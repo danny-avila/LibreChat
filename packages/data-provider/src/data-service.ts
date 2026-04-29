@@ -66,6 +66,29 @@ export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkRe
   return request.delete(endpoints.shareMessages(shareId));
 }
 
+export function listContacts(params?: q.ContactListParams): Promise<q.ContactsResponse> {
+  return request.get(endpoints.contacts(params));
+}
+
+export function getContactById(contactId: string): Promise<t.TContact> {
+  return request.get(endpoints.contactById(contactId));
+}
+
+export function createContact(payload: t.TContactRequest): Promise<t.TContact> {
+  return request.post(endpoints.contacts(), payload);
+}
+
+export function updateContact(variables: {
+  contactId: string;
+  data: t.TUpdateContactRequest;
+}): Promise<t.TContact> {
+  return request.patch(endpoints.contactById(variables.contactId), variables.data);
+}
+
+export function deleteContact(contactId: string): Promise<t.TContact> {
+  return request.delete(endpoints.contactById(contactId));
+}
+
 export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
   const { value } = payload;
   if (!value) {

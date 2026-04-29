@@ -85,6 +85,19 @@ export const getSharedLinks = (
 export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;
 export const updateSharedLink = (shareId: string) => `${shareRoot}/${shareId}`;
 
+const contactsRoot = `${BASE_URL}/api/contacts`;
+
+export const contacts = (params?: q.ContactListParams) => {
+  if (!params) {
+    return contactsRoot;
+  }
+
+  return `${contactsRoot}${buildQuery(params)}`;
+};
+
+export const contactById = (contactId: string) => `${contactsRoot}/${encodeURIComponent(contactId)}`;
+export const contactImportCsv = () => `${contactsRoot}/import/csv`;
+
 const keysEndpoint = `${BASE_URL}/api/keys`;
 
 export const keys = () => keysEndpoint;

@@ -38,4 +38,6 @@ ContactSchema.index({
   notes: 'text',
 });
 
-module.exports = mongoose.model('Contact', ContactSchema);
+// module.exports = mongoose.model('Contact', ContactSchema);
+module.exports =
+  mongoose.models.Contact || mongoose.model('Contact', ContactSchema);

@@ -323,6 +323,40 @@ export type TConversationTagRequest = Partial<
 
 export type TConversationTagResponse = TConversationTag;
 
+export type TContact = {
+  _id: string;
+  name: string;
+  company?: string;
+  role?: string;
+  email?: string;
+  phone?: string;
+  tags: string[];
+  notes?: string;
+  metadata: Record<string, string | number | boolean | string[] | null>;
+  deleted_at?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  tenantId?: string;
+};
+
+export type TContactsListParams = {
+  search?: string;
+  page?: number;
+  limit?: number;
+};
+
+export type TContactsResponse = {
+  data: TContact[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type TContactRequest = Partial<Omit<TContact, '_id' | 'createdAt' | 'updatedAt' | 'deleted_at'>> &
+  Pick<TContact, 'name'>;
+
+export type TUpdateContactRequest = Partial<TContactRequest>;
+
 export type TTagConversationRequest = {
   tags: string[];
   tag: string;

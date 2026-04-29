@@ -47,6 +47,8 @@ export * from './storage';
 export * from './tools';
 /* web search */
 export * from './web';
+/* Contacts */
+export * from './contacts/service';
 /* Cache */
 export * from './cache';
 /* Stream */

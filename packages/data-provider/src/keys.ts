@@ -51,6 +51,7 @@ export enum QueryKeys {
   health = 'health',
   userTerms = 'userTerms',
   banner = 'banner',
+  contacts = 'contacts',
   /* Memories */
   memories = 'memories',
   principalSearch = 'principalSearch',
@@ -97,4 +98,7 @@ export enum MutationKeys {
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
   updateMemoryPreferences = 'updateMemoryPreferences',
+  createContact = 'createContact',
+  updateContact = 'updateContact',
+  deleteContact = 'deleteContact',
 }

@@ -1,7 +1,11 @@
 const express = require('express');
 const multer = require('multer');
+const mongoose = require('mongoose');
 const router = express.Router();
-const Contact = require('../../models/Contact');
+const { createContactsService } = require('@librechat/api');
+
+const contactsService = createContactsService(mongoose);
+const { Contact } = contactsService;
 
 /** Multer: store file in memory as a Buffer (no disk write needed) */
 const upload = multer({
@@ -18,6 +22,31 @@ const upload = multer({
 /** Core schema fields — every other column goes into metadata */
 const SCHEMA_FIELDS = new Set(['name', 'company', 'role', 'email', 'notes']);
 const REQUIRED_FIELDS = ['name', 'company', 'role', 'email', 'notes'];
+
+function normalizeTags(tags) {
+  if (Array.isArray(tags)) {
+    return tags.map((tag) => String(tag).trim()).filter((tag) => tag !== '');
+  }
+
+  if (typeof tags === 'string') {
+    return tags
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag !== '');
+  }
+
+  return [];
+}
+
+function normalizeContactInput(body) {
+  const { attributes, metadata, tags, ...rest } = body;
+
+  return {
+    ...rest,
+    tags: normalizeTags(tags),
+    metadata: metadata || attributes || {},
+  };
+}
 
 /**
  * Parse a CSV buffer into an array of row objects.
@@ -75,25 +104,13 @@ function parseCSV(buffer) {
 router.get('/', async (req, res) => {
   try {
     const { search, page = 1, limit = 50 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const query = search ? { $text: { $search: search } } : {};
-
-    const [contacts, total] = await Promise.all([
-      Contact.find(query)
-        .select('name company role email notes -_id')
-        .skip(skip)
-        .limit(parseInt(limit))
-        .lean(),
-      Contact.countDocuments(query),
-    ]);
-
-    res.json({
-      message: 'Contacts fetched',
-      data: contacts,
-      total,
-      page: parseInt(page),
-      limit: parseInt(limit),
+    const result = await contactsService.listContacts({
+      search: search ? String(search) : undefined,
+      page: Number(page),
+      limit: Number(limit),
     });
+
+    res.json({ message: 'Contacts fetched', ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -104,17 +121,8 @@ router.get('/', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.post('/', async (req, res) => {
   try {
-    const { attributes, metadata, ...rest } = req.body;
-    // Accept both `attributes` (assignment API spec) and `metadata` (internal schema name)
-    const contactData = { ...rest, metadata: metadata || attributes || {} };
-    if (contactData.email) {
-      contactData.email = String(contactData.email).trim().toLowerCase();
-      const existing = await Contact.findOne({ email: contactData.email }).select('_id').lean();
-      if (existing) {
-        return res.status(409).json({ error: 'Email already exists' });
-      }
-    }
-    const contact = await Contact.create(contactData);
+    const contactData = normalizeContactInput(req.body);
+    const contact = await contactsService.createContact(contactData);
     res.status(201).json({ message: 'Contact created', data: contact });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -126,9 +134,35 @@ router.post('/', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/:id', async (req, res) => {
   try {
-    const contact = await Contact.findById(req.params.id).lean();
+    const contact = await contactsService.getContactById(req.params.id);
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
     res.json({ data: contact });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/contacts/:id  — edit an existing contact
+// ---------------------------------------------------------------------------
+router.patch('/:id', async (req, res) => {
+  try {
+    const updated = await contactsService.updateContact(req.params.id, normalizeContactInput(req.body));
+    if (!updated) return res.status(404).json({ error: 'Contact not found' });
+    res.json({ message: 'Contact updated', data: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/contacts/:id  — soft delete a contact
+// ---------------------------------------------------------------------------
+router.delete('/:id', async (req, res) => {
+  try {
+    const deleted = await contactsService.deleteContact(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Contact not found' });
+    res.json({ message: 'Contact deleted', data: deleted });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -247,6 +281,158 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
     success,
     failed,
   });
+
 });
 
+router.get('/:id/ai-summary', async (req, res) => {
+  try {
+    const contact = await contactsService.getContactById(req.params.id);
+    if (!contact) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+ 
+    // Build a structured block of contact facts so the AI has clean data
+    const lines = [];
+    lines.push(`Name: ${contact.name}`);
+    if (contact.company) lines.push(`Company: ${contact.company}`);
+    if (contact.role)    lines.push(`Role: ${contact.role}`);
+    if (contact.email)   lines.push(`Email: ${contact.email}`);
+    if (contact.phone)   lines.push(`Phone: ${contact.phone}`);
+    if (contact.tags && contact.tags.length > 0) {
+      lines.push(`Tags: ${contact.tags.join(', ')}`);
+    }
+    if (contact.notes)   lines.push(`Notes: ${contact.notes}`);
+ 
+    // Extra metadata fields (industry, funding_stage, etc.)
+    if (contact.metadata && typeof contact.metadata === 'object') {
+      for (const [key, value] of Object.entries(contact.metadata)) {
+        if (value !== null && value !== undefined && value !== '') {
+          const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+          lines.push(`${label}: ${value}`);
+        }
+      }
+    }
+ 
+    const contactBlock = lines.join('\n');
+ 
+    // This is the exact message that gets auto-submitted to the AI on /c/new
+    const prompt =
+      `I am looking at a contact in my CRM. Here are their full details:\n\n` +
+      `${contactBlock}\n\n` +
+      `Please do the following:\n` +
+      `1. Give me a structured summary of who this person is based on the information above.\n` +
+      `2. Highlight anything noteworthy (their seniority, company context, any relevant notes).\n` +
+      `3. Suggest 2-3 concrete next steps I could take to engage with or follow up with this contact.\n` +
+      `4. Finally, ask me if there is anything specific I would like to know or do regarding this contact.`;
+ 
+    res.json({ prompt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+// ---------------------------------------------------------------------------
+// GET /api/contacts/:id/ai-summary-stream
+//
+// Streams an AI-generated contact summary as Server-Sent Events (SSE).
+// The frontend reads the stream and renders tokens as they arrive.
+//
+// IMPORTANT: Paste this block ABOVE the existing router.get('/:id', ...) route
+// in api/server/routes/contacts.js, otherwise Express will try to find a
+// contact whose _id is literally "ai-summary-stream".
+//
+// This route uses the Anthropic SDK which is already a dependency of LibreChat.
+// It reads ANTHROPIC_API_KEY from process.env (already set in your .env).
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// GET /api/contacts/:id/ai-summary-stream
+//
+// Paste this ABOVE router.get('/:id', ...) in api/server/routes/contacts.js
+// ---------------------------------------------------------------------------
+
+const Anthropic = require('@anthropic-ai/sdk');
+
+router.get('/:id/ai-summary-stream', async (req, res) => {
+  try {
+    const contact = await contactsService.getContactById(req.params.id);
+    if (!contact) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+
+    const lines = [];
+    lines.push(`Name: ${contact.name}`);
+    if (contact.company) lines.push(`Company: ${contact.company}`);
+    if (contact.role)    lines.push(`Role: ${contact.role}`);
+    if (contact.email)   lines.push(`Email: ${contact.email}`);
+    if (contact.phone)   lines.push(`Phone: ${contact.phone}`);
+    if (contact.tags && contact.tags.length > 0) {
+      lines.push(`Tags: ${contact.tags.join(', ')}`);
+    }
+    if (contact.notes) lines.push(`Notes: ${contact.notes}`);
+
+    if (contact.metadata && typeof contact.metadata === 'object') {
+      for (const [key, value] of Object.entries(contact.metadata)) {
+        if (value !== null && value !== undefined && value !== '') {
+          const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+          lines.push(`${label}: ${value}`);
+        }
+      }
+    }
+
+    const contactBlock = lines.join('\n');
+
+    const userPrompt =
+      `Here is a contact from my CRM:\n\n${contactBlock}\n\n` +
+      `Please:\n` +
+      `1. Give a brief structured summary of who this person is.\n` +
+      `2. Highlight anything noteworthy (seniority, company context, notes).\n` +
+      `3. Suggest 2-3 concrete next steps to engage with this contact.\n` +
+      `4. End by asking if there is anything specific I would like to know.`;
+
+    // SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering if present
+    res.flushHeaders();
+
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const stream = anthropic.messages.stream({
+      model: 'claude-opus-4-5',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+
+    stream.on('text', (text) => {
+      // JSON-encode the chunk so newlines inside AI text are safely transported
+      // as a single SSE data line. Frontend JSON.parses it back.
+      res.write(`data: ${JSON.stringify(text)}\n\n`);
+    });
+
+    stream.on('finalMessage', () => {
+      res.write('data: [DONE]\n\n');
+      res.end();
+    });
+
+    stream.on('error', (err) => {
+      console.error('Anthropic stream error:', err);
+      res.write('data: [DONE]\n\n');
+      res.end();
+    });
+
+    req.on('close', () => {
+      try { stream.abort?.(); } catch (_) {}
+    });
+
+  } catch (err) {
+    console.error('ai-summary-stream error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    } else {
+      res.write('data: [DONE]\n\n');
+      res.end();
+    }
+  }
+});
 module.exports = router;

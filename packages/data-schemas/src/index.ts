@@ -5,6 +5,7 @@ export * from './crypto';
 export * from './schema';
 export * from './utils';
 export { createModels } from './models';
+export { createContactModel } from './models/contact';
 export {
   createMethods,
   RoleConflictError,

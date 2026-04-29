@@ -101,6 +101,19 @@ export type AllPromptGroupsResponse = t.TPromptGroup[];
 
 export type ConversationTagsResponse = s.TConversationTag[];
 
+export type ContactListParams = {
+  search?: string;
+  page?: number;
+  limit?: number;
+};
+
+export type ContactsResponse = {
+  data: t.TContact[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
 /* MCP Types */
 export type MCPTool = {
   name: string;

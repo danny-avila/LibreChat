@@ -337,6 +337,13 @@ export type UpdateConversationTagOptions = MutationOptions<
 >;
 export type DeleteConversationTagOptions = MutationOptions<types.TConversationTag, string>;
 
+export type CreateContactOptions = MutationOptions<types.TContact, types.TContactRequest>;
+export type UpdateContactOptions = MutationOptions<
+  types.TContact,
+  { contactId: string; data: types.TUpdateContactRequest }
+>;
+export type DeleteContactOptions = MutationOptions<types.TContact, string>;
+
 export type AcceptTermsMutationOptions = MutationOptions<
   types.TAcceptTermsResponse,
   void,
