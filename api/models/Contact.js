@@ -37,6 +37,14 @@ ContactSchema.index({
   role: 'text',
   notes: 'text',
 });
+// Add these after your existing ContactSchema.index({ name: 'text', ... })
+
+ContactSchema.index({ 'metadata.location': 1 });
+ContactSchema.index({ 'metadata.city': 1 });
+ContactSchema.index({ 'metadata.pan': 1 });
+ContactSchema.index({ 'metadata.mobile': 1 });
+ContactSchema.index({ 'metadata.application_status': 1 });
+ContactSchema.index({ 'metadata.pincode': 1 });
 
 // module.exports = mongoose.model('Contact', ContactSchema);
 module.exports =

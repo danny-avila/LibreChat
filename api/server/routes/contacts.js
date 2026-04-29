@@ -1,5 +1,5 @@
 const express = require('express');
-const multer = require('multer');
+// const multer = require('multer');
 const mongoose = require('mongoose');
 const router = express.Router();
 const { createContactsService } = require('@librechat/api');
@@ -7,21 +7,173 @@ const { createContactsService } = require('@librechat/api');
 const contactsService = createContactsService(mongoose);
 const { Contact } = contactsService;
 
-/** Multer: store file in memory as a Buffer (no disk write needed) */
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB max — enough for 1M row CSVs
-  fileFilter: (_req, file, cb) => {
-    if (!file.originalname.match(/\.(csv)$/i)) {
-      return cb(new Error('Only CSV files are allowed'));
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const csvParser = require('csv-parser');
+const multer = require('multer');
+
+// ✅ Replace your memory-based upload with disk storage
+const upload = multer({ dest: os.tmpdir() });
+
+const SKIP_MAPPED = new Set(['first_name', 'middle_name', 'last_name', 'email', 'company_name', 'designation']);
+const SKIP_IDS    = new Set(['id', 'chat_id', 'state_id', 'lead_id', 'message_id']);
+const CHUNK_SIZE  = 1000;
+
+router.post('/import/csv', upload.any(), async (req, res) => {
+  console.log('HEADERS:', req.headers);
+  console.log('BODY:', req.body);
+  console.log('FILES:', req.files);
+  console.log('CSV route hit2222222222');
+
+  const file = req.file || (req.files && req.files[0]);
+
+  if (!file) {
+    return res.status(400).json({ error: 'No file uploaded (any field name accepted)' });
+  }
+
+  // ✅ file.path is now a temp path on disk (not file.buffer)
+  const filePath = file.path;
+
+  let success = 0;
+  let failed  = 0;
+  let total   = 0;
+  let batch   = [];
+
+  // ✅ Flush batch to MongoDB — same insertMany logic as yours
+  const flushBatch = async () => {
+    if (!batch.length) return;
+
+    try {
+      const result = await Contact.insertMany(batch, { ordered: false });
+      success += result.length;
+    } catch (err) {
+      const inserted = err.result?.nInserted || 0;
+      success += inserted;
+      failed  += batch.length - inserted;
     }
-    cb(null, true);
-  },
+
+    batch = [];
+
+    // ✅ Your original DB overload prevention
+    await new Promise((r) => setTimeout(r, 20));
+  };
+
+  try {
+    await new Promise((resolve, reject) => {
+      const stream = fs.createReadStream(filePath).pipe(csvParser());
+
+      stream.on('data', (row) => {
+        // ✅ Pause stream — prevents unbounded memory buildup
+        stream.pause();
+
+        total++;
+
+        try {
+          // ✅ Build NAME — same as your original
+          const name = [row.first_name, row.middle_name, row.last_name]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+
+          // ✅ Email — same as your original
+          const email = row.email ? String(row.email).trim().toLowerCase() : undefined;
+
+          // ❌ skip if no email — same as your original
+          if (!email) {
+            failed++;
+            stream.resume();
+            return;
+          }
+
+          // ✅ Core fields — same as your original
+          const coreData = {
+            name,
+            email,
+            company : row.company_name || '',
+            role    : row.designation  || '',
+            notes   : '',
+          };
+
+          // ✅ Metadata — same logic as your original
+          const metadata = {};
+
+          for (const [key, value] of Object.entries(row)) {
+            const val = String(value || '').trim();
+
+            if (!val)                  continue; // ❌ skip empty
+            if (SKIP_MAPPED.has(key))  continue; // ❌ skip mapped fields
+            if (SKIP_IDS.has(key))     continue; // ❌ skip unwanted ids
+
+            if (key === 'state') {               // ✅ special mapping
+              metadata.location = val;
+              continue;
+            }
+
+            metadata[key] = val;                 // ✅ everything else → metadata
+          }
+
+          batch.push({ ...coreData, metadata });
+
+        } catch (err) {
+          failed++;
+        }
+
+        // ✅ Flush when chunk is full, then resume
+        if (batch.length >= CHUNK_SIZE) {
+          flushBatch()
+            .then(() => stream.resume())
+            .catch(reject);
+        } else {
+          stream.resume();
+        }
+      });
+
+      stream.on('end', async () => {
+        try {
+          await flushBatch(); // ✅ flush remaining rows
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      });
+
+      stream.on('error', reject);
+    });
+
+    // ✅ Same response shape as your original
+    res.status(200).json({
+      message: 'Import complete',
+      total,
+      success,
+      failed,
+    });
+
+  } catch (err) {
+    console.error('CSV import error:', err);
+    res.status(500).json({ error: 'Import failed', details: err.message });
+
+  } finally {
+    // ✅ Always delete the temp file
+    fs.unlink(filePath, () => {});
+  }
 });
 
+/** Multer: store file in memory as a Buffer (no disk write needed) */
+// const upload = multer({
+//   storage: multer.memoryStorage(),
+//   limits: { fileSize: 200 * 1024 * 1024 }, // 200MB max — enough for 1M row CSVs
+//   fileFilter: (_req, file, cb) => {
+//     if (!file.originalname.match(/\.(csv)$/i)) {
+//       return cb(new Error('Only CSV files are allowed'));
+//     }
+//     cb(null, true);
+//   },
+// });
+
 /** Core schema fields — every other column goes into metadata */
-const SCHEMA_FIELDS = new Set(['name', 'company', 'role', 'email', 'notes']);
-const REQUIRED_FIELDS = ['name', 'company', 'role', 'email', 'notes'];
+// const SCHEMA_FIELDS = new Set(['name', 'company', 'role', 'email', 'notes']);
+// const REQUIRED_FIELDS = ['name', 'company', 'role', 'email', 'notes'];
 
 function normalizeTags(tags) {
   if (Array.isArray(tags)) {
@@ -52,51 +204,51 @@ function normalizeContactInput(body) {
  * Parse a CSV buffer into an array of row objects.
  * Handles: quoted fields, commas inside quotes, CRLF line endings.
  */
-function parseCSV(buffer) {
-  const text = buffer.toString('utf-8').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = text.split('\n').filter((l) => l.trim() !== '');
-  if (lines.length === 0) return { headers: [], rows: [] };
+// function parseCSV(buffer) {
+//   const text = buffer.toString('utf-8').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+//   const lines = text.split('\n').filter((l) => l.trim() !== '');
+//   if (lines.length === 0) return { headers: [], rows: [] };
 
-  const parseLine = (line) => {
-    const fields = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') {
-          current += '"';
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (ch === ',' && !inQuotes) {
-        fields.push(current.trim());
-        current = '';
-      } else {
-        current += ch;
-      }
-    }
-    fields.push(current.trim());
-    return fields;
-  };
+//   const parseLine = (line) => {
+//     const fields = [];
+//     let current = '';
+//     let inQuotes = false;
+//     for (let i = 0; i < line.length; i++) {
+//       const ch = line[i];
+//       if (ch === '"') {
+//         if (inQuotes && line[i + 1] === '"') {
+//           current += '"';
+//           i++;
+//         } else {
+//           inQuotes = !inQuotes;
+//         }
+//       } else if (ch === ',' && !inQuotes) {
+//         fields.push(current.trim());
+//         current = '';
+//       } else {
+//         current += ch;
+//       }
+//     }
+//     fields.push(current.trim());
+//     return fields;
+//   };
 
-  // Normalise headers: lowercase + underscores (e.g. "Funding Stage" → "funding_stage")
-  const headers = parseLine(lines[0]).map((h) =>
-    h.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
-  );
+//   // Normalise headers: lowercase + underscores (e.g. "Funding Stage" → "funding_stage")
+//   const headers = parseLine(lines[0]).map((h) =>
+//     h.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
+//   );
 
-  const rows = lines.slice(1).map((line, i) => {
-    const values = parseLine(line);
-    const obj = { _rowNumber: i + 2 }; // +2: header row is 1, data starts at 2
-    headers.forEach((h, idx) => {
-      obj[h] = values[idx] ?? '';
-    });
-    return obj;
-  });
+//   const rows = lines.slice(1).map((line, i) => {
+//     const values = parseLine(line);
+//     const obj = { _rowNumber: i + 2 }; // +2: header row is 1, data starts at 2
+//     headers.forEach((h, idx) => {
+//       obj[h] = values[idx] ?? '';
+//     });
+//     return obj;
+//   });
 
-  return { headers, rows };
-}
+//   return { headers, rows };
+// }
 
 // ---------------------------------------------------------------------------
 // GET /api/contacts  — list contacts with optional search & pagination
@@ -285,146 +437,146 @@ router.delete('/:id', async (req, res) => {
 // });
 
 console.log('CSV route hit111111111');
-router.post('/import/csv', upload.any(), async (req, res) => {
-  console.log('HEADERS:', req.headers);
-console.log('BODY:', req.body);
-console.log('FILE:', req.file);
-console.log('FILES:', req.files);
-  console.log('CSV route hit2222222222');
-const file = req.file || (req.files && req.files[0]);
+// router.post('/import/csv', upload.any(), async (req, res) => {
+//   console.log('HEADERS:', req.headers);
+// console.log('BODY:', req.body);
+// console.log('FILE:', req.file);
+// console.log('FILES:', req.files);
+//   console.log('CSV route hit2222222222');
+// const file = req.file || (req.files && req.files[0]);
 
-if (!file) {
-  return res.status(400).json({
-    error: 'No file uploaded (any field name accepted)',
-  });
-}
+// if (!file) {
+//   return res.status(400).json({
+//     error: 'No file uploaded (any field name accepted)',
+//   });
+// }
 
-// const { rows } = parseCSV(req.file.buffer);
-const { rows } = parseCSV(file.buffer);  
+// // const { rows } = parseCSV(req.file.buffer);
+// const { rows } = parseCSV(file.buffer);  
 
-  if (!rows.length) {
-    return res.status(400).json({
-      error: 'CSV is empty',
-    });
-  }
+//   if (!rows.length) {
+//     return res.status(400).json({
+//       error: 'CSV is empty',
+//     });
+//   }
 
-  let success = 0;
-  let failed = 0;
+//   let success = 0;
+//   let failed = 0;
 
-  const CHUNK_SIZE = 1000;
+//   const CHUNK_SIZE = 1000;
 
-  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-    const chunk = rows.slice(i, i + CHUNK_SIZE);
-    const docs = [];
+//   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+//     const chunk = rows.slice(i, i + CHUNK_SIZE);
+//     const docs = [];
 
-    for (const row of chunk) {
-      try {
-        // ✅ Build NAME
-        const name = [
-          row.first_name,
-          row.middle_name,
-          row.last_name,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .trim();
+//     for (const row of chunk) {
+//       try {
+//         // ✅ Build NAME
+//         const name = [
+//           row.first_name,
+//           row.middle_name,
+//           row.last_name,
+//         ]
+//           .filter(Boolean)
+//           .join(' ')
+//           .trim();
 
-        // ✅ Email
-        const email = row.email
-          ? String(row.email).trim().toLowerCase()
-          : undefined;
+//         // ✅ Email
+//         const email = row.email
+//           ? String(row.email).trim().toLowerCase()
+//           : undefined;
 
-        // ❌ skip if no email
-        if (!email) {
-          failed++;
-          continue;
-        }
+//         // ❌ skip if no email
+//         if (!email) {
+//           failed++;
+//           continue;
+//         }
 
-        // ✅ Core fields
-        const coreData = {
-          name,
-          email,
-          company: row.company_name || '',
-          role: row.designation || '',
-          notes: '',
-        };
+//         // ✅ Core fields
+//         const coreData = {
+//           name,
+//           email,
+//           company: row.company_name || '',
+//           role: row.designation || '',
+//           notes: '',
+//         };
 
    
-       const metadata = {};
+//        const metadata = {};
 
-        for (const [key, value] of Object.entries(row)) {
-          const val = String(value || '').trim();
+//         for (const [key, value] of Object.entries(row)) {
+//           const val = String(value || '').trim();
 
-          // ❌ skip empty
-          if (!val) continue;
+//           // ❌ skip empty
+//           if (!val) continue;
 
-          // ❌ skip mapped fields
-          if (
-            [
-              'first_name',
-              'middle_name',
-              'last_name',
-              'email',
-              'company_name',
-              'designation',
-            ].includes(key)
-          ) {
-            continue;
-          }
+//           // ❌ skip mapped fields
+//           if (
+//             [
+//               'first_name',
+//               'middle_name',
+//               'last_name',
+//               'email',
+//               'company_name',
+//               'designation',
+//             ].includes(key)
+//           ) {
+//             continue;
+//           }
 
-          // ❌ skip unwanted ids
-          if (
-            ['id', 'chat_id', 'state_id', 'lead_id', 'message_id'].includes(key)
-          ) {
-            continue;
-          }
+//           // ❌ skip unwanted ids
+//           if (
+//             ['id', 'chat_id', 'state_id', 'lead_id', 'message_id'].includes(key)
+//           ) {
+//             continue;
+//           }
 
-          // ✅ special mapping
-          if (key === 'state') {
-            metadata.location = val;
-            continue;
-          }
+//           // ✅ special mapping
+//           if (key === 'state') {
+//             metadata.location = val;
+//             continue;
+//           }
 
-          // ✅ everything else → metadata
-          metadata[key] = val;
-        }
+//           // ✅ everything else → metadata
+//           metadata[key] = val;
+//         }
 
-        docs.push({
-          ...coreData,
-          metadata,
-        });
-      } catch (err) {
-        failed++;
-      }
-    }
+//         docs.push({
+//           ...coreData,
+//           metadata,
+//         });
+//       } catch (err) {
+//         failed++;
+//       }
+//     }
 
-    if (!docs.length) continue;
+//     if (!docs.length) continue;
 
-    try {
-      const result = await Contact.insertMany(docs, {
-        ordered: false,
-      });
+//     try {
+//       const result = await Contact.insertMany(docs, {
+//         ordered: false,
+//       });
 
-      success += result.length;
-    } catch (err) {
-      const inserted = err.result?.nInserted || 0;
-      success += inserted;
-      failed += docs.length - inserted;
-    }
+//       success += result.length;
+//     } catch (err) {
+//       const inserted = err.result?.nInserted || 0;
+//       success += inserted;
+//       failed += docs.length - inserted;
+//     }
 
-    // prevent DB overload
-    if (i + CHUNK_SIZE < rows.length) {
-      await new Promise((r) => setTimeout(r, 20));
-    }
-  }
+//     // prevent DB overload
+//     if (i + CHUNK_SIZE < rows.length) {
+//       await new Promise((r) => setTimeout(r, 20));
+//     }
+//   }
 
-  res.status(200).json({
-    message: 'Import complete',
-    total: rows.length,
-    success,
-    failed,
-  });
-});
+//   res.status(200).json({
+//     message: 'Import complete',
+//     total: rows.length,
+//     success,
+//     failed,
+//   });
+// });
 
 router.get('/:id/ai-summary', async (req, res) => {
   try {

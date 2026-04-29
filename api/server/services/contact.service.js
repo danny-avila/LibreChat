@@ -61,7 +61,7 @@ exports.searchContacts = async (queryText) => {
       $text: { $search: search },
     })
       .select(projection)
-      .limit(10)
+      .limit(15)
       .lean();
 
     if (textMatches.length > 0) {
@@ -78,27 +78,17 @@ exports.searchContacts = async (queryText) => {
       { role: { $regex: keywordRegex } },
       { email: { $regex: keywordRegex } },
       { notes: { $regex: keywordRegex } },
-      { 'metadata.metadata': { $regex: keywordRegex } },
-      {
-        $expr: {
-          $regexMatch: {
-            input: {
-              $convert: {
-                input: '$metadata',
-                to: 'string',
-                onError: '',
-                onNull: '',
-              },
-            },
-            regex: keywordPattern,
-            options: 'i',
-          },
-        },
-      },
+    { 'metadata.pan': { $regex: keywordRegex } },
+{ 'metadata.mobile': { $regex: keywordRegex } },
+{ 'metadata.location': { $regex: keywordRegex } },
+{ 'metadata.city': { $regex: keywordRegex } },
+{ 'metadata.application_status': { $regex: keywordRegex } },
+{ 'metadata.pincode': { $regex: keywordRegex } },
+    
     ],
   })
     .select(projection)
-    .limit(10)
+    .limit(15)
     .lean();
   if (regexMatches.length > 0) {
     return regexMatches;
@@ -106,7 +96,7 @@ exports.searchContacts = async (queryText) => {
 
   const candidates = await Contact.find()
     .select(projection)
-    .limit(200)
+    .limit(1000)
     .lean();
 
   if (keywords.length === 0) {
@@ -139,9 +129,9 @@ exports.searchContacts = async (queryText) => {
       .toLowerCase()
       .replace(/_/g, ' ');
 
-    if (keywords.some((keyword) => haystack.includes(keyword))) {
+    if (keywords.every((keyword) => haystack.includes(keyword))) {
       matches.push(contact);
-      if (matches.length >= 10) {
+      if (matches.length >= 15) {
         break;
       }
     }

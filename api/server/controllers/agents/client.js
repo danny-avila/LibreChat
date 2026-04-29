@@ -376,31 +376,24 @@ class AgentClient extends BaseClient {
 
         this.contactContext = { query: latestUserText, contacts: deduped };
 
-        const contactLines = deduped.map((contact) => {
-          const base = `Name: ${contact.name}, Company: ${contact.company || 'N/A'}, Role: ${contact.role || 'N/A'}, Email: ${contact.email || 'N/A'}, Notes: ${contact.notes || 'N/A'}`;
+       const SKIP_META_KEYS = new Set(['_rowNumber', 'pan', 'mobile', 'pincode', 'dob', 'gender', 'latitude', 'longitude', 'kyc_successful', 'income_verified_aa']);
 
-          let metadata = contact.metadata ?? {};
-          if (metadata && typeof metadata.metadata === 'string') {
-            try {
-              metadata = JSON.parse(metadata.metadata);
-            } catch (error) {
-              metadata = { metadata: metadata.metadata };
-            }
-          }
+const contactLines = deduped.map((contact) => {
+  const parts = [`Name: ${contact.name}`];
+  if (contact.company) parts.push(`Company: ${contact.company}`);
+  if (contact.role) parts.push(`Role: ${contact.role}`);
+  if (contact.email) parts.push(`Email: ${contact.email}`);
 
-          const metaEntries = metadata && typeof metadata === 'object'
-            ? Object.entries(metadata)
-                .filter(([, value]) => value !== '' && value != null)
-                .map(([key, value]) => {
-                  const formatted = Array.isArray(value) ? value.join(', ') : value;
-                  return `${key}: ${formatted}`;
-                })
-            : [];
+  const metadata = contact.metadata ?? {};
+  const metaEntries = Object.entries(metadata)
+    .filter(([key, value]) => !SKIP_META_KEYS.has(key) && value !== '' && value != null)
+    .map(([key, value]) => `${key}: ${value}`);
 
-          const meta = metaEntries.length ? `, Attributes: ${metaEntries.join('; ')}` : '';
-          return `- ${base}${meta}`;
-        }).join('\n');
+  if (metaEntries.length) parts.push(metaEntries.join(', '));
+  return `- ${parts.join(', ')}`;
+}).join('\n');
 
+         
         sharedRunContextParts.push(
           [
             '# Contacts Workspace (source of truth for contact questions)',
@@ -714,17 +707,20 @@ class AgentClient extends BaseClient {
       abortController: opts.abortController,
     });
 
-    const completion = filterMalformedContentParts(this.contentParts);
-    const contactOverride = this.buildContactOverride();
-    if (contactOverride) {
-      return {
-        completion: [{ type: ContentTypes.TEXT, text: contactOverride }],
-      };
-    }
+    // const completion = filterMalformedContentParts(this.contentParts);
+    // const contactOverride = this.buildContactOverride();
+    // if (contactOverride) {
+    //   return {
+    //     completion: [{ type: ContentTypes.TEXT, text: contactOverride }],
+    //   };
+    // }
 
-    return { completion };
+    // return { completion };
+    const completion = filterMalformedContentParts(this.contentParts);
+return { completion };
   }
 
+  
   buildContactOverride() {
     if (!this.contactContext?.contacts?.length) {
       return null;
@@ -829,7 +825,7 @@ class AgentClient extends BaseClient {
         }
       }
 
-      return keywords.some((keyword) => haystack.includes(keyword));
+      return keywords.every((keyword) => haystack.includes(keyword));
     });
 
     if (matches.length === 0) {
