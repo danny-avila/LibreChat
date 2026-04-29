@@ -51,6 +51,7 @@ async function deleteFromCognito(email) {
 }
 
 export const handler = async (event) => {
+  console.log("handler start");
   const email = event?.email?.trim();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'invalid email' }) };
