@@ -85,7 +85,10 @@ function badgeFromChunkMarker(text: string | undefined): {
   };
 }
 
-function getSectionBadge(meta: Record<string, unknown> | undefined, documentText?: string): {
+function getSectionBadge(
+  meta: Record<string, unknown> | undefined,
+  documentText?: string,
+): {
   kind: 'body' | 'attachment';
   label: string;
   filename?: string;
@@ -98,7 +101,7 @@ function getSectionBadge(meta: Record<string, unknown> | undefined, documentText
     const idx = meta.attachment_idx as number | undefined;
     const total = meta.attachment_total as number | undefined;
     const filename = (meta.attachment_filename as string | undefined) ?? fallback?.filename ?? '';
-    const counter = idx && total ? `첨부 ${idx}/${total}` : fallback?.label ?? '첨부';
+    const counter = idx && total ? `첨부 ${idx}/${total}` : (fallback?.label ?? '첨부');
     return { kind: 'attachment', label: counter, filename };
   }
   if (kind === 'body') {
@@ -252,6 +255,7 @@ export default function BklSourcesPanel() {
           </div>
         </div>
         <div className="flex items-center gap-1">
+          <ImanageButton source={current} />
           <OriginalSourceButton source={current} />
           <Button size="icon" variant="ghost" onClick={onClose} aria-label="닫기">
             <X size={16} aria-hidden="true" />
@@ -412,6 +416,59 @@ function OriginalSourceButton({ source }: { source: BklSource | null }) {
   );
 }
 
+function ImanageButton({ source }: { source: BklSource | null }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    setUrl(null);
+    if (!source) return;
+    const meta = source.metadata?.[0] as Record<string, unknown> | undefined;
+    const direct =
+      source.source?.imanage_url ??
+      source.source?.imanage_preview_url ??
+      (typeof meta?.imanage_url === 'string' ? (meta.imanage_url as string) : null) ??
+      (typeof meta?.imanage_preview_url === 'string' ? (meta.imanage_preview_url as string) : null);
+    if (direct) {
+      setUrl(direct);
+      return;
+    }
+    const docId = typeof meta?.doc_id === 'string' && meta.doc_id ? (meta.doc_id as string) : null;
+    if (!docId) return;
+    let cancelled = false;
+    fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        const u = data.imanage_url ?? data.imanage_preview_url ?? null;
+        if (u) setUrl(u);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [source]);
+
+  if (!url) return null;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="iManage에서 보기"
+      aria-label="iManage에서 보기"
+      className={cn(
+        'inline-flex h-8 items-center gap-1 rounded-md px-2',
+        'text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+        'focus-visible:outline-none focus-visible:ring-2',
+        'focus-visible:ring-border-medium',
+      )}
+    >
+      <ExternalLink size={14} aria-hidden="true" />
+      <span>iManage</span>
+    </a>
+  );
+}
+
 function PanelTitleIcon({ source }: { source: BklSource | null }) {
   if (!source) return null;
   const meta = source.metadata?.[0];
@@ -421,17 +478,12 @@ function PanelTitleIcon({ source }: { source: BklSource | null }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ext = (meta as any)?.file_type ?? null;
   const rawName = meta?.name ?? meta?.file_name ?? '';
-  return (
-    <FileTypeIcon
-      ext={ext}
-      name={rawName}
-      className="mt-0.5 h-5 w-5 shrink-0"
-    />
-  );
+  return <FileTypeIcon ext={ext} name={rawName} className="mt-0.5 h-5 w-5 shrink-0" />;
 }
 
 function PanelTitle({ source }: { source: BklSource | null }) {
-  if (!source) return <h2 className="mt-0.5 truncate text-sm font-semibold text-text-primary">—</h2>;
+  if (!source)
+    return <h2 className="mt-0.5 truncate text-sm font-semibold text-text-primary">—</h2>;
   const meta = source.metadata?.[0];
   const rawName = meta?.name ?? meta?.file_name ?? '출처 문서';
   const fileName = extractFileName(rawName);
@@ -447,11 +499,7 @@ function PanelTitle({ source }: { source: BklSource | null }) {
       {(badge || pageInfo || relevance) && (
         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-text-secondary">
           {badge ? (
-            <SectionBadge
-              kind={badge.kind}
-              label={badge.label}
-              filename={badge.filename}
-            />
+            <SectionBadge kind={badge.kind} label={badge.label} filename={badge.filename} />
           ) : null}
           {pageInfo ? <span>{pageInfo}</span> : null}
           {relevance ? (
@@ -518,7 +566,8 @@ function SectionBadge({
  * non-MSG documents going forward, but legacy index slices written before
  * that fix still carry the marker — this strip handles both.
  */
-const _CHUNK_MARKER_RE = /^\s*\[(?:본문|첨부(?:\s+\d+\s*\/\s*\d+)?(?:\s*[·•]\s*[^\]\n]+)?)\]\s*\n+/u;
+const _CHUNK_MARKER_RE =
+  /^\s*\[(?:본문|첨부(?:\s+\d+\s*\/\s*\d+)?(?:\s*[·•]\s*[^\]\n]+)?)\]\s*\n+/u;
 function stripLeadingSegmentMarker(text: string): string {
   if (!text) return text;
   return text.replace(_CHUNK_MARKER_RE, '');
@@ -601,8 +650,7 @@ function normaliseMammothEscapes(text: string): string {
  * paragraph (no further dotted segment) is left untouched so we don't
  * suppress legitimate ordered-list usage of large start numbers.
  */
-const _DATE_LIST_GUARD_RE =
-  /^([ \t]*)(\d{4})\.([ \t]+)(?=\d{1,2}\.[ \t]+(?:\d{1,2}\.|[\d(]))/gm;
+const _DATE_LIST_GUARD_RE = /^([ \t]*)(\d{4})\.([ \t]+)(?=\d{1,2}\.[ \t]+(?:\d{1,2}\.|[\d(]))/gm;
 function neutraliseDateListMarker(text: string): string {
   if (!text) return text;
   return text.replace(_DATE_LIST_GUARD_RE, '$1$2\\.$3');
@@ -642,9 +690,7 @@ function promoteLegalBoldHeading(text: string): string {
 function PanelBody({ source }: { source: BklSource }) {
   const rawText = source.document?.[0] ?? '';
   const text = promoteLegalBoldHeading(
-    neutraliseDateListMarker(
-      normaliseMammothEscapes(stripLeadingSegmentMarker(rawText)),
-    ),
+    neutraliseDateListMarker(normaliseMammothEscapes(stripLeadingSegmentMarker(rawText))),
   );
   if (!text) return <p className="text-sm text-text-secondary">내용을 불러올 수 없습니다.</p>;
   // MarkdownLite (GFM + math + code highlighting) renders the chunk body.
@@ -664,7 +710,7 @@ function PanelBody({ source }: { source: BklSource }) {
   return (
     <div
       className={cn(
-        'prose prose-sm max-w-none break-words text-text-primary dark:prose-invert',
+        'prose prose-sm dark:prose-invert max-w-none break-words text-text-primary',
         'prose-h1:text-base prose-h1:font-semibold prose-h1:my-2',
         'prose-h2:text-sm prose-h2:font-semibold prose-h2:my-2',
         'prose-h3:text-sm prose-h3:font-semibold prose-h3:my-1.5',
