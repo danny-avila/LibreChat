@@ -1,9 +1,10 @@
-import { memo, useEffect, useId, useLayoutEffect } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
 import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
+import { displayFilename } from './attachmentTypes';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
 import { cn, getFileType } from '~/utils';
@@ -41,11 +42,15 @@ interface ToolArtifactCardProps {
  *     Without that guard, both cards would observe each other's write
  *     and trade overwrites in a loop.
  *
- *  3. **Focus on mount** (deps: artifact.id). A freshly-mounted card
- *     means a new artifact has arrived; we steal panel focus to match
- *     the legacy streaming-artifact UX where the latest artifact
- *     auto-opens. Cards that re-render with the same artifact don't
- *     refire this, so user clicks on older cards aren't overridden.
+ *  3. **Focus on mount** (deps: artifact.id) — gated on `isSubmitting`
+ *     captured at first render via a ref. A card mounted *during*
+ *     streaming means a new artifact arrived from SSE; we steal panel
+ *     focus to match the legacy streaming-artifact UX. A card mounted
+ *     while `isSubmitting === false` is part of conversation history
+ *     (page load, navigating back to an old conversation) and must
+ *     not steal focus — `Presentation`'s render condition gates the
+ *     panel on `currentArtifactId != null`, so leaving focus alone
+ *     keeps the panel closed on history load.
  *
  * Visibility is intentionally not toggled. The Recoil default is `true`,
  * which auto-opens the panel on first registration; a user who has
@@ -60,9 +65,15 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
   const existingEntry = useRecoilValue(store.artifactByIdSelector(artifact.id));
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
   const [claim, setClaim] = useRecoilState(store.toolArtifactClaim(artifact.id));
   const isSelected = artifact.id === currentArtifactId;
   const isMyClaim = claim === claimKey;
+  // Captured at first render only — cards that mount mid-stream stay
+  // "fresh" for the rest of their lifetime even after streaming ends,
+  // and cards that mount post-stream stay "history" even if the user
+  // sends another message while the same card stays mounted.
+  const mountedDuringStreamRef = useRef(isSubmitting);
 
   useLayoutEffect(() => {
     // Always (re)claim on mount — a later card for the same id displaces
@@ -96,6 +107,11 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   }, [artifact, existingEntry, isMyClaim, setArtifacts]);
 
   useEffect(() => {
+    if (!mountedDuringStreamRef.current) {
+      // Card mounted as part of conversation history — leave focus alone
+      // so the side panel doesn't auto-open on navigation.
+      return;
+    }
     setCurrentArtifactId(artifact.id);
   }, [artifact.id, setCurrentArtifactId]);
 
@@ -130,6 +146,11 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const actionLabel = isSelected
     ? localize('com_ui_click_to_close')
     : localize('com_ui_artifact_click');
+  const visibleFilename = displayFilename(attachment.filename);
+  // The artifact's stored `title` mirrors the on-disk `filename` for
+  // tool artifacts, so re-derive the user-facing label rather than
+  // showing the collision-suffixed name.
+  const visibleTitle = displayFilename(artifact.title);
 
   return (
     <div className="group relative my-2 inline-flex max-w-fit items-stretch gap-px overflow-hidden rounded-xl text-sm text-text-primary shadow-sm">
@@ -149,8 +170,8 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
           <div className="flex flex-row items-center gap-2">
             <FilePreview fileType={fileType} className="relative" />
             <div className="overflow-hidden text-left">
-              <div className="truncate font-medium" title={attachment.filename ?? ''}>
-                {artifact.title}
+              <div className="truncate font-medium" title={visibleFilename}>
+                {visibleTitle}
               </div>
               <div className="truncate text-xs text-text-secondary">{actionLabel}</div>
             </div>
@@ -160,7 +181,7 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       <button
         type="button"
         onClick={handleDownload}
-        aria-label={`${localize('com_ui_download')} ${attachment.filename ?? ''}`}
+        aria-label={`${localize('com_ui_download')} ${visibleFilename}`}
         title={localize('com_ui_download')}
         className={cn(
           'flex shrink-0 items-center justify-center px-3 transition-colors duration-200',
