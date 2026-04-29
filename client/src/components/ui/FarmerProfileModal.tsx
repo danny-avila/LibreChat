@@ -201,6 +201,16 @@ const FarmerProfileModal = ({
     onOpenChange(isOpen);
   };
 
+  const detectDevice = (): string => {
+    const ua = navigator.userAgent;
+    if (/android/i.test(ua)) return 'Android';
+    if (/iphone|ipad|ipod/i.test(ua)) return 'iOS';
+    if (/windows/i.test(ua)) return 'Windows';
+    if (/macintosh|mac os x/i.test(ua)) return 'MacOS';
+    if (/linux/i.test(ua)) return 'Linux';
+    return 'Unknown';
+  };
+
   const onSubmit = (data: FarmerProfileForm) => {
     const resolvedDistrict =
       data.district === 'Other' ? data.customDistrict : data.district;
@@ -215,6 +225,7 @@ const FarmerProfileModal = ({
         .split(',').map((c) => c.trim()).filter(Boolean),
       awarenessOfKCC: data.awarenessOfKCC === 'yes',
       usesAgriApps: data.usesAgriApps === 'yes',
+      platform: detectDevice(),
       location: data.location?.latitude && data.location?.longitude 
         ? {
             latitude: Number(data.location.latitude),

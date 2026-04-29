@@ -1077,6 +1077,27 @@ export const useAcceptSecondTermsMutation = (
   });
 };
 
+export const useUpdateFarmerPlatformMutation = (): UseMutationResult<
+  { message: string },
+  unknown,
+  string,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((platform: string) => dataService.updateFarmerPlatform(platform), {
+    onSuccess: () => {
+      queryClient.setQueryData<t.TUserTermsResponse>(
+        [QueryKeys.userTerms],
+        (prev) =>
+          ({
+            ...prev,
+            farmerProfileHasPlatform: true,
+          }) as t.TUserTermsResponse,
+      );
+    },
+  });
+};
+
 export const useSaveFarmerProfileMutation = (
   options?: t.SaveFarmerProfileMutationOptions,
 ): UseMutationResult<{ message: string }, unknown, t.IFarmerProfile, unknown> => {

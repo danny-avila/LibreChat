@@ -81,6 +81,7 @@ const getTermsStatusController = async (req, res) => {
       termsAccepted: !!user.termsAccepted,
       secondTermsAccepted: !!user.secondTermsAccepted,
       farmerProfileCompleted: !!user.farmerProfile?.farmerName,
+      farmerProfileHasPlatform: !!user.farmerProfile?.platform,
       farmerLocationCompleted: !!(user.farmerProfile?.location?.latitude && user.farmerProfile?.location?.longitude),
     });
   } catch (error) {
@@ -116,6 +117,23 @@ const acceptSecondTermsController = async (req, res) => {
   } catch (error) {
     logger.error('Error accepting second terms:', error);
     res.status(500).json({ message: 'Error accepting second terms' });
+  }
+};
+
+const updateFarmerPlatformController = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: { 'farmerProfile.platform': req.body.platform } },
+      { new: true },
+    );
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ message: 'Platform updated successfully' });
+  } catch (error) {
+    logger.error('Error updating farmer platform:', error);
+    res.status(500).json({ message: 'Error updating platform' });
   }
 };
 
@@ -497,6 +515,7 @@ module.exports = {
   acceptTermsController,
   acceptSecondTermsController,
   saveFarmerProfileController,
+  updateFarmerPlatformController,
   deleteUserController,
   verifyEmailController,
   updateUserPluginsController,
