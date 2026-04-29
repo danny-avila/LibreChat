@@ -587,14 +587,21 @@ describe('MCP SSRF protection – cross-origin credential stripping on redirect'
     jest.restoreAllMocks();
   });
 
-  it('should strip Authorization and user-injected headers when 308-redirecting cross-origin', async () => {
+  it('should strip Authorization, runtime headers, and config headers when 308-redirecting cross-origin', async () => {
     const capture = await createHeaderCaptureServer();
     try {
       server = await createCrossOriginRedirectingServer(capture.url, 308);
 
       conn = new MCPConnection({
         serverName: 'cross-origin-strip',
-        serverConfig: { type: 'streamable-http', url: server.url },
+        serverConfig: {
+          type: 'streamable-http',
+          url: server.url,
+          headers: {
+            'X-Config-Api-Key': 'config-level-secret',
+            'X-Internal-Token': 'config-internal-token',
+          },
+        },
         oauthTokens: {
           access_token: 'super-secret-bearer-token',
           token_type: 'Bearer',
@@ -602,7 +609,7 @@ describe('MCP SSRF protection – cross-origin credential stripping on redirect'
         },
         useSSRFProtection: false,
       });
-      conn.setRequestHeaders({ 'X-Api-Key': 'user-private-api-key' });
+      conn.setRequestHeaders({ 'X-Runtime-Api-Key': 'runtime-private-api-key' });
 
       await expect(conn.connect()).rejects.toThrow();
       expect(server.redirectHit).toBe(true);
@@ -610,7 +617,9 @@ describe('MCP SSRF protection – cross-origin credential stripping on redirect'
 
       for (const headers of capture.receivedHeaders) {
         expect(headers['authorization']).toBeUndefined();
-        expect(headers['x-api-key']).toBeUndefined();
+        expect(headers['x-runtime-api-key']).toBeUndefined();
+        expect(headers['x-config-api-key']).toBeUndefined();
+        expect(headers['x-internal-token']).toBeUndefined();
         expect(headers['mcp-session-id']).toBeUndefined();
         expect(headers['cookie']).toBeUndefined();
       }

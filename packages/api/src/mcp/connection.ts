@@ -114,12 +114,12 @@ function buildFetchInit(
 
 /**
  * Drops credential-bearing headers when a 307/308 redirect crosses an origin
- * boundary. Removes the always-forbidden set plus any user-injected headers
- * (which can include API keys / per-server secrets).
+ * boundary. Removes the always-forbidden set plus any caller-supplied secret
+ * headers (runtime `setRequestHeaders` values and config-level API keys).
  */
 function stripCrossOriginHeaders(
   headers: Record<string, string>,
-  userInjectedKeys: ReadonlySet<string>,
+  secretHeaderKeys: ReadonlySet<string>,
 ): Record<string, string> {
   const stripped: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
@@ -127,7 +127,7 @@ function stripCrossOriginHeaders(
     if (CROSS_ORIGIN_FORBIDDEN_HEADERS.has(lowered)) {
       continue;
     }
-    if (userInjectedKeys.has(lowered)) {
+    if (secretHeaderKeys.has(lowered)) {
       continue;
     }
     stripped[key] = value;
@@ -490,6 +490,7 @@ export class MCPConnection extends EventEmitter {
     getHeaders: () => Record<string, string> | null | undefined,
     timeout?: number,
     sseBodyTimeout?: number,
+    configuredSecretHeaderKeys?: ReadonlySet<string>,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
     const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
     const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
@@ -518,9 +519,16 @@ export class MCPConnection extends EventEmitter {
       const isGet = (init?.method ?? 'GET').toUpperCase() === 'GET';
       const dispatcher = isGet && getAgent ? getAgent : postAgent;
       const requestHeaders = getHeaders();
-      const userInjectedKeys: ReadonlySet<string> = new Set(
-        Object.keys(requestHeaders ?? {}).map((key) => key.toLowerCase()),
-      );
+      /**
+       * Headers that originated from user/server configuration — runtime
+       * `setRequestHeaders` plus any keys baked into the transport at
+       * construction time (e.g. `serverConfig.headers` API keys). All are
+       * treated as credentials and stripped on cross-origin redirect.
+       */
+      const secretHeaderKeys: ReadonlySet<string> = new Set([
+        ...Object.keys(requestHeaders ?? {}).map((key) => key.toLowerCase()),
+        ...(configuredSecretHeaderKeys ?? []),
+      ]);
 
       let currentInit = buildFetchInit(init, dispatcher, requestHeaders);
       let url = input;
@@ -561,7 +569,7 @@ export class MCPConnection extends EventEmitter {
           const headers = currentInit.headers as Record<string, string>;
           currentInit = {
             ...currentInit,
-            headers: stripCrossOriginHeaders(headers, userInjectedKeys),
+            headers: stripCrossOriginHeaders(headers, secretHeaderKeys),
           };
         }
 
@@ -661,6 +669,9 @@ export class MCPConnection extends EventEmitter {
             ...(ssrfConnect != null ? { connect: ssrfConnect } : {}),
           });
           this.agents.push(sseAgent);
+          const sseConfiguredSecretHeaderKeys: ReadonlySet<string> = new Set(
+            Object.keys(headers).map((key) => key.toLowerCase()),
+          );
           const transport = new SSEClientTransport(url, {
             requestInit: {
               /** User/OAuth headers override SSE defaults */
@@ -684,6 +695,8 @@ export class MCPConnection extends EventEmitter {
             fetch: this.createFetchFunction(
               this.getRequestHeaders.bind(this),
               sseTimeout,
+              undefined,
+              sseConfiguredSecretHeaderKeys,
             ) as unknown as FetchLike,
           });
 
@@ -713,6 +726,9 @@ export class MCPConnection extends EventEmitter {
             headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
           }
 
+          const httpConfiguredSecretHeaderKeys: ReadonlySet<string> = new Set(
+            Object.keys(headers).map((key) => key.toLowerCase()),
+          );
           const transport = new StreamableHTTPClientTransport(url, {
             requestInit: {
               headers,
@@ -722,6 +738,7 @@ export class MCPConnection extends EventEmitter {
               this.getRequestHeaders.bind(this),
               this.timeout,
               this.sseReadTimeout || DEFAULT_SSE_READ_TIMEOUT,
+              httpConfiguredSecretHeaderKeys,
             ) as unknown as FetchLike,
           });
 
