@@ -22,7 +22,6 @@ export default function DragDropWrapper({ children, className }: DragDropWrapper
       <DragDropOverlay isActive={isActive} />
       <DragDropProvider>
         <DragDropModal
-          files={draggedFiles}
           isVisible={showModal}
           setShowModal={setShowModal}
           onOptionSelect={handleOptionSelect}

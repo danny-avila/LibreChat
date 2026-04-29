@@ -19,10 +19,12 @@ export async function parseText({
   req,
   file,
   file_id,
+  fallback = true,
 }: {
   req: ServerRequest;
   file: Express.Multer.File;
   file_id: string;
+  fallback?: boolean;
 }): Promise<{ text: string; bytes: number; source: string }> {
   const bklApiBaseUrl = process.env.BKL_API_BASE_URL;
   if (bklApiBaseUrl) {
@@ -57,7 +59,14 @@ export async function parseText({
         message: '[parseText] BKL API text extraction failed, falling back',
         error,
       });
+      if (!fallback) {
+        throw error;
+      }
     }
+  }
+
+  if (!fallback) {
+    throw new Error('BKL_API_BASE_URL is not configured for text extraction');
   }
 
   if (!process.env.RAG_API_URL) {

@@ -8,7 +8,6 @@ import {
   Tools,
   QueryKeys,
   Constants,
-  inferMimeType,
   EToolResources,
   EModelEndpoint,
   mergeFileConfig,
@@ -125,16 +124,17 @@ export default function useDragHelpers() {
         }
       }
 
-      /** Determine if dragged files are all images (enables the base image option) */
-      const allImages = item.files.every((f) =>
-        inferMimeType(f.name, f.type)?.startsWith('image/'),
-      );
+      if (contextEnabled) {
+        setEphemeralAgent((prev) => ({
+          ...prev,
+          [EToolResources.context]: true,
+        }));
+        handleFilesRef.current(item.files, EToolResources.context);
+        return;
+      }
 
       const shouldShowModal =
-        allImages ||
-        (fileSearchEnabled && fileSearchAllowedByAgent) ||
-        (codeEnabled && codeAllowedByAgent) ||
-        contextEnabled;
+        (fileSearchEnabled && fileSearchAllowedByAgent) || (codeEnabled && codeAllowedByAgent);
 
       if (!shouldShowModal) {
         // Fallback: directly handle files without showing modal

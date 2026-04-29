@@ -558,6 +558,18 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         .json({ message: 'Agent file uploaded and processed successfully', ...result });
     };
 
+    if (process.env.BKL_API_BASE_URL) {
+      try {
+        const { text, bytes } = await parseText({ req, file, file_id, fallback: false });
+        return await createTextFile({ text, bytes, type: file.mimetype });
+      } catch (err) {
+        logger.error(
+          `[processAgentFileUpload] BKL API text extraction failed for "${file.originalname}", falling back:`,
+          err,
+        );
+      }
+    }
+
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
 
     const shouldUseConfiguredOCR =
