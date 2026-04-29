@@ -82,6 +82,25 @@ function previewForChunk(chunk: ChunkPreview, query: string): string {
   return buildSnippet(chunk.content, query);
 }
 
+function formatMetadataValue(value?: string | null): string | null {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(value)) return value.slice(0, 10);
+  return value;
+}
+
+function documentMetadataLine(hit: DocumentHit): string | null {
+  const values = [
+    hit.edit_date,
+    hit.last_user,
+    hit.custom4,
+    hit.custom1_description,
+    hit.custom29_description,
+  ]
+    .map(formatMetadataValue)
+    .filter(Boolean);
+  return values.length ? values.join(' | ') : null;
+}
+
 // `fileExtension` / `extensionLabel` / `ExtensionIcon` were inlined here
 // originally; they now live in `~/utils/fileTypeIcon.tsx` so the citation
 // chip and the BKL sources panel render the same icon set.
@@ -157,12 +176,11 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
     matchedChunkCount > displayedChunkCount
       ? `표시 ${displayedChunkCount}개 / 매칭 ${matchedChunkCount}개`
       : `${localize('com_document_search_matched_chunks')}: ${matchedChunkCount}`;
+  const metadataLine = documentMetadataLine(hit);
 
-  const metaBadges = [
-    hit.work_type,
-    hit.document_type,
-    hit.practice_area_primary,
-  ].filter(Boolean) as string[];
+  const metaBadges = [hit.work_type, hit.document_type, hit.practice_area_primary].filter(
+    Boolean,
+  ) as string[];
 
   return (
     <article
@@ -182,7 +200,7 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
       )}
     >
       <div className="flex items-center gap-2 px-4">
-        <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-border-medium bg-surface-secondary px-1.5 text-[10px] font-semibold leading-none tabular-nums tracking-wide text-text-secondary">
+        <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-border-medium bg-surface-secondary px-1.5 text-[10px] font-semibold tabular-nums leading-none tracking-wide text-text-secondary">
           {fileExtensionLabel(hit.file_name)}
         </span>
         <FileTypeIcon name={hit.file_name} className="h-4 w-4 shrink-0" />
@@ -223,6 +241,15 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
           </a>
         )}
       </div>
+
+      {metadataLine && (
+        <div
+          className="mt-1 truncate px-4 pl-16 text-[11px] text-text-tertiary"
+          title={metadataLine}
+        >
+          {metadataLine}
+        </div>
+      )}
 
       {visibleChunks.length > 0 && (
         <div
@@ -286,9 +313,7 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
             · {b}
           </span>
         ))}
-        <span className="ml-auto tabular-nums">
-          {chunkCountLabel}
-        </span>
+        <span className="ml-auto tabular-nums">{chunkCountLabel}</span>
       </div>
     </article>
   );
