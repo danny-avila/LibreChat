@@ -28,15 +28,15 @@
  * @see {@link https://docs.aws.amazon.com/cdk/latest/guide/} AWS CDK Developer Guide
  */
 
-import * as cdk from "aws-cdk-lib";
+import * as cdk from 'aws-cdk-lib';
 import { ECS_PATTERNS_UNIQUE_TARGET_GROUP_ID } from 'aws-cdk-lib/cx-api';
-import { DatabaseStack } from "../lib/db-stack";
-import { EcsStack } from "../lib/ecs-stack";
-import { CognitoStack } from "../lib/cognito-stack";
-import { MonitoringStack } from "../lib/monitoring-stack";
-import { KitchenSinkStack } from "../lib/kitchensink-stack";
-import { LambdaStack } from "../lib/lambda-stack";
-import {branding, assets} from "../lib/branding";
+import { DatabaseStack } from '../lib/db-stack';
+import { EcsStack } from '../lib/ecs-stack';
+import { CognitoStack } from '../lib/cognito-stack';
+import { MonitoringStack } from '../lib/monitoring-stack';
+import { KitchenSinkStack } from '../lib/kitchensink-stack';
+import { LambdaStack } from '../lib/lambda-stack';
+import { assets, branding } from '../lib/branding';
 
 const app = new cdk.App({
   postCliContext: {
@@ -49,39 +49,39 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION,
 };
 
-type AwsEnv = "prod" | "dev";
+type AwsEnv = 'prod' | 'dev';
 
-const AWS_ENV = (process.env.AWS_ENV ?? "dev") as AwsEnv;
-const isProd = AWS_ENV === "prod";
+const AWS_ENV = (process.env.AWS_ENV ?? 'dev') as AwsEnv;
+const isProd = AWS_ENV === 'prod';
 
 const domainNames: Record<AwsEnv, string> = {
-  prod: "ai-assistant.nj.gov",
-  dev: "dev.ai-assistant.nj.gov",
+  prod: 'ai-assistant.nj.gov',
+  dev: 'dev.ai-assistant.nj.gov',
 };
 
 const tagEnvNames: Record<AwsEnv, string> = {
-  prod: "production",
-  dev: "development",
+  prod: 'production',
+  dev: 'development',
 };
 
 const envVars = {
   domainName: domainNames[AWS_ENV],
   env: AWS_ENV,
   isProd,
-}
+};
 
 const ragApiJwtSecretSuffix: Record<AwsEnv, string> = {
-  dev: "5vHiQq",
-  prod: "", // TODO: populate after secret is created in prod
+  dev: '5vHiQq',
+  prod: '', // TODO: populate after secret is created in prod
 };
 
 const commonTags = {
-  Project: "AIAssistantService",
-  ManagedBy: "CDK",
+  Project: 'AIAssistantService',
+  ManagedBy: 'CDK',
   Environment: tagEnvNames[AWS_ENV],
-  Agency: "997",
-  Org: "0005",
-  CloudPortfolioID: "0293"
+  Agency: '997',
+  Org: '0005',
+  CloudPortfolioID: '0293',
 };
 
 function applyTags(stack: cdk.Stack) {
@@ -90,12 +90,12 @@ function applyTags(stack: cdk.Stack) {
   });
 }
 
-const databaseStack = new DatabaseStack(app, "DatabaseStack", {
+const databaseStack = new DatabaseStack(app, 'DatabaseStack', {
   env: env,
   envVars: envVars,
 });
 
-const ecsStack = new EcsStack(app, "EcsStack", {
+const ecsStack = new EcsStack(app, 'EcsStack', {
   env: env,
   envVars: envVars,
   mongoImage: `${env.account}.dkr.ecr.${env.region}.amazonaws.com/newjersey/mongo:latest`,
@@ -110,7 +110,7 @@ const ecsStack = new EcsStack(app, "EcsStack", {
   ragApiJwtSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:ai-assistant/rag-api/jwt-secret-${ragApiJwtSecretSuffix[AWS_ENV]}`,
 });
 
-const cognitoStack = new CognitoStack(app, "CognitoStack", {
+const cognitoStack = new CognitoStack(app, 'CognitoStack', {
   env: env,
   envVars: envVars,
   branding: branding,
@@ -118,7 +118,7 @@ const cognitoStack = new CognitoStack(app, "CognitoStack", {
 });
 
 if (!isProd) {
-  const lambdaStack = new LambdaStack(app, "LambdaStack", {
+  const lambdaStack = new LambdaStack(app, 'LambdaStack', {
     env,
     envVars,
     userPool: cognitoStack.userPool,
@@ -127,7 +127,7 @@ if (!isProd) {
   applyTags(lambdaStack);
 }
 
-const monitoringStack = new MonitoringStack(app, "MonitoringStack", {
+const monitoringStack = new MonitoringStack(app, 'MonitoringStack', {
   env: env,
   service: ecsStack.service,
 });
@@ -137,8 +137,8 @@ applyTags(ecsStack);
 applyTags(cognitoStack);
 applyTags(monitoringStack);
 
-if (process.env.DEPLOY_KITCHENSINK === "true") {
-  const kitchenSinkStack = new KitchenSinkStack(app, "KitchenSinkStack", {
+if (process.env.DEPLOY_KITCHENSINK === 'true') {
+  const kitchenSinkStack = new KitchenSinkStack(app, 'KitchenSinkStack', {
     env: env,
     listenerArn: ecsStack.listener.listenerArn,
     certificateArn: `arn:aws:acm:${env.region}:${env.account}:certificate/${process.env.LIBRECHAT_ACM_CERTIFICATE_ID}`,

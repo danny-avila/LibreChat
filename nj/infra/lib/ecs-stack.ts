@@ -1,24 +1,24 @@
-import * as cdk from "aws-cdk-lib";
-import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as ecs from "aws-cdk-lib/aws-ecs";
-import * as ecsPatterns from "aws-cdk-lib/aws-ecs-patterns";
-import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
-import * as efs from "aws-cdk-lib/aws-efs";
-import * as iam from "aws-cdk-lib/aws-iam";
-import * as s3 from "aws-cdk-lib/aws-s3";
-import * as ssm from "aws-cdk-lib/aws-ssm";
-import * as acm from "aws-cdk-lib/aws-certificatemanager"
-import * as secrets from "aws-cdk-lib/aws-secretsmanager"
-import { Construct } from "constructs";
+import * as cdk from 'aws-cdk-lib';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as ecsPatterns from 'aws-cdk-lib/aws-ecs-patterns';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as efs from 'aws-cdk-lib/aws-efs';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as secrets from 'aws-cdk-lib/aws-secretsmanager';
+import { Construct } from 'constructs';
 
 export type EnvVars = {
-  domainName: string,
-  env: string,
-  isProd: boolean
-}
+  domainName: string;
+  env: string;
+  isProd: boolean;
+};
 
 export interface EcsServicesProps extends cdk.StackProps {
-  envVars: EnvVars,
+  envVars: EnvVars;
   mongoImage: string;
   certificateArn: string;
   redisEndpoint: string;
@@ -32,21 +32,20 @@ export interface EcsServicesProps extends cdk.StackProps {
 }
 
 export class EcsStack extends cdk.Stack {
+  private static readonly REDIS_PORT = 6379;
   public readonly listener: elbv2.ApplicationListener;
   public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
   public readonly service: ecsPatterns.ApplicationLoadBalancedFargateService;
   public readonly s3Bucket: s3.Bucket;
 
-  private static readonly REDIS_PORT = 6379;
-
   constructor(scope: Construct, id: string, props: EcsServicesProps) {
     super(scope, id, props);
     const vpc = ec2.Vpc.fromLookup(this, 'ExistingVpc', {
       tags: {
-          'Name': 'VPC-Innov-Platform-*'
-      }
+        Name: 'VPC-Innov-Platform-*',
+      },
     });
-    const isProd = props.envVars.env.includes("prod")
+    const isProd = props.envVars.env.includes('prod');
 
     this.CreateVPCEndpoints(isProd, vpc);
     const cluster = this.CreateCluster(vpc);
@@ -59,179 +58,209 @@ export class EcsStack extends cdk.Stack {
     this.service = librechatService;
 
     if (!isProd) {
-      this.CreateDatabaseSidecars(props, commonExecRole, vpc, cluster, librechatService)
+      this.CreateDatabaseSidecars(props, commonExecRole, vpc, cluster, librechatService);
     }
   }
 
   private CreateVPCEndpoints(isProd: boolean, vpc: ec2.IVpc) {
-    const endpointsSg = new ec2.SecurityGroup(this, "VpcEndpointsSg", { vpc });
+    const endpointsSg = new ec2.SecurityGroup(this, 'VpcEndpointsSg', { vpc });
     endpointsSg.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(27017));
-    vpc.addInterfaceEndpoint("EcrDockerEndpoint", {
+    vpc.addInterfaceEndpoint('EcrDockerEndpoint', {
       service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
       securityGroups: [endpointsSg],
     });
-    vpc.addInterfaceEndpoint("EcrApiEndpoint", {
+    vpc.addInterfaceEndpoint('EcrApiEndpoint', {
       service: ec2.InterfaceVpcEndpointAwsService.ECR,
       securityGroups: [endpointsSg],
     });
-    vpc.addInterfaceEndpoint("CloudWatchLogsEndpoint", {
+    vpc.addInterfaceEndpoint('CloudWatchLogsEndpoint', {
       service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
       securityGroups: [endpointsSg],
     });
-    vpc.addInterfaceEndpoint("BedrockRuntimeEndpoint", {
+    vpc.addInterfaceEndpoint('BedrockRuntimeEndpoint', {
       service: ec2.InterfaceVpcEndpointAwsService.BEDROCK_RUNTIME,
       securityGroups: [endpointsSg],
     });
-    vpc.addInterfaceEndpoint("CognitoEndpoint", {
+    vpc.addInterfaceEndpoint('CognitoEndpoint', {
       service: ec2.InterfaceVpcEndpointAwsService.COGNITO_IDP,
       securityGroups: [endpointsSg],
       subnets: {
         subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-        availabilityZones: ['us-east-1a']
-      }
+        availabilityZones: ['us-east-1a'],
+      },
     });
-    vpc.addInterfaceEndpoint("SecretsManagerEndpoint", {
+    vpc.addInterfaceEndpoint('SecretsManagerEndpoint', {
       service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
       securityGroups: [endpointsSg],
     });
-    vpc.addGatewayEndpoint("S3GatewayEndpoint", {
+    vpc.addGatewayEndpoint('S3GatewayEndpoint', {
       service: ec2.GatewayVpcEndpointAwsService.S3,
     });
     if (isProd) {
-      vpc.addInterfaceEndpoint("RdsEndpoint", {
+      vpc.addInterfaceEndpoint('RdsEndpoint', {
         service: ec2.InterfaceVpcEndpointAwsService.RDS,
         securityGroups: [endpointsSg],
       });
     }
-  };
+  }
 
   private CreateCluster(vpc: ec2.IVpc) {
-    const cluster = new ecs.Cluster(this, "AIAssistantCluster", {
+    const cluster = new ecs.Cluster(this, 'AIAssistantCluster', {
       vpc,
-      clusterName: "ai-assistant-cluster",
+      clusterName: 'ai-assistant-cluster',
     });
-    cluster.addDefaultCloudMapNamespace({ name: "internal" });
+    cluster.addDefaultCloudMapNamespace({ name: 'internal' });
 
     return cluster;
-  };
+  }
 
   private CreateCommonExecRole(isProd: boolean) {
-    const commonExecRole = new iam.Role(this, "CommonTaskExecutionRole", {
-      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-      description: "Execution role for pulling ECR images and writing logs",
+    const commonExecRole = new iam.Role(this, 'CommonTaskExecutionRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      description: 'Execution role for pulling ECR images and writing logs',
     });
     commonExecRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AmazonECSTaskExecutionRolePolicy"),
+      iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy'),
     );
     commonExecRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonS3ReadOnlyAccess")
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3ReadOnlyAccess'),
     );
-    commonExecRole.attachInlinePolicy( new iam.Policy(this, 'fileBucketPolicy', {
-      statements: [new iam.PolicyStatement({
-        actions: ['s3:*'],
-        resources: [this.s3Bucket.bucketArn, `${this.s3Bucket.bucketArn}/*`]
-      })]
-    }))
-    commonExecRole.attachInlinePolicy( new iam.Policy(this, 'bedrockPolicy', {
-      statements: [new iam.PolicyStatement({
-        actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-        resources: [`arn:aws:bedrock:${this.region}::foundation-model/*`]
-      })]
-    }))
+    commonExecRole.attachInlinePolicy(
+      new iam.Policy(this, 'fileBucketPolicy', {
+        statements: [
+          new iam.PolicyStatement({
+            actions: ['s3:*'],
+            resources: [this.s3Bucket.bucketArn, `${this.s3Bucket.bucketArn}/*`],
+          }),
+        ],
+      }),
+    );
+    commonExecRole.attachInlinePolicy(
+      new iam.Policy(this, 'bedrockPolicy', {
+        statements: [
+          new iam.PolicyStatement({
+            actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+            resources: [`arn:aws:bedrock:${this.region}::foundation-model/*`],
+          }),
+        ],
+      }),
+    );
     if (isProd) {
       commonExecRole.addManagedPolicy(
-        iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonRDSFullAccess")
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonRDSFullAccess'),
       );
       commonExecRole.addManagedPolicy(
-        iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonDocDBFullAccess")
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDocDBFullAccess'),
       );
     }
     return commonExecRole;
-  };
+  }
 
-  private CreateLibrechatService(props: EcsServicesProps, cluster: ecs.Cluster, commonExecRole: iam.Role, isProd: boolean) {
-    const docdbSecret = secrets.Secret.fromSecretNameV2(this, "DocdbSecret", "ai-assistant/docdb/uri");
-    const librechatTag = isProd ? ssm.StringParameter.valueForStringParameter(this, '/ai-assistant/prod-image-tag') : "latest";
+  private CreateLibrechatService(
+    props: EcsServicesProps,
+    cluster: ecs.Cluster,
+    commonExecRole: iam.Role,
+    isProd: boolean,
+  ) {
+    const docdbSecret = secrets.Secret.fromSecretNameV2(
+      this,
+      'DocdbSecret',
+      'ai-assistant/docdb/uri',
+    );
+    const librechatTag = isProd
+      ? ssm.StringParameter.valueForStringParameter(this, '/ai-assistant/prod-image-tag')
+      : 'latest';
     const librechatImage = `${this.account}.dkr.ecr.${this.region}.amazonaws.com/newjersey/librechat:${librechatTag}`;
 
     const redisUri = `rediss://${props.redisEndpoint}:${props.redisPort}`;
 
-    const librechatTaskDef = new ecs.FargateTaskDefinition(this, "LibreChatTaskDef", {
+    const librechatTaskDef = new ecs.FargateTaskDefinition(this, 'LibreChatTaskDef', {
       executionRole: commonExecRole,
       taskRole: commonExecRole,
       ...(isProd ? { cpu: 2048, memoryLimitMiB: 8192 } : { cpu: 512, memoryLimitMiB: 1024 }),
     });
 
     const environment: Record<string, string> = {
-      NODE_ENV: "production",
-      PORT: "3080",
-      HOST: "0.0.0.0",
-      LOG_LEVEL: "info",
-      MEILI_HOST: "http://rag_api.internal:7700",
-      RAG_API_URL: "http://rag_api.internal:8000",
-      CONFIG_PATH: "/app/nj/nj-librechat.yaml",
+      NODE_ENV: 'production',
+      PORT: '3080',
+      HOST: '0.0.0.0',
+      LOG_LEVEL: 'info',
+      MEILI_HOST: 'http://rag_api.internal:7700',
+      RAG_API_URL: 'http://rag_api.internal:8000',
+      CONFIG_PATH: '/app/nj/nj-librechat.yaml',
       AWS_BUCKET_NAME: this.s3Bucket.bucketName,
       AWS_REGION: this.region,
 
       // Apply empty custom footer in ECS definition (instead of .env file)
       // Can move back to .env if resolved: https://github.com/aws/containers-roadmap/issues/1354
-      CUSTOM_FOOTER: "",
+      CUSTOM_FOOTER: '',
 
       // Redis configuration
-      USE_REDIS: "true",
+      USE_REDIS: 'true',
       REDIS_URI: redisUri,
-      REDIS_USE_ALTERNATIVE_DNS_LOOKUP: "true",
+      REDIS_USE_ALTERNATIVE_DNS_LOOKUP: 'true',
 
-      ...(!isProd ? { MONGO_URI: "mongodb://mongodb.internal:27017/LibreChat" } : {}),
-      ...(!isProd && props.rdsEndpoint && props.rdsPort ? {
-        POSTGRES_HOST: props.rdsEndpoint,
-        POSTGRES_PORT: props.rdsPort,
-      } : {}),
+      ...(!isProd ? { MONGO_URI: 'mongodb://mongodb.internal:27017/LibreChat' } : {}),
+      ...(!isProd && props.rdsEndpoint && props.rdsPort
+        ? {
+            POSTGRES_HOST: props.rdsEndpoint,
+            POSTGRES_PORT: props.rdsPort,
+          }
+        : {}),
     };
 
     const envSecrets: Record<string, ecs.Secret> = {
-      ...(isProd ? { MONGO_URI: ecs.Secret.fromSecretsManager(docdbSecret, "uri") } : {}),
-      ...(!isProd && props.rdsSecret ? {
-        POSTGRES_USER: ecs.Secret.fromSecretsManager(props.rdsSecret, "username"),
-        POSTGRES_PASSWORD: ecs.Secret.fromSecretsManager(props.rdsSecret, "password"),
-        POSTGRES_DB: ecs.Secret.fromSecretsManager(props.rdsSecret, "dbname"),
-      } : {}),
+      ...(isProd ? { MONGO_URI: ecs.Secret.fromSecretsManager(docdbSecret, 'uri') } : {}),
+      ...(!isProd && props.rdsSecret
+        ? {
+            POSTGRES_USER: ecs.Secret.fromSecretsManager(props.rdsSecret, 'username'),
+            POSTGRES_PASSWORD: ecs.Secret.fromSecretsManager(props.rdsSecret, 'password'),
+            POSTGRES_DB: ecs.Secret.fromSecretsManager(props.rdsSecret, 'dbname'),
+          }
+        : {}),
     };
 
-    librechatTaskDef.addContainer("librechat", {
+    librechatTaskDef.addContainer('librechat', {
       image: ecs.ContainerImage.fromRegistry(librechatImage),
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: "librechat" }),
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'librechat' }),
       environment: environment,
       secrets: envSecrets,
       environmentFiles: [
-        ecs.EnvironmentFile.fromBucket(s3.Bucket.fromBucketArn(this, "EnvFilesBucket", "arn:aws:s3:::nj-librechat-env-files"), `${props.envVars.env}.env`),
+        ecs.EnvironmentFile.fromBucket(
+          s3.Bucket.fromBucketArn(this, 'EnvFilesBucket', 'arn:aws:s3:::nj-librechat-env-files'),
+          `${props.envVars.env}.env`,
+        ),
       ],
       portMappings: [{ containerPort: 3080 }],
-      command: ["npm", "run", "backend"],
-      cpu: (isProd ? 1024 : 512), 
-      memoryLimitMiB: (isProd ? 2048 : 1024),
+      command: ['npm', 'run', 'backend'],
+      cpu: isProd ? 1024 : 512,
+      memoryLimitMiB: isProd ? 2048 : 1024,
     });
 
     // Re-enable when OIT does load balancer things
-    const aiAssistantCertificate = acm.Certificate.fromCertificateArn(this, 'aiAssistantCertificate', props.certificateArn);
+    const aiAssistantCertificate = acm.Certificate.fromCertificateArn(
+      this,
+      'aiAssistantCertificate',
+      props.certificateArn,
+    );
 
     const librechatService = new ecsPatterns.ApplicationLoadBalancedFargateService(
       this,
-      "LibreChatFargateService",
+      'LibreChatFargateService',
       {
         cluster,
-        desiredCount: (isProd ? 2 : 1),
+        desiredCount: isProd ? 2 : 1,
         minHealthyPercent: 50,
         taskDefinition: librechatTaskDef,
         enableExecuteCommand: true,
         publicLoadBalancer: false,
-        listenerPort: 443, 
+        listenerPort: 443,
         taskSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
         certificate: aiAssistantCertificate,
-      }
+      },
     );
     const scalableTarget = librechatService.service.autoScaleTaskCount({
-      minCapacity: (isProd ? 2 : 1),
+      minCapacity: isProd ? 2 : 1,
       maxCapacity: 20,
     });
 
@@ -244,61 +273,75 @@ export class EcsStack extends cdk.Stack {
     });
 
     // Allow LibreChat service to connect to Redis
-    librechatService.service.connections.allowTo(props.redisSecurityGroup, ec2.Port.tcp(EcsStack.REDIS_PORT), "LibreChat to Redis");
+    librechatService.service.connections.allowTo(
+      props.redisSecurityGroup,
+      ec2.Port.tcp(EcsStack.REDIS_PORT),
+      'LibreChat to Redis',
+    );
 
-    new cdk.CfnOutput(this, "LibrechatImageUri", { value: librechatImage });
-    new cdk.CfnOutput(this, "LoadBalancerSecurityGroupId", {
+    new cdk.CfnOutput(this, 'LibrechatImageUri', { value: librechatImage });
+    new cdk.CfnOutput(this, 'LoadBalancerSecurityGroupId', {
       value: librechatService.loadBalancer.connections.securityGroups[0].securityGroupId,
-      exportName: "EcsStack:LoadBalancerSecurityGroupId",
+      exportName: 'EcsStack:LoadBalancerSecurityGroupId',
     });
     return librechatService;
-  };
+  }
 
-  private CreateDatabaseSidecars(props: EcsServicesProps, commonExecRole: iam.Role, vpc: ec2.IVpc, cluster: ecs.Cluster, librechatService: ecsPatterns.ApplicationLoadBalancedFargateService) {
-    const mongoFs = new efs.FileSystem(this, "MongoFs", {
+  private CreateDatabaseSidecars(
+    props: EcsServicesProps,
+    commonExecRole: iam.Role,
+    vpc: ec2.IVpc,
+    cluster: ecs.Cluster,
+    librechatService: ecsPatterns.ApplicationLoadBalancedFargateService,
+  ) {
+    const mongoFs = new efs.FileSystem(this, 'MongoFs', {
       vpc,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       encrypted: true,
     });
 
-    const mongoTaskDef = new ecs.FargateTaskDefinition(this, "MongoTaskDef", {
+    const mongoTaskDef = new ecs.FargateTaskDefinition(this, 'MongoTaskDef', {
       cpu: 256,
       memoryLimitMiB: 1024,
       executionRole: commonExecRole,
     });
 
     mongoTaskDef.addVolume({
-      name: "mongoData",
+      name: 'mongoData',
       efsVolumeConfiguration: {
         fileSystemId: mongoFs.fileSystemId,
-        transitEncryption: "ENABLED",
+        transitEncryption: 'ENABLED',
       },
     });
 
-    const mongoContainer = mongoTaskDef.addContainer("mongodb", {
+    const mongoContainer = mongoTaskDef.addContainer('mongodb', {
       image: ecs.ContainerImage.fromRegistry(props.mongoImage),
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: "mongodb" }),
-      command: ["mongod", "--noauth"],
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'mongodb' }),
+      command: ['mongod', '--noauth'],
       portMappings: [{ containerPort: 27017 }],
     });
     mongoContainer.addMountPoints({
-      sourceVolume: "mongoData",
-      containerPath: "/data/db",
+      sourceVolume: 'mongoData',
+      containerPath: '/data/db',
       readOnly: false,
     });
 
-    const mongoSg = new ec2.SecurityGroup(this, "MongoSg", { vpc });
-    const mongoService = new ecs.FargateService(this, "MongoService", {
+    const mongoSg = new ec2.SecurityGroup(this, 'MongoSg', { vpc });
+    const mongoService = new ecs.FargateService(this, 'MongoService', {
       cluster,
       taskDefinition: mongoTaskDef,
       desiredCount: 1,
       enableExecuteCommand: true,
-      cloudMapOptions: { name: "mongodb" },
+      cloudMapOptions: { name: 'mongodb' },
       securityGroups: [mongoSg],
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
 
-    mongoService.connections.allowFrom(librechatService.service, ec2.Port.tcp(27017), "App to MongoDB");
+    mongoService.connections.allowFrom(
+      librechatService.service,
+      ec2.Port.tcp(27017),
+      'App to MongoDB',
+    );
     mongoFs.connections.allowDefaultPortFrom(mongoService);
 
     // Create RAG API service
@@ -306,23 +349,41 @@ export class EcsStack extends cdk.Stack {
 
     // Allow RAG API to connect to RDS
     if (props.rdsSecurityGroup && props.rdsPort) {
-      ragApiService.connections.allowTo(props.rdsSecurityGroup, ec2.Port.tcp(5432), "RAG API to RDS");
+      ragApiService.connections.allowTo(
+        props.rdsSecurityGroup,
+        ec2.Port.tcp(5432),
+        'RAG API to RDS',
+      );
     }
 
     // Allow LibreChat to connect to RAG API
-    ragApiService.connections.allowFrom(librechatService.service, ec2.Port.tcp(8000), "LibreChat to RAG API");
+    ragApiService.connections.allowFrom(
+      librechatService.service,
+      ec2.Port.tcp(8000),
+      'LibreChat to RAG API',
+    );
 
     // Allow LibreChat to connect to RDS
     if (props.rdsSecurityGroup && props.rdsPort) {
-      librechatService.service.connections.allowTo(props.rdsSecurityGroup, ec2.Port.tcp(5432), "LibreChat to RDS");
+      librechatService.service.connections.allowTo(
+        props.rdsSecurityGroup,
+        ec2.Port.tcp(5432),
+        'LibreChat to RDS',
+      );
     }
 
-    new cdk.CfnOutput(this, "MongoImageUri", { value: props.mongoImage });
-    new cdk.CfnOutput(this, "RagApiImageUri", { value: "152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/rag-api:latest" });
+    new cdk.CfnOutput(this, 'MongoImageUri', { value: props.mongoImage });
+    new cdk.CfnOutput(this, 'RagApiImageUri', {
+      value: '152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/rag-api:latest',
+    });
   }
 
-  private CreateRagApiService(props: EcsServicesProps, commonExecRole: iam.Role, cluster: ecs.Cluster): ecs.FargateService {
-    const ragApiTaskDef = new ecs.FargateTaskDefinition(this, "RagApiTaskDef", {
+  private CreateRagApiService(
+    props: EcsServicesProps,
+    commonExecRole: iam.Role,
+    cluster: ecs.Cluster,
+  ): ecs.FargateService {
+    const ragApiTaskDef = new ecs.FargateTaskDefinition(this, 'RagApiTaskDef', {
       cpu: 512,
       memoryLimitMiB: 1024,
       executionRole: commonExecRole,
@@ -330,56 +391,61 @@ export class EcsStack extends cdk.Stack {
     });
 
     const environment: Record<string, string> = {
-      RAG_PORT: "8000",
-      EMBEDDINGS_PROVIDER: "bedrock",
-      EMBEDDINGS_MODEL: "amazon.titan-embed-text-v1",
+      RAG_PORT: '8000',
+      EMBEDDINGS_PROVIDER: 'bedrock',
+      EMBEDDINGS_MODEL: 'amazon.titan-embed-text-v1',
     };
 
-    const jwtSecret = secrets.Secret.fromSecretCompleteArn(this, "RagApiJwtSecret", props.ragApiJwtSecretArn);
+    const jwtSecret = secrets.Secret.fromSecretCompleteArn(
+      this,
+      'RagApiJwtSecret',
+      props.ragApiJwtSecretArn,
+    );
     jwtSecret.grantRead(commonExecRole);
     const envSecrets: Record<string, ecs.Secret> = {
-      JWT_SECRET: ecs.Secret.fromSecretsManager(jwtSecret, "JWT_SECRET"),
+      JWT_SECRET: ecs.Secret.fromSecretsManager(jwtSecret, 'JWT_SECRET'),
     };
 
     // Add RDS connection details if available
     if (props.rdsEndpoint && props.rdsPort && props.rdsSecret) {
       environment.DB_HOST = props.rdsEndpoint;
       environment.DB_PORT = props.rdsPort;
-      envSecrets.POSTGRES_USER = ecs.Secret.fromSecretsManager(props.rdsSecret, "username");
-      envSecrets.POSTGRES_PASSWORD = ecs.Secret.fromSecretsManager(props.rdsSecret, "password");
-      envSecrets.POSTGRES_DB = ecs.Secret.fromSecretsManager(props.rdsSecret, "dbname");
+      envSecrets.POSTGRES_USER = ecs.Secret.fromSecretsManager(props.rdsSecret, 'username');
+      envSecrets.POSTGRES_PASSWORD = ecs.Secret.fromSecretsManager(props.rdsSecret, 'password');
+      envSecrets.POSTGRES_DB = ecs.Secret.fromSecretsManager(props.rdsSecret, 'dbname');
     }
 
-    ragApiTaskDef.addContainer("rag_api", {
-      image: ecs.ContainerImage.fromRegistry("152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/rag-api:latest"),
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: "rag-api" }),
+    ragApiTaskDef.addContainer('rag_api', {
+      image: ecs.ContainerImage.fromRegistry(
+        '152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/rag-api:latest',
+      ),
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'rag-api' }),
       environment: environment,
       secrets: envSecrets,
       portMappings: [{ containerPort: 8000 }],
     });
 
-    const ragApiService = new ecs.FargateService(this, "RagApiService", {
+    const ragApiService = new ecs.FargateService(this, 'RagApiService', {
       cluster,
       taskDefinition: ragApiTaskDef,
       desiredCount: 1,
       enableExecuteCommand: true,
-      cloudMapOptions: { name: "rag_api" },
+      cloudMapOptions: { name: 'rag_api' },
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
 
     return ragApiService;
   }
 
-  private CreateFileS3Bucket(){
+  private CreateFileS3Bucket() {
     const s3Bucket = new s3.Bucket(this, 'LibrechatFileBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       versioned: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
-    })
+    });
 
     return s3Bucket;
   }
 }
-
