@@ -281,4 +281,51 @@ describe('useResumableSSE - 404 error path', () => {
       unmount();
     },
   );
+
+  it('treats responseCode === 0 with raw SSE buffer data as transport failure (reconnect path)', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+
+    await act(async () => {
+      sse._emit('error', {
+        responseCode: 0,
+        data: 'event: message\ndata: {"created":true,"message":{}}\n\n',
+      });
+    });
+
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('parses and surfaces server-sent error events (no responseCode, JSON data)', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+
+    const errorPayload = JSON.stringify({
+      error: JSON.stringify({ type: 'token_limit' }),
+    });
+
+    await act(async () => {
+      sse._emit('error', { data: errorPayload });
+    });
+
+    expect(mockErrorHandler).toHaveBeenCalledTimes(1);
+    unmount();
+  });
 });
