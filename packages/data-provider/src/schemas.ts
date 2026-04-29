@@ -956,7 +956,13 @@ export const tQueryParamsSchema = tConversationSchema
     }),
   );
 
-/** Narrowed preset schema for use in model specs — omits system/DB/deprecated fields */
+/** Narrowed preset schema for use in model specs — omits system/DB/deprecated fields.
+ *
+ * `greeting` and `iconURL` are admin-configurable display fields on a model spec's
+ * preset (landing greeting, preset-level icon fallback) and must be preserved.
+ * `spec` is set by the client from `modelSpec.name` via `getModelSpecPreset` and is
+ * omitted to avoid duplicate configuration surface.
+ */
 export const tModelSpecPresetSchema = tPresetSchema.omit({
   conversationId: true,
   presetId: true,
@@ -973,8 +979,6 @@ export const tModelSpecPresetSchema = tPresetSchema.omit({
   resendImages: true,
   chatGptLabel: true,
   presetOverride: true,
-  greeting: true,
-  iconURL: true,
   spec: true,
 });
 
