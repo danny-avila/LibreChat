@@ -374,29 +374,48 @@ async function createRedirectChainToMCP(depth: number, statusCode: 307 | 308): P
   };
 }
 
+interface CapturedRequest {
+  method: string;
+  headers: http.IncomingHttpHeaders;
+  body: string;
+}
+
 interface HeaderCaptureServer {
   url: string;
   receivedHeaders: http.IncomingHttpHeaders[];
+  receivedRequests: CapturedRequest[];
   close: () => Promise<void>;
 }
 
 /**
- * Captures every incoming request's headers and replies with a benign 200,
- * so tests can assert which headers actually crossed a redirect boundary.
+ * Captures every incoming request's headers, method, and body, then replies
+ * with a benign 200 so tests can assert what actually crossed a redirect
+ * boundary (header stripping, 307/308 method preservation, payload survival).
  */
 async function createHeaderCaptureServer(): Promise<HeaderCaptureServer> {
-  const captured: http.IncomingHttpHeaders[] = [];
+  const headers: http.IncomingHttpHeaders[] = [];
+  const requests: CapturedRequest[] = [];
   const server = http.createServer((req, res) => {
-    captured.push({ ...req.headers });
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end('{}');
+    headers.push({ ...req.headers });
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      requests.push({
+        method: req.method ?? '',
+        headers: { ...req.headers },
+        body: Buffer.concat(chunks).toString('utf8'),
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{}');
+    });
   });
   const destroySockets = trackSockets(server);
   const port = await getFreePort();
   await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
   return {
     url: `http://127.0.0.1:${port}/`,
-    receivedHeaders: captured,
+    receivedHeaders: headers,
+    receivedRequests: requests,
     close: destroySockets,
   };
 }
@@ -740,6 +759,81 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       expect(headers['x-wrapper-header']).toBe('wrapper-supplied');
     } finally {
       await capture.close();
+    }
+  });
+
+  it('should preserve POST method and body across a 308 redirect when input is a Request', async () => {
+    /**
+     * Pre-fix regression: switching `url` to the `Location` string on
+     * redirect dropped the original `Request`'s method and body, so a
+     * redirected POST silently became a GET with no payload — the exact
+     * thing 307/308 are designed to forbid.
+     */
+    const capture = await createHeaderCaptureServer();
+    let server: TestServer | undefined;
+    try {
+      server = await createCrossOriginRedirectingServer(capture.url, 308);
+
+      conn = new MCPConnection({
+        serverName: 'customfetch-request-redirect-post',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getCustomFetch(conn);
+      const payload = JSON.stringify({ jsonrpc: '2.0', method: 'ping', id: 1 });
+      const request = new UndiciRequest(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+      });
+
+      const response = await customFetch(request);
+      expect(response.status).toBe(200);
+      await response.body?.cancel().catch(() => undefined);
+
+      expect(server.redirectHit).toBe(true);
+      expect(capture.receivedRequests.length).toBeGreaterThan(0);
+      const last = capture.receivedRequests[capture.receivedRequests.length - 1];
+      expect(last.method).toBe('POST');
+      expect(last.body).toBe(payload);
+    } finally {
+      await capture.close();
+      if (server) {
+        await server.close();
+      }
+    }
+  });
+
+  it('should not crash on a cross-origin redirect when no headers are present', async () => {
+    /**
+     * Pre-fix regression: `buildFetchInit` skips setting `headers` when
+     * nothing contributes any, but the cross-origin strip path read
+     * `currentInit.headers` unconditionally and called `Object.entries`
+     * on `undefined`, throwing `TypeError`. Guarded so a no-headers
+     * cross-origin hop returns the response cleanly.
+     */
+    const capture = await createHeaderCaptureServer();
+    let server: TestServer | undefined;
+    try {
+      server = await createCrossOriginRedirectingServer(capture.url, 307);
+
+      conn = new MCPConnection({
+        serverName: 'customfetch-redirect-no-headers',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getCustomFetch(conn);
+      const response = await customFetch(server.url);
+      expect(response.status).toBe(200);
+      await response.body?.cancel().catch(() => undefined);
+      expect(server.redirectHit).toBe(true);
+    } finally {
+      await capture.close();
+      if (server) {
+        await server.close();
+      }
     }
   });
 });

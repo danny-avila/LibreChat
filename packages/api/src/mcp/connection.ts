@@ -90,19 +90,56 @@ const CROSS_ORIGIN_FORBIDDEN_HEADERS = new Set([
 ]);
 
 /**
- * Extracts a URL string from any value undici's `RequestInfo` accepts. Plain
- * `toString()` is unsafe here because `Request.prototype.toString()` returns
- * `"[object Request]"`, which would cause `new URL(...)` to throw before any
- * network call.
+ * Normalizes a fetch input + init pair so the redirect loop only ever has
+ * to deal with `(string, init)`. When `input` is a `Request`, its method,
+ * headers, and body are baked into the returned init — explicit init values
+ * win (matching Fetch-spec semantics) and the body is buffered with
+ * `arrayBuffer()` so 307/308 retries can replay it on the new URL. Without
+ * this, switching `url` to a `Location` string on redirect would silently
+ * drop the original POST method and request payload.
  */
-function getRequestUrlString(input: UndiciRequestInfo): string {
+async function resolveFetchInput(
+  input: UndiciRequestInfo,
+  init: UndiciRequestInit | undefined,
+): Promise<{ urlString: string; resolvedInit: UndiciRequestInit | undefined }> {
   if (typeof input === 'string') {
-    return input;
+    return { urlString: input, resolvedInit: init };
   }
-  if ('url' in input && typeof input.url === 'string') {
-    return input.url;
+  if (input instanceof URL) {
+    return { urlString: input.href, resolvedInit: init };
   }
-  return (input as URL).href;
+  /**
+   * Treat anything else as a `Request`. Duck-typed instead of
+   * `instanceof undici.Request` because requests handed to a generic fetch
+   * wrapper can come from a different undici realm and fail the prototype
+   * check while still implementing the same shape. The `as unknown as` cast
+   * is needed because undici's `Headers` and DOM's `Headers` have
+   * incompatible declared shapes even though they are interchangeable at
+   * runtime for the methods we use.
+   */
+  const req = input as unknown as {
+    url: string;
+    method: string;
+    headers: { entries: () => Iterable<[string, string]> };
+    body: unknown;
+    arrayBuffer: () => Promise<ArrayBuffer>;
+  };
+  const reqHeaders = Object.fromEntries(req.headers.entries());
+  const initHeaders = normalizeInitHeaders(init);
+  const mergedHeaders = { ...reqHeaders, ...initHeaders };
+  /** Body must be buffered before we hand it off — the original stream is
+   * single-shot, so a redirect retry with the same stream would crash with
+   * `body has been read`. Empty/no-body Requests skip the read entirely. */
+  const reqBody = req.body ? await req.arrayBuffer() : undefined;
+  return {
+    urlString: req.url,
+    resolvedInit: {
+      ...init,
+      method: init?.method ?? req.method,
+      body: init?.body ?? (reqBody as unknown as UndiciRequestInit['body']),
+      headers: mergedHeaders,
+    },
+  };
 }
 
 function normalizeInitHeaders(init: UndiciRequestInit | undefined): Record<string, string> {
@@ -548,7 +585,18 @@ export class MCPConnection extends EventEmitter {
       input: UndiciRequestInfo,
       init?: UndiciRequestInit,
     ): Promise<UndiciResponse> {
-      const isGet = (init?.method ?? 'GET').toUpperCase() === 'GET';
+      /**
+       * Resolve the input shape upfront so the redirect loop can work with a
+       * (string url, init) pair uniformly. When `input` is a `Request`, we
+       * pull its method, headers, and body into the init — the body is
+       * buffered because `Request.body` is a one-shot stream that can't be
+       * replayed across redirect hops, and switching `url` to the new
+       * `Location` would otherwise drop the original method/body and turn a
+       * redirected POST into a GET with no payload.
+       */
+      const { urlString, resolvedInit } = await resolveFetchInput(input, init);
+
+      const isGet = (resolvedInit?.method ?? 'GET').toUpperCase() === 'GET';
       const dispatcher = isGet && getAgent ? getAgent : postAgent;
       const requestHeaders = getHeaders();
       /**
@@ -562,19 +610,12 @@ export class MCPConnection extends EventEmitter {
         ...(configuredSecretHeaderKeys ?? []),
       ]);
 
-      let currentInit = buildFetchInit(init, dispatcher, requestHeaders);
-      /**
-       * Track the request URL as a string alongside the actual fetch input.
-       * `input` may be a `Request` (whose `toString()` is `"[object Request]"`),
-       * so we cannot derive the URL by stringifying it. After the first hop we
-       * always have a string URL to pass to `undiciFetch`.
-       */
-      let url: UndiciRequestInfo = input;
-      let currentUrlString = getRequestUrlString(input);
+      let currentInit = buildFetchInit(resolvedInit, dispatcher, requestHeaders);
+      let currentUrlString = urlString;
       const originalOrigin = new URL(currentUrlString).origin;
 
       for (let redirects = 0; ; redirects++) {
-        const response = await undiciFetch(url, currentInit);
+        const response = await undiciFetch(currentUrlString, currentInit);
         const isMethodPreservingRedirect = response.status === 307 || response.status === 308;
 
         if (!isMethodPreservingRedirect || redirects >= MAX_REDIRECTS) {
@@ -603,15 +644,16 @@ export class MCPConnection extends EventEmitter {
 
         await response.body?.cancel().catch(() => undefined);
 
-        if (targetUrl.origin !== originalOrigin) {
-          const headers = currentInit.headers as Record<string, string>;
+        if (targetUrl.origin !== originalOrigin && currentInit.headers != null) {
           currentInit = {
             ...currentInit,
-            headers: stripCrossOriginHeaders(headers, secretHeaderKeys),
+            headers: stripCrossOriginHeaders(
+              currentInit.headers as Record<string, string>,
+              secretHeaderKeys,
+            ),
           };
         }
 
-        url = targetUrl.href;
         currentUrlString = targetUrl.href;
       }
     };
