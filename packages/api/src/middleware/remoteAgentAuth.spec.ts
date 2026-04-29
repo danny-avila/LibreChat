@@ -1,4 +1,4 @@
-import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { AppConfig, IUser, UserMethods } from '@librechat/data-schemas';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { Request, Response } from 'express';
@@ -36,9 +36,10 @@ jest.mock('jsonwebtoken', () => ({
   verify: jest.fn(),
 }));
 
-jest.mock('../auth/openid', () => ({
-  findOpenIDUser: jest.fn(),
-}));
+jest.mock('../auth/openid', () => {
+  const actual = jest.requireActual('../auth/openid') as typeof import('../auth/openid');
+  return { ...actual, findOpenIDUser: jest.fn(actual.findOpenIDUser) };
+});
 
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
@@ -50,6 +51,9 @@ import { findOpenIDUser } from '../auth/openid';
 const mockFetch = undiciFetch as jest.Mock;
 const mockProxyAgent = ProxyAgent as unknown as jest.Mock;
 const mockGetTenantId = getTenantId as jest.Mock;
+const realFindOpenIDUser =
+  jest.requireActual<typeof import('../auth/openid')>('../auth/openid').findOpenIDUser;
+const mockFindOpenIDUser = findOpenIDUser as jest.MockedFunction<typeof findOpenIDUser>;
 const FAKE_TOKEN = 'header.payload.signature';
 const BASE_ISSUER = 'https://auth.example.com/realms/test';
 const BASE_JWKS_URI = `${BASE_ISSUER}/protocol/openid-connect/certs`;
@@ -64,6 +68,8 @@ type AgentAuthConfig = NonNullable<NonNullable<TAgentsEndpoint['remoteApi']>['au
 type OidcConfig = NonNullable<AgentAuthConfig['oidc']>;
 type ApiKeyConfig = NonNullable<AgentAuthConfig['apiKey']>;
 type JwtVerifyCallback = (err: Error | null, payload?: JwtPayload) => void;
+type FindUserCondition = Pick<Partial<IUser>, '_id' | 'email' | 'openidId' | 'idOnTheSource'>;
+type FindUserQuery = FindUserCondition & { $or?: FindUserCondition[] };
 
 const mockUser = { _id: 'uid123', id: 'uid123', email: 'agent@test.com' };
 const originalEnv = ENV_KEYS.reduce<Record<(typeof ENV_KEYS)[number], string | undefined>>(
@@ -126,9 +132,40 @@ function makeConfig(
   } as unknown as AppConfig;
 }
 
+function makeUser(overrides: Partial<IUser> = {}): IUser {
+  return {
+    ...mockUser,
+    role: 'user',
+    provider: 'openid',
+    openidId: 'sub123',
+    ...overrides,
+  } as IUser;
+}
+
+function matchesCondition(user: IUser, condition: FindUserCondition): boolean {
+  if (condition._id != null && user._id !== condition._id) return false;
+  if (condition.email != null && user.email !== condition.email) return false;
+  if (condition.openidId != null && user.openidId !== condition.openidId) return false;
+  if (condition.idOnTheSource != null && user.idOnTheSource !== condition.idOnTheSource) {
+    return false;
+  }
+  return true;
+}
+
+function makeFindUser(...users: IUser[]): jest.MockedFunction<UserMethods['findUser']> {
+  return jest.fn(async (query) => {
+    const userQuery = query as FindUserQuery;
+    const conditions = userQuery.$or ?? [userQuery];
+    return (
+      users.find((user) => conditions.some((condition) => matchesCondition(user, condition))) ??
+      null
+    );
+  }) as jest.MockedFunction<UserMethods['findUser']>;
+}
+
 function makeDeps(appConfig: AppConfig | null = makeConfig()) {
   return {
-    findUser: jest.fn(),
+    findUser: makeFindUser(makeUser()),
     updateUser: jest.fn(),
     getAppConfig: jest.fn().mockResolvedValue(appConfig),
     apiKeyMiddleware: jest.fn((_req: unknown, _res: unknown, next: () => void) => next()),
@@ -156,6 +193,7 @@ describe('createRemoteAgentAuth', () => {
     mockFetch.mockReset();
     mockGetTenantId.mockReset();
     mockGetTenantId.mockReturnValue(undefined);
+    mockFindOpenIDUser.mockImplementation(realFindOpenIDUser);
     mockNext = jest.fn();
   });
 
@@ -265,10 +303,6 @@ describe('createRemoteAgentAuth', () => {
   });
 
   describe('when OIDC verification succeeds', () => {
-    beforeEach(() => {
-      (findOpenIDUser as jest.Mock).mockResolvedValue({ user: { ...mockUser }, error: null });
-    });
-
     it('sets req.user and calls next()', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', exp: 9999999999 });
       const deps = makeDeps();
@@ -305,6 +339,23 @@ describe('createRemoteAgentAuth', () => {
             'ES384',
             'ES512',
           ]),
+        }),
+      );
+    });
+
+    it('does not allow HMAC signing algorithms', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      const deps = makeDeps();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect((jwt.verify as jest.Mock).mock.calls[0][2]).toEqual(
+        expect.objectContaining({
+          algorithms: expect.not.arrayContaining(['HS256', 'HS384', 'HS512']),
         }),
       );
     });
@@ -355,9 +406,9 @@ describe('createRemoteAgentAuth', () => {
 
     it('falls back to apiKeyMiddleware when user is not found and apiKey is enabled', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
-      (findOpenIDUser as jest.Mock).mockResolvedValue({ user: null, error: null });
 
       const deps = makeDeps(makeConfig({}, { enabled: true }));
+      deps.findUser.mockResolvedValue(null);
       const { res } = makeRes();
 
       await createRemoteAgentAuth(deps)(
@@ -374,9 +425,9 @@ describe('createRemoteAgentAuth', () => {
 
     it('returns 401 when user is not found and apiKey is disabled', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
-      (findOpenIDUser as jest.Mock).mockResolvedValue({ user: null, error: null });
 
       const deps = makeDeps(makeConfig({}, { enabled: false }));
+      deps.findUser.mockResolvedValue(null);
       const { res, status, json } = makeRes();
 
       await createRemoteAgentAuth(deps)(
@@ -411,13 +462,11 @@ describe('createRemoteAgentAuth', () => {
 
     it('returns 401 without API key fallback when OpenID user resolution is rejected', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
-      (findOpenIDUser as jest.Mock).mockResolvedValue({
-        user: null,
-        error: 'AUTH_FAILED',
-        migration: false,
-      });
 
       const deps = makeDeps(makeConfig({}, { enabled: true }));
+      deps.findUser
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(makeUser({ provider: 'google', openidId: undefined }));
       const { res, status, json } = makeRes();
 
       await createRemoteAgentAuth(deps)(
@@ -483,6 +532,36 @@ describe('createRemoteAgentAuth', () => {
 
       expect(status).toHaveBeenCalledWith(401);
     });
+
+    it('returns 401 when verifier rejects a HMAC-signed token', async () => {
+      const payload = { sub: 'sub123', email: 'agent@test.com' };
+      setupOidcMocks(payload);
+      (jwt.decode as jest.Mock).mockReturnValue({
+        header: { alg: 'HS256', kid: 'test-kid' },
+        payload,
+      });
+      (jwt.verify as jest.Mock).mockImplementation(
+        (_t: string, _k: string, options: VerifyOptions, cb: JwtVerifyCallback) => {
+          expect(options.algorithms).toEqual(
+            expect.not.arrayContaining(['HS256', 'HS384', 'HS512']),
+          );
+          cb(new Error('invalid algorithm'));
+        },
+      );
+
+      const deps = makeDeps(makeConfig({}, { enabled: false }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
   });
 
   describe('unexpected errors', () => {
@@ -505,7 +584,7 @@ describe('createRemoteAgentAuth', () => {
 
     it('returns 500 when findOpenIDUser throws', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
-      (findOpenIDUser as jest.Mock).mockRejectedValue(new Error('DB error'));
+      mockFindOpenIDUser.mockRejectedValue(new Error('DB error'));
 
       const deps = makeDeps(makeConfig({}, { enabled: true }));
       const { res, status, json } = makeRes();
@@ -524,8 +603,7 @@ describe('createRemoteAgentAuth', () => {
 
   describe('JWKS URI resolution', () => {
     beforeEach(() => {
-      setupOidcMocks({ sub: 'sub1', email: 'a@b.com' });
-      (findOpenIDUser as jest.Mock).mockResolvedValue({ user: { ...mockUser }, error: null });
+      setupOidcMocks({ sub: 'sub123', email: 'a@b.com' });
     });
 
     it('uses jwksUri from config and skips discovery', async () => {
@@ -661,6 +739,33 @@ describe('createRemoteAgentAuth', () => {
       expect(jwksRsa).toHaveBeenCalledTimes(2);
     });
 
+    it('evicts the oldest JWKS client entry when the cache exceeds its limit', async () => {
+      const runRequest = async (index: number) => {
+        const deps = makeDeps(
+          makeConfig({
+            jwksUri: `https://cache-${index}.example.com/jwks`,
+            issuer: `https://issuer-cache-${index}.example.com`,
+          }),
+        );
+
+        await createRemoteAgentAuth(deps)(
+          makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+          makeRes().res,
+          mockNext,
+        );
+      };
+
+      for (let i = 0; i < 101; i++) {
+        await runRequest(i);
+      }
+      await runRequest(0);
+
+      expect(jwksRsa).toHaveBeenCalledTimes(102);
+      expect(jwksRsa).toHaveBeenLastCalledWith(
+        expect.objectContaining({ jwksUri: 'https://cache-0.example.com/jwks' }),
+      );
+    });
+
     it('aborts discovery when the timeout expires', async () => {
       jest.useFakeTimers();
 
@@ -740,16 +845,26 @@ describe('createRemoteAgentAuth', () => {
   describe('email claim resolution', () => {
     async function captureEmailArg(claims: JwtPayload): Promise<string | undefined> {
       setupOidcMocks(claims);
-      (findOpenIDUser as jest.Mock).mockResolvedValue({ user: { ...mockUser }, error: null });
 
       const deps = makeDeps();
+      deps.findUser
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(makeUser({ email: getExpectedEmail(claims), openidId: claims.sub }));
       await createRemoteAgentAuth(deps)(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
         makeRes().res,
         mockNext,
       );
 
-      return (findOpenIDUser as jest.Mock).mock.calls[0][0].email;
+      return (deps.findUser.mock.calls[1]?.[0] as { email?: string } | undefined)?.email;
+    }
+
+    function getExpectedEmail(claims: JwtPayload): string | undefined {
+      return (
+        (claims['email'] as string | undefined) ??
+        (claims['preferred_username'] as string | undefined) ??
+        (claims['upn'] as string | undefined)
+      );
     }
 
     it('uses email claim', async () => {
@@ -773,13 +888,16 @@ describe('createRemoteAgentAuth', () => {
     it('persists openidId binding when migration is needed', async () => {
       const mockUpdateUser = jest.fn().mockResolvedValue(undefined);
       setupOidcMocks({ sub: 'sub-new', email: 'existing@test.com' });
-      (findOpenIDUser as jest.Mock).mockResolvedValue({
-        user: { ...mockUser, openidId: undefined, role: 'user' },
-        error: null,
-        migration: true,
-      });
 
       const deps = { ...makeDeps(), updateUser: mockUpdateUser };
+      deps.findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(
+        makeUser({
+          email: 'existing@test.com',
+          openidId: undefined,
+          provider: undefined,
+          role: 'user',
+        }),
+      );
       await createRemoteAgentAuth(deps)(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
         makeRes().res,
@@ -796,13 +914,16 @@ describe('createRemoteAgentAuth', () => {
     it('returns 500 when migration update fails', async () => {
       const mockUpdateUser = jest.fn().mockRejectedValue(new Error('DB write failed'));
       setupOidcMocks({ sub: 'sub-new', email: 'existing@test.com' });
-      (findOpenIDUser as jest.Mock).mockResolvedValue({
-        user: { ...mockUser, openidId: undefined, role: 'user' },
-        error: null,
-        migration: true,
-      });
 
       const deps = { ...makeDeps(makeConfig({}, { enabled: true })), updateUser: mockUpdateUser };
+      deps.findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(
+        makeUser({
+          email: 'existing@test.com',
+          openidId: undefined,
+          provider: undefined,
+          role: 'user',
+        }),
+      );
       const { res, status, json } = makeRes();
 
       await createRemoteAgentAuth(deps)(
@@ -820,11 +941,6 @@ describe('createRemoteAgentAuth', () => {
     it('does not call updateUser when migration is false and role exists', async () => {
       const mockUpdateUser = jest.fn();
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
-      (findOpenIDUser as jest.Mock).mockResolvedValue({
-        user: { ...mockUser, role: 'user' },
-        error: null,
-        migration: false,
-      });
 
       const deps = { ...makeDeps(), updateUser: mockUpdateUser };
       await createRemoteAgentAuth(deps)(
@@ -854,16 +970,29 @@ describe('createRemoteAgentAuth', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
     });
 
+    it('does not fall back to apiKeyMiddleware when a verified token is missing scope', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', scope: 'openid profile' });
+
+      const deps = makeDeps(makeConfig({ scope: 'remote_agent' }, { enabled: true }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
     it('passes when required scope is present in token', async () => {
       setupOidcMocks({
         sub: 'sub123',
         email: 'agent@test.com',
         scope: 'openid profile remote_agent',
-      });
-      (findOpenIDUser as jest.Mock).mockResolvedValue({
-        user: { ...mockUser },
-        error: null,
-        migration: false,
       });
 
       const deps = makeDeps(makeConfig({ scope: 'remote_agent' }));
@@ -876,13 +1005,63 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).toHaveBeenCalled();
     });
 
-    it('passes when scope is not configured (backward compat)', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' }); // no scope claim at all
-      (findOpenIDUser as jest.Mock).mockResolvedValue({
-        user: { ...mockUser },
-        error: null,
-        migration: false,
+    it('passes when scp is an array containing the required scope', async () => {
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        scp: ['openid', 'remote_agent'],
       });
+
+      const deps = makeDeps(makeConfig({ scope: 'remote_agent' }));
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('passes when all configured scopes are present', async () => {
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        scp: ['openid', 'remote_agent', 'admin'],
+      });
+
+      const deps = makeDeps(makeConfig({ scope: 'remote_agent admin' }));
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('returns 401 when any configured scope is missing', async () => {
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        scp: ['openid', 'remote_agent'],
+      });
+
+      const deps = makeDeps(makeConfig({ scope: 'remote_agent admin' }, { enabled: false }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('passes when scope is not configured (backward compat)', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
 
       const deps = makeDeps(makeConfig({ scope: undefined }));
       await createRemoteAgentAuth(deps)(

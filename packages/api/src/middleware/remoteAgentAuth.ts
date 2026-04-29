@@ -9,6 +9,7 @@ import type { AppConfig, IUser, UserMethods } from '@librechat/data-schemas';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
+import type { GetAppConfigOptions } from '../app/service';
 import { findOpenIDUser } from '../auth/openid';
 import { isEnabled, math } from '~/utils';
 
@@ -18,14 +19,6 @@ export interface RemoteAgentAuthDeps {
   updateUser: UserMethods['updateUser'];
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig | null>;
 }
-
-type GetAppConfigOptions = {
-  role?: string;
-  userId?: string;
-  tenantId?: string;
-  refresh?: boolean;
-  baseOnly?: boolean;
-};
 
 type OidcConfig = NonNullable<
   NonNullable<NonNullable<TAgentsEndpoint['remoteApi']>['auth']>['oidc']
@@ -40,12 +33,14 @@ type CacheEntry<T> = {
   expiresAt: number;
   promise: Promise<T>;
 };
+type ScopeClaim = string | string[] | undefined;
 type UserResolution =
   | { status: 'resolved'; user: IUser }
   | { status: 'missing' }
   | { status: 'rejected'; error: string };
 
 const OIDC_DISCOVERY_TIMEOUT_MS = 10000;
+const MAX_JWKS_CACHE_ENTRIES = 100;
 const JWT_ALGORITHMS: Algorithm[] = [
   'RS256',
   'RS384',
@@ -65,6 +60,29 @@ export function clearRemoteAgentAuthCache(): void {
   jwksClientCache.clear();
 }
 
+function pruneExpiredEntries<T>(cache: Map<string, CacheEntry<T>>): void {
+  const now = Date.now();
+  for (const [key, entry] of cache) {
+    if (entry.expiresAt <= now) cache.delete(key);
+  }
+}
+
+function setCacheEntry<T>(
+  cache: Map<string, CacheEntry<T>>,
+  key: string,
+  entry: CacheEntry<T>,
+): void {
+  pruneExpiredEntries(cache);
+
+  while (cache.size >= MAX_JWKS_CACHE_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey == null) break;
+    cache.delete(oldestKey);
+  }
+
+  cache.set(key, entry);
+}
+
 function extractBearer(authHeader: string | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) return null;
   return authHeader.slice(7);
@@ -76,6 +94,29 @@ function getEmail(payload: JwtPayload): string | undefined {
     (payload['preferred_username'] as string | undefined) ??
     (payload['upn'] as string | undefined)
   );
+}
+
+function splitScopes(scopes: string): string[] {
+  return scopes
+    .trim()
+    .split(/[\s,]+/)
+    .filter(Boolean);
+}
+
+function getTokenScopes(scopeClaim: ScopeClaim): string[] {
+  if (Array.isArray(scopeClaim)) return scopeClaim.flatMap(splitScopes);
+  return scopeClaim ? splitScopes(scopeClaim) : [];
+}
+
+function hasRequiredScopes(requiredScope: string | undefined, payload: JwtPayload): boolean {
+  if (!requiredScope) return true;
+
+  const requiredScopes = splitScopes(requiredScope);
+  if (requiredScopes.length === 0) return true;
+
+  const rawScope = (payload['scp'] ?? payload['scope']) as ScopeClaim;
+  const tokenScopes = getTokenScopes(rawScope);
+  return requiredScopes.every((scope) => tokenScopes.includes(scope));
 }
 
 function getJwksCacheOptions(): JwksCacheOptions {
@@ -135,7 +176,7 @@ async function resolveJwksUri(
     throw err;
   });
 
-  jwksUriCache.set(cacheKey, {
+  setCacheEntry(jwksUriCache, cacheKey, {
     promise,
     expiresAt: Date.now() + cacheOptions.maxAge,
   });
@@ -177,7 +218,7 @@ async function getJwksClient(oidcConfig: EnabledOidcConfig): Promise<jwksRsa.Jwk
 
   const promise = Promise.resolve(client);
 
-  jwksClientCache.set(cacheKey, {
+  setCacheEntry(jwksClientCache, cacheKey, {
     promise,
     expiresAt: Date.now() + cacheOptions.maxAge,
   });
@@ -272,7 +313,7 @@ async function resolveUser(
 
   const updateData: Partial<IUser> = {};
 
-  if (migration && payload.sub != null) {
+  if (migration) {
     updateData.provider = 'openid';
     updateData.openidId = payload.sub;
   }
@@ -351,17 +392,10 @@ export function createRemoteAgentAuth({
 
       try {
         payload = await verifyOidcBearer(token, oidcConfig);
-        if (oidcConfig.scope != null) {
-          const rawScope = payload['scp'] ?? payload['scope'];
-          const tokenScopes: string[] = Array.isArray(rawScope)
-            ? rawScope
-            : ((rawScope as string | undefined)?.split(' ') ?? []);
-          if (!tokenScopes.includes(oidcConfig.scope)) {
-            logger.warn(`[remoteAgentAuth] Token missing required scope: ${oidcConfig.scope}`);
-            if (apiKeyEnabled) return apiKeyMiddleware(req, res, next);
-            res.status(401).json({ error: 'Unauthorized' });
-            return;
-          }
+        if (!hasRequiredScopes(oidcConfig.scope, payload)) {
+          logger.warn(`[remoteAgentAuth] Token missing required scope: ${oidcConfig.scope}`);
+          res.status(401).json({ error: 'Unauthorized' });
+          return;
         }
       } catch (oidcErr) {
         logger.error('[remoteAgentAuth] OIDC verification failed:', oidcErr);
