@@ -13,6 +13,9 @@ jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
   return {
+    appendCodeEnvFile: jest.fn((form, stream, filename) => {
+      form.append('file', stream, { filename });
+    }),
     logAxiosError: jest.fn(({ message }) => message),
     createAxiosInstance: jest.fn(() => mockAxios),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
