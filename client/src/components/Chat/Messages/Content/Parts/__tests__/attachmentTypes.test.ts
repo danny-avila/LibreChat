@@ -262,6 +262,15 @@ describe('displayFilename', () => {
   it('preserves an extensionless leaf with hex suffix inside a directory', () => {
     expect(displayFilename('out/blob-deadbe')).toBe('out/blob-deadbe');
   });
+
+  it('strips the suffix AND restores the leading dot for a sanitized dotfile that has an extension', () => {
+    /** Pins the interaction between the two regex paths: the broad
+     * `COLLISION_SUFFIX_BEFORE_EXT` strips `-abcdef` before `.txt`, and
+     * the `_. → .` underscore-restore step then runs because the
+     * stripped form starts with `_.`. The two halves are tested
+     * separately above; this case exercises both in one input. */
+    expect(displayFilename('_.config-abcdef.txt')).toBe('.config.txt');
+  });
 });
 
 describe('attachmentSalience', () => {

@@ -112,12 +112,15 @@ export const displayFilename = (filename: string | undefined): string => {
  * omits the byte count) from silently sinking past real content. The
  * filter is intentionally narrow: only an explicit zero counts as empty.
  *
- * The internal cast is needed because `TAttachment` is a union and only
- * its first arm declares `bytes`; the function reads through the cast
- * and treats `undefined` as neutral, which is correct for every arm.
+ * The internal cast targets the `TFile & TAttachmentMetadata` arm of
+ * `TAttachment` (the only one that declares `bytes`) rather than an
+ * anonymous `{ bytes?: number }` shape. Tying the cast to the concrete
+ * source type means a future `bytes` retype on `TFile` (e.g., to
+ * `bigint`) would surface here at compile time instead of being
+ * silently papered over.
  */
 export const attachmentSalience = (item: TAttachment): number => {
-  const bytes = (item as { bytes?: number }).bytes;
+  const bytes = (item as TFile & TAttachmentMetadata).bytes;
   return bytes === 0 ? 1 : 0;
 };
 
