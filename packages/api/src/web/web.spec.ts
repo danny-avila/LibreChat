@@ -818,6 +818,46 @@ describe('web.ts', () => {
       expect(cohereCalls.length).toBe(0);
     });
 
+    it('should handle a rerankerType of `none`', async () => {
+      // Initialize a webSearchConfig with a specific rerankerType
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        rerankerType: 'none' as RerankerTypes,
+      };
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.rerankerType).toBe('none');
+
+      // Verify that we didn't request any reranker keys
+      const cohereCalls = mockLoadAuthValues.mock.calls.filter(
+        (call) =>
+          call[0].authFields.includes('COHERE_API_KEY') ||
+          call[0].authFields.includes('JINA_API_KEY'),
+      );
+      expect(cohereCalls.length).toBe(0);
+    });
+
     it('should handle invalid specified service gracefully', async () => {
       // Initialize a webSearchConfig with an invalid searchProvider
       const webSearchConfig: TCustomConfig['webSearch'] = {

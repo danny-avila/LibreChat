@@ -56,6 +56,7 @@ describe('loadWebSearchConfig', () => {
         jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
+        rerankerType: undefined,
       });
     });
 

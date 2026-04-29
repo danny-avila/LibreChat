@@ -1,4 +1,4 @@
-import { SafeSearchTypes } from 'librechat-data-provider';
+import { RerankerTypes, SafeSearchTypes } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '~/types/web';
 
@@ -73,6 +73,7 @@ export function loadWebSearchConfig(
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
+  const rerankerType = config?.rerankerType;
 
   return {
     ...config,
@@ -86,5 +87,6 @@ export function loadWebSearchConfig(
     firecrawlApiUrl,
     firecrawlVersion,
     searxngInstanceUrl,
+    rerankerType,
   };
 }
