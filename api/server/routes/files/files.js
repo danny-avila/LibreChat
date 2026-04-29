@@ -437,7 +437,8 @@ router.post('/', async (req, res) => {
     if (
       error.message?.includes('Invalid file format') ||
       error.message?.includes('No OCR result') ||
-      error.message?.includes('exceeds token limit')
+      error.message?.includes('exceeds token limit') ||
+      error.message?.includes('지원하지 않는 파일 형식입니다')
     ) {
       message = error.message;
     }

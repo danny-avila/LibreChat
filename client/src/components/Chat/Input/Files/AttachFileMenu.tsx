@@ -1,11 +1,7 @@
 import React, { useRef, useState, useMemo } from 'react';
-import { useRecoilState } from 'recoil';
+import { useSetRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
-import {
-  FileSearch,
-  FileType2Icon,
-  TerminalSquareIcon,
-} from 'lucide-react';
+import { FileType2Icon } from 'lucide-react';
 import {
   FileUpload,
   TooltipAnchor,
@@ -13,24 +9,16 @@ import {
   AttachmentIcon,
   SharePointIcon,
 } from '@librechat/client';
-import {
-  EToolResources,
-  defaultAgentCapabilities,
-} from 'librechat-data-provider';
+import { EToolResources, defaultAgentCapabilities } from 'librechat-data-provider';
 import type { EModelEndpoint, EndpointFileConfig } from 'librechat-data-provider';
-import {
-  useAgentToolPermissions,
-  useAgentCapabilities,
-  useGetAgentsConfig,
-  useFileHandling,
-  useLocalize,
-} from '~/hooks';
+import { useAgentCapabilities, useGetAgentsConfig, useFileHandling, useLocalize } from '~/hooks';
 import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
-import { cn } from '~/utils';
+import { BKL_ALLOWED_UPLOAD_ACCEPT, cn } from '~/utils';
+import ExistingFilesImportModal from './ExistingFilesImportModal';
 
 interface AttachFileMenuProps {
   agentId?: string | null;
@@ -41,21 +29,14 @@ interface AttachFileMenuProps {
   endpointFileConfig?: EndpointFileConfig;
 }
 
-const AttachFileMenu = ({
-  agentId,
-  endpoint,
-  disabled,
-  conversationId,
-  endpointFileConfig,
-}: AttachFileMenuProps) => {
+const AttachFileMenu = ({ disabled, conversationId, endpointFileConfig }: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
-  const [ephemeralAgent, setEphemeralAgent] = useRecoilState(
-    ephemeralAgentByConvoId(conversationId),
-  );
+  const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
   const [toolResource, setToolResource] = useState<EToolResources | undefined>();
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const { handleFileChange } = useFileHandling();
   const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
     toolResource,
@@ -73,63 +54,47 @@ const AttachFileMenu = ({
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const { fileSearchAllowedByAgent, codeAllowedByAgent } = useAgentToolPermissions(
-    agentId,
-    ephemeralAgent,
-  );
-
   const handleUploadClick = () => {
     if (!inputRef.current) {
       return;
     }
     inputRef.current.value = '';
-    inputRef.current.accept = '';
+    inputRef.current.accept = BKL_ALLOWED_UPLOAD_ACCEPT;
     inputRef.current.click();
   };
 
   const dropdownItems = useMemo(() => {
-    const createMenuItems = (onAction: () => void) => {
+    const createMenuItems = (onAction: () => void, includeImport = true) => {
       const items: MenuItemProps[] = [];
 
       if (capabilities.contextEnabled) {
         items.push({
-          label: localize('com_ui_upload_ocr_text'),
+          label: '새파일 업로드',
           onClick: () => {
             setToolResource(EToolResources.context);
+            setEphemeralAgent((prev) => ({
+              ...prev,
+              [EToolResources.context]: true,
+            }));
             onAction();
           },
           icon: <FileType2Icon className="icon-md" />,
         });
-      }
 
-      if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
-        items.push({
-          label: localize('com_ui_upload_file_search'),
-          onClick: () => {
-            setToolResource(EToolResources.file_search);
-            setEphemeralAgent((prev) => ({
-              ...prev,
-              [EToolResources.file_search]: true,
-            }));
-            onAction();
-          },
-          icon: <FileSearch className="icon-md" />,
-        });
-      }
-
-      if (capabilities.codeEnabled && codeAllowedByAgent) {
-        items.push({
-          label: localize('com_ui_upload_code_files'),
-          onClick: () => {
-            setToolResource(EToolResources.execute_code);
-            setEphemeralAgent((prev) => ({
-              ...prev,
-              [EToolResources.execute_code]: true,
-            }));
-            onAction();
-          },
-          icon: <TerminalSquareIcon className="icon-md" />,
-        });
+        if (includeImport) {
+          items.push({
+            label: '기존파일 임포트',
+            onClick: () => {
+              setToolResource(EToolResources.context);
+              setEphemeralAgent((prev) => ({
+                ...prev,
+                [EToolResources.context]: true,
+              }));
+              setIsImportModalOpen(true);
+            },
+            icon: <FileType2Icon className="icon-md" />,
+          });
+        }
       }
 
       return items;
@@ -141,7 +106,7 @@ const AttachFileMenu = ({
       const sharePointItems = createMenuItems(() => {
         setIsSharePointDialogOpen(true);
         // Note: toolResource will be set by the specific item clicked
-      });
+      }, false);
       localItems.push({
         label: localize('com_files_upload_sharepoint'),
         onClick: () => {},
@@ -158,9 +123,8 @@ const AttachFileMenu = ({
     setToolResource,
     setEphemeralAgent,
     sharePointEnabled,
-    codeAllowedByAgent,
-    fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
+    setIsImportModalOpen,
   ]);
 
   const menuTrigger = (
@@ -222,6 +186,7 @@ const AttachFileMenu = ({
         downloadProgress={downloadProgress}
         maxSelectionCount={endpointFileConfig?.fileLimit}
       />
+      <ExistingFilesImportModal open={isImportModalOpen} onOpenChange={setIsImportModalOpen} />
     </>
   );
 };

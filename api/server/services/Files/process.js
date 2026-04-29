@@ -38,6 +38,30 @@ const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
 
+const BKL_ALLOWED_UPLOAD_EXTENSIONS = new Set([
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.hwp',
+  '.hwpx',
+  '.ppt',
+  '.pptx',
+  '.msg',
+  '.eml',
+  '.txt',
+  '.md',
+]);
+
+const BKL_UNSUPPORTED_UPLOAD_MESSAGE =
+  '지원하지 않는 파일 형식입니다. PDF, Word, HWP, PPT, MSG, EML, TXT, MD만 업로드할 수 있습니다.';
+
+const assertBklAllowedUploadExtension = (file) => {
+  const ext = path.extname(file?.originalname ?? '').toLowerCase();
+  if (!BKL_ALLOWED_UPLOAD_EXTENSIONS.has(ext)) {
+    throw new Error(BKL_UNSUPPORTED_UPLOAD_MESSAGE);
+  }
+};
+
 /**
  * Creates a modular file upload wrapper that ensures filename sanitization
  * across all storage strategies. This prevents storage-specific implementations
@@ -378,6 +402,9 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * @returns {Promise<void>}
  */
 const processFileUpload = async ({ req, res, metadata }) => {
+  if (metadata.message_file) {
+    assertBklAllowedUploadExtension(req.file);
+  }
   const appConfig = req.config;
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
@@ -471,6 +498,9 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
+  if (metadata.message_file || tool_resource === EToolResources.context) {
+    assertBklAllowedUploadExtension(file);
+  }
 
   let messageAttachment = !!metadata.message_file;
 

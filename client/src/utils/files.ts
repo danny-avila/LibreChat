@@ -12,6 +12,7 @@ import {
   inferMimeType,
   excelMimeTypes,
   EToolResources,
+  FileSources,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import type { TFile, EndpointFileConfig, FileConfig } from 'librechat-data-provider';
@@ -19,6 +20,44 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { ExtendedFile } from '~/common';
 
 export const partialTypes = ['text/x-'];
+
+export const BKL_ALLOWED_UPLOAD_EXTENSIONS = [
+  'pdf',
+  'doc',
+  'docx',
+  'hwp',
+  'hwpx',
+  'ppt',
+  'pptx',
+  'msg',
+  'eml',
+  'txt',
+  'md',
+] as const;
+
+export const BKL_ALLOWED_UPLOAD_ACCEPT = BKL_ALLOWED_UPLOAD_EXTENSIONS.map((ext) => `.${ext}`).join(
+  ',',
+);
+
+export const BKL_UNSUPPORTED_UPLOAD_MESSAGE =
+  '지원하지 않는 파일 형식입니다. PDF, Word, HWP, PPT, MSG, EML, TXT, MD만 업로드할 수 있습니다.';
+
+export function getBklFileExtension(name = ''): string {
+  const basename = name.split(/[\\/]/).pop() ?? '';
+  const idx = basename.lastIndexOf('.');
+  return idx >= 0 ? basename.slice(idx + 1).toLowerCase() : '';
+}
+
+export function isBklAllowedUploadFile(file: Pick<File, 'name'>): boolean {
+  const ext = getBklFileExtension(file.name);
+  return BKL_ALLOWED_UPLOAD_EXTENSIONS.includes(
+    ext as (typeof BKL_ALLOWED_UPLOAD_EXTENSIONS)[number],
+  );
+}
+
+export function isBklOcrReadyFile(file: Pick<TFile, 'file_id' | 'source' | 'filename'>): boolean {
+  return Boolean(file.file_id && file.filename && file.source === FileSources.text);
+}
 
 const textDocument = {
   paths: TextPaths,
@@ -244,6 +283,12 @@ export const validateFiles = ({
   }
   const existingFiles = Array.from(files.values());
   const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
+  const shouldApplyBklAllowlist = toolResource === EToolResources.context;
+  const unsupportedFile = fileList.find((file) => !isBklAllowedUploadFile(file));
+  if (shouldApplyBklAllowlist && unsupportedFile) {
+    setError(BKL_UNSUPPORTED_UPLOAD_MESSAGE);
+    return false;
+  }
   if (incomingTotalSize === 0) {
     setError('com_error_files_empty');
     return false;
@@ -260,13 +305,13 @@ export const validateFiles = ({
     const fileType = inferMimeType(originalFile.name, originalFile.type);
 
     // Check if the file type is still empty after the extension check
-    if (!fileType) {
+    if (!fileType && toolResource !== EToolResources.context) {
       setError('Unable to determine file type for: ' + originalFile.name);
       return false;
     }
 
     // Replace empty type with inferred type
-    if (originalFile.type !== fileType) {
+    if (fileType && originalFile.type !== fileType) {
       const newFile = new File([originalFile], originalFile.name, { type: fileType });
       originalFile = newFile;
       fileList[i] = newFile;
@@ -281,7 +326,10 @@ export const validateFiles = ({
       ];
     }
 
-    if (!checkType(originalFile.type, mimeTypesToCheck)) {
+    if (
+      toolResource !== EToolResources.context &&
+      !checkType(originalFile.type, mimeTypesToCheck)
+    ) {
       console.log(originalFile);
       setError('Currently, unsupported file type: ' + originalFile.type);
       return false;
