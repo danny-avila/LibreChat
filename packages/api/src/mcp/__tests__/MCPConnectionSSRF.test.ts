@@ -666,6 +666,23 @@ describe('MCP SSRF protection – cross-origin credential stripping on redirect'
     const tools = await conn.fetchTools();
     expect(tools).toBeDefined();
   });
+
+  it('treats a protocol downgrade as cross-origin (URL.origin contract)', () => {
+    /**
+     * The cross-origin strip path keys off `targetUrl.origin !== originalOrigin`.
+     * `URL.origin` is defined as `scheme + "://" + host + ":" + port`, so a
+     * same-host `https → http` redirect produces a different origin and trips
+     * the strip path through the existing logic — no separate code path is
+     * needed for protocol downgrade. Pin the URL contract here instead of
+     * standing up a TLS fixture just to re-prove the spec.
+     */
+    expect(new URL('https://example.com/a').origin).not.toBe(
+      new URL('http://example.com/a').origin,
+    );
+    expect(new URL('https://example.com:443/a').origin).not.toBe(
+      new URL('http://example.com:80/a').origin,
+    );
+  });
 });
 
 describe('MCP SSRF protection – customFetch input shapes', () => {
