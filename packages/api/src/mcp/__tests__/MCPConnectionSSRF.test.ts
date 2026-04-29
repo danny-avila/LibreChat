@@ -14,11 +14,19 @@
 import * as net from 'net';
 import * as http from 'http';
 import { randomUUID } from 'crypto';
+import { Request as UndiciRequest } from 'undici';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import type {
+  RequestInfo as UndiciRequestInfo,
+  RequestInit as UndiciRequestInit,
+  Response as UndiciResponse,
+} from 'undici';
 import type { Socket } from 'net';
 import { MCPConnection } from '~/mcp/connection';
 import { resolveHostnameSSRF } from '~/auth';
+
+type CustomFetch = (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse>;
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -639,6 +647,63 @@ describe('MCP SSRF protection – cross-origin credential stripping on redirect'
     const tools = await conn.fetchTools();
     expect(tools).toBeDefined();
   });
+});
+
+describe('MCP SSRF protection – customFetch input shapes', () => {
+  let target: Omit<TestServer, 'redirectHit'> | undefined;
+  let conn: MCPConnection | null;
+
+  afterEach(async () => {
+    await safeDisconnect(conn);
+    conn = null;
+    if (target) {
+      await target.close();
+      target = undefined;
+    }
+    jest.restoreAllMocks();
+  });
+
+  /**
+   * Reach into the private fetch factory to exercise it with each
+   * `RequestInfo` shape undici accepts. `Request.toString()` returns
+   * `"[object Request]"`, so a naive `new URL(input.toString())` for origin
+   * derivation would throw before any network call — this test pins that
+   * regression.
+   */
+  function getCustomFetch(connection: MCPConnection): CustomFetch {
+    const factory = (
+      connection as unknown as {
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+        ) => CustomFetch;
+      }
+    ).createFetchFunction;
+    return factory.call(connection, () => null);
+  }
+
+  it.each<['string' | 'URL' | 'Request']>([['string'], ['URL'], ['Request']])(
+    'should accept a %s input without throwing on URL derivation',
+    async (shape) => {
+      target = await createStreamableServer();
+
+      conn = new MCPConnection({
+        serverName: `customfetch-${shape.toLowerCase()}`,
+        serverConfig: { type: 'streamable-http', url: target.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getCustomFetch(conn);
+      const inputs: Record<typeof shape, () => UndiciRequestInfo> = {
+        string: () => target!.url,
+        URL: () => new URL(target!.url),
+        Request: () => new UndiciRequest(target!.url, { method: 'GET' }),
+      };
+
+      const response = await customFetch(inputs[shape]());
+      expect(response.status).toBeGreaterThanOrEqual(200);
+      await response.body?.cancel().catch(() => undefined);
+    },
+  );
 });
 
 describe('MCP SSRF protection – WebSocket DNS resolution', () => {

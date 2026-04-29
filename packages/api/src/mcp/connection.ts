@@ -89,6 +89,22 @@ const CROSS_ORIGIN_FORBIDDEN_HEADERS = new Set([
   'mcp-session-id',
 ]);
 
+/**
+ * Extracts a URL string from any value undici's `RequestInfo` accepts. Plain
+ * `toString()` is unsafe here because `Request.prototype.toString()` returns
+ * `"[object Request]"`, which would cause `new URL(...)` to throw before any
+ * network call.
+ */
+function getRequestUrlString(input: UndiciRequestInfo): string {
+  if (typeof input === 'string') {
+    return input;
+  }
+  if ('url' in input && typeof input.url === 'string') {
+    return input.url;
+  }
+  return (input as URL).href;
+}
+
 function normalizeInitHeaders(init: UndiciRequestInit | undefined): Record<string, string> {
   if (!init?.headers) {
     return {};
@@ -536,8 +552,15 @@ export class MCPConnection extends EventEmitter {
       ]);
 
       let currentInit = buildFetchInit(init, dispatcher, requestHeaders);
-      let url = input;
-      const originalOrigin = new URL(typeof url === 'string' ? url : url.toString()).origin;
+      /**
+       * Track the request URL as a string alongside the actual fetch input.
+       * `input` may be a `Request` (whose `toString()` is `"[object Request]"`),
+       * so we cannot derive the URL by stringifying it. After the first hop we
+       * always have a string URL to pass to `undiciFetch`.
+       */
+      let url: UndiciRequestInfo = input;
+      let currentUrlString = getRequestUrlString(input);
+      const originalOrigin = new URL(currentUrlString).origin;
 
       for (let redirects = 0; ; redirects++) {
         const response = await undiciFetch(url, currentInit);
@@ -552,8 +575,7 @@ export class MCPConnection extends EventEmitter {
           return response;
         }
 
-        const baseUrl = typeof url === 'string' ? url : url.toString();
-        const targetUrl = new URL(location, baseUrl);
+        const targetUrl = new URL(location, currentUrlString);
 
         /**
          * Defense-in-depth SSRF check on every redirect hop. The dispatcher's
@@ -579,6 +601,7 @@ export class MCPConnection extends EventEmitter {
         }
 
         url = targetUrl.href;
+        currentUrlString = targetUrl.href;
       }
     };
   }
