@@ -64,6 +64,7 @@ export class EcsStack extends cdk.Stack {
 
   private CreateVPCEndpoints(isProd: boolean, vpc: ec2.IVpc) {
     const endpointsSg = new ec2.SecurityGroup(this, 'VpcEndpointsSg', { vpc });
+    endpointsSg.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(443));
     endpointsSg.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(27017));
     vpc.addInterfaceEndpoint('EcrDockerEndpoint', {
       service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
