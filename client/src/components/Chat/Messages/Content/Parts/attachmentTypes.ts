@@ -4,20 +4,20 @@ import type { ToolArtifactType } from '~/utils/artifacts';
 import { detectArtifactTypeFromFile } from '~/utils/artifacts';
 
 /**
- * Names the code-execution sandbox uses for empty-folder placeholders so
- * directory structure survives a `mkdir` in the stateless container.
- * The user has no reason to see these — they're an implementation detail
- * of `@librechat/agents`'s bash executor — so we filter them out before
- * any UI rendering. Match against the leaf segment so a real path like
- * `notes/.dirkeep.md` (unlikely but possible) isn't accidentally hidden.
+ * Empty-folder placeholders the bash executor drops in the stateless
+ * sandbox so a `mkdir` survives across runs. The user has no reason to
+ * see these — they're an implementation detail of `@librechat/agents`
+ * — so we filter them out before any UI rendering.
  *
- * Names appear post-sanitization (`packages/api/src/utils/files.ts`):
- * a leading `.` is rewritten to `_` and a 6-hex disambiguator is
- * appended when sanitization mutated the input (`.dirkeep` →
- * `_.dirkeep-<hash>`), so the regex tolerates both forms and the
- * optional suffix.
+ * Anchored to the *post-sanitization* form `_.dirkeep-<6 hex>` /
+ * `_.gitkeep-<6 hex>` produced by `sanitizeArtifactPath` (the leading
+ * `.` is always rewritten to `_` and a disambiguator is always
+ * appended because the dotfile rewrite counts as a mutation). A bare
+ * `.dirkeep` / `.gitkeep` never originates from the sandbox — it's
+ * almost always project scaffolding the user uploaded — so the
+ * underscore prefix and the hex suffix are the discriminating signal.
  */
-const SANDBOX_PLACEHOLDER_LEAVES = /^_?\.(?:dirkeep|gitkeep)(?:-[0-9a-f]{6})?$/i;
+const SANDBOX_PLACEHOLDER_LEAVES = /^_\.(?:dirkeep|gitkeep)-[0-9a-f]{6}$/i;
 
 /**
  * Drop the deterministic 6-hex disambiguator the backend appends when

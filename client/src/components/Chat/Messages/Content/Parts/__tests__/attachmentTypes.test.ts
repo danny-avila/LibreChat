@@ -152,15 +152,7 @@ describe('isInternalSandboxArtifact', () => {
     expect(isInternalSandboxArtifact(attachment)).toBe(true);
   });
 
-  it('matches a bare `.dirkeep` (no path, no suffix)', () => {
-    const attachment = baseAttachment({
-      filename: '.dirkeep',
-      bytes: 0,
-    } as Partial<TAttachment>);
-    expect(isInternalSandboxArtifact(attachment)).toBe(true);
-  });
-
-  it('matches a `.gitkeep` placeholder too', () => {
+  it('matches a `.gitkeep` placeholder in its post-sanitization form', () => {
     const attachment = baseAttachment({
       filename: 'subdir/_.gitkeep-deadbe',
       bytes: 0,
@@ -168,11 +160,31 @@ describe('isInternalSandboxArtifact', () => {
     expect(isInternalSandboxArtifact(attachment)).toBe(true);
   });
 
-  it('does NOT match a non-empty file even if its leaf looks like .dirkeep', () => {
+  it('does NOT match a bare `.dirkeep` (likely user-uploaded scaffolding)', () => {
+    /** A bare `.dirkeep` never originates from the sandbox — the dotfile
+     * rewrite + disambiguator step in `sanitizeArtifactPath` always
+     * produces `_.dirkeep-<6 hex>`. Treat the bare form as user content
+     * (e.g. a checked-in directory marker) and let it render. */
+    const attachment = baseAttachment({
+      filename: '.dirkeep',
+      bytes: 0,
+    } as Partial<TAttachment>);
+    expect(isInternalSandboxArtifact(attachment)).toBe(false);
+  });
+
+  it('does NOT match a bare `.gitkeep` (the canonical project-scaffolding marker)', () => {
+    const attachment = baseAttachment({
+      filename: 'src/components/.gitkeep',
+      bytes: 0,
+    } as Partial<TAttachment>);
+    expect(isInternalSandboxArtifact(attachment)).toBe(false);
+  });
+
+  it('does NOT match a non-empty file even if its leaf matches the sanitized form', () => {
     // Defense in depth: bytes > 0 means the user actually wrote
     // content, so don't hide it regardless of name.
     const attachment = baseAttachment({
-      filename: '.dirkeep',
+      filename: '_.dirkeep-88b30b',
       bytes: 12,
     } as Partial<TAttachment>);
     expect(isInternalSandboxArtifact(attachment)).toBe(false);
