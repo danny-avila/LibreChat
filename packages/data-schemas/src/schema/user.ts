@@ -43,6 +43,10 @@ const FarmerProfileSchema = new Schema(
     highestEducatedPerson: { type: String },
     numberOfSmartphones: { type: Number },
     platform: { type: String },
+    location: {
+      latitude: { type: Number },
+      longitude: { type: Number },
+    },
   },
   { _id: false },
 );
