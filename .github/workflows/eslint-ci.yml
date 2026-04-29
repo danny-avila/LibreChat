@@ -10,6 +10,13 @@ on:
     paths:
       - 'api/**'
       - 'client/**'
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - 'api/**'
+      - 'client/**'
 
 jobs:
   eslint_checks:

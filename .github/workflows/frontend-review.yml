@@ -10,6 +10,13 @@ on:
     paths:
       - 'client/**'
       - 'packages/data-provider/**'
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - 'client/**'
+      - 'packages/data-provider/**'
 
 env:
   NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'

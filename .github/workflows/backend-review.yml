@@ -9,6 +9,13 @@ on:
     paths:
       - 'api/**'
       - 'packages/**'
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - 'api/**'
+      - 'packages/**'
 
 env:
   NODE_ENV: CI

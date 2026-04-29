@@ -4,6 +4,12 @@ on:
   pull_request:
     paths:
       - 'client/src/**'
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - 'client/src/**'
   workflow_dispatch:
     inputs:
       run_workflow:
@@ -15,6 +21,7 @@ jobs:
   axe-linter:
     runs-on: ubuntu-latest
     if: >
+      (github.event_name == 'push') ||
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'danny-avila/LibreChat') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run_workflow == 'true')
     
