@@ -41,7 +41,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GITNEXUS_VERSION: '1.5.3'
+  GITNEXUS_VERSION: '1.6.3'
 
 jobs:
   index:
@@ -74,7 +74,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
 
       - name: Cache npm store
         uses: actions/cache@v4
