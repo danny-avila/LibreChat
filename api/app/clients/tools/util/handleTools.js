@@ -1,10 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const {
-  EnvVar,
-  Calculator,
-  createSearchTool,
-  createCodeExecutionTool,
-} = require('@librechat/agents');
+const { Calculator, createSearchTool, createCodeExecutionTool } = require('@librechat/agents');
 const {
   checkAccess,
   toolkitParent,
@@ -254,6 +249,15 @@ const loadTools = async ({
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
+  /**
+   * @type {import('@librechat/agents').CodeEnvFile[] | undefined}
+   * Captured by the `execute_code` factory when files are primed. Surfaced
+   * out of `loadTools` so client.js can seed `Graph.sessions[EXECUTE_CODE]`
+   * before run start — without that seed, the first `execute_code` /
+   * `bash_tool` call lands with empty `_injected_files` and the sandbox
+   * can't see the prior turn's generated artifacts.
+   */
+  let primedCodeFiles;
   const requestedMCPTools = {};
 
   /** Resolve config-source servers for the current user/tenant context */
@@ -265,28 +269,17 @@ const loadTools = async ({
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
       requestedTools[tool] = async () => {
-        const authValues = await loadAuthValues({
-          userId: user,
-          authFields: [EnvVar.CODE_API_KEY],
+        const { files, toolContext } = await primeCodeFiles({
+          ...options,
+          agentId: agent?.id,
         });
-        const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-        const { files, toolContext } = await primeCodeFiles(
-          {
-            ...options,
-            agentId: agent?.id,
-          },
-          codeApiKey,
-        );
         if (toolContext) {
           toolContextMap[tool] = toolContext;
         }
-        const CodeExecutionTool = createCodeExecutionTool({
-          user_id: user,
-          files,
-          ...authValues,
-        });
-        CodeExecutionTool.apiKey = codeApiKey;
-        return CodeExecutionTool;
+        if (files?.length) {
+          primedCodeFiles = files;
+        }
+        return createCodeExecutionTool({ user_id: user, files });
       };
       continue;
     } else if (tool === Tools.file_search) {
@@ -493,7 +486,7 @@ const loadTools = async ({
     }
   }
   loadedTools.push(...(await Promise.all(mcpToolPromises)).flatMap((plugin) => plugin || []));
-  return { loadedTools, toolContextMap };
+  return { loadedTools, toolContextMap, primedCodeFiles };
 };
 
 module.exports = {

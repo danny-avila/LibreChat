@@ -1,5 +1,6 @@
 import {
   fixSubgraphTitleContrast,
+  sanitizeMermaidSvg,
   artifactFlowchartConfig,
   inlineFlowchartConfig,
   getMermaidFiles,
@@ -167,6 +168,89 @@ describe('mermaid config', () => {
       const style = svg.querySelector('text')!.getAttribute('style')!;
       expect(style).not.toContain(';;');
       expect(style).toContain('fill: #1a1a1a');
+    });
+  });
+
+  describe('sanitizeMermaidSvg', () => {
+    const wrap = (inner: string) => `<svg xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+
+    it('produces valid XML parseable as image/svg+xml', () => {
+      const svg = wrap('<rect width="10" height="10"/>');
+      const result = sanitizeMermaidSvg(svg);
+      const doc = new DOMParser().parseFromString(result, 'image/svg+xml');
+      expect(doc.querySelector('parsererror')).toBeNull();
+    });
+
+    it('preserves foreignObject and its HTML children', () => {
+      const svg = wrap(
+        '<foreignObject width="100" height="50"><div xmlns="http://www.w3.org/1999/xhtml"><p>Hello</p></div></foreignObject>',
+      );
+      const result = sanitizeMermaidSvg(svg);
+      expect(result).toContain('<foreignObject');
+      expect(result).toContain('<p>Hello</p>');
+    });
+
+    it('serializes <br> as self-closing <br /> for XML compatibility', () => {
+      const svg = wrap(
+        '<foreignObject width="100" height="50"><div xmlns="http://www.w3.org/1999/xhtml"><p>Line1<br/>Line2</p></div></foreignObject>',
+      );
+      const result = sanitizeMermaidSvg(svg);
+      expect(result).toMatch(/<br\s*\/>/);
+      expect(result).not.toMatch(/<br\s*>/);
+    });
+
+    it('retains xmlns="http://www.w3.org/2000/svg" on the root svg element', () => {
+      const svg = wrap('<rect width="10" height="10"/>');
+      const result = sanitizeMermaidSvg(svg);
+      expect(result).toContain('xmlns="http://www.w3.org/2000/svg"');
+    });
+
+    it('strips script tags from SVG', () => {
+      const svg = wrap('<script>alert("xss")</script><rect width="10" height="10"/>');
+      const result = sanitizeMermaidSvg(svg);
+      expect(result).not.toContain('<script');
+      expect(result).not.toContain('alert');
+    });
+
+    it('strips event handler attributes', () => {
+      const svg = wrap('<rect width="10" height="10" onclick="alert(1)"/>');
+      const result = sanitizeMermaidSvg(svg);
+      expect(result).not.toContain('onclick');
+    });
+
+    it('strips script tags inside foreignObject HTML', () => {
+      const svg = wrap(
+        '<foreignObject width="100" height="50"><div xmlns="http://www.w3.org/1999/xhtml"><script>alert("xss")</script><p>Safe</p></div></foreignObject>',
+      );
+      const result = sanitizeMermaidSvg(svg);
+      expect(result).not.toContain('<script');
+      expect(result).toContain('Safe');
+    });
+
+    it('strips javascript: URLs in foreignObject HTML', () => {
+      const svg = wrap(
+        '<foreignObject width="100" height="50"><div xmlns="http://www.w3.org/1999/xhtml"><a href="javascript:alert(1)">click</a></div></foreignObject>',
+      );
+      const result = sanitizeMermaidSvg(svg);
+      expect(result).not.toContain('javascript:');
+    });
+
+    it('preserves mermaid-specific attributes on SVG elements', () => {
+      const svg = wrap('<text dominant-baseline="middle" text-anchor="start">label</text>');
+      const result = sanitizeMermaidSvg(svg);
+      expect(result).toContain('dominant-baseline');
+      expect(result).toContain('text-anchor');
+    });
+
+    it('preserves styled span and class names inside foreignObject', () => {
+      const svg = wrap(
+        '<foreignObject width="150" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell;"><span class="nodeLabel"><p>Node text<br/>second line</p></span></div></foreignObject>',
+      );
+      const result = sanitizeMermaidSvg(svg);
+      expect(result).toContain('nodeLabel');
+      expect(result).toContain('Node text');
+      expect(result).toContain('second line');
+      expect(result).toMatch(/<br\s*\/>/);
     });
   });
 });

@@ -7,15 +7,20 @@ const {
   ResourceType,
   PermissionBits,
   hasPermissions,
+  AgentCapabilities,
 } = require('librechat-data-provider');
 const {
   createRun,
   buildToolSet,
+  loadSkillStates,
+  resolveAgentScopedSkillIds,
   createSafeUser,
   initializeAgent,
   getBalanceConfig,
   recordCollectedUsage,
   getTransactionsConfig,
+  extractManualSkills,
+  injectSkillPrimes,
   createToolExecuteHandler,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
@@ -49,6 +54,11 @@ const {
   findAccessibleResources,
   getEffectivePermissions,
 } = require('~/server/services/PermissionService');
+const {
+  getSkillToolDeps,
+  enrichWithSkillConfigurable,
+  buildSkillPrimedIdsByName,
+} = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
@@ -270,6 +280,7 @@ function convertMessagesToOutputItems(messages) {
  * @param {import('express').Response} res
  */
 const createResponse = async (req, res) => {
+  const appConfig = req.config;
   const requestStartTime = Date.now();
 
   // Validate request
@@ -281,7 +292,7 @@ const createResponse = async (req, res) => {
   const request = validation.request;
   const agentId = request.model;
   const isStreaming = request.stream === true;
-  const summarizationConfig = req.config?.summarization;
+  const summarizationConfig = appConfig?.summarization;
 
   // Look up the agent
   const agent = await db.getAgent({ id: agentId });
@@ -334,7 +345,7 @@ const createResponse = async (req, res) => {
 
     // Build allowed providers set
     const allowedProviders = new Set(
-      req.config?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
     );
 
     // Create tool loader
@@ -362,7 +373,33 @@ const createResponse = async (req, res) => {
       getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+      listSkillsByAccess: db.listSkillsByAccess,
+      listAlwaysApplySkills: db.listAlwaysApplySkills,
+      getSkillByName: db.getSkillByName,
     };
+
+    const enabledCapabilities = new Set(
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities,
+    );
+    const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
+    const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
+    const accessibleSkillIds = skillsCapabilityEnabled
+      ? await findAccessibleResources({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.SKILL,
+          requiredPermissions: PermissionBits.VIEW,
+        })
+      : [];
+
+    const { skillStates, defaultActiveOnShare } = await loadSkillStates({
+      userId: req.user.id,
+      appConfig,
+      getUserById: db.getUserById,
+      accessibleSkillIds,
+    });
+
+    const manualSkills = extractManualSkills(req.body);
 
     const primaryConfig = await initializeAgent(
       {
@@ -376,6 +413,16 @@ const createResponse = async (req, res) => {
         endpointOption,
         allowedProviders,
         isInitialAgent: true,
+        accessibleSkillIds: resolveAgentScopedSkillIds({
+          agent,
+          accessibleSkillIds,
+          skillsCapabilityEnabled,
+          ephemeralSkillsToggle,
+        }),
+        codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+        skillStates,
+        defaultActiveOnShare,
+        manualSkills,
       },
       dbMethods,
     );
@@ -399,6 +446,7 @@ const createResponse = async (req, res) => {
       userMCPAuthMap: primaryConfig.userMCPAuthMap,
       tool_resources: primaryConfig.tool_resources,
       actionsEnabled: primaryConfig.actionsEnabled,
+      codeEnvAvailable: primaryConfig.codeEnvAvailable,
     });
 
     // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
@@ -428,6 +476,8 @@ const createResponse = async (req, res) => {
           // sub-agent must clear the same sharing boundary, not the looser
           // in-app AGENT one.
           resourceType: ResourceType.REMOTE_AGENT,
+          /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
+          codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         },
         {
           getAgent: db.getAgent,
@@ -454,6 +504,7 @@ const createResponse = async (req, res) => {
               userMCPAuthMap: config.userMCPAuthMap,
               tool_resources: config.tool_resources,
               actionsEnabled: config.actionsEnabled,
+              codeEnvAvailable: config.codeEnvAvailable,
             });
           },
           initializeAgent,
@@ -485,11 +536,55 @@ const createResponse = async (req, res) => {
     const allMessages = [...previousMessages, ...inputMessages];
 
     const toolSet = buildToolSet(primaryConfig);
-    const {
-      messages: formattedMessages,
-      indexTokenCountMap,
-      summary: initialSummary,
-    } = formatAgentMessages(allMessages, {}, toolSet);
+    const formatted = formatAgentMessages(allMessages, {}, toolSet);
+    const formattedMessages = formatted.messages;
+    const initialSummary = formatted.summary;
+    let indexTokenCountMap = formatted.indexTokenCountMap;
+
+    /**
+     * Inject manual + always-apply skill primes so the model sees SKILL.md
+     * bodies for this turn — parity with AgentClient's chat path. The
+     * Responses API uses its own response-builder shape, so LibreChat-
+     * style card SSE events don't apply; only the message-context part
+     * carries over.
+     */
+    const manualSkillPrimes = primaryConfig.manualSkillPrimes;
+    const alwaysApplySkillPrimes = primaryConfig.alwaysApplySkillPrimes;
+    if (
+      (manualSkillPrimes && manualSkillPrimes.length > 0) ||
+      (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0)
+    ) {
+      const primeResult = injectSkillPrimes({
+        initialMessages: formattedMessages,
+        indexTokenCountMap,
+        manualSkillPrimes,
+        alwaysApplySkillPrimes,
+      });
+      indexTokenCountMap = primeResult.indexTokenCountMap;
+      /* Surface the cap-driven always-apply truncation at the controller
+         layer too — `injectSkillPrimes` already logs internally, but the
+         controller-level warn includes endpoint context so operators can
+         tell at a glance which path hit the cap. Mirrors AgentClient's
+         warn in `client.js`. */
+      if (primeResult.alwaysApplyDropped > 0) {
+        logger.warn(
+          `[Responses API] Dropped ${primeResult.alwaysApplyDropped} always-apply prime(s) to stay within MAX_PRIMED_SKILLS_PER_TURN.`,
+        );
+      }
+    }
+
+    /* Stable for the turn: the prime lists are fixed once
+       `initializeAgent` resolves. Hoisted here so both the streaming
+       and non-streaming `loadTools` closures below reuse it without
+       recomputing per tool execution. `codeEnvAvailable` is read
+       per-agent from the stored tool context (admin cap AND that
+       agent's `tools` list includes `execute_code`) — a skills-only
+       agent never gains sandbox access even if the admin enabled the
+       capability globally. */
+    const skillPrimedIdsByName = buildSkillPrimedIdsByName(
+      manualSkillPrimes,
+      alwaysApplySkillPrimes,
+    );
 
     // Create tracker for streaming or aggregator for non-streaming
     const tracker = actuallyStreaming ? createResponseTracker() : null;
@@ -533,7 +628,7 @@ const createResponse = async (req, res) => {
         loadTools: async (toolNames, agentId) => {
           const ctx =
             agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
-          return loadToolsForExecution({
+          const result = await loadToolsForExecution({
             req,
             res,
             toolNames,
@@ -544,8 +639,16 @@ const createResponse = async (req, res) => {
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
           });
+          return enrichWithSkillConfigurable(
+            result,
+            req,
+            primaryConfig.accessibleSkillIds,
+            ctx.codeEnvAvailable === true,
+            skillPrimedIdsByName,
+          );
         },
         toolEndCallback,
+        ...getSkillToolDeps(),
       };
 
       // Combine handlers
@@ -588,7 +691,7 @@ const createResponse = async (req, res) => {
         initialSummary,
         runId: responseId,
         summarizationConfig,
-        appConfig: req.config,
+        appConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
@@ -629,8 +732,8 @@ const createResponse = async (req, res) => {
       });
 
       // Record token usage against balance
-      const balanceConfig = getBalanceConfig(req.config);
-      const transactionsConfig = getTransactionsConfig(req.config);
+      const balanceConfig = getBalanceConfig(appConfig);
+      const transactionsConfig = getTransactionsConfig(appConfig);
       recordCollectedUsage(
         {
           spendTokens: db.spendTokens,
@@ -701,7 +804,7 @@ const createResponse = async (req, res) => {
         loadTools: async (toolNames, agentId) => {
           const ctx =
             agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
-          return loadToolsForExecution({
+          const result = await loadToolsForExecution({
             req,
             res,
             toolNames,
@@ -712,8 +815,16 @@ const createResponse = async (req, res) => {
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
           });
+          return enrichWithSkillConfigurable(
+            result,
+            req,
+            primaryConfig.accessibleSkillIds,
+            ctx.codeEnvAvailable === true,
+            skillPrimedIdsByName,
+          );
         },
         toolEndCallback,
+        ...getSkillToolDeps(),
       };
 
       const handlers = {
@@ -754,7 +865,7 @@ const createResponse = async (req, res) => {
         initialSummary,
         runId: responseId,
         summarizationConfig,
-        appConfig: req.config,
+        appConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
@@ -794,8 +905,8 @@ const createResponse = async (req, res) => {
       });
 
       // Record token usage against balance
-      const balanceConfig = getBalanceConfig(req.config);
-      const transactionsConfig = getTransactionsConfig(req.config);
+      const balanceConfig = getBalanceConfig(appConfig);
+      const transactionsConfig = getTransactionsConfig(appConfig);
       recordCollectedUsage(
         {
           spendTokens: db.spendTokens,

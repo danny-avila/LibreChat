@@ -2,11 +2,11 @@ const { logger } = require('@librechat/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@langchain/core/tools');
 const {
   sleep,
-  EnvVar,
   StepTypes,
   GraphEvents,
   createToolSearch,
   Constants: AgentConstants,
+  createBashExecutionTool,
   createProgrammaticToolCallingTool,
 } = require('@librechat/agents');
 const {
@@ -59,7 +59,6 @@ const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileS
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
-const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { resolveConfigServers } = require('~/server/services/MCP');
 const { recordUsage } = require('~/server/services/Threads');
@@ -714,7 +713,6 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     },
     {
       isBuiltInTool,
-      loadAuthValues,
       getOrFetchMCPServerTools,
       getActionToolDefinitions,
     },
@@ -769,7 +767,6 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         },
         {
           isBuiltInTool,
-          loadAuthValues,
           getOrFetchMCPServerTools,
           getActionToolDefinitions,
         },
@@ -790,22 +787,26 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     toolContextMap[Tools.web_search] = buildWebSearchContext();
   }
 
+  /**
+   * `files` carry the upload session_ids; we surface them so client.js can
+   * seed `Graph.sessions[EXECUTE_CODE]` before run start. Without that seed,
+   * the agents-side `ToolNode.getCodeSessionContext` returns undefined on
+   * call #1, `_injected_files` is never set on the tool call, and the
+   * sandbox can't see the prior turn's generated artifacts on first read.
+   */
+  let primedCodeFiles;
   if (hasExecuteCode && tool_resources) {
     try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: [EnvVar.CODE_API_KEY],
+      const { toolContext, files } = await primeCodeFiles({
+        req,
+        tool_resources,
+        agentId: agent.id,
       });
-      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-
-      if (codeApiKey) {
-        const { toolContext } = await primeCodeFiles(
-          { req, tool_resources, agentId: agent.id },
-          codeApiKey,
-        );
-        if (toolContext) {
-          toolContextMap[Tools.execute_code] = toolContext;
-        }
+      if (toolContext) {
+        toolContextMap[Tools.execute_code] = toolContext;
+      }
+      if (files?.length) {
+        primedCodeFiles = files;
       }
     } catch (error) {
       logger.error('[loadToolDefinitionsWrapper] Error priming code files:', error);
@@ -862,6 +863,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     toolDefinitions,
     hasDeferredTools,
     actionsEnabled,
+    primedCodeFiles,
   };
 }
 
@@ -960,7 +962,7 @@ async function loadAgentTools({
     });
   }
 
-  const { loadedTools, toolContextMap } = await loadTools({
+  const { loadedTools, toolContextMap, primedCodeFiles } = await loadTools({
     agent,
     signal,
     userMCPAuthMap,
@@ -991,7 +993,6 @@ async function loadAgentTools({
       agentId: agent.id,
       agentToolOptions: agent.tool_options,
       deferredToolsEnabled,
-      loadAuthValues,
     });
 
   const agentTools = [];
@@ -1050,6 +1051,7 @@ async function loadAgentTools({
       hasDeferredTools,
       actionsEnabled,
       tools: agentTools,
+      primedCodeFiles,
     };
   }
 
@@ -1066,6 +1068,7 @@ async function loadAgentTools({
       hasDeferredTools,
       actionsEnabled,
       tools: agentTools,
+      primedCodeFiles,
     };
   }
 
@@ -1189,6 +1192,7 @@ async function loadAgentTools({
     hasDeferredTools,
     actionsEnabled,
     tools: agentTools,
+    primedCodeFiles,
   };
 }
 
@@ -1252,26 +1256,33 @@ async function loadToolsForExecution({
   if (isPTC && toolRegistry) {
     configurable.toolRegistry = toolRegistry;
     try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: [EnvVar.CODE_API_KEY],
-      });
-      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-
-      if (codeApiKey) {
-        const ptcTool = createProgrammaticToolCallingTool({ apiKey: codeApiKey });
-        allLoadedTools.push(ptcTool);
-      } else {
-        logger.warn('[loadToolsForExecution] PTC requested but CODE_API_KEY not available');
-      }
+      /**
+       * PTC auth is handled by the agents library / sandbox service
+       * directly; LibreChat no longer threads a per-run credential.
+       */
+      const ptcTool = createProgrammaticToolCallingTool({});
+      allLoadedTools.push(ptcTool);
     } catch (error) {
       logger.error('[loadToolsForExecution] Error creating PTC tool:', error);
+    }
+  }
+
+  const isBashTool = toolNames.includes(AgentConstants.BASH_TOOL);
+  if (isBashTool) {
+    try {
+      const bashTool = createBashExecutionTool({});
+      allLoadedTools.push(bashTool);
+    } catch (error) {
+      logger.error('[loadToolsForExecution] Failed to create bash_tool', error);
     }
   }
 
   const specialToolNames = new Set([
     AgentConstants.TOOL_SEARCH,
     AgentConstants.PROGRAMMATIC_TOOL_CALLING,
+    AgentConstants.BASH_TOOL,
+    AgentConstants.SKILL_TOOL,
+    AgentConstants.READ_FILE,
   ]);
 
   let ptcOrchestratedToolNames = [];

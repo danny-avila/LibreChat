@@ -268,10 +268,16 @@ export abstract class UserConnectionManager {
           this.pendingConnections.delete(key);
         }
       }
-      // Ensure user activity timestamp is removed
-      this.userLastActivity.delete(userId);
       logger.info(`[MCP][User: ${userId}] All connections processed for disconnection.`);
     }
+    /**
+     * Always clear the activity timestamp, even when userMap was missing.
+     * `updateUserLastActivity` can be called before a connection is established
+     * (e.g. in MCPManager.callTool prior to getConnection); if that connection
+     * attempt fails, the activity entry would otherwise leak and trigger the
+     * idle check repeatedly for the same userId.
+     */
+    this.userLastActivity.delete(userId);
   }
 
   /** Check for and disconnect idle connections */

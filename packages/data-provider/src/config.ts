@@ -83,6 +83,7 @@ export const fileStrategiesSchema = z
     avatar: fileStorageSchema.optional(),
     image: fileStorageSchema.optional(),
     document: fileStorageSchema.optional(),
+    skills: fileStorageSchema.optional(),
   })
   .optional();
 
@@ -222,8 +223,10 @@ export enum AgentCapabilities {
   file_search = 'file_search',
   web_search = 'web_search',
   artifacts = 'artifacts',
+  subagents = 'subagents',
   actions = 'actions',
   context = 'context',
+  skills = 'skills',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -311,8 +314,10 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.file_search,
   AgentCapabilities.web_search,
   AgentCapabilities.artifacts,
+  AgentCapabilities.subagents,
   AgentCapabilities.actions,
   AgentCapabilities.context,
+  AgentCapabilities.skills,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -744,6 +749,18 @@ export const interfaceSchema = z
         public: z.boolean().optional(),
       })
       .optional(),
+    skills: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+          defaultActiveOnShare: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
     modelSelect: true,
@@ -788,6 +805,13 @@ export const interfaceSchema = z
       create: false,
       share: false,
       public: false,
+    },
+    skills: {
+      use: true,
+      create: true,
+      share: false,
+      public: false,
+      defaultActiveOnShare: false,
     },
   });
 
@@ -913,6 +937,7 @@ export enum ScraperProviders {
 export enum RerankerTypes {
   JINA = 'jina',
   COHERE = 'cohere',
+  NONE = 'none',
 }
 
 export enum SafeSearchTypes {
@@ -1903,7 +1928,12 @@ export enum Constants {
   EPHEMERAL_AGENT_ID = 'ephemeral',
   /** Programmatic Tool Calling tool name */
   PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_code',
+  /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
+  SUBAGENT = 'subagent',
 }
+
+/** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
+export const MAX_SUBAGENTS = 10;
 
 export enum LocalStorageKeys {
   /** Key for the admin defined App Title */
@@ -1948,6 +1978,8 @@ export enum LocalStorageKeys {
   LAST_FILE_SEARCH_TOGGLE_ = 'LAST_FILE_SEARCH_TOGGLE_',
   /** Last checked toggle for Artifacts per conversation ID */
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
+  /** Last checked toggle for Skills per conversation ID */
+  LAST_SKILLS_TOGGLE_ = 'LAST_SKILLS_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */

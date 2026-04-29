@@ -805,3 +805,270 @@ describe('custom-endpoint provider resolution', () => {
     expect(parameters.modelName).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Suite 8: subagentConfigs
+// ---------------------------------------------------------------------------
+describe('subagentConfigs', () => {
+  it('is undefined when subagents are not enabled', async () => {
+    const agents = await callAndCapture({});
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+
+  it('adds self-spawn when enabled and allowSelf defaults to true', async () => {
+    const agents = await callAndCapture({
+      agents: [makeAgent({ subagents: { enabled: true } })],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(Array.isArray(configs)).toBe(true);
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({ self: true, type: 'self' });
+  });
+
+  it('omits self-spawn when allowSelf is false', async () => {
+    const agents = await callAndCapture({
+      agents: [makeAgent({ subagents: { enabled: true, allowSelf: false } })],
+    });
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+
+  it('adds explicit subagent configs with agentInputs', async () => {
+    const child = makeAgent({
+      id: 'agent_child',
+      name: 'Researcher',
+      description: 'Deep web research',
+    });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({
+      type: 'agent_child',
+      name: 'Researcher',
+      description: 'Deep web research',
+    });
+    expect(configs[0].agentInputs).toBeDefined();
+    expect(configs[0].self).toBeUndefined();
+  });
+
+  it('combines self-spawn and explicit subagents when both enabled', async () => {
+    const child = makeAgent({ id: 'agent_child', name: 'Helper' });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(2);
+    expect(configs[0].self).toBe(true);
+    expect(configs[1].type).toBe('agent_child');
+  });
+
+  it('skips a child that points at the parent itself', async () => {
+    const self = makeAgent({ id: 'agent_1' });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_1'] },
+          subagentAgentConfigs: [self],
+        }),
+      ],
+    });
+    expect(agents[0].subagentConfigs).toBeUndefined();
+  });
+
+  it('does NOT leak the parent run `initialSummary` into an explicit child (Codex P1 regression)', async () => {
+    /**
+     * `buildAgentInput` is a shared factory that always stamps the parent
+     * run's `initialSummary` on the returned AgentInputs. When it's reused
+     * to build a subagent child's inputs, `buildSubagentConfigs` must clear
+     * that field — otherwise the child inherits unrelated conversation
+     * context, defeating the isolation contract (and burning extra tokens).
+     */
+    const summary = { text: 'parent conversation summary', tokenCount: 99 };
+    const child = makeAgent({ id: 'agent_child', name: 'Child' });
+    const agents = await callAndCapture({
+      initialSummary: summary,
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+
+    const parent = agents[0];
+    /** The parent itself keeps the summary — that's how it receives
+     *  cross-turn context. */
+    expect(parent.initialSummary).toEqual(summary);
+
+    const childConfig = (parent.subagentConfigs as Array<Record<string, unknown>>)[0];
+    const childInputs = childConfig.agentInputs as {
+      initialSummary?: unknown;
+      discoveredTools?: unknown;
+    };
+    expect(childInputs.initialSummary).toBeUndefined();
+    expect(childInputs.discoveredTools).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: toolOutputReferences gating
+// ---------------------------------------------------------------------------
+describe('toolOutputReferences gating', () => {
+  /**
+   * Captures the top-level `Run.create` config (not just agentInputs) so the
+   * test can assert presence/absence of the `toolOutputReferences` key.
+   */
+  async function callAndCaptureRunConfig(
+    overrides?: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const agents = [makeAgent(overrides)];
+    const signal = new AbortController().signal;
+
+    await createRun({
+      agents: agents as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    expect(createMock).toHaveBeenCalledTimes(1);
+    return createMock.mock.calls[0][0] as Record<string, unknown>;
+  }
+
+  it('passes toolOutputReferences when agent has codeEnvAvailable=true', async () => {
+    const callArgs = await callAndCaptureRunConfig({ codeEnvAvailable: true });
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+  });
+
+  it('omits toolOutputReferences when codeEnvAvailable is false', async () => {
+    const callArgs = await callAndCaptureRunConfig({ codeEnvAvailable: false });
+    expect(callArgs).not.toHaveProperty('toolOutputReferences');
+  });
+
+  it('omits toolOutputReferences when codeEnvAvailable is unset', async () => {
+    const callArgs = await callAndCaptureRunConfig();
+    expect(callArgs).not.toHaveProperty('toolOutputReferences');
+  });
+
+  it('enables toolOutputReferences if any agent in a multi-agent run has codeEnvAvailable=true', async () => {
+    const signal = new AbortController().signal;
+    await createRun({
+      agents: [
+        makeAgent({ id: 'agent_a', codeEnvAvailable: false }),
+        makeAgent({ id: 'agent_b', codeEnvAvailable: true }),
+      ] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+  });
+
+  it('enables toolOutputReferences when only a subagent has codeEnvAvailable=true', async () => {
+    /**
+     * Real scenario: a parent agent without `execute_code` spawns a
+     * subagent that does have it. The SDK's shared tool-output
+     * reference registry serves every ToolNode in the run, so the
+     * subagent's `bash_tool` benefits from the run-level flag — and
+     * without this gate looking at `subagentAgentConfigs`, the
+     * subagent's `{{tool<idx>turn<turn>}}` placeholders would pass
+     * through unsubstituted.
+     */
+    const signal = new AbortController().signal;
+    const subagent = makeAgent({ id: 'agent_child', codeEnvAvailable: true });
+    await createRun({
+      agents: [
+        makeAgent({
+          id: 'agent_parent',
+          codeEnvAvailable: false,
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [subagent],
+        }),
+      ] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+  });
+
+  it('enables toolOutputReferences when a transitively-nested subagent has codeEnvAvailable=true', async () => {
+    /**
+     * Multi-level delegation (parent → child → grandchild): only the
+     * grandchild has `codeEnvAvailable`. Verifies the recursion
+     * descends past one level of `subagentAgentConfigs`.
+     */
+    const signal = new AbortController().signal;
+    const grandchild = makeAgent({ id: 'agent_grandchild', codeEnvAvailable: true });
+    const child = makeAgent({
+      id: 'agent_child',
+      codeEnvAvailable: false,
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_grandchild'] },
+      subagentAgentConfigs: [grandchild],
+    });
+    await createRun({
+      agents: [
+        makeAgent({
+          id: 'agent_parent',
+          codeEnvAvailable: false,
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+  });
+
+  it('terminates and omits toolOutputReferences for a cyclic agent tree with no codeenv', async () => {
+    /**
+     * Cycle safety: `A → B → A`, neither has `codeEnvAvailable`. The
+     * `visited` set in `anyAgentHasCodeEnv` must short-circuit the
+     * recursion — without it this would stack-overflow before
+     * `Run.create` is reached. Mirrors the cycle-safety pattern
+     * `buildSubagentConfigs` already uses elsewhere in this module.
+     */
+    const signal = new AbortController().signal;
+    type CyclicAgent = ReturnType<typeof makeAgent> & {
+      subagentAgentConfigs?: ReturnType<typeof makeAgent>[];
+    };
+    const a = makeAgent({ id: 'agent_a', codeEnvAvailable: false }) as CyclicAgent;
+    const b = makeAgent({ id: 'agent_b', codeEnvAvailable: false }) as CyclicAgent;
+    a.subagentAgentConfigs = [b];
+    b.subagentAgentConfigs = [a];
+
+    await createRun({
+      agents: [a] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs).not.toHaveProperty('toolOutputReferences');
+  });
+});
