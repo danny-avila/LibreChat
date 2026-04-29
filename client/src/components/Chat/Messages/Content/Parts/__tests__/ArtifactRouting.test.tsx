@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
+import type { MutableSnapshot } from 'recoil';
 import type { TAttachment } from 'librechat-data-provider';
 import Attachment, { AttachmentGroup } from '../Attachment';
 import store from '~/store';
@@ -18,8 +19,8 @@ jest.mock('../LogLink', () => ({
 
 jest.mock('~/components/Chat/Input/Files/FileContainer', () => ({
   __esModule: true,
-  default: ({ file }: { file: { filename?: string } }) => (
-    <div data-testid="file-container">{file.filename ?? ''}</div>
+  default: ({ file, displayName }: { file: { filename?: string }; displayName?: string }) => (
+    <div data-testid="file-container">{displayName ?? file.filename ?? ''}</div>
   ),
 }));
 
@@ -56,7 +57,19 @@ const baseAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
     ...overrides,
   }) as TAttachment;
 
-const renderWith = (ui: React.ReactElement) => render(<RecoilRoot>{ui}</RecoilRoot>);
+/**
+ * Seeds `isSubmittingFamily(0) = streaming` so `ToolArtifactCard`'s
+ * mount-time focus effect (which is gated on streaming state) behaves
+ * the way each test expects. Default `streaming: true` matches the
+ * legacy SSE-arrival flow that the bulk of these tests exercise.
+ */
+const renderWith = (ui: React.ReactElement, opts: { streaming?: boolean } = {}) => {
+  const streaming = opts.streaming ?? true;
+  const initializeState = (snapshot: MutableSnapshot) => {
+    snapshot.set(store.isSubmittingFamily(0), streaming);
+  };
+  return render(<RecoilRoot initializeState={initializeState}>{ui}</RecoilRoot>);
+};
 
 interface ArtifactsSnapshot {
   visibility: boolean;
@@ -78,14 +91,18 @@ const StateProbe = ({ onSnapshot }: { onSnapshot: (snap: ArtifactsSnapshot) => v
   return null;
 };
 
-const renderWithProbe = (ui: React.ReactElement) => {
+const renderWithProbe = (ui: React.ReactElement, opts: { streaming?: boolean } = {}) => {
+  const streaming = opts.streaming ?? true;
+  const initializeState = (snap: MutableSnapshot) => {
+    snap.set(store.isSubmittingFamily(0), streaming);
+  };
   let snapshot: ArtifactsSnapshot = {
     visibility: false,
     currentArtifactId: null,
     artifactIds: [],
   };
   const utils = render(
-    <RecoilRoot>
+    <RecoilRoot initializeState={initializeState}>
       <StateProbe
         onSnapshot={(snap) => {
           snapshot = snap;
@@ -353,9 +370,267 @@ describe('ToolArtifactCard click behaviour', () => {
       expect.arrayContaining(['tool-artifact-older', 'tool-artifact-newer']),
     );
   });
+
+  it('does NOT auto-focus when the card mounts outside an active stream (history load)', () => {
+    // Reproduces "navigating to a previous conversation". Cards mount
+    // for already-completed turns; `isSubmitting` is false. The legacy
+    // behavior would auto-focus the latest artifact and re-open the
+    // panel — we don't want that.
+    const html = baseAttachment({
+      file_id: 'history-html',
+      filename: 'previous.html',
+      text: '<h1>prev</h1>',
+    } as Partial<TAttachment>);
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={html} />, {
+      streaming: false,
+    });
+    const snap = getSnapshot();
+    // Artifact still gets registered (so the panel can find it on click)…
+    expect(snap.artifactIds).toContain('tool-artifact-history-html');
+    // …but currentArtifactId stays null, which means
+    // `Presentation`'s render gate (`currentArtifactId != null`) keeps
+    // the panel closed.
+    expect(snap.currentArtifactId).toBeNull();
+  });
+
+  it('does NOT auto-open a streaming CODE artifact (test.py is click-to-open)', () => {
+    // Source-code artifacts are excluded from streaming auto-open even
+    // when isSubmitting=true. The agent often emits supporting `.py` /
+    // `.js` / `Dockerfile` / etc. helpers alongside a richer
+    // deliverable; the panel shouldn't hijack the viewport every time
+    // a script gets written. Click is the only path that surfaces a
+    // CODE artifact in the panel.
+    const py = baseAttachment({
+      file_id: 'helper-script',
+      filename: 'test.py',
+      text: 'print("hello")',
+    } as Partial<TAttachment>);
+    const initializeState = (snap: MutableSnapshot) => {
+      snap.set(store.isSubmittingFamily(0), true);
+    };
+    let snapshot: ArtifactsSnapshot = {
+      visibility: false,
+      currentArtifactId: null,
+      artifactIds: [],
+    };
+    render(
+      <RecoilRoot initializeState={initializeState}>
+        <StateProbe
+          onSnapshot={(snap) => {
+            snapshot = snap;
+          }}
+        />
+        <Attachment attachment={py} />
+      </RecoilRoot>,
+    );
+    // Artifact registered (so the panel can find it on click)…
+    expect(snapshot.artifactIds).toContain('tool-artifact-helper-script');
+    // …but currentArtifactId stays null and visibility is untouched.
+    expect(snapshot.currentArtifactId).toBeNull();
+  });
+
+  it('forces panel visibility on streaming mount even if visibility was previously false', () => {
+    // Repro: user closed the panel earlier in the session
+    // (`artifactsVisibility = false`), then a new tool artifact
+    // arrives via SSE. The old behavior set `currentArtifactId` but
+    // left visibility alone, so the chip showed "click to close" while
+    // the panel stayed hidden. Streaming arrivals must re-open the
+    // panel — that's the explicit "auto-open when first created" rule.
+    const html = baseAttachment({
+      file_id: 'fresh-stream',
+      filename: 'fresh.html',
+      text: '<h1>fresh</h1>',
+    } as Partial<TAttachment>);
+    const initializeState = (snap: MutableSnapshot) => {
+      snap.set(store.isSubmittingFamily(0), true);
+      snap.set(store.artifactsVisibility, false);
+    };
+    let snapshot: ArtifactsSnapshot = {
+      visibility: false,
+      currentArtifactId: null,
+      artifactIds: [],
+    };
+    render(
+      <RecoilRoot initializeState={initializeState}>
+        <StateProbe
+          onSnapshot={(snap) => {
+            snapshot = snap;
+          }}
+        />
+        <Attachment attachment={html} />
+      </RecoilRoot>,
+    );
+    expect(snapshot.visibility).toBe(true);
+    expect(snapshot.currentArtifactId).toBe('tool-artifact-fresh-stream');
+  });
+
+  it('does NOT force visibility on history mount (closed panel stays closed)', () => {
+    // The flip-side of the prior test: a card mounted from history
+    // (isSubmitting=false) must not toggle visibility, so a user who
+    // explicitly closed the panel keeps it closed when revisiting.
+    const html = baseAttachment({
+      file_id: 'history-no-vis',
+      filename: 'historic.html',
+      text: '<h1>old</h1>',
+    } as Partial<TAttachment>);
+    const initializeState = (snap: MutableSnapshot) => {
+      snap.set(store.isSubmittingFamily(0), false);
+      snap.set(store.artifactsVisibility, false);
+    };
+    let snapshot: ArtifactsSnapshot = {
+      visibility: false,
+      currentArtifactId: null,
+      artifactIds: [],
+    };
+    render(
+      <RecoilRoot initializeState={initializeState}>
+        <StateProbe
+          onSnapshot={(snap) => {
+            snapshot = snap;
+          }}
+        />
+        <Attachment attachment={html} />
+      </RecoilRoot>,
+    );
+    expect(snapshot.visibility).toBe(false);
+    expect(snapshot.currentArtifactId).toBeNull();
+  });
+
+  it('clicking a CODE artifact focuses it even though it skipped auto-open', () => {
+    // Counterpart to the streaming-CODE no-auto-open test: confirm the
+    // click path still surfaces a `.py` chip in the panel. Even on a
+    // streaming mount the user can click to open; the carve-out only
+    // affects the *automatic* open, not the explicit one.
+    const py = baseAttachment({
+      file_id: 'click-py',
+      filename: 'helper.py',
+      text: 'print("hi")',
+    } as Partial<TAttachment>);
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={py} />);
+    expect(getSnapshot().currentArtifactId).toBeNull();
+    const openButton = screen.getByRole('button', { name: /com_ui_artifact_click/i });
+    act(() => {
+      fireEvent.click(openButton);
+    });
+    expect(getSnapshot().currentArtifactId).toBe('tool-artifact-click-py');
+    expect(getSnapshot().visibility).toBe(true);
+  });
+
+  it('clicking a history-loaded card focuses it (user-initiated open)', () => {
+    // Even though the mount-time auto-focus is suppressed for history,
+    // the click handler is unconditional — users explicitly opening a
+    // chip must always work.
+    const html = baseAttachment({
+      file_id: 'history-click',
+      filename: 'previous.html',
+      text: '<h1>prev</h1>',
+    } as Partial<TAttachment>);
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={html} />, {
+      streaming: false,
+    });
+    expect(getSnapshot().currentArtifactId).toBeNull();
+    /** Pin to the panel-open button by name — the download button has no
+     * `aria-pressed`, but `getByRole('button', { pressed: false })`
+     * relies on DOM order, which silently shifts if the chip's button
+     * order changes. */
+    const openButton = screen.getByRole('button', { name: /com_ui_artifact_click/i });
+    act(() => {
+      fireEvent.click(openButton);
+    });
+    expect(getSnapshot().currentArtifactId).toBe('tool-artifact-history-click');
+    expect(getSnapshot().visibility).toBe(true);
+  });
 });
 
 describe('AttachmentGroup routing', () => {
+  it('filters internal sandbox `.dirkeep` placeholders out of every bucket', () => {
+    // The bash executor's empty-folder marker (`_.dirkeep-<hash>`,
+    // `bytes: 0`) is implementation detail; users shouldn't see it as
+    // its own chip. The filter runs ahead of all routing so the
+    // placeholder doesn't leak into image / panel / text / file buckets.
+    const realFile = baseAttachment({
+      file_id: 'real',
+      filename: 'test_folder/test_file.txt',
+      text: 'hello',
+      bytes: 5,
+    } as Partial<TAttachment>);
+    const dirkeep = baseAttachment({
+      file_id: 'dk',
+      filename: 'test_folder/_.dirkeep-88b30b',
+      bytes: 0,
+    } as Partial<TAttachment>);
+    const { container } = renderWith(<AttachmentGroup attachments={[dirkeep, realFile]} />);
+    // No chip rendered for the dirkeep placeholder.
+    expect(screen.queryByText(/dirkeep/)).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/dirkeep/);
+    // Real file still renders.
+    expect(container.textContent).toMatch(/test_file\.txt/);
+  });
+
+  it('sinks empty files below non-empty siblings within the file bucket', () => {
+    // Without the salience sort, an early-arriving 0-byte file would
+    // render first and visually upstage the real artifact below it.
+    // Both files route to the `fileAttachments` bucket (no text, no
+    // panel-eligible extension) so the test exercises within-bucket
+    // ordering — sort is per-bucket, not cross-bucket.
+    const empty = baseAttachment({
+      file_id: 'empty-zip',
+      filename: 'placeholder.zip',
+      type: 'application/zip',
+      bytes: 0,
+    } as Partial<TAttachment>);
+    const real = baseAttachment({
+      file_id: 'real-zip',
+      filename: 'archive.zip',
+      type: 'application/zip',
+      bytes: 1024,
+    } as Partial<TAttachment>);
+    const { container } = renderWith(<AttachmentGroup attachments={[empty, real]} />);
+    const chips = Array.from(container.querySelectorAll('[data-testid="file-container"]'));
+    expect(chips.length).toBe(2);
+    const filenames = chips.map((c) => c.textContent ?? '');
+    // Real chip must render before the empty placeholder.
+    expect(filenames[0]).toMatch(/archive\.zip/);
+    expect(filenames[1]).toMatch(/placeholder\.zip/);
+  });
+
+  it('passes a non-dotfile filename through to FileContainer unchanged', () => {
+    /** `displayFilename` deliberately leaves non-dotfile names alone —
+     * the `-<6 hex>` tail on `archive-deadbe.zip` could be either a
+     * user-named hash artifact OR a sanitization disambiguator, and
+     * collapsing both onto `archive.zip` would silently merge distinct
+     * files in the chip. Only the leading-`_.` dotfile shape has a
+     * structural discriminator strong enough to safely strip; everything
+     * else passes through verbatim. */
+    const sandboxFile = baseAttachment({
+      file_id: 'sandbox-zip',
+      filename: 'archive-deadbe.zip',
+      type: 'application/zip',
+      bytes: 1024,
+    } as Partial<TAttachment>);
+    const { container } = renderWith(<AttachmentGroup attachments={[sandboxFile]} />);
+    const chip = container.querySelector('[data-testid="file-container"]');
+    expect(chip?.textContent).toBe('archive-deadbe.zip');
+  });
+
+  it('strips the suffix and restores the dot for a sandbox dotfile rendered through FileContainer', () => {
+    /** Counterpart: the dotfile shape `_.config-<hash>.zip` IS recoverable
+     * because the leading `_.` is the structural fingerprint. Confirm
+     * the artifact path's `displayName` flows through `FileContainer`
+     * for this case. Uses `.zip` (no panel-artifact extension mapping)
+     * so the attachment lands in the plain-file bucket rather than the
+     * PLAIN_TEXT panel-artifact bucket. */
+    const sandboxDotfile = baseAttachment({
+      file_id: 'sandbox-config',
+      filename: '_.config-abcdef.zip',
+      type: 'application/zip',
+      bytes: 12,
+    } as Partial<TAttachment>);
+    const { container } = renderWith(<AttachmentGroup attachments={[sandboxDotfile]} />);
+    const chip = container.querySelector('[data-testid="file-container"]');
+    expect(chip?.textContent).toBe('.config.zip');
+  });
+
   it('renders separate buckets for panel artifacts, mermaid, text, and plain files', () => {
     const attachments = [
       baseAttachment({
