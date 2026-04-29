@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { v4 } from 'uuid';
+import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -181,6 +182,7 @@ export default function useEventHandlers({
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
+  const autoScrollDuringGeneration = useRecoilValue(store.autoScrollDuringGeneration);
   const navigate = useNavigate();
   const location = useLocation();
 
