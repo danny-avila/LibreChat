@@ -125,4 +125,48 @@ describe('cleanCodeToolOutput', () => {
       'stdout:\nresult\n\n\nNote: Files from previous executions are automatically available and can be modified.';
     expect(cleanCodeToolOutput(input)).toBe('stdout:\nresult');
   });
+
+  it('does NOT mutate stdout that legitimately contains an annotation phrase outside a file-list section', () => {
+    /** Codex regression: the previous global `.replace` would strip
+     * any line ending in one of the three annotation phrases — even
+     * if that line was the user's own stdout. A script doing
+     * `echo "foo | File is already downloaded by the user"` had its
+     * output silently mangled before being fed back into model
+     * context. With section-scoped stripping, the script's stdout
+     * passes through unchanged because there's no `Generated files:`
+     * or `Available files (...)` header above it. */
+    const input = [
+      'stdout:',
+      'foo | File is already downloaded by the user',
+      'bar | Image is already displayed to the user',
+      'baz | Available as an input — already known to the user',
+    ].join('\n');
+    const output = cleanCodeToolOutput(input);
+    expect(output).toMatch(/foo \| File is already downloaded by the user/);
+    expect(output).toMatch(/bar \| Image is already displayed to the user/);
+    expect(output).toMatch(/baz \| Available as an input — already known to the user/);
+  });
+
+  it('strips annotations inside a file-list section but preserves identical phrases in stdout above it', () => {
+    /** Mixed case: the same execution's stdout coincidentally echoes
+     * one of the annotation phrases AND a file gets generated. The
+     * stdout phrase must survive; the file-listing annotation must
+     * still get stripped. */
+    const input = [
+      'stdout:',
+      'echo output: foo | File is already downloaded by the user',
+      '',
+      'Generated files:',
+      '- /mnt/data/foo.txt | File is already downloaded by the user',
+    ].join('\n');
+    const output = cleanCodeToolOutput(input);
+    // Stdout line preserved verbatim.
+    expect(output).toMatch(/echo output: foo \| File is already downloaded by the user/);
+    // File-listing line had its annotation stripped.
+    expect(output).toMatch(/- \/mnt\/data\/foo\.txt$/m);
+    // The annotation phrase appears EXACTLY once now (only in stdout,
+    // not on the file-listing line).
+    const phraseCount = (output.match(/File is already downloaded by the user/g) ?? []).length;
+    expect(phraseCount).toBe(1);
+  });
 });
