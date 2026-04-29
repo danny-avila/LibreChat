@@ -393,6 +393,42 @@ describe('ToolArtifactCard click behaviour', () => {
     expect(snap.currentArtifactId).toBeNull();
   });
 
+  it('does NOT auto-open a streaming CODE artifact (test.py is click-to-open)', () => {
+    // Source-code artifacts are excluded from streaming auto-open even
+    // when isSubmitting=true. The agent often emits supporting `.py` /
+    // `.js` / `Dockerfile` / etc. helpers alongside a richer
+    // deliverable; the panel shouldn't hijack the viewport every time
+    // a script gets written. Click is the only path that surfaces a
+    // CODE artifact in the panel.
+    const py = baseAttachment({
+      file_id: 'helper-script',
+      filename: 'test.py',
+      text: 'print("hello")',
+    } as Partial<TAttachment>);
+    const initializeState = (snap: MutableSnapshot) => {
+      snap.set(store.isSubmittingFamily(0), true);
+    };
+    let snapshot: ArtifactsSnapshot = {
+      visibility: false,
+      currentArtifactId: null,
+      artifactIds: [],
+    };
+    render(
+      <RecoilRoot initializeState={initializeState}>
+        <StateProbe
+          onSnapshot={(snap) => {
+            snapshot = snap;
+          }}
+        />
+        <Attachment attachment={py} />
+      </RecoilRoot>,
+    );
+    // Artifact registered (so the panel can find it on click)…
+    expect(snapshot.artifactIds).toContain('tool-artifact-helper-script');
+    // …but currentArtifactId stays null and visibility is untouched.
+    expect(snapshot.currentArtifactId).toBeNull();
+  });
+
   it('forces panel visibility on streaming mount even if visibility was previously false', () => {
     // Repro: user closed the panel earlier in the session
     // (`artifactsVisibility = false`), then a new tool artifact
@@ -458,6 +494,26 @@ describe('ToolArtifactCard click behaviour', () => {
     );
     expect(snapshot.visibility).toBe(false);
     expect(snapshot.currentArtifactId).toBeNull();
+  });
+
+  it('clicking a CODE artifact focuses it even though it skipped auto-open', () => {
+    // Counterpart to the streaming-CODE no-auto-open test: confirm the
+    // click path still surfaces a `.py` chip in the panel. Even on a
+    // streaming mount the user can click to open; the carve-out only
+    // affects the *automatic* open, not the explicit one.
+    const py = baseAttachment({
+      file_id: 'click-py',
+      filename: 'helper.py',
+      text: 'print("hi")',
+    } as Partial<TAttachment>);
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={py} />);
+    expect(getSnapshot().currentArtifactId).toBeNull();
+    const openButton = screen.getByRole('button', { name: /com_ui_artifact_click/i });
+    act(() => {
+      fireEvent.click(openButton);
+    });
+    expect(getSnapshot().currentArtifactId).toBe('tool-artifact-click-py');
+    expect(getSnapshot().visibility).toBe(true);
   });
 
   it('clicking a history-loaded card focuses it (user-initiated open)', () => {

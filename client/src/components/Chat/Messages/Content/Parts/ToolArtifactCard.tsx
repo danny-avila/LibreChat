@@ -10,6 +10,7 @@ import {
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
+import { TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import { displayFilename } from './attachmentTypes';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
@@ -48,20 +49,23 @@ interface ToolArtifactCardProps {
  *     Without that guard, both cards would observe each other's write
  *     and trade overwrites in a loop.
  *
- *  3. **Focus + open on mount** (deps: artifact.id) — gated on
- *     `isSubmitting` captured at first render via a ref. A card mounted
- *     *during* streaming means a new artifact arrived from SSE; we
- *     steal panel focus AND force `artifactsVisibility = true` so the
- *     panel actually opens (matching the legacy SSE auto-open UX).
- *     Toggling visibility on every streaming arrival means a previously
- *     closed panel re-opens for a fresh artifact — that's the explicit
- *     "auto-open when first created" behavior. A card mounted while
- *     `isSubmitting === false` is part of conversation history (page
- *     load, navigating back to an old conversation) and must not steal
- *     focus or open the panel — `Presentation`'s render condition gates
- *     on `currentArtifactId != null`, so leaving both alone keeps the
- *     panel closed on history load. Click-to-open path (`handleOpen`)
- *     remains unchanged so users can manually open historical chips.
+ *  3. **Focus + open on mount** (deps: artifact.id, artifact.type) —
+ *     gated on `isSubmitting` captured at first render via a ref AND
+ *     on `artifact.type !== CODE`. A card mounted *during* streaming
+ *     for a rich-preview bucket (HTML, React, Markdown, plain text)
+ *     steals panel focus and forces `artifactsVisibility = true` so
+ *     the panel auto-opens — matching the legacy SSE auto-open UX.
+ *     A card mounted while `isSubmitting === false` is part of
+ *     conversation history (page load, back-navigation) and must not
+ *     steal focus — `Presentation`'s render condition gates on
+ *     `currentArtifactId != null`, so leaving both alone keeps the
+ *     panel closed on history load. The CODE bucket (`.py`, `.js`,
+ *     `Dockerfile`, …) is click-to-open *even on streaming*: source
+ *     files are typically supporting scripts the agent emits alongside
+ *     a richer deliverable, and shoving the panel in front of the
+ *     user every time a helper script gets written is disruptive.
+ *     Click-to-open via `handleOpen` works for every bucket regardless
+ *     of context.
  */
 const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) => {
   const localize = useLocalize();
@@ -137,6 +141,16 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       // visibility alone so the side panel doesn't auto-open on navigation.
       return;
     }
+    if (artifact.type === TOOL_ARTIFACT_TYPES.CODE) {
+      // Source-code artifacts (`.py`, `.js`, `.cpp`, `Dockerfile`, …) are
+      // click-to-open only. They're typically supporting scripts the
+      // agent emits alongside a richer deliverable; auto-opening them
+      // would shove the panel in front of the user every time a tool
+      // call writes a helper file. The rich-preview buckets (HTML,
+      // React, Markdown, plain text) keep the legacy auto-open UX so
+      // an HTML deliverable still surfaces immediately.
+      return;
+    }
     // Streaming arrival: focus the new artifact AND force the panel
     // visible. Without `setVisible(true)`, a session where the user had
     // previously closed the panel (visibility=false) would surface the
@@ -144,7 +158,7 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
     // — `Presentation` gates rendering on visibility.
     setCurrentArtifactId(artifact.id);
     setVisible(true);
-  }, [artifact.id, setCurrentArtifactId, setVisible]);
+  }, [artifact.id, artifact.type, setCurrentArtifactId, setVisible]);
 
   const file = attachment as TFile & TAttachmentMetadata;
   const { handleDownload } = useAttachmentLink({
