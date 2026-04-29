@@ -52,9 +52,6 @@
 name: GitNexus Deploy
 
 on:
-  workflow_run:
-    workflows: ['GitNexus Index']
-    types: [completed]
   workflow_dispatch:
     inputs:
       pr_number:

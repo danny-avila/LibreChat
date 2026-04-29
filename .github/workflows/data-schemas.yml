@@ -1,11 +1,6 @@
 name: Publish `@librechat/data-schemas` to NPM
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'packages/data-schemas/package.json'
   workflow_dispatch:
     inputs:
       reason:

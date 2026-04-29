@@ -1,12 +1,6 @@
 name: GitNexus Index
 
 on:
-  push:
-    branches: [main, dev]
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.github/**']
-  pull_request:
-    branches: [main, dev]
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.github/**']
   workflow_dispatch:
     inputs:
       embeddings:

@@ -1,11 +1,6 @@
 name: Publish `librechat-data-provider` to NPM
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'packages/data-provider/package.json'
   workflow_dispatch:
     inputs:
       reason:

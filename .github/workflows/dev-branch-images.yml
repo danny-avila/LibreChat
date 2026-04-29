@@ -2,13 +2,6 @@ name: Docker Dev Branch Images Build
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - dev
-    paths:
-      - 'api/**'
-      - 'client/**'
-      - 'packages/**'
 
 jobs:
   build:

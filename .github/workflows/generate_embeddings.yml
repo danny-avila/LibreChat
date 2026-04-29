@@ -1,11 +1,6 @@
 name: 'generate_embeddings'
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'docs/**'
 
 jobs:
   generate:
