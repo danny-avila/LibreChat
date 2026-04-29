@@ -101,20 +101,14 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       const container = scrollableRef.current;
       const containerRect = container.getBoundingClientRect();
 
-      // Walk backwards from the end sentinel to find the last rendered message
-      // element. Avoids a full querySelectorAll scan and forced reflow on every tick.
-      let lastMessageEl: HTMLElement | null = null;
-      let candidate = messagesEndRef.current?.previousElementSibling;
-      while (candidate) {
-        if (
-          candidate instanceof HTMLElement &&
-          candidate.matches('.message-render[id]:not([id=""])')
-        ) {
-          lastMessageEl = candidate;
-          break;
-        }
-        candidate = candidate.previousElementSibling;
-      }
+      // Query the DOM for the last rendered message element rather than using
+      // messagesTree[last], because messagesTree is a nested tree where [last] is
+      // the root node, not the leaf currently being streamed.
+      const allMessageEls = container.querySelectorAll<HTMLElement>(
+        '.message-render[id]:not([id=""])',
+      );
+      const lastMessageEl =
+        allMessageEls.length > 0 ? allMessageEls[allMessageEls.length - 1] : null;
       const currentElementId = lastMessageEl?.id ?? null;
 
       if (trackedGenerationIdRef.current !== currentElementId) {
