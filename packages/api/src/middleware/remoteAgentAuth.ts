@@ -237,10 +237,14 @@ async function resolveUser(
   findUser: UserMethods['findUser'],
   updateUser: UserMethods['updateUser'],
 ): Promise<UserResolution> {
+  if (typeof payload.sub !== 'string' || payload.sub.trim() === '') {
+    return { status: 'rejected', error: 'missing_sub_claim' };
+  }
+
   const { user, error, migration } = await findOpenIDUser({
     findUser,
     email: getEmail(payload),
-    openidId: payload.sub ?? '',
+    openidId: payload.sub,
     idOnTheSource: payload['oid'] as string | undefined,
     strategyName: 'remoteAgentAuth',
   });

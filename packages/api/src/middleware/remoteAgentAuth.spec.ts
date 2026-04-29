@@ -376,6 +376,25 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).not.toHaveBeenCalled();
     });
 
+    it('returns 401 without user lookup when sub claim is missing', async () => {
+      setupOidcMocks({ email: 'agent@test.com' });
+
+      const deps = makeDeps(makeConfig({}, { enabled: true }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(findOpenIDUser).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
     it('returns 401 without API key fallback when OpenID user resolution is rejected', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
       (findOpenIDUser as jest.Mock).mockResolvedValue({
