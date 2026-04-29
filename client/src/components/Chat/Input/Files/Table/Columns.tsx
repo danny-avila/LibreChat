@@ -169,6 +169,7 @@ export const columns: ColumnDef<TFile>[] = [
       return formatDate(row.original.updatedAt?.toString() ?? '', isSmallScreen);
     },
   },
+  /* NJ: Hide 'storage' and 'context' columns - unnecessary complexity for users
   {
     accessorKey: 'filterSource',
     header: ({ column }) => {
@@ -248,6 +249,7 @@ export const columns: ColumnDef<TFile>[] = [
       );
     },
   },
+  */
   {
     accessorKey: 'bytes',
     header: ({ column }) => {
