@@ -5,6 +5,10 @@ import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-pro
 import type { Artifact } from '~/common';
 import {
   artifactTypeForAttachment,
+  bySalience,
+  byEntrySalience,
+  displayFilename,
+  isInternalSandboxArtifact,
   isTextAttachment,
   renderAttachmentKey,
 } from './attachmentTypes';
@@ -61,6 +65,11 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
 
     const now = new Date();
     attachments?.forEach((attachment) => {
+      // Sandbox-internal placeholders (`.dirkeep` etc.) are
+      // implementation detail — never list them as their own files.
+      if (isInternalSandboxArtifact(attachment)) {
+        return;
+      }
       const fileData = attachment as TFile & TAttachmentMetadata;
       const { filepath = null } = fileData;
       // LogContent uses a looser image check than Attachment.tsx (no
@@ -110,6 +119,15 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
       otherAtts.push(attachment);
     });
 
+    // Sink empty / placeholder files in each bucket so the user's eye
+    // lands on the real artifact first. Stable sort preserves the
+    // arrival order among non-empty entries.
+    imageAtts.sort(bySalience);
+    textAtts.sort(bySalience);
+    panelAtts.sort(byEntrySalience);
+    mermaidAtts.sort(byEntrySalience);
+    otherAtts.sort(bySalience);
+
     return {
       imageAttachments: renderImages === true ? imageAtts : null,
       textAttachments: textAtts,
@@ -125,9 +143,10 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
       'expiresAt' in file && typeof file.expiresAt === 'number' ? new Date(file.expiresAt) : null;
     const isExpired = expiresAt ? isAfter(now, expiresAt) : false;
     const filename = file.filename || '';
+    const visibleName = displayFilename(filename);
 
     if (isExpired) {
-      return `${filename} ${localize('com_download_expired')}`;
+      return `${visibleName} ${localize('com_download_expired')}`;
     }
 
     const fileData = file as TFile & TAttachmentMetadata;
@@ -142,7 +161,7 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
         source={fileData.source}
       >
         {'- '}
-        {filename} {localize('com_click_to_download')}
+        {visibleName} {localize('com_click_to_download')}
       </LogLink>
     );
   };
@@ -200,10 +219,10 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
                       user={file.user}
                       source={file.source}
                     >
-                      {file.filename}
+                      {displayFilename(file.filename)}
                     </LogLink>
                   ) : (
-                    file.filename
+                    displayFilename(file.filename)
                   )}
                 </div>
               )}

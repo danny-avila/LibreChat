@@ -12,6 +12,7 @@ import type {
 import { Types } from 'mongoose';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { ServerRequest } from '~/types';
+import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
 import type { SkillFileRecord } from './skillFiles';
 import { buildSkillPrimeMessage } from './skills';
@@ -1041,13 +1042,25 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     metadata,
                   } as Record<string, unknown>);
 
+                  // Code-execution tools emit per-call boilerplate
+                  // ("Note: ..." paragraphs and `| <annotation>` per-file
+                  // suffixes) that wastes tokens when re-injected into
+                  // every subsequent model turn. Strip it here, *after*
+                  // the tool resolved but *before* downstream consumers
+                  // (model context, SSE forwarding, persistence) see it.
+                  // Non-code-execution tools pass through unchanged.
+                  const cleanedContent =
+                    CODE_EXECUTION_TOOLS.has(tc.name) && typeof result.content === 'string'
+                      ? cleanCodeToolOutput(result.content)
+                      : result.content;
+
                   if (toolEndCallback) {
                     await toolEndCallback(
                       {
                         output: {
                           name: tc.name,
                           tool_call_id: tc.id,
-                          content: result.content,
+                          content: cleanedContent,
                           artifact: result.artifact,
                         },
                       },
@@ -1063,7 +1076,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
                   return {
                     toolCallId: tc.id,
-                    content: result.content,
+                    content: cleanedContent,
                     artifact: result.artifact,
                     status: 'success' as const,
                   };

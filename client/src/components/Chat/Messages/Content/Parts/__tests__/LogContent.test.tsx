@@ -1,8 +1,10 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
+import type { MutableSnapshot } from 'recoil';
 import type { TAttachment } from 'librechat-data-provider';
 import LogContent from '../LogContent';
+import store from '~/store';
 
 jest.mock('~/hooks', () => ({
   useLocalize:
@@ -62,7 +64,19 @@ const baseAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
     ...overrides,
   }) as TAttachment;
 
-const renderWith = (ui: React.ReactElement) => render(<RecoilRoot>{ui}</RecoilRoot>);
+/**
+ * Default `streaming: true` so `ToolArtifactCard`'s mount-time
+ * auto-focus (gated on `isSubmittingFamily(0)`) fires for these tests.
+ * The legacy SSE-arrival flow is what every "panel routing" assertion
+ * implicitly assumes.
+ */
+const renderWith = (ui: React.ReactElement, opts: { streaming?: boolean } = {}) => {
+  const streaming = opts.streaming ?? true;
+  const initializeState = (snapshot: MutableSnapshot) => {
+    snapshot.set(store.isSubmittingFamily(0), streaming);
+  };
+  return render(<RecoilRoot initializeState={initializeState}>{ui}</RecoilRoot>);
+};
 
 describe('LogContent attachment routing', () => {
   it('routes HTML attachments through ToolArtifactCard (panel)', () => {

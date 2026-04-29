@@ -1,9 +1,17 @@
-import { memo, useEffect, useId, useLayoutEffect } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
-import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import {
+  useRecoilCallback,
+  useRecoilState,
+  useRecoilValue,
+  useResetRecoilState,
+  useSetRecoilState,
+} from 'recoil';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
+import { TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
+import { displayFilename } from './attachmentTypes';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
 import { cn, getFileType } from '~/utils';
@@ -41,15 +49,23 @@ interface ToolArtifactCardProps {
  *     Without that guard, both cards would observe each other's write
  *     and trade overwrites in a loop.
  *
- *  3. **Focus on mount** (deps: artifact.id). A freshly-mounted card
- *     means a new artifact has arrived; we steal panel focus to match
- *     the legacy streaming-artifact UX where the latest artifact
- *     auto-opens. Cards that re-render with the same artifact don't
- *     refire this, so user clicks on older cards aren't overridden.
- *
- * Visibility is intentionally not toggled. The Recoil default is `true`,
- * which auto-opens the panel on first registration; a user who has
- * explicitly closed the panel keeps it closed until they click.
+ *  3. **Focus + open on mount** (deps: artifact.id, artifact.type) —
+ *     gated on `isSubmitting` captured at first render via a ref AND
+ *     on `artifact.type !== CODE`. A card mounted *during* streaming
+ *     for a rich-preview bucket (HTML, React, Markdown, plain text)
+ *     steals panel focus and forces `artifactsVisibility = true` so
+ *     the panel auto-opens — matching the legacy SSE auto-open UX.
+ *     A card mounted while `isSubmitting === false` is part of
+ *     conversation history (page load, back-navigation) and must not
+ *     steal focus — `Presentation`'s render condition gates on
+ *     `currentArtifactId != null`, so leaving both alone keeps the
+ *     panel closed on history load. The CODE bucket (`.py`, `.js`,
+ *     `Dockerfile`, …) is click-to-open *even on streaming*: source
+ *     files are typically supporting scripts the agent emits alongside
+ *     a richer deliverable, and shoving the panel in front of the
+ *     user every time a helper script gets written is disruptive.
+ *     Click-to-open via `handleOpen` works for every bucket regardless
+ *     of context.
  */
 const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) => {
   const localize = useLocalize();
@@ -63,6 +79,30 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const [claim, setClaim] = useRecoilState(store.toolArtifactClaim(artifact.id));
   const isSelected = artifact.id === currentArtifactId;
   const isMyClaim = claim === claimKey;
+  /**
+   * Captured at first render via a non-subscribing snapshot read so the
+   * downstream effect doesn't re-fire (and the component doesn't
+   * re-render) every time `isSubmittingFamily(0)` flips. Cards that mount
+   * mid-stream stay "fresh" for the rest of their lifetime; cards that
+   * mount post-stream stay "history" even if the user sends a new
+   * message while this card stays mounted.
+   */
+  const readInitialIsSubmitting = useRecoilCallback(
+    ({ snapshot }) =>
+      () =>
+        // `valueMaybe()` returns `undefined` if the atom is in an error
+        // or loading state instead of throwing — defensive against an
+        // upstream selector failure surfacing during card mount. The
+        // `?? false` default is correct because a card we can't classify
+        // as streaming is one we should treat as history (don't steal
+        // focus / open the panel).
+        snapshot.getLoadable(store.isSubmittingFamily(0)).valueMaybe() ?? false,
+    [],
+  );
+  const mountedDuringStreamRef = useRef<boolean | null>(null);
+  if (mountedDuringStreamRef.current === null) {
+    mountedDuringStreamRef.current = readInitialIsSubmitting();
+  }
 
   useLayoutEffect(() => {
     // Always (re)claim on mount — a later card for the same id displaces
@@ -96,8 +136,29 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   }, [artifact, existingEntry, isMyClaim, setArtifacts]);
 
   useEffect(() => {
+    if (!mountedDuringStreamRef.current) {
+      // Card mounted as part of conversation history — leave focus and
+      // visibility alone so the side panel doesn't auto-open on navigation.
+      return;
+    }
+    if (artifact.type === TOOL_ARTIFACT_TYPES.CODE) {
+      // Source-code artifacts (`.py`, `.js`, `.cpp`, `Dockerfile`, …) are
+      // click-to-open only. They're typically supporting scripts the
+      // agent emits alongside a richer deliverable; auto-opening them
+      // would shove the panel in front of the user every time a tool
+      // call writes a helper file. The rich-preview buckets (HTML,
+      // React, Markdown, plain text) keep the legacy auto-open UX so
+      // an HTML deliverable still surfaces immediately.
+      return;
+    }
+    // Streaming arrival: focus the new artifact AND force the panel
+    // visible. Without `setVisible(true)`, a session where the user had
+    // previously closed the panel (visibility=false) would surface the
+    // selection in the chip ("click to close") but never actually open
+    // — `Presentation` gates rendering on visibility.
     setCurrentArtifactId(artifact.id);
-  }, [artifact.id, setCurrentArtifactId]);
+    setVisible(true);
+  }, [artifact.id, artifact.type, setCurrentArtifactId, setVisible]);
 
   const file = attachment as TFile & TAttachmentMetadata;
   const { handleDownload } = useAttachmentLink({
@@ -130,6 +191,11 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const actionLabel = isSelected
     ? localize('com_ui_click_to_close')
     : localize('com_ui_artifact_click');
+  const visibleFilename = displayFilename(attachment.filename);
+  // The artifact's stored `title` mirrors the on-disk `filename` for
+  // tool artifacts, so re-derive the user-facing label rather than
+  // showing the collision-suffixed name.
+  const visibleTitle = displayFilename(artifact.title);
 
   return (
     <div className="group relative my-2 inline-flex max-w-fit items-stretch gap-px overflow-hidden rounded-xl text-sm text-text-primary shadow-sm">
@@ -149,8 +215,8 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
           <div className="flex flex-row items-center gap-2">
             <FilePreview fileType={fileType} className="relative" />
             <div className="overflow-hidden text-left">
-              <div className="truncate font-medium" title={attachment.filename ?? ''}>
-                {artifact.title}
+              <div className="truncate font-medium" title={visibleFilename}>
+                {visibleTitle}
               </div>
               <div className="truncate text-xs text-text-secondary">{actionLabel}</div>
             </div>
@@ -160,7 +226,7 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       <button
         type="button"
         onClick={handleDownload}
-        aria-label={`${localize('com_ui_download')} ${attachment.filename ?? ''}`}
+        aria-label={`${localize('com_ui_download')} ${visibleFilename}`}
         title={localize('com_ui_download')}
         className={cn(
           'flex shrink-0 items-center justify-center px-3 transition-colors duration-200',
