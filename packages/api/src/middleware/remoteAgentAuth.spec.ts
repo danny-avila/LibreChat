@@ -5,6 +5,7 @@ import type { Request, Response } from 'express';
 import type { RequestInit } from 'undici';
 
 jest.mock('@librechat/data-schemas', () => ({
+  getTenantId: jest.fn(),
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -41,13 +42,14 @@ jest.mock('../auth/openid', () => ({
 
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
-import { logger } from '@librechat/data-schemas';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { logger, getTenantId } from '@librechat/data-schemas';
 import { clearRemoteAgentAuthCache, createRemoteAgentAuth } from './remoteAgentAuth';
 import { findOpenIDUser } from '../auth/openid';
 
 const mockFetch = undiciFetch as jest.Mock;
 const mockProxyAgent = ProxyAgent as unknown as jest.Mock;
+const mockGetTenantId = getTenantId as jest.Mock;
 const FAKE_TOKEN = 'header.payload.signature';
 const BASE_ISSUER = 'https://auth.example.com/realms/test';
 const BASE_JWKS_URI = `${BASE_ISSUER}/protocol/openid-connect/certs`;
@@ -152,6 +154,8 @@ describe('createRemoteAgentAuth', () => {
     deleteEnvKeys();
     clearRemoteAgentAuthCache();
     mockFetch.mockReset();
+    mockGetTenantId.mockReset();
+    mockGetTenantId.mockReturnValue(undefined);
     mockNext = jest.fn();
   });
 
@@ -192,6 +196,16 @@ describe('createRemoteAgentAuth', () => {
     it('falls back to apiKeyMiddleware when oidc.enabled is false', async () => {
       const deps = makeDeps(makeConfig({ enabled: false }));
       await createRemoteAgentAuth(deps)(makeReq() as Request, makeRes().res, mockNext);
+      expect(deps.apiKeyMiddleware).toHaveBeenCalled();
+    });
+
+    it('loads config with pre-auth tenant context when present', async () => {
+      mockGetTenantId.mockReturnValue('tenant-a');
+      const deps = makeDeps(makeConfig({ enabled: false }));
+
+      await createRemoteAgentAuth(deps)(makeReq() as Request, makeRes().res, mockNext);
+
+      expect(deps.getAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-a' });
       expect(deps.apiKeyMiddleware).toHaveBeenCalled();
     });
 

@@ -28,12 +28,14 @@ const {
 const { configMiddleware } = require('~/server/middleware');
 const {
   checkAgentPermission,
+  preAuthTenantMiddleware,
   requireRemoteAgentAuth,
   checkRemoteAgentsFeature,
 } = require('./middleware');
 
 const router = express.Router();
 
+router.use(preAuthTenantMiddleware);
 router.use(requireRemoteAgentAuth);
 router.use(configMiddleware);
 router.use(checkRemoteAgentsFeature);

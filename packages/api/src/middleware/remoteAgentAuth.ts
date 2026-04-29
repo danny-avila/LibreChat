@@ -1,9 +1,9 @@
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
-import { logger } from '@librechat/data-schemas';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SystemRoles } from 'librechat-data-provider';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { logger, getTenantId } from '@librechat/data-schemas';
 import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { AppConfig, IUser, UserMethods } from '@librechat/data-schemas';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
@@ -16,8 +16,16 @@ export interface RemoteAgentAuthDeps {
   apiKeyMiddleware: RequestHandler;
   findUser: UserMethods['findUser'];
   updateUser: UserMethods['updateUser'];
-  getAppConfig: () => Promise<AppConfig | null>;
+  getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig | null>;
 }
+
+type GetAppConfigOptions = {
+  role?: string;
+  userId?: string;
+  tenantId?: string;
+  refresh?: boolean;
+  baseOnly?: boolean;
+};
 
 type OidcConfig = NonNullable<
   NonNullable<NonNullable<TAgentsEndpoint['remoteApi']>['auth']>['oidc']
@@ -184,6 +192,14 @@ function getVerifyOptions(oidcConfig: EnabledOidcConfig): VerifyOptions {
   };
 }
 
+function getConfigOptions(req: Request): GetAppConfigOptions | undefined {
+  const user = req.user as { tenantId?: string } | undefined;
+  const tenantId = user?.tenantId ?? getTenantId();
+
+  if (!tenantId) return undefined;
+  return { tenantId };
+}
+
 function verifyJwt(
   token: string,
   signingKey: jwksRsa.SigningKey,
@@ -303,7 +319,7 @@ export function createRemoteAgentAuth({
 }: RemoteAgentAuthDeps): RequestHandler {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const config = await getAppConfig();
+      const config = await getAppConfig(getConfigOptions(req));
       const authConfig = config?.endpoints?.agents?.remoteApi?.auth;
       const apiKeyEnabled = authConfig?.apiKey?.enabled !== false;
 

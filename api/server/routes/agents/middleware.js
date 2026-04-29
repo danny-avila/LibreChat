@@ -1,6 +1,7 @@
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   generateCheckAccess,
+  preAuthTenantMiddleware,
   createRequireApiKeyAuth,
   createRemoteAgentAuth,
   createCheckRemoteAgentAccess,
@@ -34,6 +35,7 @@ const checkAgentPermission = createCheckRemoteAgentAccess({
 
 module.exports = {
   checkAgentPermission,
+  preAuthTenantMiddleware,
   requireRemoteAgentAuth,
   checkRemoteAgentsFeature,
 };
