@@ -251,27 +251,32 @@ export class MCPConnectionFactory {
           throw new Error(`${this.logPrefix} OAuth required but server URL is missing from config`);
         }
 
+        const oauthTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
         logger.info(
-          `${this.logPrefix} No stored tokens — proactively triggering OAuth flow before connecting`,
+          `${this.logPrefix} No stored tokens — proactively triggering OAuth flow before connecting (timeout: ${oauthTimeout}ms)`,
         );
 
-        await new Promise<void>((resolve, reject) => {
-          const handleSuccess = () => {
-            connection.off('oauthFailed', handleFailure);
-            resolve();
-          };
-          const handleFailure = (err: Error) => {
-            connection.off('oauthHandled', handleSuccess);
-            reject(err);
-          };
-          connection.once('oauthHandled', handleSuccess);
-          connection.once('oauthFailed', handleFailure);
-          connection.emit('oauthRequired', {
-            serverUrl,
-            serverName: this.serverName,
-            userId: this.userId,
-          });
-        });
+        await withTimeout(
+          new Promise<void>((resolve, reject) => {
+            const handleSuccess = () => {
+              connection.off('oauthFailed', handleFailure);
+              resolve();
+            };
+            const handleFailure = (err: Error) => {
+              connection.off('oauthHandled', handleSuccess);
+              reject(err);
+            };
+            connection.once('oauthHandled', handleSuccess);
+            connection.once('oauthFailed', handleFailure);
+            connection.emit('oauthRequired', {
+              serverUrl,
+              serverName: this.serverName,
+              userId: this.userId,
+            });
+          }),
+          oauthTimeout,
+          `Proactive OAuth flow timeout after ${oauthTimeout}ms`,
+        );
 
         await this.attemptToConnect(connection);
       } else {
