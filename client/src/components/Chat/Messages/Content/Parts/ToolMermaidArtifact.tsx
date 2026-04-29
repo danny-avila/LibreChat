@@ -4,6 +4,7 @@ import { useRecoilState } from 'recoil';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import Mermaid from '~/components/Messages/Content/Mermaid/Mermaid';
 import { toolArtifactKey } from '~/utils/artifacts';
+import { displayFilename } from './attachmentTypes';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -56,9 +57,9 @@ const ToolMermaidArtifact = memo(({ attachment, text }: ToolMermaidArtifactProps
           {attachment.filename && (
             <div
               className="truncate text-[10px] font-medium uppercase tracking-wide text-text-secondary"
-              title={attachment.filename}
+              title={displayFilename(attachment.filename)}
             >
-              {attachment.filename}
+              {displayFilename(attachment.filename)}
             </div>
           )}
           {attachment.filepath && (

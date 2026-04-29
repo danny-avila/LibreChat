@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
+import type { MutableSnapshot } from 'recoil';
 import type { TAttachment } from 'librechat-data-provider';
 import Attachment, { AttachmentGroup } from '../Attachment';
 import store from '~/store';
@@ -56,7 +57,19 @@ const baseAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
     ...overrides,
   }) as TAttachment;
 
-const renderWith = (ui: React.ReactElement) => render(<RecoilRoot>{ui}</RecoilRoot>);
+/**
+ * Seeds `isSubmittingFamily(0) = streaming` so `ToolArtifactCard`'s
+ * mount-time focus effect (which is gated on streaming state) behaves
+ * the way each test expects. Default `streaming: true` matches the
+ * legacy SSE-arrival flow that the bulk of these tests exercise.
+ */
+const renderWith = (ui: React.ReactElement, opts: { streaming?: boolean } = {}) => {
+  const streaming = opts.streaming ?? true;
+  const initializeState = (snapshot: MutableSnapshot) => {
+    snapshot.set(store.isSubmittingFamily(0), streaming);
+  };
+  return render(<RecoilRoot initializeState={initializeState}>{ui}</RecoilRoot>);
+};
 
 interface ArtifactsSnapshot {
   visibility: boolean;
@@ -78,14 +91,18 @@ const StateProbe = ({ onSnapshot }: { onSnapshot: (snap: ArtifactsSnapshot) => v
   return null;
 };
 
-const renderWithProbe = (ui: React.ReactElement) => {
+const renderWithProbe = (ui: React.ReactElement, opts: { streaming?: boolean } = {}) => {
+  const streaming = opts.streaming ?? true;
+  const initializeState = (snap: MutableSnapshot) => {
+    snap.set(store.isSubmittingFamily(0), streaming);
+  };
   let snapshot: ArtifactsSnapshot = {
     visibility: false,
     currentArtifactId: null,
     artifactIds: [],
   };
   const utils = render(
-    <RecoilRoot>
+    <RecoilRoot initializeState={initializeState}>
       <StateProbe
         onSnapshot={(snap) => {
           snapshot = snap;
@@ -353,9 +370,103 @@ describe('ToolArtifactCard click behaviour', () => {
       expect.arrayContaining(['tool-artifact-older', 'tool-artifact-newer']),
     );
   });
+
+  it('does NOT auto-focus when the card mounts outside an active stream (history load)', () => {
+    // Reproduces "navigating to a previous conversation". Cards mount
+    // for already-completed turns; `isSubmitting` is false. The legacy
+    // behavior would auto-focus the latest artifact and re-open the
+    // panel — we don't want that.
+    const html = baseAttachment({
+      file_id: 'history-html',
+      filename: 'previous.html',
+      text: '<h1>prev</h1>',
+    } as Partial<TAttachment>);
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={html} />, {
+      streaming: false,
+    });
+    const snap = getSnapshot();
+    // Artifact still gets registered (so the panel can find it on click)…
+    expect(snap.artifactIds).toContain('tool-artifact-history-html');
+    // …but currentArtifactId stays null, which means
+    // `Presentation`'s render gate (`currentArtifactId != null`) keeps
+    // the panel closed.
+    expect(snap.currentArtifactId).toBeNull();
+  });
+
+  it('clicking a history-loaded card focuses it (user-initiated open)', () => {
+    // Even though the mount-time auto-focus is suppressed for history,
+    // the click handler is unconditional — users explicitly opening a
+    // chip must always work.
+    const html = baseAttachment({
+      file_id: 'history-click',
+      filename: 'previous.html',
+      text: '<h1>prev</h1>',
+    } as Partial<TAttachment>);
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={html} />, {
+      streaming: false,
+    });
+    expect(getSnapshot().currentArtifactId).toBeNull();
+    // Open button is unpressed initially (no auto-focus).
+    const openButton = screen.getByRole('button', { pressed: false });
+    act(() => {
+      fireEvent.click(openButton);
+    });
+    expect(getSnapshot().currentArtifactId).toBe('tool-artifact-history-click');
+    expect(getSnapshot().visibility).toBe(true);
+  });
 });
 
 describe('AttachmentGroup routing', () => {
+  it('filters internal sandbox `.dirkeep` placeholders out of every bucket', () => {
+    // The bash executor's empty-folder marker (`_.dirkeep-<hash>`,
+    // `bytes: 0`) is implementation detail; users shouldn't see it as
+    // its own chip. The filter runs ahead of all routing so the
+    // placeholder doesn't leak into image / panel / text / file buckets.
+    const realFile = baseAttachment({
+      file_id: 'real',
+      filename: 'test_folder/test_file.txt',
+      text: 'hello',
+      bytes: 5,
+    } as Partial<TAttachment>);
+    const dirkeep = baseAttachment({
+      file_id: 'dk',
+      filename: 'test_folder/_.dirkeep-88b30b',
+      bytes: 0,
+    } as Partial<TAttachment>);
+    const { container } = renderWith(<AttachmentGroup attachments={[dirkeep, realFile]} />);
+    // No chip rendered for the dirkeep placeholder.
+    expect(screen.queryByText(/dirkeep/)).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/dirkeep/);
+    // Real file still renders.
+    expect(container.textContent).toMatch(/test_file\.txt/);
+  });
+
+  it('sinks empty files below non-empty siblings within the file bucket', () => {
+    // Without the salience sort, an early-arriving 0-byte file would
+    // render first and visually upstage the real artifact below it.
+    // Both files route to the `fileAttachments` bucket (no text, no
+    // panel-eligible extension) so the test exercises within-bucket
+    // ordering — sort is per-bucket, not cross-bucket.
+    const empty = baseAttachment({
+      file_id: 'empty-zip',
+      filename: 'placeholder.zip',
+      type: 'application/zip',
+      bytes: 0,
+    } as Partial<TAttachment>);
+    const real = baseAttachment({
+      file_id: 'real-zip',
+      filename: 'archive.zip',
+      type: 'application/zip',
+      bytes: 1024,
+    } as Partial<TAttachment>);
+    const { container } = renderWith(<AttachmentGroup attachments={[empty, real]} />);
+    const chips = Array.from(container.querySelectorAll('[data-testid="file-container"]'));
+    expect(chips.length).toBe(2);
+    const filenames = chips.map((c) => c.textContent ?? '');
+    // Real chip must render before the empty placeholder.
+    expect(filenames[0]).toMatch(/archive\.zip/);
+    expect(filenames[1]).toMatch(/placeholder\.zip/);
+  });
   it('renders separate buckets for panel artifacts, mermaid, text, and plain files', () => {
     const attachments = [
       baseAttachment({

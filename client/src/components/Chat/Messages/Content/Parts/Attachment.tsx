@@ -4,7 +4,9 @@ import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-pro
 import type { ToolArtifactType } from '~/utils/artifacts';
 import {
   artifactTypeForAttachment,
+  attachmentSalience,
   isImageAttachment,
+  isInternalSandboxArtifact,
   isTextAttachment,
   renderAttachmentKey,
 } from './attachmentTypes';
@@ -224,6 +226,12 @@ export default function Attachment({ attachment }: { attachment?: TAttachment })
   if (attachment.type === Tools.web_search) {
     return null;
   }
+  // Sandbox-internal placeholders (`.dirkeep` etc.) are an implementation
+  // detail of the bash executor's empty-folder preservation; users have
+  // no reason to see them as their own file chips.
+  if (isInternalSandboxArtifact(attachment)) {
+    return null;
+  }
 
   if (isImageAttachment(attachment)) {
     return <ImageAttachment attachment={attachment} />;
@@ -262,6 +270,9 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
     if (attachment.type === Tools.web_search) {
       return;
     }
+    if (isInternalSandboxArtifact(attachment)) {
+      return;
+    }
     if (isImageAttachment(attachment)) {
       imageAttachments.push(attachment);
       return;
@@ -281,6 +292,17 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
     }
     fileAttachments.push(attachment);
   });
+
+  // Sink empty / placeholder-shaped files in each bucket so the user's
+  // eye lands on the real artifact first. `sort` is stable in modern
+  // engines (V8 ≥ 7.0) so equal-weight entries keep their input order.
+  fileAttachments.sort((a, b) => attachmentSalience(a) - attachmentSalience(b));
+  textAttachments.sort((a, b) => attachmentSalience(a) - attachmentSalience(b));
+  panelArtifacts.sort(
+    (a, b) => attachmentSalience(a.attachment) - attachmentSalience(b.attachment),
+  );
+  mermaidArtifacts.sort((a, b) => attachmentSalience(a) - attachmentSalience(b));
+  imageAttachments.sort((a, b) => attachmentSalience(a) - attachmentSalience(b));
 
   return (
     <>
