@@ -1,6 +1,12 @@
-import { memo, useEffect, useId, useLayoutEffect } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
-import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import {
+  useRecoilCallback,
+  useRecoilState,
+  useRecoilValue,
+  useResetRecoilState,
+  useSetRecoilState,
+} from 'recoil';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
@@ -18,7 +24,7 @@ interface ToolArtifactCardProps {
 /**
  * Card that opens a code-execution-produced artifact in the side panel.
  *
- * Two effects, separately scoped:
+ * Three effects, separately scoped:
  *
  *  1. **Dedup claim** (`useLayoutEffect`, runs synchronously before
  *     paint). The same file can appear in multiple tool calls within a
@@ -42,15 +48,20 @@ interface ToolArtifactCardProps {
  *     Without that guard, both cards would observe each other's write
  *     and trade overwrites in a loop.
  *
- * **No auto-open.** The card never sets `currentArtifactId` or
- * `artifactsVisibility` on mount, regardless of whether streaming is
- * active. Code-file artifacts are click-to-open only — the user
- * explicitly chooses to surface a file in the panel rather than having
- * a streaming arrival hijack their viewport. Combined with
- * `Presentation`'s `currentArtifactId != null` render gate, this means
- * the panel stays closed across both history navigation and SSE
- * arrival until the user clicks a chip. `handleOpen` is the sole
- * focus + visibility toggle.
+ *  3. **Focus + open on mount** (deps: artifact.id) — gated on
+ *     `isSubmitting` captured at first render via a ref. A card mounted
+ *     *during* streaming means a new artifact arrived from SSE; we
+ *     steal panel focus AND force `artifactsVisibility = true` so the
+ *     panel actually opens (matching the legacy SSE auto-open UX).
+ *     Toggling visibility on every streaming arrival means a previously
+ *     closed panel re-opens for a fresh artifact — that's the explicit
+ *     "auto-open when first created" behavior. A card mounted while
+ *     `isSubmitting === false` is part of conversation history (page
+ *     load, navigating back to an old conversation) and must not steal
+ *     focus or open the panel — `Presentation`'s render condition gates
+ *     on `currentArtifactId != null`, so leaving both alone keeps the
+ *     panel closed on history load. Click-to-open path (`handleOpen`)
+ *     remains unchanged so users can manually open historical chips.
  */
 const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) => {
   const localize = useLocalize();
@@ -64,6 +75,30 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const [claim, setClaim] = useRecoilState(store.toolArtifactClaim(artifact.id));
   const isSelected = artifact.id === currentArtifactId;
   const isMyClaim = claim === claimKey;
+  /**
+   * Captured at first render via a non-subscribing snapshot read so the
+   * downstream effect doesn't re-fire (and the component doesn't
+   * re-render) every time `isSubmittingFamily(0)` flips. Cards that mount
+   * mid-stream stay "fresh" for the rest of their lifetime; cards that
+   * mount post-stream stay "history" even if the user sends a new
+   * message while this card stays mounted.
+   */
+  const readInitialIsSubmitting = useRecoilCallback(
+    ({ snapshot }) =>
+      () =>
+        // `valueMaybe()` returns `undefined` if the atom is in an error
+        // or loading state instead of throwing — defensive against an
+        // upstream selector failure surfacing during card mount. The
+        // `?? false` default is correct because a card we can't classify
+        // as streaming is one we should treat as history (don't steal
+        // focus / open the panel).
+        snapshot.getLoadable(store.isSubmittingFamily(0)).valueMaybe() ?? false,
+    [],
+  );
+  const mountedDuringStreamRef = useRef<boolean | null>(null);
+  if (mountedDuringStreamRef.current === null) {
+    mountedDuringStreamRef.current = readInitialIsSubmitting();
+  }
 
   useLayoutEffect(() => {
     // Always (re)claim on mount — a later card for the same id displaces
@@ -96,6 +131,21 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
     setArtifacts((prev) => ({ ...(prev ?? {}), [artifact.id]: artifact }));
   }, [artifact, existingEntry, isMyClaim, setArtifacts]);
 
+  useEffect(() => {
+    if (!mountedDuringStreamRef.current) {
+      // Card mounted as part of conversation history — leave focus and
+      // visibility alone so the side panel doesn't auto-open on navigation.
+      return;
+    }
+    // Streaming arrival: focus the new artifact AND force the panel
+    // visible. Without `setVisible(true)`, a session where the user had
+    // previously closed the panel (visibility=false) would surface the
+    // selection in the chip ("click to close") but never actually open
+    // — `Presentation` gates rendering on visibility.
+    setCurrentArtifactId(artifact.id);
+    setVisible(true);
+  }, [artifact.id, setCurrentArtifactId, setVisible]);
+
   const file = attachment as TFile & TAttachmentMetadata;
   const { handleDownload } = useAttachmentLink({
     href: attachment.filepath ?? '',
@@ -111,11 +161,8 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       setVisible(false);
       return;
     }
-    // The self-heal registration effect already wrote the artifact to
-    // `artifactsState`; clicking just focuses it and forces visibility
-    // so the panel reveals itself. This is the *only* path that opens
-    // the panel for tool-artifact files — there is no auto-open on
-    // streaming arrival.
+    // Registration already happened in the mount effect; the click only
+    // needs to focus + reveal the panel for users who have closed it.
     setCurrentArtifactId(artifact.id);
     setVisible(true);
   };

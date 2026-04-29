@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
+import type { MutableSnapshot } from 'recoil';
 import type { TAttachment } from 'librechat-data-provider';
 import Attachment, { AttachmentGroup } from '../Attachment';
 import store from '~/store';
@@ -57,12 +58,18 @@ const baseAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
   }) as TAttachment;
 
 /**
- * `ToolArtifactCard` no longer reads `isSubmittingFamily` — code-file
- * artifacts are click-to-open only — so tests don't need to seed
- * streaming state. Kept as a thin wrapper so the call sites stay
- * uniform and a future shared seed has one place to land.
+ * Seeds `isSubmittingFamily(0) = streaming` so `ToolArtifactCard`'s
+ * mount-time focus effect (which is gated on streaming state) behaves
+ * the way each test expects. Default `streaming: true` matches the
+ * legacy SSE-arrival flow that the bulk of these tests exercise.
  */
-const renderWith = (ui: React.ReactElement) => render(<RecoilRoot>{ui}</RecoilRoot>);
+const renderWith = (ui: React.ReactElement, opts: { streaming?: boolean } = {}) => {
+  const streaming = opts.streaming ?? true;
+  const initializeState = (snapshot: MutableSnapshot) => {
+    snapshot.set(store.isSubmittingFamily(0), streaming);
+  };
+  return render(<RecoilRoot initializeState={initializeState}>{ui}</RecoilRoot>);
+};
 
 interface ArtifactsSnapshot {
   visibility: boolean;
@@ -84,14 +91,18 @@ const StateProbe = ({ onSnapshot }: { onSnapshot: (snap: ArtifactsSnapshot) => v
   return null;
 };
 
-const renderWithProbe = (ui: React.ReactElement) => {
+const renderWithProbe = (ui: React.ReactElement, opts: { streaming?: boolean } = {}) => {
+  const streaming = opts.streaming ?? true;
+  const initializeState = (snap: MutableSnapshot) => {
+    snap.set(store.isSubmittingFamily(0), streaming);
+  };
   let snapshot: ArtifactsSnapshot = {
     visibility: false,
     currentArtifactId: null,
     artifactIds: [],
   };
   const utils = render(
-    <RecoilRoot>
+    <RecoilRoot initializeState={initializeState}>
       <StateProbe
         onSnapshot={(snap) => {
           snapshot = snap;
@@ -116,10 +127,9 @@ describe('Attachment routing for tool artifacts', () => {
 
     // Card body shows the artifact title
     expect(screen.getByText('index.html')).toBeInTheDocument();
-    // Open-panel button is rendered but unpressed — code-file artifacts
-    // never auto-focus on mount.
-    expect(screen.getByRole('button', { pressed: false })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    // Open-panel button carries aria-pressed (auto-focused on mount per the
+    // legacy auto-open behaviour).
+    expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
     // Download button has the download aria-label
     expect(
       screen.getByRole('button', { name: /com_ui_download.*index\.html/i }),
@@ -192,52 +202,40 @@ describe('ToolArtifactCard click behaviour', () => {
       text: '<h1>hi</h1>',
     } as Partial<TAttachment>);
 
-  // Mount registers the artifact in `artifactsState` (so the panel can
-  // find it on click) but does NOT focus it or open the panel —
-  // code-file artifacts are click-to-open only.
-  it('registers the artifact on mount but does not auto-focus or open the panel', () => {
+  // Auto-open invariant: rendering a tool-artifact card must (a) register
+  // the artifact in `artifactsState` and (b) focus it via
+  // `currentArtifactId`. With `artifactsVisibility` defaulting to `true`,
+  // this surfaces the latest tool artifact in the side panel — matching
+  // the legacy streaming-artifact UX.
+  it('registers and auto-focuses the artifact on mount', () => {
     const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
     const snap = getSnapshot();
     expect(snap.artifactIds).toContain('tool-artifact-html-1');
-    expect(snap.currentArtifactId).toBeNull();
+    expect(snap.currentArtifactId).toBe('tool-artifact-html-1');
   });
 
-  it('opens on first click and closes on a second click of the same chip', () => {
+  it('toggles closed when the user clicks the (already-selected) card', () => {
     const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
-    // No card is focused on mount; the open button is unpressed.
-    const openButton = screen.getByRole('button', { pressed: false });
-    act(() => {
-      fireEvent.click(openButton);
-    });
-    const opened = getSnapshot();
-    expect(opened.currentArtifactId).toBe('tool-artifact-html-1');
-    expect(opened.visibility).toBe(true);
-    // Click the (now-pressed) button to close.
+    // Mount auto-focuses; the open button is in the pressed state.
     const closeButton = screen.getByRole('button', { pressed: true });
     act(() => {
       fireEvent.click(closeButton);
     });
-    const closed = getSnapshot();
-    expect(closed.currentArtifactId).toBeNull();
-    expect(closed.visibility).toBe(false);
+    const snap = getSnapshot();
+    expect(snap.currentArtifactId).toBeNull();
+    expect(snap.visibility).toBe(false);
     // Self-heal effect keeps the artifact registered so re-opening works.
-    expect(closed.artifactIds).toContain('tool-artifact-html-1');
+    expect(snap.artifactIds).toContain('tool-artifact-html-1');
   });
 
   it('reopens after a close (regression: artifact still openable post-close)', () => {
     const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
-    // First click: open.
-    act(() => {
-      fireEvent.click(screen.getByRole('button', { pressed: false }));
-    });
-    expect(getSnapshot().currentArtifactId).toBe('tool-artifact-html-1');
-    // Second click: close.
     act(() => {
       fireEvent.click(screen.getByRole('button', { pressed: true }));
     });
     expect(getSnapshot().visibility).toBe(false);
     expect(getSnapshot().currentArtifactId).toBeNull();
-    // Third click: re-open.
+    // Click the now-unpressed open button again.
     act(() => {
       fireEvent.click(screen.getByRole('button', { pressed: false }));
     });
@@ -352,12 +350,8 @@ describe('ToolArtifactCard click behaviour', () => {
     expect(screen.getAllByTestId('mermaid-render')).toHaveLength(1);
   });
 
-  it('does NOT auto-focus any card when multiple artifacts mount in one group', () => {
-    // Mount-time focus was removed: code-file artifacts are
-    // click-to-open only. Even mounting many panel-eligible cards in a
-    // single group leaves `currentArtifactId` null until the user
-    // clicks one. All artifacts still get registered so they're
-    // available the moment a click happens.
+  it('focuses the latest card when multiple artifacts mount (legacy parity)', () => {
+    // Order: older first, newer last. Last-mounted should win currentArtifactId.
     const olderHtml = baseAttachment({
       file_id: 'older',
       filename: 'old.html',
@@ -371,33 +365,89 @@ describe('ToolArtifactCard click behaviour', () => {
     const { getSnapshot } = renderWithProbe(
       <AttachmentGroup attachments={[olderHtml, newerHtml]} />,
     );
-    expect(getSnapshot().currentArtifactId).toBeNull();
+    expect(getSnapshot().currentArtifactId).toBe('tool-artifact-newer');
     expect(getSnapshot().artifactIds).toEqual(
       expect.arrayContaining(['tool-artifact-older', 'tool-artifact-newer']),
     );
   });
 
-  it('does NOT toggle visibility on mount (closed panel stays closed across both fresh streams and history)', () => {
-    /** Single behavior across all mount contexts: tool-artifact files
-     *  never auto-toggle the panel. A previously-closed panel stays
-     *  closed even when a fresh artifact arrives via SSE — the user
-     *  has to click to surface it. */
+  it('does NOT auto-focus when the card mounts outside an active stream (history load)', () => {
+    // Reproduces "navigating to a previous conversation". Cards mount
+    // for already-completed turns; `isSubmitting` is false. The legacy
+    // behavior would auto-focus the latest artifact and re-open the
+    // panel — we don't want that.
     const html = baseAttachment({
-      file_id: 'no-auto-open',
+      file_id: 'history-html',
+      filename: 'previous.html',
+      text: '<h1>prev</h1>',
+    } as Partial<TAttachment>);
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={html} />, {
+      streaming: false,
+    });
+    const snap = getSnapshot();
+    // Artifact still gets registered (so the panel can find it on click)…
+    expect(snap.artifactIds).toContain('tool-artifact-history-html');
+    // …but currentArtifactId stays null, which means
+    // `Presentation`'s render gate (`currentArtifactId != null`) keeps
+    // the panel closed.
+    expect(snap.currentArtifactId).toBeNull();
+  });
+
+  it('forces panel visibility on streaming mount even if visibility was previously false', () => {
+    // Repro: user closed the panel earlier in the session
+    // (`artifactsVisibility = false`), then a new tool artifact
+    // arrives via SSE. The old behavior set `currentArtifactId` but
+    // left visibility alone, so the chip showed "click to close" while
+    // the panel stayed hidden. Streaming arrivals must re-open the
+    // panel — that's the explicit "auto-open when first created" rule.
+    const html = baseAttachment({
+      file_id: 'fresh-stream',
       filename: 'fresh.html',
       text: '<h1>fresh</h1>',
     } as Partial<TAttachment>);
+    const initializeState = (snap: MutableSnapshot) => {
+      snap.set(store.isSubmittingFamily(0), true);
+      snap.set(store.artifactsVisibility, false);
+    };
     let snapshot: ArtifactsSnapshot = {
-      visibility: true,
+      visibility: false,
       currentArtifactId: null,
       artifactIds: [],
     };
     render(
-      <RecoilRoot
-        initializeState={(snap) => {
-          snap.set(store.artifactsVisibility, false);
-        }}
-      >
+      <RecoilRoot initializeState={initializeState}>
+        <StateProbe
+          onSnapshot={(snap) => {
+            snapshot = snap;
+          }}
+        />
+        <Attachment attachment={html} />
+      </RecoilRoot>,
+    );
+    expect(snapshot.visibility).toBe(true);
+    expect(snapshot.currentArtifactId).toBe('tool-artifact-fresh-stream');
+  });
+
+  it('does NOT force visibility on history mount (closed panel stays closed)', () => {
+    // The flip-side of the prior test: a card mounted from history
+    // (isSubmitting=false) must not toggle visibility, so a user who
+    // explicitly closed the panel keeps it closed when revisiting.
+    const html = baseAttachment({
+      file_id: 'history-no-vis',
+      filename: 'historic.html',
+      text: '<h1>old</h1>',
+    } as Partial<TAttachment>);
+    const initializeState = (snap: MutableSnapshot) => {
+      snap.set(store.isSubmittingFamily(0), false);
+      snap.set(store.artifactsVisibility, false);
+    };
+    let snapshot: ArtifactsSnapshot = {
+      visibility: false,
+      currentArtifactId: null,
+      artifactIds: [],
+    };
+    render(
+      <RecoilRoot initializeState={initializeState}>
         <StateProbe
           onSnapshot={(snap) => {
             snapshot = snap;
@@ -408,18 +458,20 @@ describe('ToolArtifactCard click behaviour', () => {
     );
     expect(snapshot.visibility).toBe(false);
     expect(snapshot.currentArtifactId).toBeNull();
-    expect(snapshot.artifactIds).toContain('tool-artifact-no-auto-open');
   });
 
-  it('clicking a card focuses it and forces the panel visible', () => {
-    // The click handler is the *only* path that opens the panel —
-    // mount never does it. This is the user-explicit open flow.
+  it('clicking a history-loaded card focuses it (user-initiated open)', () => {
+    // Even though the mount-time auto-focus is suppressed for history,
+    // the click handler is unconditional — users explicitly opening a
+    // chip must always work.
     const html = baseAttachment({
-      file_id: 'click-open',
+      file_id: 'history-click',
       filename: 'previous.html',
       text: '<h1>prev</h1>',
     } as Partial<TAttachment>);
-    const { getSnapshot } = renderWithProbe(<Attachment attachment={html} />);
+    const { getSnapshot } = renderWithProbe(<Attachment attachment={html} />, {
+      streaming: false,
+    });
     expect(getSnapshot().currentArtifactId).toBeNull();
     /** Pin to the panel-open button by name — the download button has no
      * `aria-pressed`, but `getByRole('button', { pressed: false })`
@@ -429,7 +481,7 @@ describe('ToolArtifactCard click behaviour', () => {
     act(() => {
       fireEvent.click(openButton);
     });
-    expect(getSnapshot().currentArtifactId).toBe('tool-artifact-click-open');
+    expect(getSnapshot().currentArtifactId).toBe('tool-artifact-history-click');
     expect(getSnapshot().visibility).toBe(true);
   });
 });
