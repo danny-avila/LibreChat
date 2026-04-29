@@ -644,7 +644,7 @@ router.get('/:id/ai-summary', async (req, res) => {
 // Paste this ABOVE router.get('/:id', ...) in api/server/routes/contacts.js
 // ---------------------------------------------------------------------------
 
-const Anthropic = require('@anthropic-ai/sdk');
+const Groq = require('groq-sdk');
 
 router.get('/:id/ai-summary-stream', async (req, res) => {
   try {
@@ -687,37 +687,30 @@ router.get('/:id/ai-summary-stream', async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering if present
+    res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    // ✅ Groq streaming
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-    const stream = anthropic.messages.stream({
-      model: 'claude-opus-4-5',
+    const stream = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile', // fast & capable — change if you prefer another
       max_tokens: 1024,
+      stream: true,
       messages: [{ role: 'user', content: userPrompt }],
     });
 
-    stream.on('text', (text) => {
-      // JSON-encode the chunk so newlines inside AI text are safely transported
-      // as a single SSE data line. Frontend JSON.parses it back.
-      res.write(`data: ${JSON.stringify(text)}\n\n`);
-    });
+    // ✅ Stream chunks to frontend — same SSE format as before
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content;
+      if (text) {
+        res.write(`data: ${JSON.stringify(text)}\n\n`);
+      }
+    }
 
-    stream.on('finalMessage', () => {
-      res.write('data: [DONE]\n\n');
-      res.end();
-    });
-
-    stream.on('error', (err) => {
-      console.error('Anthropic stream error:', err);
-      res.write('data: [DONE]\n\n');
-      res.end();
-    });
-
-    req.on('close', () => {
-      try { stream.abort?.(); } catch (_) {}
-    });
+    // ✅ Signal done
+    res.write('data: [DONE]\n\n');
+    res.end();
 
   } catch (err) {
     console.error('ai-summary-stream error:', err);
@@ -729,4 +722,6 @@ router.get('/:id/ai-summary-stream', async (req, res) => {
     }
   }
 });
+
+
 module.exports = router;
