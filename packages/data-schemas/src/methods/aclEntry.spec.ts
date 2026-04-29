@@ -7,7 +7,7 @@ import {
 } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
-import { createAclEntryMethods } from './aclEntry';
+import { createAclEntryMethods, permissionBitSupersets } from './aclEntry';
 import aclEntrySchema from '~/schema/aclEntry';
 
 let mongoServer: MongoMemoryServer;
@@ -1238,6 +1238,549 @@ describe('AclEntry Model Tests', () => {
         { $match: { principalType: 'nonexistent' } },
       ]);
       expect(results).toEqual([]);
+    });
+  });
+
+  /**
+   * These cases exercise the application-layer bitwise filtering that replaced
+   * the `$bitsAllSet` query operator (which is not supported by MongoDB forks
+   * such as Azure Cosmos DB for MongoDB). They verify logical equivalence:
+   * a query for bit B must match entries whose `permBits` are a superset of B,
+   * and must not match subset or disjoint entries.
+   */
+  describe('Application-layer bitwise filtering (Cosmos DB compatibility)', () => {
+    describe('hasPermission', () => {
+      test('returns true when entry has exact required bit', async () => {
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+        const result = await methods.hasPermission(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW,
+        );
+        expect(result).toBe(true);
+      });
+
+      test('returns true when entry has superset of required bits', async () => {
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+          grantedById,
+        );
+        const result = await methods.hasPermission(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+        );
+        expect(result).toBe(true);
+      });
+
+      test('returns false when entry has only subset of required bits', async () => {
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+        const result = await methods.hasPermission(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+        );
+        expect(result).toBe(false);
+      });
+
+      test('returns false when no entries match', async () => {
+        const result = await methods.hasPermission(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          resourceId,
+          PermissionBits.VIEW,
+        );
+        expect(result).toBe(false);
+      });
+    });
+
+    describe('findAccessibleResources', () => {
+      test('returns deduplicated resource IDs across multiple matching entries', async () => {
+        const shared = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          shared,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+        await methods.grantPermission(
+          PrincipalType.GROUP,
+          groupId,
+          ResourceType.AGENT,
+          shared,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+          grantedById,
+        );
+
+        const result = await methods.findAccessibleResources(
+          [
+            { principalType: PrincipalType.USER, principalId: userId },
+            { principalType: PrincipalType.GROUP, principalId: groupId },
+          ],
+          ResourceType.AGENT,
+          PermissionBits.VIEW,
+        );
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(shared.toString());
+      });
+
+      test('excludes resources whose entries only hold subset bits', async () => {
+        const viewOnly = new mongoose.Types.ObjectId();
+        const viewEdit = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          viewOnly,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          viewEdit,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+          grantedById,
+        );
+
+        const result = await methods.findAccessibleResources(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          PermissionBits.EDIT,
+        );
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(viewEdit.toString());
+      });
+    });
+
+    describe('findPublicResourceIds', () => {
+      test('returns the public resource ID when required bits are present', async () => {
+        const shared = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.PUBLIC,
+          null,
+          ResourceType.AGENT,
+          shared,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+          grantedById,
+        );
+
+        const result = await methods.findPublicResourceIds(
+          ResourceType.AGENT,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+        );
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(shared.toString());
+      });
+
+      test('deduplicates when duplicate public entries exist for the same resource', async () => {
+        /**
+         * `grantPermission` upserts, so duplicates are not reachable through the
+         * public API. Bypass it with `AclEntry.create` to confirm the
+         * application-layer dedup logic handles the defensive case.
+         */
+        const shared = new mongoose.Types.ObjectId();
+        await AclEntry.create([
+          {
+            principalType: PrincipalType.PUBLIC,
+            resourceType: ResourceType.AGENT,
+            resourceId: shared,
+            permBits: PermissionBits.VIEW,
+            grantedBy: grantedById,
+          },
+          {
+            principalType: PrincipalType.PUBLIC,
+            resourceType: ResourceType.AGENT,
+            resourceId: shared,
+            permBits: PermissionBits.VIEW | PermissionBits.EDIT,
+            grantedBy: grantedById,
+          },
+        ]);
+
+        const result = await methods.findPublicResourceIds(ResourceType.AGENT, PermissionBits.VIEW);
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(shared.toString());
+      });
+    });
+
+    describe('getSoleOwnedResourceIds', () => {
+      test('returns resources where the user is the only DELETE holder', async () => {
+        const soleRes = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          soleRes,
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+          grantedById,
+        );
+
+        const result = await methods.getSoleOwnedResourceIds(userId, ResourceType.AGENT);
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(soleRes.toString());
+      });
+
+      test('excludes resources where another principal also holds DELETE', async () => {
+        const sharedRes = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          sharedRes,
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+          grantedById,
+        );
+        await methods.grantPermission(
+          PrincipalType.GROUP,
+          groupId,
+          ResourceType.AGENT,
+          sharedRes,
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+          grantedById,
+        );
+
+        const result = await methods.getSoleOwnedResourceIds(userId, ResourceType.AGENT);
+        expect(result).toHaveLength(0);
+      });
+
+      test('ignores other principals that lack the DELETE bit', async () => {
+        const soleRes = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          soleRes,
+          PermissionBits.VIEW | PermissionBits.DELETE,
+          grantedById,
+        );
+        await methods.grantPermission(
+          PrincipalType.GROUP,
+          groupId,
+          ResourceType.AGENT,
+          soleRes,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+
+        const result = await methods.getSoleOwnedResourceIds(userId, ResourceType.AGENT);
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(soleRes.toString());
+      });
+
+      test('excludes resources where the user entry lacks DELETE', async () => {
+        const noDelete = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          noDelete,
+          PermissionBits.VIEW | PermissionBits.EDIT,
+          grantedById,
+        );
+
+        const result = await methods.getSoleOwnedResourceIds(userId, ResourceType.AGENT);
+        expect(result).toHaveLength(0);
+      });
+
+      test('handles an array of resource types', async () => {
+        const agentRes = new mongoose.Types.ObjectId();
+        const mcpRes = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.AGENT,
+          agentRes,
+          PermissionBits.VIEW | PermissionBits.DELETE,
+          grantedById,
+        );
+        await methods.grantPermission(
+          PrincipalType.USER,
+          userId,
+          ResourceType.MCPSERVER,
+          mcpRes,
+          PermissionBits.VIEW | PermissionBits.DELETE,
+          grantedById,
+        );
+
+        const result = await methods.getSoleOwnedResourceIds(userId, [
+          ResourceType.AGENT,
+          ResourceType.MCPSERVER,
+        ]);
+        expect(result).toHaveLength(2);
+        const idStrings = result.map((id) => id.toString()).sort();
+        expect(idStrings).toEqual([agentRes.toString(), mcpRes.toString()].sort());
+      });
+
+      test('returns empty array when no owned entries exist', async () => {
+        const result = await methods.getSoleOwnedResourceIds(userId, ResourceType.AGENT);
+        expect(result).toEqual([]);
+      });
+    });
+  });
+
+  /**
+   * Focused unit tests for the `permissionBitSupersets` helper. The helper is
+   * the single point of correctness for every ACL read path (every query uses
+   * `permBits: { $in: permissionBitSupersets(X) }`), so it warrants direct
+   * coverage independent of the higher-level parity and behavior specs.
+   */
+  describe('permissionBitSupersets', () => {
+    test('requiredBits=0 matches every permBits value in [0, 15]', () => {
+      const result = permissionBitSupersets(0);
+      expect(result).toHaveLength(16);
+      expect([...result].sort((a, b) => a - b)).toEqual([
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+      ]);
+    });
+
+    test('requiredBits=15 (all four bits) matches only [15]', () => {
+      const result = permissionBitSupersets(
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
+      );
+      expect([...result].sort((a, b) => a - b)).toEqual([15]);
+    });
+
+    test('every returned value is a bitwise superset of requiredBits', () => {
+      for (const required of [
+        PermissionBits.VIEW,
+        PermissionBits.EDIT,
+        PermissionBits.DELETE,
+        PermissionBits.SHARE,
+        PermissionBits.VIEW | PermissionBits.EDIT,
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
+      ]) {
+        const result = permissionBitSupersets(required);
+        for (const v of result) {
+          expect((v & required) === required).toBe(true);
+        }
+      }
+    });
+
+    test('returns exactly the values satisfying $bitsAllSet semantics', () => {
+      /**
+       * Parity check against the literal definition: for every required mask,
+       * the returned set must equal the set of all v in [0,15] whose bits
+       * include `required`.
+       */
+      for (let required = 0; required <= 15; required++) {
+        const expected: number[] = [];
+        for (let v = 0; v <= 15; v++) {
+          if ((v & required) === required) {
+            expected.push(v);
+          }
+        }
+        expect([...permissionBitSupersets(required)].sort((a, b) => a - b)).toEqual(expected);
+      }
+    });
+
+    test('memoizes: repeat calls return the same frozen reference', () => {
+      const first = permissionBitSupersets(PermissionBits.SHARE);
+      const second = permissionBitSupersets(PermissionBits.SHARE);
+      expect(second).toBe(first);
+      expect(Object.isFrozen(first)).toBe(true);
+    });
+
+    test('frozen result throws on mutation attempts in strict mode', () => {
+      const result = permissionBitSupersets(PermissionBits.VIEW);
+      /**
+       * `Object.freeze` in strict mode (TypeScript compiles to strict) causes
+       * mutation attempts to throw rather than silently corrupt the cache.
+       */
+      expect(() => {
+        (result as number[]).push(99);
+      }).toThrow(TypeError);
+    });
+
+    /**
+     * Controllers forward user input directly into this path (e.g.
+     * `req.query.requiredPermission` in agents/v1.js is parsed by `parseInt`
+     * and passed to `findAccessibleResources`). Without a guard, attacker-
+     * supplied unique integers would grow the process-global `supersetCache`
+     * indefinitely (a DoS vector). Verify the function rejects every
+     * out-of-range shape without touching the cache.
+     */
+    describe('rejection of out-of-range inputs (cache-growth safety)', () => {
+      const MAX =
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+      const SHARED_EMPTY = permissionBitSupersets(MAX + 1);
+
+      test('returns a frozen empty array for requiredBits above MAX_PERM_BITS', () => {
+        expect(permissionBitSupersets(MAX + 1)).toEqual([]);
+        expect(Object.isFrozen(permissionBitSupersets(MAX + 1))).toBe(true);
+      });
+
+      test('returns the same shared empty instance for every rejected input', () => {
+        /**
+         * Shared reference identity means rejected inputs do not each allocate
+         * a fresh array on every call — key to avoiding GC churn under load.
+         */
+        expect(permissionBitSupersets(MAX + 1)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(MAX + 100)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(-1)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(Number.MAX_SAFE_INTEGER)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(NaN)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(1.5)).toBe(SHARED_EMPTY);
+      });
+
+      test('rejects inputs with bits above MAX_PERM_BITS even if some in-range bits are set', () => {
+        /**
+         * `permBits = 17 = 0b10001` has VIEW set AND bit 4 (out of range). A
+         * stored `permBits` can never be both ≤ 15 and have bit 4 set, so the
+         * match set is necessarily empty — reject before caching.
+         */
+        expect(permissionBitSupersets(MAX + PermissionBits.VIEW)).toBe(SHARED_EMPTY);
+      });
+
+      test('does NOT cache rejected inputs (reference identity)', () => {
+        /**
+         * Fire a burst of unique attacker-supplied integers and verify that
+         * none of them can be retrieved from the cache via a legitimate call
+         * — i.e., they were never cached. We do this by asserting shared
+         * reference identity across repeated calls with varied bogus values.
+         * If any of these were being cached, repeat calls would return
+         * distinct frozen arrays.
+         */
+        const ref = permissionBitSupersets(MAX + 1);
+        for (let i = 0; i < 1000; i++) {
+          expect(permissionBitSupersets(MAX + 1 + i)).toBe(ref);
+        }
+        for (let i = 0; i < 1000; i++) {
+          expect(permissionBitSupersets(-(i + 1))).toBe(ref);
+        }
+      });
+
+      test('does NOT call `supersetCache.set` for rejected inputs (Map-write probe)', () => {
+        /**
+         * Stronger guarantee than reference identity alone: spy on
+         * `Map.prototype.set` and assert zero invocations during a burst of
+         * rejected inputs. This closes the hypothetical gap where a future
+         * regression like `supersetCache.set(requiredBits, EMPTY_SUPERSETS)`
+         * could pass the reference-identity check while still leaking memory
+         * one entry per attacker request.
+         *
+         * The spy is global (it intercepts every `Map.prototype.set` call),
+         * so we snapshot the call count before and after and assert the
+         * delta is zero. The body does no async work and no other Map
+         * writes, so any delta would come from `permissionBitSupersets`.
+         */
+        const setSpy = jest.spyOn(Map.prototype, 'set');
+        try {
+          const before = setSpy.mock.calls.length;
+          for (let i = 0; i < 500; i++) {
+            permissionBitSupersets(MAX + 1 + i);
+            permissionBitSupersets(-(i + 1));
+            permissionBitSupersets(i + 0.5);
+          }
+          const delta = setSpy.mock.calls.length - before;
+          expect(delta).toBe(0);
+        } finally {
+          setSpy.mockRestore();
+        }
+      });
+
+      test('in-range inputs are still cached normally (memoized reference)', () => {
+        const first = permissionBitSupersets(PermissionBits.EDIT);
+        const second = permissionBitSupersets(PermissionBits.EDIT);
+        expect(second).toBe(first);
+        expect(Object.isFrozen(first)).toBe(true);
+        expect(first).not.toBe(SHARED_EMPTY);
+      });
+    });
+  });
+
+  /**
+   * These tests enforce the invariant that `permBits` stays within the
+   * `[0, MAX_PERM_BITS]` range that `permissionBitSupersets` enumerates. Rows
+   * with out-of-range bits would be silently excluded from the `$in` filter
+   * (false permission denials), so the schema rejects them at write time.
+   * See the second review pass on issue #12729.
+   */
+  describe('permBits schema bounds', () => {
+    const MAX_PERM_BITS =
+      PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+
+    test('accepts permBits at the upper bound (all enum bits set)', async () => {
+      const resource = new mongoose.Types.ObjectId();
+      await expect(
+        AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          principalModel: PrincipalModel.USER,
+          resourceType: ResourceType.AGENT,
+          resourceId: resource,
+          permBits: MAX_PERM_BITS,
+          grantedBy: grantedById,
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    test('rejects permBits above MAX_PERM_BITS', async () => {
+      const resource = new mongoose.Types.ObjectId();
+      await expect(
+        AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          principalModel: PrincipalModel.USER,
+          resourceType: ResourceType.AGENT,
+          resourceId: resource,
+          permBits: MAX_PERM_BITS + 1,
+          grantedBy: grantedById,
+        }),
+      ).rejects.toThrow(mongoose.Error.ValidationError);
+    });
+
+    test('rejects negative permBits', async () => {
+      const resource = new mongoose.Types.ObjectId();
+      await expect(
+        AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          principalModel: PrincipalModel.USER,
+          resourceType: ResourceType.AGENT,
+          resourceId: resource,
+          permBits: -1,
+          grantedBy: grantedById,
+        }),
+      ).rejects.toThrow(mongoose.Error.ValidationError);
+    });
+
+    test('rejects non-integer permBits', async () => {
+      const resource = new mongoose.Types.ObjectId();
+      await expect(
+        AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          principalModel: PrincipalModel.USER,
+          resourceType: ResourceType.AGENT,
+          resourceId: resource,
+          permBits: 1.5,
+          grantedBy: grantedById,
+        }),
+      ).rejects.toThrow(mongoose.Error.ValidationError);
     });
   });
 });

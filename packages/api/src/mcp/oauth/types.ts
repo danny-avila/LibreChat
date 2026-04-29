@@ -93,6 +93,8 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   oauthHeaders?: Record<string, string>;
   /** True when the flow reused a stored client registration from a prior successful OAuth flow */
   reusedStoredClient?: boolean;
+  /** Tenant context captured at flow initiation for callback replay (SameSite cookies unavailable on cross-origin redirects) */
+  tenantId?: string;
 }
 
 export interface MCPOAuthTokens extends OAuthTokens {

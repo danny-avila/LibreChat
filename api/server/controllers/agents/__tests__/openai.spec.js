@@ -46,9 +46,11 @@ jest.mock('@librechat/api', () => ({
     .fn()
     .mockReturnValue({ request: { model: 'agent-123', messages: [], stream: false } }),
   initializeAgent: jest.fn().mockResolvedValue({
+    id: 'agent-123',
     model: 'gpt-4',
     model_parameters: {},
     toolRegistry: {},
+    edges: [],
   }),
   getBalanceConfig: mockGetBalanceConfig,
   createErrorResponse: jest.fn(),
@@ -72,6 +74,24 @@ jest.mock('@librechat/api', () => ({
   resolveRecursionLimit: jest.fn().mockReturnValue(50),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
   isChatCompletionValidationFailure: jest.fn().mockReturnValue(false),
+  discoverConnectedAgents: jest.fn().mockResolvedValue({
+    agentConfigs: new Map(),
+    edges: [],
+    skippedAgentIds: new Set(),
+    userMCPAuthMap: undefined,
+  }),
+}));
+
+jest.mock('~/server/controllers/ModelController', () => ({
+  getModelsConfig: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('~/server/services/Files/permissions', () => ({
+  filterFilesByAgentAccess: jest.fn(),
+}));
+
+jest.mock('~/cache', () => ({
+  logViolation: jest.fn(),
 }));
 
 jest.mock('~/server/services/ToolService', () => ({
@@ -91,6 +111,7 @@ jest.mock('~/server/controllers/agents/callbacks', () => ({
 
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
+  checkPermission: jest.fn().mockResolvedValue(true),
 }));
 
 const mockUpdateBalance = jest.fn().mockResolvedValue({});

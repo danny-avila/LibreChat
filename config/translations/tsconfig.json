@@ -1,7 +1,6 @@
 {
   "compilerOptions": {
     "noImplicitAny": false,
-    "baseUrl": ".",
     "outDir": "./dist",
     "strict": true,
     "moduleResolution": "node",

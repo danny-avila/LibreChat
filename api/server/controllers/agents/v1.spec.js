@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
-const { agentSchema } = require('@librechat/data-schemas');
+const { agentSchema, fileSchema } = require('@librechat/data-schemas');
 const { FileSources, PermissionBits } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -99,6 +99,9 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     const mongoUri = mongoServer.getUri();
     await mongoose.connect(mongoUri);
     Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
+    // Register File so orphan-pruning tests (and the tool_resources validation
+    // test, which now needs real File docs for its ids) have a working model.
+    mongoose.models.File || mongoose.model('File', fileSchema);
   }, 20000);
 
   afterAll(async () => {
@@ -542,6 +545,23 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     });
 
     test('should validate tool_resources in updates', async () => {
+      // Back these ids with real File docs so the orphan-pruning added for
+      // issue #12776 does not strip them — this test is about OCR conversion
+      // and schema filtering, not file existence.
+      const File = mongoose.models.File;
+      for (const id of ['ocr1', 'ocr2', 'img1']) {
+        await File.create({
+          file_id: id,
+          user: existingAgentAuthorId,
+          filename: `${id}.txt`,
+          filepath: `/tmp/${id}`,
+          object: 'file',
+          type: 'text/plain',
+          bytes: 1,
+          source: FileSources.local,
+        });
+      }
+
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
       mockReq.body = {
@@ -728,6 +748,93 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           details: expect.any(Array),
         }),
       );
+    });
+
+    describe('orphan file_id pruning (issue #12776)', () => {
+      const File = () => mongoose.models.File;
+
+      const createFileDoc = async (file_id, userId) =>
+        File().create({
+          file_id,
+          user: userId,
+          filename: `${file_id}.txt`,
+          filepath: `/tmp/${file_id}`,
+          object: 'file',
+          type: 'text/plain',
+          bytes: 1,
+          source: FileSources.local,
+        });
+
+      beforeEach(async () => {
+        await File().deleteMany({});
+      });
+
+      test('strips orphan file_ids from incoming tool_resources before persisting', async () => {
+        const keeper = `file_${uuidv4()}`;
+        const orphan = `file_${uuidv4()}`;
+        await createFileDoc(keeper, existingAgentAuthorId);
+
+        mockReq.user.id = existingAgentAuthorId.toString();
+        mockReq.params.id = existingAgentId;
+        mockReq.body = {
+          tool_resources: {
+            file_search: { file_ids: [keeper, orphan] },
+          },
+        };
+
+        await updateAgentHandler(mockReq, mockRes);
+
+        const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+        expect(agentInDb.tool_resources.file_search.file_ids).toEqual([keeper]);
+      });
+
+      test('leaves tool_resources alone when the update omits it', async () => {
+        const orphan = `file_${uuidv4()}`;
+        await Agent.updateOne(
+          { id: existingAgentId },
+          { $set: { tool_resources: { file_search: { file_ids: [orphan] } } } },
+        );
+
+        mockReq.user.id = existingAgentAuthorId.toString();
+        mockReq.params.id = existingAgentId;
+        mockReq.body = { name: 'Unrelated Rename' };
+
+        await updateAgentHandler(mockReq, mockRes);
+
+        const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+        expect(agentInDb.name).toBe('Unrelated Rename');
+        // Save-time pruning is intentionally scoped to tool_resources updates.
+        // The delete-time fix and migration script cover the untouched case.
+        expect(agentInDb.tool_resources.file_search.file_ids).toEqual([orphan]);
+      });
+
+      test('swallows errors from the file-existence check and still completes the save', async () => {
+        const db = require('~/models');
+        const originalGetFiles = db.getFiles;
+        db.getFiles = jest.fn().mockRejectedValue(new Error('transient DB error'));
+
+        const orphan = `file_${uuidv4()}`;
+        mockReq.user.id = existingAgentAuthorId.toString();
+        mockReq.params.id = existingAgentId;
+        mockReq.body = {
+          name: 'Save Succeeds',
+          tool_resources: { file_search: { file_ids: [orphan] } },
+        };
+
+        try {
+          await updateAgentHandler(mockReq, mockRes);
+
+          expect(mockRes.status).not.toHaveBeenCalledWith(500);
+          expect(mockRes.json).toHaveBeenCalled();
+          const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+          expect(agentInDb.name).toBe('Save Succeeds');
+          // Cleanup skipped on error, so the id remains — the delete-time path
+          // or the next successful save will reconcile it.
+          expect(agentInDb.tool_resources.file_search.file_ids).toEqual([orphan]);
+        } finally {
+          db.getFiles = originalGetFiles;
+        }
+      });
     });
   });
 

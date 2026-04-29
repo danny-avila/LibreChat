@@ -7,6 +7,32 @@ import type { ServerRequest } from '~/types';
 import { logAxiosError, readFileAsString } from '~/utils';
 import { generateShortLivedToken } from '~/crypto/jwt';
 
+const MARKDOWN_MIME_TYPES = new Set([
+  'text/markdown',
+  'text/x-markdown',
+  'text/md',
+  'application/markdown',
+  'application/x-markdown',
+]);
+
+const MARKDOWN_EXTENSIONS_RE = /\.(md|markdown|mdown|mkdn|mkd|mdwn)$/i;
+
+function normalizeMimeType(mimetype: string): string {
+  if (!mimetype) {
+    return '';
+  }
+  const semi = mimetype.indexOf(';');
+  const base = semi === -1 ? mimetype : mimetype.slice(0, semi);
+  return base.trim().toLowerCase();
+}
+
+function isMarkdownFile(file: Express.Multer.File): boolean {
+  if (MARKDOWN_MIME_TYPES.has(normalizeMimeType(file.mimetype))) {
+    return true;
+  }
+  return MARKDOWN_EXTENSIONS_RE.test(file.originalname ?? '');
+}
+
 /**
  * Attempts to parse text using RAG API, falls back to native text parsing
  * @param params - The parameters object
@@ -26,6 +52,13 @@ export async function parseText({
 }): Promise<{ text: string; bytes: number; source: string }> {
   if (!process.env.RAG_API_URL) {
     logger.debug('[parseText] RAG_API_URL not defined, falling back to native text parsing');
+    return parseTextNative(file);
+  }
+
+  if (isMarkdownFile(file)) {
+    logger.debug(
+      `[parseText] Markdown file detected (${file.originalname}, ${file.mimetype}), using native parsing to preserve raw formatting`,
+    );
     return parseTextNative(file);
   }
 

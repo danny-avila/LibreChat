@@ -836,6 +836,7 @@ class AgentClient extends BaseClient {
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
           summarizationConfig: appConfig?.summarization,
+          appConfig,
           tokenCounter,
         });
 
