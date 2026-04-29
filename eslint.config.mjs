@@ -96,10 +96,10 @@ export default [
       },
       'import/resolver': {
         typescript: {
-          project: ['./client/tsconfig.json'],
+          project: [path.resolve(__dirname, './client/tsconfig.json')],
         },
         node: {
-          project: ['./client/tsconfig.json'],
+          project: [path.resolve(__dirname, './client/tsconfig.json')],
         },
       },
     },
@@ -228,6 +228,7 @@ export default [
       sourceType: 'script',
       parserOptions: {
         project: './client/tsconfig.json',
+        tsconfigRootDir: __dirname,
       },
     },
     rules: {
@@ -272,6 +273,7 @@ export default [
       sourceType: 'module',
       parserOptions: {
         project: './packages/data-provider/tsconfig.json',
+        tsconfigRootDir: __dirname,
       },
     },
     rules: {
@@ -311,6 +313,7 @@ export default [
       sourceType: 'script',
       parserOptions: {
         project: './config/translations/tsconfig.json',
+        tsconfigRootDir: __dirname,
       },
     },
   },
@@ -321,6 +324,7 @@ export default [
       sourceType: 'script',
       parserOptions: {
         project: './packages/data-provider/tsconfig.spec.json',
+        tsconfigRootDir: __dirname,
       },
     },
   },
@@ -331,6 +335,7 @@ export default [
       sourceType: 'script',
       parserOptions: {
         project: './packages/data-provider/tsconfig.spec.json',
+        tsconfigRootDir: __dirname,
       },
     },
   },
@@ -341,6 +346,7 @@ export default [
       sourceType: 'script',
       parserOptions: {
         project: './packages/api/tsconfig.spec.json',
+        tsconfigRootDir: __dirname,
       },
     },
   },
@@ -353,6 +359,7 @@ export default [
       sourceType: 'module',
       parserOptions: {
         project: './packages/data-schemas/tsconfig.json',
+        tsconfigRootDir: __dirname,
       },
     },
     rules: {

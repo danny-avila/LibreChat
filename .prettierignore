@@ -1,0 +1,12 @@
+node_modules
+dist
+**/dist
+**/types
+client/public
+client/coverage
+e2e/playwright-report
+packages/api/test_bundle
+packages/data-provider/test_bundle
+meili_data
+data-node
+.devcontainer
