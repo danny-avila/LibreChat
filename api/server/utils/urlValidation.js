@@ -12,7 +12,7 @@ function validateUrl(targetUrl) {
   let parsedUrl;
   try {
     parsedUrl = new URL(targetUrl);
-  } catch (error) {
+  } catch {
     throw new Error('Malformed URL provided');
   }
 

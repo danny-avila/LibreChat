@@ -1,4 +1,3 @@
-const fs = require('fs').promises;
 const { logger } = require('@librechat/data-schemas');
 const { FileContext } = require('librechat-data-provider');
 const { deleteFileByFilter, updateAssistantDoc, getAssistants } = require('~/models');

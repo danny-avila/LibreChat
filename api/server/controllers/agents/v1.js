@@ -1,5 +1,4 @@
 const { z } = require('zod');
-const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {

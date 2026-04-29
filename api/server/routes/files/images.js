@@ -1,5 +1,4 @@
 const path = require('path');
-const fs = require('fs').promises;
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { verifyAgentUploadPermission, resolveUploadErrorMessage } = require('@librechat/api');
