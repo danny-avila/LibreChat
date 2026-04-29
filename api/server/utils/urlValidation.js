@@ -55,7 +55,7 @@ function isPrivateIP(ip) {
   const match = ip.match(ipv4Regex);
 
   if (match) {
-    const [, a, b, c, d] = match.map(Number);
+    const [, a, b, _c, _d] = match.map(Number);
 
     // 10.0.0.0/8
     if (a === 10) return true;
