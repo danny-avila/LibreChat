@@ -323,21 +323,31 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
+const remoteApiOidcSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    issuer: z.string().url().optional(),
+    audience: z.string().optional(),
+    jwksUri: z.string().url().optional(),
+    scope: z.string().optional(),
+  })
+  .superRefine((oidc, ctx) => {
+    if (oidc.enabled === true && !oidc.issuer) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['issuer'],
+        message: 'issuer is required when OIDC auth is enabled',
+      });
+    }
+  });
+
 const remoteApiAuthSchema = z.object({
   apiKey: z
     .object({
       enabled: z.boolean().default(true),
     })
     .optional(),
-  oidc: z
-    .object({
-      enabled: z.boolean().default(false),
-      issuer: z.string(),
-      audience: z.string().optional(),
-      jwksUri: z.string().optional(),
-      scope: z.string().optional(),
-    })
-    .optional(),
+  oidc: remoteApiOidcSchema.optional(),
 });
 
 const remoteApiSchema = z.object({

@@ -352,6 +352,45 @@ describe('agentsEndpointSchema', () => {
       expect(result.data).not.toHaveProperty('baseURL');
     }
   });
+
+  it('allows explicitly disabled remote OIDC auth without issuer', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: false,
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('requires a valid issuer when remote OIDC auth is enabled', () => {
+    const missingIssuer = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+          },
+        },
+      },
+    });
+    const invalidIssuer = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'my-realm',
+          },
+        },
+      },
+    });
+
+    expect(missingIssuer.success).toBe(false);
+    expect(invalidIssuer.success).toBe(false);
+  });
 });
 
 describe('azureEndpointSchema', () => {

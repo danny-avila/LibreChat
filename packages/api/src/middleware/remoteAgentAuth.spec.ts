@@ -1,5 +1,7 @@
-import type { Request, Response } from 'express';
+import type { JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { TAgentsEndpoint } from 'librechat-data-provider';
+import type { Request, Response } from 'express';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -16,11 +18,16 @@ jest.mock('~/utils', () => ({
 }));
 
 const mockGetSigningKey = jest.fn();
-const mockGetKeys = jest.fn();
+const mockGetSigningKeys = jest.fn();
 
 jest.mock('jwks-rsa', () =>
-  jest.fn(() => ({ getSigningKey: mockGetSigningKey, getKeys: mockGetKeys })),
+  jest.fn(() => ({ getSigningKey: mockGetSigningKey, getSigningKeys: mockGetSigningKeys })),
 );
+
+jest.mock('undici', () => ({
+  fetch: jest.fn(),
+  ProxyAgent: jest.fn((proxy: string) => ({ proxy })),
+}));
 
 jest.mock('jsonwebtoken', () => ({
   decode: jest.fn(),
@@ -32,24 +39,56 @@ jest.mock('../auth/openid', () => ({
 }));
 
 import jwt from 'jsonwebtoken';
+import jwksRsa from 'jwks-rsa';
 import { logger } from '@librechat/data-schemas';
+import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { clearRemoteAgentAuthCache, createRemoteAgentAuth } from './remoteAgentAuth';
 import { findOpenIDUser } from '../auth/openid';
-import { createRemoteAgentAuth } from './remoteAgentAuth';
 
-const fetchMock = jest.fn();
-
-beforeAll(() => {
-  (global as unknown as Record<string, unknown>).fetch = fetchMock;
-});
-
+const mockFetch = undiciFetch as jest.Mock;
+const mockProxyAgent = ProxyAgent as unknown as jest.Mock;
 const FAKE_TOKEN = 'header.payload.signature';
 const BASE_ISSUER = 'https://auth.example.com/realms/test';
 const BASE_JWKS_URI = `${BASE_ISSUER}/protocol/openid-connect/certs`;
+const ENV_KEYS = [
+  'OPENID_JWKS_URL',
+  'OPENID_JWKS_URL_CACHE_ENABLED',
+  'OPENID_JWKS_URL_CACHE_TIME',
+  'PROXY',
+] as const;
 
-type SigningKeyCallback = (err: Error | null, key?: { getPublicKey: () => string }) => void;
-type JwtVerifyCallback = (err: Error | null, payload?: object) => void;
+type AgentAuthConfig = NonNullable<NonNullable<TAgentsEndpoint['remoteApi']>['auth']>;
+type OidcConfig = NonNullable<AgentAuthConfig['oidc']>;
+type ApiKeyConfig = NonNullable<AgentAuthConfig['apiKey']>;
+type JwtVerifyCallback = (err: Error | null, payload?: JwtPayload) => void;
 
 const mockUser = { _id: 'uid123', id: 'uid123', email: 'agent@test.com' };
+const originalEnv = ENV_KEYS.reduce<Record<(typeof ENV_KEYS)[number], string | undefined>>(
+  (env, key) => ({ ...env, [key]: process.env[key] }),
+  {
+    OPENID_JWKS_URL: undefined,
+    OPENID_JWKS_URL_CACHE_ENABLED: undefined,
+    OPENID_JWKS_URL_CACHE_TIME: undefined,
+    PROXY: undefined,
+  },
+);
+
+function deleteEnvKeys() {
+  ENV_KEYS.forEach((key) => {
+    delete process.env[key];
+  });
+}
+
+function restoreOriginalEnv() {
+  ENV_KEYS.forEach((key) => {
+    const value = originalEnv[key];
+    if (value == null) {
+      delete process.env[key];
+      return;
+    }
+    process.env[key] = value;
+  });
+}
 
 function makeRes() {
   const json = jest.fn();
@@ -61,7 +100,10 @@ function makeReq(headers: Record<string, string> = {}): Partial<Request> {
   return { headers };
 }
 
-function makeConfig(oidcOverrides?: object, apiKeyOverrides?: object): AppConfig {
+function makeConfig(
+  oidcOverrides?: Partial<OidcConfig>,
+  apiKeyOverrides?: Partial<ApiKeyConfig>,
+): AppConfig {
   return {
     endpoints: {
       agents: {
@@ -90,13 +132,14 @@ function makeDeps(appConfig: AppConfig | null = makeConfig()) {
   };
 }
 
-function setupOidcMocks(payload: object, kid = 'test-kid') {
-  (jwt.decode as jest.Mock).mockReturnValue({ header: { kid }, payload });
-  mockGetSigningKey.mockImplementation((_k: string, cb: SigningKeyCallback) =>
-    cb(null, { getPublicKey: () => 'public-key' }),
-  );
+function setupOidcMocks(payload: JwtPayload, kid: string | null = 'test-kid') {
+  (jwt.decode as jest.Mock).mockReturnValue({ header: kid == null ? {} : { kid }, payload });
+  mockGetSigningKey.mockResolvedValue({ getPublicKey: () => 'public-key' });
+  mockGetSigningKeys.mockResolvedValue([
+    { kid: kid ?? 'test-kid', getPublicKey: () => 'public-key' },
+  ]);
   (jwt.verify as jest.Mock).mockImplementation(
-    (_t: string, _k: string, _o: object, cb: JwtVerifyCallback) => cb(null, payload),
+    (_t: string, _k: string, _o: VerifyOptions, cb: JwtVerifyCallback) => cb(null, payload),
   );
 }
 
@@ -105,8 +148,19 @@ describe('createRemoteAgentAuth', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    fetchMock.mockReset();
+    deleteEnvKeys();
+    clearRemoteAgentAuthCache();
+    mockFetch.mockReset();
     mockNext = jest.fn();
+  });
+
+  afterEach(() => {
+    deleteEnvKeys();
+    clearRemoteAgentAuthCache();
+  });
+
+  afterAll(() => {
+    restoreOriginalEnv();
   });
 
   describe('when OIDC is not enabled', () => {
@@ -131,7 +185,7 @@ describe('createRemoteAgentAuth', () => {
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Authentication required' });
       expect(mockNext).not.toHaveBeenCalled();
-      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled(); // ← this is the key assertion
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
 
     it('falls back to apiKeyMiddleware when oidc.enabled is false', async () => {
@@ -182,6 +236,17 @@ describe('createRemoteAgentAuth', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Bearer token required' });
       expect(mockNext).not.toHaveBeenCalled();
     });
+
+    it('returns 500 when OIDC is enabled without an issuer', async () => {
+      const deps = makeDeps(makeConfig({ issuer: undefined }, { enabled: false }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(makeReq() as Request, res, mockNext);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Internal server error' });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
   });
 
   describe('when OIDC verification succeeds', () => {
@@ -200,6 +265,63 @@ describe('createRemoteAgentAuth', () => {
       expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@test.com' });
       expect(mockNext).toHaveBeenCalledWith();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+    });
+
+    it('allows RSA, RSA-PSS, and ECDSA signing algorithms', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      const deps = makeDeps();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect((jwt.verify as jest.Mock).mock.calls[0][2]).toEqual(
+        expect.objectContaining({
+          algorithms: expect.arrayContaining([
+            'RS256',
+            'RS384',
+            'RS512',
+            'PS256',
+            'PS384',
+            'PS512',
+            'ES256',
+            'ES384',
+            'ES512',
+          ]),
+        }),
+      );
+    });
+
+    it('tries signing keys until a token without kid verifies', async () => {
+      const payload = { sub: 'sub123', email: 'agent@test.com' };
+      setupOidcMocks(payload, null);
+      mockGetSigningKeys.mockResolvedValue([
+        { kid: 'first-kid', getPublicKey: () => 'first-public-key' },
+        { kid: 'second-kid', getPublicKey: () => 'second-public-key' },
+      ]);
+      (jwt.verify as jest.Mock).mockImplementation(
+        (_t: string, key: string, _o: VerifyOptions, cb: JwtVerifyCallback) => {
+          if (key === 'first-public-key') {
+            cb(new Error('invalid signature'));
+            return;
+          }
+          cb(null, payload);
+        },
+      );
+
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(mockGetSigningKey).not.toHaveBeenCalled();
+      expect(jwt.verify).toHaveBeenCalledTimes(2);
+      expect((jwt.verify as jest.Mock).mock.calls[0][1]).toBe('first-public-key');
+      expect((jwt.verify as jest.Mock).mock.calls[1][1]).toBe('second-public-key');
+      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@test.com' });
+      expect(mockNext).toHaveBeenCalledWith();
     });
 
     it('attaches federatedTokens with access_token and expires_at', async () => {
@@ -252,14 +374,35 @@ describe('createRemoteAgentAuth', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
       expect(mockNext).not.toHaveBeenCalled();
     });
+
+    it('returns 401 without API key fallback when OpenID user resolution is rejected', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      (findOpenIDUser as jest.Mock).mockResolvedValue({
+        user: null,
+        error: 'AUTH_FAILED',
+        migration: false,
+      });
+
+      const deps = makeDeps(makeConfig({}, { enabled: true }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
+    });
   });
 
   describe('when OIDC verification fails', () => {
     beforeEach(() => {
       (jwt.decode as jest.Mock).mockReturnValue({ header: { kid: 'kid' }, payload: {} });
-      mockGetSigningKey.mockImplementation((_k: string, cb: SigningKeyCallback) =>
-        cb(new Error('Signing key not found')),
-      );
+      mockGetSigningKey.mockRejectedValue(new Error('Signing key not found'));
     });
 
     it('falls back to apiKeyMiddleware when apiKey is enabled', async () => {
@@ -326,11 +469,11 @@ describe('createRemoteAgentAuth', () => {
       );
     });
 
-    it('returns 401 when findOpenIDUser throws and apiKey is disabled', async () => {
+    it('returns 500 when findOpenIDUser throws', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
       (findOpenIDUser as jest.Mock).mockRejectedValue(new Error('DB error'));
 
-      const deps = makeDeps(makeConfig({}, { enabled: false }));
+      const deps = makeDeps(makeConfig({}, { enabled: true }));
       const { res, status, json } = makeRes();
 
       await createRemoteAgentAuth(deps)(
@@ -339,8 +482,9 @@ describe('createRemoteAgentAuth', () => {
         mockNext,
       );
 
-      expect(status).toHaveBeenCalledWith(401);
-      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Internal server error' });
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
   });
 
@@ -364,7 +508,7 @@ describe('createRemoteAgentAuth', () => {
         mockNext,
       );
 
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
       expect(mockNext).toHaveBeenCalled();
     });
 
@@ -380,17 +524,14 @@ describe('createRemoteAgentAuth', () => {
         mockNext,
       );
 
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
       expect(mockNext).toHaveBeenCalled();
-
-      delete process.env.OPENID_JWKS_URL;
     });
 
     it('fetches discovery document when jwksUri and env var are absent', async () => {
-      delete process.env.OPENID_JWKS_URL;
       const issuer = 'https://issuer-discovery-1.example.com';
 
-      fetchMock.mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         json: async () => ({ jwks_uri: `${issuer}/protocol/openid-connect/certs` }),
       });
@@ -403,13 +544,91 @@ describe('createRemoteAgentAuth', () => {
         mockNext,
       );
 
-      expect(fetchMock).toHaveBeenCalledWith(`${issuer}/.well-known/openid-configuration`);
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${issuer}/.well-known/openid-configuration`,
+        expect.objectContaining({ signal: expect.any(Object) }),
+      );
       expect(mockNext).toHaveBeenCalled();
     });
 
+    it('uses a proxy agent for discovery when PROXY is set', async () => {
+      process.env.PROXY = 'http://proxy.example.com';
+      const issuer = 'https://issuer-proxy.example.com';
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ jwks_uri: `${issuer}/protocol/openid-connect/certs` }),
+      });
+
+      const deps = makeDeps(makeConfig({ jwksUri: undefined, issuer }));
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockProxyAgent).toHaveBeenCalledWith('http://proxy.example.com');
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${issuer}/.well-known/openid-configuration`,
+        expect.objectContaining({ dispatcher: { proxy: 'http://proxy.example.com' } }),
+      );
+    });
+
+    it('caches JWKS clients by resolved URI', async () => {
+      process.env.OPENID_JWKS_URL = 'https://env-one.example.com/jwks';
+      const deps = makeDeps(
+        makeConfig({ jwksUri: undefined, issuer: 'https://issuer-env-cache.example.com' }),
+      );
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      process.env.OPENID_JWKS_URL = 'https://env-two.example.com/jwks';
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(jwksRsa).toHaveBeenCalledWith(
+        expect.objectContaining({ jwksUri: 'https://env-one.example.com/jwks' }),
+      );
+      expect(jwksRsa).toHaveBeenCalledWith(
+        expect.objectContaining({ jwksUri: 'https://env-two.example.com/jwks' }),
+      );
+    });
+
+    it('honors disabled JWKS caching', async () => {
+      process.env.OPENID_JWKS_URL_CACHE_ENABLED = 'false';
+      const deps = makeDeps(
+        makeConfig({
+          jwksUri: 'https://cache-disabled.example.com/jwks',
+          issuer: 'https://issuer-cache-disabled.example.com',
+        }),
+      );
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(jwksRsa).toHaveBeenCalledTimes(2);
+    });
+
     it('returns 401 when discovery returns non-ok response', async () => {
-      delete process.env.OPENID_JWKS_URL;
-      fetchMock.mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' });
+      mockFetch.mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' });
 
       const deps = makeDeps(
         makeConfig(
@@ -429,8 +648,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('returns 401 when discovery response is missing jwks_uri field', async () => {
-      delete process.env.OPENID_JWKS_URL;
-      fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
 
       const deps = makeDeps(
         makeConfig(
@@ -451,7 +669,7 @@ describe('createRemoteAgentAuth', () => {
   });
 
   describe('email claim resolution', () => {
-    async function captureEmailArg(claims: object): Promise<string | undefined> {
+    async function captureEmailArg(claims: JwtPayload): Promise<string | undefined> {
       setupOidcMocks(claims);
       (findOpenIDUser as jest.Mock).mockResolvedValue({ user: { ...mockUser }, error: null });
 
@@ -504,6 +722,30 @@ describe('createRemoteAgentAuth', () => {
         expect.objectContaining({ provider: 'openid', openidId: 'sub-new' }),
       );
       expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('returns 500 when migration update fails', async () => {
+      const mockUpdateUser = jest.fn().mockRejectedValue(new Error('DB write failed'));
+      setupOidcMocks({ sub: 'sub-new', email: 'existing@test.com' });
+      (findOpenIDUser as jest.Mock).mockResolvedValue({
+        user: { ...mockUser, openidId: undefined, role: 'user' },
+        error: null,
+        migration: true,
+      });
+
+      const deps = { ...makeDeps(makeConfig({}, { enabled: true })), updateUser: mockUpdateUser };
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Internal server error' });
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('does not call updateUser when migration is false and role exists', async () => {
