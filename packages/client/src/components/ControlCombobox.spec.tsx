@@ -143,6 +143,34 @@ describe('ControlCombobox popover sizing', () => {
     expect(triggerObservers).toHaveLength(0);
   });
 
+  it('uses button.offsetWidth when borderBoxSize is unavailable', () => {
+    const { offsetWidthSpy } = renderCombobox(26);
+    openPopover();
+    expect(getPopoverWidth()).toBe('26px');
+
+    const observer = observers[0];
+    expect(observer).toBeDefined();
+
+    offsetWidthSpy.mockReturnValue(275);
+
+    act(() => {
+      observer.callback(
+        [
+          {
+            target: observer.target as Element,
+            contentRect: { width: 251 } as DOMRectReadOnly,
+            borderBoxSize: undefined,
+            contentBoxSize: undefined,
+            devicePixelContentBoxSize: undefined,
+          } as unknown as ResizeObserverEntry,
+        ],
+        observer as unknown as ResizeObserver,
+      );
+    });
+
+    expect(getPopoverWidth()).toBe('275px');
+  });
+
   it('ignores zero-width resize entries', () => {
     renderCombobox(275);
     openPopover();
