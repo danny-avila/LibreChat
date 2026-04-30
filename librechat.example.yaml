@@ -315,7 +315,7 @@ endpoints:
   #     # You can use friendly names (avoid spaces for cleaner YAML) or technical IDs as keys
   #     models:
   #       claude-opus-4.5:
-  #         deploymentName: claude-opus-4-5@20251101
+  #         deploymentName: claude-sonnet-4-5-20250929
   #       claude-sonnet-4:
   #         deploymentName: claude-sonnet-4-20250514
   #       claude-3.7-sonnet:
