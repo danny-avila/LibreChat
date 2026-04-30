@@ -47,10 +47,12 @@ import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { logger, getTenantId } from '@librechat/data-schemas';
 import { clearRemoteAgentAuthCache, createRemoteAgentAuth } from './remoteAgentAuth';
 import { findOpenIDUser } from '../auth/openid';
+import { math } from '~/utils';
 
 const mockFetch = undiciFetch as jest.Mock;
 const mockProxyAgent = ProxyAgent as unknown as jest.Mock;
 const mockGetTenantId = getTenantId as jest.Mock;
+const mockMath = math as jest.Mock;
 const realFindOpenIDUser =
   jest.requireActual<typeof import('../auth/openid')>('../auth/openid').findOpenIDUser;
 const mockFindOpenIDUser = findOpenIDUser as jest.MockedFunction<typeof findOpenIDUser>;
@@ -193,6 +195,7 @@ describe('createRemoteAgentAuth', () => {
     mockFetch.mockReset();
     mockGetTenantId.mockReset();
     mockGetTenantId.mockReturnValue(undefined);
+    mockMath.mockReturnValue(60000);
     mockFindOpenIDUser.mockImplementation(realFindOpenIDUser);
     mockNext = jest.fn();
   });
@@ -541,10 +544,7 @@ describe('createRemoteAgentAuth', () => {
         payload,
       });
       (jwt.verify as jest.Mock).mockImplementation(
-        (_t: string, _k: string, options: VerifyOptions, cb: JwtVerifyCallback) => {
-          expect(options.algorithms).toEqual(
-            expect.not.arrayContaining(['HS256', 'HS384', 'HS512']),
-          );
+        (_t: string, _k: string, _options: VerifyOptions, cb: JwtVerifyCallback) => {
           cb(new Error('invalid algorithm'));
         },
       );
@@ -560,6 +560,11 @@ describe('createRemoteAgentAuth', () => {
 
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect((jwt.verify as jest.Mock).mock.calls[0][2]).toEqual(
+        expect.objectContaining({
+          algorithms: expect.not.arrayContaining(['HS256', 'HS384', 'HS512']),
+        }),
+      );
       expect(mockNext).not.toHaveBeenCalled();
     });
   });
@@ -764,6 +769,46 @@ describe('createRemoteAgentAuth', () => {
       expect(jwksRsa).toHaveBeenLastCalledWith(
         expect.objectContaining({ jwksUri: 'https://cache-0.example.com/jwks' }),
       );
+    });
+
+    it('prunes expired JWKS client entries before evicting valid entries', async () => {
+      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(0);
+      const runRequest = async (key: string) => {
+        const deps = makeDeps(
+          makeConfig({
+            jwksUri: `https://cache-prune-${key}.example.com/jwks`,
+            issuer: `https://issuer-cache-prune-${key}.example.com`,
+          }),
+        );
+
+        await createRemoteAgentAuth(deps)(
+          makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+          makeRes().res,
+          mockNext,
+        );
+      };
+
+      try {
+        mockMath.mockReturnValue(120000);
+        await runRequest('keeper');
+
+        mockMath.mockReturnValue(1000);
+        for (let i = 0; i < 99; i++) {
+          await runRequest(`expired-${i}`);
+        }
+
+        nowSpy.mockReturnValue(2000);
+        mockMath.mockReturnValue(60000);
+        await runRequest('new');
+
+        expect(jwksRsa).toHaveBeenCalledTimes(101);
+
+        await runRequest('keeper');
+
+        expect(jwksRsa).toHaveBeenCalledTimes(101);
+      } finally {
+        nowSpy.mockRestore();
+      }
     });
 
     it('aborts discovery when the timeout expires', async () => {
@@ -1047,6 +1092,27 @@ describe('createRemoteAgentAuth', () => {
       });
 
       const deps = makeDeps(makeConfig({ scope: 'remote_agent admin' }, { enabled: false }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('treats comma-separated configured scopes as one invalid scope token', async () => {
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        scope: 'remote_agent admin',
+      });
+
+      const deps = makeDeps(makeConfig({ scope: 'remote_agent,admin' }, { enabled: false }));
       const { res, status, json } = makeRes();
 
       await createRemoteAgentAuth(deps)(

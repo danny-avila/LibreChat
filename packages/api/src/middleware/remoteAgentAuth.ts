@@ -97,10 +97,7 @@ function getEmail(payload: JwtPayload): string | undefined {
 }
 
 function splitScopes(scopes: string): string[] {
-  return scopes
-    .trim()
-    .split(/[\s,]+/)
-    .filter(Boolean);
+  return scopes.trim().split(/\s+/).filter(Boolean);
 }
 
 function getTokenScopes(scopeClaim: ScopeClaim): string[] {
