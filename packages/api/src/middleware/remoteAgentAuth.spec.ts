@@ -5,7 +5,6 @@ import type { Request, Response } from 'express';
 import type { RequestInit } from 'undici';
 
 jest.mock('@librechat/data-schemas', () => ({
-  getTenantId: jest.fn(),
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -44,14 +43,13 @@ jest.mock('../auth/openid', () => {
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
-import { logger, getTenantId } from '@librechat/data-schemas';
+import { logger } from '@librechat/data-schemas';
 import { clearRemoteAgentAuthCache, createRemoteAgentAuth } from './remoteAgentAuth';
 import { findOpenIDUser } from '../auth/openid';
 import { math } from '~/utils';
 
 const mockFetch = undiciFetch as jest.Mock;
 const mockProxyAgent = ProxyAgent as unknown as jest.Mock;
-const mockGetTenantId = getTenantId as jest.Mock;
 const mockMath = math as jest.Mock;
 const realFindOpenIDUser =
   jest.requireActual<typeof import('../auth/openid')>('../auth/openid').findOpenIDUser;
@@ -193,8 +191,6 @@ describe('createRemoteAgentAuth', () => {
     deleteEnvKeys();
     clearRemoteAgentAuthCache();
     mockFetch.mockReset();
-    mockGetTenantId.mockReset();
-    mockGetTenantId.mockReturnValue(undefined);
     mockMath.mockReturnValue(60000);
     mockFindOpenIDUser.mockImplementation(realFindOpenIDUser);
     mockNext = jest.fn();
@@ -240,11 +236,21 @@ describe('createRemoteAgentAuth', () => {
       expect(deps.apiKeyMiddleware).toHaveBeenCalled();
     });
 
-    it('loads config with pre-auth tenant context when present', async () => {
-      mockGetTenantId.mockReturnValue('tenant-a');
+    it('loads base config before authentication when only pre-auth tenant context exists', async () => {
       const deps = makeDeps(makeConfig({ enabled: false }));
 
       await createRemoteAgentAuth(deps)(makeReq() as Request, makeRes().res, mockNext);
+
+      expect(deps.getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+      expect(deps.apiKeyMiddleware).toHaveBeenCalled();
+    });
+
+    it('loads tenant config when an authenticated user is already present', async () => {
+      const deps = makeDeps(makeConfig({ enabled: false }));
+      const req = makeReq();
+      req.user = makeUser({ tenantId: 'tenant-a' });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
 
       expect(deps.getAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-a' });
       expect(deps.apiKeyMiddleware).toHaveBeenCalled();
@@ -317,6 +323,23 @@ describe('createRemoteAgentAuth', () => {
       expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@test.com' });
       expect(mockNext).toHaveBeenCalledWith();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+    });
+
+    it('accepts case-insensitive Bearer auth scheme', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(jwt.verify).toHaveBeenCalledWith(
+        FAKE_TOKEN,
+        'public-key',
+        expect.any(Object),
+        expect.any(Function),
+      );
+      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@test.com' });
+      expect(mockNext).toHaveBeenCalledWith();
     });
 
     it('allows RSA, RSA-PSS, and ECDSA signing algorithms', async () => {

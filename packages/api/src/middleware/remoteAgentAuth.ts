@@ -1,9 +1,9 @@
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
+import { logger } from '@librechat/data-schemas';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SystemRoles } from 'librechat-data-provider';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
-import { logger, getTenantId } from '@librechat/data-schemas';
 import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { AppConfig, IUser, UserMethods } from '@librechat/data-schemas';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
@@ -84,8 +84,8 @@ function setCacheEntry<T>(
 }
 
 function extractBearer(authHeader: string | undefined): string | null {
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  return authHeader.slice(7);
+  const match = authHeader?.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] ?? null;
 }
 
 function getEmail(payload: JwtPayload): string | undefined {
@@ -232,10 +232,9 @@ function getVerifyOptions(oidcConfig: EnabledOidcConfig): VerifyOptions {
 
 function getConfigOptions(req: Request): GetAppConfigOptions | undefined {
   const user = req.user as { tenantId?: string } | undefined;
-  const tenantId = user?.tenantId ?? getTenantId();
 
-  if (!tenantId) return undefined;
-  return { tenantId };
+  if (user?.tenantId) return { tenantId: user.tenantId };
+  return { baseOnly: true };
 }
 
 function verifyJwt(
