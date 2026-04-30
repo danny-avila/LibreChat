@@ -3,6 +3,18 @@ import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/agents';
 import type { LCAvailableTools, LCFunctionTool } from './types';
 
+/**
+ * Maximum allowed length for tool function names accepted by OpenAI-compatible
+ * Chat Completions / Responses APIs. Tool calls whose names exceed this limit
+ * are rejected with HTTP 400 ("string too long. Expected ... maximum length 64").
+ * MCP tool names are constructed as `${toolName}${mcp_delimiter}${serverName}`,
+ * so callers must keep the combined length within this bound.
+ *
+ * Refs: https://platform.openai.com/docs/api-reference/chat/create
+ *       https://github.com/danny-avila/LibreChat/issues/7435
+ */
+const MAX_OPENAI_TOOL_NAME_LENGTH = 64;
+
 export interface MCPToolInput {
   name: string;
   description?: string;
@@ -40,6 +52,16 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps) {
 
       for (const tool of tools) {
         const name = `${tool.name}${mcpDelimiter}${serverName}`;
+        if (name.length > MAX_OPENAI_TOOL_NAME_LENGTH) {
+          logger.warn(
+            `[MCP Cache] Tool name "${name}" (${name.length} chars) exceeds the ` +
+              `${MAX_OPENAI_TOOL_NAME_LENGTH}-char limit enforced by OpenAI-compatible APIs ` +
+              `(server: "${serverName}", tool: "${tool.name}", delimiter: "${mcpDelimiter}"). ` +
+              `Calls including this tool will be rejected with HTTP 400. ` +
+              `Shorten the MCP server name or the tool name to fit within ` +
+              `${MAX_OPENAI_TOOL_NAME_LENGTH - mcpDelimiter.length} characters combined.`,
+          );
+        }
         const entry: LCFunctionTool = {
           type: 'function',
           ['function']: {
