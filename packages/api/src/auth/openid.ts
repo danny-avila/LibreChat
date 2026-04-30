@@ -11,7 +11,7 @@ export type OpenIdEmailClaims = {
 
 function getStringClaim(claims: OpenIdEmailClaims, claim: string): string | undefined {
   const value = claims[claim];
-  return typeof value === 'string' ? value : undefined;
+  return typeof value === 'string' && value ? value : undefined;
 }
 
 export function getOpenIdEmail(

@@ -505,6 +505,16 @@ describe('getOpenIdEmail', () => {
     ).toBe('user@example.com');
   });
 
+  it('skips empty fallback claims', () => {
+    expect(
+      getOpenIdEmail({
+        email: '',
+        preferred_username: 'preferred@example.com',
+        upn: 'upn@example.com',
+      }),
+    ).toBe('preferred@example.com');
+  });
+
   it('uses OPENID_EMAIL_CLAIM when present', () => {
     process.env.OPENID_EMAIL_CLAIM = 'custom_identifier';
 

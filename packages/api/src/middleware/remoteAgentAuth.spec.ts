@@ -941,6 +941,16 @@ describe('createRemoteAgentAuth', () => {
       );
     });
 
+    it('falls back to preferred_username when email is empty', async () => {
+      expect(
+        await captureEmailArg({
+          sub: 's2-empty',
+          email: '',
+          preferred_username: 'agent-user',
+        }),
+      ).toBe('agent-user');
+    });
+
     it('falls back to upn when email and preferred_username are absent', async () => {
       expect(await captureEmailArg({ sub: 's3', upn: 'upn@corp.com' })).toBe('upn@corp.com');
     });
