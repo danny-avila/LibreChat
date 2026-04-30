@@ -80,9 +80,30 @@ function ControlCombobox({
   }, [searchValue, items]);
 
   useEffect(() => {
-    if (buttonRef.current && !isCollapsed) {
-      setButtonWidth(buttonRef.current.offsetWidth);
+    const button = buttonRef.current;
+    if (!button || isCollapsed) {
+      return;
     }
+
+    setButtonWidth(button.offsetWidth);
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+      const width = entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
+      if (width > 0) {
+        setButtonWidth(width);
+      }
+    });
+
+    observer.observe(button);
+    return () => observer.disconnect();
   }, [isCollapsed]);
 
   const selectIconClassName = cn(
