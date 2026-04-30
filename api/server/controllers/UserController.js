@@ -126,6 +126,23 @@ const acceptSecondTermsController = async (req, res) => {
   }
 };
 
+const updateFarmerPlatformController = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: { 'farmerProfile.platform': req.body.platform } },
+      { new: true },
+    );
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ message: 'Platform updated successfully' });
+  } catch (error) {
+    logger.error('Error updating farmer platform:', error);
+    res.status(500).json({ message: 'Error updating platform' });
+  }
+};
+
 const saveFarmerProfileController = async (req, res) => {
   try {
     const farmerProfile = req.body;
@@ -507,6 +524,7 @@ module.exports = {
   acceptTermsController,
   acceptSecondTermsController,
   saveFarmerProfileController,
+  updateFarmerPlatformController,
   deleteUserController,
   verifyEmailController,
   updateUserPluginsController,

@@ -42,6 +42,7 @@ const FarmerProfileSchema = new Schema(
     usesAgriApps: { type: Boolean },
     highestEducatedPerson: { type: String },
     numberOfSmartphones: { type: Number },
+    platform: { type: String },
     location: {
       latitude: { type: Number },
       longitude: { type: Number },
