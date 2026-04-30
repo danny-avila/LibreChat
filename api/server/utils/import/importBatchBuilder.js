@@ -1,17 +1,8 @@
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const {
-  EModelEndpoint,
-  Constants,
-  openAISettings,
-  anthropicSettings,
-} = require('librechat-data-provider');
+const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
 const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages } = require('~/models');
-
-const DEFAULT_MODEL_BY_ENDPOINT = {
-  [EModelEndpoint.openAI]: openAISettings.model.default,
-  [EModelEndpoint.anthropic]: anthropicSettings.model.default,
-};
+const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
 /**
  * Factory function for creating an instance of ImportBatchBuilder.
@@ -80,10 +71,14 @@ class ImportBatchBuilder {
    * @param {string} [title='Imported Chat'] - The title of the conversation. Defaults to 'Imported Chat'.
    * @param {Date} [createdAt] - The creation date of the conversation.
    * @param {TConversation} [originalConvo] - The original conversation.
+   * @param {string} [defaultModel] - Resolved default model for this endpoint
+   *   (typically derived from the runtime models config). Used only when
+   *   originalConvo.model is unset.
    * @returns {{ conversation: TConversation, messages: TMessage[] }} The resulting conversation and messages.
    */
-  finishConversation(title, createdAt, originalConvo = {}) {
-    const defaultModel = DEFAULT_MODEL_BY_ENDPOINT[this.endpoint] ?? openAISettings.model.default;
+  finishConversation(title, createdAt, originalConvo = {}, defaultModel) {
+    const fallbackModel =
+      defaultModel ?? FALLBACK_MODEL_BY_ENDPOINT[this.endpoint] ?? openAISettings.model.default;
     const convo = {
       ...originalConvo,
       user: this.requestUserId,
@@ -93,7 +88,7 @@ class ImportBatchBuilder {
       updatedAt: createdAt,
       overrideTimestamp: true,
       endpoint: this.endpoint,
-      model: originalConvo.model ?? defaultModel,
+      model: originalConvo.model ?? fallbackModel,
     };
     convo._id && delete convo._id;
     this.conversations.push(convo);
