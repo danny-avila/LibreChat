@@ -1,9 +1,9 @@
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
-import { logger } from '@librechat/data-schemas';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SystemRoles } from 'librechat-data-provider';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { getTenantId, logger } from '@librechat/data-schemas';
 import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { AppConfig, IUser, UserMethods } from '@librechat/data-schemas';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
@@ -224,8 +224,9 @@ function getVerifyOptions(oidcConfig: EnabledOidcConfig): VerifyOptions {
 
 function getConfigOptions(req: Request): GetAppConfigOptions | undefined {
   const user = req.user as { tenantId?: string } | undefined;
+  const tenantId = user?.tenantId ?? getTenantId();
 
-  if (user?.tenantId) return { tenantId: user.tenantId };
+  if (tenantId) return { tenantId };
   return { baseOnly: true };
 }
 

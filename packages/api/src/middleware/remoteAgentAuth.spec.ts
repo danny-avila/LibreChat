@@ -4,14 +4,18 @@ import type { JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { Request, Response } from 'express';
 import type { RequestInit } from 'undici';
 
-jest.mock('@librechat/data-schemas', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
+jest.mock('@librechat/data-schemas', () => {
+  const actual = jest.requireActual('@librechat/data-schemas');
+  return {
+    ...actual,
+    logger: {
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+    },
+  };
+});
 
 jest.mock('~/utils', () => ({
   isEnabled: jest.fn(() => false),
@@ -43,7 +47,7 @@ jest.mock('../auth/openid', () => {
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
-import { logger } from '@librechat/data-schemas';
+import { logger, tenantStorage } from '@librechat/data-schemas';
 import { clearRemoteAgentAuthCache, createRemoteAgentAuth } from './remoteAgentAuth';
 import { findOpenIDUser, getOpenIdEmail } from '../auth/openid';
 import { math } from '~/utils';
@@ -238,13 +242,42 @@ describe('createRemoteAgentAuth', () => {
       expect(deps.apiKeyMiddleware).toHaveBeenCalled();
     });
 
-    it('loads base config before authentication when only pre-auth tenant context exists', async () => {
+    it('loads base config before authentication when tenant context is absent', async () => {
       const deps = makeDeps(makeConfig({ enabled: false }));
 
       await createRemoteAgentAuth(deps)(makeReq() as Request, makeRes().res, mockNext);
 
       expect(deps.getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
       expect(deps.apiKeyMiddleware).toHaveBeenCalled();
+    });
+
+    it('loads tenant config from pre-auth tenant context before authentication', async () => {
+      const deps = makeDeps(makeConfig({ enabled: false }));
+
+      await tenantStorage.run({ tenantId: 'tenant-preauth' }, async () => {
+        await createRemoteAgentAuth(deps)(makeReq() as Request, makeRes().res, mockNext);
+      });
+
+      expect(deps.getAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-preauth' });
+      expect(deps.apiKeyMiddleware).toHaveBeenCalled();
+    });
+
+    it('enforces tenant auth policy from pre-auth tenant context', async () => {
+      const deps = makeDeps(makeConfig({ enabled: false }));
+      deps.getAppConfig.mockImplementation(async (options) =>
+        options?.tenantId === 'tenant-oidc-only'
+          ? makeConfig({ enabled: false }, { enabled: false })
+          : makeConfig({ enabled: false }, { enabled: true }),
+      );
+      const { res, status } = makeRes();
+
+      await tenantStorage.run({ tenantId: 'tenant-oidc-only' }, async () => {
+        await createRemoteAgentAuth(deps)(makeReq() as Request, res, mockNext);
+      });
+
+      expect(deps.getAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-oidc-only' });
+      expect(status).toHaveBeenCalledWith(401);
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
 
     it('loads tenant config when an authenticated user is already present', async () => {
