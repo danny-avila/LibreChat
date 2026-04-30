@@ -1031,9 +1031,11 @@ export const memorySchema = z.object({
   agent: z
     .union([
       z.object({
+        enabled: z.boolean().optional(),
         id: z.string(),
       }),
       z.object({
+        enabled: z.boolean().optional(),
         provider: z.string(),
         model: z.string(),
         instructions: z.string().optional(),
