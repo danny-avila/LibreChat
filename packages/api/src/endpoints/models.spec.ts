@@ -218,6 +218,11 @@ describe('getOpenAIModels', () => {
     expect(models).toEqual(expect.arrayContaining(['azure-model', 'azure-model-2']));
   });
 
+  it('returns Azure OpenAI defaults with Sora when azure flag is set', async () => {
+    const models = await getOpenAIModels({ azure: true });
+    expect(models).toContain('sora');
+  });
+
   it('returns `OPENAI_MODELS` with no flags (and fetch fails)', async () => {
     process.env.OPENAI_MODELS = 'openai-model,openai-model-2';
     const models = await getOpenAIModels({});

@@ -294,7 +294,7 @@ export async function getOpenAIModels(opts: GetOpenAIModelsOptions = {}): Promis
   if (opts.assistants) {
     models = defaultModels[EModelEndpoint.assistants];
   } else if (opts.azure) {
-    models = defaultModels[EModelEndpoint.azureAssistants];
+    models = defaultModels[EModelEndpoint.azureOpenAI];
   }
 
   let key: string;
