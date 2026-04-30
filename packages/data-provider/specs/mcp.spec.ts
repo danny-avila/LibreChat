@@ -1,19 +1,9 @@
 import { MCPOptionsSchema, SSEOptionsSchema, MCPServerUserInputSchema } from '../src/mcp';
 
-describe('MCPServerUserInputSchema', () => {
+describe('MCPOptionsSchema', () => {
   describe('title validation', () => {
     it('should accept hyphenated MCP server titles in config', () => {
       const result = MCPOptionsSchema.safeParse({
-        type: 'sse',
-        url: 'https://example.com/mcp',
-        title: 'My-Test Server',
-      });
-
-      expect(result.success).toBe(true);
-    });
-
-    it('should accept hyphenated MCP server titles in user input', () => {
-      const result = MCPServerUserInputSchema.safeParse({
         type: 'sse',
         url: 'https://example.com/mcp',
         title: 'My-Test Server',
@@ -30,6 +20,20 @@ describe('MCPServerUserInputSchema', () => {
       });
 
       expect(result.success).toBe(false);
+    });
+  });
+});
+
+describe('MCPServerUserInputSchema', () => {
+  describe('title validation', () => {
+    it('should accept hyphenated MCP server titles in user input', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'My-Test Server',
+      });
+
+      expect(result.success).toBe(true);
     });
   });
 
