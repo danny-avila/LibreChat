@@ -259,6 +259,7 @@ export class EcsStack extends cdk.Stack {
         listenerPort: 443,
         taskSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
         certificate: aiAssistantCertificate,
+        propagateTags: ecs.PropagatedTagSource.SERVICE,
       },
     );
     const scalableTarget = librechatService.service.autoScaleTaskCount({
@@ -335,6 +336,7 @@ export class EcsStack extends cdk.Stack {
       desiredCount: 1,
       enableExecuteCommand: true,
       cloudMapOptions: { name: 'mongodb' },
+      propagateTags: ecs.PropagatedTagSource.SERVICE,
       securityGroups: [mongoSg],
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
@@ -434,6 +436,7 @@ export class EcsStack extends cdk.Stack {
       desiredCount: 1,
       enableExecuteCommand: true,
       cloudMapOptions: { name: 'rag_api' },
+      propagateTags: ecs.PropagatedTagSource.SERVICE,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
 
