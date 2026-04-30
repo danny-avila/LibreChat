@@ -275,7 +275,11 @@ This workspace adds a contacts CSV import endpoint and a contact-aware assistant
 
 ### Model Used
 
-- Provider: Groq
-- Model: `llama-3.1-8b-instant`
+- Provider: Groq & Gemini
+- Model: 
+
+---
+githubLink - https://github.com/himanshu8github/LibreChat/tree/contacts-feature
+branch - contacts-feature
 
 ---
