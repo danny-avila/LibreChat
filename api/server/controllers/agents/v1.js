@@ -10,7 +10,9 @@ const {
   collectEdgeAgentIds,
   mergeAgentOcrConversion,
   MAX_AVATAR_REFRESH_AGENTS,
+  collectToolResourceFileIds,
   convertOcrToContextInPlace,
+  stripFileIdsFromToolResources,
 } = require('@librechat/api');
 const {
   Time,
@@ -385,6 +387,38 @@ const updateAgentHandler = async (req, res) => {
     }
     if (ocrConversion.tools) {
       updateData.tools = ocrConversion.tools;
+    }
+
+    /*
+     * Strip orphaned file_id stubs from the incoming payload (see issue #12776).
+     * Scoped to updates that actually touch tool_resources: if the save does not
+     * modify that field, the delete-time cleanup in processDeleteRequest and the
+     * one-off migration already cover pre-existing corruption, so there's no
+     * reason to pay an extra DB round-trip here. Wrapped in try/catch so a
+     * transient failure in this integrity check never turns a good save into 500.
+     */
+    if (updateData.tool_resources) {
+      try {
+        const referencedFileIds = collectToolResourceFileIds(updateData.tool_resources);
+        if (referencedFileIds.length > 0) {
+          const existingFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
+            file_id: 1,
+          });
+          const existingIds = new Set((existingFiles ?? []).map((f) => f.file_id));
+          const orphans = referencedFileIds.filter((id) => !existingIds.has(id));
+          if (orphans.length > 0) {
+            logger.warn(
+              `[/Agents/:id] Pruning ${orphans.length} orphaned file reference(s) from agent ${id}`,
+            );
+            stripFileIdsFromToolResources(updateData.tool_resources, orphans);
+          }
+        }
+      } catch (orphanCheckError) {
+        logger.warn(
+          '[/Agents/:id] Orphan file check failed, skipping cleanup for this request',
+          orphanCheckError,
+        );
+      }
     }
 
     if (updateData.tools) {

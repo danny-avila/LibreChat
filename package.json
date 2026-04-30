@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.5-rc1",
+  "version": "v0.8.5",
   "description": "",
   "packageManager": "npm@11.10.0",
   "workspaces": [
@@ -49,6 +49,7 @@
     "build:client-package": "cd packages/client && npm run build",
     "build:packages": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package",
     "build": "npx turbo run build",
+    "build:safe": "npx turbo run build --no-daemon",
     "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
@@ -92,7 +93,10 @@
     "migrate:agent-permissions:batch": "node config/migrate-agent-permissions.js --batch-size=50",
     "migrate:prompt-permissions:dry-run": "node config/migrate-prompt-permissions.js --dry-run",
     "migrate:prompt-permissions": "node config/migrate-prompt-permissions.js",
-    "migrate:prompt-permissions:batch": "node config/migrate-prompt-permissions.js --batch-size=50"
+    "migrate:prompt-permissions:batch": "node config/migrate-prompt-permissions.js --batch-size=50",
+    "migrate:orphaned-agent-files:dry-run": "node config/migrate-orphaned-agent-files.js --dry-run",
+    "migrate:orphaned-agent-files": "node config/migrate-orphaned-agent-files.js",
+    "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50"
   },
   "repository": {
     "type": "git",
@@ -136,6 +140,7 @@
   },
   "overrides": {
     "@anthropic-ai/sdk": "0.73.0",
+    "@xmldom/xmldom": "^0.8.13",
     "@librechat/agents": {
       "@langchain/anthropic": {
         "@anthropic-ai/sdk": "0.73.0",
