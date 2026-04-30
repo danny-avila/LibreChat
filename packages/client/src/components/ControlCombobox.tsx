@@ -96,7 +96,7 @@ function ControlCombobox({
       if (!entry) {
         return;
       }
-      const width = entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
+      const width = entry.borderBoxSize?.[0]?.inlineSize ?? button.offsetWidth;
       if (width > 0) {
         setButtonWidth(width);
       }

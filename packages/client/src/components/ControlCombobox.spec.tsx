@@ -44,7 +44,7 @@ const items = [
   { label: 'Option B', value: 'b' },
 ];
 
-const renderCombobox = (initialButtonWidth: number) => {
+const renderCombobox = (initialButtonWidth: number, isCollapsed = false) => {
   const offsetWidthSpy = jest
     .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
     .mockReturnValue(initialButtonWidth);
@@ -56,7 +56,7 @@ const renderCombobox = (initialButtonWidth: number) => {
       items={items}
       setValue={() => undefined}
       ariaLabel="Test combobox"
-      isCollapsed={false}
+      isCollapsed={isCollapsed}
       showCarat
     />,
   );
@@ -119,5 +119,53 @@ describe('ControlCombobox popover sizing', () => {
     expect(observer).toBeDefined();
     unmount();
     expect(observer.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not observe the trigger button when isCollapsed is true', () => {
+    renderCombobox(275, true);
+    const triggerObservers = observers.filter(
+      (o) => (o.target as HTMLElement | null)?.tagName === 'BUTTON',
+    );
+    expect(triggerObservers).toHaveLength(0);
+  });
+
+  it('falls back to synchronous offsetWidth when ResizeObserver is unavailable', () => {
+    (window as unknown as { ResizeObserver: typeof ResizeObserver | undefined }).ResizeObserver =
+      undefined;
+
+    renderCombobox(275);
+    openPopover();
+
+    expect(getPopoverWidth()).toBe('275px');
+    const triggerObservers = observers.filter(
+      (o) => (o.target as HTMLElement | null)?.tagName === 'BUTTON',
+    );
+    expect(triggerObservers).toHaveLength(0);
+  });
+
+  it('ignores zero-width resize entries', () => {
+    renderCombobox(275);
+    openPopover();
+    expect(getPopoverWidth()).toBe('275px');
+
+    const observer = observers[0];
+    expect(observer).toBeDefined();
+
+    act(() => {
+      observer.callback(
+        [
+          {
+            target: observer.target as Element,
+            contentRect: { width: 0 } as DOMRectReadOnly,
+            borderBoxSize: [{ inlineSize: 0, blockSize: 0 }],
+            contentBoxSize: [{ inlineSize: 0, blockSize: 0 }],
+            devicePixelContentBoxSize: [{ inlineSize: 0, blockSize: 0 }],
+          } as unknown as ResizeObserverEntry,
+        ],
+        observer as unknown as ResizeObserver,
+      );
+    });
+
+    expect(getPopoverWidth()).toBe('275px');
   });
 });
