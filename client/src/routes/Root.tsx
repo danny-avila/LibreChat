@@ -67,7 +67,6 @@ export default function Root() {
       setShowFarmerProfile(true);
       return;
     }
-    if (termsData.farmerNeedsUpdate) {
     if (!termsData.farmerProfileHasPlatform) {
       const ua = navigator.userAgent;
       let platform = 'Unknown';
@@ -78,7 +77,7 @@ export default function Root() {
       else if (/linux/i.test(ua)) platform = 'Linux';
       updateFarmerPlatform.mutate(platform);
     }
-    if (!termsData.farmerLocationCompleted) {
+    if (termsData.farmerNeedsUpdate) {
       setShowFarmerLocation(true);
     }
   }, [termsData]);
