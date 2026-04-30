@@ -10,7 +10,7 @@ import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { GetAppConfigOptions } from '../app/service';
-import { findOpenIDUser } from '../auth/openid';
+import { findOpenIDUser, getOpenIdEmail } from '../auth/openid';
 import { isEnabled, math } from '~/utils';
 
 export interface RemoteAgentAuthDeps {
@@ -86,14 +86,6 @@ function setCacheEntry<T>(
 function extractBearer(authHeader: string | undefined): string | null {
   const match = authHeader?.match(/^Bearer\s+(.+)$/i);
   return match?.[1] ?? null;
-}
-
-function getEmail(payload: JwtPayload): string | undefined {
-  return (
-    (payload['email'] as string | undefined) ??
-    (payload['preferred_username'] as string | undefined) ??
-    (payload['upn'] as string | undefined)
-  );
 }
 
 function splitScopes(scopes: string): string[] {
@@ -296,7 +288,7 @@ async function resolveUser(
 
   const { user, error, migration } = await findOpenIDUser({
     findUser,
-    email: getEmail(payload),
+    email: getOpenIdEmail(payload, 'remoteAgentAuth'),
     openidId: payload.sub,
     idOnTheSource: payload['oid'] as string | undefined,
     strategyName: 'remoteAgentAuth',

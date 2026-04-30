@@ -45,7 +45,7 @@ import jwksRsa from 'jwks-rsa';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { clearRemoteAgentAuthCache, createRemoteAgentAuth } from './remoteAgentAuth';
-import { findOpenIDUser } from '../auth/openid';
+import { findOpenIDUser, getOpenIdEmail } from '../auth/openid';
 import { math } from '~/utils';
 
 const mockFetch = undiciFetch as jest.Mock;
@@ -58,6 +58,7 @@ const FAKE_TOKEN = 'header.payload.signature';
 const BASE_ISSUER = 'https://auth.example.com/realms/test';
 const BASE_JWKS_URI = `${BASE_ISSUER}/protocol/openid-connect/certs`;
 const ENV_KEYS = [
+  'OPENID_EMAIL_CLAIM',
   'OPENID_JWKS_URL',
   'OPENID_JWKS_URL_CACHE_ENABLED',
   'OPENID_JWKS_URL_CACHE_TIME',
@@ -75,6 +76,7 @@ const mockUser = { _id: 'uid123', id: 'uid123', email: 'agent@test.com' };
 const originalEnv = ENV_KEYS.reduce<Record<(typeof ENV_KEYS)[number], string | undefined>>(
   (env, key) => ({ ...env, [key]: process.env[key] }),
   {
+    OPENID_EMAIL_CLAIM: undefined,
     OPENID_JWKS_URL: undefined,
     OPENID_JWKS_URL_CACHE_ENABLED: undefined,
     OPENID_JWKS_URL_CACHE_TIME: undefined,
@@ -917,7 +919,7 @@ describe('createRemoteAgentAuth', () => {
       const deps = makeDeps();
       deps.findUser
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(makeUser({ email: getExpectedEmail(claims), openidId: claims.sub }));
+        .mockResolvedValueOnce(makeUser({ email: getOpenIdEmail(claims), openidId: claims.sub }));
       await createRemoteAgentAuth(deps)(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
         makeRes().res,
@@ -925,14 +927,6 @@ describe('createRemoteAgentAuth', () => {
       );
 
       return (deps.findUser.mock.calls[1]?.[0] as { email?: string } | undefined)?.email;
-    }
-
-    function getExpectedEmail(claims: JwtPayload): string | undefined {
-      return (
-        (claims['email'] as string | undefined) ??
-        (claims['preferred_username'] as string | undefined) ??
-        (claims['upn'] as string | undefined)
-      );
     }
 
     it('uses email claim', async () => {
@@ -949,6 +943,18 @@ describe('createRemoteAgentAuth', () => {
 
     it('falls back to upn when email and preferred_username are absent', async () => {
       expect(await captureEmailArg({ sub: 's3', upn: 'upn@corp.com' })).toBe('upn@corp.com');
+    });
+
+    it('uses OPENID_EMAIL_CLAIM when configured', async () => {
+      process.env.OPENID_EMAIL_CLAIM = 'custom_identifier';
+
+      expect(
+        await captureEmailArg({
+          sub: 's4',
+          email: 'user@example.com',
+          custom_identifier: 'agent@corp.example.com',
+        }),
+      ).toBe('agent@corp.example.com');
     });
   });
 

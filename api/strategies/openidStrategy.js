@@ -13,6 +13,7 @@ const {
   logHeaders,
   safeStringify,
   findOpenIDUser,
+  getOpenIdEmail,
   getBalanceConfig,
   isEmailDomainAllowed,
   resolveAppConfigForUser,
@@ -266,34 +267,6 @@ function getFullName(userinfo) {
   }
 
   return userinfo.username || userinfo.email;
-}
-
-/**
- * Resolves the user identifier from OpenID claims.
- * Configurable via OPENID_EMAIL_CLAIM; defaults to: email -> preferred_username -> upn.
- *
- * @param {Object} userinfo - The user information object from OpenID Connect
- * @returns {string|undefined} The resolved identifier string
- */
-function getOpenIdEmail(userinfo) {
-  const claimKey = process.env.OPENID_EMAIL_CLAIM?.trim();
-  if (claimKey) {
-    const value = userinfo[claimKey];
-    if (typeof value === 'string' && value) {
-      return value;
-    }
-    if (value !== undefined && value !== null) {
-      logger.warn(
-        `[openidStrategy] OPENID_EMAIL_CLAIM="${claimKey}" resolved to a non-string value (type: ${typeof value}). Falling back to: email -> preferred_username -> upn.`,
-      );
-    } else {
-      logger.warn(
-        `[openidStrategy] OPENID_EMAIL_CLAIM="${claimKey}" not present in userinfo. Falling back to: email -> preferred_username -> upn.`,
-      );
-    }
-  }
-  const fallback = userinfo.email || userinfo.preferred_username || userinfo.upn;
-  return typeof fallback === 'string' ? fallback : undefined;
 }
 
 /**

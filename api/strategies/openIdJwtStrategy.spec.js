@@ -23,6 +23,7 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => false),
   findOpenIDUser: jest.fn(),
+  getOpenIdEmail: jest.requireActual('@librechat/api').getOpenIdEmail,
   math: jest.fn((val, fallback) => fallback),
 }));
 jest.mock('~/models', () => ({

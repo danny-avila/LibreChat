@@ -2,6 +2,46 @@ import { logger } from '@librechat/data-schemas';
 import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
 
+export type OpenIdEmailClaims = {
+  email?: unknown;
+  preferred_username?: unknown;
+  upn?: unknown;
+  [claim: string]: unknown;
+};
+
+function getStringClaim(claims: OpenIdEmailClaims, claim: string): string | undefined {
+  const value = claims[claim];
+  return typeof value === 'string' ? value : undefined;
+}
+
+export function getOpenIdEmail(
+  claims: OpenIdEmailClaims | null | undefined,
+  strategyName = 'openidStrategy',
+): string | undefined {
+  if (claims == null) return undefined;
+
+  const claimKey = process.env.OPENID_EMAIL_CLAIM?.trim();
+  if (claimKey) {
+    const value = claims[claimKey];
+    if (typeof value === 'string' && value) return value;
+    if (value != null) {
+      logger.warn(
+        `[${strategyName}] OPENID_EMAIL_CLAIM="${claimKey}" resolved to a non-string value (type: ${typeof value}). Falling back to: email -> preferred_username -> upn.`,
+      );
+    } else {
+      logger.warn(
+        `[${strategyName}] OPENID_EMAIL_CLAIM="${claimKey}" not present in userinfo. Falling back to: email -> preferred_username -> upn.`,
+      );
+    }
+  }
+
+  return (
+    getStringClaim(claims, 'email') ??
+    getStringClaim(claims, 'preferred_username') ??
+    getStringClaim(claims, 'upn')
+  );
+}
+
 /**
  * Finds or migrates a user for OpenID authentication
  * @returns user object (with migration fields if needed), error message, and whether migration is needed

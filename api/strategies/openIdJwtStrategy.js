@@ -3,9 +3,8 @@ const jwksRsa = require('jwks-rsa');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SystemRoles } = require('librechat-data-provider');
-const { isEnabled, findOpenIDUser, math } = require('@librechat/api');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const { getOpenIdEmail } = require('./openidStrategy');
+const { isEnabled, findOpenIDUser, getOpenIdEmail, math } = require('@librechat/api');
 const { updateUser, findUser } = require('~/models');
 
 /**

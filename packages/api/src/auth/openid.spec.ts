@@ -1,8 +1,8 @@
 import { Types } from 'mongoose';
-import { ErrorTypes } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
+import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
-import { findOpenIDUser } from './openid';
+import { findOpenIDUser, getOpenIdEmail } from './openid';
 
 function newId() {
   return new Types.ObjectId();
@@ -476,5 +476,65 @@ describe('findOpenIDUser', () => {
         migration: false,
       });
     });
+  });
+});
+
+describe('getOpenIdEmail', () => {
+  const originalEmailClaim = process.env.OPENID_EMAIL_CLAIM;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.OPENID_EMAIL_CLAIM;
+  });
+
+  afterAll(() => {
+    if (originalEmailClaim == null) {
+      delete process.env.OPENID_EMAIL_CLAIM;
+      return;
+    }
+    process.env.OPENID_EMAIL_CLAIM = originalEmailClaim;
+  });
+
+  it('uses the default claim order', () => {
+    expect(
+      getOpenIdEmail({
+        email: 'user@example.com',
+        preferred_username: 'preferred@example.com',
+        upn: 'upn@example.com',
+      }),
+    ).toBe('user@example.com');
+  });
+
+  it('uses OPENID_EMAIL_CLAIM when present', () => {
+    process.env.OPENID_EMAIL_CLAIM = 'custom_identifier';
+
+    expect(
+      getOpenIdEmail({
+        email: 'user@example.com',
+        custom_identifier: 'agent@corp.example.com',
+      }),
+    ).toBe('agent@corp.example.com');
+  });
+
+  it('falls back with a warning when OPENID_EMAIL_CLAIM is missing', () => {
+    process.env.OPENID_EMAIL_CLAIM = 'missing_identifier';
+
+    expect(getOpenIdEmail({ email: 'user@example.com' }, 'remoteAgentAuth')).toBe(
+      'user@example.com',
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('OPENID_EMAIL_CLAIM="missing_identifier" not present in userinfo'),
+    );
+  });
+
+  it('falls back with a warning when OPENID_EMAIL_CLAIM is not a string', () => {
+    process.env.OPENID_EMAIL_CLAIM = 'groups';
+
+    expect(getOpenIdEmail({ email: 'user@example.com', groups: ['a'] })).toBe('user@example.com');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'OPENID_EMAIL_CLAIM="groups" resolved to a non-string value (type: object)',
+      ),
+    );
   });
 });
