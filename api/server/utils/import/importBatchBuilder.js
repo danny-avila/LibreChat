@@ -1,7 +1,17 @@
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  Constants,
+  openAISettings,
+  anthropicSettings,
+} = require('librechat-data-provider');
 const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages } = require('~/models');
+
+const DEFAULT_MODEL_BY_ENDPOINT = {
+  [EModelEndpoint.openAI]: openAISettings.model.default,
+  [EModelEndpoint.anthropic]: anthropicSettings.model.default,
+};
 
 /**
  * Factory function for creating an instance of ImportBatchBuilder.
@@ -73,6 +83,7 @@ class ImportBatchBuilder {
    * @returns {{ conversation: TConversation, messages: TMessage[] }} The resulting conversation and messages.
    */
   finishConversation(title, createdAt, originalConvo = {}) {
+    const defaultModel = DEFAULT_MODEL_BY_ENDPOINT[this.endpoint] ?? openAISettings.model.default;
     const convo = {
       ...originalConvo,
       user: this.requestUserId,
@@ -82,7 +93,7 @@ class ImportBatchBuilder {
       updatedAt: createdAt,
       overrideTimestamp: true,
       endpoint: this.endpoint,
-      model: originalConvo.model ?? openAISettings.model.default,
+      model: originalConvo.model ?? defaultModel,
     };
     convo._id && delete convo._id;
     this.conversations.push(convo);

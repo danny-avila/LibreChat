@@ -1,6 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  Constants,
+  openAISettings,
+  anthropicSettings,
+} = require('librechat-data-provider');
 const { getImporter, processAssistantMessage } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
 const { bulkSaveMessages, bulkSaveConvos: _bulkSaveConvos } = require('~/models');
@@ -1013,6 +1018,28 @@ describe('importLibreChatConvo', () => {
       expect(result.conversation.title).toBe('Imported Chat');
       expect(result.conversation.model).toBe(openAISettings.model.default);
     });
+
+    it('should default to the anthropic model for anthropic-endpoint conversations', () => {
+      const requestUserId = 'user-123';
+      const builder = new ImportBatchBuilder(requestUserId);
+      builder.conversationId = 'conv-id-123';
+      builder.messages = [{ text: 'Hello, world!' }];
+      builder.endpoint = EModelEndpoint.anthropic;
+      const result = builder.finishConversation();
+      expect(result.conversation.endpoint).toBe(EModelEndpoint.anthropic);
+      expect(result.conversation.model).toBe(anthropicSettings.model.default);
+    });
+
+    it('should default to the openAI model for openAI-endpoint conversations', () => {
+      const requestUserId = 'user-123';
+      const builder = new ImportBatchBuilder(requestUserId);
+      builder.conversationId = 'conv-id-123';
+      builder.messages = [{ text: 'Hello, world!' }];
+      builder.endpoint = EModelEndpoint.openAI;
+      const result = builder.finishConversation();
+      expect(result.conversation.endpoint).toBe(EModelEndpoint.openAI);
+      expect(result.conversation.model).toBe(openAISettings.model.default);
+    });
   });
 });
 
@@ -1435,6 +1462,42 @@ describe('importClaudeConvo', () => {
     const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
     // Model should not be explicitly set (will use ImportBatchBuilder default)
     expect(savedMessages[0]).not.toHaveProperty('model');
+  });
+
+  it('should set the conversation endpoint and a Claude model so the chat UI loads correctly without a refresh', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Claude Conversation',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Hello' }],
+          },
+          {
+            uuid: 'msg-2',
+            sender: 'assistant',
+            created_at: '2025-01-15T10:00:02.000Z',
+            content: [{ type: 'text', text: 'Hi there!' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(importBatchBuilder.conversations).toHaveLength(1);
+    const convo = importBatchBuilder.conversations[0];
+    expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
+    expect(convo.model).toBe(anthropicSettings.model.default);
+    expect(convo.model).not.toBe(openAISettings.model.default);
   });
 
   it('should correct timestamp inversions (child before parent)', async () => {
