@@ -1,0 +1,132 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ms365-mcp-server
+  namespace: billechat
+  labels:
+    app: ms365-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ms365-mcp-server
+  template:
+    metadata:
+      labels:
+        app: ms365-mcp-server
+    spec:
+      containers:
+        - name: ms365-mcp-server
+          image: billechatacr.azurecr.io/ms365-mcp-server:v2
+          ports:
+            - containerPort: 3000
+          env:
+            - name: MS365_MCP_CLIENT_ID
+              value: "0456cb09-0378-4b91-b694-cfe052e10d65"
+            - name: MS365_MCP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ms365-mcp-secrets
+                  key: client-secret
+            - name: MS365_MCP_TENANT_ID
+              value: "3912aa95-6d78-446d-8548-a49ffd73f550"
+            # Exclude tools that need MailboxSettings.Read (not in admin consent grant)
+            - name: ENABLED_TOOLS
+              value: "^(?!list-mail-rules|get-mailbox-settings|list-outlook-categories).*(mail|attachment|draft|calendar|event|contact)"
+            # Public URL for OAuth redirects (proxied through billechat domain)
+            - name: MS365_MCP_PUBLIC_URL
+              value: "https://billechat.135-225-229-32.nip.io/ms365-mcp"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ms365-mcp-server
+  namespace: billechat
+  labels:
+    app: ms365-mcp-server
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    app: ms365-mcp-server
+---
+# Proxy OAuth paths through billechat domain — no separate public endpoint.
+# MCP transport (/mcp) stays fully internal via cluster DNS.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ms365-mcp-proxy
+  namespace: billechat
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+spec:
+  ingressClassName: nginx
+  tls:
+    - secretName: billechat-tls
+      hosts:
+        - billechat.135-225-229-32.nip.io
+  rules:
+    - host: billechat.135-225-229-32.nip.io
+      http:
+        paths:
+          - path: /ms365-mcp(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: ms365-mcp-server
+                port:
+                  number: 3000
+---
+# RFC 8414 path-aware well-known discovery.
+# The MCP SDK resolves the auth server metadata URL as:
+#   /.well-known/oauth-authorization-server/<path>
+# not as /<path>/.well-known/oauth-authorization-server
+# This ingress forwards that RFC 8414 URL to the MCP server.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ms365-mcp-wellknown-proxy
+  namespace: billechat
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /.well-known/oauth-authorization-server
+spec:
+  ingressClassName: nginx
+  tls:
+    - secretName: billechat-tls
+      hosts:
+        - billechat.135-225-229-32.nip.io
+  rules:
+    - host: billechat.135-225-229-32.nip.io
+      http:
+        paths:
+          - path: /.well-known/oauth-authorization-server/ms365-mcp
+            pathType: Exact
+            backend:
+              service:
+                name: ms365-mcp-server
+                port:
+                  number: 3000

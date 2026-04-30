@@ -1,0 +1,232 @@
+# BilleChat Helm Values
+# Custom values for deploying LibreChat as BilleChat on AKS
+
+replicaCount: 1
+
+image:
+  registry: billechatacr.azurecr.io
+  repository: billechat
+  pullPolicy: Always
+  tag: latest
+
+global:
+  librechat:
+    existingSecretName: ""
+    existingSecretApiKey: AZURE_AI_FOUNDRY_API_KEY
+
+librechat:
+  configEnv:
+    # Secrets — overridden via --set in CI/CD pipeline
+    CREDS_KEY: "override-via-pipeline"
+    CREDS_IV: "override-via-pipeline"
+    JWT_SECRET: "override-via-pipeline"
+    JWT_REFRESH_SECRET: "override-via-pipeline"
+
+    # Server
+    HOST: "0.0.0.0"
+    PORT: "3080"
+    NODE_ENV: "production"
+    NO_INDEX: "true"
+    TRUST_PROXY: "1"
+    CONSOLE_JSON: "true"
+    DEBUG_LOGGING: "false"
+
+    # Domain
+    DOMAIN_CLIENT: "https://billechat.135-225-229-32.nip.io"
+    DOMAIN_SERVER: "https://billechat.135-225-229-32.nip.io"
+
+    # Azure AI Foundry — API key overridden via pipeline
+    AZURE_AI_FOUNDRY_API_KEY: "override-via-pipeline"
+
+    # RAG
+    RAG_OPENAI_BASEURL: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/openai"
+    RAG_OPENAI_API_KEY: "override-via-pipeline"
+    EMBEDDINGS_PROVIDER: "azure"
+    EMBEDDINGS_MODEL: "text-embedding-3-large"
+    AZURE_OPENAI_API_KEY: "override-via-pipeline"
+    AZURE_OPENAI_ENDPOINT: "https://micha-mm146vwy-swedencentral.services.ai.azure.com"
+    OPENAI_API_VERSION: "2024-12-01-preview"
+
+    # Auth — Entra ID OpenID
+    ALLOW_EMAIL_LOGIN: "false"
+    ALLOW_REGISTRATION: "false"
+    ALLOW_SOCIAL_LOGIN: "true"
+    ALLOW_SOCIAL_REGISTRATION: "true"
+    ALLOW_PASSWORD_RESET: "false"
+    ALLOW_UNVERIFIED_EMAIL_LOGIN: "true"
+
+    OPENID_CLIENT_ID: "f0aa5392-50f1-4319-9c10-4c817490bfd9"
+    OPENID_CLIENT_SECRET: "override-via-pipeline"
+    OPENID_ISSUER: "https://login.microsoftonline.com/3912aa95-6d78-446d-8548-a49ffd73f550/v2.0"
+    OPENID_SESSION_SECRET: "override-via-pipeline"
+    OPENID_SCOPE: "openid profile email offline_access api://f0aa5392-50f1-4319-9c10-4c817490bfd9/access_as_user"
+    OPENID_CALLBACK_URL: "/oauth/openid/callback"
+    OPENID_REDIRECT_URI: "https://billechat.135-225-229-32.nip.io/oauth/openid/callback"
+    OPENID_EMAIL_CLAIM: "upn"
+    OPENID_BUTTON_LABEL: "Sign in with Billennium"
+    OPENID_REUSE_TOKENS: "true"
+
+    # SharePoint
+    ENABLE_SHAREPOINT_FILEPICKER: "true"
+    SHAREPOINT_BASE_URL: "https://billenniumspzoo.sharepoint.com"
+    SHAREPOINT_PICKER_SHAREPOINT_SCOPE: "https://billenniumspzoo.sharepoint.com/AllSites.Read"
+    SHAREPOINT_PICKER_GRAPH_SCOPE: "Files.Read.All"
+    USE_ENTRA_ID_FOR_PEOPLE_SEARCH: "true"
+    OPENID_GRAPH_SCOPES: "User.Read,People.Read"
+
+    # Moderation
+    OPENAI_MODERATION: "false"
+    BAN_VIOLATIONS: "true"
+    LIMIT_CONCURRENT_MESSAGES: "true"
+    CONCURRENT_MESSAGE_MAX: "2"
+
+  existingSecretName: ""
+
+  configYamlContent: |
+    version: 1.3.8
+    cache: true
+    mcpSettings:
+      allowedDomains:
+        - http://ms365-mcp-server.billechat.svc.cluster.local:3000
+        - https://mcp.atlassian.com
+        - https://auth.atlassian.com
+        - https://api.atlassian.com
+    mcpServers:
+      # Microsoft 365 MCP — Outlook, Calendar, Teams, OneDrive, SharePoint, etc.
+      # Uses OAuth 2.1 (browser-based login). Deployed as a sidecar service in the cluster.
+      # Public URL: https://ms365-mcp.135-225-229-32.nip.io
+      # If OAuth per-user is not desired, have an Azure AD admin grant tenant-wide consent:
+      #   https://login.microsoftonline.com/3912aa95-6d78-446d-8548-a49ffd73f550/adminconsent?client_id=<MS365_MCP_APP_CLIENT_ID>
+      ms365:
+        type: streamable-http
+        url: http://ms365-mcp-server.billechat.svc.cluster.local:3000/mcp
+      atlassian:
+        type: streamable-http
+        url: https://mcp.atlassian.com/v1/mcp/authv2
+    endpoints:
+      azureOpenAI:
+        titleModel: "gpt-5-chat"
+        groups:
+          - group: "swedencentral-foundry"
+            apiKey: "${AZURE_AI_FOUNDRY_API_KEY}"
+            serverless: true
+            baseURL: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/openai/deployments/gpt-5-chat"
+            version: "2024-12-01-preview"
+            models:
+              gpt-5-chat: true
+
+  imageVolume:
+    enabled: true
+    size: 10Gi
+    accessModes: ReadWriteOnce
+
+# Image
+imagePullSecrets: []
+
+# Service
+service:
+  type: ClusterIP
+  port: 3080
+  targetPort: 3080
+  containerPort: 3080
+
+# Ingress
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/websocket-services: billechat-librechat
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+  hosts:
+    - host: billechat.135-225-229-32.nip.io
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: billechat-tls
+      hosts:
+        - billechat.135-225-229-32.nip.io
+
+# Resources
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+
+# Probes
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3080
+  initialDelaySeconds: 30
+  periodSeconds: 15
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 3080
+  initialDelaySeconds: 15
+  periodSeconds: 10
+
+# Security
+podSecurityContext:
+  fsGroup: 2000
+securityContext:
+  capabilities:
+    drop:
+      - ALL
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# MongoDB (subchart)
+mongodb:
+  enabled: true
+  image:
+    tag: latest
+  auth:
+    enabled: false
+  databases:
+    - LibreChat
+  persistence:
+    size: 20Gi
+
+# Meilisearch (subchart)
+meilisearch:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 5Gi
+  image:
+    tag: "v1.35.1"
+  auth:
+    existingMasterKeySecret: ""
+
+# RAG API (subchart)
+librechat-rag-api:
+  enabled: true
+  embeddingsProvider: azure
+  image:
+    repository: danny-avila/librechat-rag-api-dev-lite
+    registry: registry.librechat.ai
+    tag: latest
+  postgresql:
+    enabled: true
+    auth:
+      existingSecret: "librechat-vectordb"
+      database: librechat-vectordb
+      username: postgres
+      secretKeys:
+        userPasswordKey: postgres-password
+        adminPasswordKey: postgres-password
+        replicationPasswordKey: replication-password
+
+# Redis
+redis:
+  enabled: false

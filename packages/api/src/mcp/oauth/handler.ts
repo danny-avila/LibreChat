@@ -41,6 +41,48 @@ export class MCPOAuthHandler {
   private static readonly FLOW_TYPE = 'mcp_oauth';
   private static readonly FLOW_TTL = 10 * 60 * 1000; // 10 minutes
 
+  private static normalizeIssuerScopedEndpoint(
+    endpoint: string | undefined,
+    issuerUrl: URL,
+    fieldName: 'token_endpoint' | 'registration_endpoint',
+  ): string | undefined {
+    if (!endpoint) {
+      return endpoint;
+    }
+
+    const issuerPath = issuerUrl.pathname.replace(/\/+$/, '');
+    if (!issuerPath || issuerPath === '/') {
+      return endpoint;
+    }
+
+    let endpointUrl: URL;
+    try {
+      endpointUrl = new URL(endpoint);
+    } catch {
+      return endpoint;
+    }
+
+    const expectedLeaf = fieldName === 'token_endpoint' ? '/token' : '/register';
+    if (
+      endpointUrl.origin !== issuerUrl.origin ||
+      endpointUrl.pathname === issuerPath ||
+      endpointUrl.pathname.startsWith(`${issuerPath}/`) ||
+      endpointUrl.pathname !== expectedLeaf
+    ) {
+      return endpoint;
+    }
+
+    const normalizedUrl = new URL(`${issuerPath}${endpointUrl.pathname}`, issuerUrl.origin);
+    normalizedUrl.search = endpointUrl.search;
+    normalizedUrl.hash = endpointUrl.hash;
+
+    logger.warn(
+      `[MCPOAuth] Normalized ${fieldName} from ${sanitizeUrlForLogging(endpoint)} to ${sanitizeUrlForLogging(normalizedUrl.toString())}`,
+    );
+
+    return normalizedUrl.toString();
+  }
+
   /**
    * Creates a fetch function with custom headers injected
    */
@@ -265,6 +307,17 @@ export class MCPOAuthHandler {
 
     logger.debug(`[MCPOAuth] OAuth metadata discovered successfully`);
     const metadata = await OAuthMetadataSchema.parseAsync(rawMetadata);
+
+    metadata.token_endpoint = this.normalizeIssuerScopedEndpoint(
+      metadata.token_endpoint,
+      authServerUrl,
+      'token_endpoint',
+    );
+    metadata.registration_endpoint = this.normalizeIssuerScopedEndpoint(
+      metadata.registration_endpoint,
+      authServerUrl,
+      'registration_endpoint',
+    );
 
     const endpointChecks: Promise<void>[] = [];
     if (metadata.registration_endpoint) {

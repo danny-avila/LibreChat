@@ -1,0 +1,134 @@
+name: BilleChat Build & Deploy
+
+on:
+  push:
+    branches:
+      - billechat
+    paths:
+      - 'api/**'
+      - 'client/**'
+      - 'packages/**'
+      - 'deploy/azure/**'
+      - 'helm/**'
+      - 'Dockerfile'
+      - 'librechat.yaml'
+  workflow_dispatch:
+
+env:
+  ACR_NAME: billechatacr
+  AKS_CLUSTER: billechat-aks
+  RESOURCE_GROUP: billechat-rg
+  NAMESPACE: billechat
+  HELM_RELEASE: billechat
+  IMAGE_NAME: billechat
+
+jobs:
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Azure Container Registry
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=raw,value=latest
+
+      - name: Prepare build context
+        run: cp .env.example .env
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to AKS
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.AKS_CLUSTER }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Add Helm repositories
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo add meilisearch https://meilisearch.github.io/meilisearch-kubernetes
+          helm repo update
+
+      - name: Build Helm dependencies
+        run: |
+          cd helm/librechat
+          helm dependency build
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install ${{ env.HELM_RELEASE }} ./helm/librechat \
+            --namespace ${{ env.NAMESPACE }} \
+            --create-namespace \
+            --values deploy/azure/billechat-values.yaml \
+            --set image.registry=${{ secrets.ACR_LOGIN_SERVER }} \
+            --set image.repository=${{ env.IMAGE_NAME }} \
+            --set image.tag=${{ github.sha }} \
+            --set librechat.configEnv.AZURE_AI_FOUNDRY_API_KEY=${{ secrets.AZURE_AI_FOUNDRY_API_KEY }} \
+            --set librechat.configEnv.JWT_SECRET=${{ secrets.JWT_SECRET }} \
+            --set librechat.configEnv.JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }} \
+            --set librechat.configEnv.CREDS_KEY=${{ secrets.CREDS_KEY }} \
+            --set librechat.configEnv.CREDS_IV=${{ secrets.CREDS_IV }} \
+            --set librechat.configEnv.OPENID_CLIENT_SECRET=${{ secrets.OPENID_CLIENT_SECRET }} \
+            --set librechat.configEnv.OPENID_SESSION_SECRET=${{ secrets.OPENID_SESSION_SECRET }} \
+            --set librechat.configEnv.RAG_OPENAI_API_KEY=${{ secrets.RAG_OPENAI_API_KEY }} \
+            --set librechat.configEnv.AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }} \
+            --timeout 10m \
+            --wait
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/${{ env.HELM_RELEASE }}-librechat \
+            --namespace ${{ env.NAMESPACE }} \
+            --timeout=300s
+          echo ""
+          echo "Pod status:"
+          kubectl get pods -n ${{ env.NAMESPACE }}
+          echo ""
+          echo "Ingress:"
+          kubectl get ingress -n ${{ env.NAMESPACE }}
