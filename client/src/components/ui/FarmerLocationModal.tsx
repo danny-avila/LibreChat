@@ -1,8 +1,8 @@
 /* eslint-disable i18next/no-literal-string */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { useForm } from 'react-hook-form';
-import { useState } from 'react';
-import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle, Label } from '@librechat/client';
+import { useState, useEffect } from 'react';
+import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle, Label, Input } from '@librechat/client';
 import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -12,16 +12,21 @@ type FarmerLocationForm = {
     latitude: number;
     longitude: number;
   };
+  landhold?: string;
 };
 
 const FarmerLocationModal = ({
   open,
   onOpenChange,
   onComplete,
+  isLocationMissing = false,
+  isLandholdMissing = false,
 }: {
   open: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onComplete: () => void;
+  isLocationMissing?: boolean;
+  isLandholdMissing?: boolean;
 }) => {
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
@@ -32,47 +37,75 @@ const FarmerLocationModal = ({
     handleSubmit,
     watch,
     setValue,
-    formState: { isValid },
-  } = useForm<FarmerLocationForm>({ mode: 'onChange' });
+    unregister,
+    formState: { errors },
+  } = useForm<FarmerLocationForm>({ 
+    mode: 'onChange',
+    shouldUnregister: true 
+  });
 
   const saveMutation = useSaveFarmerProfileMutation({
     onSuccess: () => {
       onComplete();
     },
+    onError: (error) => {
+      console.error('Mutation error:', error);
+      setLocationError('Failed to save profile. Please try again.');
+    }
   });
 
+  useEffect(() => {
+    if (!isLocationMissing) {
+      unregister('location.latitude');
+      unregister('location.longitude');
+    }
+    if (!isLandholdMissing) {
+      unregister('landhold');
+    }
+  }, [isLocationMissing, isLandholdMissing, unregister]);
+
+  const onFormError = (formErrors: any) => {
+    console.error('Form validation failed:', formErrors);
+  };
+
   const onSubmit = (data: FarmerLocationForm) => {
-    const profilePayload: IFarmerProfile = {
-      location:
-        data.location?.latitude && data.location?.longitude
-          ? {
-              latitude: Number(data.location.latitude),
-              longitude: Number(data.location.longitude),
-            }
-          : undefined,
-    };
+    const profilePayload: IFarmerProfile = {};
+    
+    if (isLocationMissing && data.location?.latitude && data.location?.longitude) {
+      profilePayload.location = {
+        latitude: Number(data.location.latitude),
+        longitude: Number(data.location.longitude),
+      };
+    }
+    
+    if (isLandholdMissing && data.landhold) {
+      profilePayload.landhold = Number(data.landhold);
+    }
+    
     saveMutation.mutate(profilePayload);
   };
 
   const fieldClass = 'mb-4';
+  const inputClass = 'mt-1 block w-full rounded-md border border-border-heavy bg-surface-secondary px-3 py-2 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-green-500';
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
       <OGDialogContent showCloseButton={true} className="flex w-11/12 max-w-md flex-col sm:w-full">
         <OGDialogHeader>
           <OGDialogTitle className="text-lg font-bold text-text-primary">
-            Register Home Location
+            Complete Your Profile
           </OGDialogTitle>
         </OGDialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="mt-4 flex flex-col">
-          <input type="hidden" {...register('location.latitude', { required: true })} />
-          <input type="hidden" {...register('location.longitude', { required: true })} />
-
+        <form onSubmit={handleSubmit(onSubmit, onFormError)} className="mt-4 flex flex-col">
           <p className="mb-4 text-sm text-text-secondary">
-            We noticed you haven't shared your location with us yet. Please capture it below.
+            We noticed you haven't shared some details with us yet. Please provide them below.
           </p>
 
+          {isLocationMissing && (
+            <>
+              <input type="hidden" {...register('location.latitude')} />
+              <input type="hidden" {...register('location.longitude')} />
           <div className="mb-4 rounded-md border border-blue-100 bg-blue-50/50 p-4 dark:border-blue-800 dark:bg-blue-900/10">
             <div className="flex">
               <div className="flex-shrink-0">
@@ -142,14 +175,38 @@ const FarmerLocationModal = ({
               {locationError && <span className="text-sm text-red-500">{locationError}</span>}
             </div>
           </div>
+            </>
+          )}
+
+          {isLandholdMissing && (
+            <div className={fieldClass}>
+              <Label htmlFor="landhold">Total Agricultural Landholding (Specify your total farm size in Acres)</Label>
+              <Input
+                id="landhold"
+                placeholder="e.g. 5"
+                className={inputClass}
+                {...register('landhold', { required: 'Landholding is required' })}
+              />
+            </div>
+          )}
+
+          {Object.keys(errors).length > 0 && (
+            <div className="mt-2 text-sm text-red-500">
+              Please fix the errors before submitting.
+            </div>
+          )}
 
           <div className="mt-4 flex justify-end gap-2 border-t border-border-heavy pt-4">
             <button
               type="submit"
-              disabled={!isValid || saveMutation.isLoading}
+              disabled={
+                saveMutation.isLoading ||
+                (isLocationMissing && (!watch('location.latitude') || !watch('location.longitude'))) ||
+                (isLandholdMissing && !watch('landhold'))
+              }
               className="hover:bg-surface-active-hover inline-flex items-center justify-center rounded-lg bg-surface-active px-6 py-2 text-sm font-medium text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {saveMutation.isLoading ? 'Saving...' : 'Save Location'}
+              {saveMutation.isLoading ? 'Saving...' : 'Save Details'}
             </button>
           </div>
         </form>

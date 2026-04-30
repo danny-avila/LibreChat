@@ -1088,10 +1088,18 @@ export const useSaveFarmerProfileMutation = (
         (prev) => {
           if (!prev) return prev;
           const hasLocation = !!(variables.location?.latitude && variables.location?.longitude);
+          const hasLandhold = variables.landhold !== undefined && variables.landhold !== null;
+          
+          const newLocationCompleted = prev.farmerLocationCompleted || hasLocation;
+          const newLandholdCompleted = prev.farmerLandholdCompleted || hasLandhold;
+          const farmerNeedsUpdate = !newLocationCompleted || !newLandholdCompleted;
+
           return {
             ...prev,
             farmerProfileCompleted: true,
-            ...(hasLocation ? { farmerLocationCompleted: true } : {}),
+            farmerLocationCompleted: newLocationCompleted,
+            farmerLandholdCompleted: newLandholdCompleted,
+            farmerNeedsUpdate,
           } as t.TUserTermsResponse;
         },
       );

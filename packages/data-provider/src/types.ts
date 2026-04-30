@@ -630,6 +630,8 @@ export type TUserTermsResponse = {
   secondTermsAccepted: boolean;
   farmerProfileCompleted: boolean;
   farmerLocationCompleted?: boolean;
+  farmerLandholdCompleted?: boolean;
+  farmerNeedsUpdate?: boolean;
 };
 
 export type TAcceptTermsResponse = {

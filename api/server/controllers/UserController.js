@@ -77,11 +77,18 @@ const getTermsStatusController = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+    const farmerProfileCompleted = !!user.farmerProfile?.farmerName;
+    const farmerLocationCompleted = !!(user.farmerProfile?.location?.latitude && user.farmerProfile?.location?.longitude);
+    const farmerLandholdCompleted = user.farmerProfile?.landhold !== undefined && user.farmerProfile?.landhold !== null;
+    const farmerNeedsUpdate = !farmerLocationCompleted || !farmerLandholdCompleted;
+
     res.status(200).json({
       termsAccepted: !!user.termsAccepted,
       secondTermsAccepted: !!user.secondTermsAccepted,
-      farmerProfileCompleted: !!user.farmerProfile?.farmerName,
-      farmerLocationCompleted: !!(user.farmerProfile?.location?.latitude && user.farmerProfile?.location?.longitude),
+      farmerProfileCompleted,
+      farmerLocationCompleted,
+      farmerLandholdCompleted,
+      farmerNeedsUpdate,
     });
   } catch (error) {
     logger.error('Error fetching terms acceptance status:', error);
@@ -161,6 +168,9 @@ const saveFarmerProfileController = async (req, res) => {
     }
     if (farmerProfile.location !== undefined) {
       updateQuery.$set['farmerProfile.location'] = farmerProfile.location;
+    }
+    if (farmerProfile.landhold !== undefined) {
+      updateQuery.$set['farmerProfile.landhold'] = farmerProfile.landhold;
     }
 
     if (Object.keys(updateQuery.$set).length === 0) {

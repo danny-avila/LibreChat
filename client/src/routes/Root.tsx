@@ -66,7 +66,7 @@ export default function Root() {
       setShowFarmerProfile(true);
       return;
     }
-    if (!termsData.farmerLocationCompleted) {
+    if (termsData.farmerNeedsUpdate) {
       setShowFarmerLocation(true);
     }
   }, [termsData]);
@@ -166,6 +166,8 @@ export default function Root() {
             open={showFarmerLocation}
             onOpenChange={setShowFarmerLocation}
             onComplete={handleFarmerLocationComplete}
+            isLocationMissing={!termsData?.farmerLocationCompleted}
+            isLandholdMissing={!termsData?.farmerLandholdCompleted}
           />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
