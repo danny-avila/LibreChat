@@ -551,7 +551,7 @@ const sttOpenaiSchema = z.object({
   model: z.string(),
   language: z
     .string()
-    .regex(/^[a-z]{2}(-[a-z]{2})?$/)
+    .regex(/^[a-z]{2}(-[a-z]{2})?$/i)
     .optional(),
   extraParams: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
 });

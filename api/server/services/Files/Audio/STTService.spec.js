@@ -51,7 +51,7 @@ const sttOpenaiSchema = z.object({
   model: z.string(),
   language: z
     .string()
-    .regex(/^[a-z]{2}(-[a-z]{2})?$/)
+    .regex(/^[a-z]{2}(-[a-z]{2})?$/i)
     .optional(),
   extraParams: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
 });
@@ -162,6 +162,8 @@ describe('sttOpenaiSchema', () => {
   it.each([
     { lang: 'pl', valid: true },
     { lang: 'en-us', valid: true },
+    { lang: 'en-US', valid: true },
+    { lang: 'EN-US', valid: true },
     { lang: 'Polish', valid: false },
     { lang: 'xyz123', valid: false },
   ])('language "$lang" → valid=$valid', ({ lang, valid }) => {
