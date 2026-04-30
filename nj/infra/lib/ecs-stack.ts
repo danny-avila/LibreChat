@@ -37,6 +37,7 @@ export class EcsStack extends cdk.Stack {
   public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
   public readonly service: ecsPatterns.ApplicationLoadBalancedFargateService;
   public readonly s3Bucket: s3.Bucket;
+  public mongoService?: ecs.FargateService;
 
   constructor(scope: Construct, id: string, props: EcsServicesProps) {
     super(scope, id, props);
@@ -373,6 +374,7 @@ export class EcsStack extends cdk.Stack {
       );
     }
 
+    this.mongoService = mongoService;
     new cdk.CfnOutput(this, 'MongoImageUri', { value: props.mongoImage });
     new cdk.CfnOutput(this, 'RagApiImageUri', {
       value: '152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/rag-api:latest',

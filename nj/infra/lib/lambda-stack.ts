@@ -1,6 +1,5 @@
 import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
-import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -14,10 +13,11 @@ export type EnvVars = {
 
 export interface LambdaStackProps extends cdk.StackProps {
   envVars: EnvVars;
-  userPool: cognito.IUserPool;
 }
 
 export class LambdaStack extends cdk.Stack {
+  public readonly lambdaSg: ec2.SecurityGroup;
+
   constructor(scope: Construct, id: string, props: LambdaStackProps) {
     super(scope, id, props);
 
@@ -25,9 +25,7 @@ export class LambdaStack extends cdk.Stack {
       tags: { Name: 'VPC-Innov-Platform-*' },
     });
 
-    const { userPool } = props;
-
-    const sg = new ec2.SecurityGroup(this, 'ClearUserLambdaSg', {
+    this.lambdaSg = new ec2.SecurityGroup(this, 'ClearUserLambdaSg', {
       vpc,
       description: 'Security group for clearUser Lambda',
     });
@@ -46,10 +44,6 @@ export class LambdaStack extends cdk.Stack {
                 `arn:aws:secretsmanager:${this.region}:${this.account}:secret:ai-assistant/docdb/uri*`,
               ],
             }),
-            new iam.PolicyStatement({
-              actions: ['cognito-idp:ListUsers', 'cognito-idp:AdminDeleteUser'],
-              resources: [userPool.userPoolArn],
-            }),
           ],
         }),
       },
@@ -63,11 +57,10 @@ export class LambdaStack extends cdk.Stack {
       role,
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-      securityGroups: [sg],
+      securityGroups: [this.lambdaSg],
       timeout: cdk.Duration.seconds(30),
       environment: {
         NODE_ENV: props.envVars.isProd ? 'production' : 'development',
-        USER_POOL_ID: userPool.userPoolId,
       },
       bundling: {
         format: OutputFormat.CJS,

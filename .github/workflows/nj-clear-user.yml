@@ -19,7 +19,7 @@ on:
 jobs:
   clear-user:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ inputs.environment }}-deploy
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -28,7 +28,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Invoke Lambda
+      - name: Clear OpenID from database
         run: |
           aws lambda invoke \
             --function-name ai-assistant-clear-user \
@@ -36,5 +36,29 @@ jobs:
             --cli-binary-format raw-in-base64-out \
             response.json
           cat response.json
+          jq -e '.statusCode == 200' response.json
         env:
           EMAIL: ${{ inputs.email }}
+
+      - name: Delete from Cognito
+        run: |
+          USERNAMES=$(aws cognito-idp list-users \
+            --user-pool-id "$USER_POOL_ID" \
+            --filter "email = \"$EMAIL\"" \
+            --query 'Users[].Username' \
+            --output text)
+
+          if [ -z "$USERNAMES" ]; then
+            echo "No Cognito users found for $EMAIL"
+            exit 0
+          fi
+
+          for USERNAME in $USERNAMES; do
+            echo "Deleting $USERNAME"
+            aws cognito-idp admin-delete-user \
+              --user-pool-id "$USER_POOL_ID" \
+              --username "$USERNAME"
+          done
+        env:
+          EMAIL: ${{ inputs.email }}
+          USER_POOL_ID: ${{ secrets.USER_POOL_ID }}

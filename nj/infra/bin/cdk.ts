@@ -29,6 +29,7 @@
  */
 
 import * as cdk from 'aws-cdk-lib';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { ECS_PATTERNS_UNIQUE_TARGET_GROUP_ID } from 'aws-cdk-lib/cx-api';
 import { DatabaseStack } from '../lib/db-stack';
 import { EcsStack } from '../lib/ecs-stack';
@@ -121,8 +122,15 @@ if (!isProd) {
   const lambdaStack = new LambdaStack(app, 'LambdaStack', {
     env,
     envVars,
-    userPool: cognitoStack.userPool,
   });
+
+  if (ecsStack.mongoService) {
+    ecsStack.mongoService.connections.allowFrom(
+      lambdaStack.lambdaSg,
+      ec2.Port.tcp(27017),
+      'clearUser Lambda to MongoDB',
+    );
+  }
 
   applyTags(lambdaStack);
 }
