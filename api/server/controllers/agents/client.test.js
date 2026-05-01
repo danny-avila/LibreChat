@@ -1963,15 +1963,15 @@ describe('AgentClient - titleConvo', () => {
 
       expect(client.useMemory).toHaveBeenCalled();
 
-      // Verify primary agent has its configured instructions (not from buildOptions) and memory context
+      // Verify primary agent keeps configured instructions stable and memory context dynamic
       expect(client.options.agent.instructions).toContain('Primary agent instructions');
-      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
 
       expect(parallelAgent1.instructions).toContain('Parallel agent 1 instructions');
-      expect(parallelAgent1.instructions).toContain(memoryContent);
+      expect(parallelAgent1.additional_instructions).toContain(memoryContent);
 
       expect(parallelAgent2.instructions).toContain('Parallel agent 2 instructions');
-      expect(parallelAgent2.instructions).toContain(memoryContent);
+      expect(parallelAgent2.additional_instructions).toContain(memoryContent);
     });
 
     it('should not modify parallel agents when no memory context is available', async () => {
@@ -2033,7 +2033,8 @@ describe('AgentClient - titleConvo', () => {
         additional_instructions: null,
       });
 
-      expect(parallelAgentNoInstructions.instructions).toContain(memoryContent);
+      expect(parallelAgentNoInstructions.instructions).toBeUndefined();
+      expect(parallelAgentNoInstructions.additional_instructions).toContain(memoryContent);
     });
 
     it('should not modify agentConfigs when none exist', async () => {
@@ -2059,7 +2060,7 @@ describe('AgentClient - titleConvo', () => {
         }),
       ).resolves.not.toThrow();
 
-      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
     });
 
     it('should handle empty agentConfigs map', async () => {
@@ -2085,7 +2086,7 @@ describe('AgentClient - titleConvo', () => {
         }),
       ).resolves.not.toThrow();
 
-      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
     });
   });
 

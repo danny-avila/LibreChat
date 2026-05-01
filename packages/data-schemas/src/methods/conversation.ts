@@ -16,7 +16,12 @@ export interface ConversationMethods {
   saveConvo(
     ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
     data: { conversationId: string; newConversationId?: string; [key: string]: unknown },
-    metadata?: { context?: string; unsetFields?: Record<string, number>; noUpsert?: boolean },
+    metadata?: {
+      context?: string;
+      unsetFields?: Record<string, number>;
+      noUpsert?: boolean;
+      createdAtOnInsert?: Date;
+    },
   ): Promise<IConversation | { message: string } | null>;
   bulkSaveConvos(conversations: Array<Record<string, unknown>>): Promise<unknown>;
   getConvosByCursor(
@@ -156,7 +161,12 @@ export function createConversationMethods(
       newConversationId?: string;
       [key: string]: unknown;
     },
-    metadata?: { context?: string; unsetFields?: Record<string, number>; noUpsert?: boolean },
+    metadata?: {
+      context?: string;
+      unsetFields?: Record<string, number>;
+      noUpsert?: boolean;
+      createdAtOnInsert?: Date;
+    },
   ) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
@@ -185,9 +195,21 @@ export function createConversationMethods(
         update.expiredAt = null;
       }
 
+      const createdAtOnInsert =
+        metadata?.createdAtOnInsert instanceof Date &&
+        !Number.isNaN(metadata.createdAtOnInsert.getTime())
+          ? metadata.createdAtOnInsert
+          : undefined;
+      if (createdAtOnInsert) {
+        update.updatedAt = new Date();
+      }
+
       const updateOperation: Record<string, unknown> = { $set: update };
       if (metadata?.unsetFields && Object.keys(metadata.unsetFields).length > 0) {
         updateOperation.$unset = metadata.unsetFields;
+      }
+      if (createdAtOnInsert) {
+        updateOperation.$setOnInsert = { createdAt: createdAtOnInsert };
       }
 
       const conversation = await Conversation.findOneAndUpdate(
@@ -196,6 +218,7 @@ export function createConversationMethods(
         {
           new: true,
           upsert: metadata?.noUpsert !== true,
+          ...(createdAtOnInsert ? { timestamps: false } : {}),
         },
       );
 

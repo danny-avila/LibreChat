@@ -21,4 +21,6 @@ export type RequestBody = {
 export type ServerRequest = Request<unknown, unknown, RequestBody> & {
   user?: IUser;
   config?: AppConfig;
+  /** Server-captured conversation creation time used to anchor dynamic prompt variables. */
+  conversationCreatedAt?: string;
 };

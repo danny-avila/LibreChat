@@ -813,11 +813,19 @@ class BaseClient {
       endpointType: options.endpointType,
       ...endpointOptions,
     };
+    const conversationCreatedAt = options?.req?.conversationCreatedAt;
+    const createdAtOnInsert =
+      conversationCreatedAt != null ? new Date(conversationCreatedAt) : undefined;
+    const validCreatedAtOnInsert =
+      createdAtOnInsert && !Number.isNaN(createdAtOnInsert.getTime())
+        ? createdAtOnInsert
+        : undefined;
 
-    const existingConvo =
-      this.fetchedConvo === true
-        ? null
-        : await db.getConvo(options?.req?.user?.id, message.conversationId);
+    const skippedExistingConvoLookup = this.fetchedConvo === true;
+    const existingConvo = skippedExistingConvoLookup
+      ? null
+      : await db.getConvo(options?.req?.user?.id, message.conversationId);
+    const shouldSetCreatedAtOnInsert = !skippedExistingConvoLookup && existingConvo == null;
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
@@ -847,6 +855,7 @@ class BaseClient {
     const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
+      createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
     });
 
     return { message: savedMessage, conversation };

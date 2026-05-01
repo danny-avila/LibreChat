@@ -204,6 +204,24 @@ describe('Conversation Operations', () => {
       });
       expect(savedConvo?.someField).toBeUndefined();
     });
+
+    it('should set createdAt from metadata only on insert', async () => {
+      const firstAnchor = new Date('2024-02-03T04:05:06.000Z');
+      const secondAnchor = new Date('2025-02-03T04:05:06.000Z');
+
+      const firstSave = await saveConvo(mockCtx, mockConversationData, {
+        createdAtOnInsert: firstAnchor,
+      });
+      const secondSave = await saveConvo(
+        mockCtx,
+        { ...mockConversationData, title: 'Updated title' },
+        { createdAtOnInsert: secondAnchor },
+      );
+
+      expect(new Date(firstSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
+      expect(new Date(secondSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
+      expect(secondSave?.title).toBe('Updated title');
+    });
   });
 
   describe('isTemporary conversation handling', () => {

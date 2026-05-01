@@ -233,7 +233,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   /** Pre-ratio context budget from initializeAgent. */
   baseContextTokens?: number;
   useLegacyContent?: boolean;
-  toolContextMap?: Record<string, string>;
+  toolContextMap?: Record<string, unknown>;
+  dynamicToolContextMap?: Record<string, unknown>;
   toolRegistry?: LCToolRegistry;
   /** Serializable tool definitions for event-driven execution */
   toolDefinitions?: LCTool[];
@@ -726,15 +727,18 @@ export async function createRun({
       agent.model_parameters,
     );
 
-    const systemMessage = Object.values(agent.toolContextMap ?? {})
-      .join('\n')
-      .trim();
+    const joinInstructionMap = (map?: Record<string, unknown>) =>
+      Object.values(map ?? {})
+        .filter((value): value is string => typeof value === 'string' && value !== '')
+        .join('\n')
+        .trim();
 
-    const systemContent = [
-      systemMessage,
-      agent.instructions ?? '',
-      agent.additional_instructions ?? '',
-    ]
+    const toolInstructions = joinInstructionMap(agent.toolContextMap);
+    const dynamicToolInstructions = joinInstructionMap(agent.dynamicToolContextMap);
+
+    const systemContent = [toolInstructions, agent.instructions ?? ''].join('\n').trim();
+
+    const additionalInstructions = [dynamicToolInstructions, agent.additional_instructions ?? '']
       .join('\n')
       .trim();
 
@@ -827,6 +831,7 @@ export async function createRun({
       tools: agent.tools,
       clientOptions: llmConfig,
       instructions: systemContent,
+      additional_instructions: additionalInstructions || undefined,
       name: agent.name ?? undefined,
       toolRegistry,
       maxContextTokens: effectiveMaxContextTokens,

@@ -12,7 +12,7 @@ const {
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
-const { saveMessage } = require('~/models');
+const { saveMessage, getConvo } = require('~/models');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -30,6 +30,41 @@ function createCloseHandler(abortController) {
     abortController.abort();
     logger.debug('[AgentController] Request aborted on close');
   };
+}
+
+function toValidISOString(value) {
+  if (value == null) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+async function resolveConversationCreatedAt({ userId, conversationId, isNewConvo }) {
+  if (isNewConvo) {
+    return new Date().toISOString();
+  }
+
+  try {
+    const conversation = await getConvo(userId, conversationId);
+    return toValidISOString(conversation?.createdAt) ?? new Date().toISOString();
+  } catch (error) {
+    logger.warn('[AgentController] Failed to resolve conversation timestamp anchor', {
+      conversationId,
+      error: error?.message ?? error,
+    });
+    return new Date().toISOString();
+  }
+}
+
+async function attachConversationCreatedAt(req, { userId, conversationId, isNewConvo }) {
+  req.body.conversationId = conversationId;
+  req.conversationCreatedAt = await resolveConversationCreatedAt({
+    userId,
+    conversationId,
+    isNewConvo,
+  });
 }
 
 /**
@@ -60,9 +95,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
   // Generate conversationId upfront if not provided - streamId === conversationId always
   // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
-  const conversationId =
-    !reqConversationId || reqConversationId === 'new' ? crypto.randomUUID() : reqConversationId;
+  const isNewConvo = !reqConversationId || reqConversationId === 'new';
+  const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
+
+  await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
 
   let client = null;
 
@@ -268,7 +305,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         // Check abort state BEFORE calling completeJob (which triggers abort signal for cleanup)
         const wasAbortedBeforeComplete = job.abortController.signal.aborted;
-        const isNewConvo = !reqConversationId || reqConversationId === 'new';
         const shouldGenerateTitle =
           addTitle &&
           parentMessageId === Constants.NO_PARENT &&
@@ -453,8 +489,8 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
 
   // Generate conversationId upfront if not provided - streamId === conversationId always
   // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
-  const conversationId =
-    !reqConversationId || reqConversationId === 'new' ? crypto.randomUUID() : reqConversationId;
+  const isNewConvo = !reqConversationId || reqConversationId === 'new';
+  const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
 
   let userMessage;
@@ -464,8 +500,9 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
   let cleanupHandlers = [];
 
   // Match the same logic used for conversationId generation above
-  const isNewConvo = !reqConversationId || reqConversationId === 'new';
   const userId = req.user.id;
+
+  await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
 
   // Create handler to avoid capturing the entire parent scope
   let getReqData = (data = {}) => {

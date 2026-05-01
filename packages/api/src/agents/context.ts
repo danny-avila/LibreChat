@@ -87,25 +87,38 @@ export async function getMCPInstructionsForServers(
 }
 
 /**
- * Builds final instructions for an agent by combining shared run context and agent-specific context.
- * Order: sharedRunContext -> baseInstructions -> mcpInstructions
+ * Builds stable instructions for an agent by combining MCP context and agent-specific context.
+ * Order: mcpInstructions -> baseInstructions
  *
  * @param {Object} params
- * @param {string} [params.sharedRunContext] - Run-level context shared by all agents (file context, RAG, memory)
  * @param {string} [params.baseInstructions] - Agent's base instructions
  * @param {string} [params.mcpInstructions] - Agent's MCP server instructions
  * @returns {string | undefined} Combined instructions, or undefined if empty
  */
 export function buildAgentInstructions({
-  sharedRunContext,
   baseInstructions,
   mcpInstructions,
 }: {
-  sharedRunContext?: string;
   baseInstructions?: string;
   mcpInstructions?: string;
 }): string | undefined {
-  const parts = [sharedRunContext, baseInstructions, mcpInstructions].filter(Boolean);
+  const parts = [mcpInstructions, baseInstructions].filter(Boolean);
+  const combined = parts.join('\n\n').trim();
+  return combined || undefined;
+}
+
+/**
+ * Builds dynamic system-tail instructions for an agent.
+ * Order: existing additional instructions -> shared run context.
+ */
+export function buildAgentAdditionalInstructions({
+  additionalInstructions,
+  sharedRunContext,
+}: {
+  additionalInstructions?: string;
+  sharedRunContext?: string;
+}): string | undefined {
+  const parts = [additionalInstructions, sharedRunContext].filter(Boolean);
   const combined = parts.join('\n\n').trim();
   return combined || undefined;
 }
@@ -141,6 +154,7 @@ export async function applyContextToAgent({
   configServers?: Record<string, ParsedServerConfig>;
 }): Promise<void> {
   const baseInstructions = agent.instructions || '';
+  const additionalInstructions = agent.additional_instructions || '';
 
   try {
     const mcpServers = ephemeralAgent?.mcp?.length ? ephemeralAgent.mcp : extractMCPServers(agent);
@@ -152,9 +166,12 @@ export async function applyContextToAgent({
     );
 
     agent.instructions = buildAgentInstructions({
-      sharedRunContext,
       baseInstructions,
       mcpInstructions,
+    });
+    agent.additional_instructions = buildAgentAdditionalInstructions({
+      additionalInstructions,
+      sharedRunContext,
     });
 
     if (agentId && logger) {
@@ -162,9 +179,12 @@ export async function applyContextToAgent({
     }
   } catch (error) {
     agent.instructions = buildAgentInstructions({
-      sharedRunContext,
       baseInstructions,
       mcpInstructions: '',
+    });
+    agent.additional_instructions = buildAgentAdditionalInstructions({
+      additionalInstructions,
+      sharedRunContext,
     });
 
     if (logger) {

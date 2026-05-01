@@ -245,25 +245,19 @@ class AgentClient extends BaseClient {
     /** @type {number | undefined} */
     let promptTokens;
 
-    /**
-     * Extract base instructions for all agents (combines instructions + additional_instructions).
-     * This must be done before applying context to preserve the original agent configuration.
-     */
-    const extractBaseInstructions = (agent) => {
-      const baseInstructions = [agent.instructions ?? '', agent.additional_instructions ?? '']
-        .filter(Boolean)
-        .join('\n')
-        .trim();
-      agent.instructions = baseInstructions;
+    /** Normalize instruction fields before applying per-run context. */
+    const normalizeInstructions = (agent) => {
+      agent.instructions = agent.instructions?.trim() || undefined;
+      agent.additional_instructions = agent.additional_instructions?.trim() || undefined;
       return agent;
     };
 
-    /** Collect all agents for unified processing, extracting base instructions during collection */
+    /** Collect all agents for unified processing while preserving stable/dynamic instruction fields. */
     const allAgents = [
-      { agent: extractBaseInstructions(this.options.agent), agentId: this.options.agent.id },
+      { agent: normalizeInstructions(this.options.agent), agentId: this.options.agent.id },
       ...(this.agentConfigs?.size > 0
         ? Array.from(this.agentConfigs.entries()).map(([agentId, agent]) => ({
-            agent: extractBaseInstructions(agent),
+            agent: normalizeInstructions(agent),
             agentId,
           }))
         : []),
@@ -423,7 +417,8 @@ class AgentClient extends BaseClient {
 
     /**
      * Apply context to all agents.
-     * Each agent gets: shared run context + their own base instructions + their own MCP instructions.
+     * Stable agent/MCP instructions stay on `instructions`; shared runtime context
+     * is appended to `additional_instructions` as the dynamic system tail.
      *
      * NOTE: This intentionally mutates agent objects in place. The agentConfigs Map
      * holds references to config objects that will be passed to the graph runtime.

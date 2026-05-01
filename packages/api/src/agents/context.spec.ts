@@ -7,6 +7,7 @@ import {
   extractMCPServers,
   getMCPInstructionsForServers,
   buildAgentInstructions,
+  buildAgentAdditionalInstructions,
   applyContextToAgent,
 } from './context';
 
@@ -209,40 +210,29 @@ describe('Agent Context Utilities', () => {
   describe('buildAgentInstructions', () => {
     it('should combine all parts with double newlines', () => {
       const result = buildAgentInstructions({
-        sharedRunContext: 'Shared context',
         baseInstructions: 'Base instructions',
         mcpInstructions: 'MCP instructions',
       });
 
-      expect(result).toBe('Shared context\n\nBase instructions\n\nMCP instructions');
+      expect(result).toBe('MCP instructions\n\nBase instructions');
     });
 
     it('should filter out empty parts', () => {
       const result = buildAgentInstructions({
-        sharedRunContext: 'Shared context',
         baseInstructions: '',
         mcpInstructions: 'MCP instructions',
       });
 
-      expect(result).toBe('Shared context\n\nMCP instructions');
+      expect(result).toBe('MCP instructions');
     });
 
     it('should return undefined when all parts are empty', () => {
       const result = buildAgentInstructions({
-        sharedRunContext: '',
         baseInstructions: '',
         mcpInstructions: '',
       });
 
       expect(result).toBeUndefined();
-    });
-
-    it('should handle only shared context', () => {
-      const result = buildAgentInstructions({
-        sharedRunContext: 'Shared context only',
-      });
-
-      expect(result).toBe('Shared context only');
     });
 
     it('should handle only base instructions', () => {
@@ -263,21 +253,48 @@ describe('Agent Context Utilities', () => {
 
     it('should trim whitespace from combined result', () => {
       const result = buildAgentInstructions({
-        sharedRunContext: '  Shared context  ',
         baseInstructions: '  Base instructions  ',
+        mcpInstructions: '  MCP instructions  ',
       });
 
-      expect(result).toBe('Shared context  \n\n  Base instructions');
+      expect(result).toBe('MCP instructions  \n\n  Base instructions');
     });
 
     it('should handle undefined parts', () => {
       const result = buildAgentInstructions({
-        sharedRunContext: undefined,
         baseInstructions: 'Base',
         mcpInstructions: undefined,
       });
 
       expect(result).toBe('Base');
+    });
+  });
+
+  describe('buildAgentAdditionalInstructions', () => {
+    it('should combine existing additional instructions and shared context', () => {
+      const result = buildAgentAdditionalInstructions({
+        additionalInstructions: 'Existing dynamic',
+        sharedRunContext: 'Shared context',
+      });
+
+      expect(result).toBe('Existing dynamic\n\nShared context');
+    });
+
+    it('should handle only shared context', () => {
+      const result = buildAgentAdditionalInstructions({
+        sharedRunContext: 'Shared context only',
+      });
+
+      expect(result).toBe('Shared context only');
+    });
+
+    it('should return undefined when all dynamic parts are empty', () => {
+      const result = buildAgentAdditionalInstructions({
+        additionalInstructions: '',
+        sharedRunContext: '',
+      });
+
+      expect(result).toBeUndefined();
     });
   });
 
@@ -320,9 +337,8 @@ describe('Agent Context Utilities', () => {
         logger: mockLogger,
       });
 
-      expect(agent.instructions).toBe(
-        'Shared context\n\nOriginal instructions\n\nMCP instructions',
-      );
+      expect(agent.instructions).toBe('MCP instructions\n\nOriginal instructions');
+      expect(agent.additional_instructions).toBe('Shared context');
       expect(mockLogger.debug).toHaveBeenCalledWith(
         '[AgentContext] Applied context to agent: test-agent',
       );
@@ -349,7 +365,8 @@ describe('Agent Context Utilities', () => {
         ['ephemeral-server'],
         undefined,
       );
-      expect(agent.instructions).toContain('Ephemeral MCP');
+      expect(agent.instructions).toBe('Ephemeral MCP\n\nBase instructions');
+      expect(agent.additional_instructions).toBe('Context');
     });
 
     it('should prefer agent tools over empty ephemeral MCP array', async () => {
@@ -398,7 +415,8 @@ describe('Agent Context Utilities', () => {
         logger: mockLogger,
       });
 
-      expect(agent.instructions).toBe('Context\n\nBase');
+      expect(agent.instructions).toBe('Base');
+      expect(agent.additional_instructions).toBe('Context');
       expect(mockLogger.debug).not.toHaveBeenCalled();
     });
 
@@ -424,7 +442,8 @@ describe('Agent Context Utilities', () => {
         mcpManager: mockMCPManager,
       });
 
-      expect(agent.instructions).toBe('Context\n\nBase\n\nMCP');
+      expect(agent.instructions).toBe('MCP\n\nBase');
+      expect(agent.additional_instructions).toBe('Context');
     });
 
     it('should handle MCP fetch error gracefully and set fallback instructions', async () => {
@@ -453,8 +472,9 @@ describe('Agent Context Utilities', () => {
       });
 
       // getMCPInstructionsForServers catches the error and returns empty string
-      // So agent still has shared context + base instructions (without MCP)
-      expect(agent.instructions).toBe('Shared context\n\nBase instructions');
+      // So agent still has base instructions (without MCP), with shared context dynamic.
+      expect(agent.instructions).toBe('Base instructions');
+      expect(agent.additional_instructions).toBe('Shared context');
       // Error is logged by getMCPInstructionsForServers, not applyContextToAgent
       expect(mockLogger.error).toHaveBeenCalledWith(
         '[AgentContext] Failed to get MCP instructions:',
@@ -481,8 +501,9 @@ describe('Agent Context Utilities', () => {
 
       // extractMCPServers handles null tools gracefully, returns []
       // getMCPInstructionsForServers returns early with '', so no MCP instructions
-      // Agent should still have shared context + base instructions
-      expect(agent.instructions).toBe('Context\n\nBase');
+      // Agent should still have stable base instructions and dynamic shared context.
+      expect(agent.instructions).toBe('Base');
+      expect(agent.additional_instructions).toBe('Context');
       expect(mockMCPManager.formatInstructionsForContext).not.toHaveBeenCalled();
     });
 
@@ -508,7 +529,8 @@ describe('Agent Context Utilities', () => {
         mcpManager: mockMCPManager,
       });
 
-      expect(agent.instructions).toBe('Shared\n\nMCP only');
+      expect(agent.instructions).toBe('MCP only');
+      expect(agent.additional_instructions).toBe('Shared');
     });
 
     it('should handle missing instructions field on agent', async () => {
@@ -526,7 +548,28 @@ describe('Agent Context Utilities', () => {
         mcpManager: mockMCPManager,
       });
 
-      expect(agent.instructions).toBe('Context');
+      expect(agent.instructions).toBeUndefined();
+      expect(agent.additional_instructions).toBe('Context');
+    });
+
+    it('should preserve existing additional instructions before shared context', async () => {
+      const agent = {
+        id: 'test-agent',
+        instructions: 'Base',
+        additional_instructions: 'Existing dynamic',
+        tools: [],
+      };
+
+      mockMCPManager.formatInstructionsForContext.mockResolvedValue('');
+
+      await applyContextToAgent({
+        agent,
+        sharedRunContext: 'Context',
+        mcpManager: mockMCPManager,
+      });
+
+      expect(agent.instructions).toBe('Base');
+      expect(agent.additional_instructions).toBe('Existing dynamic\n\nContext');
     });
   });
 });
