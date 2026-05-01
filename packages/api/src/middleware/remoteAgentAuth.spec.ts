@@ -560,8 +560,9 @@ describe('createRemoteAgentAuth', () => {
       );
 
       expect(deps.apiKeyMiddleware).toHaveBeenCalled();
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining('OIDC verification failed'),
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('trying API key auth'),
         expect.any(Error),
       );
     });
@@ -578,6 +579,10 @@ describe('createRemoteAgentAuth', () => {
 
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('OIDC verification failed'),
+        expect.any(Error),
+      );
     });
 
     it('returns 401 when JWT cannot be decoded', async () => {

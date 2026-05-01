@@ -387,8 +387,11 @@ export function createRemoteAgentAuth({
           return;
         }
       } catch (oidcErr) {
+        if (apiKeyEnabled) {
+          logger.debug('[remoteAgentAuth] OIDC verification failed; trying API key auth:', oidcErr);
+          return apiKeyMiddleware(req, res, next);
+        }
         logger.error('[remoteAgentAuth] OIDC verification failed:', oidcErr);
-        if (apiKeyEnabled) return apiKeyMiddleware(req, res, next);
         res.status(401).json({ error: 'Unauthorized' });
         return;
       }
