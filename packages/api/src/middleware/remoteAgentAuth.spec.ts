@@ -378,6 +378,22 @@ describe('createRemoteAgentAuth', () => {
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
 
+    it('normalizes trailing slash issuer before verifying JWTs', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      const deps = makeDeps(makeConfig({ issuer: `${BASE_ISSUER}/` }));
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect((jwt.verify as jest.Mock).mock.calls[0][2]).toEqual(
+        expect.objectContaining({ issuer: BASE_ISSUER }),
+      );
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
     it('accepts case-insensitive Bearer auth scheme', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
       const deps = makeDeps();
