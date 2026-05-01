@@ -10,6 +10,10 @@
     ".": {
       "require": "./dist/index.js",
       "types": "./dist/types/index.d.ts"
+    },
+    "./telemetry": {
+      "require": "./dist/telemetry.js",
+      "types": "./dist/types/telemetry/index.d.ts"
     }
   },
   "scripts": {
@@ -98,6 +102,11 @@
     "@librechat/agents": "^3.1.74",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.66.0",
+    "@opentelemetry/resources": "^2.6.1",
+    "@opentelemetry/sdk-node": "^0.207.0",
+    "@opentelemetry/semantic-conventions": "^1.39.0",
     "@smithy/node-http-handler": "^4.4.5",
     "ai-tokenizer": "^1.0.6",
     "axios": "^1.15.0",
