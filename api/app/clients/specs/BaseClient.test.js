@@ -1,4 +1,4 @@
-const { Constants } = require('librechat-data-provider');
+const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const { initializeFakeClient } = require('./FakeClient');
 
 jest.mock('~/db/connect');
@@ -1254,6 +1254,49 @@ describe('BaseClient', () => {
       );
       expect(userSave[0].files).toHaveLength(1);
       expect(userSave[0].files[0].file_id).toBe('file-abc');
+    });
+  });
+
+  describe('sendMessage structured content text', () => {
+    beforeEach(() => {
+      TestClient.clientName = EModelEndpoint.agents;
+      TestClient.saveMessageToDatabase = jest.fn().mockImplementation((msg) => {
+        return Promise.resolve({ message: msg });
+      });
+    });
+
+    test('populates top-level text before saving agent text content parts', async () => {
+      TestClient.sendCompletion = jest.fn(async () => ({
+        completion: [{ type: ContentTypes.TEXT, text: 'generated text' }],
+        metadata: undefined,
+      }));
+
+      const response = await TestClient.sendMessage('Hello');
+
+      const responseSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => !msg.isCreatedByUser,
+      );
+      expect(responseSave).toBeDefined();
+      expect(responseSave[0].text).toBe('generated text');
+      expect(response.text).toBe('generated text');
+    });
+
+    test('does not include think content in populated top-level text', async () => {
+      TestClient.sendCompletion = jest.fn(async () => ({
+        completion: [
+          { type: ContentTypes.THINK, think: 'internal reasoning' },
+          { type: ContentTypes.TEXT, text: 'visible answer' },
+        ],
+        metadata: undefined,
+      }));
+
+      await TestClient.sendMessage('Hello');
+
+      const responseSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => !msg.isCreatedByUser,
+      );
+      expect(responseSave).toBeDefined();
+      expect(responseSave[0].text).toBe('visible answer');
     });
   });
 });

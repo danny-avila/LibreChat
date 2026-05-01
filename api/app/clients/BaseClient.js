@@ -18,6 +18,7 @@ const {
   excludedKeys,
   EModelEndpoint,
   mergeFileConfig,
+  parseTextParts,
   isParamEndpoint,
   isAgentsEndpoint,
   isEphemeralAgentId,
@@ -29,6 +30,23 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
 const db = require('~/models');
+
+function withTopLevelTextFromContent(message) {
+  if (typeof message.text === 'string' && message.text.length > 0) {
+    return message;
+  }
+
+  if (!Array.isArray(message.content) || message.content.length === 0) {
+    return message;
+  }
+
+  const text = parseTextParts(message.content, true);
+  if (!text) {
+    return message;
+  }
+
+  return { ...message, text };
+}
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -661,14 +679,16 @@ class BaseClient {
       responseMessage.contextMeta = this.contextMeta;
     }
 
-    responseMessage.databasePromise = this.saveMessageToDatabase(
-      responseMessage,
+    const responseMessageWithText = withTopLevelTextFromContent(responseMessage);
+
+    responseMessageWithText.databasePromise = this.saveMessageToDatabase(
+      responseMessageWithText,
       saveOptions,
       user,
     );
-    this.savedMessageIds.add(responseMessage.messageId);
-    delete responseMessage.tokenCount;
-    return responseMessage;
+    this.savedMessageIds.add(responseMessageWithText.messageId);
+    delete responseMessageWithText.tokenCount;
+    return responseMessageWithText;
   }
 
   async loadHistory(conversationId, parentMessageId = null) {

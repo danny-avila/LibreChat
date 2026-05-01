@@ -41,7 +41,7 @@ function withTopLevelTextFromContent(message) {
     return message;
   }
 
-  const text = parseTextParts(message.content);
+  const text = parseTextParts(message.content, true);
   if (!text) {
     return message;
   }

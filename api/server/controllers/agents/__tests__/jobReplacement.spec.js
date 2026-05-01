@@ -280,7 +280,10 @@ describe('Job Replacement Detection', () => {
         parentMessageId: userMessage.messageId,
         sender: 'Agent',
         text: '',
-        content: [{ type: 'text', text: 'generated text' }],
+        content: [
+          { type: 'think', think: 'internal reasoning' },
+          { type: 'text', text: 'generated text' },
+        ],
         databasePromise: Promise.resolve({
           conversation: { conversationId: streamId, title: 'New Chat' },
         }),
