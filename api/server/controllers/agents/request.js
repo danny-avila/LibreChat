@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { Constants, ViolationTypes } = require('librechat-data-provider');
+const { Constants, ViolationTypes, parseTextParts } = require('librechat-data-provider');
 const {
   sendEvent,
   getViolationInfo,
@@ -30,6 +30,23 @@ function createCloseHandler(abortController) {
     abortController.abort();
     logger.debug('[AgentController] Request aborted on close');
   };
+}
+
+function withTopLevelTextFromContent(message) {
+  if (typeof message.text === 'string' && message.text.length > 0) {
+    return message;
+  }
+
+  if (!Array.isArray(message.content) || message.content.length === 0) {
+    return message;
+  }
+
+  const text = parseTextParts(message.content);
+  if (!text) {
+    return message;
+  }
+
+  return { ...message, text };
 }
 
 /**
@@ -137,7 +154,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             isTemporary: req?.body?.isTemporary,
             interfaceConfig: req?.config?.interfaceConfig,
           },
-          partialMessage,
+          withTopLevelTextFromContent(partialMessage),
           { context: 'api/server/controllers/agents/request.js - partial response on disconnect' },
         );
 
@@ -248,10 +265,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         const messageId = response.messageId;
         const endpoint = endpointOption.endpoint;
-        response.endpoint = endpoint;
+        const responseWithText = withTopLevelTextFromContent({
+          ...response,
+          endpoint,
+        });
 
-        const databasePromise = response.databasePromise;
-        delete response.databasePromise;
+        const databasePromise = responseWithText.databasePromise;
+        delete responseWithText.databasePromise;
 
         const { conversation: convoData = {} } = await databasePromise;
         const conversation = { ...convoData };
@@ -295,7 +315,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         if (client.savedMessageIds && !client.savedMessageIds.has(messageId)) {
           await saveMessage(
             reqCtx,
-            { ...response, user: userId, unfinished: wasAbortedBeforeComplete },
+            { ...responseWithText, user: userId, unfinished: wasAbortedBeforeComplete },
             { context: 'api/server/controllers/agents/request.js - resumable response end' },
           );
         }
@@ -322,14 +342,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversation,
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
-            responseMessage: { ...response },
+            responseMessage: { ...responseWithText },
           };
 
           logger.debug(`[ResumableAgentController] Emitting FINAL event`, {
             streamId,
             wasAbortedBeforeComplete,
             userMessageId: userMessage?.messageId,
-            responseMessageId: response?.messageId,
+            responseMessageId: responseWithText?.messageId,
             conversationId: conversation?.conversationId,
           });
 
@@ -342,14 +362,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversation,
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
-            responseMessage: { ...response, unfinished: true },
+            responseMessage: { ...responseWithText, unfinished: true },
           };
 
           logger.debug(`[ResumableAgentController] Emitting ABORTED FINAL event`, {
             streamId,
             wasAbortedBeforeComplete,
             userMessageId: userMessage?.messageId,
-            responseMessageId: response?.messageId,
+            responseMessageId: responseWithText?.messageId,
             conversationId: conversation?.conversationId,
           });
 
@@ -361,7 +381,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         if (shouldGenerateTitle) {
           addTitle(req, {
             text,
-            response: { ...response },
+            response: { ...responseWithText },
             client,
           })
             .catch((err) => {
