@@ -67,6 +67,32 @@ let failedQueue: { resolve: (value?: any) => void; reject: (reason?: any) => voi
 const refreshToken = (retry?: boolean): Promise<t.TRefreshTokenResponse | undefined> =>
   _post(endpoints.refreshToken(retry));
 
+const stripBasePath = (pathname: string) => {
+  const baseUrl = endpoints.apiBaseUrl();
+  if (baseUrl && (pathname === baseUrl || pathname.startsWith(`${baseUrl}/`))) {
+    return pathname.slice(baseUrl.length) || '/';
+  }
+  return pathname;
+};
+
+const isSharePage = () =>
+  /(?:^|\/)share\/[^/]+\/?$/.test(stripBasePath(window.location.pathname));
+
+const getRequestPathname = (url?: string) => {
+  if (typeof url !== 'string') {
+    return '';
+  }
+  try {
+    return new URL(url, window.location.origin).pathname;
+  } catch {
+    return url.split(/[?#]/)[0] ?? '';
+  }
+};
+
+const isSharedMessagesRequest = (url?: string, method?: string) =>
+  method?.toLowerCase() === 'get' &&
+  /(?:^|\/)api\/share\/[^/]+$/.test(getRequestPathname(url));
+
 const dispatchTokenUpdatedEvent = (token: string) => {
   setTokenHeader(token);
   window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: token }));
@@ -100,10 +126,11 @@ if (typeof window !== 'undefined') {
       }
 
       /** Skip refresh when the Authorization header has been cleared (e.g. during logout),
-       *  but allow shared link requests to proceed so auth recovery/redirect can happen */
+       *  but allow the shared link data request to proceed so private shares can still
+       *  recover auth/redirect without unrelated share-page queries forcing login. */
       if (
         !axios.defaults.headers.common['Authorization'] &&
-        !window.location.pathname.startsWith('/share/')
+        !(isSharePage() && isSharedMessagesRequest(originalRequest.url, originalRequest.method))
       ) {
         return Promise.reject(error);
       }

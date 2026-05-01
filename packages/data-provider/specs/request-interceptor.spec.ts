@@ -85,7 +85,7 @@ describe('axios 401 interceptor — Authorization header guard', () => {
 
     mockAdapter.mockRejectedValueOnce({
       response: { status: 401 },
-      config: { url: '/api/share/abc123', headers: {} },
+      config: { url: '/api/share/abc123', method: 'get', headers: {} },
     });
 
     mockAdapter.mockResolvedValueOnce({
@@ -112,6 +112,75 @@ describe('axios 401 interceptor — Authorization header guard', () => {
 
     const refreshCall = mockAdapter.mock.calls[1];
     expect(refreshCall[0].url).toContain('api/auth/refresh');
+  });
+
+  it('recognizes base-prefixed shared link data requests', async () => {
+    expect.assertions(2);
+    setTokenHeader(undefined);
+
+    setWindowLocation({
+      href: 'http://localhost/chat/share/abc123',
+      pathname: '/chat/share/abc123',
+      search: '',
+      hash: '',
+      origin: 'http://localhost',
+    } as Partial<Location>);
+
+    mockAdapter.mockRejectedValueOnce({
+      response: { status: 401 },
+      config: { url: '/chat/api/share/abc123', method: 'get', headers: {} },
+    });
+
+    mockAdapter.mockResolvedValueOnce({
+      data: { token: 'new-token' },
+      status: 200,
+      headers: {},
+      config: {},
+    });
+
+    mockAdapter.mockResolvedValueOnce({
+      data: { sharedLink: {} },
+      status: 200,
+      headers: {},
+      config: {},
+    });
+
+    try {
+      await axios.get('/chat/api/share/abc123');
+    } catch {
+      // may reject depending on exact flow
+    }
+
+    expect(mockAdapter.mock.calls.length).toBe(3);
+
+    const refreshCall = mockAdapter.mock.calls[1];
+    expect(refreshCall[0].url).toContain('api/auth/refresh');
+  });
+
+  it('does not refresh or redirect for unrelated 401s on public shared link pages', async () => {
+    expect.assertions(2);
+    setTokenHeader(undefined);
+
+    setWindowLocation({
+      href: 'http://localhost/share/abc123',
+      pathname: '/share/abc123',
+      search: '',
+      hash: '',
+    } as Partial<Location>);
+
+    mockAdapter.mockRejectedValueOnce({
+      response: { status: 401 },
+      config: { url: '/api/mcp/servers', headers: {} },
+    });
+
+    try {
+      await axios.get('/api/mcp/servers');
+    } catch {
+      // expected rejection
+    }
+
+    expect(mockAdapter).toHaveBeenCalledTimes(1);
+    expect(window.location.href).toBe('http://localhost/share/abc123');
   });
 
   it('does not bypass guard when share/ appears only in query params', async () => {
@@ -152,7 +221,7 @@ describe('axios 401 interceptor — Authorization header guard', () => {
 
     mockAdapter.mockRejectedValueOnce({
       response: { status: 401 },
-      config: { url: '/api/share/abc123', headers: {} },
+      config: { url: '/api/share/abc123', method: 'get', headers: {} },
     });
 
     mockAdapter.mockResolvedValueOnce({
@@ -184,7 +253,7 @@ describe('axios 401 interceptor — Authorization header guard', () => {
 
     mockAdapter.mockRejectedValueOnce({
       response: { status: 401 },
-      config: { url: '/api/share/abc123', headers: {} },
+      config: { url: '/api/share/abc123', method: 'get', headers: {} },
     });
 
     mockAdapter.mockResolvedValueOnce({
