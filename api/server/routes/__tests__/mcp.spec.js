@@ -1947,6 +1947,61 @@ describe('MCP Routes', () => {
     });
   });
 
+  describe('GET /tools', () => {
+    it('should continue returning MCP tools when one server cache lookup fails', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const { getMCPServerTools } = require('~/server/services/Config');
+
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({
+        'bad-server': {
+          type: 'sse',
+          url: 'https://bad.example.com/sse',
+        },
+        'good-server': {
+          type: 'sse',
+          url: 'https://good.example.com/sse',
+          iconPath: '/icons/good.svg',
+        },
+      });
+
+      getMCPServerTools
+        .mockRejectedValueOnce(new Error('cache unavailable'))
+        .mockResolvedValueOnce({
+          [`search${Constants.mcp_delimiter}good-server`]: {
+            type: 'function',
+            function: {
+              name: `search${Constants.mcp_delimiter}good-server`,
+              description: 'Search good server',
+              parameters: { type: 'object' },
+            },
+          },
+        });
+
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctions: jest.fn().mockResolvedValue(null),
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers['good-server']).toMatchObject({
+        name: 'good-server',
+        icon: '/icons/good.svg',
+        tools: [
+          {
+            name: 'search',
+            pluginKey: `search${Constants.mcp_delimiter}good-server`,
+            description: 'Search good server',
+          },
+        ],
+      });
+      expect(response.body.servers['bad-server']).toMatchObject({
+        name: 'bad-server',
+        tools: [],
+      });
+    });
+  });
+
   describe('GET /servers', () => {
     // mockRegistryInstance is defined at the top of the file
 
