@@ -12,9 +12,13 @@ export type OpenIdEmailClaims = {
 
 type OpenIdLookupField = 'openidId' | 'idOnTheSource';
 
+const OPENID_DISCOVERY_PATH = '/.well-known/openid-configuration';
+
 export function normalizeOpenIdIssuer(issuer: string | undefined): string | undefined {
   const normalized = issuer?.trim().replace(/\/+$/, '');
-  return normalized || undefined;
+  if (!normalized) return undefined;
+  if (!normalized.endsWith(OPENID_DISCOVERY_PATH)) return normalized;
+  return normalized.slice(0, -OPENID_DISCOVERY_PATH.length) || undefined;
 }
 
 function getStringClaim(claims: OpenIdEmailClaims, claim: string): string | undefined {

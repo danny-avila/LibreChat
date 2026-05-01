@@ -378,9 +378,10 @@ describe('createRemoteAgentAuth', () => {
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
 
-    it('normalizes trailing slash issuer before verifying JWTs', async () => {
+    it('preserves exact configured issuer when verifying JWTs', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
-      const deps = makeDeps(makeConfig({ issuer: `${BASE_ISSUER}/` }));
+      const issuer = `${BASE_ISSUER}/`;
+      const deps = makeDeps(makeConfig({ issuer }));
 
       await createRemoteAgentAuth(deps)(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
@@ -389,7 +390,7 @@ describe('createRemoteAgentAuth', () => {
       );
 
       expect((jwt.verify as jest.Mock).mock.calls[0][2]).toEqual(
-        expect.objectContaining({ issuer: BASE_ISSUER }),
+        expect.objectContaining({ issuer }),
       );
       expect(mockNext).toHaveBeenCalledWith();
     });

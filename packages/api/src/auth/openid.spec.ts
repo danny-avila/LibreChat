@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
-import { findOpenIDUser, getOpenIdEmail } from './openid';
+import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from './openid';
 
 function newId() {
   return new Types.ObjectId();
@@ -15,6 +15,20 @@ jest.mock('@librechat/data-schemas', () => ({
     info: jest.fn(),
   },
 }));
+
+describe('normalizeOpenIdIssuer', () => {
+  it('normalizes blank, trailing-slash, and discovery-document issuers', () => {
+    expect(normalizeOpenIdIssuer('')).toBeUndefined();
+    expect(normalizeOpenIdIssuer('   ')).toBeUndefined();
+    expect(normalizeOpenIdIssuer('https://issuer.example.com/')).toBe('https://issuer.example.com');
+    expect(
+      normalizeOpenIdIssuer('https://issuer.example.com/.well-known/openid-configuration/'),
+    ).toBe('https://issuer.example.com');
+    expect(
+      normalizeOpenIdIssuer('https://issuer.example.com/realm/.well-known/openid-configuration'),
+    ).toBe('https://issuer.example.com/realm');
+  });
+});
 
 describe('findOpenIDUser', () => {
   let mockFindUser: jest.MockedFunction<UserMethods['findUser']>;
@@ -151,6 +165,44 @@ describe('findOpenIDUser', () => {
 
     it('should allow legacy issuer-less lookup only for the configured OpenID login issuer', async () => {
       process.env.OPENID_ISSUER = 'https://issuer.example.com/';
+      const mockUser: IUser = {
+        _id: newId(),
+        provider: 'openid',
+        openidId: 'openid_123',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+        findUser: mockFindUser,
+      });
+
+      expect(mockFindUser).toHaveBeenCalledWith({
+        $or: [
+          { openidId: 'openid_123', openidIssuer: 'https://issuer.example.com' },
+          {
+            openidId: 'openid_123',
+            $or: [
+              { openidIssuer: { $exists: false } },
+              { openidIssuer: null },
+              { openidIssuer: '' },
+            ],
+          },
+        ],
+      });
+      expect(result).toEqual({
+        user: { ...mockUser, openidIssuer: 'https://issuer.example.com' },
+        error: null,
+        migration: true,
+      });
+    });
+
+    it('should allow legacy issuer-less lookup when login issuer is a discovery document URL', async () => {
+      process.env.OPENID_ISSUER = 'https://issuer.example.com/.well-known/openid-configuration';
       const mockUser: IUser = {
         _id: newId(),
         provider: 'openid',
