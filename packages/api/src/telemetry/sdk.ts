@@ -8,13 +8,9 @@ import type { Attributes } from '@opentelemetry/api';
 import type { TelemetryConfig, TelemetryStatus } from './config';
 import { getTelemetryConfig } from './config';
 
-interface BunGlobal {
-  Bun?: object;
-}
-
 export interface TelemetryController {
   enabled: boolean;
-  status: TelemetryStatus;
+  readonly status: TelemetryStatus;
   shutdown: () => Promise<void>;
 }
 
@@ -24,12 +20,13 @@ interface RegisteredSignal {
 }
 
 let activeSdk: NodeSDK | undefined;
+let pendingSdk: NodeSDK | undefined;
+let startPromise: Promise<void> | undefined;
 let status: TelemetryStatus = 'stopped';
 let registeredSignals: RegisteredSignal[] = [];
 
 function isBunRuntime(): boolean {
-  const runtime = globalThis as typeof globalThis & BunGlobal;
-  return runtime.Bun != null;
+  return Reflect.get(globalThis, 'Bun') != null;
 }
 
 function shouldIgnoreIncomingRequest(request: IncomingMessage, healthPath: string): boolean {
@@ -89,6 +86,10 @@ function createSdk(config: TelemetryConfig): NodeSDK {
   return new NodeSDK(sdkConfig);
 }
 
+function startSdk(sdk: NodeSDK): void | Promise<void> {
+  return (sdk as NodeSDK & { start: () => void | Promise<void> }).start();
+}
+
 function emitWarning(message: string): void {
   process.emitWarning(message, { code: 'LIBRECHAT_OTEL' });
 }
@@ -96,9 +97,18 @@ function emitWarning(message: string): void {
 function makeController(enabled: boolean): TelemetryController {
   return {
     enabled,
-    status,
+    get status() {
+      return status;
+    },
     shutdown: shutdownTelemetry,
   };
+}
+
+function unregisterShutdownHandlers(): void {
+  for (const { signal, listener } of registeredSignals) {
+    process.removeListener(signal, listener);
+  }
+  registeredSignals = [];
 }
 
 function registerShutdownHandlers(): void {
@@ -122,7 +132,7 @@ function registerShutdownHandlers(): void {
 }
 
 export function initializeTelemetry(env: NodeJS.ProcessEnv = process.env): TelemetryController {
-  if (activeSdk) {
+  if (activeSdk || pendingSdk) {
     return makeController(true);
   }
 
@@ -134,7 +144,36 @@ export function initializeTelemetry(env: NodeJS.ProcessEnv = process.env): Telem
 
   try {
     const sdk = createSdk(config);
-    sdk.start();
+    const result = startSdk(sdk);
+    if (result) {
+      pendingSdk = sdk;
+      status = 'starting';
+      const pendingStart = result
+        .then(() => {
+          if (pendingSdk === sdk) {
+            pendingSdk = undefined;
+            activeSdk = sdk;
+            status = 'started';
+            registerShutdownHandlers();
+          }
+        })
+        .catch((error) => {
+          if (pendingSdk === sdk) {
+            pendingSdk = undefined;
+            status = 'failed';
+            const message = error instanceof Error ? error.message : String(error);
+            emitWarning(`OpenTelemetry initialization failed: ${message}`);
+          }
+        });
+      startPromise = pendingStart;
+      void pendingStart.finally(() => {
+        if (startPromise === pendingStart) {
+          startPromise = undefined;
+        }
+      });
+      return makeController(true);
+    }
+
     activeSdk = sdk;
     status = 'started';
     registerShutdownHandlers();
@@ -148,22 +187,31 @@ export function initializeTelemetry(env: NodeJS.ProcessEnv = process.env): Telem
 }
 
 export async function shutdownTelemetry(): Promise<void> {
+  if (startPromise) {
+    await startPromise;
+  }
+
   if (!activeSdk) {
     status = status === 'started' ? 'stopped' : status;
     return;
   }
 
   const sdk = activeSdk;
-  activeSdk = undefined;
-  await sdk.shutdown();
-  status = 'stopped';
+  try {
+    await sdk.shutdown();
+    activeSdk = undefined;
+    status = 'stopped';
+    unregisterShutdownHandlers();
+  } catch (error) {
+    status = 'started';
+    throw error;
+  }
 }
 
 export function resetTelemetryForTests(): void {
   activeSdk = undefined;
+  pendingSdk = undefined;
+  startPromise = undefined;
   status = 'stopped';
-  for (const { signal, listener } of registeredSignals) {
-    process.removeListener(signal, listener);
-  }
-  registeredSignals = [];
+  unregisterShutdownHandlers();
 }

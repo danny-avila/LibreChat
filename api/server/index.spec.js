@@ -60,12 +60,17 @@ describe('Telemetry wiring', () => {
   });
 
   it('mounts telemetry middleware before routes and telemetry errors before ErrorController', () => {
-    expect(source.indexOf('app.use(telemetryMiddleware);')).toBeLessThan(
-      source.indexOf("app.use('/api/auth'"),
-    );
-    expect(source.indexOf('app.use(telemetryErrorMiddleware);')).toBeLessThan(
-      source.indexOf('app.use(ErrorController);'),
-    );
+    const telemetryMiddlewareIndex = source.indexOf('app.use(telemetryMiddleware);');
+    const apiRoutesIndex = source.indexOf("app.use('/api/auth'");
+    const telemetryErrorMiddlewareIndex = source.indexOf('app.use(telemetryErrorMiddleware);');
+    const errorControllerIndex = source.indexOf('app.use(ErrorController);');
+
+    expect(telemetryMiddlewareIndex).toBeGreaterThan(-1);
+    expect(apiRoutesIndex).toBeGreaterThan(-1);
+    expect(telemetryErrorMiddlewareIndex).toBeGreaterThan(-1);
+    expect(errorControllerIndex).toBeGreaterThan(-1);
+    expect(telemetryMiddlewareIndex).toBeLessThan(apiRoutesIndex);
+    expect(telemetryErrorMiddlewareIndex).toBeLessThan(errorControllerIndex);
   });
 });
 

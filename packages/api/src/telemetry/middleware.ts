@@ -96,8 +96,17 @@ export function telemetryMiddleware(req: ServerRequest, res: Response, next: Nex
   });
   setIdentityAttributes(span, req);
 
-  res.once('finish', () => setCompletionAttributes(span, req, res, start));
-  res.once('close', () => setCompletionAttributes(span, req, res, start));
+  let completed = false;
+  const complete = () => {
+    if (completed) {
+      return;
+    }
+    completed = true;
+    setCompletionAttributes(span, req, res, start);
+  };
+
+  res.once('finish', complete);
+  res.once('close', complete);
   next();
 }
 
