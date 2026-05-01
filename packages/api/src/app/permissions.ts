@@ -89,7 +89,7 @@ export async function updateInterfacePermissions({
   const memoryEnabled = isMemoryEnabled(memoryConfig);
   /** Check if memory is explicitly disabled (memory.disabled === true) */
   const isMemoryExplicitlyDisabled = memoryConfig?.disabled === true;
-  /** Check if memory should be enabled (explicitly enabled or valid config) */
+  /** Check if memory should be enabled (explicitly enabled or configured) */
   const shouldEnableMemory =
     memoryConfig?.disabled === false ||
     (memoryConfig && memoryEnabled && memoryConfig.disabled === undefined);
@@ -152,7 +152,7 @@ export async function updateInterfacePermissions({
           logger.debug(`Role '${roleName}': Disabling memories as memory.disabled is true`);
         } else if (isMemoryReenabling) {
           logger.debug(
-            `Role '${roleName}': Re-enabling memories due to valid memory configuration`,
+            `Role '${roleName}': Re-enabling memories due to memory configuration`,
           );
         }
       } else {
