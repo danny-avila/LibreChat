@@ -18,12 +18,22 @@ jest.mock('@librechat/data-schemas', () => ({
 
 describe('findOpenIDUser', () => {
   let mockFindUser: jest.MockedFunction<UserMethods['findUser']>;
+  const originalOpenIdIssuer = process.env.OPENID_ISSUER;
 
   beforeEach(() => {
     mockFindUser = jest.fn();
+    delete process.env.OPENID_ISSUER;
     jest.clearAllMocks();
     (logger.warn as jest.Mock).mockClear();
     (logger.info as jest.Mock).mockClear();
+  });
+
+  afterAll(() => {
+    if (originalOpenIdIssuer == null) {
+      delete process.env.OPENID_ISSUER;
+      return;
+    }
+    process.env.OPENID_ISSUER = originalOpenIdIssuer;
   });
 
   describe('Primary condition searches', () => {
@@ -107,6 +117,73 @@ describe('findOpenIDUser', () => {
         user: mockUser,
         error: null,
         migration: false,
+      });
+    });
+
+    it('should bind primary lookup to issuer', async () => {
+      const mockUser: IUser = {
+        _id: newId(),
+        provider: 'openid',
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com/',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(mockFindUser).toHaveBeenCalledWith({
+        $or: [{ openidId: 'openid_123', openidIssuer: 'https://issuer.example.com' }],
+      });
+      expect(result).toEqual({
+        user: mockUser,
+        error: null,
+        migration: false,
+      });
+    });
+
+    it('should allow legacy issuer-less lookup only for the configured OpenID login issuer', async () => {
+      process.env.OPENID_ISSUER = 'https://issuer.example.com/';
+      const mockUser: IUser = {
+        _id: newId(),
+        provider: 'openid',
+        openidId: 'openid_123',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+        findUser: mockFindUser,
+      });
+
+      expect(mockFindUser).toHaveBeenCalledWith({
+        $or: [
+          { openidId: 'openid_123', openidIssuer: 'https://issuer.example.com' },
+          {
+            openidId: 'openid_123',
+            $or: [
+              { openidIssuer: { $exists: false } },
+              { openidIssuer: null },
+              { openidIssuer: '' },
+            ],
+          },
+        ],
+      });
+      expect(result).toEqual({
+        user: { ...mockUser, openidIssuer: 'https://issuer.example.com' },
+        error: null,
+        migration: true,
       });
     });
   });
@@ -252,6 +329,58 @@ describe('findOpenIDUser', () => {
         migration: false,
       });
     });
+
+    it('should reject email fallback when stored openidIssuer does not match token issuer', async () => {
+      const mockUser: IUser = {
+        _id: newId(),
+        provider: 'openid',
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer-a.example.com',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer-b.example.com',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(result).toEqual({
+        user: null,
+        error: ErrorTypes.AUTH_FAILED,
+        migration: false,
+      });
+    });
+
+    it('should reject legacy email fallback when token issuer is not the configured OpenID login issuer', async () => {
+      process.env.OPENID_ISSUER = 'https://issuer-a.example.com';
+      const mockUser: IUser = {
+        _id: newId(),
+        provider: 'openid',
+        openidId: 'openid_123',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer-b.example.com',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(result).toEqual({
+        user: null,
+        error: ErrorTypes.AUTH_FAILED,
+        migration: false,
+      });
+    });
   });
 
   describe('User migration scenarios', () => {
@@ -278,6 +407,34 @@ describe('findOpenIDUser', () => {
           ...mockUser,
           provider: 'openid',
           openidId: 'openid_123',
+        },
+        error: null,
+        migration: true,
+      });
+    });
+
+    it('should persist issuer when migrating a user by email', async () => {
+      const mockUser: IUser = {
+        _id: newId(),
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(result).toEqual({
+        user: {
+          ...mockUser,
+          provider: 'openid',
+          openidId: 'openid_123',
+          openidIssuer: 'https://issuer.example.com',
         },
         error: null,
         migration: true,

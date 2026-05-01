@@ -73,7 +73,15 @@ type AgentAuthConfig = NonNullable<NonNullable<TAgentsEndpoint['remoteApi']>['au
 type OidcConfig = NonNullable<AgentAuthConfig['oidc']>;
 type ApiKeyConfig = NonNullable<AgentAuthConfig['apiKey']>;
 type JwtVerifyCallback = (err: Error | null, payload?: JwtPayload) => void;
-type FindUserCondition = Pick<Partial<IUser>, '_id' | 'email' | 'openidId' | 'idOnTheSource'>;
+type FindUserValue = IUser['_id'] | string | null | { $exists: boolean };
+type FindUserCondition = {
+  _id?: FindUserValue;
+  email?: FindUserValue;
+  openidId?: FindUserValue;
+  openidIssuer?: FindUserValue;
+  idOnTheSource?: FindUserValue;
+  $or?: FindUserCondition[];
+};
 type FindUserQuery = FindUserCondition & { $or?: FindUserCondition[] };
 
 const mockUser = { _id: 'uid123', id: 'uid123', email: 'agent@test.com' };
@@ -144,15 +152,37 @@ function makeUser(overrides: Partial<IUser> = {}): IUser {
     role: 'user',
     provider: 'openid',
     openidId: 'sub123',
+    openidIssuer: BASE_ISSUER,
     ...overrides,
   } as IUser;
 }
 
+function matchesValue(value: FindUserValue | undefined, condition: FindUserValue): boolean {
+  if (condition && typeof condition === 'object' && '$exists' in condition) {
+    return condition.$exists ? value != null : value == null;
+  }
+  return value === condition;
+}
+
 function matchesCondition(user: IUser, condition: FindUserCondition): boolean {
-  if (condition._id != null && user._id !== condition._id) return false;
-  if (condition.email != null && user.email !== condition.email) return false;
-  if (condition.openidId != null && user.openidId !== condition.openidId) return false;
-  if (condition.idOnTheSource != null && user.idOnTheSource !== condition.idOnTheSource) {
+  if (condition.$or && !condition.$or.some((nested) => matchesCondition(user, nested))) {
+    return false;
+  }
+  if (condition._id !== undefined && !matchesValue(user._id, condition._id)) return false;
+  if (condition.email !== undefined && !matchesValue(user.email, condition.email)) return false;
+  if (condition.openidId !== undefined && !matchesValue(user.openidId, condition.openidId)) {
+    return false;
+  }
+  if (
+    condition.openidIssuer !== undefined &&
+    !matchesValue(user.openidIssuer, condition.openidIssuer)
+  ) {
+    return false;
+  }
+  if (
+    condition.idOnTheSource !== undefined &&
+    !matchesValue(user.idOnTheSource, condition.idOnTheSource)
+  ) {
     return false;
   }
   return true;
@@ -517,6 +547,30 @@ describe('createRemoteAgentAuth', () => {
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
       expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('does not resolve a colliding legacy openidId from a different issuer', async () => {
+      const issuer = 'https://issuer-b.example.com';
+      setupOidcMocks({ sub: 'shared-sub', email: 'attacker@example.com' });
+
+      const deps = makeDeps(makeConfig({ issuer }, { enabled: false }));
+      deps.findUser = makeFindUser(
+        makeUser({
+          email: 'victim@example.com',
+          openidId: 'shared-sub',
+          openidIssuer: undefined,
+        }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(req as Request, res, mockNext);
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(req.user).toBeUndefined();
+      expect(mockNext).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
 
     it('returns 401 without user lookup when sub claim is missing', async () => {
@@ -1130,7 +1184,11 @@ describe('createRemoteAgentAuth', () => {
 
       expect(mockUpdateUser).toHaveBeenCalledWith(
         mockUser.id,
-        expect.objectContaining({ provider: 'openid', openidId: 'sub-new' }),
+        expect.objectContaining({
+          provider: 'openid',
+          openidId: 'sub-new',
+          openidIssuer: BASE_ISSUER,
+        }),
       );
       expect(mockNext).toHaveBeenCalled();
     });

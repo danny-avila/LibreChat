@@ -10,7 +10,7 @@ import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { GetAppConfigOptions } from '../app/service';
-import { findOpenIDUser, getOpenIdEmail } from '../auth/openid';
+import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from '../auth/openid';
 import { isEnabled, math } from '~/utils';
 
 export interface RemoteAgentAuthDeps {
@@ -289,6 +289,7 @@ async function verifyOidcBearer(token: string, oidcConfig: EnabledOidcConfig): P
 async function resolveUser(
   token: string,
   payload: JwtPayload,
+  oidcConfig: EnabledOidcConfig,
   findUser: UserMethods['findUser'],
   updateUser: UserMethods['updateUser'],
 ): Promise<UserResolution> {
@@ -300,6 +301,7 @@ async function resolveUser(
     findUser,
     email: getOpenIdEmail(payload, 'remoteAgentAuth'),
     openidId: payload.sub,
+    openidIssuer: oidcConfig.issuer,
     idOnTheSource: payload['oid'] as string | undefined,
     strategyName: 'remoteAgentAuth',
   });
@@ -314,6 +316,7 @@ async function resolveUser(
   if (migration) {
     updateData.provider = 'openid';
     updateData.openidId = payload.sub;
+    updateData.openidIssuer = normalizeOpenIdIssuer(oidcConfig.issuer);
   }
 
   if (!user.role) {
@@ -408,7 +411,7 @@ export function createRemoteAgentAuth({
         return;
       }
 
-      const userResolution = await resolveUser(token, payload, findUser, updateUser);
+      const userResolution = await resolveUser(token, payload, oidcConfig, findUser, updateUser);
 
       if (userResolution.status === 'rejected') {
         logger.warn(`[remoteAgentAuth] OpenID user rejected: ${userResolution.error}`);
