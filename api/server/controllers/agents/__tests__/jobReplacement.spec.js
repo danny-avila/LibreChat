@@ -27,6 +27,9 @@ const mockGenerationJobManager = {
 
 const mockSaveMessage = jest.fn();
 const mockDecrementPendingRequest = jest.fn();
+const mockDisposeClient = jest.fn();
+const mockHandleAbortError = jest.fn();
+const mockLogViolation = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: mockLogger,
@@ -47,9 +50,24 @@ jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
 }));
 
+jest.mock('~/server/cleanup', () => ({
+  disposeClient: (...args) => mockDisposeClient(...args),
+  clientRegistry: null,
+  requestDataMap: new WeakMap(),
+}));
+
+jest.mock('~/server/middleware', () => ({
+  handleAbortError: (...args) => mockHandleAbortError(...args),
+}));
+
+jest.mock('~/cache', () => ({
+  logViolation: (...args) => mockLogViolation(...args),
+}));
+
 describe('Job Replacement Detection', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockHandleAbortError.mockResolvedValue();
   });
 
   describe('Job Creation Timestamp Tracking', () => {
@@ -243,6 +261,87 @@ describe('Job Replacement Detection', () => {
       }
 
       expect(callOrder).toEqual(['saveMessage', 'emitDone']);
+    });
+
+    it('should populate top-level text from content parts before saving and emitting final response', async () => {
+      const AgentController = require('../request');
+      const streamId = 'test-stream-123';
+      const userMessage = {
+        messageId: 'user-message-123',
+        conversationId: streamId,
+        parentMessageId: '00000000-0000-0000-0000-000000000000',
+        text: 'hello',
+        sender: 'User',
+        isCreatedByUser: true,
+      };
+      const responseMessage = {
+        messageId: 'response-message-123',
+        conversationId: streamId,
+        parentMessageId: userMessage.messageId,
+        sender: 'Agent',
+        text: '',
+        content: [
+          { type: 'think', think: 'internal reasoning' },
+          { type: 'text', text: 'generated text' },
+        ],
+        databasePromise: Promise.resolve({
+          conversation: { conversationId: streamId, title: 'New Chat' },
+        }),
+      };
+      const client = {
+        sender: 'Agent',
+        options: {},
+        savedMessageIds: new Set(),
+        sendMessage: jest.fn(async (_text, options) => {
+          options.onStart(userMessage, responseMessage.messageId, false);
+          return { ...responseMessage };
+        }),
+      };
+      const req = {
+        user: { id: 'user-123' },
+        body: {
+          text: 'hello',
+          endpointOption: {
+            endpoint: 'agents',
+            modelOptions: { model: 'agent-model' },
+          },
+          conversationId: streamId,
+          parentMessageId: '00000000-0000-0000-0000-000000000000',
+        },
+      };
+      const res = { json: jest.fn() };
+
+      mockGenerationJobManager.createJob.mockResolvedValue({
+        createdAt: 1000,
+        readyPromise: Promise.resolve(),
+        abortController: new AbortController(),
+        emitter: { on: jest.fn() },
+      });
+      mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000 });
+      mockSaveMessage.mockResolvedValue();
+
+      await AgentController(req, res, jest.fn(), async () => ({ client }), undefined);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          messageId: responseMessage.messageId,
+          text: 'generated text',
+        }),
+        expect.objectContaining({
+          context: 'api/server/controllers/agents/request.js - resumable response end',
+        }),
+      );
+      expect(mockGenerationJobManager.emitDone).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({
+          responseMessage: expect.objectContaining({
+            messageId: responseMessage.messageId,
+            text: 'generated text',
+          }),
+        }),
+      );
     });
   });
 
