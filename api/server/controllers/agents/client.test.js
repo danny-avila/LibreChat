@@ -2085,7 +2085,9 @@ describe('AgentClient - titleConvo', () => {
 
       expect(client.options.agent.additional_instructions).toContain(memoryContent);
       expect(parallelAgentNoInstructions.instructions).toBeUndefined();
-      expect(parallelAgentNoInstructions.additional_instructions ?? '').not.toContain(memoryContent);
+      expect(parallelAgentNoInstructions.additional_instructions ?? '').not.toContain(
+        memoryContent,
+      );
     });
 
     it('should not modify agentConfigs when none exist', async () => {
