@@ -169,7 +169,7 @@ function makeFindUser(...users: IUser[]): jest.MockedFunction<UserMethods['findU
   }) as jest.MockedFunction<UserMethods['findUser']>;
 }
 
-function makeDeps(appConfig: AppConfig | null = makeConfig()) {
+function makeDeps(appConfig: AppConfig = makeConfig()) {
   return {
     findUser: makeFindUser(makeUser()),
     updateUser: jest.fn(),
@@ -212,18 +212,6 @@ describe('createRemoteAgentAuth', () => {
   });
 
   describe('when OIDC is not enabled', () => {
-    it('falls back to apiKeyMiddleware when getAppConfig returns null', async () => {
-      const deps = makeDeps(null);
-      const mw = createRemoteAgentAuth(deps);
-      const req = makeReq();
-      const { res } = makeRes();
-
-      await mw(req as Request, res, mockNext);
-
-      expect(deps.apiKeyMiddleware).toHaveBeenCalledWith(req, res, mockNext);
-      expect(mockNext).toHaveBeenCalled();
-    });
-
     it('returns 401 when oidc.enabled is false and apiKey is disabled', async () => {
       const deps = makeDeps(makeConfig({ enabled: false }, { enabled: false }));
       const { res, status, json } = makeRes();
@@ -377,6 +365,23 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).toHaveBeenCalledWith();
     });
 
+    it('trims trailing whitespace from Bearer tokens', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}   ` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(jwt.verify).toHaveBeenCalledWith(
+        FAKE_TOKEN,
+        'public-key',
+        expect.any(Object),
+        expect.any(Function),
+      );
+      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@test.com' });
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
     it('allows RSA, RSA-PSS, and ECDSA signing algorithms', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
       const deps = makeDeps();
@@ -462,6 +467,18 @@ describe('createRemoteAgentAuth', () => {
       expect((req.user as IUser).federatedTokens).toEqual({
         access_token: FAKE_TOKEN,
         expires_at: exp,
+      });
+    });
+
+    it('omits federatedTokens expires_at when exp is absent', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect((req.user as IUser).federatedTokens).toEqual({
+        access_token: FAKE_TOKEN,
       });
     });
 

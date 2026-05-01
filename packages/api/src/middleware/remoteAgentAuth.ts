@@ -17,7 +17,7 @@ export interface RemoteAgentAuthDeps {
   apiKeyMiddleware: RequestHandler;
   findUser: UserMethods['findUser'];
   updateUser: UserMethods['updateUser'];
-  getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig | null>;
+  getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
 }
 
 type OidcConfig = NonNullable<
@@ -84,7 +84,7 @@ function setCacheEntry<T>(
 }
 
 function extractBearer(authHeader: string | undefined): string | null {
-  const match = authHeader?.match(/^Bearer\s+(.+)$/i);
+  const match = authHeader?.match(/^Bearer\s+(\S+)\s*$/i);
   return match?.[1] ?? null;
 }
 
@@ -229,7 +229,7 @@ function getVerifyOptions(oidcConfig: EnabledOidcConfig): VerifyOptions {
   };
 }
 
-function getConfigOptions(req: Request): GetAppConfigOptions | undefined {
+function getConfigOptions(req: Request): GetAppConfigOptions {
   const user = req.user as { tenantId?: string } | undefined;
   const tenantId = user?.tenantId ?? getTenantId();
 
@@ -325,7 +325,10 @@ async function resolveUser(
     await updateUser(user.id, updateData);
   }
 
-  user.federatedTokens = { access_token: token, expires_at: payload.exp };
+  user.federatedTokens = {
+    access_token: token,
+    ...(payload.exp != null ? { expires_at: payload.exp } : {}),
+  };
   return { status: 'resolved', user };
 }
 
@@ -359,7 +362,7 @@ export function createRemoteAgentAuth({
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const config = await getAppConfig(getConfigOptions(req));
-      const authConfig = config?.endpoints?.agents?.remoteApi?.auth;
+      const authConfig = config.endpoints?.agents?.remoteApi?.auth;
       const apiKeyEnabled = authConfig?.apiKey?.enabled !== false;
 
       if (authConfig?.oidc?.enabled !== true) {
