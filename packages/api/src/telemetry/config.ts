@@ -1,7 +1,7 @@
 const DEFAULT_SERVICE_NAME = 'librechat';
 const DEFAULT_HEALTH_PATH = '/health';
 
-export type TelemetryStatus = 'disabled' | 'failed' | 'started' | 'stopped';
+export type TelemetryStatus = 'disabled' | 'failed' | 'started' | 'starting' | 'stopped';
 
 export interface TelemetryConfig {
   enabled: boolean;

@@ -19,12 +19,6 @@ jest.mock('@opentelemetry/resources', () => ({
   resourceFromAttributes: mockResourceFromAttributes,
 }));
 
-interface BunGlobal {
-  Bun?: object;
-}
-
-const runtime = globalThis as typeof globalThis & BunGlobal;
-
 describe('telemetry SDK lifecycle', () => {
   let emitWarningSpy: jest.SpyInstance;
   let initializeTelemetry: (typeof import('./sdk'))['initializeTelemetry'];
@@ -35,14 +29,14 @@ describe('telemetry SDK lifecycle', () => {
     jest.clearAllMocks();
     ({ initializeTelemetry, resetTelemetryForTests, shutdownTelemetry } = await import('./sdk'));
     resetTelemetryForTests();
-    delete runtime.Bun;
+    Reflect.deleteProperty(globalThis, 'Bun');
     emitWarningSpy = jest.spyOn(process, 'emitWarning').mockImplementation(() => true);
   });
 
   afterEach(() => {
     resetTelemetryForTests();
     emitWarningSpy.mockRestore();
-    delete runtime.Bun;
+    Reflect.deleteProperty(globalThis, 'Bun');
   });
 
   it('does not initialize when tracing is disabled by default', () => {
@@ -65,7 +59,10 @@ describe('telemetry SDK lifecycle', () => {
   });
 
   it('does not initialize under Bun runtime', () => {
-    runtime.Bun = {};
+    Object.defineProperty(globalThis, 'Bun', {
+      configurable: true,
+      value: {},
+    });
 
     const controller = initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
 
@@ -108,6 +105,29 @@ describe('telemetry SDK lifecycle', () => {
     );
   });
 
+  it('reflects lifecycle status from the controller getter', async () => {
+    const controller = initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+
+    expect(controller.status).toBe('started');
+    await controller.shutdown();
+    expect(controller.status).toBe('stopped');
+  });
+
+  it('handles async SDK start failures without throwing', async () => {
+    mockStart.mockRejectedValueOnce(new Error('async start failed'));
+
+    const controller = initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+
+    expect(controller.enabled).toBe(true);
+    expect(controller.status).toBe('starting');
+    await controller.shutdown();
+    expect(controller.status).toBe('failed');
+    expect(emitWarningSpy).toHaveBeenCalledWith(
+      'OpenTelemetry initialization failed: async start failed',
+      { code: 'LIBRECHAT_OTEL' },
+    );
+  });
+
   it('returns failed status without throwing when SDK start fails', () => {
     mockStart.mockImplementationOnce(() => {
       throw new Error('start failed');
@@ -129,5 +149,17 @@ describe('telemetry SDK lifecycle', () => {
     await shutdownTelemetry();
 
     expect(mockShutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the active SDK available when shutdown fails', async () => {
+    mockShutdown.mockRejectedValueOnce(new Error('shutdown failed'));
+    const controller = initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+
+    await expect(shutdownTelemetry()).rejects.toThrow('shutdown failed');
+    expect(controller.status).toBe('started');
+
+    await shutdownTelemetry();
+    expect(mockShutdown).toHaveBeenCalledTimes(2);
+    expect(controller.status).toBe('stopped');
   });
 });

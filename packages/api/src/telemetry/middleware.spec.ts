@@ -5,18 +5,30 @@ import type { Span } from '@opentelemetry/api';
 import type { ServerRequest } from '~/types';
 import { telemetryErrorMiddleware, telemetryMiddleware } from './middleware';
 
-type MockSpan = Pick<Span, 'recordException' | 'setAttributes' | 'setStatus'>;
-
 interface MockResponse extends EventEmitter {
   statusCode: number;
 }
 
-function createSpan(): jest.Mocked<MockSpan> {
-  return {
-    setStatus: jest.fn(),
-    setAttributes: jest.fn(),
-    recordException: jest.fn(),
-  };
+function createSpan(): jest.Mocked<Span> {
+  const span = {} as jest.Mocked<Span>;
+  span.addEvent = jest.fn<jest.Mocked<Span>, Parameters<Span['addEvent']>>(() => span);
+  span.addLink = jest.fn<jest.Mocked<Span>, Parameters<Span['addLink']>>(() => span);
+  span.addLinks = jest.fn<jest.Mocked<Span>, Parameters<Span['addLinks']>>(() => span);
+  span.end = jest.fn<void, Parameters<Span['end']>>();
+  span.isRecording = jest.fn<boolean, Parameters<Span['isRecording']>>(() => true);
+  span.recordException = jest.fn<void, Parameters<Span['recordException']>>();
+  span.setAttribute = jest.fn<jest.Mocked<Span>, Parameters<Span['setAttribute']>>(() => span);
+  span.setAttributes = jest.fn<jest.Mocked<Span>, Parameters<Span['setAttributes']>>(() => span);
+  span.setStatus = jest.fn<jest.Mocked<Span>, Parameters<Span['setStatus']>>(() => span);
+  span.spanContext = jest.fn<ReturnType<Span['spanContext']>, Parameters<Span['spanContext']>>(
+    () => ({
+      spanId: '0000000000000000',
+      traceFlags: 0,
+      traceId: '00000000000000000000000000000000',
+    }),
+  );
+  span.updateName = jest.fn<jest.Mocked<Span>, Parameters<Span['updateName']>>(() => span);
+  return span;
 }
 
 function createResponse(statusCode = 200): MockResponse {
@@ -68,7 +80,7 @@ describe('telemetryMiddleware', () => {
     const req = createRequest();
     const res = createResponse(201);
     const next: NextFunction = jest.fn();
-    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span as Span);
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
 
     telemetryMiddleware(req, res as Response, next);
     res.emit('finish');
@@ -102,7 +114,7 @@ describe('telemetryMiddleware', () => {
   it('ignores health checks', () => {
     const span = createSpan();
     const next = jest.fn();
-    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span as Span);
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
 
     telemetryMiddleware(
       createRequest({
@@ -126,7 +138,7 @@ describe('telemetryMiddleware', () => {
       route: undefined,
     });
     const res = createResponse(404);
-    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span as Span);
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
 
     telemetryMiddleware(req, res as Response, jest.fn());
     res.emit('finish');
@@ -144,12 +156,24 @@ describe('telemetryMiddleware', () => {
     const span = createSpan();
     const req = createRequest();
     const res = createResponse(500);
-    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span as Span);
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
 
     telemetryMiddleware(req, res as Response, jest.fn());
     res.emit('finish');
 
     expect(span.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
+  });
+
+  it('records completion attributes only once when finish and close both fire', () => {
+    const span = createSpan();
+    const res = createResponse(200);
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
+
+    telemetryMiddleware(createRequest(), res as Response, jest.fn());
+    res.emit('finish');
+    res.emit('close');
+
+    expect(span.setAttributes).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -162,7 +186,7 @@ describe('telemetryErrorMiddleware', () => {
     const span = createSpan();
     const error = new TypeError('boom');
     const next = jest.fn();
-    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span as Span);
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
 
     telemetryErrorMiddleware(error, createRequest(), createResponse() as Response, next);
 
