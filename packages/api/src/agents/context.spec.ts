@@ -3,6 +3,7 @@ import { Constants } from 'librechat-data-provider';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import type { Logger } from 'winston';
 import type { MCPManager } from '~/mcp/MCPManager';
+import type { AgentWithTools } from './context';
 import {
   extractMCPServers,
   getMCPInstructionsForServers,
@@ -314,7 +315,7 @@ describe('Agent Context Utilities', () => {
     });
 
     it('should apply context successfully with all components', async () => {
-      const agent = {
+      const agent: AgentWithTools = {
         id: 'test-agent',
         instructions: 'Original instructions',
         tools: [
@@ -345,7 +346,7 @@ describe('Agent Context Utilities', () => {
     });
 
     it('should use ephemeral agent MCP servers when provided', async () => {
-      const agent = {
+      const agent: AgentWithTools = {
         id: 'test-agent',
         instructions: 'Base instructions',
         tools: [],
@@ -370,7 +371,7 @@ describe('Agent Context Utilities', () => {
     });
 
     it('should prefer agent tools over empty ephemeral MCP array', async () => {
-      const agent = {
+      const agent: AgentWithTools = {
         id: 'test-agent',
         instructions: 'Base',
         tools: [
@@ -400,7 +401,7 @@ describe('Agent Context Utilities', () => {
     });
 
     it('should work without agentId', async () => {
-      const agent = {
+      const agent: AgentWithTools = {
         id: 'test-agent',
         instructions: 'Base',
         tools: [],
@@ -421,7 +422,7 @@ describe('Agent Context Utilities', () => {
     });
 
     it('should work without logger', async () => {
-      const agent = {
+      const agent: AgentWithTools = {
         id: 'test-agent',
         instructions: 'Base',
         tools: [
@@ -447,7 +448,7 @@ describe('Agent Context Utilities', () => {
     });
 
     it('should handle MCP fetch error gracefully and set fallback instructions', async () => {
-      const agent = {
+      const agent: AgentWithTools = {
         id: 'test-agent',
         instructions: 'Base instructions',
         tools: [
@@ -483,7 +484,7 @@ describe('Agent Context Utilities', () => {
     });
 
     it('should handle invalid tools gracefully without throwing', async () => {
-      const agent = {
+      const agent: AgentWithTools = {
         id: 'test-agent',
         instructions: 'Base',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -508,7 +509,7 @@ describe('Agent Context Utilities', () => {
     });
 
     it('should preserve empty base instructions', async () => {
-      const agent = {
+      const agent: AgentWithTools = {
         id: 'test-agent',
         instructions: '',
         tools: [
@@ -534,7 +535,7 @@ describe('Agent Context Utilities', () => {
     });
 
     it('should handle missing instructions field on agent', async () => {
-      const agent = {
+      const agent: AgentWithTools = {
         id: 'test-agent',
         instructions: undefined,
         tools: [],
