@@ -2008,6 +2008,43 @@ describe('MCP Routes', () => {
         tools: [],
       });
     });
+
+    it('should return configured servers when all cache lookups fail', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      const { getMCPServerTools } = require('~/server/services/Config');
+
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({
+        'first-server': {
+          type: 'sse',
+          url: 'https://first.example.com/sse',
+        },
+        'second-server': {
+          type: 'sse',
+          url: 'https://second.example.com/sse',
+        },
+      });
+
+      getMCPServerTools.mockRejectedValue(new Error('cache unavailable'));
+
+      const mockGetServerToolFunctions = jest.fn().mockResolvedValue(null);
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctions: mockGetServerToolFunctions,
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers['first-server']).toMatchObject({
+        name: 'first-server',
+        tools: [],
+      });
+      expect(response.body.servers['second-server']).toMatchObject({
+        name: 'second-server',
+        tools: [],
+      });
+      expect(logger.error).toHaveBeenCalledTimes(2);
+      expect(mockGetServerToolFunctions).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('GET /servers', () => {
