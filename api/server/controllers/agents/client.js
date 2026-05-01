@@ -18,6 +18,7 @@ const {
   memoryInstructions,
   createTokenCounter,
   applyContextToAgent,
+  isMemoryAgentEnabled,
   recordCollectedUsage,
   GenerationJobManager,
   getTransactionsConfig,
@@ -372,7 +373,8 @@ class AgentClient extends BaseClient {
 
     /**
      * Build shared run context - applies to ALL agents in the run.
-     * This includes: file context (latest message), augmented prompt (RAG), memory context.
+     * This includes file context from the latest message and augmented prompt (RAG).
+     * Memory context is handled separately and applied per-agent based on config.
      */
     const sharedRunContextParts = [];
 
@@ -392,12 +394,12 @@ class AgentClient extends BaseClient {
 
     /** Memory context (user preferences/memories) */
     const withoutKeys = await this.useMemory();
-    if (withoutKeys) {
-      const memoryContext = `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
-      sharedRunContextParts.push(memoryContext);
-    }
+    const memoryContext = withoutKeys
+      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
+      : undefined;
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
+    const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
     /** Preserve canonical pre-format token counts for all history entering graph formatting */
     this.indexTokenCountMap = canonicalTokenCountMap;
@@ -423,7 +425,7 @@ class AgentClient extends BaseClient {
 
     /**
      * Apply context to all agents.
-     * Each agent gets: shared run context + their own base instructions + their own MCP instructions.
+     * Each agent gets: run context + their own base instructions + their own MCP instructions.
      *
      * NOTE: This intentionally mutates agent objects in place. The agentConfigs Map
      * holds references to config objects that will be passed to the graph runtime.
@@ -434,17 +436,22 @@ class AgentClient extends BaseClient {
     const configServers = await resolveConfigServers(this.options.req);
 
     await Promise.all(
-      allAgents.map(({ agent, agentId }) =>
-        applyContextToAgent({
+      allAgents.map(({ agent, agentId }) => {
+        const agentRunContext =
+          memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)
+            ? [sharedRunContext, memoryContext].filter(Boolean).join('\n\n')
+            : sharedRunContext;
+
+        return applyContextToAgent({
           agent,
           agentId,
           logger,
           mcpManager,
           configServers,
-          sharedRunContext,
+          sharedRunContext: agentRunContext,
           ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
-        }),
-      ),
+        });
+      }),
     );
 
     return result;
@@ -503,6 +510,22 @@ class AgentClient extends BaseClient {
     const memoryConfig = appConfig.memory;
     if (!memoryConfig || memoryConfig.disabled === true) {
       return;
+    }
+
+    const userId = this.options.req.user.id + '';
+    this.processMemory = undefined;
+
+    if (!isMemoryAgentEnabled(memoryConfig)) {
+      try {
+        const { withoutKeys } = await db.getFormattedMemories({ userId });
+        return withoutKeys;
+      } catch (error) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
+          error,
+        );
+        return;
+      }
     }
 
     /** @type {Agent} */
@@ -593,7 +616,6 @@ class AgentClient extends BaseClient {
       tokenLimit: memoryConfig.tokenLimit,
     };
 
-    const userId = this.options.req.user.id + '';
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
     const streamId = this.options.req?._resumableStreamId || null;
@@ -936,7 +958,9 @@ class AgentClient extends BaseClient {
         //   messages = addCacheControl(messages);
         // }
 
-        memoryPromise = this.runMemory(messages);
+        if (this.processMemory) {
+          memoryPromise = this.runMemory(messages);
+        }
 
         /** Seed calibration state from previous run if encoding matches */
         const currentEncoding = this.getEncoding();

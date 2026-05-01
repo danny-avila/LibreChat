@@ -597,8 +597,11 @@ endpoints:
 #   # (optional) Enable personalization features (defaults to true if memory is configured)
 #   # When false, users will not see the Personalization tab in settings
 #   personalize: true
-#   # Memory agent configuration - either use an existing agent by ID or define inline
+#   # (optional) Memory agent configuration for automatic memory updates from chat messages.
+#   # If omitted, users can still create, edit, delete, and reference memories manually.
 #   agent:
+#     # Explicitly enables automatic memory updates from chat messages.
+#     enabled: true
 #     # Option 1: Use existing agent by ID
 #     id: "your-memory-agent-id"
 #     # Option 2: Define agent inline

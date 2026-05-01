@@ -1777,7 +1777,7 @@ describe('updateInterfacePermissions - permissions', () => {
     });
   });
 
-  it('should re-enable memory permissions when valid memory config exists without disabled field', async () => {
+  it('should re-enable memory permissions when memory config exists without disabled field', async () => {
     // Mock existing memory permissions that are disabled
     mockGetRoleByName.mockResolvedValue({
       permissions: {
@@ -1793,11 +1793,6 @@ describe('updateInterfacePermissions - permissions', () => {
 
     const config = {
       memory: {
-        // No disabled field, but valid config
-        agent: {
-          id: 'test-agent-id',
-          provider: 'openai',
-        },
         personalize: false,
       } as unknown as TCustomConfig['memory'],
     };

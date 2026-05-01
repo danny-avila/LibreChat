@@ -29,6 +29,7 @@ jest.mock('~/server/services/MCP', () => ({
 jest.mock('~/models', () => ({
   getAgent: jest.fn(),
   getRoleByName: jest.fn(),
+  getFormattedMemories: jest.fn(),
 }));
 
 // Mock getMCPManager
@@ -1923,7 +1924,7 @@ describe('AgentClient - titleConvo', () => {
       client.maxContextTokens = 4096;
     });
 
-    it('should pass memory context to parallel agents (addedConvo)', async () => {
+    it('should only pass memory context to the primary agent by default', async () => {
       const memoryContent = 'User prefers dark mode. User is a software developer.';
       client.useMemory = jest.fn().mockResolvedValue(memoryContent);
 
@@ -1963,15 +1964,51 @@ describe('AgentClient - titleConvo', () => {
 
       expect(client.useMemory).toHaveBeenCalled();
 
-      // Verify primary agent has its configured instructions (not from buildOptions) and memory context
       expect(client.options.agent.instructions).toContain('Primary agent instructions');
       expect(client.options.agent.instructions).toContain(memoryContent);
 
       expect(parallelAgent1.instructions).toContain('Parallel agent 1 instructions');
-      expect(parallelAgent1.instructions).toContain(memoryContent);
+      expect(parallelAgent1.instructions).not.toContain(memoryContent);
 
       expect(parallelAgent2.instructions).toContain('Parallel agent 2 instructions');
-      expect(parallelAgent2.instructions).toContain(memoryContent);
+      expect(parallelAgent2.instructions).not.toContain(memoryContent);
+    });
+
+    it('should pass memory context to parallel agents when automatic memory updates are enabled', async () => {
+      const memoryContent = 'User prefers dark mode. User is a software developer.';
+      client.useMemory = jest.fn().mockResolvedValue(memoryContent);
+      mockReq.config.memory.agent = {
+        enabled: true,
+        id: 'memory-agent',
+      };
+
+      const parallelAgent = {
+        id: 'parallel-agent-1',
+        name: 'Parallel Agent 1',
+        instructions: 'Parallel agent instructions',
+        provider: EModelEndpoint.openAI,
+      };
+
+      client.agentConfigs = new Map([['parallel-agent-1', parallelAgent]]);
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, null, {
+        instructions: 'Base instructions',
+        additional_instructions: null,
+      });
+
+      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(parallelAgent.instructions).toContain('Parallel agent instructions');
+      expect(parallelAgent.instructions).toContain(memoryContent);
     });
 
     it('should not modify parallel agents when no memory context is available', async () => {
@@ -2004,7 +2041,7 @@ describe('AgentClient - titleConvo', () => {
       expect(parallelAgent.instructions).toBe('Original parallel instructions');
     });
 
-    it('should handle parallel agents without existing instructions', async () => {
+    it('should handle parallel agents without existing instructions when memory stays primary-only', async () => {
       const memoryContent = 'User is a data scientist.';
       client.useMemory = jest.fn().mockResolvedValue(memoryContent);
 
@@ -2033,7 +2070,8 @@ describe('AgentClient - titleConvo', () => {
         additional_instructions: null,
       });
 
-      expect(parallelAgentNoInstructions.instructions).toContain(memoryContent);
+      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(parallelAgentNoInstructions.instructions).toBeUndefined();
     });
 
     it('should not modify agentConfigs when none exist', async () => {
@@ -2099,6 +2137,7 @@ describe('AgentClient - titleConvo', () => {
     let mockLoadAgent;
     let mockInitializeAgent;
     let mockCreateMemoryProcessor;
+    let mockGetFormattedMemories;
 
     beforeEach(() => {
       jest.clearAllMocks();
@@ -2124,6 +2163,7 @@ describe('AgentClient - titleConvo', () => {
         config: {
           memory: {
             agent: {
+              enabled: true,
               id: 'agent-123',
             },
           },
@@ -2147,6 +2187,12 @@ describe('AgentClient - titleConvo', () => {
       mockLoadAgent = require('@librechat/api').loadAgent;
       mockInitializeAgent = require('@librechat/api').initializeAgent;
       mockCreateMemoryProcessor = require('@librechat/api').createMemoryProcessor;
+      mockGetFormattedMemories = require('~/models').getFormattedMemories;
+      mockGetFormattedMemories.mockResolvedValue({
+        withKeys: '',
+        withoutKeys: '',
+        totalTokens: 0,
+      });
     });
 
     it('should use current agent when memory config agent.id matches current agent id', async () => {
@@ -2211,12 +2257,89 @@ describe('AgentClient - titleConvo', () => {
       );
     });
 
-    it('should return early when prelimAgent is undefined (no valid memory agent config)', async () => {
+    it('should return existing memories without auto-processing when memory agent is not enabled', async () => {
       mockReq.config.memory = {
-        agent: {},
+        personalize: true,
       };
 
       mockCheckAccess.mockResolvedValue(true);
+      mockGetFormattedMemories.mockResolvedValue({
+        withKeys: 'food: likes pasta',
+        withoutKeys: 'likes pasta',
+        totalTokens: 3,
+      });
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+
+      const result = await client.useMemory();
+
+      expect(result).toBe('likes pasta');
+      expect(mockGetFormattedMemories).toHaveBeenCalledWith({ userId: 'user-123' });
+      expect(mockInitializeAgent).not.toHaveBeenCalled();
+      expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+      expect(client.processMemory).toBeUndefined();
+    });
+
+    it('should not initialize auto-processing when no memories exist', async () => {
+      mockReq.config.memory = {
+        personalize: true,
+      };
+
+      mockCheckAccess.mockResolvedValue(true);
+      mockGetFormattedMemories.mockResolvedValue({
+        withKeys: '',
+        withoutKeys: '',
+        totalTokens: 0,
+      });
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+
+      const result = await client.useMemory();
+
+      expect(result).toBe('');
+      expect(mockGetFormattedMemories).toHaveBeenCalledWith({ userId: 'user-123' });
+      expect(mockInitializeAgent).not.toHaveBeenCalled();
+      expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+      expect(client.processMemory).toBeUndefined();
+    });
+
+    it('should return existing memories without auto-processing when memory agent config lacks explicit enablement', async () => {
+      mockReq.config.memory.agent = {
+        id: 'agent-123',
+      };
+
+      mockCheckAccess.mockResolvedValue(true);
+      mockGetFormattedMemories.mockResolvedValue({
+        withKeys: 'tone: concise',
+        withoutKeys: 'prefers concise answers',
+        totalTokens: 4,
+      });
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+
+      const result = await client.useMemory();
+
+      expect(result).toBe('prefers concise answers');
+      expect(mockLoadAgent).not.toHaveBeenCalled();
+      expect(mockInitializeAgent).not.toHaveBeenCalled();
+      expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+    });
+
+    it('should return undefined when loading memories fails without auto-processing', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+      mockReq.config.memory = {
+        personalize: true,
+      };
+
+      mockCheckAccess.mockResolvedValue(true);
+      mockGetFormattedMemories.mockRejectedValue(new Error('DB connection failed'));
 
       client = new AgentClient(mockOptions);
       client.conversationId = 'convo-123';
@@ -2225,13 +2348,20 @@ describe('AgentClient - titleConvo', () => {
       const result = await client.useMemory();
 
       expect(result).toBeUndefined();
+      expect(mockGetFormattedMemories).toHaveBeenCalledWith({ userId: 'user-123' });
       expect(mockInitializeAgent).not.toHaveBeenCalled();
       expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+      expect(client.processMemory).toBeUndefined();
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
+        expect.any(Error),
+      );
     });
 
     it('should create ephemeral agent when no id but model and provider are specified', async () => {
       mockReq.config.memory = {
         agent: {
+          enabled: true,
           model: 'gpt-4',
           provider: EModelEndpoint.openAI,
         },
@@ -2272,7 +2402,7 @@ describe('AgentClient - finalizeSubagentContent', () => {
    *  ON_SUBAGENT_UPDATE handler) have their `contentParts` harvested
    *  onto the matching parent `subagent` tool_call at message-save time
    *  so a page refresh shows the same activity the user saw live. */
-  const { createContentAggregator, GraphEvents } = jest.requireActual('@librechat/agents');
+  const { GraphEvents } = jest.requireActual('@librechat/agents');
   const { getDefaultHandlers } = require('./callbacks');
 
   const makeClient = (subagentAggregatorsByToolCallId) => {
