@@ -1,5 +1,5 @@
-import { renderHook, act } from '@testing-library/react';
-import { Constants, LocalStorageKeys } from 'librechat-data-provider';
+import { renderHook, act, waitFor } from '@testing-library/react';
+import { Constants, LocalStorageKeys, request } from 'librechat-data-provider';
 import type { TSubmission } from 'librechat-data-provider';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
@@ -105,6 +105,7 @@ jest.mock('librechat-data-provider', () => {
     apiBaseUrl: jest.fn(() => ''),
     request: {
       post: jest.fn().mockResolvedValue({ streamId: 'stream-123' }),
+      get: jest.fn().mockResolvedValue({ active: false }),
       refreshToken: jest.fn(),
       dispatchTokenUpdatedEvent: jest.fn(),
     },
@@ -174,6 +175,10 @@ describe('useResumableSSE - 404 error path', () => {
     mockSetIsSubmitting.mockClear();
     mockInvalidateQueries.mockClear();
     mockRemoveQueries.mockClear();
+    (request.post as jest.Mock).mockClear();
+    (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-123' });
+    (request.get as jest.Mock).mockClear();
+    (request.get as jest.Mock).mockResolvedValue({ active: false });
   });
 
   const seedDraft = (conversationId: string) => {
@@ -281,4 +286,126 @@ describe('useResumableSSE - 404 error path', () => {
       unmount();
     },
   );
+
+  it('aborts an active same-conversation job before starting a replacement generation', async () => {
+    const requestPost = request.post as jest.Mock;
+    const requestGet = request.get as jest.Mock;
+    requestPost.mockResolvedValue({ streamId: CONV_ID });
+    requestGet.mockResolvedValue({ active: true, streamId: CONV_ID });
+    const chatHelpers = buildChatHelpers();
+    const firstSubmission = buildSubmission({
+      userMessage: { messageId: 'msg-1' },
+    } as Partial<PartialSubmission>);
+    const secondSubmission = buildSubmission({
+      userMessage: { messageId: 'msg-2' },
+    } as Partial<PartialSubmission>);
+
+    const { rerender, unmount } = renderHook(
+      ({ submission }) => useResumableSSE(submission, chatHelpers),
+      { initialProps: { submission: firstSubmission } },
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(requestPost).toHaveBeenCalledWith('/api/agents/chat', { model: 'gpt-4o' });
+
+    rerender({ submission: secondSubmission });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(requestGet).toHaveBeenCalledWith(`/api/agents/chat/status/${CONV_ID}`);
+      expect(requestPost).toHaveBeenNthCalledWith(2, '/api/agents/chat/abort', {
+        streamId: CONV_ID,
+        conversationId: CONV_ID,
+      });
+      expect(requestPost).toHaveBeenNthCalledWith(3, '/api/agents/chat', { model: 'gpt-4o' });
+    });
+    unmount();
+  });
+
+  it('uses the active stream ID to verify replacement jobs for new conversations', async () => {
+    const requestPost = request.post as jest.Mock;
+    const requestGet = request.get as jest.Mock;
+    const generatedConversationId = 'generated-conv-123';
+    requestPost
+      .mockResolvedValueOnce({ streamId: generatedConversationId })
+      .mockResolvedValueOnce({ streamId: 'replacement-stream' });
+    requestGet.mockResolvedValue({ active: true, streamId: generatedConversationId });
+    const chatHelpers = buildChatHelpers();
+    const firstSubmission = buildSubmission({
+      conversation: { conversationId: 'new' },
+      userMessage: { messageId: 'msg-1' },
+    } as Partial<PartialSubmission>);
+    const secondSubmission = buildSubmission({
+      conversation: { conversationId: 'new' },
+      userMessage: { messageId: 'msg-2' },
+    } as Partial<PartialSubmission>);
+
+    const { rerender, unmount } = renderHook(
+      ({ submission }) => useResumableSSE(submission, chatHelpers),
+      { initialProps: { submission: firstSubmission } },
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    rerender({ submission: secondSubmission });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(requestGet).toHaveBeenCalledWith(`/api/agents/chat/status/${generatedConversationId}`);
+      expect(requestPost).toHaveBeenNthCalledWith(2, '/api/agents/chat/abort', {
+        streamId: generatedConversationId,
+        conversationId: 'new',
+      });
+      expect(requestPost).toHaveBeenNthCalledWith(3, '/api/agents/chat', { model: 'gpt-4o' });
+    });
+    unmount();
+  });
+
+  it('does not abort a stale same-conversation ref when stream status is no longer active', async () => {
+    const requestPost = request.post as jest.Mock;
+    const requestGet = request.get as jest.Mock;
+    requestPost.mockResolvedValue({ streamId: CONV_ID });
+    requestGet.mockResolvedValue({ active: false, streamId: CONV_ID });
+    const chatHelpers = buildChatHelpers();
+    const firstSubmission = buildSubmission({
+      userMessage: { messageId: 'msg-1' },
+    } as Partial<PartialSubmission>);
+    const secondSubmission = buildSubmission({
+      userMessage: { messageId: 'msg-2' },
+    } as Partial<PartialSubmission>);
+
+    const { rerender, unmount } = renderHook(
+      ({ submission }) => useResumableSSE(submission, chatHelpers),
+      { initialProps: { submission: firstSubmission } },
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    rerender({ submission: secondSubmission });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(requestGet).toHaveBeenCalledWith(`/api/agents/chat/status/${CONV_ID}`);
+      expect(requestPost).toHaveBeenCalledTimes(2);
+      expect(requestPost).not.toHaveBeenCalledWith('/api/agents/chat/abort', expect.anything());
+      expect(requestPost).toHaveBeenNthCalledWith(2, '/api/agents/chat', { model: 'gpt-4o' });
+    });
+    unmount();
+  });
 });

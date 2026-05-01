@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { Constants, tMessageSchema, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
@@ -109,9 +109,6 @@ export default function useResumeOnLoad(
   const endpointType = currentConversation?.endpointType;
   const actualEndpoint = endpointType ?? endpoint;
   const resumableEnabled = !isAssistantsEndpoint(actualEndpoint);
-  // Track conversations we've already processed (either resumed or skipped)
-  const processedConvoRef = useRef<string | null>(null);
-
   // Check for active stream when conversation changes
   // Allow check if no submission OR submission is for a different conversation (stale)
   const submissionConvoId = currentSubmission?.conversation?.conversationId;
@@ -122,8 +119,7 @@ export default function useResumeOnLoad(
     messagesLoaded && // Wait for messages to load before checking
     !hasActiveSubmissionForThisConvo && // Allow if no submission or stale submission
     !!conversationId &&
-    conversationId !== Constants.NEW_CONVO &&
-    processedConvoRef.current !== conversationId; // Don't re-check processed convos
+    conversationId !== Constants.NEW_CONVO;
 
   const {
     data: streamStatus,
@@ -142,7 +138,6 @@ export default function useResumeOnLoad(
       isFetching,
       streamStatusActive: streamStatus?.active,
       streamStatusStreamId: streamStatus?.streamId,
-      processedConvoRef: processedConvoRef.current,
     });
 
     if (!resumableEnabled || !conversationId || conversationId === Constants.NEW_CONVO) {
@@ -160,8 +155,6 @@ export default function useResumeOnLoad(
     // A stale submission with undefined/different conversationId should not block us
     if (hasActiveSubmissionForThisConvo) {
       console.log('[ResumeOnLoad] Skipping - already have active submission for this conversation');
-      // Mark as processed so we don't try again
-      processedConvoRef.current = conversationId;
       return;
     }
 
@@ -183,19 +176,10 @@ export default function useResumeOnLoad(
       return;
     }
 
-    // Don't process the same conversation twice
-    if (processedConvoRef.current === conversationId) {
-      console.log('[ResumeOnLoad] Skipping - already processed this conversation');
-      return;
-    }
-
     if (!streamStatus.active || !streamStatus.streamId) {
       console.log('[ResumeOnLoad] No active job to resume for:', conversationId);
-      processedConvoRef.current = conversationId;
       return;
     }
-
-    processedConvoRef.current = conversationId;
 
     console.log('[ResumeOnLoad] Found active job, creating submission...', {
       streamId: streamStatus.streamId,
@@ -249,16 +233,4 @@ export default function useResumeOnLoad(
     getMessages,
     setSubmission,
   ]);
-
-  // Reset processedConvoRef when conversation changes to allow re-checking
-  useEffect(() => {
-    // Always reset when conversation changes - this allows resuming when navigating back
-    if (conversationId !== processedConvoRef.current) {
-      console.log('[ResumeOnLoad] Resetting processedConvoRef for new conversation:', {
-        old: processedConvoRef.current,
-        new: conversationId,
-      });
-      processedConvoRef.current = null;
-    }
-  }, [conversationId]);
 }
