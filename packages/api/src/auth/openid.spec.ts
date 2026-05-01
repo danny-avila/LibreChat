@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
-import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from './openid';
+import { findOpenIDUser, getOpenIdEmail, getOpenIdIssuer, normalizeOpenIdIssuer } from './openid';
 
 function newId() {
   return new Types.ObjectId();
@@ -30,9 +30,38 @@ describe('normalizeOpenIdIssuer', () => {
   });
 });
 
+describe('getOpenIdIssuer', () => {
+  const originalOpenIdIssuer = process.env.OPENID_ISSUER;
+
+  afterEach(() => {
+    if (originalOpenIdIssuer == null) {
+      delete process.env.OPENID_ISSUER;
+      return;
+    }
+
+    process.env.OPENID_ISSUER = originalOpenIdIssuer;
+  });
+
+  it('prefers token issuer and falls back to metadata and env issuer', () => {
+    process.env.OPENID_ISSUER = 'https://env.example.com/.well-known/openid-configuration';
+
+    expect(
+      getOpenIdIssuer(
+        { iss: 'https://token.example.com/' },
+        { serverMetadata: () => ({ issuer: 'https://metadata.example.com' }) },
+      ),
+    ).toBe('https://token.example.com');
+    expect(
+      getOpenIdIssuer({}, { serverMetadata: () => ({ issuer: 'https://metadata.example.com/' }) }),
+    ).toBe('https://metadata.example.com');
+    expect(getOpenIdIssuer({})).toBe('https://env.example.com');
+  });
+});
+
 describe('findOpenIDUser', () => {
   let mockFindUser: jest.MockedFunction<UserMethods['findUser']>;
   const originalOpenIdIssuer = process.env.OPENID_ISSUER;
+  const issuer = 'https://issuer.example.com';
 
   beforeEach(() => {
     mockFindUser = jest.fn();
@@ -56,6 +85,7 @@ describe('findOpenIDUser', () => {
         _id: newId(),
         provider: 'openid',
         openidId: 'openid_123',
+        openidIssuer: issuer,
         email: 'user@example.com',
         username: 'testuser',
       } as IUser;
@@ -64,12 +94,13 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
 
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123' }],
+        $or: [{ openidId: 'openid_123', openidIssuer: issuer }],
       });
       expect(result).toEqual({
         user: mockUser,
@@ -91,12 +122,16 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         idOnTheSource: 'source_123',
       });
 
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123' }, { idOnTheSource: 'source_123' }],
+        $or: [
+          { openidId: 'openid_123', openidIssuer: issuer },
+          { idOnTheSource: 'source_123', openidIssuer: issuer },
+        ],
       });
       expect(result).toEqual({
         user: mockUser,
@@ -111,6 +146,7 @@ describe('findOpenIDUser', () => {
         provider: 'openid',
         openidId: 'openid_123',
         idOnTheSource: 'source_123',
+        openidIssuer: issuer,
         email: 'user@example.com',
         username: 'testuser',
       } as IUser;
@@ -119,13 +155,17 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         idOnTheSource: 'source_123',
         email: 'user@example.com',
       });
 
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123' }, { idOnTheSource: 'source_123' }],
+        $or: [
+          { openidId: 'openid_123', openidIssuer: issuer },
+          { idOnTheSource: 'source_123', openidIssuer: issuer },
+        ],
       });
       expect(result).toEqual({
         user: mockUser,
@@ -238,6 +278,25 @@ describe('findOpenIDUser', () => {
         migration: true,
       });
     });
+
+    it('should skip primary ID lookup when issuer context is missing', async () => {
+      mockFindUser.mockResolvedValueOnce(null);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        idOnTheSource: 'source_123',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(mockFindUser).toHaveBeenCalledTimes(1);
+      expect(mockFindUser).toHaveBeenCalledWith({ email: 'user@example.com' });
+      expect(result).toEqual({
+        user: null,
+        error: null,
+        migration: false,
+      });
+    });
   });
 
   describe('Email-based searches', () => {
@@ -246,6 +305,7 @@ describe('findOpenIDUser', () => {
         _id: newId(),
         provider: 'openid',
         openidId: 'openid_123',
+        openidIssuer: issuer,
         email: 'user@example.com',
         username: 'testuser',
       } as IUser;
@@ -254,12 +314,13 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
 
       expect(mockFindUser).toHaveBeenNthCalledWith(1, {
-        $or: [{ openidId: 'openid_123' }],
+        $or: [{ openidId: 'openid_123', openidIssuer: issuer }],
       });
       expect(mockFindUser).toHaveBeenNthCalledWith(2, { email: 'user@example.com' });
       expect(result).toEqual({
@@ -276,6 +337,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -293,12 +355,13 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
       });
 
       expect(mockFindUser).toHaveBeenCalledTimes(1);
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123' }],
+        $or: [{ openidId: 'openid_123', openidIssuer: issuer }],
       });
       expect(result).toEqual({
         user: null,
@@ -323,6 +386,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -347,6 +411,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -363,6 +428,7 @@ describe('findOpenIDUser', () => {
         _id: newId(),
         provider: 'openid',
         openidId: 'openid_123',
+        openidIssuer: issuer,
         email: 'user@example.com',
         username: 'testuser',
       } as IUser;
@@ -371,6 +437,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -450,6 +517,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -459,6 +527,7 @@ describe('findOpenIDUser', () => {
           ...mockUser,
           provider: 'openid',
           openidId: 'openid_123',
+          openidIssuer: issuer,
         },
         error: null,
         migration: true,
@@ -506,6 +575,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -530,6 +600,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -597,12 +668,13 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         idOnTheSource: '',
       });
 
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123' }],
+        $or: [{ openidId: 'openid_123', openidIssuer: issuer }],
       });
       expect(result).toEqual({
         user: null,
@@ -629,6 +701,7 @@ describe('findOpenIDUser', () => {
         _id: newId(),
         provider: 'openid',
         openidId: 'openid_123',
+        openidIssuer: issuer,
         email: 'user@example.com',
         username: 'testuser',
       } as IUser;
@@ -637,6 +710,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'User@Example.COM',
       });
@@ -655,6 +729,7 @@ describe('findOpenIDUser', () => {
       await expect(
         findOpenIDUser({
           openidId: 'openid_123',
+          openidIssuer: issuer,
           findUser: mockFindUser,
         }),
       ).rejects.toThrow('Database error');

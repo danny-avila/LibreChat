@@ -2,7 +2,7 @@ const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, findOpenIDUser } = require('@librechat/api');
+const { isEnabled, findOpenIDUser, getOpenIdIssuer } = require('@librechat/api');
 const {
   requestPasswordReset,
   setOpenIDAuthTokens,
@@ -85,10 +85,12 @@ const refreshController = async (req, res) => {
         refreshParams,
       );
       const claims = tokenset.claims();
+      const openidIssuer = getOpenIdIssuer(claims, openIdConfig);
       const { user, error, migration } = await findOpenIDUser({
         findUser,
         email: getOpenIdEmail(claims),
         openidId: claims.sub,
+        openidIssuer,
         idOnTheSource: claims.oid,
         strategyName: 'refreshController',
       });
@@ -111,6 +113,7 @@ const refreshController = async (req, res) => {
         await updateUser(user._id.toString(), {
           provider: 'openid',
           openidId: claims.sub,
+          ...(openidIssuer ? { openidIssuer } : {}),
         });
         logger.info(
           `[refreshController] Updated user ${user.email} openidId (${reason}): ${user.openidId ?? 'null'} -> ${claims.sub}`,

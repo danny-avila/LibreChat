@@ -30,6 +30,7 @@ jest.mock('@librechat/api', () => ({
   getBalanceConfig: jest.fn(() => ({
     enabled: false,
   })),
+  getOpenIdIssuer: jest.fn(() => 'https://fake-issuer.com'),
   resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
 }));
 jest.mock('~/models', () => ({
@@ -206,6 +207,7 @@ describe('setupOpenId', () => {
       expect.objectContaining({
         provider: 'openid',
         openidId: userinfo.sub,
+        openidIssuer: 'https://fake-issuer.com',
         username: userinfo.preferred_username,
         email: userinfo.email,
         name: `${userinfo.given_name} ${userinfo.family_name}`,
@@ -326,6 +328,7 @@ describe('setupOpenId', () => {
       expect.objectContaining({
         provider: 'openid',
         openidId: userinfo.sub,
+        openidIssuer: 'https://fake-issuer.com',
         username: userinfo.preferred_username,
         name: `${userinfo.given_name} ${userinfo.family_name}`,
       }),

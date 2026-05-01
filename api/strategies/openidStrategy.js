@@ -14,6 +14,7 @@ const {
   safeStringify,
   findOpenIDUser,
   getOpenIdEmail,
+  getOpenIdIssuer,
   getBalanceConfig,
   isEmailDomainAllowed,
   resolveAppConfigForUser,
@@ -443,6 +444,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   }
 
   const email = getOpenIdEmail(userinfo);
+  const openidIssuer = getOpenIdIssuer(claims, userinfo, openidConfig);
 
   const baseConfig = await getAppConfig({ baseOnly: true });
   if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
@@ -456,6 +458,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     findUser,
     email: email,
     openidId: claims.sub || userinfo.sub,
+    openidIssuer,
     idOnTheSource: claims.oid || userinfo.oid,
     strategyName: 'openidStrategy',
   });
@@ -561,6 +564,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       emailVerified: userinfo.email_verified || false,
       name: fullName,
       idOnTheSource: userinfo.oid,
+      openidIssuer,
     };
 
     const balanceConfig = getBalanceConfig(appConfig);
@@ -568,6 +572,9 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   } else {
     user.provider = 'openid';
     user.openidId = userinfo.sub;
+    if (openidIssuer) {
+      user.openidIssuer = openidIssuer;
+    }
     user.username = username;
     user.name = fullName;
     user.idOnTheSource = userinfo.oid;

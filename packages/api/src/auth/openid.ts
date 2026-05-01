@@ -10,6 +10,12 @@ export type OpenIdEmailClaims = {
   [claim: string]: unknown;
 };
 
+export type OpenIdIssuerSource = {
+  iss?: string;
+  issuer?: string;
+  serverMetadata?: () => { issuer?: string } | undefined;
+};
+
 type OpenIdLookupField = 'openidId' | 'idOnTheSource';
 
 const OPENID_DISCOVERY_PATH = '/.well-known/openid-configuration';
@@ -21,9 +27,27 @@ export function normalizeOpenIdIssuer(issuer: string | undefined): string | unde
   return normalized.slice(0, -OPENID_DISCOVERY_PATH.length) || undefined;
 }
 
+function getIssuerFromSource(source: OpenIdIssuerSource | null | undefined): string | undefined {
+  if (source == null) return undefined;
+
+  const issuer = source.iss || source.serverMetadata?.()?.issuer || source.issuer;
+  return normalizeOpenIdIssuer(issuer);
+}
+
 function getStringClaim(claims: OpenIdEmailClaims, claim: string): string | undefined {
   const value = claims[claim];
   return typeof value === 'string' && value ? value : undefined;
+}
+
+export function getOpenIdIssuer(
+  ...sources: Array<OpenIdIssuerSource | null | undefined>
+): string | undefined {
+  for (const source of sources) {
+    const issuer = getIssuerFromSource(source);
+    if (issuer) return issuer;
+  }
+
+  return normalizeOpenIdIssuer(process.env.OPENID_ISSUER);
 }
 
 function isLegacyOpenIdIssuer(openidIssuer: string | undefined): boolean {
@@ -37,7 +61,7 @@ function getIssuerBoundConditions(
   openidIssuer: string | undefined,
 ): FilterQuery<IUser>[] {
   if (!value || typeof value !== 'string') return [];
-  if (!openidIssuer) return [{ [field]: value }];
+  if (!openidIssuer) return [];
 
   const conditions: FilterQuery<IUser>[] = [{ [field]: value, openidIssuer }];
 
