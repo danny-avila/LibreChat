@@ -12,6 +12,8 @@ const staticAtoms = {
     default: SettingsViews.default,
   }),
   showPopover: atom<boolean>({ key: 'showPopover', default: false }),
+  sttExternal: atom<boolean>({ key: 'sttExternal', default: false }),
+  ttsExternal: atom<boolean>({ key: 'ttsExternal', default: false }),
 };
 
 const localStorageAtoms = {
