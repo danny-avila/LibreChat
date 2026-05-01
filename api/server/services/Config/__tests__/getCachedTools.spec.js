@@ -1,6 +1,12 @@
 const { CacheKeys } = require('librechat-data-provider');
 
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    error: jest.fn(),
+  },
+}));
 jest.mock('~/cache/getLogStores');
+const { logger } = require('@librechat/data-schemas');
 const getLogStores = require('~/cache/getLogStores');
 
 const mockCache = { get: jest.fn(), set: jest.fn(), delete: jest.fn() };
@@ -73,6 +79,17 @@ describe('getCachedTools', () => {
       await getMCPServerTools('user1', 'github');
       expect(getLogStores).toHaveBeenCalledWith(CacheKeys.TOOL_CACHE);
       expect(mockCache.get).toHaveBeenCalledWith(ToolCacheKeys.MCP_SERVER('user1', 'github'));
+    });
+
+    it('getMCPServerTools should return null when the cache lookup fails', async () => {
+      const error = new Error('cache unavailable');
+      mockCache.get.mockRejectedValue(error);
+
+      await expect(getMCPServerTools('user1', 'github')).resolves.toBeNull();
+      expect(logger.error).toHaveBeenCalledWith(
+        '[getMCPServerTools] Error fetching cached tools for github:',
+        error,
+      );
     });
 
     it('should NOT use CONFIG_STORE namespace', async () => {
