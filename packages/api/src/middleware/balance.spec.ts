@@ -39,7 +39,6 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
-  await Balance.syncIndexes();
   jest.clearAllMocks();
   jest.restoreAllMocks();
 });

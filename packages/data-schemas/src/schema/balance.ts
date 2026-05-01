@@ -5,7 +5,7 @@ const balanceSchema = new Schema<t.IBalance>({
   user: {
     type: Schema.Types.ObjectId,
     ref: 'User',
-    unique: true,
+    index: true,
     required: true,
   },
   // 1000 tokenCredits = 1 mill ($0.001 USD)
