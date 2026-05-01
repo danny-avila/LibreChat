@@ -1,9 +1,9 @@
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { SystemRoles } from 'librechat-data-provider';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { getTenantId, logger } from '@librechat/data-schemas';
+import { SystemRoles, isRemoteOidcUrlAllowed } from 'librechat-data-provider';
 import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { AppConfig, IUser, UserMethods } from '@librechat/data-schemas';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
@@ -127,8 +127,13 @@ function buildDiscoveryOptions(controller: AbortController): RequestInit {
   return options;
 }
 
+function ensureRemoteOidcUrlAllowed(value: string, label: string): string {
+  if (isRemoteOidcUrlAllowed(value)) return value;
+  throw new Error(`${label} must use https:// unless targeting localhost`);
+}
+
 async function discoverJwksUri(issuer: string): Promise<string> {
-  const normalizedIssuer = issuer.replace(/\/$/, '');
+  const normalizedIssuer = ensureRemoteOidcUrlAllowed(issuer, 'OIDC issuer').replace(/\/$/, '');
   const discoveryUrl = `${normalizedIssuer}/.well-known/openid-configuration`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OIDC_DISCOVERY_TIMEOUT_MS);
@@ -140,7 +145,7 @@ async function discoverJwksUri(issuer: string): Promise<string> {
     const meta = (await res.json()) as { jwks_uri?: string };
     if (!meta.jwks_uri) throw new Error('OIDC discovery response missing jwks_uri');
 
-    return meta.jwks_uri;
+    return ensureRemoteOidcUrlAllowed(meta.jwks_uri, 'OIDC JWKS URI');
   } finally {
     clearTimeout(timeout);
   }
@@ -150,8 +155,10 @@ async function resolveJwksUri(
   oidcConfig: EnabledOidcConfig,
   cacheOptions: JwksCacheOptions,
 ): Promise<string> {
-  if (oidcConfig.jwksUri) return oidcConfig.jwksUri;
-  if (process.env.OPENID_JWKS_URL) return process.env.OPENID_JWKS_URL;
+  if (oidcConfig.jwksUri) return ensureRemoteOidcUrlAllowed(oidcConfig.jwksUri, 'OIDC JWKS URI');
+  if (process.env.OPENID_JWKS_URL) {
+    return ensureRemoteOidcUrlAllowed(process.env.OPENID_JWKS_URL, 'OIDC JWKS URI');
+  }
 
   if (!cacheOptions.enabled) return discoverJwksUri(oidcConfig.issuer);
 
@@ -263,6 +270,8 @@ async function verifyWithSigningKeys(
 }
 
 async function verifyOidcBearer(token: string, oidcConfig: EnabledOidcConfig): Promise<JwtPayload> {
+  ensureRemoteOidcUrlAllowed(oidcConfig.issuer, 'OIDC issuer');
+
   const decoded = jwt.decode(token, { complete: true });
   if (decoded == null || typeof decoded === 'string') throw new Error('Invalid JWT: cannot decode');
 

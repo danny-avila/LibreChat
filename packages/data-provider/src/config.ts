@@ -323,12 +323,32 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
+const LOCAL_REMOTE_OIDC_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+export function isRemoteOidcUrlAllowed(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:') return true;
+    if (url.protocol !== 'http:') return false;
+
+    const hostname = url.hostname.toLowerCase();
+    return LOCAL_REMOTE_OIDC_HOSTS.has(hostname) || hostname.endsWith('.localhost');
+  } catch {
+    return false;
+  }
+}
+
+const remoteApiOidcUrlSchema = z
+  .string()
+  .url()
+  .refine(isRemoteOidcUrlAllowed, { message: 'must use https:// unless targeting localhost' });
+
 const remoteApiOidcSchema = z
   .object({
     enabled: z.boolean().default(false),
-    issuer: z.string().url().optional(),
+    issuer: remoteApiOidcUrlSchema.optional(),
     audience: z.string().optional(),
-    jwksUri: z.string().url().optional(),
+    jwksUri: remoteApiOidcUrlSchema.optional(),
     scope: z.string().optional(),
   })
   .superRefine((oidc, ctx) => {

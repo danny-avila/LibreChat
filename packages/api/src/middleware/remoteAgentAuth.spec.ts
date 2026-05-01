@@ -708,6 +708,69 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).toHaveBeenCalled();
     });
 
+    it('rejects insecure OPENID_JWKS_URL values outside localhost', async () => {
+      process.env.OPENID_JWKS_URL = 'http://env.example.com/jwks';
+      const deps = makeDeps(
+        makeConfig(
+          { jwksUri: undefined, issuer: 'https://issuer-env-insecure.example.com' },
+          { enabled: false },
+        ),
+      );
+      const { res, status } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(jwksRsa).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('rejects insecure issuer values outside localhost before JWKS resolution', async () => {
+      process.env.OPENID_JWKS_URL = 'https://env.example.com/jwks';
+      const deps = makeDeps(
+        makeConfig(
+          { jwksUri: undefined, issuer: 'http://issuer-env-insecure.example.com' },
+          { enabled: false },
+        ),
+      );
+      const { res, status } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(jwksRsa).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('allows localhost HTTP OPENID_JWKS_URL values for development', async () => {
+      process.env.OPENID_JWKS_URL = 'http://localhost:8080/jwks';
+      const deps = makeDeps(
+        makeConfig({ jwksUri: undefined, issuer: 'http://localhost:8080/realms/test' }),
+      );
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(jwksRsa).toHaveBeenCalledWith(
+        expect.objectContaining({ jwksUri: 'http://localhost:8080/jwks' }),
+      );
+      expect(mockNext).toHaveBeenCalled();
+    });
+
     it('fetches discovery document when jwksUri and env var are absent', async () => {
       const issuer = 'https://issuer-discovery-1.example.com';
 
@@ -729,6 +792,28 @@ describe('createRemoteAgentAuth', () => {
         expect.objectContaining({ signal: expect.any(Object) }),
       );
       expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('rejects insecure JWKS URIs returned by discovery', async () => {
+      const issuer = 'https://issuer-discovery-insecure.example.com';
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ jwks_uri: 'http://issuer-discovery-insecure.example.com/jwks' }),
+      });
+
+      const deps = makeDeps(makeConfig({ jwksUri: undefined, issuer }, { enabled: false }));
+      const { res, status } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(jwksRsa).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('uses a proxy agent for discovery when PROXY is set', async () => {

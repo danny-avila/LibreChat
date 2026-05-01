@@ -391,6 +391,49 @@ describe('agentsEndpointSchema', () => {
     expect(missingIssuer.success).toBe(false);
     expect(invalidIssuer.success).toBe(false);
   });
+
+  it('requires HTTPS remote OIDC issuer and JWKS URLs outside localhost', () => {
+    const insecureIssuer = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'http://auth.example.com',
+          },
+        },
+      },
+    });
+    const insecureJwksUri = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+            jwksUri: 'http://auth.example.com/jwks',
+          },
+        },
+      },
+    });
+
+    expect(insecureIssuer.success).toBe(false);
+    expect(insecureJwksUri.success).toBe(false);
+  });
+
+  it('allows localhost HTTP remote OIDC URLs for development', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'http://localhost:8080/realms/test',
+            jwksUri: 'http://127.0.0.1:8080/realms/test/protocol/openid-connect/certs',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('azureEndpointSchema', () => {
