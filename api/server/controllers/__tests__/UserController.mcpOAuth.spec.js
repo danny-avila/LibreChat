@@ -10,7 +10,7 @@ const mockGetFlowStateManager = jest.fn();
 const mockGetMCPServersRegistry = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
-  logger: { error: jest.fn(), info: jest.fn() },
+  logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn() },
   webSearchKeys: [],
 }));
 
@@ -32,8 +32,18 @@ jest.mock('@librechat/api', () => ({
     deleteUserTokens: jest.fn(async ({ userId, serverName, deleteToken }) => {
       await deleteToken({
         userId,
+        type: 'mcp_oauth_client',
+        identifier: `mcp:${serverName}:client`,
+      });
+      await deleteToken({
+        userId,
         type: 'mcp_oauth',
         identifier: `mcp:${serverName}`,
+      });
+      await deleteToken({
+        userId,
+        type: 'mcp_oauth_refresh',
+        identifier: `mcp:${serverName}:refresh`,
       });
     }),
   },
@@ -85,6 +95,7 @@ jest.mock('~/cache', () => ({
   getLogStores: (...args) => mockGetLogStores(...args),
 }));
 
+const { logger } = require('@librechat/data-schemas');
 const { MCPTokenStorage, MCPOAuthHandler } = require('@librechat/api');
 const { updateUserPluginsController } = require('~/server/controllers/UserController');
 
@@ -155,6 +166,11 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     await updateUserPluginsController(createRequest(), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(MCPTokenStorage.getClientInfoAndMetadata).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+      findToken: mockFindToken,
+    });
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
@@ -171,6 +187,44 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     expect(mcpManager.disconnectUserConnection).toHaveBeenCalledWith('user-1', 'test-server');
   });
 
+  it('still clears OAuth flow state when stored token deletion fails', async () => {
+    const { flowManager } = setupMCPMocks();
+    const cleanupError = new Error('DB down');
+    MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue(null);
+    MCPTokenStorage.deleteUserTokens.mockRejectedValueOnce(cleanupError);
+
+    const res = createResponse();
+    await updateUserPluginsController(createRequest(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(flowManager.deleteFlow).toHaveBeenCalledWith('user-1:test-server', 'mcp_get_tokens');
+    expect(flowManager.deleteFlow).toHaveBeenCalledWith('user-1:test-server', 'mcp_oauth');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Failed to delete MCP OAuth tokens for test-server:',
+      cleanupError,
+    );
+  });
+
+  it('logs flow cleanup failures without failing MCP OAuth cleanup', async () => {
+    const { flowManager } = setupMCPMocks();
+    const flowError = new Error('flow cache down');
+    MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue(null);
+    flowManager.deleteFlow
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(flowError);
+
+    const res = createResponse();
+    await updateUserPluginsController(createRequest(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(flowManager.deleteFlow).toHaveBeenCalledWith('user-1:test-server', 'mcp_get_tokens');
+    expect(flowManager.deleteFlow).toHaveBeenCalledWith('user-1:test-server', 'mcp_oauth');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Failed to clear MCP OAuth flow state for test-server:',
+      flowError,
+    );
+  });
+
   it('clears stored OAuth token state when client metadata cannot be loaded', async () => {
     const { flowManager } = setupMCPMocks();
     MCPTokenStorage.getClientInfoAndMetadata.mockRejectedValue(new Error('invalid client info'));
@@ -179,6 +233,10 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     await updateUserPluginsController(createRequest(), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Unable to load OAuth client metadata for test-server; clearing local MCP OAuth state only.',
+      expect.any(Error),
+    );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
@@ -198,6 +256,15 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     await updateUserPluginsController(createRequest(), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(MCPTokenStorage.getTokens).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+      findToken: mockFindToken,
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Unable to load OAuth tokens for test-server; clearing local token state.',
+      expect.any(Error),
+    );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
@@ -266,6 +333,11 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     await updateUserPluginsController(createRequest(), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(MCPTokenStorage.getTokens).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+      findToken: mockFindToken,
+    });
     expect(MCPOAuthHandler.revokeOAuthToken).toHaveBeenCalledWith(
       'test-server',
       'access-token',
@@ -291,6 +363,68 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
         revocationEndpoint: 'https://example.com/revoke',
         revocationEndpointAuthMethodsSupported: undefined,
       },
+      {},
+      [],
+    );
+    expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+      deleteToken: expect.any(Function),
+    });
+  });
+
+  it('revokes only the access token when refresh token data is absent', async () => {
+    setupMCPMocks();
+    MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue({
+      clientInfo: { client_id: 'client-1', client_secret: 'secret-1' },
+      clientMetadata: {},
+    });
+    MCPTokenStorage.getTokens.mockResolvedValue({
+      access_token: 'access-token',
+    });
+    MCPOAuthHandler.revokeOAuthToken.mockResolvedValue();
+
+    const res = createResponse();
+    await updateUserPluginsController(createRequest(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(MCPOAuthHandler.revokeOAuthToken).toHaveBeenCalledTimes(1);
+    expect(MCPOAuthHandler.revokeOAuthToken).toHaveBeenCalledWith(
+      'test-server',
+      'access-token',
+      'access',
+      expect.objectContaining({ clientId: 'client-1' }),
+      {},
+      [],
+    );
+    expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+      deleteToken: expect.any(Function),
+    });
+  });
+
+  it('revokes only the refresh token when access token data is absent', async () => {
+    setupMCPMocks();
+    MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue({
+      clientInfo: { client_id: 'client-1', client_secret: 'secret-1' },
+      clientMetadata: {},
+    });
+    MCPTokenStorage.getTokens.mockResolvedValue({
+      refresh_token: 'refresh-token',
+    });
+    MCPOAuthHandler.revokeOAuthToken.mockResolvedValue();
+
+    const res = createResponse();
+    await updateUserPluginsController(createRequest(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(MCPOAuthHandler.revokeOAuthToken).toHaveBeenCalledTimes(1);
+    expect(MCPOAuthHandler.revokeOAuthToken).toHaveBeenCalledWith(
+      'test-server',
+      'refresh-token',
+      'refresh',
+      expect.objectContaining({ clientId: 'client-1' }),
       {},
       [],
     );
