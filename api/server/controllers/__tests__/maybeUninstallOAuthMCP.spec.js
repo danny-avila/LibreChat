@@ -19,12 +19,6 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => {
-  class ReauthenticationRequiredError extends Error {
-    constructor(serverName, reason) {
-      super(`Re-authentication required for "${serverName}": ${reason}`);
-      this.name = 'ReauthenticationRequiredError';
-    }
-  }
   return {
     MCPOAuthHandler: {
       revokeOAuthToken: (...args) => mockRevokeOAuthToken(...args),
@@ -35,7 +29,6 @@ jest.mock('@librechat/api', () => {
       getClientInfoAndMetadata: (...args) => mockGetClientInfoAndMetadata(...args),
       deleteUserTokens: (...args) => mockDeleteUserTokens(...args),
     },
-    ReauthenticationRequiredError,
     normalizeHttpError: jest.fn(),
     extractWebSearchEnvVars: jest.fn(),
     needsRefresh: jest.fn(),
@@ -124,7 +117,6 @@ jest.mock('~/models', () => ({
 }));
 
 const { maybeUninstallOAuthMCP } = require('~/server/controllers/UserController');
-const { ReauthenticationRequiredError } = require('@librechat/api');
 
 const userId = 'user-123';
 const pluginKey = 'mcp_acme';
@@ -167,7 +159,7 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteFlow).not.toHaveBeenCalled();
   });
 
-  test('is a no-op when the MCP server is not an OAuth server', async () => {
+  test('clears stored state when the MCP server is not an OAuth server', async () => {
     mockGetServerConfig.mockResolvedValue(serverConfig);
     mockGetOAuthServers.mockResolvedValue(new Set(['other']));
 
@@ -175,18 +167,21 @@ describe('maybeUninstallOAuthMCP', () => {
 
     expect(mockGetClientInfoAndMetadata).not.toHaveBeenCalled();
     expect(mockGetTokens).not.toHaveBeenCalled();
-    expect(mockDeleteUserTokens).not.toHaveBeenCalled();
+    expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
+    expect(mockDeleteUserTokens.mock.calls[0][0]).toMatchObject({ userId, serverName });
+    expect(mockDeleteFlow).toHaveBeenCalledTimes(2);
   });
 
-  test('returns early when client info is missing', async () => {
+  test('clears stored state when client info is missing', async () => {
     setupOAuthServerFound();
     mockGetClientInfoAndMetadata.mockResolvedValue(null);
 
     await maybeUninstallOAuthMCP(userId, pluginKey, appConfig);
 
     expect(mockGetTokens).not.toHaveBeenCalled();
-    expect(mockDeleteUserTokens).not.toHaveBeenCalled();
-    expect(mockDeleteFlow).not.toHaveBeenCalled();
+    expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
+    expect(mockDeleteUserTokens.mock.calls[0][0]).toMatchObject({ userId, serverName });
+    expect(mockDeleteFlow).toHaveBeenCalledTimes(2);
   });
 
   test('revokes both tokens and runs cleanup on happy path', async () => {
@@ -215,9 +210,9 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteFlow.mock.calls[1][1]).toBe('mcp_oauth');
   });
 
-  test('skips revocation but still runs cleanup when getTokens throws ReauthenticationRequiredError', async () => {
+  test('skips revocation but still runs cleanup when token retrieval fails', async () => {
     setupOAuthServerFound();
-    mockGetTokens.mockRejectedValue(new ReauthenticationRequiredError(serverName, 'missing'));
+    mockGetTokens.mockRejectedValue(new Error('missing'));
     mockDeleteUserTokens.mockResolvedValue(undefined);
     mockDeleteFlow.mockResolvedValue(undefined);
 
@@ -226,7 +221,10 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockRevokeOAuthToken).not.toHaveBeenCalled();
     expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
     expect(mockDeleteFlow).toHaveBeenCalledTimes(2);
-    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining('No usable tokens'));
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      `Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
+      expect.any(Error),
+    );
   });
 
   test('skips revocation, logs warn, and still runs cleanup on unexpected token-retrieval error', async () => {
@@ -241,7 +239,7 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
     expect(mockDeleteFlow).toHaveBeenCalledTimes(2);
     expect(mockLoggerWarn).toHaveBeenCalledWith(
-      expect.stringContaining('Unexpected error retrieving tokens'),
+      `Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
       expect.any(Error),
     );
   });
