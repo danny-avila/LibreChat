@@ -304,7 +304,7 @@ endpoints:
   #     # Option 1: Simple array (legacy format - model name = deployment name)
   #     # Use this if you want the technical model IDs to show in the UI
   #     # models:
-  #     #   - "claude-sonnet-4-20250514"
+  #     #   - "claude-sonnet-4-6"
   #     #   - "claude-3-7-sonnet-20250219"
   #     #   - "claude-3-5-sonnet-v2@20241022"
   #     #   - "claude-3-5-haiku@20241022"
@@ -317,7 +317,7 @@ endpoints:
   #       claude-opus-4.5:
   #         deploymentName: claude-opus-4-5@20251101
   #       claude-sonnet-4:
-  #         deploymentName: claude-sonnet-4-20250514
+  #         deploymentName: claude-sonnet-4-6
   #       claude-3.7-sonnet:
   #         deploymentName: claude-3-7-sonnet-20250219
   #       claude-3.5-sonnet:
@@ -327,7 +327,7 @@ endpoints:
   #
   #     # Option 3: Mixed format with default deploymentName
   #     # Set a default deploymentName and use boolean values for models
-  #     # deploymentName: claude-sonnet-4-20250514
+  #     # deploymentName: claude-sonnet-4-6
   #     # models:
   #     #   claude-sonnet-4: true  # Will use the default deploymentName
   #     #   claude-3.5-haiku:
@@ -458,7 +458,7 @@ endpoints:
   #   # The ARN (value) is the inference profile you wish to map to for that model
   #   # Both the model ID and ARN are sent to AWS - the model ID for validation/metadata, the ARN for routing
   #   inferenceProfiles:
-  #     "us.anthropic.claude-sonnet-4-20250514-v1:0": "${BEDROCK_INFERENCE_PROFILE_CLAUDE_SONNET}"
+  #     "us.anthropic.claude-sonnet-4-6": "${BEDROCK_INFERENCE_PROFILE_CLAUDE_SONNET}"
   #     "anthropic.claude-3-7-sonnet-20250219-v1:0": "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/abc123"
   #
   #   # Guardrail Configuration
