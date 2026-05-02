@@ -1185,10 +1185,19 @@ describe('Grok Model Tests - Tokens', () => {
 describe('Claude Model Tests', () => {
   it('should return correct context length for Claude 4 models', () => {
     expect(getModelMaxTokens('claude-sonnet-4')).toBe(
-      maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4'],
+      maxTokensMap[EModelEndpoint.anthropic]['claude-4'],
     );
     expect(getModelMaxTokens('claude-opus-4')).toBe(
       maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4'],
+    );
+  });
+
+  it('should return 200K for Claude Sonnet 4.5', () => {
+    expect(getModelMaxTokens('claude-sonnet-4-5', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-5'],
+    );
+    expect(getModelMaxTokens('claude-sonnet-4-5-20250929')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-5'],
     );
   });
 
@@ -1414,6 +1423,9 @@ describe('Claude Model Tests', () => {
     );
     expect(getModelMaxTokens('claude-sonnet-4-6')).toBe(
       maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
+    );
+    expect(getModelMaxTokens('claude-sonnet-4-6')).toBeGreaterThan(
+      getModelMaxTokens('claude-sonnet-4-5'),
     );
   });
 

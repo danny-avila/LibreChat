@@ -134,10 +134,10 @@ export function omitsThinkingByDefault(model: string): boolean {
   return false;
 }
 
-/** Checks if a model qualifies for the context-1m beta header (Sonnet 4+, Opus 4.6+, Opus 5+) */
+/** Checks if a model has a 1M context window (Sonnet 4.6+, Opus 4.6+, Opus 5+) */
 export function supportsContext1m(model: string): boolean {
   const sonnet = parseSonnetVersion(model);
-  if (sonnet != null && sonnet.major >= 4) {
+  if (sonnet != null && (sonnet.major > 4 || (sonnet.major === 4 && sonnet.minor >= 6))) {
     return true;
   }
   const opus = parseOpusVersion(model);
@@ -151,7 +151,7 @@ export function supportsContext1m(model: string): boolean {
  * Gets the appropriate anthropic_beta headers for Bedrock Anthropic models.
  * Bedrock uses `anthropic_beta` (with underscore) in additionalModelRequestFields.
  *
- * @param model - The Bedrock model identifier (e.g., "anthropic.claude-sonnet-4-20250514-v1:0")
+ * @param model - The Bedrock model identifier (e.g., "anthropic.claude-sonnet-4-6")
  * @returns Array of beta header strings, or empty array if not applicable
  */
 function getBedrockAnthropicBetaHeaders(model: string): string[] {
@@ -163,15 +163,8 @@ function getBedrockAnthropicBetaHeaders(model: string): string[] {
       model,
     );
 
-  const isSonnet4PlusModel =
-    /anthropic\.claude-(?:sonnet-[4-9]|[4-9](?:\.\d+)?(?:-\d+)?-sonnet)/.test(model);
-
   if (isClaudeThinkingModel) {
     betaHeaders.push('output-128k-2025-02-19');
-  }
-
-  if (isSonnet4PlusModel || supportsAdaptiveThinking(model)) {
-    betaHeaders.push('context-1m-2025-08-07');
   }
 
   return betaHeaders;

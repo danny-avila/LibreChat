@@ -700,7 +700,7 @@ describe('Premium Token Pricing Integration Tests', () => {
     const initialBalance = 100000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
-    const model = 'claude-opus-4-6';
+    const model = 'gemini-3.1';
     const promptTokens = 100000;
     const completionTokens = 500;
 
@@ -729,7 +729,7 @@ describe('Premium Token Pricing Integration Tests', () => {
     const initialBalance = 100000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
-    const model = 'claude-opus-4-6';
+    const model = 'gemini-3.1';
     const promptTokens = 250000;
     const completionTokens = 500;
 
@@ -758,7 +758,7 @@ describe('Premium Token Pricing Integration Tests', () => {
     const initialBalance = 100000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
-    const model = 'claude-opus-4-6';
+    const model = 'gemini-3.1';
     const promptTokens = premiumTokenValues[model].threshold;
     const completionTokens = 500;
 
@@ -787,7 +787,7 @@ describe('Premium Token Pricing Integration Tests', () => {
     const initialBalance = 100000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
-    const model = 'claude-opus-4-6';
+    const model = 'gemini-3.1';
     const txData = {
       user: userId,
       conversationId: 'test-structured-premium',
@@ -838,7 +838,7 @@ describe('Premium Token Pricing Integration Tests', () => {
     const initialBalance = 100000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
-    const model = 'claude-opus-4-6';
+    const model = 'gemini-3.1';
     const txData = {
       user: userId,
       conversationId: 'test-structured-standard',
@@ -1027,7 +1027,7 @@ describe('Premium Token Pricing Integration Tests', () => {
     const initialBalance = 100000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
-    const model = 'claude-opus-4-5';
+    const model = 'claude-opus-4-6';
     const promptTokens = 300000;
     const completionTokens = 500;
 
