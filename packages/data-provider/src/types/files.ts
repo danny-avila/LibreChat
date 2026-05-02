@@ -45,6 +45,12 @@ export type EndpointFileConfig = {
   supportedMimeTypes?: RegExp[];
 };
 
+export type FileMetadataConfig = {
+  enabled?: boolean;
+  fields?: string[];
+  format?: 'markdown' | 'json' | 'xml';
+};
+
 export type FileConfig = {
   endpoints: {
     [key: string]: EndpointFileConfig;
@@ -67,6 +73,8 @@ export type FileConfig = {
   stt?: {
     supportedMimeTypes?: RegExp[];
   };
+  /** File metadata exposure configuration for LLMs */
+  metadata?: FileMetadataConfig;
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
 };
 
