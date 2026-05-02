@@ -269,6 +269,28 @@ describe('createRemoteAgentAuth', () => {
       expect(deps.apiKeyMiddleware).toHaveBeenCalled();
     });
 
+    it('rejects API key auth when the resolved user tenant disables API keys', async () => {
+      const deps = makeDeps(makeConfig({ enabled: false }, { enabled: true }));
+      deps.getAppConfig.mockImplementation(async (options) =>
+        options?.tenantId === 'tenant-oidc-only'
+          ? makeConfig({ enabled: true }, { enabled: false })
+          : makeConfig({ enabled: false }, { enabled: true }),
+      );
+      deps.apiKeyMiddleware.mockImplementation((req: Request, _res: Response, next) => {
+        req.user = makeUser({ tenantId: 'tenant-oidc-only' });
+        next();
+      });
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(makeReq() as Request, res, mockNext);
+
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, { tenantId: 'tenant-oidc-only' });
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
     it('loads tenant config from pre-auth tenant context before authentication', async () => {
       const deps = makeDeps(makeConfig({ enabled: false }));
 

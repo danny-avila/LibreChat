@@ -237,6 +237,53 @@ function getConfigOptions(req: Request): GetAppConfigOptions {
   return { baseOnly: true };
 }
 
+function getRemoteAuthConfig(config: AppConfig): AgentAuthConfig | undefined {
+  return config.endpoints?.agents?.remoteApi?.auth;
+}
+
+function isApiKeyEnabled(config: AppConfig): boolean {
+  return getRemoteAuthConfig(config)?.apiKey?.enabled !== false;
+}
+
+async function enforceApiKeyTenantPolicy(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  getAppConfig: RemoteAgentAuthDeps['getAppConfig'],
+): Promise<void> {
+  const config = await getAppConfig(getConfigOptions(req));
+
+  if (!isApiKeyEnabled(config)) {
+    logger.warn('[remoteAgentAuth] API key rejected by resolved tenant auth policy');
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  next();
+}
+
+async function runApiKeyAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  apiKeyMiddleware: RequestHandler,
+  getAppConfig: RemoteAgentAuthDeps['getAppConfig'],
+): Promise<void> {
+  let postAuth: Promise<void> | undefined;
+
+  const wrappedNext: NextFunction = (err?: unknown) => {
+    if (err != null) {
+      next(err);
+      return;
+    }
+
+    postAuth = enforceApiKeyTenantPolicy(req, res, next, getAppConfig);
+  };
+
+  await Promise.resolve(apiKeyMiddleware(req, res, wrappedNext));
+  if (postAuth) await postAuth;
+}
+
 function verifyJwt(
   token: string,
   signingKey: jwksRsa.SigningKey,
@@ -365,11 +412,14 @@ export function createRemoteAgentAuth({
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const config = await getAppConfig(getConfigOptions(req));
-      const authConfig = config.endpoints?.agents?.remoteApi?.auth;
-      const apiKeyEnabled = authConfig?.apiKey?.enabled !== false;
+      const authConfig = getRemoteAuthConfig(config);
+      const apiKeyEnabled = isApiKeyEnabled(config);
 
       if (authConfig?.oidc?.enabled !== true) {
-        if (apiKeyEnabled) return apiKeyMiddleware(req, res, next);
+        if (apiKeyEnabled) {
+          await runApiKeyAuth(req, res, next, apiKeyMiddleware, getAppConfig);
+          return;
+        }
         res.status(401).json({ error: 'Authentication required' });
         return;
       }
@@ -387,7 +437,10 @@ export function createRemoteAgentAuth({
 
       const token = extractBearer(req.headers.authorization);
       if (token == null) {
-        if (apiKeyEnabled) return apiKeyMiddleware(req, res, next);
+        if (apiKeyEnabled) {
+          await runApiKeyAuth(req, res, next, apiKeyMiddleware, getAppConfig);
+          return;
+        }
         res.status(401).json({ error: 'Bearer token required' });
         return;
       }
@@ -404,7 +457,8 @@ export function createRemoteAgentAuth({
       } catch (oidcErr) {
         if (apiKeyEnabled) {
           logger.debug('[remoteAgentAuth] OIDC verification failed; trying API key auth:', oidcErr);
-          return apiKeyMiddleware(req, res, next);
+          await runApiKeyAuth(req, res, next, apiKeyMiddleware, getAppConfig);
+          return;
         }
         logger.error('[remoteAgentAuth] OIDC verification failed:', oidcErr);
         res.status(401).json({ error: 'Unauthorized' });
@@ -421,7 +475,10 @@ export function createRemoteAgentAuth({
 
       if (userResolution.status === 'missing') {
         logger.warn('[remoteAgentAuth] OIDC token valid but no matching LibreChat user');
-        if (apiKeyEnabled) return apiKeyMiddleware(req, res, next);
+        if (apiKeyEnabled) {
+          await runApiKeyAuth(req, res, next, apiKeyMiddleware, getAppConfig);
+          return;
+        }
         res.status(401).json({ error: 'Unauthorized' });
         return;
       }
