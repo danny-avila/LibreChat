@@ -87,8 +87,8 @@ export async function getMCPInstructionsForServers(
 }
 
 /**
- * Builds stable instructions for an agent by combining MCP context and agent-specific context.
- * Order: mcpInstructions -> baseInstructions
+ * Builds stable instructions for an agent by combining agent-specific context and MCP context.
+ * Order: baseInstructions -> mcpInstructions
  *
  * @param {Object} params
  * @param {string} [params.baseInstructions] - Agent's base instructions
@@ -102,7 +102,7 @@ export function buildAgentInstructions({
   baseInstructions?: string;
   mcpInstructions?: string;
 }): string | undefined {
-  const parts = [mcpInstructions, baseInstructions].filter(Boolean);
+  const parts = [baseInstructions, mcpInstructions].filter(Boolean);
   const combined = parts.join('\n\n').trim();
   return combined || undefined;
 }

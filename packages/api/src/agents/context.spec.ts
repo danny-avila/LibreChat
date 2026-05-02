@@ -215,7 +215,7 @@ describe('Agent Context Utilities', () => {
         mcpInstructions: 'MCP instructions',
       });
 
-      expect(result).toBe('MCP instructions\n\nBase instructions');
+      expect(result).toBe('Base instructions\n\nMCP instructions');
     });
 
     it('should filter out empty parts', () => {
@@ -258,7 +258,7 @@ describe('Agent Context Utilities', () => {
         mcpInstructions: '  MCP instructions  ',
       });
 
-      expect(result).toBe('MCP instructions  \n\n  Base instructions');
+      expect(result).toBe('Base instructions  \n\n  MCP instructions');
     });
 
     it('should handle undefined parts', () => {
@@ -338,7 +338,7 @@ describe('Agent Context Utilities', () => {
         logger: mockLogger,
       });
 
-      expect(agent.instructions).toBe('MCP instructions\n\nOriginal instructions');
+      expect(agent.instructions).toBe('Original instructions\n\nMCP instructions');
       expect(agent.additional_instructions).toBe('Shared context');
       expect(mockLogger.debug).toHaveBeenCalledWith(
         '[AgentContext] Applied context to agent: test-agent',
@@ -366,7 +366,7 @@ describe('Agent Context Utilities', () => {
         ['ephemeral-server'],
         undefined,
       );
-      expect(agent.instructions).toBe('Ephemeral MCP\n\nBase instructions');
+      expect(agent.instructions).toBe('Base instructions\n\nEphemeral MCP');
       expect(agent.additional_instructions).toBe('Context');
     });
 
@@ -443,7 +443,7 @@ describe('Agent Context Utilities', () => {
         mcpManager: mockMCPManager,
       });
 
-      expect(agent.instructions).toBe('MCP\n\nBase');
+      expect(agent.instructions).toBe('Base\n\nMCP');
       expect(agent.additional_instructions).toBe('Context');
     });
 
