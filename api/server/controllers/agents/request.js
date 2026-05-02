@@ -105,8 +105,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const isNewConvo = !reqConversationId || reqConversationId === 'new';
   const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
-
-  await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
+  req.body.conversationId = conversationId;
 
   let client = null;
 
@@ -125,6 +124,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
     res.json({ streamId, conversationId, status: 'started' });
+
+    await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
 
     // Note: We no longer use res.on('close') to abort since we send JSON immediately.
     // The response closes normally after res.json(), which is not an abort condition.
