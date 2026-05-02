@@ -78,12 +78,20 @@ const getMCPTools = async (req, res) => {
     const mcpManager = getMCPManager();
     const mcpServers = {};
 
-    const cachePromises = configuredServers.map((serverName) =>
-      getMCPServerTools(userId, serverName).then((tools) => ({ serverName, tools })),
-    );
-    const cacheResults = await Promise.all(cachePromises);
-
     const serverToolsMap = new Map();
+    const cacheResults = await Promise.all(
+      configuredServers.map(async (serverName) => {
+        try {
+          return {
+            serverName,
+            tools: await getMCPServerTools(userId, serverName),
+          };
+        } catch (error) {
+          logger.error(`[getMCPTools] Error fetching cached tools for ${serverName}:`, error);
+          return { serverName, tools: null };
+        }
+      }),
+    );
     for (const { serverName, tools } of cacheResults) {
       if (tools) {
         serverToolsMap.set(serverName, tools);

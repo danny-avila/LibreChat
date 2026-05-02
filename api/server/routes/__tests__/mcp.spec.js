@@ -1947,6 +1947,106 @@ describe('MCP Routes', () => {
     });
   });
 
+  describe('GET /tools', () => {
+    it('should continue returning MCP tools when one server cache lookup fails', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const { logger } = require('@librechat/data-schemas');
+      const { getMCPServerTools } = require('~/server/services/Config');
+
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({
+        'bad-server': {
+          type: 'sse',
+          url: 'https://bad.example.com/sse',
+        },
+        'good-server': {
+          type: 'sse',
+          url: 'https://good.example.com/sse',
+          iconPath: '/icons/good.svg',
+        },
+      });
+
+      // Mock order matches Object.keys() order from the config above.
+      getMCPServerTools
+        .mockRejectedValueOnce(new Error('cache unavailable'))
+        .mockResolvedValueOnce({
+          [`search${Constants.mcp_delimiter}good-server`]: {
+            type: 'function',
+            function: {
+              name: `search${Constants.mcp_delimiter}good-server`,
+              description: 'Search good server',
+              parameters: { type: 'object' },
+            },
+          },
+        });
+
+      const mockGetServerToolFunctions = jest.fn().mockResolvedValue(null);
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctions: mockGetServerToolFunctions,
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(logger.error).toHaveBeenCalledWith(
+        '[getMCPTools] Error fetching cached tools for bad-server:',
+        expect.any(Error),
+      );
+      expect(mockGetServerToolFunctions).toHaveBeenCalledWith('test-user-id', 'bad-server');
+      expect(response.body.servers['good-server']).toMatchObject({
+        name: 'good-server',
+        icon: '/icons/good.svg',
+        tools: [
+          {
+            name: 'search',
+            pluginKey: `search${Constants.mcp_delimiter}good-server`,
+            description: 'Search good server',
+          },
+        ],
+      });
+      expect(response.body.servers['bad-server']).toMatchObject({
+        name: 'bad-server',
+        tools: [],
+      });
+    });
+
+    it('should return configured servers when all cache lookups fail', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      const { getMCPServerTools } = require('~/server/services/Config');
+
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({
+        'first-server': {
+          type: 'sse',
+          url: 'https://first.example.com/sse',
+        },
+        'second-server': {
+          type: 'sse',
+          url: 'https://second.example.com/sse',
+        },
+      });
+
+      getMCPServerTools.mockRejectedValue(new Error('cache unavailable'));
+
+      const mockGetServerToolFunctions = jest.fn().mockResolvedValue(null);
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctions: mockGetServerToolFunctions,
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers['first-server']).toMatchObject({
+        name: 'first-server',
+        tools: [],
+      });
+      expect(response.body.servers['second-server']).toMatchObject({
+        name: 'second-server',
+        tools: [],
+      });
+      expect(logger.error).toHaveBeenCalledTimes(2);
+      expect(mockGetServerToolFunctions).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('GET /servers', () => {
     // mockRegistryInstance is defined at the top of the file
 
