@@ -499,7 +499,10 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
         allowedDomains,
       );
     } catch (error) {
-      logger.error(`[maybeUninstallOAuthMCP] Error revoking OAuth access token for ${serverName}:`, error);
+      logger.error(
+        `[maybeUninstallOAuthMCP] Error revoking OAuth access token for ${serverName}:`,
+        error,
+      );
     }
   }
 
@@ -520,7 +523,10 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
         allowedDomains,
       );
     } catch (error) {
-      logger.error(`[maybeUninstallOAuthMCP] Error revoking OAuth refresh token for ${serverName}:`, error);
+      logger.error(
+        `[maybeUninstallOAuthMCP] Error revoking OAuth refresh token for ${serverName}:`,
+        error,
+      );
     }
   }
 
