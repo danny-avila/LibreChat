@@ -821,10 +821,19 @@ class BaseClient {
         ? createdAtOnInsert
         : undefined;
 
+    const req = options?.req;
     const skippedExistingConvoLookup = this.fetchedConvo === true;
-    const existingConvo = skippedExistingConvoLookup
-      ? null
-      : await db.getConvo(options?.req?.user?.id, message.conversationId);
+    const hasResolvedConversation =
+      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
+    let existingConvo = null;
+    if (!skippedExistingConvoLookup && hasResolvedConversation) {
+      existingConvo = req.resolvedConversation;
+    } else if (!skippedExistingConvoLookup) {
+      existingConvo = await db.getConvo(req?.user?.id, message.conversationId);
+    }
+    if (hasResolvedConversation) {
+      delete req.resolvedConversation;
+    }
     const shouldSetCreatedAtOnInsert = !skippedExistingConvoLookup && existingConvo == null;
 
     const unsetFields = {};

@@ -43,28 +43,35 @@ function toValidISOString(value) {
 
 async function resolveConversationCreatedAt({ userId, conversationId, isNewConvo }) {
   if (isNewConvo) {
-    return new Date().toISOString();
+    return { createdAt: new Date().toISOString(), conversation: undefined };
   }
 
   try {
     const conversation = await getConvo(userId, conversationId);
-    return toValidISOString(conversation?.createdAt) ?? new Date().toISOString();
+    return {
+      conversation,
+      createdAt: toValidISOString(conversation?.createdAt) ?? new Date().toISOString(),
+    };
   } catch (error) {
     logger.warn('[AgentController] Failed to resolve conversation timestamp anchor', {
       conversationId,
       error: error?.message ?? error,
     });
-    return new Date().toISOString();
+    return { createdAt: new Date().toISOString(), conversation: undefined };
   }
 }
 
 async function attachConversationCreatedAt(req, { userId, conversationId, isNewConvo }) {
   req.body.conversationId = conversationId;
-  req.conversationCreatedAt = await resolveConversationCreatedAt({
+  const resolved = await resolveConversationCreatedAt({
     userId,
     conversationId,
     isNewConvo,
   });
+  req.conversationCreatedAt = resolved.createdAt;
+  if (!isNewConvo && resolved.conversation !== undefined) {
+    req.resolvedConversation = resolved.conversation ?? null;
+  }
 }
 
 /**
