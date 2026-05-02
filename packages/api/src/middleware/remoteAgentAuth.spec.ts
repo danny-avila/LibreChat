@@ -276,8 +276,8 @@ describe('createRemoteAgentAuth', () => {
           ? makeConfig({ enabled: true }, { enabled: false })
           : makeConfig({ enabled: false }, { enabled: true }),
       );
-      deps.apiKeyMiddleware.mockImplementation((req: Request, _res: Response, next) => {
-        req.user = makeUser({ tenantId: 'tenant-oidc-only' });
+      deps.apiKeyMiddleware.mockImplementation((req: unknown, _res: unknown, next) => {
+        (req as Request).user = makeUser({ tenantId: 'tenant-oidc-only' });
         next();
       });
       const { res, status, json } = makeRes();

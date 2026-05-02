@@ -24,6 +24,7 @@ type OidcConfig = NonNullable<
   NonNullable<NonNullable<TAgentsEndpoint['remoteApi']>['auth']>['oidc']
 >;
 
+type AgentAuthConfig = NonNullable<NonNullable<TAgentsEndpoint['remoteApi']>['auth']>;
 type EnabledOidcConfig = OidcConfig & { issuer: string };
 type JwksCacheOptions = {
   enabled: boolean;
