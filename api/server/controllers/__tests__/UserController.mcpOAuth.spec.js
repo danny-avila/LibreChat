@@ -171,6 +171,63 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     expect(mcpManager.disconnectUserConnection).toHaveBeenCalledWith('user-1', 'test-server');
   });
 
+  it('clears stored OAuth token state when client metadata cannot be loaded', async () => {
+    const { flowManager } = setupMCPMocks();
+    MCPTokenStorage.getClientInfoAndMetadata.mockRejectedValue(new Error('invalid client info'));
+
+    const res = createResponse();
+    await updateUserPluginsController(createRequest(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+      deleteToken: expect.any(Function),
+    });
+    expect(flowManager.deleteFlow).toHaveBeenCalledWith('user-1:test-server', 'mcp_get_tokens');
+    expect(flowManager.deleteFlow).toHaveBeenCalledWith('user-1:test-server', 'mcp_oauth');
+    expect(MCPTokenStorage.getTokens).not.toHaveBeenCalled();
+    expect(MCPOAuthHandler.revokeOAuthToken).not.toHaveBeenCalled();
+  });
+
+  it('clears stored OAuth token state when server config is missing', async () => {
+    const { flowManager, registry } = setupMCPMocks();
+    registry.getServerConfig.mockResolvedValue(undefined);
+
+    const res = createResponse();
+    await updateUserPluginsController(createRequest(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+      deleteToken: expect.any(Function),
+    });
+    expect(flowManager.deleteFlow).toHaveBeenCalledWith('user-1:test-server', 'mcp_get_tokens');
+    expect(flowManager.deleteFlow).toHaveBeenCalledWith('user-1:test-server', 'mcp_oauth');
+    expect(MCPTokenStorage.getClientInfoAndMetadata).not.toHaveBeenCalled();
+    expect(MCPOAuthHandler.revokeOAuthToken).not.toHaveBeenCalled();
+  });
+
+  it('clears stored OAuth token state when server no longer requires OAuth', async () => {
+    const { flowManager, registry } = setupMCPMocks();
+    registry.getOAuthServers.mockResolvedValue(new Set());
+
+    const res = createResponse();
+    await updateUserPluginsController(createRequest(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+      deleteToken: expect.any(Function),
+    });
+    expect(flowManager.deleteFlow).toHaveBeenCalledWith('user-1:test-server', 'mcp_get_tokens');
+    expect(flowManager.deleteFlow).toHaveBeenCalledWith('user-1:test-server', 'mcp_oauth');
+    expect(MCPTokenStorage.getClientInfoAndMetadata).not.toHaveBeenCalled();
+    expect(MCPOAuthHandler.revokeOAuthToken).not.toHaveBeenCalled();
+  });
+
   it('clears stored OAuth token state when token loading fails before provider revocation', async () => {
     const { flowManager } = setupMCPMocks();
     MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue({
