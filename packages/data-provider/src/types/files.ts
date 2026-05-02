@@ -7,6 +7,7 @@ export enum FileSources {
   azure_blob = 'azure_blob',
   openai = 'openai',
   s3 = 's3',
+  cloudfront = 'cloudfront',
   vectordb = 'vectordb',
   execute_code = 'execute_code',
   mistral_ocr = 'mistral_ocr',
