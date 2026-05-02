@@ -8,6 +8,7 @@ const {
   loadWebSearchAuth,
   buildImageToolContext,
   buildWebSearchContext,
+  buildWebSearchDynamicContext,
 } = require('@librechat/api');
 const {
   Tools,
@@ -150,7 +151,7 @@ const getAuthFields = (toolKey) => {
  * @param {AppConfig['webSearch']} [params.webSearch]
  * @param {AppConfig['fileStrategy']} [params.fileStrategy]
  * @param {AppConfig['imageOutputType']} [params.imageOutputType]
- * @returns {Promise<{ loadedTools: Tool[], toolContextMap: Object<string, any> } | Record<string,Tool>>}
+ * @returns {Promise<{ loadedTools: Tool[], toolContextMap: Object<string, any>, dynamicToolContextMap?: Object<string, any> } | Record<string,Tool>>}
  */
 const loadTools = async ({
   user,
@@ -180,7 +181,7 @@ const loadTools = async ({
   };
 
   const customConstructors = {
-    image_gen_oai: async (toolContextMap) => {
+    image_gen_oai: async (_toolContextMap, dynamicToolContextMap) => {
       const authFields = getAuthFields('image_gen_oai');
       const authValues = await loadAuthValues({ userId: user, authFields });
       const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
@@ -190,7 +191,7 @@ const loadTools = async ({
         contextDescription: 'image editing',
       });
       if (toolContext) {
-        toolContextMap.image_edit_oai = toolContext;
+        dynamicToolContextMap.image_edit_oai = toolContext;
       }
       return createOpenAIImageTools({
         ...authValues,
@@ -201,7 +202,7 @@ const loadTools = async ({
         imageFiles,
       });
     },
-    gemini_image_gen: async (toolContextMap) => {
+    gemini_image_gen: async (_toolContextMap, dynamicToolContextMap) => {
       const authFields = getAuthFields('gemini_image_gen');
       const authValues = await loadAuthValues({ userId: user, authFields, throwError: false });
       const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
@@ -211,7 +212,7 @@ const loadTools = async ({
         contextDescription: 'image context',
       });
       if (toolContext) {
-        toolContextMap.gemini_image_gen = toolContext;
+        dynamicToolContextMap.gemini_image_gen = toolContext;
       }
       return createGeminiImageTool({
         ...authValues,
@@ -249,6 +250,8 @@ const loadTools = async ({
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
+  /** @type {Record<string, string>} */
+  const dynamicToolContextMap = {};
   /**
    * @type {import('@librechat/agents').CodeEnvFile[] | undefined}
    * Captured by the `execute_code` factory when files are primed. Surfaced
@@ -274,7 +277,7 @@ const loadTools = async ({
           agentId: agent?.id,
         });
         if (toolContext) {
-          toolContextMap[tool] = toolContext;
+          dynamicToolContextMap[tool] = toolContext;
         }
         if (files?.length) {
           primedCodeFiles = files;
@@ -289,7 +292,7 @@ const loadTools = async ({
           agentId: agent?.id,
         });
         if (toolContext) {
-          toolContextMap[tool] = toolContext;
+          dynamicToolContextMap[tool] = toolContext;
         }
 
         /** @type {boolean | undefined} Check if user has FILE_CITATIONS permission */
@@ -325,6 +328,9 @@ const loadTools = async ({
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
       requestedTools[tool] = async () => {
         toolContextMap[tool] = buildWebSearchContext();
+        dynamicToolContextMap[tool] = buildWebSearchDynamicContext(
+          options.req?.conversationCreatedAt,
+        );
         return createSearchTool({
           ...result.authResult,
           onSearchResults,
@@ -374,7 +380,7 @@ const loadTools = async ({
       if (!requestedTools[toolKey]) {
         let cached;
         requestedTools[toolKey] = async () => {
-          cached ??= customConstructors[toolKey](toolContextMap);
+          cached ??= customConstructors[toolKey](toolContextMap, dynamicToolContextMap);
           return cached;
         };
       }
@@ -486,7 +492,7 @@ const loadTools = async ({
     }
   }
   loadedTools.push(...(await Promise.all(mcpToolPromises)).flatMap((plugin) => plugin || []));
-  return { loadedTools, toolContextMap, primedCodeFiles };
+  return { loadedTools, toolContextMap, dynamicToolContextMap, primedCodeFiles };
 };
 
 module.exports = {

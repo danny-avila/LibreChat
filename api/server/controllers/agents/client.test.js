@@ -15,6 +15,12 @@ jest.mock('@librechat/api', () => ({
   checkAccess: jest.fn(),
   initializeAgent: jest.fn(),
   createMemoryProcessor: jest.fn(),
+  isMemoryAgentEnabled: jest.fn((config) => {
+    if (!config || config.disabled === true) return false;
+    const agent = config.agent;
+    if (agent?.enabled !== true) return false;
+    return Boolean(agent.id || (agent.provider && agent.model));
+  }),
   loadAgent: jest.fn(),
 }));
 
@@ -1965,13 +1971,16 @@ describe('AgentClient - titleConvo', () => {
       expect(client.useMemory).toHaveBeenCalled();
 
       expect(client.options.agent.instructions).toContain('Primary agent instructions');
-      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(client.options.agent.instructions).not.toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
 
       expect(parallelAgent1.instructions).toContain('Parallel agent 1 instructions');
       expect(parallelAgent1.instructions).not.toContain(memoryContent);
+      expect(parallelAgent1.additional_instructions ?? '').not.toContain(memoryContent);
 
       expect(parallelAgent2.instructions).toContain('Parallel agent 2 instructions');
       expect(parallelAgent2.instructions).not.toContain(memoryContent);
+      expect(parallelAgent2.additional_instructions ?? '').not.toContain(memoryContent);
     });
 
     it('should pass memory context to parallel agents when automatic memory updates are enabled', async () => {
@@ -2006,9 +2015,13 @@ describe('AgentClient - titleConvo', () => {
         additional_instructions: null,
       });
 
-      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(client.options.agent.instructions).toContain('Primary agent instructions');
+      expect(client.options.agent.instructions).not.toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
+
       expect(parallelAgent.instructions).toContain('Parallel agent instructions');
-      expect(parallelAgent.instructions).toContain(memoryContent);
+      expect(parallelAgent.instructions).not.toContain(memoryContent);
+      expect(parallelAgent.additional_instructions).toContain(memoryContent);
     });
 
     it('should not modify parallel agents when no memory context is available', async () => {
@@ -2070,8 +2083,11 @@ describe('AgentClient - titleConvo', () => {
         additional_instructions: null,
       });
 
-      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
       expect(parallelAgentNoInstructions.instructions).toBeUndefined();
+      expect(parallelAgentNoInstructions.additional_instructions ?? '').not.toContain(
+        memoryContent,
+      );
     });
 
     it('should not modify agentConfigs when none exist', async () => {
@@ -2097,7 +2113,7 @@ describe('AgentClient - titleConvo', () => {
         }),
       ).resolves.not.toThrow();
 
-      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
     });
 
     it('should handle empty agentConfigs map', async () => {
@@ -2123,7 +2139,7 @@ describe('AgentClient - titleConvo', () => {
         }),
       ).resolves.not.toThrow();
 
-      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
     });
   });
 

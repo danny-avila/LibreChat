@@ -813,11 +813,28 @@ class BaseClient {
       endpointType: options.endpointType,
       ...endpointOptions,
     };
+    const conversationCreatedAt = options?.req?.conversationCreatedAt;
+    const createdAtOnInsert =
+      conversationCreatedAt != null ? new Date(conversationCreatedAt) : undefined;
+    const validCreatedAtOnInsert =
+      createdAtOnInsert && !Number.isNaN(createdAtOnInsert.getTime())
+        ? createdAtOnInsert
+        : undefined;
 
-    const existingConvo =
-      this.fetchedConvo === true
-        ? null
-        : await db.getConvo(options?.req?.user?.id, message.conversationId);
+    const req = options?.req;
+    const skippedExistingConvoLookup = this.fetchedConvo === true;
+    const hasResolvedConversation =
+      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
+    let existingConvo = null;
+    if (!skippedExistingConvoLookup && hasResolvedConversation) {
+      existingConvo = req.resolvedConversation;
+    } else if (!skippedExistingConvoLookup) {
+      existingConvo = await db.getConvo(req?.user?.id, message.conversationId);
+    }
+    if (hasResolvedConversation) {
+      delete req.resolvedConversation;
+    }
+    const shouldSetCreatedAtOnInsert = !skippedExistingConvoLookup && existingConvo == null;
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
@@ -847,6 +864,7 @@ class BaseClient {
     const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
+      createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
     });
 
     return { message: savedMessage, conversation };

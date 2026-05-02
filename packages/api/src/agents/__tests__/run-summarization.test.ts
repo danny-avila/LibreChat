@@ -362,7 +362,28 @@ describe('initialSummary passthrough', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Suite 7: custom-endpoint provider resolution
+// Suite 7: stable/dynamic system instructions
+// ---------------------------------------------------------------------------
+describe('stable/dynamic system instructions', () => {
+  it('keeps static tool and agent instructions separate from dynamic runtime tail', async () => {
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          instructions: 'Base instructions',
+          additional_instructions: 'Memory tail',
+          toolContextMap: { web_search: 'Static tool instructions' },
+          dynamicToolContextMap: { web_search: 'Conversation Date & Time: anchor' },
+        }),
+      ],
+    });
+
+    expect(agents[0].instructions).toBe('Static tool instructions\nBase instructions');
+    expect(agents[0].additional_instructions).toBe('Conversation Date & Time: anchor\nMemory tail');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite 8: custom-endpoint provider resolution
 // ---------------------------------------------------------------------------
 describe('custom-endpoint provider resolution', () => {
   it('remaps a custom endpoint name to openAI and injects baseURL/apiKey', async () => {
