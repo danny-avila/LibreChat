@@ -184,6 +184,24 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteFlow).toHaveBeenCalledTimes(2);
   });
 
+  test('clears stored state when client info cannot be loaded', async () => {
+    setupOAuthServerFound();
+    mockGetClientInfoAndMetadata.mockRejectedValue(new Error('bad client data'));
+    mockDeleteUserTokens.mockResolvedValue(undefined);
+    mockDeleteFlow.mockResolvedValue(undefined);
+
+    await maybeUninstallOAuthMCP(userId, pluginKey, appConfig);
+
+    expect(mockGetTokens).not.toHaveBeenCalled();
+    expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
+    expect(mockDeleteUserTokens.mock.calls[0][0]).toMatchObject({ userId, serverName });
+    expect(mockDeleteFlow).toHaveBeenCalledTimes(2);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      `[maybeUninstallOAuthMCP] Unable to load OAuth client metadata for ${serverName}; clearing local MCP OAuth state only.`,
+      expect.any(Error),
+    );
+  });
+
   test('revokes both tokens and runs cleanup on happy path', async () => {
     setupOAuthServerFound();
     mockGetTokens.mockResolvedValue({
@@ -222,7 +240,7 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
     expect(mockDeleteFlow).toHaveBeenCalledTimes(2);
     expect(mockLoggerWarn).toHaveBeenCalledWith(
-      `Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
+      `[maybeUninstallOAuthMCP] Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
       expect.any(Error),
     );
   });
@@ -239,7 +257,7 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
     expect(mockDeleteFlow).toHaveBeenCalledTimes(2);
     expect(mockLoggerWarn).toHaveBeenCalledWith(
-      `Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
+      `[maybeUninstallOAuthMCP] Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
       expect.any(Error),
     );
   });

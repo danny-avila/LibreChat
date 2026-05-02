@@ -375,6 +375,7 @@ const resendVerificationController = async (req, res) => {
   }
 };
 
+/** Best-effort cleanup of stored MCP OAuth tokens and flow state. */
 const clearStoredMCPOAuthState = async (userId, serverName) => {
   try {
     await MCPTokenStorage.deleteUserTokens({
@@ -385,7 +386,10 @@ const clearStoredMCPOAuthState = async (userId, serverName) => {
       },
     });
   } catch (error) {
-    logger.warn(`Failed to delete MCP OAuth tokens for ${serverName}:`, error);
+    logger.warn(
+      `[clearStoredMCPOAuthState] Failed to delete MCP OAuth tokens for ${serverName}:`,
+      error,
+    );
   }
 
   try {
@@ -396,15 +400,23 @@ const clearStoredMCPOAuthState = async (userId, serverName) => {
       flowManager.deleteFlow(flowId, 'mcp_get_tokens'),
       flowManager.deleteFlow(flowId, 'mcp_oauth'),
     ]);
-    const failedResult = results.find((result) => result.status === 'rejected');
-    if (failedResult) {
-      logger.warn(`Failed to clear MCP OAuth flow state for ${serverName}:`, failedResult.reason);
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        logger.warn(
+          `[clearStoredMCPOAuthState] Failed to clear MCP OAuth flow state for ${serverName}:`,
+          result.reason,
+        );
+      }
     }
   } catch (error) {
-    logger.warn(`Failed to clear MCP OAuth flow state for ${serverName}:`, error);
+    logger.warn(
+      `[clearStoredMCPOAuthState] Failed to clear MCP OAuth flow state for ${serverName}:`,
+      error,
+    );
   }
 };
 
+/** Revokes MCP OAuth tokens at the provider when possible, then clears local state. */
 const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   if (!pluginKey.startsWith(Constants.mcp_prefix)) {
     // this is not an MCP server, so nothing to do here
@@ -431,7 +443,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     });
   } catch (error) {
     logger.warn(
-      `Unable to load OAuth client metadata for ${serverName}; clearing local MCP OAuth state only.`,
+      `[maybeUninstallOAuthMCP] Unable to load OAuth client metadata for ${serverName}; clearing local MCP OAuth state only.`,
       error,
     );
     await clearStoredMCPOAuthState(userId, serverName);
@@ -439,7 +451,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
   }
   if (clientTokenData == null) {
     logger.info(
-      `Missing OAuth client metadata for ${serverName}; clearing local MCP OAuth state only.`,
+      `[maybeUninstallOAuthMCP] Missing OAuth client metadata for ${serverName}; clearing local MCP OAuth state only.`,
     );
     await clearStoredMCPOAuthState(userId, serverName);
     return;
@@ -456,7 +468,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     });
   } catch (error) {
     logger.warn(
-      `Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
+      `[maybeUninstallOAuthMCP] Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
       error,
     );
   }
