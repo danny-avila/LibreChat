@@ -90,20 +90,13 @@ async function invalidateCachedTools(options = {}) {
  * @returns {Promise<LCAvailableTools|null>} The available tools for the server
  */
 async function getMCPServerTools(userId, serverName) {
-  const cache = getLogStores(CacheKeys.TOOL_CACHE);
-  let serverTools;
   try {
-    serverTools = await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName));
+    const cache = getLogStores(CacheKeys.TOOL_CACHE);
+    return (await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName))) || null;
   } catch (error) {
     logger.error(`[getMCPServerTools] Error fetching cached tools for ${serverName}:`, error);
     return null;
   }
-
-  if (serverTools) {
-    return serverTools;
-  }
-
-  return null;
 }
 
 module.exports = {

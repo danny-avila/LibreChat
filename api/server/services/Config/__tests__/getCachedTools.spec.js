@@ -92,6 +92,19 @@ describe('getCachedTools', () => {
       );
     });
 
+    it('getMCPServerTools should return null when the cache store is unavailable', async () => {
+      const error = new Error('cache store unavailable');
+      getLogStores.mockImplementationOnce(() => {
+        throw error;
+      });
+
+      await expect(getMCPServerTools('user1', 'github')).resolves.toBeNull();
+      expect(logger.error).toHaveBeenCalledWith(
+        '[getMCPServerTools] Error fetching cached tools for github:',
+        error,
+      );
+    });
+
     it('should NOT use CONFIG_STORE namespace', async () => {
       mockCache.get.mockResolvedValue(null);
       await getCachedTools();
