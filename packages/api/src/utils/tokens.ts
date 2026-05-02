@@ -97,6 +97,8 @@ const googleModels = {
   'gemma-2': 32768,
   'gemma-3': 32768,
   'gemma-3-27b': 131072,
+  'gemma-4': 262144,
+  'gemma-4-e': 131072,
   gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288,
   'gemini-1.5': 1000000,
