@@ -88,21 +88,18 @@ describe('getLLMConfig', () => {
     expect(result.llmConfig.thinking).toHaveProperty('budget_tokens', 2000);
   });
 
-  it('should add "context-1m" beta header and promptCache boolean for claude-sonnet-4 model', () => {
+  it('should pass promptCache without long-context beta header for claude-sonnet-4 model', () => {
     const modelOptions = {
       model: 'claude-sonnet-4-20250514',
       promptCache: true,
     };
     const result = getLLMConfig('test-key', { modelOptions });
     const clientOptions = result.llmConfig.clientOptions;
-    expect(clientOptions?.defaultHeaders).toBeDefined();
-    expect(clientOptions?.defaultHeaders).toHaveProperty('anthropic-beta');
-    const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string>;
-    expect(defaultHeaders['anthropic-beta']).toBe('context-1m-2025-08-07');
+    expect(clientOptions?.defaultHeaders).toBeUndefined();
     expect(result.llmConfig.promptCache).toBe(true);
   });
 
-  it('should add "context-1m" beta header and promptCache boolean for claude-sonnet-4 model formats', () => {
+  it('should pass promptCache without long-context beta header for claude-sonnet-4 model formats', () => {
     const modelVariations = [
       'claude-sonnet-4-20250514',
       'claude-sonnet-4-latest',
@@ -113,29 +110,23 @@ describe('getLLMConfig', () => {
       const modelOptions = { model, promptCache: true };
       const result = getLLMConfig('test-key', { modelOptions });
       const clientOptions = result.llmConfig.clientOptions;
-      expect(clientOptions?.defaultHeaders).toBeDefined();
-      expect(clientOptions?.defaultHeaders).toHaveProperty('anthropic-beta');
-      const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string>;
-      expect(defaultHeaders['anthropic-beta']).toBe('context-1m-2025-08-07');
+      expect(clientOptions?.defaultHeaders).toBeUndefined();
       expect(result.llmConfig.promptCache).toBe(true);
     });
   });
 
-  it('should add "context-1m" beta header for claude-sonnet-4-6 model', () => {
+  it('should pass promptCache without long-context beta header for claude-sonnet-4-6 model', () => {
     const modelOptions = {
       model: 'claude-sonnet-4-6',
       promptCache: true,
     };
     const result = getLLMConfig('test-key', { modelOptions });
     const clientOptions = result.llmConfig.clientOptions;
-    expect(clientOptions?.defaultHeaders).toBeDefined();
-    expect(clientOptions?.defaultHeaders).toHaveProperty('anthropic-beta');
-    const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string>;
-    expect(defaultHeaders['anthropic-beta']).toBe('context-1m-2025-08-07');
+    expect(clientOptions?.defaultHeaders).toBeUndefined();
     expect(result.llmConfig.promptCache).toBe(true);
   });
 
-  it('should add "context-1m" beta header for claude-sonnet-4-6 model formats', () => {
+  it('should pass promptCache without long-context beta header for claude-sonnet-4-6 model formats', () => {
     const modelVariations = [
       'claude-sonnet-4-6',
       'claude-sonnet-4-6-20260101',
@@ -146,10 +137,7 @@ describe('getLLMConfig', () => {
       const modelOptions = { model, promptCache: true };
       const result = getLLMConfig('test-key', { modelOptions });
       const clientOptions = result.llmConfig.clientOptions;
-      expect(clientOptions?.defaultHeaders).toBeDefined();
-      expect(clientOptions?.defaultHeaders).toHaveProperty('anthropic-beta');
-      const defaultHeaders = clientOptions?.defaultHeaders as Record<string, string>;
-      expect(defaultHeaders['anthropic-beta']).toBe('context-1m-2025-08-07');
+      expect(clientOptions?.defaultHeaders).toBeUndefined();
       expect(result.llmConfig.promptCache).toBe(true);
     });
   });
@@ -1485,7 +1473,7 @@ describe('getLLMConfig', () => {
 
       it('should handle prompt cache support logic for different models', () => {
         const testCases = [
-          // Models that support prompt cache (and have other beta headers)
+          // Models that support prompt cache and have other beta headers
           {
             model: 'claude-3-5-sonnet',
             promptCache: true,
@@ -1513,7 +1501,13 @@ describe('getLLMConfig', () => {
           {
             model: 'claude-sonnet-4-20250514',
             promptCache: true,
-            shouldHaveHeaders: true,
+            shouldHaveHeaders: false,
+            shouldHavePromptCache: true,
+          },
+          {
+            model: 'claude-sonnet-4-6',
+            promptCache: true,
+            shouldHaveHeaders: false,
             shouldHavePromptCache: true,
           },
           // Models that support prompt cache but have no additional beta headers needed
