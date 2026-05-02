@@ -50,6 +50,20 @@ import type { TFilterFilesByAgentAccess } from './resources';
  * manages overflow. `createRun` can further override this via `SummarizationConfig.reserveRatio`.
  */
 const DEFAULT_RESERVE_RATIO = 0.05;
+const temporalSpecialVarRegex = /{{\s*(current_date|current_datetime|iso_datetime)\s*}}/i;
+
+function hasTemporalSpecialVars(text: string): boolean {
+  return temporalSpecialVarRegex.test(text);
+}
+
+function appendAdditionalInstructions(agent: Agent, text?: string | null): void {
+  if (text == null || text === '') {
+    return;
+  }
+  agent.additional_instructions = [agent.additional_instructions ?? '', text]
+    .filter(Boolean)
+    .join('\n\n');
+}
 
 /**
  * Extended agent type with additional fields needed after initialization
@@ -58,6 +72,7 @@ export type InitializedAgent = Agent & {
   tools: GenericTool[];
   attachments: IMongoFile[];
   toolContextMap: Record<string, unknown>;
+  dynamicToolContextMap?: Record<string, unknown>;
   maxContextTokens: number;
   /** Pre-ratio context budget (agentMaxContextNum - maxOutputTokensNum). Used by createRun to apply a configurable reserve ratio. */
   baseContextTokens?: number;
@@ -163,6 +178,7 @@ export interface InitializeAgentParams {
     /** Full tool instances (only present when definitionsOnly=false) */
     tools?: GenericTool[];
     toolContextMap?: Record<string, unknown>;
+    dynamicToolContextMap?: Record<string, unknown>;
     userMCPAuthMap?: Record<string, Record<string, string>>;
     toolRegistry?: LCToolRegistry;
     /** Serializable tool definitions for event-driven mode */
@@ -644,6 +660,7 @@ export async function initializeAgent(
   const {
     toolRegistry,
     toolContextMap,
+    dynamicToolContextMap,
     userMCPAuthMap,
     toolDefinitions: loadedToolDefinitions,
     hasDeferredTools,
@@ -653,6 +670,7 @@ export async function initializeAgent(
   } = loadToolsResult ?? {
     tools: [],
     toolContextMap: {},
+    dynamicToolContextMap: {},
     userMCPAuthMap: undefined,
     toolRegistry: undefined,
     toolDefinitions: [],
@@ -817,10 +835,17 @@ export async function initializeAgent(
   }
 
   if (agent.instructions && agent.instructions !== '') {
-    agent.instructions = replaceSpecialVars({
+    const resolvedInstructions = replaceSpecialVars({
       text: agent.instructions,
       user: req.user ? (req.user as unknown as TUser) : null,
+      now: req.conversationCreatedAt,
     });
+    if (hasTemporalSpecialVars(agent.instructions)) {
+      agent.instructions = undefined;
+      appendAdditionalInstructions(agent, resolvedInstructions);
+    } else {
+      agent.instructions = resolvedInstructions;
+    }
   }
 
   if (typeof agent.artifacts === 'string' && agent.artifacts !== '') {
@@ -828,7 +853,7 @@ export async function initializeAgent(
       endpoint: agent.provider,
       artifacts: agent.artifacts as never,
     });
-    agent.additional_instructions = artifactsPromptResult ?? undefined;
+    appendAdditionalInstructions(agent, artifactsPromptResult);
   }
 
   let skillCount = 0;
@@ -899,6 +924,7 @@ export async function initializeAgent(
     alwaysApplySkillPrimes,
     attachments: finalAttachments,
     toolContextMap: toolContextMap ?? {},
+    dynamicToolContextMap: dynamicToolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,
     tools: (tools ?? []) as GenericTool[] & string[],
     maxToolResultChars: maxToolResultCharsResolved,

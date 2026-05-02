@@ -17,6 +17,7 @@ const {
   GenerationJobManager,
   isActionDomainAllowed,
   buildWebSearchContext,
+  buildWebSearchDynamicContext,
   buildImageToolContext,
   buildToolClassification,
   buildOAuthToolCallName,
@@ -489,6 +490,7 @@ async function processRequiredActions(client, requiredActions) {
  * @returns {Promise<{
  *   tools?: StructuredTool[];
  *   toolContextMap?: Record<string, unknown>;
+ *   dynamicToolContextMap?: Record<string, unknown>;
  *   userMCPAuthMap?: Record<string, Record<string, string>>;
  *   toolRegistry?: Map<string, import('~/utils/toolClassification').LCTool>;
  *   hasDeferredTools?: boolean;
@@ -779,12 +781,17 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
+  /** @type {Record<string, string>} */
+  const dynamicToolContextMap = {};
   const hasWebSearch = filteredTools.includes(Tools.web_search);
   const hasFileSearch = filteredTools.includes(Tools.file_search);
   const hasExecuteCode = filteredTools.includes(Tools.execute_code);
 
   if (hasWebSearch) {
     toolContextMap[Tools.web_search] = buildWebSearchContext();
+    dynamicToolContextMap[Tools.web_search] = buildWebSearchDynamicContext(
+      req.conversationCreatedAt,
+    );
   }
 
   /**
@@ -803,7 +810,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         agentId: agent.id,
       });
       if (toolContext) {
-        toolContextMap[Tools.execute_code] = toolContext;
+        dynamicToolContextMap[Tools.execute_code] = toolContext;
       }
       if (files?.length) {
         primedCodeFiles = files;
@@ -821,7 +828,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         agentId: agent.id,
       });
       if (toolContext) {
-        toolContextMap[Tools.file_search] = toolContext;
+        dynamicToolContextMap[Tools.file_search] = toolContext;
       }
     } catch (error) {
       logger.error('[loadToolDefinitionsWrapper] Error priming search files:', error);
@@ -840,7 +847,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         contextDescription: 'image editing',
       });
       if (toolContext) {
-        toolContextMap.image_edit_oai = toolContext;
+        dynamicToolContextMap.image_edit_oai = toolContext;
       }
     }
 
@@ -851,7 +858,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         contextDescription: 'image context',
       });
       if (toolContext) {
-        toolContextMap.gemini_image_gen = toolContext;
+        dynamicToolContextMap.gemini_image_gen = toolContext;
       }
     }
   }
@@ -860,6 +867,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     toolRegistry,
     userMCPAuthMap,
     toolContextMap,
+    dynamicToolContextMap,
     toolDefinitions,
     hasDeferredTools,
     actionsEnabled,
@@ -962,7 +970,7 @@ async function loadAgentTools({
     });
   }
 
-  const { loadedTools, toolContextMap, primedCodeFiles } = await loadTools({
+  const { loadedTools, toolContextMap, dynamicToolContextMap, primedCodeFiles } = await loadTools({
     agent,
     signal,
     userMCPAuthMap,
@@ -1047,6 +1055,7 @@ async function loadAgentTools({
       toolRegistry,
       userMCPAuthMap,
       toolContextMap,
+      dynamicToolContextMap,
       toolDefinitions,
       hasDeferredTools,
       actionsEnabled,
@@ -1064,6 +1073,7 @@ async function loadAgentTools({
       toolRegistry,
       userMCPAuthMap,
       toolContextMap,
+      dynamicToolContextMap,
       toolDefinitions,
       hasDeferredTools,
       actionsEnabled,
@@ -1187,6 +1197,7 @@ async function loadAgentTools({
   return {
     toolRegistry,
     toolContextMap,
+    dynamicToolContextMap,
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
