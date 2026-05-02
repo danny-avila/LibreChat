@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Content Creation Agent</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    *,
+    *::before,
+    *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #e5e7eb;
+      color: #1f2937;
+      display: flex;
+      justify-content: center;
+      padding: 0 20px 40px;
+    }
+
+    .document {
+      width: 100%;
+      max-width: 850px;
+      background: #ffffff;
+      padding: 20px 70px 60px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+      border-top: 8px solid #1e3a8a;
+      /* Corporate navy blue */
+    }
+
+    .header {
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 15px;
+      margin-bottom: 15px;
+    }
+
+    .summary-box {
+      background: #f8fafc;
+      border-left: 4px solid #1e3a8a;
+      padding: 15px 20px;
+      margin-bottom: 25px;
+      border-radius: 0 4px 4px 0;
+    }
+
+    .summary-box strong {
+      display: block;
+      font-size: 11px;
+      color: #1e3a8a;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+
+    .summary {
+      font-size: 13px;
+      color: #374151;
+      line-height: 1.5;
+      font-weight: 500;
+    }
+
+    h1 {
+      font-size: 24px;
+      color: #111827;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+
+    .meta {
+      font-size: 11px;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    h2 {
+      font-size: 16px;
+      color: #1e3a8a;
+      border-left: 3px solid #1e3a8a;
+      padding-left: 10px;
+      margin: 25px 0 15px;
+    }
+
+    .section {
+      margin-bottom: 30px;
+    }
+
+    /* Visualized lists */
+    .grid-list {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+    }
+
+    .grid-item {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      padding: 12px;
+      border-radius: 4px;
+    }
+
+    .grid-item strong {
+      display: block;
+      font-size: 12px;
+      color: #0f172a;
+      margin-bottom: 4px;
+    }
+
+    .grid-item span {
+      font-size: 11px;
+      color: #475569;
+      line-height: 1.4;
+    }
+
+    /* Pipeline */
+    .pipeline {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .step {
+      flex: 1;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      padding: 12px;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    .step-num {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      background: #166534;
+      color: #fff;
+      border-radius: 50%;
+      font-size: 10px;
+      line-height: 20px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .step strong {
+      display: block;
+      font-size: 11px;
+      color: #14532d;
+      margin-bottom: 3px;
+    }
+
+    .step span {
+      font-size: 10px;
+      color: #15803d;
+    }
+
+    .arrow {
+      color: #94a3b8;
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .arch-container {
+      margin-top: 30px;
+      border: 1px solid #e2e8f0;
+      padding: 10px;
+      background: #f8fafc;
+    }
+
+    .arch-container img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .caption {
+      text-align: center;
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 8px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="document">
+    <div class="header">
+      <h1>Content Creation Agent</h1>
+      <div class="meta">Proposal(1 Page Version) | AREEB Technology</div>
+    </div>
+
+    <div class="summary-box">
+      <strong>Executive Summary</strong>
+      <p class="summary">Organizations struggle to scale corporate content. The continuous demand for high-quality posts
+        clashes with manual, fragmented production workflows. We propose a 4-stage intelligent agent pipeline that
+        automates this entire process.</p>
+    </div>
+
+    <div class="section">
+      <h2>1. The Challenge</h2>
+      <div class="grid-list">
+        <div class="grid-item">
+          <strong>Inauthentic Output</strong>
+          <span>AI drafts lack necessary human warmth.</span>
+        </div>
+        <div class="grid-item">
+          <strong>Rigid Formats</strong>
+          <span>Content ignores platform-specific rules.</span>
+        </div>
+        <div class="grid-item">
+          <strong>Context Amnesia</strong>
+          <span>Tone and brand memory reset per session.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>2. The Solution Pipeline</h2>
+      <div class="pipeline">
+        <div class="step">
+          <div class="step-num">1</div>
+          <strong>Normalize</strong>
+          <span>Standardizes raw input</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <strong>Research</strong>
+          <span>Injects live facts</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <strong>Generate</strong>
+          <span>Drafts on-brand content</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <strong>Enforce</strong>
+          <span>Applies voice guardrails</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>3. Model Selection (Benchmarks)</h2>
+      <div class="grid-list">
+        <div class="grid-item">
+          <strong>GPT-4.1-mini (Agent 0 & 1)</strong>
+          <span>Scores 84% on IFEval. Ideal for structure.</span>
+        </div>
+        <div class="grid-item">
+          <strong>Claude Sonnet 4.5 (Agent 2)</strong>
+          <span>Scores 61.4% on OSWorld. Best human tone.</span>
+        </div>
+        <div class="grid-item">
+          <strong>GPT-4.1 (Agent 3)</strong>
+          <span>Reliable instruction adherence for editing.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>4. System Architecture</h2>
+      <div class="arch-container">
+        <img src="file:///C:/Users/Jamal/Downloads/linkedin_pipeline_final.png" alt="System Architecture Diagram">
+        <div class="caption">Figure 1: Multi-Agent Execution Pipeline</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+
+</html>
