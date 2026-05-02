@@ -17,10 +17,14 @@ import {
   SetConvoProvider,
   FileMapContext,
 } from '~/Providers';
-import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
+import { useUserTermsQuery, useGetStartupConfig, useHealthCheck } from '~/data-provider';
 import { Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
-import { TermsAndConditionsModal, ImportantNoticeModal, FarmerProfileModal, FarmerLocationModal } from '~/components/ui';
-import { useHealthCheck } from '~/data-provider';
+import {
+  TermsAndConditionsModal,
+  ImportantNoticeModal,
+  FarmerProfileModal,
+  FarmerLocationModal,
+} from '~/components/ui';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -104,7 +108,6 @@ export default function Root() {
 
   const handleDeclineFarmerProfile = () => {
     setShowFarmerProfile(false);
-   // logout('/login');
   };
 
   if (!isAuthenticated) {

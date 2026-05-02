@@ -1083,18 +1083,15 @@ export const useSaveFarmerProfileMutation = (
   const queryClient = useQueryClient();
   return useMutation((profile: t.IFarmerProfile) => dataService.saveFarmerProfile(profile), {
     onSuccess: (data, variables, context) => {
-      queryClient.setQueryData<t.TUserTermsResponse>(
-        [QueryKeys.userTerms],
-        (prev) => {
-          if (!prev) return prev;
-          const hasLocation = !!(variables.location?.latitude && variables.location?.longitude);
-          return {
-            ...prev,
-            farmerProfileCompleted: true,
-            ...(hasLocation ? { farmerLocationCompleted: true } : {}),
-          } as t.TUserTermsResponse;
-        },
-      );
+      queryClient.setQueryData<t.TUserTermsResponse>([QueryKeys.userTerms], (prev) => {
+        if (!prev) return prev;
+        const hasLocation = !!(variables.location?.latitude && variables.location?.longitude);
+        return {
+          ...prev,
+          farmerProfileCompleted: true,
+          ...(hasLocation ? { farmerLocationCompleted: true } : {}),
+        } as t.TUserTermsResponse;
+      });
       options?.onSuccess?.(data, variables, context);
     },
     onError: options?.onError,
