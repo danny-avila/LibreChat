@@ -55,7 +55,7 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/models', () => ({
   updateUserPlugins: (...args) => mockUpdateUserPlugins(...args),
-  findToken: (...args) => mockFindToken(...args),
+  findToken: mockFindToken,
   deleteTokens: (...args) => mockDeleteTokens(...args),
 }));
 
@@ -209,9 +209,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     const { flowManager } = setupMCPMocks();
     const flowError = new Error('flow cache down');
     MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue(null);
-    flowManager.deleteFlow
-      .mockResolvedValueOnce(true)
-      .mockRejectedValueOnce(flowError);
+    flowManager.deleteFlow.mockResolvedValueOnce(true).mockRejectedValueOnce(flowError);
 
     const res = createResponse();
     await updateUserPluginsController(createRequest(), res);
@@ -256,15 +254,6 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     await updateUserPluginsController(createRequest(), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(MCPTokenStorage.getTokens).toHaveBeenCalledWith({
-      userId: 'user-1',
-      serverName: 'test-server',
-      findToken: mockFindToken,
-    });
-    expect(logger.warn).toHaveBeenCalledWith(
-      'Unable to load OAuth tokens for test-server; clearing local token state.',
-      expect.any(Error),
-    );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
@@ -284,6 +273,15 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     await updateUserPluginsController(createRequest(), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(MCPTokenStorage.getTokens).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+      findToken: mockFindToken,
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Unable to load OAuth tokens for test-server; clearing local token state.',
+      expect.any(Error),
+    );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
