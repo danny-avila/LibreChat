@@ -452,6 +452,12 @@ endpoints:
   #     - "anthropic.claude-3-7-sonnet-20250219-v1:0"
   #     - "anthropic.claude-3-5-sonnet-20241022-v2:0"
   #
+  #   # Prompt Cache TTL
+  #   # Optional. Bedrock supports 5-minute cache checkpoints, and 1-hour checkpoints
+  #   # for Claude 4.5 models. When omitted, Bedrock uses its default 5-minute TTL.
+  #   # Reference: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_CachePointBlock.html
+  #   promptCacheTtl: "1h"
+  #
   #   # Inference Profiles Configuration
   #   # Maps model IDs to their inference profile ARNs
   #   # IMPORTANT: The model ID (key) MUST be a valid AWS Bedrock model ID that you've added to the models list above

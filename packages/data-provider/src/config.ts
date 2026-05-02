@@ -259,6 +259,7 @@ export const bedrockEndpointSchema = baseEndpointSchema.merge(
     availableRegions: z.array(z.string()).optional(),
     models: z.array(z.string()).optional(),
     inferenceProfiles: z.record(z.string(), z.string()).optional(),
+    promptCacheTtl: z.enum(['5m', '1h']).optional(),
   }),
 );
 

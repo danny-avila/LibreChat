@@ -27,6 +27,7 @@ export interface GuardrailConfiguration {
  * @see https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles.html
  */
 export type InferenceProfileConfig = Record<string, string>;
+export type BedrockPromptCacheTtl = '5m' | '1h';
 
 /**
  * Configuration options for Bedrock LLM
@@ -45,6 +46,8 @@ export interface BedrockConfigOptions {
   guardrailConfig?: GuardrailConfiguration;
   /** Inference profile ARNs keyed by model ID / friendly name */
   inferenceProfiles?: InferenceProfileConfig;
+  /** Bedrock prompt cache checkpoint TTL. Defaults to Bedrock's 5-minute TTL when unset. */
+  promptCacheTtl?: BedrockPromptCacheTtl;
 }
 
 /**
@@ -58,6 +61,7 @@ export interface BedrockLLMConfigResult {
     endpointHost?: string;
     guardrailConfig?: GuardrailConfiguration;
     applicationInferenceProfile?: string;
+    promptCacheTtl?: BedrockPromptCacheTtl;
   };
   configOptions: Record<string, unknown>;
 }

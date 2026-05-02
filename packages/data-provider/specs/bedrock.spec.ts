@@ -900,6 +900,68 @@ describe('bedrockInputParser', () => {
       expect(result.promptCache).toBe(true);
     });
 
+    test('should preserve one-hour promptCacheTtl for Claude 4.5 models', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+        promptCache: true,
+        promptCacheTtl: '1h',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      expect(result.promptCache).toBe(true);
+      expect(result.promptCacheTtl).toBe('1h');
+    });
+
+    test('should strip one-hour promptCacheTtl for models that only support 5 minutes', () => {
+      const result = bedrockInputParser.parse({
+        model: 'amazon.nova-pro-v1:0',
+        promptCache: true,
+        promptCacheTtl: '1h',
+      }) as Record<string, unknown>;
+      expect(result.promptCache).toBe(true);
+      expect(result.promptCacheTtl).toBeUndefined();
+    });
+
+    test('should preserve explicit 5-minute promptCacheTtl for Nova models', () => {
+      const input = {
+        model: 'amazon.nova-pro-v1:0',
+        promptCache: true,
+        promptCacheTtl: '5m',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      expect(result.promptCache).toBe(true);
+      expect(result.promptCacheTtl).toBe('5m');
+    });
+
+    test('should strip promptCacheTtl when promptCache is disabled', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-4-20250514-v1:0',
+        promptCache: false,
+        promptCacheTtl: '1h',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      expect(result.promptCache).toBe(false);
+      expect(result.promptCacheTtl).toBeUndefined();
+    });
+
+    test('should strip stale promptCacheTtl when switching to non-Claude/Nova model', () => {
+      const staleConversationData = {
+        model: 'deepseek.deepseek-r1',
+        promptCacheTtl: '1h',
+      };
+      const result = bedrockInputParser.parse(staleConversationData) as Record<string, unknown>;
+      expect(result.promptCacheTtl).toBeUndefined();
+    });
+
+    test('bedrockInputSchema should strip stale promptCacheTtl when promptCache is disabled', () => {
+      const result = bedrockInputSchema.parse({
+        model: 'anthropic.claude-sonnet-4-20250514-v1:0',
+        promptCache: false,
+        promptCacheTtl: '1h',
+      }) as Record<string, unknown>;
+      expect(result.promptCache).toBe(false);
+      expect(result.promptCacheTtl).toBeUndefined();
+    });
+
     test('should strip stale thinking config from additionalModelRequestFields for non-Anthropic models', () => {
       const staleConversationData = {
         model: 'moonshot.kimi-k2-0711-thinking',
