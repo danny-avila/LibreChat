@@ -273,15 +273,6 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     await updateUserPluginsController(createRequest(), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(MCPTokenStorage.getTokens).toHaveBeenCalledWith({
-      userId: 'user-1',
-      serverName: 'test-server',
-      findToken: mockFindToken,
-    });
-    expect(logger.warn).toHaveBeenCalledWith(
-      'Unable to load OAuth tokens for test-server; clearing local token state.',
-      expect.any(Error),
-    );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
@@ -305,6 +296,15 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     await updateUserPluginsController(createRequest(), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(MCPTokenStorage.getTokens).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+      findToken: mockFindToken,
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Unable to load OAuth tokens for test-server; clearing local token state.',
+      expect.any(Error),
+    );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
