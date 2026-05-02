@@ -633,6 +633,7 @@ export type TUserTermsResponse = {
   farmerLocationCompleted?: boolean;
   farmerLandholdCompleted?: boolean;
   farmerNeedsUpdate?: boolean;
+  missingFields?: string[];
 };
 
 export type TAcceptTermsResponse = {

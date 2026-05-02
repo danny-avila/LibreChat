@@ -177,8 +177,7 @@ export default function Root() {
             open={showFarmerLocation}
             onOpenChange={setShowFarmerLocation}
             onComplete={handleFarmerLocationComplete}
-            isLocationMissing={!termsData?.farmerLocationCompleted}
-            isLandholdMissing={!termsData?.farmerLandholdCompleted}
+            missingFields={termsData?.missingFields || []}
           />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>

@@ -78,17 +78,60 @@ const getTermsStatusController = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
     const farmerProfileCompleted = !!user.farmerProfile?.farmerName;
-    const farmerLocationCompleted = !!(user.farmerProfile?.location?.latitude && user.farmerProfile?.location?.longitude);
-    const farmerLandholdCompleted = user.farmerProfile?.landhold !== undefined && user.farmerProfile?.landhold !== null;
-    const farmerNeedsUpdate = !farmerLocationCompleted || !farmerLandholdCompleted;
+    const farmerProfileHasPlatform = !!user.farmerProfile?.platform;
+
+    const requiredFields = [
+      'farmerName',
+      'age',
+      'gender',
+      'villageName',
+      'blockName',
+      'district',
+      'state',
+      'phoneNo',
+      'languagePreference',
+      'yearsOfExperience',
+      'highestEducatedPerson',
+      'numberOfSmartphones',
+      'cropsCultivated',
+      'primaryCrop',
+      'secondaryCrop',
+      'awarenessOfKCC',
+      'usesAgriApps',
+      'location',
+      'landhold'
+    ];
+
+    const missingFields = [];
+
+    for (const field of requiredFields) {
+      if (field === 'location') {
+        if (!user.farmerProfile?.location?.latitude || !user.farmerProfile?.location?.longitude) {
+          missingFields.push('location');
+        }
+      } else if (field === 'cropsCultivated') {
+        if (!user.farmerProfile?.cropsCultivated || user.farmerProfile.cropsCultivated.length === 0) {
+          missingFields.push('cropsCultivated');
+        }
+      } else {
+        const val = user.farmerProfile?.[field];
+        if (val === undefined || val === null || val === '') {
+          missingFields.push(field);
+        }
+      }
+    }
+
+    const farmerNeedsUpdate = missingFields.length > 0;
 
     res.status(200).json({
       termsAccepted: !!user.termsAccepted,
       secondTermsAccepted: !!user.secondTermsAccepted,
       farmerProfileCompleted,
-      farmerLocationCompleted,
-      farmerLandholdCompleted,
+      farmerProfileHasPlatform,
+      farmerLocationCompleted: !missingFields.includes('location'),
+      farmerLandholdCompleted: !missingFields.includes('landhold'),
       farmerNeedsUpdate,
+      missingFields,
     });
   } catch (error) {
     logger.error('Error fetching terms acceptance status:', error);
@@ -188,6 +231,24 @@ const saveFarmerProfileController = async (req, res) => {
     }
     if (farmerProfile.landhold !== undefined) {
       updateQuery.$set['farmerProfile.landhold'] = farmerProfile.landhold;
+    }
+    if (farmerProfile.age !== undefined) {
+      updateQuery.$set['farmerProfile.age'] = farmerProfile.age;
+    }
+    if (farmerProfile.gender !== undefined) {
+      updateQuery.$set['farmerProfile.gender'] = farmerProfile.gender?.trim().toLowerCase();
+    }
+    if (farmerProfile.yearsOfExperience !== undefined) {
+      updateQuery.$set['farmerProfile.yearsOfExperience'] = farmerProfile.yearsOfExperience;
+    }
+    if (farmerProfile.numberOfSmartphones !== undefined) {
+      updateQuery.$set['farmerProfile.numberOfSmartphones'] = farmerProfile.numberOfSmartphones;
+    }
+    if (farmerProfile.awarenessOfKCC !== undefined) {
+      updateQuery.$set['farmerProfile.awarenessOfKCC'] = farmerProfile.awarenessOfKCC;
+    }
+    if (farmerProfile.usesAgriApps !== undefined) {
+      updateQuery.$set['farmerProfile.usesAgriApps'] = farmerProfile.usesAgriApps;
     }
 
     if (Object.keys(updateQuery.$set).length === 0) {

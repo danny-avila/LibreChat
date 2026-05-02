@@ -1108,19 +1108,27 @@ export const useSaveFarmerProfileMutation = (
         [QueryKeys.userTerms],
         (prev) => {
           if (!prev) return prev;
-          const hasLocation = !!(variables.location?.latitude && variables.location?.longitude);
-          const hasLandhold = variables.landhold !== undefined && variables.landhold !== null;
+          let newMissingFields = prev.missingFields || [];
           
-          const newLocationCompleted = prev.farmerLocationCompleted || hasLocation;
-          const newLandholdCompleted = prev.farmerLandholdCompleted || hasLandhold;
-          const farmerNeedsUpdate = !newLocationCompleted || !newLandholdCompleted;
+          Object.keys(variables).forEach((key) => {
+            if (key === 'location') {
+              if (variables.location?.latitude && variables.location?.longitude) {
+                 newMissingFields = newMissingFields.filter((f) => f !== 'location');
+              }
+            } else if (key === 'cropsCultivated') {
+              if (variables.cropsCultivated && variables.cropsCultivated.length > 0) {
+                 newMissingFields = newMissingFields.filter((f) => f !== 'cropsCultivated');
+              }
+            } else if (variables[key as keyof t.IFarmerProfile] !== undefined && variables[key as keyof t.IFarmerProfile] !== null && variables[key as keyof t.IFarmerProfile] !== '') {
+               newMissingFields = newMissingFields.filter((f) => f !== key);
+            }
+          });
 
           return {
             ...prev,
             farmerProfileCompleted: true,
-            farmerLocationCompleted: newLocationCompleted,
-            farmerLandholdCompleted: newLandholdCompleted,
-            farmerNeedsUpdate,
+            farmerNeedsUpdate: newMissingFields.length > 0,
+            missingFields: newMissingFields,
           } as t.TUserTermsResponse;
         },
       );
