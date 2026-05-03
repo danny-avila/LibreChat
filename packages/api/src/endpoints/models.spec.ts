@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Time, EModelEndpoint, defaultModels } from 'librechat-data-provider';
+import { Time, EModelEndpoint, defaultModels, AuthType } from 'librechat-data-provider';
 import {
   fetchModels,
   splitAndTrim,
@@ -209,6 +209,17 @@ describe('getOpenAIModels', () => {
 
   it('returns default models when no environment configurations are provided (and fetch fails)', async () => {
     const models = await getOpenAIModels({ user: 'user456' });
+    expect(models).toContain('gpt-4');
+  });
+
+  it('returns default models when OpenAI API key is user provided', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'should-not-appear' }] } });
+    process.env.OPENAI_API_KEY = AuthType.USER_PROVIDED;
+
+    const models = await getOpenAIModels({ user: 'user456' });
+
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+    expect(models).not.toContain('should-not-appear');
     expect(models).toContain('gpt-4');
   });
 
