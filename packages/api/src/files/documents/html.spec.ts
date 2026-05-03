@@ -1,6 +1,7 @@
 import path from 'path';
 import * as fs from 'fs';
 import JSZip from 'jszip';
+import { megabyte } from 'librechat-data-provider';
 import {
   bufferToOfficeHtml,
   csvToHtml,
@@ -10,6 +11,7 @@ import {
   sanitizeOfficeHtml,
   wordDocToHtml,
 } from './html';
+import { ZipBombError } from './zipSafety';
 
 const fixturesDir = __dirname;
 const readFixture = (name: string): Buffer => fs.readFileSync(path.join(fixturesDir, name));
@@ -287,6 +289,66 @@ describe('Office HTML producers', () => {
       ],
     ])('extension wins over conflicting MIME: (%s, %s) → %s', (name, mime, expected) => {
       expect(officeHtmlBucket(name, mime)).toBe(expected);
+    });
+  });
+
+  describe('zip-bomb defense (SEC review on PR #12934)', () => {
+    /* Build a sub-1MB compressed ZIP that inflates to >25MB (default
+     * per-entry cap). Mirrors the SEC validation PoC: highly compressed
+     * runs of zero bytes squeeze through any compressed-size gate but
+     * blow up the parser. */
+    const buildBombArchive = async (
+      entries: Array<{ name: string; decompressedBytes: number }>,
+    ): Promise<Buffer> => {
+      const zip = new JSZip();
+      for (const { name, decompressedBytes } of entries) {
+        zip.file(name, Buffer.alloc(decompressedBytes, 0));
+      }
+      return zip.generateAsync({
+        type: 'nodebuffer',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 9 },
+      });
+    };
+
+    test('wordDocToHtml rejects a zip-bomb DOCX before mammoth touches it', async () => {
+      const bomb = await buildBombArchive([
+        { name: 'word/document.xml', decompressedBytes: 50 * megabyte },
+      ]);
+      expect(bomb.length).toBeLessThan(1 * megabyte);
+      await expect(wordDocToHtml(bomb)).rejects.toThrow(ZipBombError);
+    });
+
+    test('excelSheetToHtml rejects a zip-bomb XLSX before SheetJS touches it', async () => {
+      const bomb = await buildBombArchive([
+        { name: 'xl/worksheets/sheet1.xml', decompressedBytes: 50 * megabyte },
+      ]);
+      expect(bomb.length).toBeLessThan(1 * megabyte);
+      await expect(excelSheetToHtml(bomb)).rejects.toThrow(ZipBombError);
+    });
+
+    test('pptxToSlideListHtml rejects a zip-bomb PPTX before slide extraction', async () => {
+      const bomb = await buildBombArchive([
+        { name: 'ppt/slides/slide1.xml', decompressedBytes: 50 * megabyte },
+      ]);
+      expect(bomb.length).toBeLessThan(1 * megabyte);
+      await expect(pptxToSlideListHtml(bomb)).rejects.toThrow(ZipBombError);
+    });
+
+    test('bufferToOfficeHtml propagates ZipBombError so callers can fail safe', async () => {
+      const bomb = await buildBombArchive([
+        { name: 'word/document.xml', decompressedBytes: 50 * megabyte },
+      ]);
+      await expect(bufferToOfficeHtml(bomb, 'evil.docx', '')).rejects.toThrow(ZipBombError);
+    });
+
+    test('legitimate small office files are not impacted by the safety check', async () => {
+      /* Real DOCX fixture from the test fixtures directory should still
+       * render — paranoid validation that the safety check doesn't false-
+       * positive on tiny legitimate inputs. */
+      const fixture = readFixture('sample.docx');
+      const html = await wordDocToHtml(fixture);
+      expect(html).toContain('This is a sample DOCX file.');
     });
   });
 

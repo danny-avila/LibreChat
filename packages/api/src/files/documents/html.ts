@@ -4,6 +4,7 @@ import * as fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import yauzl from 'yauzl';
 import { excelMimeTypes, megabyte } from 'librechat-data-provider';
+import { assertSafeZipSize } from './zipSafety';
 
 /**
  * Maximum decompressed size we'll accept from a single PPTX entry. Mirrors the
@@ -261,8 +262,15 @@ ${bodyHtml}
  * default style map (paragraph styles, runs, tables, hyperlinks, lists) and
  * inlines images as base64 `data:` URIs. The output is sanitized and wrapped
  * in our document template before return.
+ *
+ * Pre-flights the buffer through `assertSafeZipSize` so a zip-bomb DOCX
+ * is rejected BEFORE it reaches mammoth — mammoth's internal extraction
+ * has no decompressed-size cap and would happily inflate a sub-1MB
+ * compressed bomb to 200+ MB of XML, blocking the event loop and
+ * spiking RSS. See SEC review on PR #12934.
  */
 export async function wordDocToHtml(buffer: Buffer): Promise<string> {
+  await assertSafeZipSize(buffer, { name: 'docx' });
   const { convertToHtml } = await import('mammoth');
   const result = await convertToHtml({ buffer });
   const sanitized = await sanitizeOfficeHtml(result.value);
@@ -385,8 +393,21 @@ function escapeHtml(input: string): string {
  * Convert a workbook buffer (`.xlsx`, `.xls`, `.ods`) to a sandboxed HTML
  * document. Each sheet is rendered as its own `<table>` and the document
  * carries a pure-CSS tab strip for sheet switching.
+ *
+ * Pre-flights ZIP-backed formats (`.xlsx`/`.ods`) through
+ * `assertSafeZipSize` to reject zip bombs before SheetJS reaches them.
+ * `.xls` is a binary CFB format, not a ZIP — it doesn't have the
+ * decompression-amplification attack surface, so the safety check is
+ * skipped for it (yauzl would reject it as malformed anyway).
  */
 export async function excelSheetToHtml(buffer: Buffer): Promise<string> {
+  /* Cheap magic-byte check so we only run the ZIP validator on actual
+   * ZIP-backed inputs. `.xls` (BIFF/CFB) starts with `D0 CF 11 E0`; ZIPs
+   * start with `PK\x03\x04`. Skipping the validator on a non-ZIP input
+   * also avoids confusing yauzl errors leaking out as ZipBombError. */
+  if (buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
+    await assertSafeZipSize(buffer, { name: 'spreadsheet' });
+  }
   const XLSX = await import('xlsx');
   const workbook = XLSX.read(buffer, { type: 'buffer' });
   const sheets = await renderWorkbookSheets(workbook, XLSX);
@@ -623,8 +644,12 @@ function renderPptxSlidesHtml(slides: PptxSlide[]): string {
  * as a card (slide number, title, body bullets). Honest about being a
  * text-only preview — complex visual layouts, charts, and embedded media are
  * not represented. Higher-fidelity rendering is a deferred follow-up.
+ *
+ * Pre-flights through `assertSafeZipSize` so a zip-bomb PPTX can't blow
+ * up the slide-XML extraction pass.
  */
 export async function pptxToSlideListHtml(buffer: Buffer): Promise<string> {
+  await assertSafeZipSize(buffer, { name: 'pptx' });
   const rawSlides = await extractPptxSlideXml(buffer);
   const slides: PptxSlide[] = rawSlides.map(({ number, xml }) => {
     const { title, body } = extractSlideText(xml);

@@ -346,5 +346,30 @@ describe('extractCodeArtifactText', () => {
       expect(mockOfficeHtml).toHaveBeenCalledWith(expect.any(Buffer), name, mime);
       expect(text).toContain('<body>');
     });
+
+    it('returns null (and falls back to download UI) when the producer rejects a zip bomb', async () => {
+      /* Defense-in-depth check for SEC review on PR #12934. When
+       * `bufferToOfficeHtml` throws `ZipBombError` (because a zip-bomb
+       * DOCX/XLSX/PPTX got through the compressed-size gate), the outer
+       * extractor must swallow it and return null — that signals to the
+       * code-output controller to register the file as a regular
+       * download instead of a panel artifact. Without this, an
+       * unhandled rejection would crash the request. */
+      const bombError = Object.assign(new Error('zip bomb suspected'), {
+        name: 'ZipBombError',
+        code: 'ZIP_BOMB',
+      });
+      mockOfficeHtml.mockRejectedValueOnce(bombError);
+      const text = await extractCodeArtifactText(
+        Buffer.from('PK'),
+        'evil.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'document',
+      );
+      // Falls through to parseDocument which is also mocked — returns
+      // the docx-mock text via the legacy text-extraction path. The key
+      // assertion is that we don't crash and don't leak the bomb error.
+      expect(text).toBe(docxText);
+    });
   });
 });
