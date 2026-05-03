@@ -45,7 +45,10 @@ jest.mock('~/auth', () => ({
         typeof optionsOrCallback === 'function'
           ? (optionsOrCallback as LookupCallback)
           : maybeCallback;
-      callback?.(null, '127.0.0.1', 4);
+      if (!callback) {
+        throw new Error('lookup callback missing');
+      }
+      callback(null, '127.0.0.1', 4);
     },
   })),
   resolveHostnameSSRF: jest.fn(async () => false),
@@ -102,12 +105,16 @@ function collectErrorMessages(error: unknown): string[] {
 
 async function expectRebindSSRFRejection(promise: Promise<unknown>): Promise<void> {
   let caught: unknown;
+  let didReject = false;
   try {
     await promise;
   } catch (error) {
+    didReject = true;
     caught = error;
   }
-  expect(caught).toBeDefined();
+  if (!didReject) {
+    throw new Error('Expected promise to reject with SSRF error, but it resolved');
+  }
   expect(
     collectErrorMessages(caught).some((message) => /SSRF protection: rebind\.test/.test(message)),
   ).toBe(true);
