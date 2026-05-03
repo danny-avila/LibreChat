@@ -1,4 +1,9 @@
 import { lookup } from 'node:dns/promises';
+import { isPrivateIP } from './ip';
+import { normalizeAllowedAddressesSet, isAddressInAllowedSet } from './allowedAddresses';
+
+/** Re-exported here for backward compatibility; canonical location is `./ip`. */
+export { isPrivateIP };
 
 /**
  * @param email
@@ -24,227 +29,21 @@ export function isEmailDomainAllowed(email: string, allowedDomains?: string[] | 
   return allowedDomains.some((allowedDomain) => allowedDomain?.toLowerCase() === domain);
 }
 
-/** Checks if IPv4 octets fall within private, reserved, or non-routable ranges */
-function isPrivateIPv4(a: number, b: number, c: number): boolean {
-  if (a === 0) {
-    return true;
-  }
-  if (a === 10) {
-    return true;
-  }
-  if (a === 127) {
-    return true;
-  }
-  if (a === 100 && b >= 64 && b <= 127) {
-    return true;
-  }
-  if (a === 169 && b === 254) {
-    return true;
-  }
-  if (a === 172 && b >= 16 && b <= 31) {
-    return true;
-  }
-  if (a === 192 && b === 168) {
-    return true;
-  }
-  if (a === 192 && b === 0 && c === 0) {
-    return true;
-  }
-  if (a === 198 && (b === 18 || b === 19)) {
-    return true;
-  }
-  if (a >= 224) {
-    return true;
-  }
-  return false;
-}
-
-/** Checks if a pre-normalized (lowercase, bracket-stripped) IPv6 address falls within fe80::/10 */
-function isIPv6LinkLocal(ipv6: string): boolean {
-  if (!ipv6.includes(':')) {
-    return false;
-  }
-  const firstHextet = ipv6.split(':', 1)[0];
-  if (!firstHextet || !/^[0-9a-f]{1,4}$/.test(firstHextet)) {
-    return false;
-  }
-  const hextet = parseInt(firstHextet, 16);
-  // /10 mask (0xffc0) preserves top 10 bits: fe80 = 1111_1110_10xx_xxxx
-  return (hextet & 0xffc0) === 0xfe80;
-}
-
-/** Checks if an IPv6 address embeds a private IPv4 via 6to4, NAT64, or Teredo */
-function hasPrivateEmbeddedIPv4(ipv6: string): boolean {
-  if (!ipv6.startsWith('2002:') && !ipv6.startsWith('64:ff9b::') && !ipv6.startsWith('2001::')) {
-    return false;
-  }
-  const segments = ipv6.split(':').filter((s) => s !== '');
-
-  if (ipv6.startsWith('2002:') && segments.length >= 3) {
-    const hi = parseInt(segments[1], 16);
-    const lo = parseInt(segments[2], 16);
-    if (!isNaN(hi) && !isNaN(lo)) {
-      return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
-    }
-  }
-
-  if (ipv6.startsWith('64:ff9b::')) {
-    const lastTwo = segments.slice(-2);
-    if (lastTwo.length === 2) {
-      const hi = parseInt(lastTwo[0], 16);
-      const lo = parseInt(lastTwo[1], 16);
-      if (!isNaN(hi) && !isNaN(lo)) {
-        return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
-      }
-    }
-  }
-
-  // RFC 4380: Teredo stores external IPv4 as bitwise complement in last 32 bits
-  if (ipv6.startsWith('2001::')) {
-    const lastTwo = segments.slice(-2);
-    if (lastTwo.length === 2) {
-      const hi = parseInt(lastTwo[0], 16);
-      const lo = parseInt(lastTwo[1], 16);
-      if (!isNaN(hi) && !isNaN(lo)) {
-        return isPrivateIPv4((~hi >> 8) & 0xff, ~hi & 0xff, (~lo >> 8) & 0xff);
-      }
-    }
-  }
-
-  return false;
-}
-
-/**
- * Checks if an IP address belongs to a private, reserved, or link-local range.
- * Handles IPv4, IPv6, and IPv4-mapped IPv6 addresses (::ffff:A.B.C.D).
- */
-export function isPrivateIP(ip: string): boolean {
-  const normalized = ip
-    .toLowerCase()
-    .trim()
-    .replace(/^\[|\]$/g, '');
-
-  const mappedMatch = normalized.match(/^::ffff:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (mappedMatch) {
-    const [, a, b, c] = mappedMatch.map(Number);
-    return isPrivateIPv4(a, b, c);
-  }
-
-  const hexMappedMatch = normalized.match(/^(?:::ffff:|::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (hexMappedMatch) {
-    const hi = parseInt(hexMappedMatch[1], 16);
-    const lo = parseInt(hexMappedMatch[2], 16);
-    return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
-  }
-
-  const ipv4Match = normalized.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4Match) {
-    const [, a, b, c] = ipv4Match.map(Number);
-    return isPrivateIPv4(a, b, c);
-  }
-
-  if (
-    normalized === '::1' ||
-    normalized === '::' ||
-    normalized.startsWith('fc') || // fc00::/7 — exactly prefixes 'fc' and 'fd'
-    normalized.startsWith('fd') ||
-    isIPv6LinkLocal(normalized) // fe80::/10 — spans 0xfe80–0xfebf; bitwise check required
-  ) {
-    return true;
-  }
-
-  if (hasPrivateEmbeddedIPv4(normalized)) {
-    return true;
-  }
-
-  return false;
-}
-
-/** Returns true when the (already-normalized) string looks like an IPv4 or IPv6 literal. */
-function isIPLiteral(normalized: string): boolean {
-  if (/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(normalized)) {
-    return true;
-  }
-  return normalized.includes(':');
-}
-
-/**
- * Normalizes an `allowedAddresses` entry for matching. Lowercases, trims, and
- * strips IPv6 bracket form (`[::1]` → `::1`). Returns an empty string for
- * obviously-invalid shapes (URLs, paths, CIDR ranges, ports) — those are
- * rejected here as well as by the schema refinement so a misconfigured entry
- * never silently grants exemption.
- */
-function normalizeAddressEntry(entry: string): string {
-  if (entry.includes('://') || entry.includes('/')) {
-    return '';
-  }
-  const normalized = entry
-    .toLowerCase()
-    .trim()
-    .replace(/^\[|\]$/g, '');
-  if (!normalized) {
-    return '';
-  }
-  // Bare IPs or hostnames only — no `host:port` or paths.
-  if (!normalized.includes(':') && normalized.includes(' ')) {
-    return '';
-  }
-  return normalized;
-}
-
 /**
  * Checks whether a hostname or IP literal appears in an admin-supplied
  * exemption list. Match is case-insensitive and bracket-stripped, so
  * `[::1]` matches `::1` and `LOCALHOST` matches `localhost`.
  *
- * This is the exemption primitive that `allowedAddresses` exposes: when a
- * hostname or its resolved IP appears here, SSRF callers treat the target
- * as safe even though it falls inside the private/reserved IP space that
- * would otherwise be blocked. Public destinations are not affected.
- *
- * SECURITY — scoped to private IP space:
- *  - If the candidate is an IP literal that is not private, the function
- *    returns false even on textual match. Public IPs are never SSRF targets,
- *    so an exemption there has no defensive purpose and must not grant
- *    "trusted" status to traffic the SSRF block would not have caught.
- *  - If an `allowedAddresses` entry is itself an IP literal that is not
- *    private, it is ignored. This prevents a misconfigured public-IP entry
- *    from broadening trust beyond the documented private-IP-only scope.
- *  - Hostname candidates and hostname entries pass through. The resolved IP
- *    is checked separately by callers (e.g. `resolveHostnameSSRF`), and only
- *    a private resolved IP is meaningful in the SSRF block path.
+ * The normalization and scoping rules live in `./allowedAddresses` so the
+ * connect-time DNS lookup in `agent.ts` and this preflight helper share a
+ * single implementation. See that module for the security invariants.
  */
 export function isAddressAllowed(
   hostnameOrIP: string,
   allowedAddresses?: string[] | null,
 ): boolean {
-  if (!Array.isArray(allowedAddresses) || allowedAddresses.length === 0) {
-    return false;
-  }
-  const normalized = hostnameOrIP
-    .toLowerCase()
-    .trim()
-    .replace(/^\[|\]$/g, '');
-  if (isIPLiteral(normalized) && !isPrivateIP(normalized)) {
-    return false;
-  }
-  for (const entry of allowedAddresses) {
-    if (typeof entry !== 'string') {
-      continue;
-    }
-    const normalizedEntry = normalizeAddressEntry(entry);
-    if (!normalizedEntry) {
-      continue;
-    }
-    if (isIPLiteral(normalizedEntry) && !isPrivateIP(normalizedEntry)) {
-      continue;
-    }
-    if (normalizedEntry === normalized) {
-      return true;
-    }
-  }
-  return false;
+  const set = normalizeAllowedAddressesSet(allowedAddresses);
+  return isAddressInAllowedSet(hostnameOrIP, set);
 }
 
 /**

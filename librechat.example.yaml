@@ -205,6 +205,15 @@ actions:
   # Hostnames or IPs listed here bypass the default-deny block on private/loopback/
   # link-local destinations. Public domains continue to work normally — listing
   # private targets here does not restrict access to anything else.
+  #
+  # Entries must be bare hostnames or private IP literals only — no URLs, paths,
+  # CIDR ranges, ports, or public IPs. Public IP literals are rejected at config
+  # load (the field is scoped to private IP space; public IPs aren't SSRF targets).
+  #
+  # NOTE on hostnames: a hostname entry trusts whatever IP that name resolves to.
+  # If DNS for that name is hijacked or rotated to a different private IP, the
+  # exemption follows. Only list hostnames whose DNS you control. Prefer literal
+  # IPs when you can.
   # allowedAddresses:
   #   - 'host.docker.internal'
   #   - '127.0.0.1'
@@ -215,6 +224,10 @@ actions:
 # the same SSRF block as Actions and MCP. If your users legitimately point at private
 # services (self-hosted Ollama, internal LLM gateway, etc.), list those hostnames or
 # IPs here so the validator allows them through. Public destinations are unaffected.
+#
+# Entries must be bare hostnames or private IP literals (no URLs, paths, CIDR,
+# ports, or public IPs). Hostname entries trust whatever IP they resolve to —
+# only list names whose DNS you control.
 # endpoints:
 #   allowedAddresses:
 #     - 'localhost'
@@ -239,7 +252,9 @@ actions:
 #   # allowedAddresses is an SSRF exemption list (private-IP-space only).
 #   # Hostnames/IPs listed here bypass the default-deny block; public destinations
 #   # remain reachable. Useful when you want default SSRF protection AND specific
-#   # internal MCP servers.
+#   # internal MCP servers. Entries must be bare hostnames or private IP literals
+#   # (no URLs, paths, CIDR, ports, or public IPs). Hostname entries trust
+#   # whatever IP they resolve to — only list names whose DNS you control.
 #   allowedAddresses:
 #     - 'host.docker.internal'
 #     - '127.0.0.1'

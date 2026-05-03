@@ -84,11 +84,12 @@ function isPrivateIPv4Literal(value: string): boolean {
   if (!match) {
     return false;
   }
-  const [a, b, ,] = match.slice(1).map(Number) as [number, number, number, number];
+  const [a, b, c] = match.slice(1).map(Number) as [number, number, number, number];
   if (a === 0 || a === 10 || a === 127) return true;
   if (a === 169 && b === 254) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 0) return true; // RFC 5736 IETF protocol assignments
   if (a === 100 && b >= 64 && b <= 127) return true;
   if (a === 198 && (b === 18 || b === 19)) return true;
   if (a >= 224) return true; // multicast/reserved
@@ -111,14 +112,29 @@ function isPrivateIPv6Literal(value: string): boolean {
   return false;
 }
 
+/**
+ * Detects `host:port` and `[ipv6]:port` shapes — both are invalid as
+ * allowedAddresses entries. Bare `::1`, `[::1]`, and other IPv6 literals
+ * with no port are intentionally not matched.
+ */
+function isHostPortShape(entry: string): boolean {
+  if (/^\[[^\]]+\]:\d+$/.test(entry)) return true;
+  const colonCount = (entry.match(/:/g) ?? []).length;
+  if (colonCount !== 1) return false;
+  return /^[^:]+:\d+$/.test(entry);
+}
+
 const allowedAddressEntrySchema = z
   .string()
   .refine((entry) => entry.length > 0 && entry.trim().length > 0, {
     message: 'allowedAddresses entries must be non-empty',
   })
-  .refine((entry) => !entry.includes('://') && !entry.includes('/') && !entry.includes(' '), {
+  .refine((entry) => !entry.includes('://') && !entry.includes('/') && !/\s/.test(entry), {
     message:
       'allowedAddresses entries must be bare hostnames or IPs — no URLs, paths, CIDR ranges, or whitespace',
+  })
+  .refine((entry) => !isHostPortShape(entry), {
+    message: 'allowedAddresses entries must not include a port — list the bare hostname or IP only',
   })
   .refine(
     (entry) => {
