@@ -24,9 +24,10 @@ import type {
 } from 'undici';
 import type { Socket } from 'net';
 import { MCPConnection } from '~/mcp/connection';
-import { resolveHostnameSSRF } from '~/auth';
+import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
 
 type CustomFetch = (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse>;
+type LookupCallback = (err: NodeJS.ErrnoException | null, address: string, family: number) => void;
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -48,6 +49,9 @@ jest.mock('~/mcp/mcpConfig', () => ({
 
 const mockedResolveHostnameSSRF = resolveHostnameSSRF as jest.MockedFunction<
   typeof resolveHostnameSSRF
+>;
+const mockedCreateSSRFSafeUndiciConnect = createSSRFSafeUndiciConnect as jest.MockedFunction<
+  typeof createSSRFSafeUndiciConnect
 >;
 
 async function safeDisconnect(conn: MCPConnection | null): Promise<void> {
@@ -581,6 +585,47 @@ describe('MCP SSRF protection – 307/308 redirect to private IP', () => {
 
       await expect(conn.connect()).rejects.toThrow();
       expect(server.redirectHit).toBe(true);
+      expect(capture.receivedHeaders).toHaveLength(0);
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it('should block DNS rebinding between redirect pre-check and connect-time lookup', async () => {
+    const capture = await createHeaderCaptureServer();
+    try {
+      const rebindUrl = new URL(capture.url);
+      rebindUrl.hostname = 'rebind.test';
+      server = await createCrossOriginRedirectingServer(rebindUrl.href, 308);
+      mockedResolveHostnameSSRF.mockResolvedValueOnce(false);
+
+      const lookup = jest.fn(
+        (_hostname: string, optionsOrCallback: unknown, maybeCallback?: LookupCallback) => {
+          const callback =
+            typeof optionsOrCallback === 'function'
+              ? (optionsOrCallback as LookupCallback)
+              : maybeCallback!;
+          const err = Object.assign(
+            new Error('SSRF protection: rebind.test resolved to blocked address 127.0.0.1'),
+            { code: 'ESSRF' },
+          ) as NodeJS.ErrnoException;
+          callback(err, '127.0.0.1', 4);
+        },
+      );
+      mockedCreateSSRFSafeUndiciConnect.mockReturnValueOnce({
+        lookup,
+      } as ReturnType<typeof createSSRFSafeUndiciConnect>);
+
+      conn = new MCPConnection({
+        serverName: 'redirect-rebinding-block',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      await expect(conn.connect()).rejects.toThrow();
+      expect(server.redirectHit).toBe(true);
+      expect(lookup).toHaveBeenCalled();
+      expect(lookup.mock.calls[0]?.[0]).toBe('rebind.test');
       expect(capture.receivedHeaders).toHaveLength(0);
     } finally {
       await capture.close();

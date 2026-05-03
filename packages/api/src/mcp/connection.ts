@@ -570,6 +570,8 @@ export class MCPConnection extends EventEmitter {
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
     const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
     const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
+    const useSSRFProtection = this.useSSRFProtection;
+    const agents = this.agents;
     const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
     const postAgent = new Agent({
       bodyTimeout: effectiveTimeout,
@@ -587,6 +589,31 @@ export class MCPConnection extends EventEmitter {
       });
       this.agents.push(getAgent);
     }
+
+    let safeRedirectPostAgent: Agent | undefined;
+    let safeRedirectGetAgent: Agent | undefined;
+    const createSafeRedirectAgent = (bodyTimeout: number): Agent => {
+      const redirectSSRFConnect = createSSRFSafeUndiciConnect() as
+        | ReturnType<typeof createSSRFSafeUndiciConnect>
+        | undefined;
+      const redirectConnectOpts =
+        redirectSSRFConnect != null ? { connect: redirectSSRFConnect } : {};
+      const agent = new Agent({
+        bodyTimeout,
+        headersTimeout: effectiveTimeout,
+        ...redirectConnectOpts,
+      });
+      agents.push(agent);
+      return agent;
+    };
+    const getSafeRedirectDispatcher = (isGetRequest: boolean): Agent => {
+      if (!isGetRequest || sseBodyTimeout == null) {
+        safeRedirectPostAgent ??= createSafeRedirectAgent(effectiveTimeout);
+        return safeRedirectPostAgent;
+      }
+      safeRedirectGetAgent ??= createSafeRedirectAgent(sseBodyTimeout);
+      return safeRedirectGetAgent;
+    };
 
     return async function customFetch(
       input: UndiciRequestInfo,
@@ -635,12 +662,13 @@ export class MCPConnection extends EventEmitter {
         }
 
         const targetUrl = new URL(location, currentUrlString);
+        const isCrossOriginRedirect = targetUrl.origin !== originalOrigin;
 
         /**
-         * Defense-in-depth SSRF check on every redirect hop. The dispatcher's
-         * connect-time `lookup` only fires when `useSSRFProtection` is true;
-         * allowlist deployments disable it, and the allowlist only covers the
-         * originally-configured URL — not server-controlled redirect targets.
+         * Keep the standalone check for immediate literal/current-DNS blocks.
+         * Cross-origin allowlist redirects also switch to a connect-time
+         * SSRF-safe dispatcher below so DNS rebinding cannot change the
+         * address between this check and the socket connection.
          */
         if (await resolveHostnameSSRF(targetUrl.hostname)) {
           logger.warn(
@@ -651,13 +679,20 @@ export class MCPConnection extends EventEmitter {
 
         await response.body?.cancel().catch(() => undefined);
 
-        if (targetUrl.origin !== originalOrigin && currentInit.headers != null) {
+        if (isCrossOriginRedirect && currentInit.headers != null) {
           currentInit = {
             ...currentInit,
             headers: stripCrossOriginHeaders(
               currentInit.headers as Record<string, string>,
               secretHeaderKeys,
             ),
+          };
+        }
+
+        if (!useSSRFProtection && isCrossOriginRedirect) {
+          currentInit = {
+            ...currentInit,
+            dispatcher: getSafeRedirectDispatcher(isGet),
           };
         }
 
