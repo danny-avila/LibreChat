@@ -384,7 +384,7 @@ describe('getGoogleConfig', () => {
       expect(result.llmConfig).toHaveProperty('thinkingConfig');
       expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
         includeThoughts: true,
-        thinkingLevel: ThinkingLevel.high,
+        thinkingLevel: 'HIGH',
       });
       expect((result.llmConfig as Record<string, unknown>).thinkingConfig).not.toHaveProperty(
         'thinkingBudget',
@@ -406,7 +406,7 @@ describe('getGoogleConfig', () => {
 
       expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
         includeThoughts: true,
-        thinkingLevel: ThinkingLevel.medium,
+        thinkingLevel: 'MEDIUM',
       });
     });
 
@@ -466,7 +466,7 @@ describe('getGoogleConfig', () => {
       expect(result.provider).toBe(Providers.VERTEXAI);
       expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
         includeThoughts: true,
-        thinkingLevel: ThinkingLevel.low,
+        thinkingLevel: 'LOW',
       });
       expect(result.llmConfig).toHaveProperty('includeThoughts', true);
     });

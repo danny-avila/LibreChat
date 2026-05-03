@@ -1,7 +1,9 @@
 const GoogleSearch = require('../GoogleSearch');
 
 jest.mock('node-fetch');
-jest.mock('@librechat/agents/langchain/utils/env');
+jest.mock('@librechat/agents/langchain/utils/env', () => ({
+  getEnvironmentVariable: jest.fn((key) => process.env[key]),
+}));
 
 describe('GoogleSearch', () => {
   let originalEnv;
