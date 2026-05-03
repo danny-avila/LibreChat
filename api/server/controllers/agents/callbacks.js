@@ -824,6 +824,12 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
               width: fileMetadata.width,
               height: fileMetadata.height,
               tool_call_id: output.tool_call_id,
+              /* Inline text / sanitized HTML preview from
+               * `extractCodeArtifactText` — drives the file artifact panel's
+               * rich preview for DOCX/XLSX/CSV/PPTX. Pass null explicitly
+               * (rather than undefined) so the wire format is stable for the
+               * empty-text gate on the client. */
+              text: fileMetadata.text ?? null,
             };
             writeResponsesAttachment(res, tracker, attachment, metadata);
           }

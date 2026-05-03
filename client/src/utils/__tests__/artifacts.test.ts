@@ -55,9 +55,13 @@ describe('detectArtifactTypeFromFile', () => {
     ['flow.mmd', TOOL_ARTIFACT_TYPES.MERMAID],
     ['flow.mermaid', TOOL_ARTIFACT_TYPES.MERMAID],
     ['readme.txt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
-    ['report.docx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
     ['notes.odt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
-    ['slides.pptx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['report.docx', TOOL_ARTIFACT_TYPES.DOCX],
+    ['data.csv', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['workbook.xlsx', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['legacy.xls', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['sheet.ods', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['slides.pptx', TOOL_ARTIFACT_TYPES.PRESENTATION],
   ])('classifies %s by extension', (filename, expected) => {
     expect(detectArtifactTypeFromFile({ filename, type: '', text: 'content' })).toBe(expected);
   });
@@ -66,23 +70,52 @@ describe('detectArtifactTypeFromFile', () => {
     ['index.html', TOOL_ARTIFACT_TYPES.HTML],
     ['App.tsx', TOOL_ARTIFACT_TYPES.REACT],
     ['flow.mmd', TOOL_ARTIFACT_TYPES.MERMAID],
-  ])('returns null when %s has no text (%s viewer needs real content)', (filename) => {
+    /* Office preview buckets need server-rendered HTML in `text` to render
+     * — the empty-text gate keeps the artifact off the panel until the
+     * backend's `bufferToOfficeHtml` finishes. */
+    ['report.docx', TOOL_ARTIFACT_TYPES.DOCX],
+    ['data.csv', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['workbook.xlsx', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['slides.pptx', TOOL_ARTIFACT_TYPES.PRESENTATION],
+  ])('returns null when %s has no text (renderer needs real content)', (filename, _expected) => {
     expect(detectArtifactTypeFromFile({ filename, type: '', text: '' })).toBeNull();
     expect(detectArtifactTypeFromFile({ filename, type: '', text: undefined })).toBeNull();
   });
 
   it.each([
     ['readme.txt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
-    ['slides.pptx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
-    ['report.docx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
     ['notes.md', TOOL_ARTIFACT_TYPES.MARKDOWN],
+    ['notes.odt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
   ])(
-    'still routes %s through the panel without text (deferred-extraction case)',
+    'still routes %s through the panel without text (deferred-extraction case for plain-text/markdown)',
     (filename, expected) => {
       expect(detectArtifactTypeFromFile({ filename, type: '', text: '' })).toBe(expected);
       expect(detectArtifactTypeFromFile({ filename, type: '', text: undefined })).toBe(expected);
     },
   );
+
+  it.each([
+    [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      TOOL_ARTIFACT_TYPES.DOCX,
+    ],
+    [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      TOOL_ARTIFACT_TYPES.SPREADSHEET,
+    ],
+    ['application/vnd.ms-excel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/vnd.oasis.opendocument.spreadsheet', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['text/csv', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/csv', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    [
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      TOOL_ARTIFACT_TYPES.PRESENTATION,
+    ],
+  ])('routes office MIME %s to its preview bucket when extension is missing', (mime, expected) => {
+    expect(
+      detectArtifactTypeFromFile({ filename: 'noext', type: mime, text: '<html>x</html>' }),
+    ).toBe(expected);
+  });
 
   it('falls back to MIME when the extension is unknown', () => {
     expect(detectArtifactTypeFromFile({ filename: 'noext', type: 'text/html', text: 'x' })).toBe(
@@ -114,11 +147,13 @@ describe('detectArtifactTypeFromFile', () => {
   });
 
   it('returns null for unsupported types', () => {
-    expect(
-      detectArtifactTypeFromFile({ filename: 'output.csv', type: 'text/csv', text: 'a,b' }),
-    ).toBeNull();
+    /* PDFs have no rich preview path on the client (the artifact panel
+     * doesn't host a PDF viewer); they fall back to the download UI. */
     expect(
       detectArtifactTypeFromFile({ filename: 'doc.pdf', type: 'application/pdf', text: 'x' }),
+    ).toBeNull();
+    expect(
+      detectArtifactTypeFromFile({ filename: 'photo.jpg', type: 'image/jpeg', text: 'binary' }),
     ).toBeNull();
   });
 
@@ -177,12 +212,11 @@ describe('detectArtifactTypeFromFile', () => {
       );
     });
 
-    it('does NOT route data formats to CODE (CSV / JSON / YAML / TOML / XML)', () => {
+    it('does NOT route data formats to CODE (JSON / YAML / TOML / XML)', () => {
       /* These get dedicated viewers in follow-ups; for now they fall
-       * through to inline rendering (return null). */
-      expect(
-        detectArtifactTypeFromFile({ filename: 'data.csv', type: 'text/csv', text: 'a,b' }),
-      ).toBeNull();
+       * through to inline rendering (return null). CSV is the exception:
+       * it routes to the SPREADSHEET preview bucket — covered separately
+       * in the "classifies %s by extension" suite above. */
       expect(
         detectArtifactTypeFromFile({ filename: 'data.json', type: 'application/json', text: '{}' }),
       ).toBeNull();
@@ -397,7 +431,10 @@ describe('fileToArtifact', () => {
   });
 
   it('returns null for unsupported types so callers can fall through', () => {
-    expect(fileToArtifact({ ...baseFile, filename: 'data.csv', type: 'text/csv' })).toBeNull();
+    expect(fileToArtifact({ ...baseFile, filename: 'photo.jpg', type: 'image/jpeg' })).toBeNull();
+    expect(
+      fileToArtifact({ ...baseFile, filename: 'doc.pdf', type: 'application/pdf' }),
+    ).toBeNull();
   });
 
   /* End-to-end test for the CODE bucket. The classification path is
@@ -502,13 +539,18 @@ describe('fileToArtifact', () => {
   });
 
   it('uses the caller-provided placeholder when a deferred-extraction file has no text', () => {
-    // Backend extractor returns null for pptx (deferred). Client sees
-    // `text === null` and substitutes the localized placeholder.
+    /* Plain-text and markdown remain on the lenient empty-text gate so the
+     * artifact card can render a "preparing preview…" placeholder while
+     * extraction is in flight. (Office preview buckets — DOCX, SPREADSHEET,
+     * PRESENTATION — use the strict gate instead: their renderers need
+     * server-rendered HTML, so the artifact stays unregistered until the
+     * `text` field arrives. See the strict-gate test in the
+     * `detectArtifactTypeFromFile` suite.) */
     const artifact = fileToArtifact(
       {
         ...baseFile,
-        filename: 'slides.pptx',
-        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        filename: 'notes.txt',
+        type: 'text/plain',
         text: null as unknown as string,
       },
       { placeholder: '_Coming soon_' },
@@ -521,11 +563,83 @@ describe('fileToArtifact', () => {
   it('falls back to empty content when no placeholder is supplied and text is missing', () => {
     const artifact = fileToArtifact({
       ...baseFile,
-      filename: 'slides.pptx',
-      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      filename: 'notes.txt',
+      type: 'text/plain',
       text: undefined,
     });
+    expect(artifact).not.toBeNull();
     expect(artifact!.content).toBe('');
+  });
+
+  it('returns null for office preview buckets without text (strict gate)', () => {
+    expect(
+      fileToArtifact({
+        ...baseFile,
+        filename: 'slides.pptx',
+        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        text: undefined,
+      }),
+    ).toBeNull();
+    expect(
+      fileToArtifact({
+        ...baseFile,
+        filename: 'report.docx',
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        text: '',
+      }),
+    ).toBeNull();
+    expect(
+      fileToArtifact({
+        ...baseFile,
+        filename: 'data.csv',
+        type: 'text/csv',
+        text: undefined,
+      }),
+    ).toBeNull();
+  });
+
+  it('builds a SPREADSHEET artifact for csv/xlsx with backend-rendered HTML in text', () => {
+    const csv = fileToArtifact({
+      ...baseFile,
+      filename: 'data.csv',
+      type: 'text/csv',
+      text: '<!DOCTYPE html><table><tr><td>1</td></tr></table>',
+    });
+    expect(csv).not.toBeNull();
+    expect(csv!.type).toBe(TOOL_ARTIFACT_TYPES.SPREADSHEET);
+    expect(csv!.title).toBe('data.csv');
+    expect(csv!.content).toContain('<table>');
+
+    const xlsx = fileToArtifact({
+      ...baseFile,
+      filename: 'workbook.xlsx',
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      text: '<!DOCTYPE html><body>sheet</body>',
+    });
+    expect(xlsx).not.toBeNull();
+    expect(xlsx!.type).toBe(TOOL_ARTIFACT_TYPES.SPREADSHEET);
+  });
+
+  it('builds a DOCX artifact for .docx with backend-rendered HTML in text', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'report.docx',
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      text: '<!DOCTYPE html><body><p>hello</p></body>',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.DOCX);
+  });
+
+  it('builds a PRESENTATION artifact for .pptx with backend-rendered HTML in text', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'deck.pptx',
+      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      text: '<!DOCTYPE html><body><ol><li>Slide 1</li></ol></body>',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PRESENTATION);
   });
 
   it('preserves an empty string as legitimate content (does not fall through to placeholder)', () => {

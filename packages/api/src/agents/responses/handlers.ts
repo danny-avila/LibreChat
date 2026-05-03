@@ -823,6 +823,15 @@ export interface AttachmentData {
   height?: number;
   /** Associated tool call ID */
   tool_call_id?: string;
+  /**
+   * Inline text or sanitized HTML preview (sized to MAX_TEXT_CACHE_BYTES).
+   * Populated by `extractCodeArtifactText` for tool-output files: raw text
+   * for plain-text artifacts, sanitized rich HTML for office formats
+   * (DOCX/XLSX/CSV/PPTX). The frontend feeds HTML through the Sandpack
+   * `static` template via `index.html`. Null if extraction was unavailable
+   * (binary, oversized, or unsupported).
+   */
+  text?: string | null;
   /** Additional metadata */
   [key: string]: unknown;
 }

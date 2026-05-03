@@ -16,6 +16,19 @@ jest.mock('~/files/documents/crud', () => ({
   }),
 }));
 
+/* The office HTML producer is mocked here so the existing fallback-path
+ * assertions (parseDocument receives the canonical MIME) keep exercising
+ * `extractDocument`. Tests that need real HTML output drive `bufferToOfficeHtml`
+ * directly via its own spec file (`html.spec.ts`); a separate `office-html`
+ * describe block below exercises the integration with this mock relaxed. */
+const mockOfficeHtml = jest.fn(
+  async (_buffer: Buffer, _name: string, _mime: string) => null as string | null,
+);
+jest.mock('~/files/documents/html', () => ({
+  bufferToOfficeHtml: (buffer: Buffer, name: string, mime: string) =>
+    mockOfficeHtml(buffer, name, mime),
+}));
+
 describe('extractCodeArtifactText', () => {
   describe('utf8-text', () => {
     it('decodes a UTF-8 buffer', async () => {
@@ -149,7 +162,8 @@ describe('extractCodeArtifactText', () => {
   });
 
   describe('skipped categories', () => {
-    it('returns null for pptx', async () => {
+    it('returns null for pptx when HTML rendering also fails', async () => {
+      mockOfficeHtml.mockResolvedValueOnce(null);
       const text = await extractCodeArtifactText(
         Buffer.from('PK'),
         'slides.pptx',
@@ -167,6 +181,122 @@ describe('extractCodeArtifactText', () => {
         'other',
       );
       expect(text).toBeNull();
+    });
+  });
+
+  describe('office-html', () => {
+    beforeEach(() => {
+      mockOfficeHtml.mockReset();
+      parseDocumentCalls.length = 0;
+    });
+
+    it('returns the HTML rendering for a docx when the producer succeeds', async () => {
+      mockOfficeHtml.mockResolvedValueOnce('<!DOCTYPE html><html><body>docx html</body></html>');
+      const text = await extractCodeArtifactText(
+        Buffer.from('PK'),
+        'report.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'document',
+      );
+      expect(text).toBe('<!DOCTYPE html><html><body>docx html</body></html>');
+      expect(parseDocumentCalls.length).toBe(0);
+    });
+
+    it('returns the HTML rendering for a pptx when the producer succeeds', async () => {
+      mockOfficeHtml.mockResolvedValueOnce('<!DOCTYPE html><html><body>slides</body></html>');
+      const text = await extractCodeArtifactText(
+        Buffer.from('PK'),
+        'deck.pptx',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'pptx',
+      );
+      expect(text).toContain('slides');
+    });
+
+    it('returns the HTML rendering for csv (overriding utf8-text raw output)', async () => {
+      mockOfficeHtml.mockResolvedValueOnce('<!DOCTYPE html><table><tr><td>a</td></tr></table>');
+      const text = await extractCodeArtifactText(
+        Buffer.from('a,b\n1,2', 'utf-8'),
+        'data.csv',
+        'text/csv',
+        'utf8-text',
+      );
+      expect(text).toContain('<table>');
+    });
+
+    it('falls back to raw utf-8 text for csv when HTML rendering returns null', async () => {
+      mockOfficeHtml.mockResolvedValueOnce(null);
+      const text = await extractCodeArtifactText(
+        Buffer.from('a,b\n1,2\n', 'utf-8'),
+        'data.csv',
+        'text/csv',
+        'utf8-text',
+      );
+      expect(text).toBe('a,b\n1,2\n');
+    });
+
+    it('falls back to parseDocument for docx when HTML rendering returns null', async () => {
+      mockOfficeHtml.mockResolvedValueOnce(null);
+      const text = await extractCodeArtifactText(
+        Buffer.from('PKfake-docx'),
+        'report.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'document',
+      );
+      expect(text).toBe(docxText);
+      expect(parseDocumentCalls[0]?.originalname).toBe('report.docx');
+    });
+
+    it('falls back to parseDocument for docx when HTML rendering throws', async () => {
+      mockOfficeHtml.mockRejectedValueOnce(new Error('mammoth blew up'));
+      const text = await extractCodeArtifactText(
+        Buffer.from('PKfake-docx'),
+        'report.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'document',
+      );
+      expect(text).toBe(docxText);
+      expect(parseDocumentCalls[0]?.originalname).toBe('report.docx');
+    });
+
+    it('truncates HTML output when it exceeds the cache cap', async () => {
+      const huge = 'X'.repeat(MAX_TEXT_CACHE_BYTES + 5_000);
+      mockOfficeHtml.mockResolvedValueOnce(huge);
+      const text = await extractCodeArtifactText(
+        Buffer.from('PK'),
+        'big.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'document',
+      );
+      expect(text).not.toBeNull();
+      expect(text!.endsWith('…[truncated]')).toBe(true);
+      expect(Buffer.byteLength(text!, 'utf-8')).toBeLessThanOrEqual(MAX_TEXT_CACHE_BYTES);
+    });
+
+    it('falls back to parseDocument for pdf (HTML producer returns null for unsupported types)', async () => {
+      // Default mock returns null — the producer's own dispatcher would do the
+      // same for PDF since pdf has no HTML rendering. Whether we call it or
+      // skip it is an implementation detail; what matters is that PDF still
+      // routes to parseDocument and yields the docx-mock text.
+      const text = await extractCodeArtifactText(
+        Buffer.from('%PDF-1.4'),
+        'doc.pdf',
+        'application/pdf',
+        'document',
+      );
+      expect(text).toBe(docxText);
+      expect(parseDocumentCalls[0]?.originalname).toBe('doc.pdf');
+    });
+
+    it('does not call the office HTML producer for plain .txt utf8-text', async () => {
+      const text = await extractCodeArtifactText(
+        Buffer.from('hello world\n', 'utf-8'),
+        'note.txt',
+        'text/plain',
+        'utf8-text',
+      );
+      expect(mockOfficeHtml).not.toHaveBeenCalled();
+      expect(text).toBe('hello world\n');
     });
   });
 });

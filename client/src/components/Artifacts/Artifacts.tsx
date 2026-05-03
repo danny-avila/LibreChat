@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Code, Play, RefreshCw, X } from 'lucide-react';
@@ -11,9 +11,21 @@ import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
 import ArtifactTabs from './ArtifactTabs';
+import { TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
+
+/**
+ * Artifact types whose preview is server-rendered HTML — there's no source
+ * for a "code" view (the underlying file is binary). Hide the code tab and
+ * snap the active tab to "preview" when one of these is selected.
+ */
+const PREVIEW_ONLY_ARTIFACT_TYPES = new Set<string>([
+  TOOL_ARTIFACT_TYPES.DOCX,
+  TOOL_ARTIFACT_TYPES.SPREADSHEET,
+  TOOL_ARTIFACT_TYPES.PRESENTATION,
+]);
 
 const MAX_BLUR_AMOUNT = 32;
 const MAX_BACKDROP_OPACITY = 0.3;
@@ -37,18 +49,21 @@ export default function Artifacts() {
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
 
-  const tabOptions = [
-    {
-      value: 'code',
-      label: localize('com_ui_code'),
-      icon: <Code className="size-4" />,
-    },
-    {
-      value: 'preview',
-      label: localize('com_ui_preview'),
-      icon: <Play className="size-4" />,
-    },
-  ];
+  const allTabOptions = useMemo(
+    () => [
+      {
+        value: 'code',
+        label: localize('com_ui_code'),
+        icon: <Code className="size-4" />,
+      },
+      {
+        value: 'preview',
+        label: localize('com_ui_preview'),
+        icon: <Play className="size-4" />,
+      },
+    ],
+    [localize],
+  );
 
   useEffect(() => {
     setIsMounted(true);
@@ -87,6 +102,23 @@ export default function Artifacts() {
     orderedArtifactIds,
     setCurrentArtifactId,
   } = useArtifacts();
+
+  /* Office artifacts (DOCX/SPREADSHEET/PRESENTATION) have no source view —
+   * the underlying file is binary and the "code" tab would display the
+   * generated HTML blob, which isn't useful. Filter the tab options and
+   * snap the active tab when the user lands on an office artifact while
+   * the code tab is selected. */
+  const isPreviewOnly =
+    currentArtifact?.type != null && PREVIEW_ONLY_ARTIFACT_TYPES.has(currentArtifact.type);
+  const tabOptions = useMemo(
+    () => (isPreviewOnly ? allTabOptions.filter((opt) => opt.value !== 'code') : allTabOptions),
+    [allTabOptions, isPreviewOnly],
+  );
+  useEffect(() => {
+    if (isPreviewOnly && activeTab === 'code') {
+      setActiveTab('preview');
+    }
+  }, [isPreviewOnly, activeTab, setActiveTab]);
 
   const handleCopyArtifact = useCallback(() => {
     const content = currentArtifact?.content ?? '';
