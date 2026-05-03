@@ -247,7 +247,8 @@ export async function loadWebSearchAuth({
     authTypes.push([category, isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED]);
   }
 
-  const scraperProvider = webSearchConfig?.scraperProvider ?? 'firecrawl';
+  const scraperProvider =
+    authResult.scraperProvider ?? webSearchConfig?.scraperProvider ?? 'firecrawl';
   let scraperOptionsTimeout: number | undefined;
   if (scraperProvider === 'tavily') {
     scraperOptionsTimeout = webSearchConfig?.tavilyScraperOptions?.timeout;
