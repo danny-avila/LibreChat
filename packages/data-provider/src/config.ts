@@ -420,6 +420,40 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
+/**
+ * Decision applied to a tool call before execution.
+ * Mirrors LangChain HITL middleware decision space.
+ *
+ * - `allow`: run the tool without prompting (default).
+ * - `deny`: block the tool; the agent receives a rejection message.
+ * - `ask`: pause the run and require user approval before execution.
+ */
+export const toolApprovalDecisionSchema = z.enum(['allow', 'deny', 'ask']);
+export type ToolApprovalDecision = z.infer<typeof toolApprovalDecisionSchema>;
+
+/**
+ * Per-endpoint tool-approval policy.
+ *
+ * Resolution order for a given tool call:
+ *   1. If the tool name is in `excluded`, the result is `allow`.
+ *   2. If the tool name is in `required`, the result is `ask`.
+ *   3. Otherwise, the result is `default` (which itself defaults to `allow`).
+ *
+ * Tool names are matched as exact strings against the registered tool name.
+ * Pattern matching (`mcp:*`, etc.) is intentionally deferred until we have
+ * a concrete need.
+ */
+export const toolApprovalPolicySchema = z
+  .object({
+    /** Decision applied when no rule matches. Defaults to `'allow'` at policy resolution time. */
+    default: toolApprovalDecisionSchema.optional(),
+    required: z.array(z.string()).optional(),
+    excluded: z.array(z.string()).optional(),
+  })
+  .optional();
+
+export type TToolApprovalPolicy = z.infer<typeof toolApprovalPolicySchema>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -436,6 +470,8 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      /** Human-in-the-loop tool approval policy. Off by default. */
+      toolApproval: toolApprovalPolicySchema,
     }),
   )
   .default({

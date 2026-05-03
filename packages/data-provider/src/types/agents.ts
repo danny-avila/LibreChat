@@ -83,6 +83,16 @@ export namespace Agents {
     auth?: string;
     /** Expiration time */
     expires_at?: number;
+    /**
+     * When set, this tool call is paused for human review.
+     * The presence of this field signals the UI to render approval controls
+     * instead of the in-flight tool execution state.
+     */
+    approval?: {
+      actionId: string;
+      allowed_decisions: ToolApprovalDecision[];
+      description?: string;
+    };
   };
 
   export type ToolEndEvent = {
@@ -248,8 +258,87 @@ export namespace Agents {
     tool_calls?: ToolCallChunk[];
     auth?: string;
     expires_at?: number;
+    /** Approval metadata, set when a tool call is paused for human review. */
+    approval?: {
+      actionId: string;
+      allowed_decisions: ToolApprovalDecision[];
+      description?: string;
+    };
   };
   export type AgentToolCall = FunctionToolCall | ToolCall;
+
+  /**
+   * Human-in-the-loop interrupt category. Currently scoped to tool approvals.
+   * Reserved for future categories like `ask_user_question` (model-driven prompts)
+   * and `respond` (deferred user reply), matching LangChain HITL semantics.
+   */
+  export type HumanInterruptType = 'tool_approval';
+
+  /** Decisions a user can make for a paused tool call. Mirrors LangChain HITL middleware. */
+  export type ToolApprovalDecision = 'approve' | 'reject' | 'edit' | 'respond';
+
+  /**
+   * One pending tool execution awaiting user review.
+   * Field naming mirrors LangChain's `ActionRequest` shape so the same payload
+   * can be forwarded directly when the SDK adopts native HITL primitives.
+   */
+  export interface ToolApprovalRequest {
+    /** Tool name as registered with the agent */
+    name: string;
+    /** Sanitized arguments (no auth tokens / file blobs). May be string or parsed object. */
+    arguments: string | Record<string, unknown>;
+    /** Provider tool_call_id linking this request to the model's tool_use block */
+    tool_call_id: string;
+    /** Optional human-readable description shown alongside the prompt */
+    description?: string;
+  }
+
+  /** Per-tool review configuration: which decisions the user is allowed to make. */
+  export interface ToolReviewConfig {
+    action_name: string;
+    allowed_decisions: ToolApprovalDecision[];
+  }
+
+  /**
+   * Full interrupt payload emitted when an agent run pauses for human review.
+   * Mirrors LangChain's `HumanInterrupt` shape (`action_requests` + `review_configs`).
+   */
+  export interface HumanInterruptPayload {
+    type: HumanInterruptType;
+    action_requests: ToolApprovalRequest[];
+    review_configs: ToolReviewConfig[];
+  }
+
+  /**
+   * Server-side record of a job that is waiting for user input.
+   * Persisted with the job; consumed by approval routes and the status endpoint.
+   */
+  export interface PendingAction {
+    /** Stable identifier used in approval URLs */
+    actionId: string;
+    streamId: string;
+    conversationId?: string;
+    /** Stable per-turn identifier (LangGraph checkpoint_ns) when available */
+    runId?: string;
+    responseMessageId?: string;
+    payload: HumanInterruptPayload;
+    createdAt: number;
+    /** Optional expiry; clients should treat past `expiresAt` as stale */
+    expiresAt?: number;
+  }
+
+  /**
+   * Per-tool decision returned from the approval UI.
+   * `editedArguments` is required when `decision === 'edit'`.
+   * `responseText` is required when `decision === 'respond'`.
+   */
+  export interface ToolApprovalResolution {
+    tool_call_id: string;
+    decision: ToolApprovalDecision;
+    editedArguments?: Record<string, unknown>;
+    responseText?: string;
+  }
+
   export interface ExtendedMessageContent {
     type?: string;
     text?: string;

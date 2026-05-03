@@ -215,6 +215,41 @@ export class RedisJobStore implements IJobStore {
       return;
     }
 
+    if (updates.status === 'requires_action') {
+      // Job paused for human review — non-terminal.
+      // Remove from runningJobs so getJobCountByStatus('running') stays accurate,
+      // refresh the hash TTL so the user has the full window to respond, and
+      // leave chunks/runSteps/user-active-set untouched so resume can rebuild state.
+      if (this.isCluster) {
+        await this.redis.srem(KEYS.runningJobs, streamId);
+        await this.redis.expire(key, this.ttl.running);
+      } else {
+        const pipeline = this.redis.pipeline();
+        pipeline.srem(KEYS.runningJobs, streamId);
+        pipeline.expire(key, this.ttl.running);
+        await pipeline.exec();
+      }
+      return;
+    }
+
+    if (updates.status === 'running') {
+      // Resume from requires_action — re-add to runningJobs (idempotent), refresh TTL,
+      // and explicitly clear any stale pendingAction (serializeJob skips `undefined`,
+      // so the only way to remove a hash field is HDEL).
+      if (this.isCluster) {
+        await this.redis.sadd(KEYS.runningJobs, streamId);
+        await this.redis.expire(key, this.ttl.running);
+        await this.redis.hdel(key, 'pendingAction');
+      } else {
+        const pipeline = this.redis.pipeline();
+        pipeline.sadd(KEYS.runningJobs, streamId);
+        pipeline.expire(key, this.ttl.running);
+        pipeline.hdel(key, 'pendingAction');
+        await pipeline.exec();
+      }
+      return;
+    }
+
     if (updates.status && ['complete', 'error', 'aborted'].includes(updates.status)) {
       // Proactively remove from user's job set (requires reading userId from the job hash)
       const job = await this.getJob(streamId);
@@ -428,8 +463,9 @@ export class RedisJobStore implements IJobStore {
 
     for (const streamId of trackedIds) {
       const job = await this.getJob(streamId);
-      // Only include if job exists AND is still running
-      if (job && job.status === 'running') {
+      // Include running jobs and jobs paused for human review (e.g. tool approval).
+      // A pending-approval job still occupies the user's conversation slot.
+      if (job && (job.status === 'running' || job.status === 'requires_action')) {
         activeIds.push(streamId);
       } else {
         // Self-healing: job completed/deleted but mapping wasn't cleaned - mark for removal
@@ -920,6 +956,7 @@ export class RedisJobStore implements IJobStore {
       iconURL: data.iconURL || undefined,
       model: data.model || undefined,
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
+      pendingAction: data.pendingAction ? JSON.parse(data.pendingAction) : undefined,
     };
   }
 }
