@@ -61,48 +61,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Install GitNexus CLI
-        working-directory: ${{ runner.temp }}
-        env:
-          NPM_CONFIG_AUDIT: false
-          NPM_CONFIG_CACHE: ${{ runner.temp }}/gitnexus-npm-cache
-          NPM_CONFIG_FUND: false
-          NPM_CONFIG_GLOBALCONFIG: ${{ runner.temp }}/gitnexus-cli/global-npmrc
-          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
-          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/gitnexus-cli/.npmrc
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/gitnexus-cli" "$RUNNER_TEMP/gitnexus-npm-cache"
-          : > "$RUNNER_TEMP/gitnexus-cli/global-npmrc"
-          printf '%s\n' \
-            'registry=https://registry.npmjs.org/' \
-            'audit=false' \
-            'fund=false' \
-            > "$RUNNER_TEMP/gitnexus-cli/.npmrc"
-          npm install \
-            --prefix "$RUNNER_TEMP/gitnexus-cli" \
-            --no-save \
-            --no-package-lock \
-            "gitnexus@${{ env.GITNEXUS_VERSION }}"
-          test -x "$RUNNER_TEMP/gitnexus-cli/node_modules/.bin/gitnexus"
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          # When the /gitnexus command dispatches us with a pr_ref, it's
-          # a refs/pull/<N>/head ref that GitHub mirrors into the base
-          # repo for every PR, so checkout works for fork PRs too. When
-          # pr_ref is empty (native push/pull_request), fall back to the
-          # default ref actions/checkout would use.
-          ref: ${{ inputs.pr_ref || '' }}
-          fetch-depth: 1
-          persist-credentials: false
-
       - name: Resolve GitNexus flags
         id: flags
         env:
@@ -146,6 +104,48 @@ jobs:
           else
             echo "enable_embeddings=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install GitNexus CLI
+        working-directory: ${{ runner.temp }}
+        env:
+          NPM_CONFIG_AUDIT: false
+          NPM_CONFIG_CACHE: ${{ runner.temp }}/gitnexus-npm-cache
+          NPM_CONFIG_FUND: false
+          NPM_CONFIG_GLOBALCONFIG: ${{ runner.temp }}/gitnexus-cli/global-npmrc
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/gitnexus-cli/.npmrc
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gitnexus-cli" "$RUNNER_TEMP/gitnexus-npm-cache"
+          : > "$RUNNER_TEMP/gitnexus-cli/global-npmrc"
+          printf '%s\n' \
+            'registry=https://registry.npmjs.org/' \
+            'audit=false' \
+            'fund=false' \
+            > "$RUNNER_TEMP/gitnexus-cli/.npmrc"
+          npm install \
+            --prefix "$RUNNER_TEMP/gitnexus-cli" \
+            --no-save \
+            --no-package-lock \
+            "gitnexus@${{ env.GITNEXUS_VERSION }}"
+          test -x "$RUNNER_TEMP/gitnexus-cli/node_modules/.bin/gitnexus"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # When the /gitnexus command dispatches us with a pr_ref, it's
+          # a refs/pull/<N>/head ref that GitHub mirrors into the base
+          # repo for every PR, so checkout works for fork PRs too. When
+          # pr_ref is empty (native push/pull_request), fall back to the
+          # default ref actions/checkout would use.
+          ref: ${{ inputs.pr_ref || '' }}
+          fetch-depth: 1
+          persist-credentials: false
 
       - name: Run GitNexus Analyze
         working-directory: ${{ runner.temp }}
