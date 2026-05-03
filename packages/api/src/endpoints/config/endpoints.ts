@@ -49,6 +49,33 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
       mergedConfig[EModelEndpoint.azureAssistants] = { userProvide: false };
     }
 
+    /**
+     * Resolve the admin-defined group label for an endpoint key.
+     * Priority: per-endpoint `groupLabel` > global `endpoints.all.groupLabel`.
+     * Returns undefined so the client can fall back to its i18n key.
+     */
+    const endpointsCfg = appConfig?.endpoints as
+      | Record<string, { groupLabel?: string } | undefined>
+      | undefined;
+    const globalGroupLabel = endpointsCfg?.all?.groupLabel;
+
+    const resolveGroupLabel = (key: string): string | undefined =>
+      endpointsCfg?.[key]?.groupLabel || globalGroupLabel;
+
+    const applyGroupLabel = (key: string) => {
+      if (!mergedConfig[key]) {
+        return;
+      }
+      const groupLabel = resolveGroupLabel(key);
+      if (!groupLabel) {
+        return;
+      }
+      mergedConfig[key] = {
+        ...mergedConfig[key],
+        groupLabel,
+      };
+    };
+
     if (
       mergedConfig[EModelEndpoint.assistants] &&
       appConfig?.endpoints?.[EModelEndpoint.assistants]
@@ -98,6 +125,12 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
         ...mergedConfig[EModelEndpoint.bedrock],
         availableRegions,
       };
+    }
+
+    // Apply admin-defined groupLabel last so per-endpoint merges above never
+    // overwrite it. Covers default, custom, and `endpoints.all` fallback.
+    for (const key of Object.keys(mergedConfig)) {
+      applyGroupLabel(key);
     }
 
     return orderEndpointsConfig(mergedConfig as TEndpointsConfig);

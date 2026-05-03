@@ -3,11 +3,13 @@ import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Permissions,
   alternateName,
+  alternateNameKeys,
   PermissionBits,
   EModelEndpoint,
   PermissionTypes,
   isAgentsEndpoint,
   getConfigDefaults,
+  getEndpointField,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
@@ -23,6 +25,7 @@ import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import { mapEndpoints, getPresetTitle } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
+import useLocalize from '~/hooks/useLocalize';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -64,6 +67,7 @@ export default function useMentions({
   });
 
   const agentsMap = useAgentsMapContext();
+  const localize = useLocalize();
   const { data: presets, isLoading: isLoadingPresets } = useGetPresetsQuery();
   const { data: modelsConfig, isLoading: isLoadingModels } = useGetModelsQuery();
   const { data: startupConfig, isLoading: isLoadingStartup } = useGetStartupConfig();
@@ -196,17 +200,25 @@ export default function useMentions({
         }),
         type: 'modelSpec' as const,
       })),
-      ...(interfaceConfig.modelSelect === true ? validEndpoints : []).map((endpoint) => ({
-        value: endpoint,
-        label: alternateName[endpoint as string] ?? endpoint ?? '',
-        type: 'endpoint' as const,
-        icon: EndpointIcon({
-          conversation: { endpoint },
-          endpointsConfig,
-          context: 'menu-item',
-          size: 20,
-        }),
-      })),
+      ...(interfaceConfig.modelSelect === true ? validEndpoints : []).map((endpoint) => {
+        const configGroupLabel = getEndpointField(endpointsConfig, endpoint, 'groupLabel');
+        const translationKey = alternateNameKeys[endpoint as string];
+        const translatedLabel = translationKey
+          ? localize(translationKey as Parameters<typeof localize>[0])
+          : undefined;
+        const fallbackLabel = alternateName[endpoint as string] ?? endpoint ?? '';
+        return {
+          value: endpoint,
+          label: configGroupLabel || translatedLabel || fallbackLabel,
+          type: 'endpoint' as const,
+          icon: EndpointIcon({
+            conversation: { endpoint },
+            endpointsConfig,
+            context: 'menu-item',
+            size: 20,
+          }),
+        };
+      }),
       ...(interfaceConfig.modelSelect === true ? (agentsList ?? []) : []),
       ...(endpointsConfig?.[EModelEndpoint.assistants] &&
       includeAssistants &&
@@ -251,6 +263,7 @@ export default function useMentions({
     includeAssistants,
     interfaceConfig.presets,
     interfaceConfig.modelSelect,
+    localize,
   ]);
 
   const isLoading =

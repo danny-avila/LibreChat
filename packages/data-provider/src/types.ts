@@ -392,6 +392,7 @@ export type TConfig = {
     defaultParamsEndpoint?: string;
     paramDefinitions?: Partial<SettingDefinition>[];
   };
+  groupLabel?: string;
 };
 
 export type TEndpointsConfig =

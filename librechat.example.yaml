@@ -243,6 +243,20 @@ actions:
 
 # Definition of custom endpoints
 endpoints:
+  # Custom Endpoint Group Labels (UI Model Selector)
+  # You can customize the group headers shown in the drop-down menu.
+  
+  #all:
+    # This sets a default group label for all endpoints
+    # groupLabel: "Internal LLMs"
+    
+  #agents:
+    # Overrides the global label specifically for the Agents endpoint
+    # groupLabel: "My Super AI"
+
+  #assistants:
+    # Overrides the global label specifically for the Assistants endpoint
+    # groupLabel: "Helpers"
   # assistants:
   #   disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
   #   pollIntervalMs: 3000  # Polling interval for checking assistant updates
