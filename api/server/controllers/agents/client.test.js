@@ -896,7 +896,7 @@ describe('AgentClient - titleConvo', () => {
                 },
                 'codex-mini': {
                   apiKey: '${AZURE_API_KEY}',
-                  baseURL: 'https://example.cognitiveservices.azure.com/agents/langchain/openai/',
+                  baseURL: 'https://example.cognitiveservices.azure.com/openai/',
                   version: '2025-04-01-preview',
                   serverless: true,
                   models: {

@@ -5,10 +5,15 @@ import type { GoogleAIToolType } from '@librechat/agents/langchain/google-common
 import type * as t from '~/types';
 import { isEnabled } from '~/utils';
 
-type GoogleThinkingLevel = 'THINKING_LEVEL_UNSPECIFIED' | 'LOW' | 'MEDIUM' | 'HIGH';
+type GoogleThinkingLevel = 'THINKING_LEVEL_UNSPECIFIED' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
+type GoogleThinkingConfig = {
+  includeThoughts: boolean;
+  thinkingLevel?: GoogleThinkingLevel;
+};
 
 const googleThinkingLevels = new Set<GoogleThinkingLevel>([
   'THINKING_LEVEL_UNSPECIFIED',
+  'MINIMAL',
   'LOW',
   'MEDIUM',
   'HIGH',
@@ -79,9 +84,7 @@ function getThresholdMapping(model: string) {
   return (value: string) => value;
 }
 
-function normalizeGoogleThinkingLevel(
-  value: unknown,
-): GoogleThinkingLevel | undefined {
+function normalizeGoogleThinkingLevel(value: unknown): GoogleThinkingLevel | undefined {
   if (typeof value !== 'string') {
     return undefined;
   }
@@ -234,10 +237,7 @@ export function getGoogleConfig(
   const isGemini3Plus = /gemini-([3-9]|\d{2,})/i.test(modelName);
 
   if (isGemini3Plus && thinking) {
-    const thinkingConfig: {
-      includeThoughts: boolean;
-      thinkingLevel?: GoogleThinkingLevel;
-    } = {
+    const thinkingConfig: GoogleThinkingConfig = {
       includeThoughts: true,
     };
     const normalizedThinkingLevel = normalizeGoogleThinkingLevel(thinkingLevel);
@@ -245,9 +245,9 @@ export function getGoogleConfig(
       thinkingConfig.thinkingLevel = normalizedThinkingLevel;
     }
     if (provider === Providers.GOOGLE) {
-      (llmConfig as GoogleClientOptions).thinkingConfig = thinkingConfig;
+      (llmConfig as { thinkingConfig?: GoogleThinkingConfig }).thinkingConfig = thinkingConfig;
     } else if (provider === Providers.VERTEXAI) {
-      (llmConfig as Record<string, unknown>).thinkingConfig = thinkingConfig;
+      (llmConfig as { thinkingConfig?: GoogleThinkingConfig }).thinkingConfig = thinkingConfig;
       (llmConfig as VertexAIClientOptions).includeThoughts = true;
     }
   } else if (!isGemini3Plus) {

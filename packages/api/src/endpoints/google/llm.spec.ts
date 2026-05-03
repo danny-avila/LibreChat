@@ -410,6 +410,25 @@ describe('getGoogleConfig', () => {
       });
     });
 
+    it('should preserve minimal thinkingLevel for Gemini 3 Flash models', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3-flash-preview',
+          thinking: true,
+          thinkingLevel: ThinkingLevel.minimal,
+        },
+      });
+
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: 'MINIMAL',
+      });
+    });
+
     it('should omit thinkingLevel when unset (empty string) for Gemini 3', () => {
       const credentials = {
         [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
