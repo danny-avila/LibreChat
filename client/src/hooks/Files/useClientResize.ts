@@ -1,5 +1,5 @@
-import { mergeFileConfig } from 'librechat-data-provider';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import { DEFAULT_MIN_FILE_SIZE_KB, mergeFileConfig } from 'librechat-data-provider';
 import { useGetFileConfig } from '~/data-provider';
 import {
   resizeImage,
@@ -8,6 +8,14 @@ import {
   type ResizeOptions,
   type ResizeResult,
 } from '~/utils/imageResize';
+
+const DEFAULT_CLIENT_IMAGE_RESIZE = {
+  enabled: false,
+  maxWidth: 1900,
+  maxHeight: 1900,
+  quality: 0.92,
+  minFileSizeKB: DEFAULT_MIN_FILE_SIZE_KB,
+} as const;
 
 /**
  * Hook for client-side image resizing functionality
@@ -18,15 +26,12 @@ export const useClientResize = () => {
     select: (data) => mergeFileConfig(data),
   });
 
-  // Safe access to clientImageResize config with fallbacks
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const config = (fileConfig as any)?.clientImageResize ?? {
-    enabled: false,
-    maxWidth: 1900,
-    maxHeight: 1900,
-    quality: 0.92,
-  };
-  const isEnabled = config?.enabled ?? false;
+  const config = useMemo(
+    () => fileConfig?.clientImageResize ?? DEFAULT_CLIENT_IMAGE_RESIZE,
+    [fileConfig],
+  );
+  const isEnabled = config.enabled ?? false;
+  const minFileSizeBytes = (config.minFileSizeKB ?? DEFAULT_MIN_FILE_SIZE_KB) * 1024;
 
   /**
    * Resizes an image if client-side resizing is enabled and supported
@@ -50,16 +55,16 @@ export const useClientResize = () => {
         return { file, resized: false };
       }
 
-      // Return original file if it doesn't need resizing
-      if (!shouldResizeImage(file)) {
+      // Skip when the file is too small, not an image, or a GIF
+      if (!shouldResizeImage(file, minFileSizeBytes)) {
         return { file, resized: false };
       }
 
       try {
         const resizeOptions: Partial<ResizeOptions> = {
-          maxWidth: config?.maxWidth,
-          maxHeight: config?.maxHeight,
-          quality: config?.quality,
+          maxWidth: config.maxWidth,
+          maxHeight: config.maxHeight,
+          quality: config.quality,
           ...options,
         };
 
@@ -70,7 +75,7 @@ export const useClientResize = () => {
         return { file, resized: false };
       }
     },
-    [isEnabled, config],
+    [isEnabled, config, minFileSizeBytes],
   );
 
   return {

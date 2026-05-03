@@ -396,6 +396,9 @@ export const megabyte = 1024 * 1024;
 /** Helper function to get megabytes value */
 export const mbToBytes = (mb: number): number => mb * megabyte;
 
+/** Default minimum file size (in KB) for client-side image resize eligibility. */
+export const DEFAULT_MIN_FILE_SIZE_KB = 1024;
+
 const defaultSizeLimit = mbToBytes(512);
 const defaultTokenLimit = 100000;
 const assistantsFileConfig = {
@@ -434,6 +437,7 @@ export const fileConfig = {
     maxWidth: 1900,
     maxHeight: 1900,
     quality: 0.92,
+    minFileSizeKB: DEFAULT_MIN_FILE_SIZE_KB,
   },
   ocr: {
     supportedMimeTypes: defaultOCRMimeTypes,
@@ -476,6 +480,7 @@ export const fileConfigSchema = z.object({
       maxWidth: z.number().min(0).optional(),
       maxHeight: z.number().min(0).optional(),
       quality: z.number().min(0).max(1).optional(),
+      minFileSizeKB: z.number().int().min(0).optional(),
     })
     .optional(),
   ocr: z

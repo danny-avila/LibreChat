@@ -189,24 +189,21 @@ export function resizeImage(
 }
 
 /**
- * Determines if an image should be resized based on size and dimensions
+ * Determines if an image should be resized. Returns `true` when the file is an
+ * eligible image type (non-GIF) and is at least `minSizeBytes` in size.
+ *
+ * @param file - The file under consideration
+ * @param minSizeBytes - Files strictly smaller than this are skipped. Defaults to 1 MB.
  */
-export function shouldResizeImage(
-  file: File,
-  fileSizeLimit: number = 512 * 1024 * 1024, // 512MB default
-): boolean {
-  // Don't resize if file is already small
-  if (file.size < fileSizeLimit * 0.1) {
-    // Less than 10% of limit
+export function shouldResizeImage(file: File, minSizeBytes: number = 1024 * 1024): boolean {
+  if (file.size < minSizeBytes) {
     return false;
   }
 
-  // Don't process non-images
   if (!file.type.startsWith('image/')) {
     return false;
   }
 
-  // Don't process GIFs (they might be animated)
   if (file.type === 'image/gif') {
     return false;
   }

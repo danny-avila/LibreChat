@@ -568,6 +568,7 @@ endpoints:
 #     maxWidth: 1900  # Maximum width for resized images (default: 1900)
 #     maxHeight: 1900  # Maximum height for resized images (default: 1900)
 #     quality: 0.92  # JPEG quality for compression (0.0-1.0, default: 0.92)
+#     minFileSizeKB: 1024  # Minimum file size in KB before resize is attempted; files below this threshold are uploaded as-is. Set to 0 to disable the threshold (default: 1024)
 # # See the Custom Configuration Guide for more information on Assistants Config:
 # # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
 
