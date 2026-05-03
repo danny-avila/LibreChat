@@ -121,6 +121,7 @@ function setupMCPMocks() {
     }),
     getOAuthServers: jest.fn().mockResolvedValue(new Set(['test-server'])),
     getAllowedDomains: jest.fn().mockReturnValue([]),
+    getAllowedAddresses: jest.fn().mockReturnValue(null),
   };
 
   mockGetAppConfig.mockResolvedValue({});
@@ -333,6 +334,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
       },
       {},
       [],
+      null,
     );
     expect(MCPOAuthHandler.revokeOAuthToken).toHaveBeenCalledWith(
       'test-server',
@@ -347,6 +349,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
       },
       {},
       [],
+      null,
     );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
@@ -378,6 +381,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
       expect.objectContaining({ clientId: 'client-1' }),
       {},
       [],
+      null,
     );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
@@ -409,6 +413,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
       expect.objectContaining({ clientId: 'client-1' }),
       {},
       [],
+      null,
     );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',

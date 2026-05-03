@@ -5,6 +5,7 @@ const mockRevokeOAuthToken = jest.fn();
 const mockGetServerConfig = jest.fn();
 const mockGetOAuthServers = jest.fn();
 const mockGetAllowedDomains = jest.fn();
+const mockGetAllowedAddresses = jest.fn();
 const mockDeleteFlow = jest.fn();
 const mockGetLogStores = jest.fn();
 const mockFindToken = jest.fn();
@@ -53,6 +54,7 @@ jest.mock('~/config', () => ({
     getServerConfig: (...args) => mockGetServerConfig(...args),
     getOAuthServers: (...args) => mockGetOAuthServers(...args),
     getAllowedDomains: (...args) => mockGetAllowedDomains(...args),
+    getAllowedAddresses: (...args) => mockGetAllowedAddresses(...args),
   })),
 }));
 
@@ -142,6 +144,7 @@ function setupOAuthServerFound() {
   mockGetServerConfig.mockResolvedValue(serverConfig);
   mockGetOAuthServers.mockResolvedValue(new Set([serverName]));
   mockGetAllowedDomains.mockReturnValue(['https://acme.example.com']);
+  mockGetAllowedAddresses.mockReturnValue(null);
   mockGetClientInfoAndMetadata.mockResolvedValue({ clientInfo, clientMetadata });
 }
 
