@@ -45,7 +45,7 @@ export class MCPConnectionFactory {
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
     basic: t.BasicConnectionOptions,
-    oauth?: t.OAuthConnectionOptions,
+    oauth?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<MCPConnection> {
     const factory = new this(basic, oauth);
     return factory.createConnection();
@@ -232,6 +232,17 @@ export class MCPConnectionFactory {
     let cleanupOAuthHandlers: (() => void) | null = null;
     if (this.useOAuth) {
       cleanupOAuthHandlers = this.handleOAuthEvents(connection);
+    } else {
+      const nonOAuthHandler = () => {
+        logger.info(
+          `${this.logPrefix} Server does not use OAuth — treating 401/403 as auth failure, not OAuth`,
+        );
+        connection.emit('oauthFailed', new Error('Server does not use OAuth'));
+      };
+      connection.on('oauthRequired', nonOAuthHandler);
+      cleanupOAuthHandlers = () => {
+        connection.removeListener('oauthRequired', nonOAuthHandler);
+      };
     }
 
     try {
