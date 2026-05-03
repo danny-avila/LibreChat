@@ -570,6 +570,7 @@ export class MCPConnection extends EventEmitter {
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
     const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
     const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
+    /** Capture only the fields needed by the fetch closure; see factory note above. */
     const useSSRFProtection = this.useSSRFProtection;
     const agents = this.agents;
     const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
@@ -592,16 +593,18 @@ export class MCPConnection extends EventEmitter {
 
     let safeRedirectPostAgent: Agent | undefined;
     let safeRedirectGetAgent: Agent | undefined;
+    /**
+     * Allowlist mode keeps the original MCP URL admin-approved, but redirect
+     * targets are server-controlled. These agents add connect-time DNS checks
+     * for those cross-origin hops so DNS rebinding cannot beat the standalone
+     * resolveHostnameSSRF pre-check.
+     */
     const createSafeRedirectAgent = (bodyTimeout: number): Agent => {
-      const redirectSSRFConnect = createSSRFSafeUndiciConnect() as
-        | ReturnType<typeof createSSRFSafeUndiciConnect>
-        | undefined;
-      const redirectConnectOpts =
-        redirectSSRFConnect != null ? { connect: redirectSSRFConnect } : {};
+      const redirectSSRFConnect = createSSRFSafeUndiciConnect();
       const agent = new Agent({
         bodyTimeout,
         headersTimeout: effectiveTimeout,
-        ...redirectConnectOpts,
+        connect: redirectSSRFConnect,
       });
       agents.push(agent);
       return agent;
@@ -690,6 +693,12 @@ export class MCPConnection extends EventEmitter {
         }
 
         if (!useSSRFProtection && isCrossOriginRedirect) {
+          /**
+           * Once a server-controlled cross-origin hop is seen, keep the safe
+           * dispatcher for the rest of this redirect chain. Restoring the
+           * original dispatcher on a later hop back to the original origin
+           * would re-open the allowlist-mode rebinding gap.
+           */
           currentInit = {
             ...currentInit,
             dispatcher: getSafeRedirectDispatcher(isGet),
