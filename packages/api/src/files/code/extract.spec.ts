@@ -20,14 +20,23 @@ jest.mock('~/files/documents/crud', () => ({
  * assertions (parseDocument receives the canonical MIME) keep exercising
  * `extractDocument`. Tests that need real HTML output drive `bufferToOfficeHtml`
  * directly via its own spec file (`html.spec.ts`); a separate `office-html`
- * describe block below exercises the integration with this mock relaxed. */
+ * describe block below exercises the integration with this mock relaxed.
+ *
+ * `officeHtmlBucket` is the gate predicate the upstream uses to decide
+ * whether to call the dispatcher at all. We pass through to the real
+ * implementation so the gate routes the same files in tests as in prod. */
 const mockOfficeHtml = jest.fn(
   async (_buffer: Buffer, _name: string, _mime: string) => null as string | null,
 );
-jest.mock('~/files/documents/html', () => ({
-  bufferToOfficeHtml: (buffer: Buffer, name: string, mime: string) =>
-    mockOfficeHtml(buffer, name, mime),
-}));
+jest.mock('~/files/documents/html', () => {
+  const actual =
+    jest.requireActual<typeof import('~/files/documents/html')>('~/files/documents/html');
+  return {
+    bufferToOfficeHtml: (buffer: Buffer, name: string, mime: string) =>
+      mockOfficeHtml(buffer, name, mime),
+    officeHtmlBucket: actual.officeHtmlBucket,
+  };
+});
 
 describe('extractCodeArtifactText', () => {
   describe('utf8-text', () => {
@@ -297,6 +306,45 @@ describe('extractCodeArtifactText', () => {
       );
       expect(mockOfficeHtml).not.toHaveBeenCalled();
       expect(text).toBe('hello world\n');
+    });
+
+    it('routes extensionless CSV-by-MIME (utf8-text category) through the office HTML path', async () => {
+      /* Regression for the Codex review on PR #12934. A tool emitting
+       * `data` with `text/csv` classifies as `utf8-text` (csv has no
+       * extension here, MIME is text/* which the classifier treats as
+       * utf8-text). The previous gate skipped the office-render branch
+       * because the extension wasn't in OFFICE_HTML_EXTENSIONS — so the
+       * raw CSV text shipped to the client, which routes by MIME to the
+       * SPREADSHEET bucket and expects a full HTML document. The fix
+       * shares the dispatcher's MIME-aware predicate so the gate fires
+       * here too. */
+      mockOfficeHtml.mockResolvedValueOnce('<!DOCTYPE html><table><tr><td>1</td></tr></table>');
+      const text = await extractCodeArtifactText(
+        Buffer.from('a,b\n1,2', 'utf-8'),
+        'data',
+        'text/csv',
+        'utf8-text',
+      );
+      expect(mockOfficeHtml).toHaveBeenCalledWith(expect.any(Buffer), 'data', 'text/csv');
+      expect(text).toContain('<table>');
+    });
+
+    it.each([
+      ['workbook', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+      ['workbook', 'application/vnd.ms-excel'],
+      ['workbook', 'application/vnd.oasis.opendocument.spreadsheet'],
+      ['report', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      ['deck', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+    ])('routes extensionless office files by MIME alone (%s, %s)', async (name, mime) => {
+      mockOfficeHtml.mockResolvedValueOnce('<!DOCTYPE html><body>x</body></html>');
+      const category = mime.includes('presentation')
+        ? 'pptx'
+        : mime.startsWith('text/')
+          ? 'utf8-text'
+          : 'document';
+      const text = await extractCodeArtifactText(Buffer.from('PK'), name, mime, category);
+      expect(mockOfficeHtml).toHaveBeenCalledWith(expect.any(Buffer), name, mime);
+      expect(text).toContain('<body>');
     });
   });
 });

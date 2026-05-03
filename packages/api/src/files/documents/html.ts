@@ -651,24 +651,34 @@ function extensionOf(name: string): string {
 }
 
 /**
- * Route an office-format buffer to the matching HTML producer. Returns `null`
- * if the file isn't a recognized office type — caller should fall through to
- * its existing text/binary handling.
+ * The four buckets the dispatcher can route to. Used by both
+ * `bufferToOfficeHtml` (which actually renders) and `officeHtmlBucket`
+ * (which the upstream gate in `extract.ts` calls to decide whether to
+ * invoke the dispatcher at all). Sharing one source of truth prevents the
+ * gate from going out of sync with the dispatcher — a previous version
+ * had a narrower extension-only gate that missed extensionless office
+ * files identified solely by MIME (e.g. a tool emitting `data` with
+ * `text/csv`), which then routed to the SPREADSHEET bucket on the
+ * client expecting full HTML and got raw text instead.
+ */
+export type OfficeHtmlBucket = 'docx' | 'spreadsheet' | 'csv' | 'pptx';
+
+/**
+ * Classify a file by extension OR MIME into the bucket the office HTML
+ * dispatcher would route it to, or `null` if no producer applies.
  *
  * Extension wins over MIME because content sniffing routinely labels these
- * formats as `application/zip` or `application/octet-stream`.
+ * formats as `application/zip` or `application/octet-stream`. MIME-only
+ * routing is the fallback for extensionless filenames where the upstream
+ * supplied a useful Content-Type header.
  */
-export async function bufferToOfficeHtml(
-  buffer: Buffer,
-  name: string,
-  mimeType: string,
-): Promise<string | null> {
+export function officeHtmlBucket(name: string, mimeType: string): OfficeHtmlBucket | null {
   const ext = extensionOf(name);
   if (ext === 'docx' || mimeType === DOCX_MIME) {
-    return wordDocToHtml(buffer);
+    return 'docx';
   }
   if (ext === 'csv' || CSV_MIME_PATTERN.test(mimeType)) {
-    return csvToHtml(buffer);
+    return 'csv';
   }
   if (
     ext === 'xlsx' ||
@@ -677,10 +687,35 @@ export async function bufferToOfficeHtml(
     excelMimeTypes.test(mimeType) ||
     mimeType === ODS_MIME
   ) {
-    return excelSheetToHtml(buffer);
+    return 'spreadsheet';
   }
   if (ext === 'pptx' || mimeType === PPTX_MIME) {
-    return pptxToSlideListHtml(buffer);
+    return 'pptx';
   }
   return null;
+}
+
+/**
+ * Route an office-format buffer to the matching HTML producer. Returns `null`
+ * if the file isn't a recognized office type — caller should fall through to
+ * its existing text/binary handling.
+ */
+export async function bufferToOfficeHtml(
+  buffer: Buffer,
+  name: string,
+  mimeType: string,
+): Promise<string | null> {
+  const bucket = officeHtmlBucket(name, mimeType);
+  switch (bucket) {
+    case 'docx':
+      return wordDocToHtml(buffer);
+    case 'csv':
+      return csvToHtml(buffer);
+    case 'spreadsheet':
+      return excelSheetToHtml(buffer);
+    case 'pptx':
+      return pptxToSlideListHtml(buffer);
+    default:
+      return null;
+  }
 }

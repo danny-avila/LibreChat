@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import type { CodeArtifactCategory } from './classify';
 import { parseDocument } from '~/files/documents/crud';
-import { bufferToOfficeHtml } from '~/files/documents/html';
+import { bufferToOfficeHtml, officeHtmlBucket } from '~/files/documents/html';
 import { isBinaryBuffer } from '~/skills/binary';
 import { withTimeout } from '~/utils/promise';
 
@@ -17,20 +17,16 @@ const TRUNCATION_MARKER = '\n\n…[truncated]';
 const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER, 'utf-8');
 
 /**
- * Extensions whose buffers should be rendered as HTML (rich preview) rather
- * than plain text. CSV is included here even though it lives in the
- * `utf8-text` category — when an office HTML producer is available we want
- * the styled-table preview, not raw comma-separated text.
+ * Decide whether a buffer is a candidate for rich HTML preview. Wraps the
+ * shared `officeHtmlBucket` predicate from `~/files/documents/html` so the
+ * gate here stays in lock-step with what the dispatcher will actually
+ * route — including extensionless office files identified solely by MIME
+ * (e.g. a tool emitting `data` with `text/csv`, which would otherwise
+ * classify as `utf8-text`, skip the office gate, and ship raw CSV text
+ * to the client's SPREADSHEET bucket that expects full HTML).
  */
-const OFFICE_HTML_EXTENSIONS = new Set<string>(['docx', 'xlsx', 'xls', 'ods', 'pptx', 'csv']);
-
-const extensionOf = (name: string): string => {
-  const dot = name.lastIndexOf('.');
-  if (dot < 0 || dot === name.length - 1) {
-    return '';
-  }
-  return name.slice(dot + 1).toLowerCase();
-};
+const hasOfficeHtmlPath = (name: string, mimeType: string): boolean =>
+  officeHtmlBucket(name, mimeType) !== null;
 
 /**
  * Truncate UTF-8 content to fit within MAX_TEXT_CACHE_BYTES. Walks back to a
@@ -181,14 +177,14 @@ export async function extractCodeArtifactText(
     return null;
   }
   try {
-    /* Office HTML preview takes precedence for any file whose extension marks
-     * it as a rich-preview type. We check extension first because content
-     * sniffing routinely labels these formats as `application/zip` or
-     * `application/octet-stream`. The HTML producer's own dispatcher will
-     * also fall back to MIME for extensionless inputs. */
-    const ext = extensionOf(name);
-    const officeByExt = OFFICE_HTML_EXTENSIONS.has(ext);
-    if (officeByExt || category === 'document' || category === 'pptx') {
+    /* Office HTML preview takes precedence for any file the dispatcher
+     * recognizes — by extension OR by MIME. The MIME fallback matters for
+     * extensionless tool outputs (e.g. `data` with `text/csv`); without
+     * it we'd ship raw CSV text to the client's SPREADSHEET bucket which
+     * expects a full HTML document. The `document`/`pptx` category checks
+     * keep the path open for sniffed `application/zip`/`octet-stream` MIMEs
+     * where neither the extension nor the MIME alone is dispositive. */
+    if (hasOfficeHtmlPath(name, mimeType) || category === 'document' || category === 'pptx') {
       const html = await renderOfficeHtml(buffer, name, mimeType);
       if (html != null) {
         return html;

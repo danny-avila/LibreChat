@@ -5,6 +5,7 @@ import {
   bufferToOfficeHtml,
   csvToHtml,
   excelSheetToHtml,
+  officeHtmlBucket,
   pptxToSlideListHtml,
   sanitizeOfficeHtml,
   wordDocToHtml,
@@ -216,6 +217,50 @@ describe('Office HTML producers', () => {
       );
       expect(html).not.toBeNull();
       expect(html!).toContain('lc-docx');
+    });
+  });
+
+  describe('officeHtmlBucket predicate', () => {
+    /* The shared predicate is the single source of truth for "should the
+     * office HTML pipeline handle this file?". The upstream gate in
+     * `extract.ts` calls it directly; the dispatcher above delegates to
+     * it. Tests here lock in MIME-only routing for extensionless inputs
+     * (the case Codex flagged on PR #12934). */
+    it.each([
+      ['report.docx', 'application/zip', 'docx'],
+      ['report.docx', '', 'docx'],
+      ['noext', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx'],
+      ['data.csv', 'application/octet-stream', 'csv'],
+      ['data', 'text/csv', 'csv'],
+      ['data', 'application/csv', 'csv'],
+      ['workbook.xlsx', '', 'spreadsheet'],
+      ['legacy.xls', '', 'spreadsheet'],
+      ['sheet.ods', '', 'spreadsheet'],
+      ['noext', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'spreadsheet'],
+      ['noext', 'application/vnd.ms-excel', 'spreadsheet'],
+      ['noext', 'application/vnd.oasis.opendocument.spreadsheet', 'spreadsheet'],
+      ['deck.pptx', '', 'pptx'],
+      [
+        'noext',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'pptx',
+      ],
+    ])('classifies (%s, %s) as %s', (name, mime, expected) => {
+      expect(officeHtmlBucket(name, mime)).toBe(expected);
+    });
+
+    it.each([
+      ['note.txt', 'text/plain'],
+      ['code.py', 'text/x-python'],
+      ['data.json', 'application/json'],
+      ['photo.jpg', 'image/jpeg'],
+      ['doc.pdf', 'application/pdf'],
+      ['archive.zip', 'application/zip'],
+      ['notes.odt', 'application/vnd.oasis.opendocument.text'],
+      ['noext', 'text/plain'],
+      ['noext', ''],
+    ])('returns null for non-office (%s, %s)', (name, mime) => {
+      expect(officeHtmlBucket(name, mime)).toBeNull();
     });
   });
 
