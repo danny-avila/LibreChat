@@ -92,4 +92,11 @@ describe('code env FormData filenames', () => {
       filename: 'my notes @ draft.py',
     });
   });
+
+  it('scrubs control characters from fallback filenames', () => {
+    expect(getCodeEnvFileOptions('report\nContent-Disposition.py')).toEqual({
+      filename: 'report_Content-Disposition.py',
+    });
+    expect(getCodeEnvFileOptions('../evil\r.py')).toEqual({ filename: 'evil_.py' });
+  });
 });

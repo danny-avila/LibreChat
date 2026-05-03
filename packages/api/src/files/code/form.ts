@@ -8,6 +8,7 @@ export interface CodeEnvFileOptions {
 }
 
 const CODE_ENV_SAFE_FILEPATH_PATTERN = /^[a-zA-Z0-9._\-/]+$/;
+const CODE_ENV_FILENAME_CONTROL_CHARS_PATTERN = /[\x00-\x1f\x7f]/g;
 
 function isSafeCodeEnvFilepath(filepath: string): boolean {
   if (!filepath || filepath.startsWith('/') || !CODE_ENV_SAFE_FILEPATH_PATTERN.test(filepath)) {
@@ -19,13 +20,17 @@ function isSafeCodeEnvFilepath(filepath: string): boolean {
 }
 
 function getCodeEnvBasename(filepath: string): string {
-  const basename = path.posix.basename(filepath);
+  const basename = getSafeCodeEnvFilename(path.posix.basename(filepath));
 
   if (!basename || basename === '.' || basename === '..') {
     return 'file';
   }
 
   return basename;
+}
+
+function getSafeCodeEnvFilename(filename: string): string {
+  return filename.replace(CODE_ENV_FILENAME_CONTROL_CHARS_PATTERN, '_');
 }
 
 /**
@@ -37,7 +42,7 @@ export function getCodeEnvFileOptions(filename: string): CodeEnvFileOptions {
   const basename = getCodeEnvBasename(normalized);
 
   if (normalized === filename && filename === basename) {
-    return { filename };
+    return { filename: getSafeCodeEnvFilename(filename) };
   }
 
   if (!isSafeCodeEnvFilepath(normalized)) {
