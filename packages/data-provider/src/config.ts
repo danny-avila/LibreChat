@@ -421,34 +421,45 @@ export const defaultAgentCapabilities = [
 ];
 
 /**
- * Decision applied to a tool call before execution.
- * Mirrors LangChain HITL middleware decision space.
+ * Permission mode applied to a tool call. Mirrors `@librechat/agents`'s
+ * `ToolPolicyMode` 1:1.
  *
- * - `allow`: run the tool without prompting (default).
- * - `deny`: block the tool; the agent receives a rejection message.
- * - `ask`: pause the run and require user approval before execution.
+ * - `default`: ask the user about anything not explicitly allowed (default-on).
+ * - `dontAsk`: deny anything not explicitly allowed (headless / API-key flows).
+ * - `bypass`: auto-approve everything that isn't explicitly denied
+ *   (the user-facing "stop asking me" toggle).
+ *
+ * Subagents inherit the parent's mode; this is enforced by the SDK and not
+ * overridable per-subagent.
  */
-export const toolApprovalDecisionSchema = z.enum(['allow', 'deny', 'ask']);
-export type ToolApprovalDecision = z.infer<typeof toolApprovalDecisionSchema>;
+export const toolApprovalModeSchema = z.enum(['default', 'dontAsk', 'bypass']);
+export type ToolApprovalMode = z.infer<typeof toolApprovalModeSchema>;
 
 /**
  * Per-endpoint tool-approval policy.
  *
- * Resolution order for a given tool call:
- *   1. If the tool name is in `excluded`, the result is `allow`.
- *   2. If the tool name is in `required`, the result is `ask`.
- *   3. Otherwise, the result is `default` (which itself defaults to `allow`).
+ * Shape mirrors `@librechat/agents`'s `ToolPolicyConfig` so the host can map it
+ * directly into `createToolPolicyHook(config)`. The SDK does the evaluation
+ * (`deny → bypass → allow → ask → dontAsk → fallthrough(ask)`); this config
+ * just describes the surface.
  *
- * Tool names are matched as exact strings against the registered tool name.
- * Pattern matching (`mcp:*`, etc.) is intentionally deferred until we have
- * a concrete need.
+ * Conventions:
+ * - All list entries are matched as globs (`*`). Use `mcp:server:*` to scope
+ *   a rule to every tool from a single MCP server.
+ * - `deny` always wins, including under `bypass`.
+ * - `enabled: false` is a LibreChat-only kill switch that disables the entire
+ *   HITL machinery for this endpoint (no checkpointer, no hooks, no prompts).
+ *   This is admin-level; users toggle prompting via `mode: 'bypass'` instead.
  */
 export const toolApprovalPolicySchema = z
   .object({
-    /** Decision applied when no rule matches. Defaults to `'allow'` at policy resolution time. */
-    default: toolApprovalDecisionSchema.optional(),
-    required: z.array(z.string()).optional(),
-    excluded: z.array(z.string()).optional(),
+    enabled: z.boolean().optional(),
+    mode: toolApprovalModeSchema.optional(),
+    allow: z.array(z.string()).optional(),
+    deny: z.array(z.string()).optional(),
+    ask: z.array(z.string()).optional(),
+    /** Optional reason template surfaced in the prompt; `{tool}` is interpolated. */
+    reason: z.string().optional(),
   })
   .optional();
 

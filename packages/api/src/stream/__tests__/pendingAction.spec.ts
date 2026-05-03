@@ -2,7 +2,7 @@ import type { Agents } from 'librechat-data-provider';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
-import { buildPendingAction } from '~/agents/hitl/policy';
+import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 
 jest.spyOn(console, 'log').mockImplementation();
 
@@ -25,12 +25,14 @@ describe('GenerationJobManager pending-action lifecycle (in-memory)', () => {
   });
 
   function buildAction(streamId: string, overrides: Partial<Agents.PendingAction> = {}) {
-    const action = buildPendingAction({
+    const payload = buildToolApprovalPayload([
+      { name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_abc' },
+    ]);
+    const action = buildPendingAction(payload, {
       streamId,
       conversationId: streamId,
       runId: 'run-1',
       responseMessageId: 'msg-1',
-      toolCalls: [{ name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_abc' }],
     });
     return { ...action, ...overrides };
   }
@@ -48,7 +50,10 @@ describe('GenerationJobManager pending-action lifecycle (in-memory)', () => {
     const pending = await manager.getPendingAction(streamId);
     expect(pending).not.toBeNull();
     expect(pending?.actionId).toBe(action.actionId);
-    expect(pending?.payload.action_requests[0].name).toBe('shell');
+    expect(pending?.payload.type).toBe('tool_approval');
+    if (pending?.payload.type === 'tool_approval') {
+      expect(pending.payload.action_requests[0].name).toBe('shell');
+    }
   });
 
   test('getPendingAction returns null for jobs not in requires_action', async () => {
