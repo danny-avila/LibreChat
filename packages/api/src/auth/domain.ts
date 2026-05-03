@@ -635,6 +635,20 @@ export function isOAuthUrlAllowed(
   allowedDomains?: string[] | null,
   allowedAddresses?: string[] | null,
 ): boolean {
+  /**
+   * Require an absolute URL with an explicit scheme. `parseDomainSpec` is
+   * lenient: it prepends `https://` to schemeless inputs so a value like
+   * `10.0.0.5/oauth` would otherwise short-circuit the trust-bypass via
+   * `allowedAddresses` and skip `validateOAuthUrl`'s strict `new URL(url)`
+   * parse-or-throw check, only to fail later in OAuth discovery with a less
+   * clear error. Falling through here lets the caller's strict parse run.
+   */
+  try {
+    new URL(url);
+  } catch {
+    return false;
+  }
+
   const inputSpec = parseDomainSpec(url);
   if (!inputSpec) {
     return false;

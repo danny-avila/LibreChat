@@ -1613,5 +1613,15 @@ describe('SSRF allowedAddresses exemption', () => {
         isOAuthUrlAllowed('http://127.0.0.1/oauth', ['oauth.trusted.com'], ['127.0.0.1']),
       ).toBe(false);
     });
+
+    it('rejects schemeless inputs even when the bare host is in allowedAddresses', () => {
+      // `parseDomainSpec` quietly prepends `https://` to schemeless inputs.
+      // Without a strict `new URL(url)` gate, a value like `10.0.0.5/oauth`
+      // would short-circuit the trust-bypass and skip `validateOAuthUrl`'s
+      // own parse-or-throw. The check must require an absolute URL.
+      expect(isOAuthUrlAllowed('10.0.0.5/oauth', null, ['10.0.0.5'])).toBe(false);
+      expect(isOAuthUrlAllowed('127.0.0.1', null, ['127.0.0.1'])).toBe(false);
+      expect(isOAuthUrlAllowed('//10.0.0.5/oauth', null, ['10.0.0.5'])).toBe(false);
+    });
   });
 });

@@ -138,5 +138,16 @@ describe('MCPOAuthHandler.validateOAuthUrl — allowedAddresses scoping', () => 
         validateOAuthUrl('https://other.public.com/oauth', 'token_endpoint', null, ['8.8.8.8']),
       ).resolves.toBeUndefined();
     });
+
+    it('rejects schemeless OAuth URLs with the strict parse-or-throw error', async () => {
+      // `parseDomainSpec` accepts schemeless inputs by prepending `https://`,
+      // so a malformed value like `10.0.0.5/oauth` could otherwise short-
+      // circuit the address-exemption path and skip `validateOAuthUrl`'s
+      // strict `new URL(url)` parse. The strict gate in `isOAuthUrlAllowed`
+      // ensures schemeless inputs fall through to the explicit error here.
+      await expect(
+        validateOAuthUrl('10.0.0.5/oauth', 'token_endpoint', null, ['10.0.0.5']),
+      ).rejects.toThrow(/Invalid OAuth/);
+    });
   });
 });
