@@ -2,9 +2,13 @@ import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 
 /**
- * Job status enum
+ * Job status enum.
+ *
+ * `requires_action` is non-terminal: the run has paused for human review
+ * (e.g. tool approval) and is expected to be resumed by an approval route.
+ * Stores must NOT cleanup `requires_action` jobs as if they were complete.
  */
-export type JobStatus = 'running' | 'complete' | 'error' | 'aborted';
+export type JobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
 
 /**
  * Serializable job data - no object references, suitable for Redis/external storage
@@ -62,6 +66,12 @@ export interface SerializableJobData {
   iconURL?: string;
   model?: string;
   promptTokens?: number;
+
+  /**
+   * Set when status is `requires_action`. Describes the human review the
+   * run is waiting on. Cleared by the resume path before the job returns to `running`.
+   */
+  pendingAction?: Agents.PendingAction;
 }
 
 /**
