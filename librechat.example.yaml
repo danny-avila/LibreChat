@@ -191,7 +191,9 @@ registration:
 
 # Agent Actions domain restrictions (OpenAPI spec validation)
 # SECURITY: If not configured, SSRF targets are blocked (localhost, private IPs, .internal/.local TLDs).
-# To allow internal targets, you MUST explicitly add them to allowedDomains.
+# Prefer `allowedAddresses` for permitting internal targets — adding a private IP to
+# `allowedDomains` switches the field into strict-whitelist mode and blocks every
+# public destination not also listed.
 # Supports wildcards: '*.example.com' and protocol/port restrictions: 'https://api.example.com:8443'
 actions:
   allowedDomains:
@@ -199,10 +201,32 @@ actions:
     - 'librechat.ai'
     - 'google.com'
     # - 'http://10.225.26.25:7894'  # Internal IP with protocol/port (uncomment if needed)
+  # `allowedAddresses` is an SSRF exemption list, NOT a strict whitelist.
+  # Hostnames or IPs listed here bypass the default-deny block on private/loopback/
+  # link-local destinations. Public domains continue to work normally — listing
+  # private targets here does not restrict access to anything else.
+  # allowedAddresses:
+  #   - 'host.docker.internal'
+  #   - '127.0.0.1'
+  #   - '10.0.0.5'
+
+# Custom endpoint baseURL exemption list
+# SECURITY: User-provided baseURLs (`baseURL: 'user_provided'`) are validated against
+# the same SSRF block as Actions and MCP. If your users legitimately point at private
+# services (self-hosted Ollama, internal LLM gateway, etc.), list those hostnames or
+# IPs here so the validator allows them through. Public destinations are unaffected.
+# endpoints:
+#   allowedAddresses:
+#     - 'localhost'
+#     - '127.0.0.1'
+#     - 'ollama'
+#     - '10.0.0.5'
 
 # MCP Server domain restrictions for remote transports (SSE, WebSocket, HTTP)
 # SECURITY: If not configured, SSRF targets are blocked (localhost, private IPs, .internal/.local TLDs).
-# To allow internal targets like host.docker.internal, you MUST explicitly add them to allowedDomains.
+# Prefer `allowedAddresses` for permitting internal targets — adding a private host to
+# `allowedDomains` switches the field into strict-whitelist mode and blocks every
+# public destination not also listed.
 # Supports wildcards: '*.example.com' matches 'api.example.com', 'staging.example.com', etc.
 # Supports protocol/port restrictions: 'https://api.example.com:8443' restricts to specific protocol/port.
 # mcpSettings:
@@ -212,6 +236,13 @@ actions:
 #     - '*.example.com'           # Wildcard subdomain
 #     - 'https://secure.api.com'  # Protocol-restricted
 #     - 'http://internal:8080'    # Protocol and port restricted
+#   # allowedAddresses is an SSRF exemption list (private-IP-space only).
+#   # Hostnames/IPs listed here bypass the default-deny block; public destinations
+#   # remain reachable. Useful when you want default SSRF protection AND specific
+#   # internal MCP servers.
+#   allowedAddresses:
+#     - 'host.docker.internal'
+#     - '127.0.0.1'
 
 # Example MCP Servers Object Structure
 # mcpServers:

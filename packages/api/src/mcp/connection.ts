@@ -390,6 +390,7 @@ interface MCPConnectionParams {
   userId?: string;
   oauthTokens?: MCPOAuthTokens | null;
   useSSRFProtection?: boolean;
+  allowedAddresses?: string[] | null;
 }
 
 export class MCPConnection extends EventEmitter {
@@ -413,6 +414,7 @@ export class MCPConnection extends EventEmitter {
   private oauthRequired = false;
   private oauthRecovery = false;
   private readonly useSSRFProtection: boolean;
+  private readonly allowedAddresses?: string[] | null;
   iconPath?: string;
   timeout?: number;
   sseReadTimeout?: number;
@@ -527,6 +529,7 @@ export class MCPConnection extends EventEmitter {
     this.serverName = params.serverName;
     this.userId = params.userId;
     this.useSSRFProtection = params.useSSRFProtection === true;
+    this.allowedAddresses = params.allowedAddresses ?? null;
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
     this.sseReadTimeout = params.serverConfig.sseReadTimeout;
@@ -568,7 +571,9 @@ export class MCPConnection extends EventEmitter {
     sseBodyTimeout?: number,
     configuredSecretHeaderKeys?: ReadonlySet<string>,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
-    const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
+    const ssrfConnect = this.useSSRFProtection
+      ? createSSRFSafeUndiciConnect(this.allowedAddresses)
+      : undefined;
     const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
     /** Capture only the fields needed by the fetch closure; see factory note above. */
     const useSSRFProtection = this.useSSRFProtection;
@@ -792,7 +797,9 @@ export class MCPConnection extends EventEmitter {
            * The connect timeout is extended because proxies may delay initial response.
            */
           const sseTimeout = this.timeout || SSE_CONNECT_TIMEOUT;
-          const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
+          const ssrfConnect = this.useSSRFProtection
+            ? createSSRFSafeUndiciConnect(this.allowedAddresses)
+            : undefined;
           const sseAgent = new Agent({
             bodyTimeout: sseTimeout,
             headersTimeout: sseTimeout,

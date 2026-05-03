@@ -242,6 +242,7 @@ describe('MCPConnectionFactory', () => {
         },
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { getTenantId } = require('@librechat/data-schemas');
       (getTenantId as jest.Mock).mockReturnValue('test-tenant');
 
@@ -276,6 +277,7 @@ describe('MCPConnectionFactory', () => {
         undefined,
         undefined,
         oauthOptions.tokenMethods.findToken,
+        undefined,
       );
 
       // initFlow must be awaited BEFORE the redirect to guarantee state is stored

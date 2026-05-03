@@ -1102,6 +1102,7 @@ export const configSchema = z.object({
   mcpSettings: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
+      allowedAddresses: z.array(z.string()).optional(),
     })
     .optional(),
   interface: interfaceSchema,
@@ -1111,6 +1112,7 @@ export const configSchema = z.object({
   actions: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
+      allowedAddresses: z.array(z.string()).optional(),
     })
     .optional(),
   registration: z
@@ -1133,6 +1135,7 @@ export const configSchema = z.object({
   modelSpecs: specsConfigSchema.optional(),
   endpoints: z
     .object({
+      allowedAddresses: z.array(z.string()).optional(),
       all: baseEndpointSchema.omit({ baseURL: true }).optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),

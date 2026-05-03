@@ -2,26 +2,43 @@ import dns from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
 import type { LookupFunction } from 'node:net';
-import { isPrivateIP } from './domain';
+import { isPrivateIP, isAddressAllowed } from './domain';
 
-/** DNS lookup wrapper that blocks resolution to private/reserved IP addresses */
-const ssrfSafeLookup: LookupFunction = (hostname, options, callback) => {
-  dns.lookup(hostname, options, (err, address, family) => {
-    if (err) {
-      callback(err, '', 0);
-      return;
-    }
-    if (typeof address === 'string' && isPrivateIP(address)) {
-      const ssrfError = Object.assign(
-        new Error(`SSRF protection: ${hostname} resolved to blocked address ${address}`),
-        { code: 'ESSRF' },
-      ) as NodeJS.ErrnoException;
-      callback(ssrfError, address, family as number);
-      return;
-    }
-    callback(null, address as string, family as number);
-  });
-};
+/**
+ * Builds a DNS lookup wrapper that blocks resolution to private/reserved IP
+ * addresses. When `allowedAddresses` is provided, hostnames or resolved IPs
+ * matching the list bypass the block — admins can permit known-good internal
+ * services (self-hosted Ollama, Docker host, etc.) without disabling SSRF
+ * protection for everything else.
+ */
+function buildSSRFSafeLookup(allowedAddresses?: string[] | null): LookupFunction {
+  return (hostname, options, callback) => {
+    const hostnameAllowed = isAddressAllowed(hostname, allowedAddresses);
+    dns.lookup(hostname, options, (err, address, family) => {
+      if (err) {
+        callback(err, '', 0);
+        return;
+      }
+      if (
+        !hostnameAllowed &&
+        typeof address === 'string' &&
+        isPrivateIP(address) &&
+        !isAddressAllowed(address, allowedAddresses)
+      ) {
+        const ssrfError = Object.assign(
+          new Error(`SSRF protection: ${hostname} resolved to blocked address ${address}`),
+          { code: 'ESSRF' },
+        ) as NodeJS.ErrnoException;
+        callback(ssrfError, address, family as number);
+        return;
+      }
+      callback(null, address as string, family as number);
+    });
+  };
+}
+
+/** Default lookup with no exemptions. Kept for callers that don't need allowedAddresses. */
+const ssrfSafeLookup: LookupFunction = buildSSRFSafeLookup();
 
 /** Internal agent shape exposing createConnection (exists at runtime but not in TS types) */
 type AgentInternal = {
@@ -29,11 +46,11 @@ type AgentInternal = {
 };
 
 /** Patches an agent instance to inject SSRF-safe DNS lookup at connect time */
-function withSSRFProtection<T extends http.Agent>(agent: T): T {
+function withSSRFProtection<T extends http.Agent>(agent: T, lookup: LookupFunction): T {
   const internal = agent as unknown as AgentInternal;
   const origCreate = internal.createConnection.bind(agent);
   internal.createConnection = (options: Record<string, unknown>, oncreate?: unknown) => {
-    options.lookup = ssrfSafeLookup;
+    options.lookup = lookup;
     return origCreate(options, oncreate);
   };
   return agent;
@@ -44,18 +61,29 @@ function withSSRFProtection<T extends http.Agent>(agent: T): T {
  * Provides TOCTOU-safe SSRF protection by validating the resolved IP at connect time,
  * preventing DNS rebinding attacks where a hostname resolves to a public IP during
  * pre-validation but to a private IP when the actual connection is made.
+ *
+ * @param allowedAddresses - Optional admin exemption list of hostnames/IPs that bypass the block.
  */
-export function createSSRFSafeAgents(): { httpAgent: http.Agent; httpsAgent: https.Agent } {
+export function createSSRFSafeAgents(allowedAddresses?: string[] | null): {
+  httpAgent: http.Agent;
+  httpsAgent: https.Agent;
+} {
+  const lookup = allowedAddresses?.length ? buildSSRFSafeLookup(allowedAddresses) : ssrfSafeLookup;
   return {
-    httpAgent: withSSRFProtection(new http.Agent()),
-    httpsAgent: withSSRFProtection(new https.Agent()),
+    httpAgent: withSSRFProtection(new http.Agent(), lookup),
+    httpsAgent: withSSRFProtection(new https.Agent(), lookup),
   };
 }
 
 /**
  * Returns undici-compatible `connect` options with SSRF-safe DNS lookup.
  * Pass the result as the `connect` property when constructing an undici `Agent`.
+ *
+ * @param allowedAddresses - Optional admin exemption list of hostnames/IPs that bypass the block.
  */
-export function createSSRFSafeUndiciConnect(): { lookup: LookupFunction } {
-  return { lookup: ssrfSafeLookup };
+export function createSSRFSafeUndiciConnect(allowedAddresses?: string[] | null): {
+  lookup: LookupFunction;
+} {
+  const lookup = allowedAddresses?.length ? buildSSRFSafeLookup(allowedAddresses) : ssrfSafeLookup;
+  return { lookup };
 }

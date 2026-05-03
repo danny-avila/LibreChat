@@ -161,13 +161,60 @@ export function isPrivateIP(ip: string): boolean {
 }
 
 /**
+ * Checks whether a hostname or IP literal appears in an admin-supplied
+ * exemption list. Match is case-insensitive and bracket-stripped, so
+ * `[::1]` matches `::1` and `LOCALHOST` matches `localhost`.
+ *
+ * This is the exemption primitive that `allowedAddresses` exposes: when a
+ * hostname or its resolved IP appears here, SSRF callers treat the target
+ * as safe even though it falls inside the private/reserved IP space that
+ * would otherwise be blocked. Public destinations are not affected.
+ */
+export function isAddressAllowed(
+  hostnameOrIP: string,
+  allowedAddresses?: string[] | null,
+): boolean {
+  if (!Array.isArray(allowedAddresses) || allowedAddresses.length === 0) {
+    return false;
+  }
+  const normalized = hostnameOrIP
+    .toLowerCase()
+    .trim()
+    .replace(/^\[|\]$/g, '');
+  for (const entry of allowedAddresses) {
+    if (typeof entry !== 'string') {
+      continue;
+    }
+    const normalizedEntry = entry
+      .toLowerCase()
+      .trim()
+      .replace(/^\[|\]$/g, '');
+    if (normalizedEntry.length > 0 && normalizedEntry === normalized) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Checks if a hostname resolves to a private/reserved IP address.
  * Directly validates literal IPv4 and IPv6 addresses without DNS lookup.
  * For hostnames, resolves via DNS and checks all returned addresses.
  * Fails open on DNS errors (returns false), since the HTTP request would also fail.
+ *
+ * When `allowedAddresses` is provided, the hostname and any resolved IP are
+ * matched against the list — a match short-circuits to `false` so admin-
+ * exempted private targets bypass the SSRF block.
  */
-export async function resolveHostnameSSRF(hostname: string): Promise<boolean> {
+export async function resolveHostnameSSRF(
+  hostname: string,
+  allowedAddresses?: string[] | null,
+): Promise<boolean> {
   const normalizedHost = hostname.toLowerCase().trim();
+
+  if (isAddressAllowed(normalizedHost, allowedAddresses)) {
+    return false;
+  }
 
   if (/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(normalizedHost)) {
     return isPrivateIP(normalizedHost);
@@ -180,7 +227,9 @@ export async function resolveHostnameSSRF(hostname: string): Promise<boolean> {
 
   try {
     const addresses = await lookup(hostname, { all: true });
-    return addresses.some((entry) => isPrivateIP(entry.address));
+    return addresses.some(
+      (entry) => isPrivateIP(entry.address) && !isAddressAllowed(entry.address, allowedAddresses),
+    );
   } catch {
     return false;
   }
@@ -189,11 +238,21 @@ export async function resolveHostnameSSRF(hostname: string): Promise<boolean> {
 /**
  * SSRF Protection: Checks if a hostname/IP is a potentially dangerous internal target.
  * Blocks private IPs, localhost, cloud metadata IPs, and common internal hostnames.
+ *
+ * When `allowedAddresses` is provided, a literal match against the input hostname
+ * exempts the target — used by admins to permit known-good internal services
+ * (self-hosted Ollama, Docker host, etc.) without disabling SSRF protection.
+ *
  * @param hostname - The hostname or IP to check
+ * @param allowedAddresses - Optional admin exemption list
  * @returns true if the target is blocked (SSRF risk), false if safe
  */
-export function isSSRFTarget(hostname: string): boolean {
+export function isSSRFTarget(hostname: string, allowedAddresses?: string[] | null): boolean {
   const normalizedHost = hostname.toLowerCase().trim();
+
+  if (isAddressAllowed(normalizedHost, allowedAddresses)) {
+    return false;
+  }
 
   if (
     normalizedHost === 'localhost' ||
@@ -354,11 +413,14 @@ const MCP_PROTOCOLS: SupportedProtocol[] = ['http:', 'https:', 'ws:', 'wss:'];
  * @param domain - The domain to check (can include protocol/port)
  * @param allowedDomains - List of allowed domain patterns
  * @param supportedProtocols - Protocols to accept (others are rejected)
+ * @param allowedAddresses - Optional admin exemption list of hostnames/IPs that
+ *   bypass the private-IP block when no allowedDomains whitelist is active
  */
 async function isDomainAllowedCore(
   domain: string,
   allowedDomains: string[] | null | undefined,
   supportedProtocols: SupportedProtocol[],
+  allowedAddresses?: string[] | null,
 ): Promise<boolean> {
   const inputSpec = parseDomainSpec(domain);
   if (!inputSpec) {
@@ -373,11 +435,11 @@ async function isDomainAllowedCore(
   /** If no domain restrictions configured, block SSRF targets but allow all else */
   if (!Array.isArray(allowedDomains) || !allowedDomains.length) {
     /** SECURITY: Block SSRF-prone targets when no allowlist is configured */
-    if (isSSRFTarget(inputSpec.hostname)) {
+    if (isSSRFTarget(inputSpec.hostname, allowedAddresses)) {
       return false;
     }
     /** SECURITY: Resolve hostname and block if it points to a private/reserved IP */
-    if (await resolveHostnameSSRF(inputSpec.hostname)) {
+    if (await resolveHostnameSSRF(inputSpec.hostname, allowedAddresses)) {
       return false;
     }
     return true;
@@ -428,15 +490,17 @@ async function isDomainAllowedCore(
  * SECURITY: WebSocket protocols are NOT allowed per OpenAPI specification.
  * @param domain - The domain to check (can include protocol/port)
  * @param allowedDomains - List of allowed domain patterns
+ * @param allowedAddresses - Optional admin exemption list of hostnames/IPs
  */
 export async function isActionDomainAllowed(
   domain?: string | null,
   allowedDomains?: string[] | null,
+  allowedAddresses?: string[] | null,
 ): Promise<boolean> {
   if (!domain || typeof domain !== 'string') {
     return false;
   }
-  return isDomainAllowedCore(domain, allowedDomains, HTTP_PROTOCOLS);
+  return isDomainAllowedCore(domain, allowedDomains, HTTP_PROTOCOLS, allowedAddresses);
 }
 
 /**
@@ -480,6 +544,7 @@ export function extractMCPServerDomain(config: Record<string, unknown>): string 
 export async function isMCPDomainAllowed(
   config: Record<string, unknown>,
   allowedDomains?: string[] | null,
+  allowedAddresses?: string[] | null,
 ): Promise<boolean> {
   const domain = extractMCPServerDomain(config);
   const hasAllowlist = Array.isArray(allowedDomains) && allowedDomains.length > 0;
@@ -499,7 +564,7 @@ export async function isMCPDomainAllowed(
   }
 
   // Use MCP_PROTOCOLS (HTTP/HTTPS/WS/WSS) for MCP server validation
-  return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS);
+  return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS, allowedAddresses);
 }
 
 /**
@@ -514,13 +579,21 @@ export async function isMCPDomainAllowed(
  * @remarks `parseDomainSpec` normalizes `www.` prefixes, so both the input URL
  * and allowedDomains entries starting with `www.` are matched without that prefix.
  */
-export function isOAuthUrlAllowed(url: string, allowedDomains?: string[] | null): boolean {
-  if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) {
+export function isOAuthUrlAllowed(
+  url: string,
+  allowedDomains?: string[] | null,
+  allowedAddresses?: string[] | null,
+): boolean {
+  const inputSpec = parseDomainSpec(url);
+  if (!inputSpec) {
     return false;
   }
 
-  const inputSpec = parseDomainSpec(url);
-  if (!inputSpec) {
+  if (isAddressAllowed(inputSpec.hostname, allowedAddresses)) {
+    return true;
+  }
+
+  if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) {
     return false;
   }
 
@@ -560,13 +633,22 @@ function throwInvalidBaseURL(message: string): never {
  * Throws if the URL is unparseable, uses a non-HTTP(S) scheme, targets a known SSRF hostname,
  * or DNS-resolves to a private IP.
  *
+ * When `allowedAddresses` is provided, the hostname and resolved IPs are matched against
+ * the list — admin-exempted private targets bypass the SSRF block. This lets operators
+ * permit known-good private services (self-hosted Ollama, Docker host, etc.) without
+ * disabling protection for everything else.
+ *
  * @note DNS rebinding: validation performs a single DNS lookup. An adversary controlling
  *   DNS with TTL=0 could respond with a public IP at validation time and a private IP
  *   at request time. This is an accepted limitation of point-in-time DNS checks.
  * @note Fail-open on DNS errors: a resolution failure here implies a failure at request
  *   time as well, matching {@link resolveHostnameSSRF} semantics.
  */
-export async function validateEndpointURL(url: string, endpoint: string): Promise<void> {
+export async function validateEndpointURL(
+  url: string,
+  endpoint: string,
+  allowedAddresses?: string[] | null,
+): Promise<void> {
   let hostname: string;
   let protocol: string;
   try {
@@ -581,11 +663,11 @@ export async function validateEndpointURL(url: string, endpoint: string): Promis
     throwInvalidBaseURL(`Invalid base URL for ${endpoint}: only HTTP and HTTPS are permitted.`);
   }
 
-  if (isSSRFTarget(hostname)) {
+  if (isSSRFTarget(hostname, allowedAddresses)) {
     throwInvalidBaseURL(`Base URL for ${endpoint} targets a restricted address.`);
   }
 
-  if (await resolveHostnameSSRF(hostname)) {
+  if (await resolveHostnameSSRF(hostname, allowedAddresses)) {
     throwInvalidBaseURL(`Base URL for ${endpoint} resolves to a restricted address.`);
   }
 }
