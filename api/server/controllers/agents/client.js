@@ -384,6 +384,37 @@ class AgentClient extends BaseClient {
       if (this.augmentedPrompt) {
         sharedRunContextParts.push(this.augmentedPrompt);
       }
+
+      // Multimodal-RAG: append page-image hits from rag-api as inline
+      // image_urls on the latest user message when the selected model
+      // can read images. Vision-capability + feature-flag gates live in
+      // createContextHandlers; here we just merge the resulting urls.
+      if (typeof this.contextHandlers.getVisualImageURLs === 'function') {
+        try {
+          const visualImageURLs = await this.contextHandlers.getVisualImageURLs();
+          if (visualImageURLs && visualImageURLs.length && latestMessage) {
+            latestMessage.image_urls = [
+              ...(latestMessage.image_urls ?? []),
+              ...visualImageURLs,
+            ];
+            // formattedMessages was .map'd from orderedMessages BEFORE this point and
+            // holds independent objects, so mutating latestMessage doesn't propagate.
+            // Mirror the image_urls onto the corresponding formatted entry so the
+            // provider payload (built from formattedMessages downstream) actually
+            // carries the page PNGs. Without this, getVisualImageURLs() loads the
+            // images into memory but they never reach the LLM.
+            const lastFormatted = formattedMessages[formattedMessages.length - 1];
+            if (lastFormatted) {
+              lastFormatted.image_urls = [
+                ...(lastFormatted.image_urls ?? []),
+                ...visualImageURLs,
+              ];
+            }
+          }
+        } catch (err) {
+          logger.warn('[AgentClient] multimodal visual attachment failed:', err);
+        }
+      }
     }
 
     /** Memory context (user preferences/memories) */
