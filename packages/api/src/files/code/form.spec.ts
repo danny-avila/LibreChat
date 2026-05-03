@@ -31,6 +31,13 @@ describe('code env FormData filenames', () => {
     expect(disposition).toContain('filename="pptx/pptx.py"');
   });
 
+  it('uses filepath for deeply nested safe filenames', () => {
+    expect(getCodeEnvFileOptions('a/b/c/d.py')).toEqual({
+      filename: 'd.py',
+      filepath: 'a/b/c/d.py',
+    });
+  });
+
   it('documents the form-data string overload regression', async () => {
     const disposition = await renderMultipartDisposition((form) => {
       form.append('file', Readable.from(['x']), 'pptx/pptx.py');
@@ -52,6 +59,7 @@ describe('code env FormData filenames', () => {
 
   it('does not preserve traversal paths as filepath options', async () => {
     expect(getCodeEnvFileOptions('../../evil.py')).toEqual({ filename: 'evil.py' });
+    expect(getCodeEnvFileOptions('..\\..\\evil.py')).toEqual({ filename: 'evil.py' });
 
     const disposition = await renderMultipartDisposition((form) => {
       appendCodeEnvFile(form, Readable.from(['x']), '../../evil.py');
@@ -71,6 +79,12 @@ describe('code env FormData filenames', () => {
     expect(getCodeEnvFileOptions('pptx/./pptx.py')).toEqual({ filename: 'pptx.py' });
     expect(getCodeEnvFileOptions('pptx/..')).toEqual({ filename: 'file' });
     expect(getCodeEnvFileOptions('pptx/')).toEqual({ filename: 'pptx' });
+  });
+
+  it('uses safe fallback names for empty or degenerate filenames', () => {
+    expect(getCodeEnvFileOptions('')).toEqual({ filename: 'file' });
+    expect(getCodeEnvFileOptions('.')).toEqual({ filename: 'file' });
+    expect(getCodeEnvFileOptions('..')).toEqual({ filename: 'file' });
   });
 
   it('keeps unsafe flat filenames flat instead of rewriting user-visible names', () => {

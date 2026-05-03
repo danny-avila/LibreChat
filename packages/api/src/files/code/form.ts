@@ -7,10 +7,10 @@ export interface CodeEnvFileOptions {
   filepath?: string;
 }
 
-const CODE_ENV_FILEPATH_CHARS = /^[a-zA-Z0-9._\-/]+$/;
+const CODE_ENV_SAFE_FILEPATH_PATTERN = /^[a-zA-Z0-9._\-/]+$/;
 
 function isSafeCodeEnvFilepath(filepath: string): boolean {
-  if (!filepath || filepath.startsWith('/') || !CODE_ENV_FILEPATH_CHARS.test(filepath)) {
+  if (!filepath || filepath.startsWith('/') || !CODE_ENV_SAFE_FILEPATH_PATTERN.test(filepath)) {
     return false;
   }
 
