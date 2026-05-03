@@ -725,6 +725,7 @@ export const interfaceSchema = z
       .optional(),
     temporaryChat: z.boolean().optional(),
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
+    blockPrivateUserBaseURL: z.boolean().optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     peoplePicker: z
