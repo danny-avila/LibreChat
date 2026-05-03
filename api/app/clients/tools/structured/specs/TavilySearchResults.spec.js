@@ -2,9 +2,6 @@ const { fetch, ProxyAgent } = require('undici');
 const TavilySearchResults = require('../TavilySearchResults');
 
 jest.mock('undici');
-jest.mock('@librechat/agents/langchain/utils/env', () => ({
-  getEnvironmentVariable: jest.fn((key) => process.env[key]),
-}));
 
 describe('TavilySearchResults', () => {
   let originalEnv;
