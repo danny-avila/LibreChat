@@ -1590,7 +1590,7 @@ describe('SSRF allowedAddresses exemption', () => {
   });
 
   describe('isOAuthUrlAllowed', () => {
-    it('returns true when the URL hostname is in allowedAddresses', () => {
+    it('returns true when the URL hostname is in allowedAddresses (no allowedDomains)', () => {
       expect(isOAuthUrlAllowed('https://10.0.0.5/oauth', null, ['10.0.0.5'])).toBe(true);
     });
 
@@ -1599,6 +1599,19 @@ describe('SSRF allowedAddresses exemption', () => {
       expect(
         isOAuthUrlAllowed('https://other.example.com/oauth', ['other.example.com'], ['10.0.0.5']),
       ).toBe(true);
+    });
+
+    it('does not let allowedAddresses bypass a configured allowedDomains list', () => {
+      // Admin set `mcpSettings.allowedDomains` to constrain OAuth metadata/token/revocation
+      // hosts. An unrelated `allowedAddresses` entry (e.g. for self-hosted Ollama) must NOT
+      // broaden that bound — otherwise a malicious MCP server could advertise OAuth at any
+      // exempted private address and pass validation.
+      expect(isOAuthUrlAllowed('http://10.0.0.5/oauth', ['oauth.trusted.com'], ['10.0.0.5'])).toBe(
+        false,
+      );
+      expect(
+        isOAuthUrlAllowed('http://127.0.0.1/oauth', ['oauth.trusted.com'], ['127.0.0.1']),
+      ).toBe(false);
     });
   });
 });

@@ -589,36 +589,44 @@ export function isOAuthUrlAllowed(
     return false;
   }
 
-  if (isAddressAllowed(inputSpec.hostname, allowedAddresses)) {
-    return true;
-  }
-
-  if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) {
+  /**
+   * When `allowedDomains` is configured, treat it as the authoritative bound
+   * on which OAuth URLs may bypass the SSRF/DNS check. `allowedAddresses` is
+   * an SSRF-private-IP exemption, not a domain allowlist — letting it
+   * short-circuit here would broaden a strict admin-configured OAuth scope
+   * (e.g. an MCP server could advertise OAuth endpoints at any address the
+   * admin permitted for an unrelated reason like a self-hosted LLM).
+   */
+  if (Array.isArray(allowedDomains) && allowedDomains.length > 0) {
+    for (const allowedDomain of allowedDomains) {
+      const allowedSpec = parseDomainSpec(allowedDomain);
+      if (!allowedSpec) {
+        continue;
+      }
+      if (!hostnameMatches(inputSpec.hostname, allowedSpec)) {
+        continue;
+      }
+      if (allowedSpec.protocol !== null) {
+        if (inputSpec.protocol === null || inputSpec.protocol !== allowedSpec.protocol) {
+          continue;
+        }
+      }
+      if (allowedSpec.explicitPort) {
+        if (!inputSpec.explicitPort || inputSpec.port !== allowedSpec.port) {
+          continue;
+        }
+      }
+      return true;
+    }
     return false;
   }
 
-  for (const allowedDomain of allowedDomains) {
-    const allowedSpec = parseDomainSpec(allowedDomain);
-    if (!allowedSpec) {
-      continue;
-    }
-    if (!hostnameMatches(inputSpec.hostname, allowedSpec)) {
-      continue;
-    }
-    if (allowedSpec.protocol !== null) {
-      if (inputSpec.protocol === null || inputSpec.protocol !== allowedSpec.protocol) {
-        continue;
-      }
-    }
-    if (allowedSpec.explicitPort) {
-      if (!inputSpec.explicitPort || inputSpec.port !== allowedSpec.port) {
-        continue;
-      }
-    }
-    return true;
-  }
-
-  return false;
+  /**
+   * No `allowedDomains` configured: the address exemption may permit specific
+   * private hosts (matches the semantics of `validateOAuthUrl`'s downstream
+   * SSRF checks, which also consult `allowedAddresses`).
+   */
+  return isAddressAllowed(inputSpec.hostname, allowedAddresses);
 }
 
 /** Matches ErrorTypes.INVALID_BASE_URL — string literal avoids build-time dependency on data-provider */
