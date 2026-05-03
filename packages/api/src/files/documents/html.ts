@@ -663,33 +663,47 @@ function extensionOf(name: string): string {
  */
 export type OfficeHtmlBucket = 'docx' | 'spreadsheet' | 'csv' | 'pptx';
 
+const OFFICE_EXTENSIONS: Record<string, OfficeHtmlBucket> = {
+  docx: 'docx',
+  csv: 'csv',
+  xlsx: 'spreadsheet',
+  xls: 'spreadsheet',
+  ods: 'spreadsheet',
+  pptx: 'pptx',
+};
+
 /**
  * Classify a file by extension OR MIME into the bucket the office HTML
  * dispatcher would route it to, or `null` if no producer applies.
  *
- * Extension wins over MIME because content sniffing routinely labels these
- * formats as `application/zip` or `application/octet-stream`. MIME-only
- * routing is the fallback for extensionless filenames where the upstream
- * supplied a useful Content-Type header.
+ * **Extension always wins** over MIME for any known office extension.
+ * Without this precedence, a `deck.pptx` whose `Content-Type` was
+ * mislabeled `text/csv` (a known footgun when tool sandboxes ship
+ * generic MIMEs) would be routed to `csvToHtml` and try to parse a
+ * binary PPTX as CSV — yielding garbage at best, a parse exception at
+ * worst. MIME-only routing is the fallback for extensionless filenames
+ * (or extensions outside our known set) where the upstream supplied a
+ * useful Content-Type header.
  */
 export function officeHtmlBucket(name: string, mimeType: string): OfficeHtmlBucket | null {
   const ext = extensionOf(name);
-  if (ext === 'docx' || mimeType === DOCX_MIME) {
+  const byExtension = OFFICE_EXTENSIONS[ext];
+  if (byExtension) {
+    return byExtension;
+  }
+  /* MIME-only fallback. Order doesn't matter here — there are no
+   * overlapping MIME patterns across buckets, and the extension table
+   * has already taken precedence above for any conflicting input. */
+  if (mimeType === DOCX_MIME) {
     return 'docx';
   }
-  if (ext === 'csv' || CSV_MIME_PATTERN.test(mimeType)) {
+  if (CSV_MIME_PATTERN.test(mimeType)) {
     return 'csv';
   }
-  if (
-    ext === 'xlsx' ||
-    ext === 'xls' ||
-    ext === 'ods' ||
-    excelMimeTypes.test(mimeType) ||
-    mimeType === ODS_MIME
-  ) {
+  if (excelMimeTypes.test(mimeType) || mimeType === ODS_MIME) {
     return 'spreadsheet';
   }
-  if (ext === 'pptx' || mimeType === PPTX_MIME) {
+  if (mimeType === PPTX_MIME) {
     return 'pptx';
   }
   return null;

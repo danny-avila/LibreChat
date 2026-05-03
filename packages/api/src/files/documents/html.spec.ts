@@ -262,6 +262,32 @@ describe('Office HTML producers', () => {
     ])('returns null for non-office (%s, %s)', (name, mime) => {
       expect(officeHtmlBucket(name, mime)).toBeNull();
     });
+
+    /* Regression for Codex P2 review on PR #12934. A binary office file
+     * with a mismatched MIME (e.g. a tool sandbox sets `text/csv` on
+     * everything it ships) must NOT be re-routed to a different bucket
+     * just because the MIME matches a different bucket's pattern. The
+     * documented "extension wins" precedence is enforced by checking
+     * extensions exhaustively before any MIME pattern fires. */
+    it.each([
+      ['deck.pptx', 'text/csv', 'pptx'],
+      ['workbook.xlsx', 'text/csv', 'spreadsheet'],
+      [
+        'legacy.xls',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'spreadsheet',
+      ],
+      ['sheet.ods', 'text/csv', 'spreadsheet'],
+      ['report.docx', 'text/csv', 'docx'],
+      ['report.docx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'docx'],
+      [
+        'data.csv',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'csv',
+      ],
+    ])('extension wins over conflicting MIME: (%s, %s) → %s', (name, mime, expected) => {
+      expect(officeHtmlBucket(name, mime)).toBe(expected);
+    });
   });
 
   describe('sanitizeOfficeHtml security', () => {
