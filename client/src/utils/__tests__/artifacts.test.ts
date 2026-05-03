@@ -107,6 +107,11 @@ describe('detectArtifactTypeFromFile', () => {
     ['application/vnd.oasis.opendocument.spreadsheet', TOOL_ARTIFACT_TYPES.SPREADSHEET],
     ['text/csv', TOOL_ARTIFACT_TYPES.SPREADSHEET],
     ['application/csv', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    /* Legacy CSV MIME variant — backend's `CSV_MIME_PATTERN` accepts
+     * it, so the client must too or extensionless CSVs with this MIME
+     * would be skipped despite the backend producing valid HTML.
+     * Regression for Codex P3 review on PR #12934. */
+    ['text/comma-separated-values', TOOL_ARTIFACT_TYPES.SPREADSHEET],
     [
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       TOOL_ARTIFACT_TYPES.PRESENTATION,

@@ -676,6 +676,24 @@ function extensionOf(name: string): string {
 }
 
 /**
+ * Strip MIME parameters (`; charset=utf-8`, `; boundary=...`) and
+ * lowercase the result so exact-match MIME comparisons survive servers
+ * and tool sandboxes that decorate Content-Type headers. Without this,
+ * an extensionless `text/csv; charset=utf-8` would slip past the bucket
+ * predicate (returning null) while the client's MIME router — which
+ * already strips parameters via `baseMime` — would route it to
+ * SPREADSHEET expecting an HTML body that the backend never produced.
+ * Mirrors `client/src/utils/artifacts.ts:baseMime`.
+ */
+function baseMime(mime: string): string {
+  if (!mime) {
+    return '';
+  }
+  const semi = mime.indexOf(';');
+  return (semi < 0 ? mime : mime.slice(0, semi)).trim().toLowerCase();
+}
+
+/**
  * The four buckets the dispatcher can route to. Used by both
  * `bufferToOfficeHtml` (which actually renders) and `officeHtmlBucket`
  * (which the upstream gate in `extract.ts` calls to decide whether to
@@ -716,19 +734,23 @@ export function officeHtmlBucket(name: string, mimeType: string): OfficeHtmlBuck
   if (byExtension) {
     return byExtension;
   }
-  /* MIME-only fallback. Order doesn't matter here — there are no
-   * overlapping MIME patterns across buckets, and the extension table
-   * has already taken precedence above for any conflicting input. */
-  if (mimeType === DOCX_MIME) {
+  /* MIME-only fallback. Strip parameters first — Content-Type headers
+   * routinely carry `; charset=utf-8` or `; boundary=...` decorations
+   * that would otherwise fail exact-match comparisons. Order within the
+   * fallback doesn't matter: there are no overlapping MIME patterns
+   * across buckets, and the extension table already took precedence
+   * above for any conflicting input. */
+  const normalized = baseMime(mimeType);
+  if (normalized === DOCX_MIME) {
     return 'docx';
   }
-  if (CSV_MIME_PATTERN.test(mimeType)) {
+  if (CSV_MIME_PATTERN.test(normalized)) {
     return 'csv';
   }
-  if (excelMimeTypes.test(mimeType) || mimeType === ODS_MIME) {
+  if (excelMimeTypes.test(normalized) || normalized === ODS_MIME) {
     return 'spreadsheet';
   }
-  if (mimeType === PPTX_MIME) {
+  if (normalized === PPTX_MIME) {
     return 'pptx';
   }
   return null;

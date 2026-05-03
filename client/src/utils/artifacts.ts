@@ -609,6 +609,13 @@ const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
   'application/vnd.oasis.opendocument.spreadsheet': TOOL_ARTIFACT_TYPES.SPREADSHEET,
   'text/csv': TOOL_ARTIFACT_TYPES.SPREADSHEET,
   'application/csv': TOOL_ARTIFACT_TYPES.SPREADSHEET,
+  /* `text/comma-separated-values` is a legacy CSV MIME variant — rare
+   * in modern HTTP traffic but still emitted by some sandboxes. Kept
+   * in lock-step with the backend's `CSV_MIME_PATTERN` in
+   * `packages/api/src/files/documents/html.ts` so an extensionless CSV
+   * with this MIME doesn't slip through the client routing while the
+   * backend has already produced full HTML for it. */
+  'text/comma-separated-values': TOOL_ARTIFACT_TYPES.SPREADSHEET,
   'application/vnd.openxmlformats-officedocument.presentationml.presentation':
     TOOL_ARTIFACT_TYPES.PRESENTATION,
   // Note: bare `text/plain` is NOT mapped here. The extension map handles

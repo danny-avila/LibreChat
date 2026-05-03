@@ -290,6 +290,38 @@ describe('Office HTML producers', () => {
     ])('extension wins over conflicting MIME: (%s, %s) → %s', (name, mime, expected) => {
       expect(officeHtmlBucket(name, mime)).toBe(expected);
     });
+
+    /* Regression for Codex P2 review on PR #12934. Real Content-Type
+     * headers carry parameters like `; charset=utf-8` and `; boundary`;
+     * the predicate must strip them before matching, otherwise the
+     * backend silently falls through to raw text while the client's
+     * `baseMime` strips the same parameters and routes the file to the
+     * spreadsheet bucket — yielding a broken preview. */
+    it.each([
+      ['data', 'text/csv; charset=utf-8', 'csv'],
+      ['data', 'text/csv;charset=utf-8', 'csv'],
+      ['data', 'TEXT/CSV; CHARSET=UTF-8', 'csv'],
+      ['data', 'application/csv; charset=ascii', 'csv'],
+      ['data', 'text/comma-separated-values', 'csv'],
+      ['data', 'text/comma-separated-values; charset=utf-8', 'csv'],
+      [
+        'workbook',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=binary',
+        'spreadsheet',
+      ],
+      [
+        'report',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document; charset=binary',
+        'docx',
+      ],
+      [
+        'deck',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation; foo=bar',
+        'pptx',
+      ],
+    ])('strips MIME parameters before matching: (%s, %s) → %s', (name, mime, expected) => {
+      expect(officeHtmlBucket(name, mime)).toBe(expected);
+    });
   });
 
   describe('zip-bomb defense (SEC review on PR #12934)', () => {
