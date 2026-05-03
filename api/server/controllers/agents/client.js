@@ -1,6 +1,6 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
-const { getBufferString, HumanMessage } = require('@langchain/core/messages');
+const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
   isEnabled,

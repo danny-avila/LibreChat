@@ -33,7 +33,7 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Types } from 'mongoose';
-import { HumanMessage, AIMessage } from '@langchain/core/messages';
+import { HumanMessage, AIMessage } from '@librechat/agents/langchain/messages';
 import {
   scopeSkillIds,
   resolveSkillActive,

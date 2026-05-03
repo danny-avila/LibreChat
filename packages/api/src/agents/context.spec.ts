@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Constants } from 'librechat-data-provider';
-import { DynamicStructuredTool } from '@langchain/core/tools';
+import { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { Logger } from 'winston';
 import type { MCPManager } from '~/mcp/MCPManager';
 import type { AgentWithTools } from './context';

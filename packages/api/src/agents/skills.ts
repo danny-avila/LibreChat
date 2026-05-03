@@ -1,9 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import { HumanMessage } from '@langchain/core/messages';
 import { isEphemeralAgentId } from 'librechat-data-provider';
+import { HumanMessage } from '@librechat/agents/langchain/messages';
 import { formatSkillCatalog, SkillToolDefinition } from '@librechat/agents';
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
-import type { BaseMessage } from '@langchain/core/messages';
+import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Agent } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type { InitializeAgentDbMethods } from './initialize';
