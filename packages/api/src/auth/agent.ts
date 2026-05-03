@@ -2,8 +2,8 @@ import dns from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
 import type { LookupFunction } from 'node:net';
-import { isPrivateIP } from './ip';
 import { normalizeAllowedAddressesSet, isAddressInAllowedSet } from './allowedAddresses';
+import { isPrivateIP } from './ip';
 
 /**
  * Builds a DNS lookup wrapper that blocks resolution to private/reserved IP

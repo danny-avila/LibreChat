@@ -1,6 +1,6 @@
 import { lookup } from 'node:dns/promises';
-import { isPrivateIP } from './ip';
 import { normalizeAllowedAddressesSet, isAddressInAllowedSet } from './allowedAddresses';
+import { isPrivateIP } from './ip';
 
 /** Re-exported here for backward compatibility; canonical location is `./ip`. */
 export { isPrivateIP };

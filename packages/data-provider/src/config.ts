@@ -116,8 +116,13 @@ function isPrivateIPv6Literal(value: string): boolean {
  * Detects `host:port` and `[ipv6]:port` shapes — both are invalid as
  * allowedAddresses entries. Bare `::1`, `[::1]`, and other IPv6 literals
  * with no port are intentionally not matched.
+ *
+ * Mirrors `looksLikeHostPort` in `@librechat/api`'s `auth/allowedAddresses`.
+ * Kept as a local copy because the data-provider package cannot import from
+ * `@librechat/api` without creating a circular dependency. Keep the two
+ * implementations in sync.
  */
-function isHostPortShape(entry: string): boolean {
+function looksLikeHostPort(entry: string): boolean {
   if (/^\[[^\]]+\]:\d+$/.test(entry)) return true;
   const colonCount = (entry.match(/:/g) ?? []).length;
   if (colonCount !== 1) return false;
@@ -133,7 +138,7 @@ const allowedAddressEntrySchema = z
     message:
       'allowedAddresses entries must be bare hostnames or IPs — no URLs, paths, CIDR ranges, or whitespace',
   })
-  .refine((entry) => !isHostPortShape(entry), {
+  .refine((entry) => !looksLikeHostPort(entry), {
     message: 'allowedAddresses entries must not include a port — list the bare hostname or IP only',
   })
   .refine(
