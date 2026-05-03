@@ -5,13 +5,14 @@
  * @module packages/api/src/tools/definitions
  */
 
-import { Constants, actionDelimiter } from 'librechat-data-provider';
+import { Constants, isActionTool } from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { ToolDefinition } from './classification';
 import { resolveJsonSchemaRefs, normalizeJsonSchema } from '~/mcp/zod';
 import { buildToolClassification } from './classification';
 import { getToolDefinition } from './registry/definitions';
+import { toolkitExpansion } from './toolkits/mapping';
 
 export interface MCPServerTool {
   function?: {
@@ -47,11 +48,6 @@ export interface LoadToolDefinitionsDeps {
   getOrFetchMCPServerTools: (userId: string, serverName: string) => Promise<MCPServerTools | null>;
   /** Checks if a tool name is a known built-in tool */
   isBuiltInTool: (toolName: string) => boolean;
-  /** Loads auth values for tool search (passed to buildToolClassification) */
-  loadAuthValues: (params: {
-    userId: string;
-    authFields: string[];
-  }) => Promise<Record<string, string>>;
   /** Loads action tool definitions (schemas) from OpenAPI specs */
   getActionToolDefinitions?: (
     agentId: string,
@@ -76,8 +72,7 @@ export async function loadToolDefinitions(
   deps: LoadToolDefinitionsDeps,
 ): Promise<LoadToolDefinitionsResult> {
   const { userId, agentId, tools, toolOptions = {}, deferredToolsEnabled = false } = params;
-  const { getOrFetchMCPServerTools, isBuiltInTool, loadAuthValues, getActionToolDefinitions } =
-    deps;
+  const { getOrFetchMCPServerTools, isBuiltInTool, getActionToolDefinitions } = deps;
 
   const emptyResult: LoadToolDefinitionsResult = {
     toolDefinitions: [],
@@ -98,7 +93,7 @@ export async function loadToolDefinitions(
   const mcpAllPattern = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
 
   for (const toolName of tools) {
-    if (toolName.includes(actionDelimiter)) {
+    if (isActionTool(toolName)) {
       actionToolNames.push(toolName);
       continue;
     }
@@ -116,6 +111,20 @@ export async function loadToolDefinitions(
         description: registryDef.description,
         parameters: registryDef.schema as JsonSchemaType | undefined,
       });
+
+      const extraTools = toolkitExpansion[toolName as keyof typeof toolkitExpansion];
+      if (extraTools) {
+        for (const extra of extraTools) {
+          const extraDef = getToolDefinition(extra);
+          if (extraDef) {
+            builtInToolDefs.push({
+              name: extra,
+              description: extraDef.description,
+              parameters: extraDef.schema as JsonSchemaType | undefined,
+            });
+          }
+        }
+      }
       continue;
     }
 
@@ -181,7 +190,6 @@ export async function loadToolDefinitions(
     userId,
     agentId,
     loadedTools,
-    loadAuthValues,
     deferredToolsEnabled,
     definitionsOnly: true,
     agentToolOptions: toolOptions,

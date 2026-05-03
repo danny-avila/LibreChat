@@ -24,12 +24,21 @@ export function isEmailDomainAllowed(email: string, allowedDomains?: string[] | 
   return allowedDomains.some((allowedDomain) => allowedDomain?.toLowerCase() === domain);
 }
 
-/** Checks if IPv4 octets fall within private, reserved, or link-local ranges */
+/** Checks if IPv4 octets fall within private, reserved, or non-routable ranges */
 function isPrivateIPv4(a: number, b: number, c: number): boolean {
-  if (a === 127) {
+  if (a === 0) {
     return true;
   }
   if (a === 10) {
+    return true;
+  }
+  if (a === 127) {
+    return true;
+  }
+  if (a === 100 && b >= 64 && b <= 127) {
+    return true;
+  }
+  if (a === 169 && b === 254) {
     return true;
   }
   if (a === 172 && b >= 16 && b <= 31) {
@@ -38,12 +47,70 @@ function isPrivateIPv4(a: number, b: number, c: number): boolean {
   if (a === 192 && b === 168) {
     return true;
   }
-  if (a === 169 && b === 254) {
+  if (a === 192 && b === 0 && c === 0) {
     return true;
   }
-  if (a === 0 && b === 0 && c === 0) {
+  if (a === 198 && (b === 18 || b === 19)) {
     return true;
   }
+  if (a >= 224) {
+    return true;
+  }
+  return false;
+}
+
+/** Checks if a pre-normalized (lowercase, bracket-stripped) IPv6 address falls within fe80::/10 */
+function isIPv6LinkLocal(ipv6: string): boolean {
+  if (!ipv6.includes(':')) {
+    return false;
+  }
+  const firstHextet = ipv6.split(':', 1)[0];
+  if (!firstHextet || !/^[0-9a-f]{1,4}$/.test(firstHextet)) {
+    return false;
+  }
+  const hextet = parseInt(firstHextet, 16);
+  // /10 mask (0xffc0) preserves top 10 bits: fe80 = 1111_1110_10xx_xxxx
+  return (hextet & 0xffc0) === 0xfe80;
+}
+
+/** Checks if an IPv6 address embeds a private IPv4 via 6to4, NAT64, or Teredo */
+function hasPrivateEmbeddedIPv4(ipv6: string): boolean {
+  if (!ipv6.startsWith('2002:') && !ipv6.startsWith('64:ff9b::') && !ipv6.startsWith('2001::')) {
+    return false;
+  }
+  const segments = ipv6.split(':').filter((s) => s !== '');
+
+  if (ipv6.startsWith('2002:') && segments.length >= 3) {
+    const hi = parseInt(segments[1], 16);
+    const lo = parseInt(segments[2], 16);
+    if (!isNaN(hi) && !isNaN(lo)) {
+      return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
+    }
+  }
+
+  if (ipv6.startsWith('64:ff9b::')) {
+    const lastTwo = segments.slice(-2);
+    if (lastTwo.length === 2) {
+      const hi = parseInt(lastTwo[0], 16);
+      const lo = parseInt(lastTwo[1], 16);
+      if (!isNaN(hi) && !isNaN(lo)) {
+        return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
+      }
+    }
+  }
+
+  // RFC 4380: Teredo stores external IPv4 as bitwise complement in last 32 bits
+  if (ipv6.startsWith('2001::')) {
+    const lastTwo = segments.slice(-2);
+    if (lastTwo.length === 2) {
+      const hi = parseInt(lastTwo[0], 16);
+      const lo = parseInt(lastTwo[1], 16);
+      if (!isNaN(hi) && !isNaN(lo)) {
+        return isPrivateIPv4((~hi >> 8) & 0xff, ~hi & 0xff, (~lo >> 8) & 0xff);
+      }
+    }
+  }
+
   return false;
 }
 
@@ -52,12 +119,22 @@ function isPrivateIPv4(a: number, b: number, c: number): boolean {
  * Handles IPv4, IPv6, and IPv4-mapped IPv6 addresses (::ffff:A.B.C.D).
  */
 export function isPrivateIP(ip: string): boolean {
-  const normalized = ip.toLowerCase().trim();
+  const normalized = ip
+    .toLowerCase()
+    .trim()
+    .replace(/^\[|\]$/g, '');
 
   const mappedMatch = normalized.match(/^::ffff:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (mappedMatch) {
     const [, a, b, c] = mappedMatch.map(Number);
     return isPrivateIPv4(a, b, c);
+  }
+
+  const hexMappedMatch = normalized.match(/^(?:::ffff:|::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hexMappedMatch) {
+    const hi = parseInt(hexMappedMatch[1], 16);
+    const lo = parseInt(hexMappedMatch[2], 16);
+    return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
   }
 
   const ipv4Match = normalized.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
@@ -66,14 +143,17 @@ export function isPrivateIP(ip: string): boolean {
     return isPrivateIPv4(a, b, c);
   }
 
-  const ipv6 = normalized.replace(/^\[|\]$/g, '');
   if (
-    ipv6 === '::1' ||
-    ipv6 === '::' ||
-    ipv6.startsWith('fc') ||
-    ipv6.startsWith('fd') ||
-    ipv6.startsWith('fe80')
+    normalized === '::1' ||
+    normalized === '::' ||
+    normalized.startsWith('fc') || // fc00::/7 — exactly prefixes 'fc' and 'fd'
+    normalized.startsWith('fd') ||
+    isIPv6LinkLocal(normalized) // fe80::/10 — spans 0xfe80–0xfebf; bitwise check required
   ) {
+    return true;
+  }
+
+  if (hasPrivateEmbeddedIPv4(normalized)) {
     return true;
   }
 
@@ -81,21 +161,21 @@ export function isPrivateIP(ip: string): boolean {
 }
 
 /**
- * Resolves a hostname via DNS and checks if any resolved address is a private/reserved IP.
- * Detects DNS-based SSRF bypasses (e.g., nip.io wildcard DNS, attacker-controlled nameservers).
- * Fails open: returns false if DNS resolution fails, since hostname-only checks still apply
- * and the actual HTTP request would also fail.
+ * Checks if a hostname resolves to a private/reserved IP address.
+ * Directly validates literal IPv4 and IPv6 addresses without DNS lookup.
+ * For hostnames, resolves via DNS and checks all returned addresses.
+ * Fails open on DNS errors (returns false), since the HTTP request would also fail.
  */
 export async function resolveHostnameSSRF(hostname: string): Promise<boolean> {
   const normalizedHost = hostname.toLowerCase().trim();
 
   if (/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(normalizedHost)) {
-    return false;
+    return isPrivateIP(normalizedHost);
   }
 
   const ipv6Check = normalizedHost.replace(/^\[|\]$/g, '');
   if (ipv6Check.includes(':')) {
-    return false;
+    return isPrivateIP(ipv6Check);
   }
 
   try {
@@ -362,7 +442,10 @@ export async function isActionDomainAllowed(
 /**
  * Extracts full domain spec (protocol://hostname:port) from MCP server config URL.
  * Returns the full origin for proper protocol/port matching against allowedDomains.
- * Returns null for stdio transports (no URL) or invalid URLs.
+ * @returns The full origin string, or null when:
+ *   - No `url` property, non-string, or empty (stdio transport — always allowed upstream)
+ *   - URL string present but cannot be parsed (rejected fail-closed upstream when allowlist active)
+ *   Callers must distinguish these two null cases; see {@link isMCPDomainAllowed}.
  * @param config - MCP server configuration (accepts any config with optional url field)
  */
 export function extractMCPServerDomain(config: Record<string, unknown>): string | null {
@@ -386,6 +469,11 @@ export function extractMCPServerDomain(config: Record<string, unknown>): string 
  * Validates MCP server domain against allowedDomains.
  * Supports HTTP, HTTPS, WS, and WSS protocols (per MCP specification).
  * Stdio transports (no URL) are always allowed.
+ * Configs with a non-empty URL that cannot be parsed are rejected fail-closed when an
+ * allowlist is active, preventing template placeholders (e.g. `{{HOST}}`) from bypassing
+ * domain validation after `processMCPEnv` resolves them at connection time.
+ * When no allowlist is configured, unparseable URLs fall through to connection-level
+ * SSRF protection (`createSSRFSafeUndiciConnect`).
  * @param config - MCP server configuration with optional url field
  * @param allowedDomains - List of allowed domains (with wildcard support)
  */
@@ -394,12 +482,110 @@ export async function isMCPDomainAllowed(
   allowedDomains?: string[] | null,
 ): Promise<boolean> {
   const domain = extractMCPServerDomain(config);
+  const hasAllowlist = Array.isArray(allowedDomains) && allowedDomains.length > 0;
 
-  // Stdio transports don't have domains - always allowed
+  const hasExplicitUrl =
+    Object.prototype.hasOwnProperty.call(config, 'url') &&
+    typeof config.url === 'string' &&
+    config.url.trim().length > 0;
+
+  if (!domain && hasExplicitUrl && hasAllowlist) {
+    return false;
+  }
+
+  // Stdio transports (no URL) are always allowed
   if (!domain) {
     return true;
   }
 
   // Use MCP_PROTOCOLS (HTTP/HTTPS/WS/WSS) for MCP server validation
   return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS);
+}
+
+/**
+ * Checks whether an OAuth URL matches any entry in the MCP allowedDomains list,
+ * honoring protocol and port constraints when specified by the admin.
+ *
+ * Mirrors the allowlist-matching logic of {@link isDomainAllowedCore} (hostname,
+ * protocol, and explicit-port checks) but is synchronous — no DNS resolution is
+ * needed because the caller is deciding whether to *skip* the subsequent
+ * SSRF/DNS checks, not replace them.
+ *
+ * @remarks `parseDomainSpec` normalizes `www.` prefixes, so both the input URL
+ * and allowedDomains entries starting with `www.` are matched without that prefix.
+ */
+export function isOAuthUrlAllowed(url: string, allowedDomains?: string[] | null): boolean {
+  if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) {
+    return false;
+  }
+
+  const inputSpec = parseDomainSpec(url);
+  if (!inputSpec) {
+    return false;
+  }
+
+  for (const allowedDomain of allowedDomains) {
+    const allowedSpec = parseDomainSpec(allowedDomain);
+    if (!allowedSpec) {
+      continue;
+    }
+    if (!hostnameMatches(inputSpec.hostname, allowedSpec)) {
+      continue;
+    }
+    if (allowedSpec.protocol !== null) {
+      if (inputSpec.protocol === null || inputSpec.protocol !== allowedSpec.protocol) {
+        continue;
+      }
+    }
+    if (allowedSpec.explicitPort) {
+      if (!inputSpec.explicitPort || inputSpec.port !== allowedSpec.port) {
+        continue;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/** Matches ErrorTypes.INVALID_BASE_URL — string literal avoids build-time dependency on data-provider */
+const INVALID_BASE_URL_TYPE = 'invalid_base_url';
+
+function throwInvalidBaseURL(message: string): never {
+  throw new Error(JSON.stringify({ type: INVALID_BASE_URL_TYPE, message }));
+}
+
+/**
+ * Validates that a user-provided endpoint URL does not target private/internal addresses.
+ * Throws if the URL is unparseable, uses a non-HTTP(S) scheme, targets a known SSRF hostname,
+ * or DNS-resolves to a private IP.
+ *
+ * @note DNS rebinding: validation performs a single DNS lookup. An adversary controlling
+ *   DNS with TTL=0 could respond with a public IP at validation time and a private IP
+ *   at request time. This is an accepted limitation of point-in-time DNS checks.
+ * @note Fail-open on DNS errors: a resolution failure here implies a failure at request
+ *   time as well, matching {@link resolveHostnameSSRF} semantics.
+ */
+export async function validateEndpointURL(url: string, endpoint: string): Promise<void> {
+  let hostname: string;
+  let protocol: string;
+  try {
+    const parsed = new URL(url);
+    hostname = parsed.hostname;
+    protocol = parsed.protocol;
+  } catch {
+    throwInvalidBaseURL(`Invalid base URL for ${endpoint}: unable to parse URL.`);
+  }
+
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    throwInvalidBaseURL(`Invalid base URL for ${endpoint}: only HTTP and HTTPS are permitted.`);
+  }
+
+  if (isSSRFTarget(hostname)) {
+    throwInvalidBaseURL(`Base URL for ${endpoint} targets a restricted address.`);
+  }
+
+  if (await resolveHostnameSSRF(hostname)) {
+    throwInvalidBaseURL(`Base URL for ${endpoint} resolves to a restricted address.`);
+  }
 }

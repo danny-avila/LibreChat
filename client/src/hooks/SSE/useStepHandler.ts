@@ -1,7 +1,9 @@
 import { useCallback, useRef } from 'react';
+import { useRecoilCallback } from 'recoil';
 import {
   Constants,
   StepTypes,
+  StepEvents,
   ContentTypes,
   ToolCallTypes,
   getNonEmptyValue,
@@ -12,11 +14,20 @@ import type {
   PartMetadata,
   ContentMetadata,
   EventSubmission,
+  SummaryContentPart,
   TMessageContentParts,
+  SubagentUpdateEvent,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
+import { subagentProgressByToolCallId } from '~/store';
+import {
+  foldSubagentEvent,
+  foldSubagentEventIntoTicker,
+  initSubagentAggregatorState,
+  initSubagentTickerState,
+} from '~/utils/subagentContent';
 
 type TUseStepHandler = {
   announcePolite: (options: AnnounceOptions) => void;
@@ -27,20 +38,17 @@ type TUseStepHandler = {
   lastAnnouncementTimeRef: React.MutableRefObject<number>;
 };
 
-type TStepEvent = {
-  event: string;
-  data:
-    | Agents.MessageDeltaEvent
-    | Agents.ReasoningDeltaEvent
-    | Agents.RunStepDeltaEvent
-    | Agents.AgentUpdate
-    | Agents.RunStep
-    | Agents.ToolEndEvent
-    | {
-        runId?: string;
-        message: string;
-      };
-};
+type TStepEvent =
+  | { event: StepEvents.ON_RUN_STEP; data: Agents.RunStep }
+  | { event: StepEvents.ON_AGENT_UPDATE; data: Agents.AgentUpdate }
+  | { event: StepEvents.ON_MESSAGE_DELTA; data: Agents.MessageDeltaEvent }
+  | { event: StepEvents.ON_REASONING_DELTA; data: Agents.ReasoningDeltaEvent }
+  | { event: StepEvents.ON_RUN_STEP_DELTA; data: Agents.RunStepDeltaEvent }
+  | { event: StepEvents.ON_RUN_STEP_COMPLETED; data: { result: Agents.ToolEndEvent } }
+  | { event: StepEvents.ON_SUMMARIZE_START; data: Agents.SummarizeStartEvent }
+  | { event: StepEvents.ON_SUMMARIZE_DELTA; data: Agents.SummarizeDeltaEvent }
+  | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent }
+  | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent };
 
 type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
 
@@ -52,6 +60,7 @@ type AllContentTypes =
   | ContentTypes.TOOL_CALL
   | ContentTypes.IMAGE_FILE
   | ContentTypes.IMAGE_URL
+  | ContentTypes.SUMMARY
   | ContentTypes.ERROR;
 
 export default function useStepHandler({
@@ -65,6 +74,159 @@ export default function useStepHandler({
   const stepMap = useRef(new Map<string, Agents.RunStep>());
   /** Buffer for deltas that arrive before their corresponding run step */
   const pendingDeltaBuffer = useRef(new Map<string, TStepEvent[]>());
+  /** Coalesces rapid-fire summarize delta renders into a single rAF frame */
+  const summarizeDeltaRaf = useRef<number | null>(null);
+  /**
+   * Maps `SubagentUpdateEvent.subagentRunId` → parent `tool_call_id`.
+   * Preferred source is `payload.parentToolCallId` (threaded through by the
+   * SDK from `ToolRunnableConfig.toolCall.id`, deterministic). If a host
+   * runs an older SDK that doesn't emit it, we fall back to a temporal
+   * claim: the OLDEST unclaimed `subagent` tool call in the active message.
+   * Forward (oldest-first) iteration matches the order tool calls are
+   * created in, so concurrent spawns map in creation order.
+   */
+  const subagentRunToToolCallId = useRef(new Map<string, string>());
+  const claimedSubagentToolCallIds = useRef(new Set<string>());
+  /**
+   * Buffers for envelopes that arrive before their `subagent` tool call is
+   * reflected in `messageMap`. Keyed by `subagentRunId`. Once a tool call is
+   * claimed we drain the buffer into the Recoil atom in arrival order.
+   */
+  const pendingSubagentBuffer = useRef(new Map<string, SubagentUpdateEvent[]>());
+  /**
+   * Tracked atom keys so `clearStepMaps` can reset them. Without this, each
+   * subagent invocation leaks an `events: SubagentUpdateEvent[]` array in the
+   * `atomFamily` — atoms persist for the app lifetime.
+   */
+  const knownSubagentAtomKeys = useRef(new Set<string>());
+
+  /** Both content parts and ticker lines are aggregated incrementally
+   *  into the atom as each `ON_SUBAGENT_UPDATE` arrives — we never
+   *  retain the raw event array, so no rolling window is needed. A
+   *  talkative subagent can emit thousands of deltas without growing
+   *  memory past what the structural output requires. */
+
+  /**
+   * Attempts to resolve the parent `tool_call_id` for a subagent run, using
+   * the SDK-provided `parentToolCallId` first and falling back to an
+   * oldest-unclaimed temporal claim.
+   */
+  const resolveSubagentToolCallId = useCallback(
+    (payload: SubagentUpdateEvent): string | undefined => {
+      const cached = subagentRunToToolCallId.current.get(payload.subagentRunId);
+      if (cached != null) return cached;
+
+      if (payload.parentToolCallId) {
+        subagentRunToToolCallId.current.set(payload.subagentRunId, payload.parentToolCallId);
+        claimedSubagentToolCallIds.current.add(payload.parentToolCallId);
+        return payload.parentToolCallId;
+      }
+
+      // Fallback — oldest unclaimed subagent tool call wins.
+      for (const message of messageMap.current.values()) {
+        const content = message.content;
+        if (!Array.isArray(content)) continue;
+        for (let i = 0; i < content.length; i++) {
+          const part = content[i];
+          if (part?.type !== ContentTypes.TOOL_CALL) continue;
+          const tc = (part as { [ContentTypes.TOOL_CALL]?: { id?: string; name?: string } })[
+            ContentTypes.TOOL_CALL
+          ];
+          if (
+            tc?.name === Constants.SUBAGENT &&
+            tc.id &&
+            !claimedSubagentToolCallIds.current.has(tc.id)
+          ) {
+            subagentRunToToolCallId.current.set(payload.subagentRunId, tc.id);
+            claimedSubagentToolCallIds.current.add(tc.id);
+            return tc.id;
+          }
+        }
+      }
+
+      return undefined;
+    },
+    [],
+  );
+
+  /**
+   * Merges an incoming {@link SubagentUpdateEvent} into the Recoil atom bucket
+   * keyed by the parent `tool_call_id`. Buffers early-arriving events whose
+   * tool call is not yet mapped, and replays the buffer once correlation
+   * completes.
+   */
+  const applySubagentUpdate = useRecoilCallback(
+    ({ set }) =>
+      (payload: SubagentUpdateEvent): void => {
+        const toolCallId = resolveSubagentToolCallId(payload);
+
+        if (!toolCallId) {
+          const queue = pendingSubagentBuffer.current.get(payload.subagentRunId) ?? [];
+          queue.push(payload);
+          pendingSubagentBuffer.current.set(payload.subagentRunId, queue);
+          return;
+        }
+
+        const buffered = pendingSubagentBuffer.current.get(payload.subagentRunId);
+        if (buffered && buffered.length > 0) {
+          pendingSubagentBuffer.current.delete(payload.subagentRunId);
+        }
+        const toApply = buffered ? [...buffered, payload] : [payload];
+
+        knownSubagentAtomKeys.current.add(toolCallId);
+        set(subagentProgressByToolCallId(toolCallId), (prev) => {
+          /** Fold the batch into both aggregators. Pure functions — they
+           *  return a new reference only when something actually changed,
+           *  so React bails out of unnecessary re-renders downstream. */
+          let contentParts = prev?.contentParts ?? [];
+          let aggregatorState = prev?.aggregatorState ?? initSubagentAggregatorState();
+          let tickerState = prev?.tickerState ?? initSubagentTickerState();
+          for (const event of toApply) {
+            ({ parts: contentParts, state: aggregatorState } = foldSubagentEvent(
+              contentParts,
+              aggregatorState,
+              event,
+            ));
+            tickerState = foldSubagentEventIntoTicker(tickerState, event);
+          }
+
+          const last = toApply[toApply.length - 1];
+          return {
+            subagentRunId: payload.subagentRunId,
+            subagentType: payload.subagentType,
+            subagentAgentId: payload.subagentAgentId ?? prev?.subagentAgentId,
+            contentParts,
+            aggregatorState,
+            tickerState,
+            status: last.phase,
+            latestLabel: last.label ?? prev?.latestLabel,
+          };
+        });
+      },
+    [resolveSubagentToolCallId],
+  );
+
+  /**
+   * Resets all accumulated subagent Recoil state. Kept for conversation-
+   * switch cleanup (see top-level hook usage) but NOT called from
+   * `clearStepMaps` — the collapsed SubagentCall ticker and its dialog
+   * read from these atoms to render the child's content parts, and we
+   * want that history to remain visible after the stream ends so the
+   * user can reopen the dialog for auditability. The atoms are bounded
+   * per-call (200-event cap) and per-conversation (one atom per
+   * subagent spawn), so growth is proportional to messages — the same
+   * growth profile as the rest of the conversation state.
+   */
+  const resetSubagentAtoms = useRecoilCallback(
+    ({ reset }) =>
+      (): void => {
+        for (const toolCallId of knownSubagentAtomKeys.current) {
+          reset(subagentProgressByToolCallId(toolCallId));
+        }
+        knownSubagentAtomKeys.current.clear();
+      },
+    [],
+  );
 
   /**
    * Calculate content index for a run step.
@@ -138,7 +300,7 @@ export default function useStepHandler({
         text: (currentContent.text || '') + contentPart.text,
       };
 
-      if (contentPart.tool_call_ids != null) {
+      if ('tool_call_ids' in contentPart && contentPart.tool_call_ids != null) {
         update.tool_call_ids = contentPart.tool_call_ids;
       }
       updatedContent[index] = update;
@@ -172,6 +334,13 @@ export default function useStepHandler({
       };
       updatedContent[index] = {
         ...currentContent,
+      };
+    } else if (contentType === ContentTypes.SUMMARY) {
+      const currentSummary = updatedContent[index] as SummaryContentPart | undefined;
+      const incoming = contentPart as SummaryContentPart;
+      updatedContent[index] = {
+        ...incoming,
+        content: [...(currentSummary?.content ?? []), ...(incoming.content ?? [])],
       };
     } else if (contentType === ContentTypes.TOOL_CALL && 'tool_call' in contentPart) {
       const existingContent = updatedContent[index] as Agents.ToolCallContent | undefined;
@@ -243,7 +412,7 @@ export default function useStepHandler({
   };
 
   const stepHandler = useCallback(
-    ({ event, data }: TStepEvent, submission: EventSubmission) => {
+    (stepEvent: TStepEvent, submission: EventSubmission) => {
       const messages = getMessages() || [];
       const { userMessage } = submission;
       let parentMessageId = userMessage.messageId;
@@ -260,8 +429,8 @@ export default function useStepHandler({
         initialContent = submission?.initialResponse?.content ?? initialContent;
       }
 
-      if (event === 'on_run_step') {
-        const runStep = data as Agents.RunStep;
+      if (stepEvent.event === StepEvents.ON_RUN_STEP) {
+        const runStep = stepEvent.data;
         let responseMessageId = runStep.runId ?? '';
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
           responseMessageId = submission?.initialResponse?.messageId ?? '';
@@ -355,15 +524,38 @@ export default function useStepHandler({
           setMessages(updatedMessages);
         }
 
+        if (runStep.summary != null) {
+          const summaryPart: SummaryContentPart = {
+            type: ContentTypes.SUMMARY,
+            content: [],
+            summarizing: true,
+            model: runStep.summary.model,
+            provider: runStep.summary.provider,
+          };
+
+          let updatedResponse = { ...(messageMap.current.get(responseMessageId) ?? response) };
+          updatedResponse = updateContent(
+            updatedResponse,
+            contentIndex,
+            summaryPart,
+            false,
+            getStepMetadata(runStep),
+          );
+
+          messageMap.current.set(responseMessageId, updatedResponse);
+          const currentMessages = getMessages() || [];
+          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+        }
+
         const bufferedDeltas = pendingDeltaBuffer.current.get(runStep.id);
         if (bufferedDeltas && bufferedDeltas.length > 0) {
           pendingDeltaBuffer.current.delete(runStep.id);
           for (const bufferedDelta of bufferedDeltas) {
-            stepHandler({ event: bufferedDelta.event, data: bufferedDelta.data }, submission);
+            stepHandler(bufferedDelta, submission);
           }
         }
-      } else if (event === 'on_agent_update') {
-        const { agent_update } = data as Agents.AgentUpdate;
+      } else if (stepEvent.event === StepEvents.ON_AGENT_UPDATE) {
+        const { agent_update } = stepEvent.data;
         let responseMessageId = agent_update.runId || '';
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
           responseMessageId = submission?.initialResponse?.messageId ?? '';
@@ -385,7 +577,7 @@ export default function useStepHandler({
           const updatedResponse = updateContent(
             response,
             currentIndex,
-            data,
+            stepEvent.data,
             false,
             agentUpdateMeta,
           );
@@ -393,8 +585,8 @@ export default function useStepHandler({
           const currentMessages = getMessages() || [];
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
         }
-      } else if (event === 'on_message_delta') {
-        const messageDelta = data as Agents.MessageDeltaEvent;
+      } else if (stepEvent.event === StepEvents.ON_MESSAGE_DELTA) {
+        const messageDelta = stepEvent.data;
         const runStep = stepMap.current.get(messageDelta.id);
         let responseMessageId = runStep?.runId ?? '';
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
@@ -404,7 +596,7 @@ export default function useStepHandler({
 
         if (!runStep || !responseMessageId) {
           const buffer = pendingDeltaBuffer.current.get(messageDelta.id) ?? [];
-          buffer.push({ event: 'on_message_delta', data: messageDelta });
+          buffer.push({ event: StepEvents.ON_MESSAGE_DELTA, data: messageDelta });
           pendingDeltaBuffer.current.set(messageDelta.id, buffer);
           return;
         }
@@ -436,8 +628,8 @@ export default function useStepHandler({
           const currentMessages = getMessages() || [];
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
         }
-      } else if (event === 'on_reasoning_delta') {
-        const reasoningDelta = data as Agents.ReasoningDeltaEvent;
+      } else if (stepEvent.event === StepEvents.ON_REASONING_DELTA) {
+        const reasoningDelta = stepEvent.data;
         const runStep = stepMap.current.get(reasoningDelta.id);
         let responseMessageId = runStep?.runId ?? '';
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
@@ -447,7 +639,7 @@ export default function useStepHandler({
 
         if (!runStep || !responseMessageId) {
           const buffer = pendingDeltaBuffer.current.get(reasoningDelta.id) ?? [];
-          buffer.push({ event: 'on_reasoning_delta', data: reasoningDelta });
+          buffer.push({ event: StepEvents.ON_REASONING_DELTA, data: reasoningDelta });
           pendingDeltaBuffer.current.set(reasoningDelta.id, buffer);
           return;
         }
@@ -479,8 +671,8 @@ export default function useStepHandler({
           const currentMessages = getMessages() || [];
           setMessages([...currentMessages.slice(0, -1), updatedResponse]);
         }
-      } else if (event === 'on_run_step_delta') {
-        const runStepDelta = data as Agents.RunStepDeltaEvent;
+      } else if (stepEvent.event === StepEvents.ON_RUN_STEP_DELTA) {
+        const runStepDelta = stepEvent.data;
         const runStep = stepMap.current.get(runStepDelta.id);
         let responseMessageId = runStep?.runId ?? '';
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
@@ -490,7 +682,7 @@ export default function useStepHandler({
 
         if (!runStep || !responseMessageId) {
           const buffer = pendingDeltaBuffer.current.get(runStepDelta.id) ?? [];
-          buffer.push({ event: 'on_run_step_delta', data: runStepDelta });
+          buffer.push({ event: StepEvents.ON_RUN_STEP_DELTA, data: runStepDelta });
           pendingDeltaBuffer.current.set(runStepDelta.id, buffer);
           return;
         }
@@ -538,8 +730,8 @@ export default function useStepHandler({
 
           setMessages(updatedMessages);
         }
-      } else if (event === 'on_run_step_completed') {
-        const { result } = data as unknown as { result: Agents.ToolEndEvent };
+      } else if (stepEvent.event === StepEvents.ON_RUN_STEP_COMPLETED) {
+        const { result } = stepEvent.data;
 
         const { id: stepId } = result;
 
@@ -581,22 +773,140 @@ export default function useStepHandler({
 
           setMessages(updatedMessages);
         }
-      }
+      } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
+        applySubagentUpdate(stepEvent.data);
+      } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_START) {
+        announcePolite({ message: 'summarize_started', isStatus: true });
+      } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_DELTA) {
+        const deltaData = stepEvent.data;
+        const runStep = stepMap.current.get(deltaData.id);
+        let responseMessageId = runStep?.runId ?? '';
+        if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
+          responseMessageId = submission?.initialResponse?.messageId ?? '';
+          parentMessageId = submission?.initialResponse?.parentMessageId ?? '';
+        }
 
-      return () => {
-        toolCallIdMap.current.clear();
-        messageMap.current.clear();
-        stepMap.current.clear();
-      };
+        if (!runStep || !responseMessageId) {
+          const buffer = pendingDeltaBuffer.current.get(deltaData.id) ?? [];
+          buffer.push({ event: StepEvents.ON_SUMMARIZE_DELTA, data: deltaData });
+          pendingDeltaBuffer.current.set(deltaData.id, buffer);
+          return;
+        }
+
+        const response = messageMap.current.get(responseMessageId);
+        if (response) {
+          const contentPart: SummaryContentPart = {
+            ...deltaData.delta.summary,
+            summarizing: true,
+          };
+
+          const contentIndex = runStep.index + initialContent.length;
+          const updatedResponse = updateContent(
+            response,
+            contentIndex,
+            contentPart,
+            false,
+            getStepMetadata(runStep),
+          );
+          messageMap.current.set(responseMessageId, updatedResponse);
+          if (summarizeDeltaRaf.current == null) {
+            summarizeDeltaRaf.current = requestAnimationFrame(() => {
+              summarizeDeltaRaf.current = null;
+              const latest = messageMap.current.get(responseMessageId);
+              if (latest) {
+                const msgs = getMessages() || [];
+                setMessages([...msgs.slice(0, -1), latest]);
+              }
+            });
+          }
+        }
+      } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_COMPLETE) {
+        const completeData = stepEvent.data;
+        const completeRunStep = stepMap.current.get(completeData.id);
+        let completeMessageId = completeRunStep?.runId ?? '';
+        if (completeMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
+          completeMessageId = submission?.initialResponse?.messageId ?? '';
+        }
+
+        const targetMessage = messageMap.current.get(completeMessageId);
+        if (!targetMessage || !Array.isArray(targetMessage.content)) {
+          return;
+        }
+
+        const currentMessages = getMessages() || [];
+        const targetIndex = currentMessages.findIndex((m) => m.messageId === completeMessageId);
+
+        if (completeData.error) {
+          const filtered = targetMessage.content.filter(
+            (part) =>
+              part?.type !== ContentTypes.SUMMARY || !(part as SummaryContentPart).summarizing,
+          );
+          if (filtered.length !== targetMessage.content.length) {
+            announcePolite({ message: 'summarize_failed', isStatus: true });
+            const cleaned = { ...targetMessage, content: filtered };
+            messageMap.current.set(completeMessageId, cleaned);
+            if (targetIndex >= 0) {
+              const updated = [...currentMessages];
+              updated[targetIndex] = cleaned;
+              setMessages(updated);
+            }
+          }
+        } else {
+          let didFinalize = false;
+          const updatedContent = targetMessage.content.map((part) => {
+            if (part?.type === ContentTypes.SUMMARY && (part as SummaryContentPart).summarizing) {
+              didFinalize = true;
+              if (!completeData.summary) {
+                return { ...part, summarizing: false } as SummaryContentPart;
+              }
+              return { ...completeData.summary, summarizing: false } as SummaryContentPart;
+            }
+            return part;
+          });
+          if (didFinalize && targetIndex >= 0) {
+            announcePolite({ message: 'summarize_completed', isStatus: true });
+            const finalized = { ...targetMessage, content: updatedContent };
+            messageMap.current.set(completeMessageId, finalized);
+            const updated = [...currentMessages];
+            updated[targetIndex] = finalized;
+            setMessages(updated);
+          }
+        }
+      } else {
+        const _exhaustive: never = stepEvent;
+        console.warn('Unhandled step event', (_exhaustive as TStepEvent).event);
+      }
     },
-    [getMessages, lastAnnouncementTimeRef, announcePolite, setMessages, calculateContentIndex],
+    [
+      getMessages,
+      lastAnnouncementTimeRef,
+      announcePolite,
+      setMessages,
+      calculateContentIndex,
+      applySubagentUpdate,
+    ],
   );
 
   const clearStepMaps = useCallback(() => {
+    if (summarizeDeltaRaf.current != null) {
+      cancelAnimationFrame(summarizeDeltaRaf.current);
+      summarizeDeltaRaf.current = null;
+    }
     toolCallIdMap.current.clear();
     messageMap.current.clear();
     stepMap.current.clear();
     pendingDeltaBuffer.current.clear();
+    subagentRunToToolCallId.current.clear();
+    claimedSubagentToolCallIds.current.clear();
+    pendingSubagentBuffer.current.clear();
+    /** Intentionally NOT calling `resetSubagentAtoms()` here — users need
+     *  to be able to reopen the SubagentCall dialog after completion to
+     *  audit what the child did. `resetSubagentAtoms` is returned below
+     *  so callers can wipe atoms on conversation-switch (see
+     *  `useEventHandlers`) — that's the correct cleanup boundary:
+     *  persisted `subagent_content` takes over for historical messages
+     *  once the conversation is saved, and we prevent unbounded
+     *  atomFamily growth across multi-conversation sessions. */
   }, []);
 
   /**
@@ -610,5 +920,5 @@ export default function useStepHandler({
     }
   }, []);
 
-  return { stepHandler, clearStepMaps, syncStepMessage };
+  return { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage };
 }

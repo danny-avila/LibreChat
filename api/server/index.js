@@ -8,29 +8,34 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
+  apiNotFound,
   ErrorController,
+  memoryDiagnostics,
   performStartupChecks,
   handleJsonParseError,
-  initializeFileStorage,
   GenerationJobManager,
   createStreamServices,
+  initializeFileStorage,
+  updateInterfacePermissions,
+  preAuthTenantMiddleware,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const { getRoleByName, updateAccessPermissions, seedDatabase } = require('~/models');
+const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
-const { updateInterfacePermissions } = require('~/models/interface');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
+const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
-const { seedDatabase } = require('~/models');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -56,11 +61,20 @@ const startServer = async () => {
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
 
-  await seedDatabase();
-  const appConfig = await getAppConfig();
+  if (isEnabled(process.env.TENANT_ISOLATION_STRICT)) {
+    logger.warn(
+      '[Security] TENANT_ISOLATION_STRICT is active. Ensure your reverse proxy strips or sets ' +
+        'the X-Tenant-Id header — untrusted clients must not be able to set it directly.',
+    );
+  }
+
+  await runAsSystem(seedDatabase);
+  const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
-  await performStartupChecks(appConfig);
-  await updateInterfacePermissions(appConfig);
+  await runAsSystem(async () => {
+    await performStartupChecks(appConfig);
+    await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
+  });
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
@@ -131,10 +145,20 @@ const startServer = async () => {
     await configureSocialLogins(app);
   }
 
-  app.use('/oauth', routes.oauth);
+  /* Per-request capability cache — must be registered before any route that calls hasCapability */
+  app.use(capabilityContextMiddleware);
+
+  /* Pre-auth tenant context for unauthenticated routes that need tenant scoping.
+   * The reverse proxy / auth gateway sets `X-Tenant-Id` header for multi-tenant deployments. */
+  app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
   /* API Endpoints */
-  app.use('/api/auth', routes.auth);
+  app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
   app.use('/api/admin', routes.adminAuth);
+  app.use('/api/admin/config', routes.adminConfig);
+  app.use('/api/admin/grants', routes.adminGrants);
+  app.use('/api/admin/groups', routes.adminGroups);
+  app.use('/api/admin/roles', routes.adminRoles);
+  app.use('/api/admin/users', routes.adminUsers);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/api-keys', routes.apiKeys);
@@ -144,15 +168,16 @@ const startServer = async () => {
   app.use('/api/convos', routes.convos);
   app.use('/api/presets', routes.presets);
   app.use('/api/prompts', routes.prompts);
+  app.use('/api/skills', routes.skills);
   app.use('/api/categories', routes.categories);
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/balance', routes.balance);
   app.use('/api/models', routes.models);
-  app.use('/api/config', routes.config);
+  app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
   app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
-  app.use('/api/share', routes.share);
+  app.use('/api/share', preAuthTenantMiddleware, routes.share);
   app.use('/api/roles', routes.roles);
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
@@ -162,8 +187,10 @@ const startServer = async () => {
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
 
-  app.use(ErrorController);
+  /** 404 for unmatched API routes */
+  app.use('/api', apiNotFound);
 
+  /** SPA fallback - serve index.html for all unmatched routes */
   app.use((req, res) => {
     res.set({
       'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
@@ -179,6 +206,9 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
+  /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
+  app.use(ErrorController);
+
   app.listen(port, host, async (err) => {
     if (err) {
       logger.error('Failed to start server:', err);
@@ -193,18 +223,49 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    await initializeMCPs();
-    await initializeOAuthReconnectManager();
-    await checkMigrations();
+    /**
+     * The listen callback is async, so any rejection from these awaits would
+     * otherwise be detached from `startServer().catch(...)` (which only
+     * catches errors that happen before `app.listen`). Without explicit
+     * handling, the global `unhandledRejection` handler would swallow init
+     * failures and leave the server listening but only partially
+     * initialized — passing liveness checks while serving broken requests.
+     */
+    try {
+      await runAsSystem(async () => {
+        await initializeMCPs();
+        await initializeOAuthReconnectManager();
+      });
+      await checkMigrations();
 
-    // Configure stream services (auto-detects Redis from USE_REDIS env var)
-    const streamServices = createStreamServices();
-    GenerationJobManager.configure(streamServices);
-    GenerationJobManager.initialize();
+      // Configure stream services (auto-detects Redis from USE_REDIS env var)
+      const streamServices = createStreamServices();
+      GenerationJobManager.configure(streamServices);
+      GenerationJobManager.initialize();
+
+      const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
+      if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
+        memoryDiagnostics.start();
+      }
+    } catch (initErr) {
+      logger.error('Post-listen initialization failed:', initErr);
+      process.exit(1);
+    }
   });
 };
 
-startServer();
+/**
+ * Boot rejections (e.g. `connectDb`, `getAppConfig`, `performStartupChecks`)
+ * must remain fail-fast: a half-initialized process with no listening HTTP
+ * server should die immediately so the orchestrator restarts it, instead of
+ * being kept alive by the `unhandledRejection` handler below until the
+ * liveness probe eventually times out. Mirrors the pattern in
+ * `experimental.js`.
+ */
+startServer().catch((err) => {
+  logger.error('Failed to start server:', err);
+  process.exit(1);
+});
 
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
@@ -261,6 +322,32 @@ process.on('uncaughtException', (err) => {
   }
 
   process.exit(1);
+});
+
+/**
+ * Unhandled promise rejection handler.
+ *
+ * Node 15+ terminates the process by default when a promise rejection is
+ * unhandled. MCP OAuth reconnect storms and streamable-HTTP transport resets
+ * can produce transient fire-and-forget rejections (ECONNRESET, token refresh
+ * races) that are recoverable — the server should log and keep serving other
+ * requests rather than silently crash under load.
+ *
+ * Non-Error reasons are forwarded as-is so structured payloads (e.g.
+ * `{ code: "ECONNRESET", errno: -104 }`) survive instead of being collapsed to
+ * "[object Object]" by `String()`.
+ */
+process.on('unhandledRejection', (reason) => {
+  if (reason instanceof Error) {
+    logger.error('Unhandled promise rejection. The app will continue running.', {
+      name: reason.name,
+      message: reason.message,
+      stack: reason.stack,
+      cause: reason.cause,
+    });
+    return;
+  }
+  logger.error('Unhandled promise rejection. The app will continue running.', { reason });
 });
 
 /** Export app for easier testing purposes */

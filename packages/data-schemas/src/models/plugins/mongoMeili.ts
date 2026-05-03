@@ -1,7 +1,7 @@
 import _ from 'lodash';
-import { MeiliSearch } from 'meilisearch';
 import { parseTextParts } from 'librechat-data-provider';
-import type { SearchResponse, SearchParams, Index } from 'meilisearch';
+import { MeiliSearch, MeiliSearchTimeOutError } from 'meilisearch';
+import type { SearchResponse, SearchParams, Index, MeiliSearchErrorInfo } from 'meilisearch';
 import type {
   CallbackWithoutResultAndOptionalError,
   FilterQuery,
@@ -94,7 +94,7 @@ const getSyncConfig = () => ({
  * Validates the required options for configuring the mongoMeili plugin.
  */
 const validateOptions = (options: Partial<MongoMeiliOptions>): void => {
-  const requiredKeys: (keyof MongoMeiliOptions)[] = ['host', 'apiKey', 'indexName'];
+  const requiredKeys: (keyof MongoMeiliOptions)[] = ['host', 'apiKey', 'indexName', 'primaryKey'];
   requiredKeys.forEach((key) => {
     if (!options[key]) {
       throw new Error(`Missing mongoMeili Option: ${key}`);
@@ -130,19 +130,21 @@ const processBatch = async <T>(
  * @param config - Configuration object.
  * @param config.index - The MeiliSearch index object.
  * @param config.attributesToIndex - List of attributes to index.
+ * @param config.primaryKey - The primary key field for MeiliSearch document operations.
  * @param config.syncOptions - Sync configuration options.
  * @returns A class definition that will be loaded into the Mongoose schema.
  */
 const createMeiliMongooseModel = ({
   index,
   attributesToIndex,
+  primaryKey,
   syncOptions,
 }: {
   index: Index<MeiliIndexable>;
   attributesToIndex: string[];
+  primaryKey: string;
   syncOptions: { batchSize: number; delayMs: number };
 }) => {
-  const primaryKey = attributesToIndex[0];
   const syncConfig = { ...getSyncConfig(), ...syncOptions };
 
   class MeiliMongooseModel {
@@ -255,11 +257,17 @@ const createMeiliMongooseModel = ({
 
       try {
         // Add documents to MeiliSearch
-        await index.addDocumentsInBatches(formattedDocs);
+        await index.addDocumentsInBatches(formattedDocs, undefined, { primaryKey });
 
-        // Update MongoDB to mark documents as indexed
+        // Update MongoDB to mark documents as indexed.
+        // { timestamps: false } prevents Mongoose from touching updatedAt, preserving
+        // original conversation/message timestamps (fixes sidebar chronological sort).
         const docsIds = documents.map((doc) => doc._id);
-        await this.updateMany({ _id: { $in: docsIds } }, { $set: { _meiliIndex: true } });
+        await this.updateMany(
+          { _id: { $in: docsIds } },
+          { $set: { _meiliIndex: true } },
+          { timestamps: false },
+        );
       } catch (error) {
         logger.error('[processSyncBatch] Error processing batch:', error);
         throw error;
@@ -416,7 +424,7 @@ const createMeiliMongooseModel = ({
 
       while (retryCount < maxRetries) {
         try {
-          await index.addDocuments([object]);
+          await index.addDocuments([object], { primaryKey });
           break;
         } catch (error) {
           retryCount++;
@@ -430,7 +438,8 @@ const createMeiliMongooseModel = ({
       }
 
       try {
-        await this.collection.updateMany(
+        // eslint-disable-next-line no-restricted-syntax -- _meiliIndex is an internal bookkeeping flag, not tenant-scoped data
+        await this.collection.updateOne(
           { _id: this._id as Types.ObjectId },
           { $set: { _meiliIndex: true } },
         );
@@ -450,10 +459,8 @@ const createMeiliMongooseModel = ({
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
       try {
-        const object = _.omitBy(_.pick(this.toJSON(), attributesToIndex), (v, k) =>
-          k.startsWith('$'),
-        );
-        await index.updateDocuments([object]);
+        const object = this.preprocessObjectForIndex!();
+        await index.updateDocuments([object], { primaryKey });
         next();
       } catch (error) {
         logger.error('[updateObjectToMeili] Error updating document in Meili:', error);
@@ -471,7 +478,7 @@ const createMeiliMongooseModel = ({
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
       try {
-        await index.deleteDocument(this._id as string);
+        await index.deleteDocument(String(this[primaryKey as keyof DocumentWithMeiliIndex]));
         next();
       } catch (error) {
         logger.error('[deleteObjectFromMeili] Error deleting document from Meili:', error);
@@ -575,7 +582,6 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   /** Create index only if it doesn't exist */
   const index = client.index<MeiliIndexable>(indexName);
 
-  // Check if index exists and create if needed
   (async () => {
     try {
       await index.getRawInfo();
@@ -585,18 +591,34 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       if (errorCode === 'index_not_found') {
         try {
           logger.info(`[mongoMeili] Creating new index: ${indexName}`);
-          await client.createIndex(indexName, { primaryKey });
-          logger.info(`[mongoMeili] Successfully created index: ${indexName}`);
+          const enqueued = await client.createIndex(indexName, { primaryKey });
+          const task = await client.waitForTask(enqueued.taskUid, {
+            timeOutMs: 10000,
+            intervalMs: 100,
+          });
+          logger.debug(`[mongoMeili] Index ${indexName} creation task:`, task);
+          if (task.status !== 'succeeded') {
+            const taskError = task.error as MeiliSearchErrorInfo | null;
+            if (taskError?.code === 'index_already_exists') {
+              logger.debug(`[mongoMeili] Index ${indexName} was created by another instance`);
+            } else {
+              logger.warn(`[mongoMeili] Index ${indexName} creation failed:`, taskError);
+            }
+          } else {
+            logger.info(`[mongoMeili] Successfully created index: ${indexName}`);
+          }
         } catch (createError) {
-          // Index might have been created by another instance
-          logger.debug(`[mongoMeili] Index ${indexName} may already exist:`, createError);
+          if (createError instanceof MeiliSearchTimeOutError) {
+            logger.warn(`[mongoMeili] Timed out waiting for index ${indexName} creation`);
+          } else {
+            logger.warn(`[mongoMeili] Error creating index ${indexName}:`, createError);
+          }
         }
       } else {
         logger.error(`[mongoMeili] Error checking index ${indexName}:`, error);
       }
     }
 
-    // Configure index settings to make 'user' field filterable
     try {
       await index.updateSettings({
         filterableAttributes: ['user'],
@@ -622,7 +644,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     logger.debug(`[mongoMeili] Added 'user' field to ${indexName} index attributes`);
   }
 
-  schema.loadClass(createMeiliMongooseModel({ index, attributesToIndex, syncOptions }));
+  schema.loadClass(createMeiliMongooseModel({ index, attributesToIndex, primaryKey, syncOptions }));
 
   // Register Mongoose hooks
   schema.post('save', function (doc: DocumentWithMeiliIndex, next) {

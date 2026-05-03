@@ -13,10 +13,10 @@ jest.mock('@mcp-ui/client', () => ({
   ),
 }));
 
-// Mock useMessagesOperations hook
+// Mock useOptionalMessagesOperations hook
 const mockAsk = jest.fn();
 jest.mock('~/Providers', () => ({
-  useMessagesOperations: () => ({
+  useOptionalMessagesOperations: () => ({
     ask: mockAsk,
   }),
 }));

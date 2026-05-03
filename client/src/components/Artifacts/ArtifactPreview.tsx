@@ -6,7 +6,7 @@ import type {
 } from '@codesandbox/sandpack-react/unstyled';
 import type { TStartupConfig } from 'librechat-data-provider';
 import type { ArtifactFiles } from '~/common';
-import { sharedFiles, sharedOptions } from '~/utils/artifacts';
+import { sharedFiles, buildSandpackOptions } from '~/utils/artifacts';
 
 export const ArtifactPreview = memo(function ({
   files,
@@ -39,15 +39,10 @@ export const ArtifactPreview = memo(function ({
     };
   }, [currentCode, files, fileKey]);
 
-  const options: typeof sharedOptions = useMemo(() => {
-    if (!startupConfig) {
-      return sharedOptions;
-    }
-    return {
-      ...sharedOptions,
-      bundlerURL: template === 'static' ? startupConfig.staticBundlerURL : startupConfig.bundlerURL,
-    };
-  }, [startupConfig, template]);
+  const options: SandpackProviderProps['options'] = useMemo(
+    () => buildSandpackOptions(template, startupConfig),
+    [startupConfig, template],
+  );
 
   if (Object.keys(artifactFiles).length === 0) {
     return null;

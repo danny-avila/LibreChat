@@ -1,8 +1,9 @@
-import { DynamicStructuredTool } from '@langchain/core/tools';
 import { Constants } from 'librechat-data-provider';
+import { DynamicStructuredTool } from '@langchain/core/tools';
 import type { Agent, TEphemeralAgent } from 'librechat-data-provider';
 import type { LCTool } from '@librechat/agents';
 import type { Logger } from 'winston';
+import type { ParsedServerConfig } from '~/mcp/types';
 import type { MCPManager } from '~/mcp/MCPManager';
 
 /**
@@ -63,12 +64,16 @@ export async function getMCPInstructionsForServers(
   mcpServers: string[],
   mcpManager: MCPManager,
   logger?: Logger,
+  configServers?: Record<string, ParsedServerConfig>,
 ): Promise<string> {
   if (!mcpServers.length) {
     return '';
   }
   try {
-    const mcpInstructions = await mcpManager.formatInstructionsForContext(mcpServers);
+    const mcpInstructions = await mcpManager.formatInstructionsForContext(
+      mcpServers,
+      configServers,
+    );
     if (mcpInstructions && logger) {
       logger.debug('[AgentContext] Fetched MCP instructions for servers:', mcpServers);
     }
@@ -82,25 +87,38 @@ export async function getMCPInstructionsForServers(
 }
 
 /**
- * Builds final instructions for an agent by combining shared run context and agent-specific context.
- * Order: sharedRunContext -> baseInstructions -> mcpInstructions
+ * Builds stable instructions for an agent by combining agent-specific context and MCP context.
+ * Order: baseInstructions -> mcpInstructions
  *
  * @param {Object} params
- * @param {string} [params.sharedRunContext] - Run-level context shared by all agents (file context, RAG, memory)
  * @param {string} [params.baseInstructions] - Agent's base instructions
  * @param {string} [params.mcpInstructions] - Agent's MCP server instructions
  * @returns {string | undefined} Combined instructions, or undefined if empty
  */
 export function buildAgentInstructions({
-  sharedRunContext,
   baseInstructions,
   mcpInstructions,
 }: {
-  sharedRunContext?: string;
   baseInstructions?: string;
   mcpInstructions?: string;
 }): string | undefined {
-  const parts = [sharedRunContext, baseInstructions, mcpInstructions].filter(Boolean);
+  const parts = [baseInstructions, mcpInstructions].filter(Boolean);
+  const combined = parts.join('\n\n').trim();
+  return combined || undefined;
+}
+
+/**
+ * Builds dynamic system-tail instructions for an agent.
+ * Order: existing additional instructions -> shared run context.
+ */
+export function buildAgentAdditionalInstructions({
+  additionalInstructions,
+  sharedRunContext,
+}: {
+  additionalInstructions?: string;
+  sharedRunContext?: string;
+}): string | undefined {
+  const parts = [additionalInstructions, sharedRunContext].filter(Boolean);
   const combined = parts.join('\n\n').trim();
   return combined || undefined;
 }
@@ -125,6 +143,7 @@ export async function applyContextToAgent({
   ephemeralAgent,
   agentId,
   logger,
+  configServers,
 }: {
   agent: AgentWithTools;
   sharedRunContext: string;
@@ -132,17 +151,27 @@ export async function applyContextToAgent({
   ephemeralAgent?: TEphemeralAgent;
   agentId?: string;
   logger?: Logger;
+  configServers?: Record<string, ParsedServerConfig>;
 }): Promise<void> {
   const baseInstructions = agent.instructions || '';
+  const additionalInstructions = agent.additional_instructions || '';
 
   try {
     const mcpServers = ephemeralAgent?.mcp?.length ? ephemeralAgent.mcp : extractMCPServers(agent);
-    const mcpInstructions = await getMCPInstructionsForServers(mcpServers, mcpManager, logger);
+    const mcpInstructions = await getMCPInstructionsForServers(
+      mcpServers,
+      mcpManager,
+      logger,
+      configServers,
+    );
 
     agent.instructions = buildAgentInstructions({
-      sharedRunContext,
       baseInstructions,
       mcpInstructions,
+    });
+    agent.additional_instructions = buildAgentAdditionalInstructions({
+      additionalInstructions,
+      sharedRunContext,
     });
 
     if (agentId && logger) {
@@ -150,9 +179,12 @@ export async function applyContextToAgent({
     }
   } catch (error) {
     agent.instructions = buildAgentInstructions({
-      sharedRunContext,
       baseInstructions,
       mcpInstructions: '',
+    });
+    agent.additional_instructions = buildAgentAdditionalInstructions({
+      additionalInstructions,
+      sharedRunContext,
     });
 
     if (logger) {

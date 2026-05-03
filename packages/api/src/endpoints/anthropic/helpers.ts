@@ -2,9 +2,10 @@ import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
   EModelEndpoint,
+  ThinkingDisplay,
   AnthropicEffort,
   anthropicSettings,
-  supportsContext1m,
+  resolveThinkingDisplay,
   supportsAdaptiveThinking,
 } from 'librechat-data-provider';
 import { matchModelName } from '~/utils/tokens';
@@ -54,10 +55,6 @@ function getClaudeHeaders(
     return {
       'anthropic-beta': 'token-efficient-tools-2025-02-19,output-128k-2025-02-19',
     };
-  } else if (supportsContext1m(model)) {
-    return {
-      'anthropic-beta': 'context-1m-2025-08-07',
-    };
   }
 
   return undefined;
@@ -73,6 +70,7 @@ function configureReasoning(
     thinking?: boolean;
     thinkingBudget?: number | null;
     effort?: AnthropicEffort | string | null;
+    thinkingDisplay?: ThinkingDisplay | string | null;
   } = {},
 ): AnthropicClientOptions & { max_tokens?: number } {
   const updatedOptions = { ...anthropicInput };
@@ -80,7 +78,25 @@ function configureReasoning(
   const modelName = updatedOptions.model ?? '';
 
   if (extendedOptions.thinking && modelName && supportsAdaptiveThinking(modelName)) {
-    updatedOptions.thinking = { type: 'adaptive' };
+    /**
+     * For Opus 4.7+, Anthropic omits thinking content from responses by
+     * default. Resolver returns `'summarized'` for those models (so the
+     * LibreChat "Thoughts" UI keeps working) and leaves the field off for
+     * older adaptive models, while honoring an explicit user choice.
+     *
+     * https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-7#thinking-content-omitted-by-default
+     */
+    const display = resolveThinkingDisplay(modelName, extendedOptions.thinkingDisplay);
+    const adaptive = display
+      ? { type: 'adaptive' as const, display }
+      : { type: 'adaptive' as const };
+    /**
+     * TODO: Remove the cast once `@librechat/agents` updates its
+     * `ChatAnthropicMessages['thinking']` type to include the `display` field
+     * added with Claude Opus 4.7. The cast is required because the installed
+     * agents SDK still uses the pre-4.7 `ThinkingConfigAdaptive` shape.
+     */
+    updatedOptions.thinking = adaptive as AnthropicClientOptions['thinking'];
 
     const effort = extendedOptions.effort;
     if (effort && effort !== AnthropicEffort.unset) {

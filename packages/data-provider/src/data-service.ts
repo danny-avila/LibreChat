@@ -6,6 +6,7 @@ import * as ag from './types/agents';
 import * as m from './types/mutations';
 import * as q from './types/queries';
 import * as f from './types/files';
+import * as sk from './types/skills';
 import * as mcp from './types/mcpServers';
 import * as config from './config';
 import request from './request';
@@ -21,22 +22,40 @@ export function revokeAllUserKeys(): Promise<unknown> {
   return request.delete(endpoints.revokeAllUserKeys());
 }
 
-export function deleteUser(): Promise<s.TPreset> {
-  return request.delete(endpoints.deleteUser());
+export function deleteUser(payload?: t.TDeleteUserRequest): Promise<unknown> {
+  return request.deleteWithOptions(endpoints.deleteUser(), { data: payload });
 }
 
-export type FavoriteItem = {
-  agentId?: string;
-  model?: string;
-  endpoint?: string;
-};
-
-export function getFavorites(): Promise<FavoriteItem[]> {
+export function getFavorites(): Promise<q.TUserFavorite[]> {
   return request.get(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`);
 }
 
-export function updateFavorites(favorites: FavoriteItem[]): Promise<FavoriteItem[]> {
+export function updateFavorites(favorites: q.TUserFavorite[]): Promise<q.TUserFavorite[]> {
   return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`, { favorites });
+}
+
+/**
+ * Skill favorites (star-a-skill). The backend route is phase 2 — see the
+ * original UI PR for the client surface. Until then, these resolve with
+ * an empty list so the UI hooks compile and the Star button is a no-op.
+ */
+export function getSkillFavorites(): Promise<string[]> {
+  return Promise.resolve([] as string[]);
+}
+
+export function updateSkillFavorites(skillFavorites: string[]): Promise<string[]> {
+  return Promise.resolve(skillFavorites);
+}
+
+/** Per-user skill active/inactive overrides. */
+export function getSkillStates(): Promise<sk.TSkillStatesResponse> {
+  return request.get(endpoints.skillStates());
+}
+
+export function updateSkillStates(
+  skillStates: sk.TSkillStatesResponse,
+): Promise<sk.TSkillStatesResponse> {
+  return request.post(endpoints.skillStates(), { skillStates });
 }
 
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
@@ -833,6 +852,10 @@ export function updatePromptGroup(
   return request.patch(endpoints.updatePromptGroup(variables.id), variables.payload);
 }
 
+export function recordPromptGroupUsage(groupId: string): Promise<{ numberOfGenerations: number }> {
+  return request.post(endpoints.recordPromptGroupUsage(groupId));
+}
+
 export function deletePrompt(payload: t.TDeletePromptVariables): Promise<t.TDeletePromptResponse> {
   return request.delete(endpoints.deletePrompt(payload));
 }
@@ -861,7 +884,148 @@ export function getRandomPrompts(
   return request.get(endpoints.getRandomPrompts(variables.limit, variables.skip));
 }
 
+/* Skills */
+
+export function listSkills(params?: sk.TSkillListRequest): Promise<sk.TSkillListResponse> {
+  return request.get(endpoints.listSkillsWithFilters(params ?? {}));
+}
+
+export function getSkill(id: string): Promise<sk.TSkill> {
+  return request.get(endpoints.getSkill(id));
+}
+
+export function createSkill(payload: sk.TCreateSkill): Promise<sk.TSkill> {
+  return request.post(endpoints.skills(), payload);
+}
+
+export function updateSkill(variables: sk.TUpdateSkillVariables): Promise<sk.TUpdateSkillResponse> {
+  return request.patch(endpoints.getSkill(variables.id), {
+    expectedVersion: variables.expectedVersion,
+    ...variables.payload,
+  });
+}
+
+export function deleteSkill(id: string): Promise<sk.TDeleteSkillResponse> {
+  return request.delete(endpoints.getSkill(id));
+}
+
+export function listSkillFiles(skillId: string): Promise<sk.TListSkillFilesResponse> {
+  return request.get(endpoints.skillFiles(skillId));
+}
+
+export function uploadSkillFile(skillId: string, formData: FormData): Promise<sk.TSkillFile> {
+  return request.postMultiPart(endpoints.skillFiles(skillId), formData);
+}
+
+/**
+ * Import a skill from a .md, .zip, or .skill file. The backend extracts the
+ * archive, creates the skill from SKILL.md, and persists all additional files.
+ * Single HTTP request — no client-side zip processing needed.
+ */
+export function importSkill(formData: FormData): Promise<sk.TSkill> {
+  return request.postMultiPart(endpoints.importSkill(), formData);
+}
+
+export function getSkillFileContent(
+  skillId: string,
+  relativePath: string,
+): Promise<sk.TSkillFileContentResponse> {
+  return request.get(endpoints.skillFile(skillId, relativePath));
+}
+
+export function deleteSkillFile(
+  skillId: string,
+  relativePath: string,
+): Promise<sk.TDeleteSkillFileResponse> {
+  return request.delete(endpoints.skillFile(skillId, relativePath));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Skill Tree (nodes) — phase 2 backend                                       */
+/* -------------------------------------------------------------------------- */
+/* These were introduced by the original UI PR and are shipped as stubs in    */
+/* phase 1 so the tree UI compiles. Each resolves with empty/no-op data until */
+/* the backend persists a folder hierarchy. The call surface matches what the */
+/* tree hooks expect so wiring real endpoints later is a one-line swap.       */
+
+export const getSkillTree = (_skillId: string): Promise<t.TSkillTreeResponse> => {
+  return Promise.resolve({ nodes: [] });
+};
+
+export const createSkillNode = (
+  skillId: string,
+  data: FormData | t.TCreateSkillNodeRequest,
+): Promise<t.TSkillNode> => {
+  const name = data instanceof FormData ? (data.get('name') as string) || 'untitled' : data.name;
+  const type = data instanceof FormData ? 'file' : data.type;
+  const now = new Date().toISOString();
+  return Promise.resolve({
+    _id: `pending-${now}`,
+    skillId,
+    parentId: null,
+    type,
+    name,
+    order: 0,
+    author: '',
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
+export const updateSkillNode = (variables: {
+  skillId: string;
+  nodeId: string;
+  data: t.TUpdateSkillNodeRequest;
+}): Promise<t.TSkillNode> => {
+  const now = new Date().toISOString();
+  return Promise.resolve({
+    _id: variables.nodeId,
+    skillId: variables.skillId,
+    parentId: variables.data.parentId ?? null,
+    type: 'file',
+    name: variables.data.name ?? '',
+    order: variables.data.order ?? 0,
+    author: '',
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
+export const deleteSkillNode = (_variables: { skillId: string; nodeId: string }): Promise<void> => {
+  return Promise.resolve();
+};
+
+export const getSkillNodeContent = (_variables: {
+  skillId: string;
+  nodeId: string;
+}): Promise<{ content: string; mimeType: string }> => {
+  return Promise.resolve({ content: '', mimeType: 'text/plain' });
+};
+
+export const updateSkillNodeContent = (variables: {
+  skillId: string;
+  nodeId: string;
+  content: string;
+}): Promise<t.TSkillNode> => {
+  const now = new Date().toISOString();
+  return Promise.resolve({
+    _id: variables.nodeId,
+    skillId: variables.skillId,
+    parentId: null,
+    type: 'file',
+    name: '',
+    order: 0,
+    author: '',
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
 /* Roles */
+export function listRoles(): Promise<q.ListRolesResponse> {
+  return request.get(`${endpoints.adminRoles()}?limit=200`);
+}
+
 export function getRole(roleName: string): Promise<r.TRole> {
   return request.get(endpoints.getRole(roleName));
 }
@@ -912,6 +1076,12 @@ export function updateMarketplacePermissions(
   variables: m.UpdateMarketplacePermVars,
 ): Promise<m.UpdatePermResponse> {
   return request.put(endpoints.updateMarketplacePermissions(variables.roleName), variables.updates);
+}
+
+export function updateSkillPermissions(
+  variables: m.UpdateSkillPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateSkillPermissions(variables.roleName), variables.updates);
 }
 
 /* Tags */
@@ -970,8 +1140,8 @@ export function updateFeedback(
 }
 
 // 2FA
-export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
-  return request.get(endpoints.enableTwoFactor());
+export function enableTwoFactor(payload?: t.TEnable2FARequest): Promise<t.TEnable2FAResponse> {
+  return request.post(endpoints.enableTwoFactor(), payload);
 }
 
 export function verifyTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
@@ -986,8 +1156,10 @@ export function disableTwoFactor(payload?: t.TDisable2FARequest): Promise<t.TDis
   return request.post(endpoints.disableTwoFactor(), payload);
 }
 
-export function regenerateBackupCodes(): Promise<t.TRegenerateBackupCodesResponse> {
-  return request.post(endpoints.regenerateBackupCodes());
+export function regenerateBackupCodes(
+  payload?: t.TRegenerateBackupCodesRequest,
+): Promise<t.TRegenerateBackupCodesResponse> {
+  return request.post(endpoints.regenerateBackupCodes(), payload);
 }
 
 export function verifyTwoFactorTemp(

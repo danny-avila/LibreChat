@@ -1,9 +1,18 @@
 const path = require('path');
 const { v4 } = require('uuid');
-const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
-const { logAxiosError, getBasePath } = require('@librechat/api');
+const {
+  getBasePath,
+  logAxiosError,
+  sanitizeArtifactPath,
+  flattenArtifactPath,
+  createAxiosInstance,
+  classifyCodeArtifact,
+  codeServerHttpAgent,
+  codeServerHttpsAgent,
+  extractCodeArtifactText,
+} = require('@librechat/api');
 const {
   Tools,
   megabyte,
@@ -22,6 +31,8 @@ const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { determineFileType } = require('~/server/utils');
+
+const axios = createAxiosInstance();
 
 /**
  * Creates a fallback download URL response when file cannot be processed locally.
@@ -62,7 +73,6 @@ const createDownloadFallback = ({
  * @param {ServerRequest} params.req - The Express request object.
  * @param {string} params.id - The file ID from the code environment.
  * @param {string} params.name - The filename.
- * @param {string} params.apiKey - The code execution API key.
  * @param {string} params.toolCallId - The tool call ID that generated the file.
  * @param {string} params.session_id - The code execution session ID.
  * @param {string} params.conversationId - The current conversation ID.
@@ -73,7 +83,6 @@ const processCodeOutput = async ({
   req,
   id,
   name,
-  apiKey,
   toolCallId,
   conversationId,
   messageId,
@@ -100,8 +109,9 @@ const processCodeOutput = async ({
       responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'LibreChat/1.0',
-        'X-API-Key': apiKey,
       },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
       timeout: 15000,
     });
 
@@ -125,14 +135,32 @@ const processCodeOutput = async ({
 
     const fileIdentifier = `${session_id}/${id}`;
 
+    /* `safeName` keeps the directory structure (`a/b/file.txt` -> `a/b/file.txt`)
+     * so the next prime() can place the file at the same nested path in the
+     * sandbox; flattening would re-create the bug where every nested artifact
+     * collapsed into the root and read_file calls 404'd. The flat-form
+     * storage key is composed below once `file_id` is known so we can cap
+     * the total length at filesystem NAME_MAX. */
+    const safeName = sanitizeArtifactPath(name);
+    if (safeName !== name) {
+      logger.warn(
+        `[processCodeOutput] Filename sanitized: "${name}" -> "${safeName}" | conv=${conversationId}`,
+      );
+    }
+
     /**
      * Atomically claim a file_id for this (filename, conversationId, context) tuple.
      * Uses $setOnInsert so concurrent calls for the same filename converge on
      * a single record instead of creating duplicates (TOCTOU race fix).
+     *
+     * Claim by `safeName` (not raw `name`) so the claim and the eventual
+     * `createFile` agree on the filename column — otherwise weird inputs
+     * (e.g. `"proj name/file@v1.txt"`) would claim under the raw name and
+     * then write under the sanitized one, leaving the claim row orphaned.
      */
     const newFileId = v4();
     const claimed = await claimCodeFile({
-      filename: name,
+      filename: safeName,
       conversationId,
       file_id: newFileId,
       user: req.user.id,
@@ -142,9 +170,19 @@ const processCodeOutput = async ({
 
     if (isUpdate) {
       logger.debug(
-        `[processCodeOutput] Updating existing file "${name}" (${file_id}) instead of creating duplicate`,
+        `[processCodeOutput] Updating existing file "${safeName}" (${file_id}) instead of creating duplicate`,
       );
     }
+
+    /**
+     * Preserve the original `messageId` on update. Each `processCodeOutput`
+     * call would otherwise overwrite it with the current run's run id, which
+     * decouples the file from the assistant message that originally created
+     * it. `getCodeGeneratedFiles` filters by `messageId IN <thread>`, so a
+     * stale id (e.g. from a later regeneration / failed re-read attempt)
+     * silently excludes the file from priming on subsequent turns.
+     */
+    const persistedMessageId = isUpdate ? (claimed.messageId ?? messageId) : messageId;
 
     if (isImage) {
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
@@ -154,9 +192,9 @@ const processCodeOutput = async ({
         ..._file,
         filepath,
         file_id,
-        messageId,
+        messageId: persistedMessageId,
         usage,
-        filename: name,
+        filename: safeName,
         conversationId,
         user: req.user.id,
         type: `image/${appConfig.imageOutputType}`,
@@ -200,7 +238,19 @@ const processCodeOutput = async ({
       );
     }
 
-    const fileName = `${file_id}__${name}`;
+    /* Compose the storage key here, after `file_id` is known, so the
+     * `flattenArtifactPath` cap budget can be calculated against the
+     * actual prefix length. The full key has to fit in one filesystem
+     * path component (NAME_MAX = 255 on most filesystems); without this
+     * cap, deeply-nested artifact paths whose individual segments were
+     * within bounds can still produce a flat form that overflows once
+     * `${file_id}__` is prepended, causing `ENAMETOOLONG` inside
+     * saveBuffer and falling back to a download URL. The 255 figure is
+     * the conservative cross-platform NAME_MAX (Linux ext4, NTFS, APFS).
+     */
+    const NAME_MAX = 255;
+    const flatName = flattenArtifactPath(safeName, NAME_MAX - file_id.length - 2);
+    const fileName = `${file_id}__${flatName}`;
     const filepath = await saveBuffer({
       userId: req.user.id,
       buffer,
@@ -208,12 +258,26 @@ const processCodeOutput = async ({
       basePath: 'uploads',
     });
 
+    /* `classifyCodeArtifact` and `extractCodeArtifactText` make
+     * extension/bare-name decisions on the input string. With the
+     * path-preserving sanitizer they can now receive a nested path like
+     * `reports.v1/Makefile`, which the classifier's `extensionOf` reads
+     * as `v1/Makefile` (the slice after the dot in the directory name)
+     * and the bare-name branch rejects because it sees a `.` anywhere in
+     * the string. Result: extensionless artifacts under dotted folders
+     * (Makefile, Dockerfile, etc.) get misclassified as `other` and
+     * skip text extraction. Pass the basename so classification matches
+     * what it would have gotten with the old flat-name flow. */
+    const leafName = path.basename(safeName);
+    const category = classifyCodeArtifact(leafName, mimeType);
+    const text = await extractCodeArtifactText(buffer, leafName, mimeType, category);
+
     const file = {
       file_id,
       filepath,
-      messageId,
+      messageId: persistedMessageId,
       object: 'file',
-      filename: name,
+      filename: safeName,
       type: mimeType,
       conversationId,
       user: req.user.id,
@@ -224,11 +288,21 @@ const processCodeOutput = async ({
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
       createdAt: isUpdate ? claimed.createdAt : formattedDate,
+      // Always set `text` explicitly (string or null) so that an update which
+      // produces a binary or oversized artifact clears any previously cached
+      // text — `createFile` uses findOneAndUpdate with $set semantics, which
+      // would otherwise leave a stale value behind.
+      text: text ?? null,
     };
 
     await createFile(file, true);
     return Object.assign(file, { messageId, toolCallId });
   } catch (error) {
+    if (error?.message === 'Path traversal detected in filename') {
+      logger.warn(
+        `[processCodeOutput] Path traversal blocked for file "${name}" | conv=${conversationId}`,
+      );
+    }
     logAxiosError({
       message: 'Error downloading/processing code environment file',
       error,
@@ -258,20 +332,17 @@ function checkIfActive(dateString) {
 /**
  * Retrieves the `lastModified` time string for a specified file from Code Execution Server.
  *
- * @param {Object} params - The parameters object.
- * @param {string} params.fileIdentifier - The identifier for the file (e.g., "session_id/fileId").
- * @param {string} params.apiKey - The API key for authentication.
+ * @param {string} fileIdentifier - The identifier for the file (e.g., "session_id/fileId").
  *
  * @returns {Promise<string|null>}
  *          A promise that resolves to the `lastModified` time string of the file if successful, or null if there is an
  *          error in initialization or fetching the info.
  */
-async function getSessionInfo(fileIdentifier, apiKey) {
+async function getSessionInfo(fileIdentifier) {
   try {
     const baseURL = getCodeBaseURL();
     const [path, queryString] = fileIdentifier.split('?');
-    const session_id = path.split('/')[0];
-
+    const [session_id, fileId] = path.split('/');
     let queryParams = {};
     if (queryString) {
       queryParams = Object.fromEntries(new URLSearchParams(queryString).entries());
@@ -279,19 +350,17 @@ async function getSessionInfo(fileIdentifier, apiKey) {
 
     const response = await axios({
       method: 'get',
-      url: `${baseURL}/files/${session_id}`,
-      params: {
-        detail: 'summary',
-        ...queryParams,
-      },
+      url: `${baseURL}/sessions/${session_id}/objects/${fileId}`,
+      params: queryParams,
       headers: {
         'User-Agent': 'LibreChat/1.0',
-        'X-API-Key': apiKey,
       },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
       timeout: 5000,
     });
 
-    return response.data.find((file) => file.name.startsWith(path))?.lastModified;
+    return response.data?.lastModified;
   } catch (error) {
     logAxiosError({
       message: `Error fetching session info: ${error.message}`,
@@ -307,13 +376,12 @@ async function getSessionInfo(fileIdentifier, apiKey) {
  * @param {ServerRequest} options.req
  * @param {Agent['tool_resources']} options.tool_resources
  * @param {string} [options.agentId] - The agent ID for file access control
- * @param {string} apiKey
  * @returns {Promise<{
  * files: Array<{ id: string; session_id: string; name: string }>,
  * toolContext: string,
  * }>}
  */
-const primeFiles = async (options, apiKey) => {
+const primeFiles = async (options) => {
   const { tool_resources, req, agentId } = options;
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
   const agentResourceIds = new Set(file_ids);
@@ -351,7 +419,19 @@ const primeFiles = async (options, apiKey) => {
       const [path, queryString] = file.metadata.fileIdentifier.split('?');
       const [session_id, id] = path.split('/');
 
-      const pushFile = () => {
+      /**
+       * `pushFile` accepts optional overrides so the reupload path can
+       * push the FRESH `(session_id, id)` parsed off the new
+       * `fileIdentifier`. Without these overrides, the closure would
+       * capture the stale pre-reupload refs from the outer loop and
+       * the in-memory `files` array (now consumed by
+       * `buildInitialToolSessions` to seed `Graph.sessions`) would
+       * point at a sandbox object that no longer exists. The DB record
+       * gets the new identifier via `updateFile`, but the seed would
+       * still inject the old one — bash_tool / read_file would 404
+       * trying to mount the file until the next turn re-reads metadata.
+       */
+      const pushFile = (overrideSessionId, overrideId) => {
         if (!toolContext) {
           toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
         }
@@ -366,8 +446,8 @@ const primeFiles = async (options, apiKey) => {
 
         toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}`;
         files.push({
-          id,
-          session_id,
+          id: overrideId ?? id,
+          session_id: overrideSessionId ?? session_id,
           name: file.filename,
         });
       };
@@ -394,7 +474,6 @@ const primeFiles = async (options, apiKey) => {
             stream,
             filename: file.filename,
             entity_id: queryParams.entity_id,
-            apiKey,
           });
 
           // Preserve existing metadata when adding fileIdentifier
@@ -407,8 +486,18 @@ const primeFiles = async (options, apiKey) => {
             file_id: file.file_id,
             metadata: updatedMetadata,
           });
-          sessions.set(session_id, true);
-          pushFile();
+          /**
+           * Parse the FRESH fileIdentifier returned by the reupload and
+           * route it through both the dedupe Map and the in-memory
+           * `files` list. The original `(session_id, id)` parsed at the
+           * top of this iteration refer to the old, expired/missing
+           * sandbox object — using them here would silently re-introduce
+           * the bug `Graph.sessions` seeding is supposed to fix.
+           */
+          const [newPath] = fileIdentifier.split('?');
+          const [newSessionId, newId] = newPath.split('/');
+          sessions.set(newSessionId, true);
+          pushFile(newSessionId, newId);
         } catch (error) {
           logger.error(
             `Error re-uploading file ${id} in session ${session_id}: ${error.message}`,
@@ -416,7 +505,7 @@ const primeFiles = async (options, apiKey) => {
           );
         }
       };
-      const uploadTime = await getSessionInfo(file.metadata.fileIdentifier, apiKey);
+      const uploadTime = await getSessionInfo(file.metadata.fileIdentifier);
       if (!uploadTime) {
         logger.warn(`Failed to get upload time for file ${id} in session ${session_id}`);
         await reuploadFile();
@@ -434,7 +523,81 @@ const primeFiles = async (options, apiKey) => {
   return { files, toolContext };
 };
 
+/**
+ * Reads a single file from the code-execution sandbox by shelling `cat`
+ * through the sandbox `/exec` endpoint. Used by the `read_file` host
+ * handler when the requested path is a code-env path (`/mnt/data/...`)
+ * or otherwise not resolvable as a skill file. Resolves to
+ * `{ content }` from stdout on success, or `null` when the codeapi base
+ * URL isn't configured / the read returns no content (caller turns that
+ * into a model-visible error). Throws axios-style errors on transport
+ * failure so the caller can surface a meaningful error message.
+ *
+ * `session_id` and `files` come from the seeded `tc.codeSessionContext`
+ * (emitted by the agents-side `ToolNode` for `read_file` calls in
+ * v3.1.72+) so the read lands in the same sandbox session that holds
+ * the agent's prior-turn artifacts.
+ *
+ * @param {Object} params
+ * @param {string} params.file_path - Absolute path inside the sandbox (e.g. `/mnt/data/foo.txt`).
+ * @param {string} [params.session_id] - Sandbox session id from the seeded context.
+ * @param {Array<{id: string, name: string, session_id?: string}>} [params.files] - File refs to mount.
+ * @returns {Promise<{content: string} | null>}
+ */
+async function readSandboxFile({ file_path, session_id, files }) {
+  const baseURL = getCodeBaseURL();
+  if (!baseURL) {
+    return null;
+  }
+
+  /** Single-quote `file_path` with embedded-quote escaping so a malicious
+   *  filename can't break out of the `cat` command. The handler upstream
+   *  has already established this is a code-env path the model
+   *  legitimately asked to read; this just keeps the shell quoting safe. */
+  const safePath = `'${file_path.replace(/'/g, `'\\''`)}'`;
+  /** @type {Record<string, unknown>} */
+  const postData = { lang: 'bash', code: `cat ${safePath}` };
+  if (session_id) {
+    postData.session_id = session_id;
+  }
+  if (files && files.length > 0) {
+    postData.files = files;
+  }
+
+  try {
+    const response = await axios({
+      method: 'post',
+      url: `${baseURL}/exec`,
+      data: postData,
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'LibreChat/1.0',
+      },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
+      timeout: 15000,
+    });
+    const result = response?.data ?? {};
+    if (result.stderr && (result.stdout == null || result.stdout === '')) {
+      throw new Error(String(result.stderr).trim());
+    }
+    if (result.stdout == null) {
+      return null;
+    }
+    return { content: String(result.stdout) };
+  } catch (error) {
+    logAxiosError({
+      message: `Error reading sandbox file "${file_path}"`,
+      error,
+    });
+    throw error;
+  }
+}
+
 module.exports = {
   primeFiles,
+  checkIfActive,
+  getSessionInfo,
   processCodeOutput,
+  readSandboxFile,
 };

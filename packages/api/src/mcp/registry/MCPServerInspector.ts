@@ -4,6 +4,7 @@ import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { hasCustomUserVars, isUserSourced } from '~/mcp/utils';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isEnabled } from '~/utils';
@@ -19,6 +20,7 @@ export class MCPServerInspector {
     private readonly config: t.ParsedServerConfig,
     private connection: MCPConnection | undefined,
     private readonly useSSRFProtection: boolean = false,
+    private readonly allowedDomains?: string[] | null,
   ) {}
 
   /**
@@ -45,7 +47,13 @@ export class MCPServerInspector {
 
     const useSSRFProtection = !Array.isArray(allowedDomains) || allowedDomains.length === 0;
     const start = Date.now();
-    const inspector = new MCPServerInspector(serverName, rawConfig, connection, useSSRFProtection);
+    const inspector = new MCPServerInspector(
+      serverName,
+      rawConfig,
+      connection,
+      useSSRFProtection,
+      allowedDomains,
+    );
     await inspector.inspectServer();
     inspector.config.initDuration = Date.now() - start;
     return inspector.config;
@@ -54,14 +62,20 @@ export class MCPServerInspector {
   private async inspectServer(): Promise<void> {
     await this.detectOAuth();
 
-    if (this.config.startup !== false && !this.config.requiresOAuth) {
+    if (
+      this.config.startup !== false &&
+      !this.config.requiresOAuth &&
+      !hasCustomUserVars(this.config)
+    ) {
       let tempConnection = false;
       if (!this.connection) {
         tempConnection = true;
         this.connection = await MCPConnectionFactory.create({
-          serverName: this.serverName,
           serverConfig: this.config,
+          serverName: this.serverName,
+          dbSourced: isUserSourced(this.config),
           useSSRFProtection: this.useSSRFProtection,
+          allowedDomains: this.allowedDomains,
         });
       }
 

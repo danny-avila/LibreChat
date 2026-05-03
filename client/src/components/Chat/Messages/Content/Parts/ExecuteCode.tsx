@@ -1,21 +1,25 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useMemo } from 'react';
+import { SquareTerminal } from 'lucide-react';
 import type { TAttachment } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
-import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
-import { useProgress, useLocalize } from '~/hooks';
+import useLazyHighlight from './useLazyHighlight';
+import useToolCallState from './useToolCallState';
+import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
+import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
-import store from '~/store';
 
 interface ParsedArgs {
   lang?: string;
   code?: string;
 }
 
-export function useParseArgs(args?: string): ParsedArgs | null {
+export function useParseArgs(args?: string | Record<string, unknown>): ParsedArgs | null {
   return useMemo(() => {
+    if (typeof args === 'object' && args !== null) {
+      return { lang: String(args.lang ?? ''), code: String(args.code ?? '') };
+    }
     let parsedArgs: ParsedArgs | string | undefined | null = args;
     try {
       parsedArgs = JSON.parse(args || '');
@@ -44,6 +48,8 @@ export function useParseArgs(args?: string): ParsedArgs | null {
   }, [args]);
 }
 
+export const ERROR_PATTERNS = /^(Traceback|Error:|Exception:|.*Error:)/m;
+
 export default function ExecuteCode({
   isSubmitting,
   initialProgress = 0.1,
@@ -53,170 +59,74 @@ export default function ExecuteCode({
 }: {
   initialProgress: number;
   isSubmitting: boolean;
-  args?: string;
+  args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
-  const hasOutput = output.length > 0;
-  const outputRef = useRef<string>(output);
-  const codeContentRef = useRef<HTMLDivElement>(null);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const showAnalysisCode = useRecoilValue(store.showCode);
-  const [showCode, setShowCode] = useState(showAnalysisCode);
-  const [contentHeight, setContentHeight] = useState<number | undefined>(0);
-
-  const prevShowCodeRef = useRef<boolean>(showCode);
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
-  const progress = useProgress(initialProgress);
 
-  useEffect(() => {
-    if (output !== outputRef.current) {
-      outputRef.current = output;
+  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
+    useToolCallState(initialProgress, isSubmitting, output, !!code);
 
-      if (showCode && codeContentRef.current) {
-        setTimeout(() => {
-          if (codeContentRef.current) {
-            const newHeight = codeContentRef.current.scrollHeight;
-            setContentHeight(newHeight);
-          }
-        }, 10);
-      }
-    }
-  }, [output, showCode]);
-
-  useEffect(() => {
-    if (showCode !== prevShowCodeRef.current) {
-      prevShowCodeRef.current = showCode;
-
-      if (showCode && codeContentRef.current) {
-        setIsAnimating(true);
-        requestAnimationFrame(() => {
-          if (codeContentRef.current) {
-            const height = codeContentRef.current.scrollHeight;
-            setContentHeight(height);
-          }
-
-          const timer = setTimeout(() => {
-            setIsAnimating(false);
-          }, 500);
-
-          return () => clearTimeout(timer);
-        });
-      } else if (!showCode) {
-        setIsAnimating(true);
-        setContentHeight(0);
-
-        const timer = setTimeout(() => {
-          setIsAnimating(false);
-        }, 500);
-
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [showCode]);
-
-  useEffect(() => {
-    if (!codeContentRef.current) {
-      return;
-    }
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      if (showCode && !isAnimating) {
-        for (const entry of entries) {
-          if (entry.target === codeContentRef.current) {
-            setContentHeight(entry.contentRect.height);
-          }
-        }
-      }
-    });
-
-    resizeObserver.observe(codeContentRef.current);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [showCode, isAnimating]);
-
-  const cancelled = !isSubmitting && progress < 1;
+  const highlighted = useLazyHighlight(code, lang);
+  const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
 
   return (
     <>
-      <div className="relative my-2.5 flex size-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1.5 flex size-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
-          onClick={() => setShowCode((prev) => !prev)}
+          onClick={toggleCode}
           inProgressText={localize('com_ui_analyzing')}
           finishedText={
             cancelled ? localize('com_ui_cancelled') : localize('com_ui_analyzing_finished')
+          }
+          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
+          icon={
+            <SquareTerminal
+              className={cn(
+                'size-4 shrink-0 text-text-secondary',
+                progress < 1 && !cancelled && !hasError && 'animate-pulse',
+              )}
+              aria-hidden="true"
+            />
           }
           hasInput={!!code?.length}
           isExpanded={showCode}
           error={cancelled}
         />
       </div>
-      <div
-        className="relative mb-2"
-        style={{
-          height: showCode ? contentHeight : 0,
-          overflow: 'hidden',
-          transition:
-            'height 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-          opacity: showCode ? 1 : 0,
-          transformOrigin: 'top',
-          willChange: 'height, opacity',
-          perspective: '1000px',
-          backfaceVisibility: 'hidden',
-          WebkitFontSmoothing: 'subpixel-antialiased',
-        }}
-      >
-        <div
-          className={cn(
-            'code-analyze-block mt-0.5 overflow-hidden rounded-xl bg-surface-primary',
-            showCode && 'shadow-lg',
-          )}
-          ref={codeContentRef}
-          style={{
-            transform: showCode ? 'translateY(0) scale(1)' : 'translateY(-8px) scale(0.98)',
-            opacity: showCode ? 1 : 0,
-            transition:
-              'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          {showCode && (
-            <div
-              style={{
-                transform: showCode ? 'translateY(0)' : 'translateY(-4px)',
-                opacity: showCode ? 1 : 0,
-                transition:
-                  'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
-              }}
-            >
-              <MarkdownLite
-                content={code ? `\`\`\`${lang}\n${code}\n\`\`\`` : ''}
-                codeExecution={false}
-              />
-            </div>
-          )}
-          {hasOutput && (
-            <div
-              className={cn(
-                'bg-surface-tertiary p-4 text-xs',
-                showCode ? 'border-t border-surface-primary-contrast' : '',
-              )}
-              style={{
-                transform: showCode ? 'translateY(0)' : 'translateY(-6px)',
-                opacity: showCode ? 1 : 0,
-                transition:
-                  'transform 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.05s, opacity 0.45s cubic-bezier(0.19, 1, 0.22, 1) 0.05s',
-                boxShadow: showCode ? '0 -1px 0 rgba(0,0,0,0.05)' : 'none',
-              }}
-            >
-              <div className="prose flex flex-col-reverse">
-                <Stdout output={output} />
+      <div style={expandStyle}>
+        <div className="overflow-hidden" ref={expandRef}>
+          <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+            {code && <CodeWindowHeader language={lang} code={code} />}
+            {code && (
+              <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
+                <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
+              </pre>
+            )}
+            {hasOutput && (
+              <div
+                className={cn(
+                  'bg-surface-primary-alt p-4 text-xs dark:bg-transparent',
+                  code && 'border-t border-border-light',
+                )}
+              >
+                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+                  {localize('com_ui_output')}
+                </div>
+                <div
+                  className={cn(
+                    'max-h-[200px] overflow-auto',
+                    outputHasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
+                  )}
+                >
+                  <Stdout output={output} />
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
       {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}

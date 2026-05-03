@@ -620,4 +620,62 @@ describe('User Methods - Database Tests', () => {
       expect(found?.provider).toBe('saml');
     });
   });
+
+  describe('findUsers with options', () => {
+    beforeEach(async () => {
+      await User.create([
+        { name: 'Alice', email: 'alice@example.com', provider: 'local' },
+        { name: 'Bob', email: 'bob@example.com', provider: 'local' },
+        { name: 'Charlie', email: 'charlie@example.com', provider: 'local' },
+        { name: 'Diana', email: 'diana@example.com', provider: 'local' },
+        { name: 'Eve', email: 'eve@example.com', provider: 'local' },
+      ]);
+    });
+
+    test('limit restricts the number of returned documents', async () => {
+      const users = await methods.findUsers({}, null, { limit: 2 });
+      expect(users).toHaveLength(2);
+    });
+
+    test('offset skips the first N documents', async () => {
+      const all = await methods.findUsers({}, 'name', { sort: { name: 1 } });
+      const skipped = await methods.findUsers({}, 'name', { offset: 2, sort: { name: 1 } });
+
+      expect(skipped).toHaveLength(3);
+      expect(skipped[0].name).toBe(all[2].name);
+    });
+
+    test('sort orders results by the specified field', async () => {
+      const asc = await methods.findUsers({}, 'name', { sort: { name: 1 } });
+      const desc = await methods.findUsers({}, 'name', { sort: { name: -1 } });
+
+      expect(asc[0].name).toBe('Alice');
+      expect(asc[4].name).toBe('Eve');
+      expect(desc[0].name).toBe('Eve');
+      expect(desc[4].name).toBe('Alice');
+    });
+
+    test('limit + offset returns the correct page', async () => {
+      const sorted = await methods.findUsers({}, 'name', { sort: { name: 1 } });
+      const page2 = await methods.findUsers({}, 'name', {
+        limit: 2,
+        offset: 2,
+        sort: { name: 1 },
+      });
+
+      expect(page2).toHaveLength(2);
+      expect(page2[0].name).toBe(sorted[2].name);
+      expect(page2[1].name).toBe(sorted[3].name);
+    });
+
+    test('limit of 0 does not restrict results', async () => {
+      const users = await methods.findUsers({}, null, { limit: 0 });
+      expect(users).toHaveLength(5);
+    });
+
+    test('returns all documents when no options provided', async () => {
+      const users = await methods.findUsers({});
+      expect(users).toHaveLength(5);
+    });
+  });
 });

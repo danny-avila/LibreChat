@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
@@ -33,7 +33,7 @@ import {
   removeConvoFromAllQueries,
   findConversationInInfinite,
 } from '~/utils';
-import { queueTitleGeneration } from '~/data-provider/SSE/queries';
+import { startupConfigKey, queueTitleGeneration } from '~/data-provider';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
@@ -188,7 +188,7 @@ export default function useEventHandlers({
   const { token } = useAuthContext();
 
   const { contentHandler, resetContentHandler } = useContentHandler({ setMessages, getMessages });
-  const { stepHandler, clearStepMaps, syncStepMessage } = useStepHandler({
+  const { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage } = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
@@ -196,6 +196,47 @@ export default function useEventHandlers({
     lastAnnouncementTimeRef,
   });
   const attachmentHandler = useAttachmentHandler(queryClient);
+
+  /** Wipe the per-subagent Recoil atoms on conversation navigation.
+   *  Historical subagent dialogs rehydrate from the persisted
+   *  `subagent_content` on each `tool_call` (written by the backend
+   *  at message-save time), so clearing live atoms on switch
+   *  doesn't lose any viewable history — it just keeps `atomFamily`
+   *  bounded across multi-conversation sessions.
+   *
+   *  Rule: only reset when transitioning AWAY FROM an established
+   *  conversation (`previous != null`). Transitions FROM null or
+   *  undefined pass through:
+   *    - initial mount on a new-chat route: nothing to clear.
+   *    - new-chat URL stamp mid-stream (null → newId): the in-flight
+   *      subagent ticker/content state for that freshly-stamped id
+   *      would be wiped if we reset here — that id IS the current
+   *      run, not a stale one.
+   *  Cases that DO reset (previous non-null, value changed):
+   *    - id1 → id2 (switching between established chats)
+   *    - id → null (user clicked "new chat")
+   *    - id → undefined (route teardown / navigate away) */
+  const lastConversationIdRef = useRef<string | null | undefined>(paramId);
+  useEffect(() => {
+    const previous = lastConversationIdRef.current;
+    lastConversationIdRef.current = paramId;
+    if (previous != null && previous !== paramId) {
+      resetSubagentAtoms();
+    }
+  }, [paramId, resetSubagentAtoms]);
+
+  /** Final cleanup on component unmount. `useStepHandler` keeps the
+   *  set of known atom keys in a ref; when the hook unmounts (user
+   *  navigates away from the chat route entirely) that ref is lost,
+   *  so a subsequent remount can't clear atoms it never saw created.
+   *  Flush at the teardown boundary to keep `atomFamily` bounded
+   *  across route changes. */
+  useEffect(
+    () => () => {
+      resetSubagentAtoms();
+    },
+    [resetSubagentAtoms],
+  );
 
   const messageHandler = useCallback(
     (data: string | undefined, submission: EventSubmission) => {
@@ -347,6 +388,16 @@ export default function useEventHandlers({
       queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
       queryClient.invalidateQueries([QueryKeys.mcpTools]);
       const { messages, userMessage, isRegenerate = false, isTemporary = false } = submission;
+      /**
+       * The spread carries `manualSkills` through from
+       * `submission.initialResponse` — `useChatFunctions` seeds the field
+       * there at construction so the assistant placeholder already has it
+       * by the time this handler fires. Subsequent `useStepHandler`
+       * spreads and `updateContent` spreads preserve it, and
+       * `finalHandler`'s server-backed `responseMessage` replacement
+       * drops it, which is the right behavior: by finalize the real
+       * `skill` tool_call is in `content` and takes over rendering.
+       */
       const initialResponse = {
         ...submission.initialResponse,
         parentMessageId: userMessage.messageId,
@@ -406,7 +457,7 @@ export default function useEventHandlers({
           sourceId: submission.conversation?.conversationId,
           ephemeralAgent: submission.ephemeralAgent,
           specName: submission.conversation?.spec,
-          startupConfig: queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]),
+          startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
         });
       }
 
@@ -526,6 +577,23 @@ export default function useEventHandlers({
         } else if (requestMessage != null && responseMessage != null) {
           finalMessages = [...messages, requestMessage, responseMessage];
         }
+
+        /* Preserve files from current messages when server response lacks them */
+        if (finalMessages.length > 0) {
+          const currentMsgMap = new Map(
+            currentMessages
+              .filter((m) => m.files && m.files.length > 0)
+              .map((m) => [m.messageId, m.files]),
+          );
+          for (let i = 0; i < finalMessages.length; i++) {
+            const msg = finalMessages[i];
+            const preservedFiles = currentMsgMap.get(msg.messageId);
+            if (msg.files == null && preservedFiles) {
+              finalMessages[i] = { ...msg, files: preservedFiles };
+            }
+          }
+        }
+
         if (finalMessages.length > 0) {
           setFinalMessages(conversation.conversationId, finalMessages);
         } else if (
@@ -571,7 +639,7 @@ export default function useEventHandlers({
               sourceId: submissionConvo.conversationId,
               ephemeralAgent: submission.ephemeralAgent,
               specName: submission.conversation?.spec,
-              startupConfig: queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]),
+              startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
             });
           }
 

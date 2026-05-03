@@ -80,9 +80,30 @@ function ControlCombobox({
   }, [searchValue, items]);
 
   useEffect(() => {
-    if (buttonRef.current && !isCollapsed) {
-      setButtonWidth(buttonRef.current.offsetWidth);
+    const button = buttonRef.current;
+    if (!button || isCollapsed) {
+      return;
     }
+
+    setButtonWidth(button.offsetWidth);
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+      const width = entry.borderBoxSize?.[0]?.inlineSize ?? button.offsetWidth;
+      if (width > 0) {
+        setButtonWidth(width);
+      }
+    });
+
+    observer.observe(button);
+    return () => observer.disconnect();
   }, [isCollapsed]);
 
   const selectIconClassName = cn(
@@ -108,7 +129,7 @@ function ControlCombobox({
           'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
           'text-text-primary hover:bg-surface-tertiary',
           'border border-border-light',
-          isCollapsed ? 'h-10 w-10' : 'h-10 w-full rounded-xl px-3 py-2 text-sm',
+          isCollapsed ? 'h-9 w-9' : 'h-9 w-full rounded-xl px-3 py-2 text-sm',
           className,
         )}
       >

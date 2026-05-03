@@ -1,14 +1,22 @@
 import { logger } from '@librechat/data-schemas';
-import { GraphEvents, Constants } from '@librechat/agents';
+import { GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type {
   LCTool,
   EventHandler,
   LCToolRegistry,
+  InjectedMessage,
   ToolCallRequest,
   ToolExecuteResult,
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
+import { Types } from 'mongoose';
 import type { StructuredToolInterface } from '@langchain/core/tools';
+import type { ServerRequest } from '~/types';
+import { cleanCodeToolOutput } from './cleanup';
+import { primeSkillFiles } from './skillFiles';
+import type { SkillFileRecord } from './skillFiles';
+import { buildSkillPrimeMessage } from './skills';
+import { runOutsideTracing } from '~/utils';
 
 export interface ToolEndCallbackData {
   output: {
@@ -42,6 +50,889 @@ export interface ToolExecuteOptions {
   }>;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
+  /**
+   * Loads a skill by name with ACL constraint (returns full body for injection).
+   *
+   * `options.preferModelInvocable` (Phase 6): on a same-name collision,
+   * prefer the newest `disableModelInvocation !== true` doc. Avoids a
+   * newer disabled duplicate shadowing the cataloged model-invocable
+   * skill the model actually targeted; falls back to newest match so
+   * the explicit-rejection gate can still fire in the disabled-only case.
+   */
+  getSkillByName?: (
+    name: string,
+    accessibleIds: Types.ObjectId[],
+    options?: { preferUserInvocable?: boolean; preferModelInvocable?: boolean },
+  ) => Promise<{
+    body: string;
+    name: string;
+    _id: Types.ObjectId;
+    fileCount: number;
+    /**
+     * Set when the skill author opted out of model invocation. The handler
+     * rejects the call and returns an instructive error so the model knows
+     * it can't reach the skill via the `skill` tool — manual `$` invocation
+     * is still allowed and goes through `resolveManualSkills` instead.
+     */
+    disableModelInvocation?: boolean;
+  } | null>;
+  /** Lists files bundled with a skill (for code env priming) */
+  listSkillFiles?: (skillId: Types.ObjectId | string) => Promise<SkillFileRecord[]>;
+  /** Storage strategy resolver for skill file streaming */
+  getStrategyFunctions?: (source: string) => {
+    getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
+    [key: string]: unknown;
+  };
+  /** Batch uploads files to the code execution environment */
+  batchUploadCodeEnvFiles?: (params: {
+    req: ServerRequest;
+    files: Array<{ stream: NodeJS.ReadableStream; filename: string }>;
+    entity_id?: string;
+  }) => Promise<{ session_id: string; files: Array<{ fileId: string; filename: string }> }>;
+  /** Checks if a code env file is still active. Returns lastModified or null. */
+  getSessionInfo?: (fileIdentifier: string) => Promise<string | null>;
+  /** 23-hour freshness check */
+  checkIfActive?: (dateString: string) => boolean;
+  /** Persists codeEnvIdentifiers on skill files after upload */
+  updateSkillFileCodeEnvIds?: (
+    updates: Array<{
+      skillId: Types.ObjectId | string;
+      relativePath: string;
+      codeEnvIdentifier: string;
+    }>,
+  ) => Promise<void>;
+  /** Loads a skill file by path (for read_file tool) */
+  getSkillFileByPath?: (
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+  ) => Promise<{
+    content?: string;
+    isBinary?: boolean;
+    mimeType: string;
+    bytes: number;
+    filepath: string;
+    source: string;
+    relativePath: string;
+  } | null>;
+  /** Updates cached content on a skill file (lazy caching after first read) */
+  updateSkillFileContent?: (
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+    update: { content?: string; isBinary?: boolean },
+  ) => Promise<void>;
+  /**
+   * Reads a code-execution sandbox file by shelling `cat` through the
+   * sandbox `/exec` endpoint. The host implementation supplies the
+   * codeapi base URL + auth and forwards the seeded `session_id` and
+   * `files` so the read lands in the same sandbox session that holds
+   * the agent's prior-turn artifacts. Returns `null` when codeapi is
+   * unavailable; throws on transport errors so the handler can surface
+   * a meaningful error message to the model.
+   */
+  readSandboxFile?: (params: {
+    file_path: string;
+    session_id?: string;
+    files?: Array<{ id: string; name: string; session_id?: string }>;
+  }) => Promise<{ content: string } | null>;
+}
+
+const MAX_READABLE_BYTES = 262_144;
+const MAX_BINARY_BYTES = 5 * 1024 * 1024;
+const MAX_CACHE_BYTES = 512 * 1024;
+
+const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+function addLineNumbers(content: string): string {
+  const lines = content.split('\n');
+  const w = String(lines.length).length;
+  return lines.map((l, i) => `${String(i + 1).padStart(w, ' ')} | ${l}`).join('\n');
+}
+
+/**
+ * Extensions whose contents `read_file` must never serialize as text. `cat`
+ * on a PNG inside the sandbox returns the raw bytes as stdout, JSON-encoded
+ * by codeapi with lossy UTF-8 replacement and then line-numbered by us —
+ * the result is a multi-KB blob of mojibake that pollutes the LLM context
+ * and exposes the raw bytes anyway. Short-circuit before the network call.
+ *
+ * Image categories surface a "use the existing attachment" message because
+ * the file was already attached to the conversation as part of the
+ * code-execution artifact pipeline — re-attaching here would dup it.
+ */
+const BINARY_EXTENSIONS_NEVER_READABLE = new Set([
+  // Raster images (already attached as artifacts by the code-execution
+  // pipeline). `.svg` is intentionally NOT in this list — it's an XML
+  // text format with no mojibake risk, and there are legitimate reasons
+  // for the model to inspect or edit a generated SVG. The post-fetch
+  // NUL-byte sniff still catches anything that turns out to be binary
+  // despite a `.svg` extension.
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.tiff',
+  '.tif',
+  '.ico',
+  '.heic',
+  '.heif',
+  '.avif',
+  // Documents (binary container formats)
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.odt',
+  '.ods',
+  '.odp',
+  // Archives
+  '.zip',
+  '.tar',
+  '.gz',
+  '.tgz',
+  '.bz2',
+  '.xz',
+  '.7z',
+  '.rar',
+  '.lz4',
+  '.zst',
+  // Audio / video
+  '.mp3',
+  '.wav',
+  '.flac',
+  '.ogg',
+  '.m4a',
+  '.aac',
+  '.wma',
+  '.mp4',
+  '.mkv',
+  '.mov',
+  '.avi',
+  '.webm',
+  '.flv',
+  '.m4v',
+  // Executables / object files / native libs
+  '.exe',
+  '.dll',
+  '.so',
+  '.dylib',
+  '.o',
+  '.obj',
+  '.a',
+  '.lib',
+  '.bin',
+  '.class',
+  '.jar',
+  // Other byte-soup formats
+  '.parquet',
+  '.bson',
+  '.db',
+  '.sqlite',
+  '.sqlite3',
+  '.pyc',
+  '.pyo',
+  '.wasm',
+  '.ttf',
+  '.otf',
+  '.woff',
+  '.woff2',
+  '.eot',
+]);
+
+const IMAGE_EXTENSIONS_FOR_HINT = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.tiff',
+  '.tif',
+  '.ico',
+  '.heic',
+  '.heif',
+  '.avif',
+]);
+
+function lowercaseExtension(filePath: string): string {
+  const dot = filePath.lastIndexOf('.');
+  const slash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+  if (dot < 0 || dot < slash) return '';
+  return filePath.slice(dot).toLowerCase();
+}
+
+/**
+ * Builds the model-visible error returned when `read_file` is invoked on
+ * a binary path. Phrasing is tuned for the LLM: states the fact (file is
+ * binary, can't be read as text), points at the correct affordance for
+ * each common case (image already in the chat; bash for everything else),
+ * and includes the path verbatim so the model can copy-paste into its
+ * next call.
+ */
+function buildBinaryFileError(filePath: string, ext: string): string {
+  if (IMAGE_EXTENSIONS_FOR_HINT.has(ext)) {
+    return `"${filePath}" is an image file (${ext}) and cannot be read as text. The image is already attached to the conversation and visible to the user. To process it programmatically, use \`bash_tool\` (e.g. \`file ${filePath}\` for metadata, or \`python3 -c '...'\` to operate on the bytes).`;
+  }
+  return `"${filePath}" is a binary file (${ext}) and cannot be read as text by \`read_file\`. Use \`bash_tool\` to process it (e.g. \`file ${filePath}\` for metadata, or a runtime-appropriate command for the format).`;
+}
+
+/**
+ * True when the first chunk of a string contains a NUL byte. Used as a
+ * post-fetch safety net for files whose extension didn't match the
+ * blocklist (no extension, novel format, etc.) — sniffs `cat` stdout to
+ * avoid ever forwarding mangled bytes to the LLM. 8KB is the same
+ * window the skill-file path uses; enough for any reasonable magic
+ * number while bounded enough to stay cheap.
+ */
+function looksBinary(content: string): boolean {
+  const limit = Math.min(content.length, 8192);
+  for (let i = 0; i < limit; i++) {
+    if (content.charCodeAt(i) === 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Routes a `read_file` call to the code-execution sandbox via the
+ * host-provided `readSandboxFile` callback. The sandbox session id and
+ * primed file refs come from `tc.codeSessionContext` (emitted by ToolNode
+ * for `read_file` tool calls in agents v3.1.72+) so the read lands in the
+ * same session that holds the agent's prior-turn artifacts. Returns a
+ * `ToolExecuteResult` with the file content (line-numbered) on success,
+ * or an instructive error pointing the model at `bash_tool` when the
+ * sandbox isn't reachable from this configuration.
+ *
+ * Two binary guards keep `cat`-on-a-PNG-style mojibake out of the LLM
+ * context: (1) an extension precheck that short-circuits known binary
+ * types BEFORE any network call, and (2) a NUL-byte content sniff after
+ * the read for unknown extensions. The codeapi `/exec` transport is JSON,
+ * which already lossily down-converts non-UTF-8 stdout to replacement
+ * characters — the bytes are unrecoverable here, so the goal is to fail
+ * fast with an instructive message rather than ship garbage.
+ */
+async function handleSandboxFileFallback(
+  tc: ToolCallRequest,
+  filePath: string,
+  options: ToolExecuteOptions,
+): Promise<ToolExecuteResult> {
+  const ext = lowercaseExtension(filePath);
+  if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: buildBinaryFileError(filePath, ext),
+    };
+  }
+
+  const { readSandboxFile } = options;
+  if (!readSandboxFile) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Path "${filePath}" is not a skill file. Use \`bash_tool\` to read code-execution sandbox files (e.g. \`cat ${filePath}\`).`,
+    };
+  }
+
+  const ctx = tc.codeSessionContext as
+    | { session_id?: string; files?: Array<{ id: string; name: string; session_id?: string }> }
+    | undefined;
+  try {
+    const result = await readSandboxFile({
+      file_path: filePath,
+      session_id: ctx?.session_id,
+      files: ctx?.files,
+    });
+    if (!result || result.content == null) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `Failed to read "${filePath}" from the code-execution sandbox. Try \`bash_tool\` (e.g. \`cat ${filePath}\`).`,
+      };
+    }
+    if (looksBinary(result.content)) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `"${filePath}" appears to be a binary file and cannot be read as text. Use \`bash_tool\` to process it (e.g. \`file ${filePath}\` for metadata).`,
+      };
+    }
+    /**
+     * Cap before line-numbering. `addLineNumbers` allocates a SECOND
+     * full-size string with per-line prefixes, so a multi-MB log read
+     * would materialize ~2x in memory before downstream truncation
+     * kicks in. Match the skill-file path's `MAX_READABLE_BYTES`
+     * (256KB) ceiling: truncate the raw content first, then number,
+     * and surface the truncation to the model so it can use
+     * `bash_tool head` / `tail` for the rest.
+     */
+    let payload = result.content;
+    let truncated = false;
+    if (payload.length > MAX_READABLE_BYTES) {
+      payload = payload.slice(0, MAX_READABLE_BYTES);
+      truncated = true;
+    }
+    let numbered = addLineNumbers(payload);
+    if (truncated) {
+      numbered += `\n\n[truncated at ${MAX_READABLE_BYTES} bytes — use \`bash_tool\` (e.g. \`head -c\` / \`tail\`) to read the rest of "${filePath}"]`;
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: numbered,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`[handleReadFileCall] Sandbox fallback failed for "${filePath}": ${message}`);
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Error reading "${filePath}" from the code-execution sandbox: ${message}. Try \`bash_tool\` (e.g. \`cat ${filePath}\`).`,
+    };
+  }
+}
+
+async function handleReadFileCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+  options: ToolExecuteOptions,
+  req?: ServerRequest,
+): Promise<ToolExecuteResult> {
+  const { getSkillByName, getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } =
+    options;
+  const args = tc.args as { file_path?: string };
+  if (!args.file_path) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'file_path is required',
+    };
+  }
+
+  const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
+  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+  /**
+   * `accessibleSkillIds` is the resolver's authoritative output (admin
+   * capability AND ACL access AND ephemeral badge / persisted
+   * `skills_enabled`). Empty ⇒ skills are not effectively in scope, so we
+   * skip skill resolution entirely and route to the sandbox fallback when
+   * the agent has code-execution available.
+   */
+  const skillsEffectivelyEnabled = accessibleIds.length > 0;
+
+  /**
+   * Short-circuit absolute code-env paths: the path can never be a skill
+   * reference (skill paths are relative `{skillName}/...`), and consulting
+   * `getSkillByName` would just burn a DB round-trip on a guaranteed miss.
+   */
+  if (args.file_path.startsWith('/mnt/data/')) {
+    if (codeEnvAvailable) {
+      return handleSandboxFileFallback(tc, args.file_path, options);
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Path "${args.file_path}" is a code-execution sandbox path, but this agent does not have code execution enabled.`,
+    };
+  }
+
+  const slashIdx = args.file_path.indexOf('/');
+  if (slashIdx < 1) {
+    if (codeEnvAvailable) {
+      return handleSandboxFileFallback(tc, args.file_path, options);
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Invalid file path "${args.file_path}". Use format: {skillName}/{path}`,
+    };
+  }
+
+  const skillName = args.file_path.slice(0, slashIdx);
+  const relativePath = args.file_path.slice(slashIdx + 1);
+  if (!relativePath) {
+    /**
+     * `read_file("output/")`: a malformed-but-unambiguously-not-a-skill
+     * path. Stay consistent with the other malformed-path branches and
+     * route to the sandbox when code execution is available, instead of
+     * dead-ending with a skill-centric error message.
+     */
+    if (codeEnvAvailable) {
+      return handleSandboxFileFallback(tc, args.file_path, options);
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'Missing file path after skill name',
+    };
+  }
+
+  /**
+   * Skills not in scope (admin capability off, ephemeral badge off, or
+   * persisted `skills_enabled !== true` — all already collapsed into
+   * `accessibleSkillIds.length === 0` by `resolveAgentScopedSkillIds`):
+   * route to the sandbox fallback when code execution is available, else
+   * the lookup truly has nowhere to go.
+   */
+  if (!skillsEffectivelyEnabled) {
+    if (codeEnvAvailable) {
+      return handleSandboxFileFallback(tc, args.file_path, options);
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage:
+        'Skill files are not available for this agent and code execution is not enabled.',
+    };
+  }
+
+  /**
+   * Read the primed-skills map BEFORE the `activeSkillNames` shortcut.
+   *
+   * `activeSkillNames` is the catalog-visible set after the
+   * `SKILL_CATALOG_LIMIT` cap and the active-state filter run in
+   * `injectSkillCatalog`. Manual ($-popover) primes and always-apply
+   * primes are intentionally resolved off the wider `accessibleSkillIds`
+   * ACL set BEFORE catalog injection — see `resolveManualSkills` for
+   * why a skill outside the catalog cap can still be authorized for
+   * direct manual invocation. So a primed skill name may legitimately
+   * be absent from `activeSkillNames`. Treat any name in
+   * `skillPrimedIdsByName` as "known" for the gate below; otherwise the
+   * shortcut would misroute `read_file("primed-skill/references/foo.md")`
+   * to the sandbox even though the primed skill is in scope.
+   */
+  const skillPrimedIdsByName =
+    (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+  const primedIdString = skillPrimedIdsByName[skillName];
+  const isPrimedThisTurn = primedIdString != null;
+
+  /**
+   * Skills are in scope, but the first segment isn't a name we know.
+   * Use the catalog-derived `activeSkillNames` Set (no DB read) to detect
+   * this and fall through to the sandbox so the model doesn't have to
+   * eat a wasted `read_file` error before retrying with `bash_tool`.
+   * Primed names bypass this shortcut even when absent from the catalog
+   * (see comment on `skillPrimedIdsByName` above).
+   */
+  const activeSkillNames = mergedConfigurable?.activeSkillNames as Set<string> | undefined;
+  if (activeSkillNames && !activeSkillNames.has(skillName) && !isPrimedThisTurn) {
+    if (codeEnvAvailable) {
+      return handleSandboxFileFallback(tc, args.file_path, options);
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${skillName}" not found or not accessible`,
+    };
+  }
+
+  if (!getSkillByName) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'File reading is not configured',
+    };
+  }
+  /* On a primed lookup (manual `$` OR always-apply), pin the accessible
+     set to ONLY the primed `_id`. This guarantees the doc whose body got
+     primed is the SAME doc whose files we read, even when same-name
+     duplicates exist and `activeSkillIds` had to drop some via the
+     disable-model dedup. For autonomous probes we keep the full ACL set
+     + `preferModelInvocable` so the lookup matches the catalog the model
+     saw (and falls back to newest so the disabled-only case still fires
+     the explicit rejection gate below). Constructing a real `ObjectId`
+     (rather than relying on mongoose's string auto-cast in `$in` queries)
+     keeps the value correct for any future consumer that compares with
+     `.equals()` or `===`. */
+  const lookupAccessibleIds = isPrimedThisTurn
+    ? [new Types.ObjectId(primedIdString)]
+    : accessibleIds;
+  const lookupOptions: { preferUserInvocable?: boolean; preferModelInvocable?: boolean } =
+    isPrimedThisTurn ? {} : { preferModelInvocable: true };
+  const skill = await getSkillByName(skillName, lookupAccessibleIds, lookupOptions);
+  if (!skill) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${skillName}" not found or not accessible`,
+    };
+  }
+
+  /**
+   * `disable-model-invocation: true` blocks AUTONOMOUS read_file probes:
+   * a model that learned a hidden skill's name (stale catalog, hallucination)
+   * shouldn't be able to read its SKILL.md body or bundled files. But when
+   * the skill was primed this turn (manual `$` invocation OR always-apply),
+   * the body is already in context — and a primed skill that depends on
+   * `references/foo.md` would be non-functional if read_file were blocked.
+   * Bypass the gate for primed names so this stays usable end-to-end for
+   * both prime sources.
+   *
+   * Sticky-primed skills (manually or model-invoked in prior turns) are not
+   * yet in this exception list — that's a known limitation tracked for
+   * a follow-up. Same-turn priming is the load-bearing path.
+   */
+  if (skill.disableModelInvocation === true && !isPrimedThisTurn) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${skillName}" cannot be invoked by the model`,
+    };
+  }
+
+  // SKILL.md special case: read from skill.body directly
+  if (relativePath === 'SKILL.md') {
+    if (!skill.body) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `SKILL.md is empty for skill "${skillName}"`,
+      };
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `File: ${args.file_path}\n\n${addLineNumbers(skill.body)}`,
+    };
+  }
+
+  if (!getSkillFileByPath) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'File reading is not configured',
+    };
+  }
+
+  const file = await getSkillFileByPath(skill._id, relativePath);
+  if (!file) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `File not found: "${relativePath}" in skill "${skillName}"`,
+    };
+  }
+
+  // Known binary — serve images as artifacts, others as metadata
+  if (file.isBinary === true) {
+    if (IMAGE_MIMES.has(file.mimeType) && file.bytes <= MAX_BINARY_BYTES) {
+      // Stream and return as image artifact (handled below in stream path)
+    } else {
+      return {
+        toolCallId: tc.id,
+        status: 'success',
+        content: `Binary file (${file.mimeType}, ${file.bytes} bytes). Use bash to process: /mnt/data/${args.file_path}`,
+      };
+    }
+  }
+
+  // Cached text content
+  if (file.isBinary !== true && file.content != null && file.content !== '') {
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `File: ${args.file_path} (${file.bytes} bytes)\n\n${addLineNumbers(file.content)}`,
+    };
+  }
+
+  // Early size check from DB metadata before streaming
+  const isImage = IMAGE_MIMES.has(file.mimeType);
+  if (!isImage && file.bytes > MAX_READABLE_BYTES) {
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `File "${args.file_path}" is too large to read directly (${file.bytes} bytes, limit: ${MAX_READABLE_BYTES}). Invoke the skill first, then use bash to read it at /mnt/data/${args.file_path}.`,
+    };
+  }
+  if (isImage && file.bytes > MAX_BINARY_BYTES) {
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `File too large (${file.bytes} bytes, limit: ${MAX_BINARY_BYTES}). Use bash to process: /mnt/data/${args.file_path}`,
+    };
+  }
+
+  // Stream from storage
+  if (!getStrategyFunctions || !req) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'Storage access not available',
+    };
+  }
+
+  try {
+    const strategy = getStrategyFunctions(file.source);
+    if (!strategy.getDownloadStream) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: 'Download not supported for this storage backend',
+      };
+    }
+
+    const stream = await strategy.getDownloadStream(req, file.filepath);
+    const chunks: Buffer[] = [];
+    // Use the larger binary limit as streaming cap; cheaper type-specific
+    // checks happen after binary detection on the assembled buffer.
+    const streamLimit = MAX_BINARY_BYTES;
+    let streamedBytes = 0;
+    for await (const chunk of stream as AsyncIterable<Buffer>) {
+      streamedBytes += chunk.length;
+      if (streamedBytes > streamLimit) {
+        // Destroy the stream if possible to free resources
+        if (
+          'destroy' in stream &&
+          typeof (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy === 'function'
+        ) {
+          (stream as NodeJS.ReadableStream & { destroy: () => void }).destroy();
+        }
+        return {
+          toolCallId: tc.id,
+          status: 'success',
+          content: `File "${args.file_path}" exceeded streaming limit (${streamLimit} bytes). Invoke the skill first, then use bash to read it at /mnt/data/${args.file_path}.`,
+        };
+      }
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+
+    // Binary detection on first 8KB
+    const checkLen = Math.min(buffer.length, 8192);
+    let isBinary = file.isBinary === true;
+    if (!isBinary) {
+      for (let i = 0; i < checkLen; i++) {
+        if (buffer[i] === 0) {
+          isBinary = true;
+          break;
+        }
+      }
+    }
+
+    if (isBinary) {
+      // Cache the binary flag (first read only)
+      if (file.isBinary == null && updateSkillFileContent) {
+        updateSkillFileContent(skill._id, relativePath, { isBinary: true }).catch(
+          (err: unknown) => {
+            logger.warn(
+              '[handleReadFileCall] cache write failed:',
+              err instanceof Error ? err.message : err,
+            );
+          },
+        );
+      }
+
+      // Return images/PDFs as artifacts
+      if (IMAGE_MIMES.has(file.mimeType) && buffer.length <= MAX_BINARY_BYTES) {
+        const base64 = buffer.toString('base64');
+        return {
+          toolCallId: tc.id,
+          status: 'success',
+          content: `Image: ${args.file_path} (${buffer.length} bytes, ${file.mimeType})`,
+          artifact: {
+            content: [
+              { type: 'image_url', image_url: { url: `data:${file.mimeType};base64,${base64}` } },
+            ],
+          },
+        };
+      }
+
+      // TODO: PDF artifact support requires a document content block path
+      // (image_url runs image processing which fails for PDFs). Falls through
+      // to the generic binary handler below.
+
+      return {
+        toolCallId: tc.id,
+        status: 'success',
+        content: `Binary file (${file.mimeType}, ${buffer.length} bytes). Use bash to process: /mnt/data/${args.file_path}`,
+      };
+    }
+
+    const text = buffer.toString('utf-8');
+
+    // Cache text on first read (skill files are immutable)
+    if (file.content == null && updateSkillFileContent && buffer.length <= MAX_CACHE_BYTES) {
+      updateSkillFileContent(skill._id, relativePath, { content: text, isBinary: false }).catch(
+        (err: unknown) => {
+          logger.warn(
+            '[handleReadFileCall] cache write failed:',
+            err instanceof Error ? err.message : err,
+          );
+        },
+      );
+    }
+
+    if (buffer.length > MAX_READABLE_BYTES) {
+      return {
+        toolCallId: tc.id,
+        status: 'success',
+        content: `File too large (${buffer.length} bytes, limit: ${MAX_READABLE_BYTES}). Use bash: cat /mnt/data/${args.file_path}`,
+      };
+    }
+
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `File: ${args.file_path} (${buffer.length} bytes)\n\n${addLineNumbers(text)}`,
+    };
+  } catch (error) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
+  }
+}
+
+async function handleSkillToolCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+  options: ToolExecuteOptions,
+  req?: ServerRequest,
+): Promise<ToolExecuteResult> {
+  const {
+    getSkillByName,
+    listSkillFiles,
+    getStrategyFunctions,
+    batchUploadCodeEnvFiles,
+    getSessionInfo,
+    checkIfActive,
+    updateSkillFileCodeEnvIds,
+  } = options;
+  const args = tc.args as { skillName?: string; args?: string };
+  if (!args.skillName) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'skillName is required',
+    };
+  }
+
+  if (!getSkillByName) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'Skill execution is not configured',
+    };
+  }
+
+  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+  /* `preferModelInvocable` keeps name-collision resolution aligned with
+     the catalog: a newer `disable-model-invocation: true` duplicate
+     can't shadow the cataloged invocable doc. Model-only
+     (`userInvocable: false`) skills are intentionally still resolvable
+     here — they're valid model-invocation targets. Falls back to the
+     newest match so the disabled-only case still resolves and the gate
+     below fires its explicit error. */
+  const skill = await getSkillByName(args.skillName, accessibleIds, {
+    preferModelInvocable: true,
+  });
+
+  if (!skill) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${args.skillName}" not found or not accessible`,
+    };
+  }
+
+  /**
+   * `disable-model-invocation: true` skills are excluded from the catalog
+   * the model sees, but a model that learned the name elsewhere (stale
+   * cache, hallucinated guess) could still try to invoke it. Reject
+   * explicitly so the error message tells the model exactly why and it
+   * doesn't loop retrying. Manual `$` invocation goes through
+   * `resolveManualSkills`, which is unaffected by this flag.
+   */
+  if (skill.disableModelInvocation === true) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `Skill "${args.skillName}" cannot be invoked by the model`,
+    };
+  }
+
+  let body = skill.body;
+  if (args.args) {
+    body = body.replace(/\$ARGUMENTS/g, args.args);
+  }
+
+  const injectedMessages: InjectedMessage[] = [buildSkillPrimeMessage({ name: skill.name, body })];
+
+  const contentText = `Skill "${args.skillName}" loaded. Follow the instructions below.`;
+  let artifact:
+    | { session_id: string; files: Array<{ id: string; session_id: string; name: string }> }
+    | undefined;
+
+  // Prime skill files to code env — only when the `execute_code` capability
+  // is enabled for this run. The flag is threaded via configurable upstream
+  // so this gate cannot be bypassed.
+  const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
+  if (
+    codeEnvAvailable &&
+    skill.fileCount > 0 &&
+    req &&
+    listSkillFiles &&
+    getStrategyFunctions &&
+    batchUploadCodeEnvFiles
+  ) {
+    try {
+      const skillFiles = await listSkillFiles(skill._id);
+      const primeResult = await primeSkillFiles({
+        skill,
+        skillFiles,
+        req,
+        getStrategyFunctions,
+        batchUploadCodeEnvFiles,
+        getSessionInfo,
+        checkIfActive,
+        updateSkillFileCodeEnvIds,
+      });
+      if (primeResult) {
+        artifact = primeResult;
+      }
+    } catch (error) {
+      logger.error(
+        `[handleSkillToolCall] Failed to prime files for skill "${args.skillName}":`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  return {
+    toolCallId: tc.id,
+    content: contentText,
+    status: 'success',
+    artifact,
+    injectedMessages,
+  };
 }
 
 /**
@@ -57,110 +948,160 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
       const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
 
       try {
-        const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
-        const { loadedTools, configurable: toolConfigurable } = await loadTools(toolNames, agentId);
-        const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
-        const mergedConfigurable = { ...configurable, ...toolConfigurable };
+        await runOutsideTracing(async () => {
+          try {
+            const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
+            const { loadedTools, configurable: toolConfigurable } = await loadTools(
+              toolNames,
+              agentId,
+            );
+            const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
+            const mergedConfigurable = { ...configurable, ...toolConfigurable };
 
-        const results: ToolExecuteResult[] = await Promise.all(
-          toolCalls.map(async (tc: ToolCallRequest) => {
-            const tool = toolMap.get(tc.name);
+            const results: ToolExecuteResult[] = await Promise.all(
+              toolCalls.map(async (tc: ToolCallRequest) => {
+                if (tc.name === Constants.SKILL_TOOL || tc.name === Constants.READ_FILE) {
+                  const req = mergedConfigurable?.req as ServerRequest | undefined;
+                  const handlerResult =
+                    tc.name === Constants.SKILL_TOOL
+                      ? await handleSkillToolCall(tc, mergedConfigurable, options, req)
+                      : await handleReadFileCall(tc, mergedConfigurable, options, req);
 
-            if (!tool) {
-              logger.warn(
-                `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].join(', ')}`,
-              );
-              return {
-                toolCallId: tc.id,
-                status: 'error' as const,
-                content: '',
-                errorMessage: `Tool ${tc.name} not found`,
-              };
-            }
+                  if (toolEndCallback && handlerResult.artifact) {
+                    await toolEndCallback(
+                      {
+                        output: {
+                          name: tc.name,
+                          tool_call_id: tc.id,
+                          content: handlerResult.content,
+                          artifact: handlerResult.artifact,
+                        },
+                      },
+                      {
+                        run_id: (metadata as Record<string, unknown>)?.run_id as string | undefined,
+                        thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                          | string
+                          | undefined,
+                        ...metadata,
+                      },
+                    );
+                  }
 
-            try {
-              const toolCallConfig: Record<string, unknown> = {
-                id: tc.id,
-                stepId: tc.stepId,
-                turn: tc.turn,
-              };
-
-              if (
-                tc.codeSessionContext &&
-                (tc.name === Constants.EXECUTE_CODE ||
-                  tc.name === Constants.PROGRAMMATIC_TOOL_CALLING)
-              ) {
-                toolCallConfig.session_id = tc.codeSessionContext.session_id;
-                if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
-                  toolCallConfig._injected_files = tc.codeSessionContext.files;
+                  return handlerResult;
                 }
-              }
 
-              if (tc.name === Constants.PROGRAMMATIC_TOOL_CALLING) {
-                const toolRegistry = mergedConfigurable?.toolRegistry as LCToolRegistry | undefined;
-                const ptcToolMap = mergedConfigurable?.ptcToolMap as
-                  | Map<string, StructuredToolInterface>
-                  | undefined;
-                if (toolRegistry) {
-                  const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
-                    (t) =>
-                      t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
-                      t.name !== Constants.TOOL_SEARCH,
+                const tool = toolMap.get(tc.name);
+
+                if (!tool) {
+                  logger.warn(
+                    `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].map((k) => `"${k}"`).join(', ')}`,
                   );
-                  toolCallConfig.toolDefs = toolDefs;
-                  toolCallConfig.toolMap = ptcToolMap ?? toolMap;
+                  return {
+                    toolCallId: tc.id,
+                    status: 'error' as const,
+                    content: '',
+                    errorMessage: `Tool ${tc.name} not found`,
+                  };
                 }
-              }
 
-              const result = await tool.invoke(tc.args, {
-                toolCall: toolCallConfig,
-                configurable: mergedConfigurable,
-                metadata,
-              } as Record<string, unknown>);
+                try {
+                  const toolCallConfig: Record<string, unknown> = {
+                    id: tc.id,
+                    stepId: tc.stepId,
+                    turn: tc.turn,
+                  };
 
-              if (toolEndCallback) {
-                await toolEndCallback(
-                  {
-                    output: {
-                      name: tc.name,
-                      tool_call_id: tc.id,
-                      content: result.content,
-                      artifact: result.artifact,
-                    },
-                  },
-                  {
-                    run_id: (metadata as Record<string, unknown>)?.run_id as string | undefined,
-                    thread_id: (metadata as Record<string, unknown>)?.thread_id as
-                      | string
-                      | undefined,
-                    ...metadata,
-                  },
-                );
-              }
+                  if (tc.codeSessionContext && CODE_EXECUTION_TOOLS.has(tc.name)) {
+                    toolCallConfig.session_id = tc.codeSessionContext.session_id;
+                    if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
+                      toolCallConfig._injected_files = tc.codeSessionContext.files;
+                    }
+                  }
 
-              return {
-                toolCallId: tc.id,
-                content: result.content,
-                artifact: result.artifact,
-                status: 'success' as const,
-              };
-            } catch (toolError) {
-              const error = toolError as Error;
-              logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error:`, error);
-              return {
-                toolCallId: tc.id,
-                status: 'error' as const,
-                content: '',
-                errorMessage: error.message,
-              };
-            }
-          }),
-        );
+                  if (tc.name === Constants.PROGRAMMATIC_TOOL_CALLING) {
+                    const toolRegistry = mergedConfigurable?.toolRegistry as
+                      | LCToolRegistry
+                      | undefined;
+                    const ptcToolMap = mergedConfigurable?.ptcToolMap as
+                      | Map<string, StructuredToolInterface>
+                      | undefined;
+                    if (toolRegistry) {
+                      const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
+                        (t) =>
+                          t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
+                          t.name !== Constants.TOOL_SEARCH,
+                      );
+                      toolCallConfig.toolDefs = toolDefs;
+                      toolCallConfig.toolMap = ptcToolMap ?? toolMap;
+                    }
+                  }
 
-        resolve(results);
-      } catch (error) {
-        logger.error('[ON_TOOL_EXECUTE] Fatal error:', error);
-        reject(error as Error);
+                  const result = await tool.invoke(tc.args, {
+                    toolCall: toolCallConfig,
+                    configurable: mergedConfigurable,
+                    metadata,
+                  } as Record<string, unknown>);
+
+                  // Code-execution tools emit per-call boilerplate
+                  // ("Note: ..." paragraphs and `| <annotation>` per-file
+                  // suffixes) that wastes tokens when re-injected into
+                  // every subsequent model turn. Strip it here, *after*
+                  // the tool resolved but *before* downstream consumers
+                  // (model context, SSE forwarding, persistence) see it.
+                  // Non-code-execution tools pass through unchanged.
+                  const cleanedContent =
+                    CODE_EXECUTION_TOOLS.has(tc.name) && typeof result.content === 'string'
+                      ? cleanCodeToolOutput(result.content)
+                      : result.content;
+
+                  if (toolEndCallback) {
+                    await toolEndCallback(
+                      {
+                        output: {
+                          name: tc.name,
+                          tool_call_id: tc.id,
+                          content: cleanedContent,
+                          artifact: result.artifact,
+                        },
+                      },
+                      {
+                        run_id: (metadata as Record<string, unknown>)?.run_id as string | undefined,
+                        thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                          | string
+                          | undefined,
+                        ...metadata,
+                      },
+                    );
+                  }
+
+                  return {
+                    toolCallId: tc.id,
+                    content: cleanedContent,
+                    artifact: result.artifact,
+                    status: 'success' as const,
+                  };
+                } catch (toolError) {
+                  const error = toolError as Error;
+                  logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error:`, error);
+                  return {
+                    toolCallId: tc.id,
+                    status: 'error' as const,
+                    content: '',
+                    errorMessage: error.message,
+                  };
+                }
+              }),
+            );
+
+            resolve(results);
+          } catch (error) {
+            logger.error('[ON_TOOL_EXECUTE] Fatal error:', error);
+            reject(error as Error);
+          }
+        });
+      } catch (outerError) {
+        logger.error('[ON_TOOL_EXECUTE] Unexpected error:', outerError);
+        reject(outerError as Error);
       }
     },
   };

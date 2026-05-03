@@ -1,23 +1,32 @@
 const fs = require('fs');
 const path = require('path');
-const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
-const { bulkSaveConvos: _bulkSaveConvos } = require('~/models/Conversation');
+const {
+  EModelEndpoint,
+  Constants,
+  openAISettings,
+  anthropicSettings,
+} = require('librechat-data-provider');
 const { getImporter, processAssistantMessage } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
-const { bulkSaveMessages } = require('~/models/Message');
-const getLogStores = require('~/cache/getLogStores');
+const { bulkSaveMessages, bulkSaveConvos: _bulkSaveConvos } = require('~/models');
 
-jest.mock('~/cache/getLogStores');
-const mockedCacheGet = jest.fn();
-getLogStores.mockImplementation(() => ({
-  get: mockedCacheGet,
+const mockGetEndpointsConfig = jest.fn().mockResolvedValue({
+  [EModelEndpoint.openAI]: { userProvide: false },
+});
+
+const mockGetModelsConfig = jest.fn().mockResolvedValue({});
+
+jest.mock('~/server/services/Config', () => ({
+  getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
+}));
+
+jest.mock('~/server/controllers/ModelController', () => ({
+  getModelsConfig: (...args) => mockGetModelsConfig(...args),
 }));
 
 // Mock the database methods
-jest.mock('~/models/Conversation', () => ({
+jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn(),
-}));
-jest.mock('~/models/Message', () => ({
   bulkSaveMessages: jest.fn(),
 }));
 
@@ -761,7 +770,7 @@ describe('importLibreChatConvo', () => {
   );
 
   it('should import conversation correctly', async () => {
-    mockedCacheGet.mockResolvedValue({
+    mockGetEndpointsConfig.mockResolvedValue({
       [EModelEndpoint.openAI]: {},
     });
     const expectedNumberOfMessages = 6;
@@ -787,7 +796,7 @@ describe('importLibreChatConvo', () => {
   });
 
   it('should import linear, non-recursive thread correctly with correct endpoint', async () => {
-    mockedCacheGet.mockResolvedValue({
+    mockGetEndpointsConfig.mockResolvedValue({
       [EModelEndpoint.azureOpenAI]: {},
     });
 
@@ -927,7 +936,7 @@ describe('importLibreChatConvo', () => {
   });
 
   it('should retain properties from the original conversation as well as new settings', async () => {
-    mockedCacheGet.mockResolvedValue({
+    mockGetEndpointsConfig.mockResolvedValue({
       [EModelEndpoint.azureOpenAI]: {},
     });
     const requestUserId = 'user-123';
@@ -1015,6 +1024,28 @@ describe('importLibreChatConvo', () => {
       expect(result.conversation.title).toBe('Imported Chat');
       expect(result.conversation.model).toBe(openAISettings.model.default);
     });
+
+    it('should default to the anthropic model for anthropic-endpoint conversations', () => {
+      const requestUserId = 'user-123';
+      const builder = new ImportBatchBuilder(requestUserId);
+      builder.conversationId = 'conv-id-123';
+      builder.messages = [{ text: 'Hello, world!' }];
+      builder.endpoint = EModelEndpoint.anthropic;
+      const result = builder.finishConversation();
+      expect(result.conversation.endpoint).toBe(EModelEndpoint.anthropic);
+      expect(result.conversation.model).toBe(anthropicSettings.model.default);
+    });
+
+    it('should default to the openAI model for openAI-endpoint conversations', () => {
+      const requestUserId = 'user-123';
+      const builder = new ImportBatchBuilder(requestUserId);
+      builder.conversationId = 'conv-id-123';
+      builder.messages = [{ text: 'Hello, world!' }];
+      builder.endpoint = EModelEndpoint.openAI;
+      const result = builder.finishConversation();
+      expect(result.conversation.endpoint).toBe(EModelEndpoint.openAI);
+      expect(result.conversation.model).toBe(openAISettings.model.default);
+    });
   });
 });
 
@@ -1065,11 +1096,15 @@ describe('importChatBotUiConvo', () => {
       1,
       'Hello what are you able to do?',
       expect.any(Date),
+      {},
+      expect.any(String),
     );
     expect(importBatchBuilder.finishConversation).toHaveBeenNthCalledWith(
       2,
       'Give me the code that inverts ...',
       expect.any(Date),
+      {},
+      expect.any(String),
     );
 
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
@@ -1277,12 +1312,9 @@ describe('processAssistantMessage', () => {
       results.push(duration);
     });
 
-    // Check if processing time increases exponentially
-    // In a ReDoS vulnerability, time would roughly double with each size increase
-    for (let i = 1; i < results.length; i++) {
-      const ratio = results[i] / results[i - 1];
-      expect(ratio).toBeLessThan(3); // Allow for CI environment variability while still catching ReDoS
-      console.log(`Size ${sizes[i]} processing time ratio: ${ratio}`);
+    // Each size should complete well under 100ms; a ReDoS would cause exponential blowup
+    for (let i = 0; i < results.length; i++) {
+      expect(results[i]).toBeLessThan(100);
     }
 
     // Also test with the exact payload from the security report
@@ -1352,6 +1384,8 @@ describe('importClaudeConvo', () => {
     expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
       'Test Conversation',
       expect.any(Date),
+      {},
+      expect.any(String),
     );
 
     const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
@@ -1440,6 +1474,136 @@ describe('importClaudeConvo', () => {
     const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
     // Model should not be explicitly set (will use ImportBatchBuilder default)
     expect(savedMessages[0]).not.toHaveProperty('model');
+  });
+
+  it('should set the conversation endpoint and a Claude model so the chat UI loads correctly without a refresh', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-123',
+        name: 'Claude Conversation',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Hello' }],
+          },
+          {
+            uuid: 'msg-2',
+            sender: 'assistant',
+            created_at: '2025-01-15T10:00:02.000Z',
+            content: [{ type: 'text', text: 'Hi there!' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(importBatchBuilder.conversations).toHaveLength(1);
+    const convo = importBatchBuilder.conversations[0];
+    expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
+    expect(convo.model).toBe(anthropicSettings.model.default);
+    expect(convo.model).not.toBe(openAISettings.model.default);
+  });
+
+  it('should prefer the first runtime-configured anthropic model over the hardcoded default', async () => {
+    mockGetModelsConfig.mockResolvedValueOnce({
+      [EModelEndpoint.anthropic]: ['claude-opus-4-7', 'claude-3-5-sonnet-latest'],
+    });
+
+    const jsonData = [
+      {
+        uuid: 'conv-456',
+        name: 'Configured Claude Conversation',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Hello' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const convo = importBatchBuilder.conversations[0];
+    expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
+    expect(convo.model).toBe('claude-opus-4-7');
+  });
+
+  it('should fall back to the anthropic hardcoded default when modelsConfig has no anthropic models', async () => {
+    mockGetModelsConfig.mockResolvedValueOnce({
+      [EModelEndpoint.anthropic]: [],
+    });
+
+    const jsonData = [
+      {
+        uuid: 'conv-789',
+        name: 'Empty modelsConfig Conversation',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Hello' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const convo = importBatchBuilder.conversations[0];
+    expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
+    expect(convo.model).toBe(anthropicSettings.model.default);
+  });
+
+  it('should fall back to the anthropic hardcoded default when getModelsConfig throws', async () => {
+    mockGetModelsConfig.mockRejectedValueOnce(new Error('boom'));
+
+    const jsonData = [
+      {
+        uuid: 'conv-fail',
+        name: 'modelsConfig failure',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T10:00:01.000Z',
+            content: [{ type: 'text', text: 'Hello' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    const convo = importBatchBuilder.conversations[0];
+    expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
+    expect(convo.model).toBe(anthropicSettings.model.default);
   });
 
   it('should correct timestamp inversions (child before parent)', async () => {
@@ -1608,6 +1772,8 @@ describe('importClaudeConvo', () => {
     expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
       'Imported Claude Chat',
       expect.any(Date),
+      {},
+      expect.any(String),
     );
   });
 });

@@ -164,6 +164,32 @@ export const verifyEmail = () => `${BASE_URL}/api/user/verify`;
 export const loginPage = () => `${BASE_URL}/login`;
 export const registerPage = () => `${BASE_URL}/register`;
 
+const REDIRECT_PARAM = 'redirect_to';
+const LOGIN_PATH_RE = /(?:^|\/)login(?:\/|$)/;
+
+/**
+ * Builds a `/login?redirect_to=...` URL from the given or current location.
+ * Returns plain `/login` (no param) when already on a login route to prevent recursive nesting.
+ */
+export function buildLoginRedirectUrl(pathname?: string, search?: string, hash?: string): string {
+  const p = pathname ?? window.location.pathname;
+  if (LOGIN_PATH_RE.test(p)) {
+    return '/login';
+  }
+  const s = search ?? window.location.search;
+  const h = hash ?? window.location.hash;
+
+  const stripped =
+    BASE_URL && (p === BASE_URL || p.startsWith(BASE_URL + '/'))
+      ? p.slice(BASE_URL.length) || '/'
+      : p;
+  const currentPath = `${stripped}${s}${h}`;
+  if (!currentPath || currentPath === '/') {
+    return '/login';
+  }
+  return `/login?${REDIRECT_PARAM}=${encodeURIComponent(currentPath)}`;
+}
+
 export const resendVerificationEmail = () => `${BASE_URL}/api/user/verify/resend`;
 
 export const plugins = () => `${BASE_URL}/api/plugins`;
@@ -317,6 +343,8 @@ export const postPrompt = prompts;
 
 export const updatePromptGroup = getPromptGroup;
 
+export const recordPromptGroupUsage = (groupId: string) => `${prompts()}/groups/${groupId}/use`;
+
 export const updatePromptLabels = (_id: string) => `${getPrompt(_id)}/labels`;
 
 export const updatePromptTag = (_id: string) => `${getPrompt(_id)}/tags/production`;
@@ -331,9 +359,54 @@ export const getCategories = () => `${BASE_URL}/api/categories`;
 
 export const getAllPromptGroups = () => `${prompts()}/all`;
 
+/* Skills */
+export const skills = () => `${BASE_URL}/api/skills`;
+export const importSkill = () => `${skills()}/import`;
+
+export const getSkill = (id: string) => `${skills()}/${encodeURIComponent(id)}`;
+
+export const listSkillsWithFilters = (
+  filter: Record<string, string | number | undefined | null>,
+) => {
+  const cleaned = Object.entries(filter).reduce(
+    (acc, [key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        acc[key] = String(value);
+      }
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+  const query =
+    Object.keys(cleaned).length > 0 ? `?${new URLSearchParams(cleaned).toString()}` : '';
+  return `${skills()}${query}`;
+};
+
+export const skillFiles = (id: string) => `${getSkill(id)}/files`;
+
+export const skillFile = (id: string, relativePath: string) =>
+  `${skillFiles(id)}/${encodeURIComponent(relativePath)}`;
+
+/**
+ * Skill filesystem tree (phase 2). URL shape mirrors the original UI PR so
+ * the tree hooks keep their call surface. `path` is pre-encoded by the
+ * caller (e.g. `${nodeId}/content`).
+ */
+export const skillTree = ({ skillId, path = '' }: { skillId: string; path?: string }) => {
+  let url = `${BASE_URL}/api/skills/${encodeURIComponent(skillId)}/tree`;
+  if (path) {
+    url += `/${path}`;
+  }
+  return url;
+};
+
+/* Skill active states (per-user overrides) */
+export const skillStates = () => `${BASE_URL}/api/user/settings/skills/active`;
+
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
-export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase()}`;
+export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
+export const getRole = (roleName: string) => `${roles()}/${encodeURIComponent(roleName)}`;
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
@@ -345,6 +418,7 @@ export const updateRemoteAgentsPermissions = (roleName: string) =>
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;
+export const updateSkillPermissions = (roleName: string) => `${getRole(roleName)}/skills`;
 
 /* Conversation Tags */
 export const conversationTags = (tag?: string) =>

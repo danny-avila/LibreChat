@@ -1,7 +1,13 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Constants, EnvVar, GraphEvents, ToolEndHandler } = require('@librechat/agents');
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
+const {
+  GraphEvents,
+  GraphNodeKeys,
+  ToolEndHandler,
+  CODE_EXECUTION_TOOLS,
+  createContentAggregator,
+} = require('@librechat/agents');
 const {
   sendEvent,
   GenerationJobManager,
@@ -10,7 +16,6 @@ const {
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
-const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
 class ModelEndHandler {
@@ -70,8 +75,13 @@ class ModelEndHandler {
       if (modelName) {
         usage.model = modelName;
       }
+      if (agentContext.provider) {
+        usage.provider = agentContext.provider;
+      }
 
-      this.collectedUsage.push(usage);
+      const taggedUsage = markSummarizationUsage(usage, metadata);
+
+      this.collectedUsage.push(taggedUsage);
     } catch (error) {
       logger.error('Error handling model end event:', error);
       return this.finalize(errorMessage);
@@ -109,6 +119,48 @@ async function emitEvent(res, streamId, eventData) {
 }
 
 /**
+ * Maps a {@link SubagentUpdateEvent} phase to the corresponding
+ * {@link GraphEvents} name that the SDK's `createContentAggregator`
+ * knows how to consume. Phases that don't carry content (`start`, `stop`,
+ * `error`) or whose payload doesn't match a handled event (`run_step`
+ * with an `ON_TOOL_EXECUTE`-shaped batch request rather than a RunStep)
+ * return `null` so the caller skips them.
+ * @param {SubagentUpdateEvent} event
+ * @returns {string | null}
+ */
+function subagentPhaseToGraphEvent(event) {
+  switch (event?.phase) {
+    case 'run_step':
+      /** `ON_RUN_STEP` and `ON_TOOL_EXECUTE` both forward with phase
+       *  `run_step`; only the former matches the aggregator's RunStep
+       *  schema. Detect by presence of `stepDetails`. */
+      return event.data?.stepDetails ? GraphEvents.ON_RUN_STEP : null;
+    case 'run_step_delta':
+      return GraphEvents.ON_RUN_STEP_DELTA;
+    case 'run_step_completed':
+      return GraphEvents.ON_RUN_STEP_COMPLETED;
+    case 'message_delta':
+      return GraphEvents.ON_MESSAGE_DELTA;
+    case 'reasoning_delta':
+      return GraphEvents.ON_REASONING_DELTA;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Folds a single {@link SubagentUpdateEvent} into the given content
+ * aggregator. Silent no-op for phases outside the aggregator's domain.
+ * @param {{ aggregateContent: Function }} aggregator
+ * @param {SubagentUpdateEvent} event
+ */
+function feedSubagentAggregator(aggregator, event) {
+  const graphEvent = subagentPhaseToGraphEvent(event);
+  if (!graphEvent) return;
+  aggregator.aggregateContent({ event: graphEvent, data: event.data });
+}
+
+/**
  * @typedef {Object} ToolExecuteOptions
  * @property {(toolNames: string[]) => Promise<{loadedTools: StructuredTool[]}>} loadTools - Function to load tools by name
  * @property {Object} configurable - Configurable context for tool invocation
@@ -133,6 +185,8 @@ function getDefaultHandlers({
   collectedUsage,
   streamId = null,
   toolExecuteOptions = null,
+  summarizationOptions = null,
+  subagentAggregatorsByToolCallId = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -244,6 +298,86 @@ function getDefaultHandlers({
   if (toolExecuteOptions) {
     handlers[GraphEvents.ON_TOOL_EXECUTE] = createToolExecuteHandler(toolExecuteOptions);
   }
+
+  handlers[GraphEvents.ON_SUBAGENT_UPDATE] = {
+    /**
+     * Forwards subagent progress envelopes to the client stream, and
+     * (when a caller-owned aggregator map is provided) also folds each
+     * event into a per-tool-call `createContentAggregator`. The
+     * resulting `contentParts` are attached to the parent's `subagent`
+     * tool_call at message-save time so the child's reasoning / tool
+     * calls / final text survive a page refresh — in-memory Recoil
+     * atoms alone wouldn't persist that.
+     *
+     * Aggregation runs regardless of stream visibility (persistence +
+     * dialog depend on it), but the SSE forward respects
+     * `hide_sequential_outputs` the same way `ON_RUN_STEP`,
+     * `ON_MESSAGE_DELTA`, etc. do — so intermediate agents in a
+     * sequential chain don't leak their subagent activity when the
+     * chain is configured to suppress intermediates.
+     */
+    handle: async (event, data, metadata) => {
+      const isLastAgent = checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node);
+      const visible = isLastAgent || !metadata?.hide_sequential_outputs;
+      /**
+       * Gate BOTH aggregation (persistence) AND streaming on the same
+       * visibility rule. If we aggregated for a hidden intermediate
+       * agent, `finalizeSubagentContent` would still attach its
+       * child's reasoning / tool output to the saved message — so a
+       * page refresh would reveal activity that was intentionally
+       * suppressed live. Treat hide_sequential_outputs as a
+       * consistent "don't record" rule for subagent traces.
+       */
+      if (!visible) return;
+      if (subagentAggregatorsByToolCallId && data?.parentToolCallId) {
+        const key = data.parentToolCallId;
+        let aggregator = subagentAggregatorsByToolCallId.get(key);
+        if (!aggregator) {
+          aggregator = createContentAggregator();
+          subagentAggregatorsByToolCallId.set(key, aggregator);
+        }
+        try {
+          feedSubagentAggregator(aggregator, data);
+        } catch (err) {
+          logger.warn(
+            `[ON_SUBAGENT_UPDATE] Failed to aggregate phase "${data?.phase}" for tool_call ${key}: ${err?.message ?? err}`,
+          );
+        }
+      }
+      await emitEvent(res, streamId, { event, data });
+    },
+  };
+
+  if (summarizationOptions?.enabled !== false) {
+    handlers[GraphEvents.ON_SUMMARIZE_START] = {
+      handle: async (_event, data) => {
+        await emitEvent(res, streamId, {
+          event: GraphEvents.ON_SUMMARIZE_START,
+          data,
+        });
+      },
+    };
+    handlers[GraphEvents.ON_SUMMARIZE_DELTA] = {
+      handle: async (_event, data) => {
+        aggregateContent({ event: GraphEvents.ON_SUMMARIZE_DELTA, data });
+        await emitEvent(res, streamId, {
+          event: GraphEvents.ON_SUMMARIZE_DELTA,
+          data,
+        });
+      },
+    };
+    handlers[GraphEvents.ON_SUMMARIZE_COMPLETE] = {
+      handle: async (_event, data) => {
+        aggregateContent({ event: GraphEvents.ON_SUMMARIZE_COMPLETE, data });
+        await emitEvent(res, streamId, {
+          event: GraphEvents.ON_SUMMARIZE_COMPLETE,
+          data,
+        });
+      },
+    };
+  }
+
+  handlers[GraphEvents.ON_AGENT_LOG] = { handle: agentLogHandler };
 
   return handlers;
 }
@@ -403,9 +537,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       return;
     }
 
-    const isCodeTool =
-      output.name === Tools.execute_code || output.name === Constants.PROGRAMMATIC_TOOL_CALLING;
-    if (!isCodeTool) {
+    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
       return;
     }
 
@@ -414,22 +546,42 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
     }
 
     for (const file of output.artifact.files) {
+      /* `inherited` files are unchanged passthroughs of inputs the caller
+       * already owns (skill files, prior session inputs, inherited
+       * .dirkeep markers). Skip post-processing: re-downloading with the
+       * user's session key 403s when the file is entity-scoped, and the
+       * input is already persisted at its origin. They remain available
+       * to subsequent calls via primeInvokedSkills / session inheritance. */
+      if (file.inherited) {
+        continue;
+      }
       const { id, name } = file;
       artifactPromises.push(
         (async () => {
-          const result = await loadAuthValues({
-            userId: req.user.id,
-            authFields: [EnvVar.CODE_API_KEY],
-          });
           const fileMetadata = await processCodeOutput({
             req,
             id,
             name,
-            apiKey: result[EnvVar.CODE_API_KEY],
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
-            session_id: output.artifact.session_id,
+            /**
+             * Use the FILE's session_id (storage session), not the
+             * top-level artifact session_id (exec session). The codeapi
+             * worker reports two distinct ids on a tool result:
+             *   - `artifact.session_id` is the EXEC session — the
+             *     sandbox VM that ran the bash command. Files don't
+             *     live there; it's torn down post-execution.
+             *   - `file.session_id` is the STORAGE session — the
+             *     file-server bucket prefix where artifacts actually
+             *     live and are served from.
+             * `processCodeOutput` builds `/download/{session_id}/{id}`,
+             * so passing the exec id resolves to a path the file-server
+             * doesn't know about and 404s. Fall back to artifact-level
+             * for older worker payloads that may not populate per-file
+             * ids.
+             */
+            session_id: file.session_id ?? output.artifact.session_id,
           });
           if (!streamId && !res.headersSent) {
             return fileMetadata;
@@ -611,9 +763,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       return;
     }
 
-    const isCodeTool =
-      output.name === Tools.execute_code || output.name === Constants.PROGRAMMATIC_TOOL_CALLING;
-    if (!isCodeTool) {
+    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
       return;
     }
 
@@ -622,22 +772,42 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
     }
 
     for (const file of output.artifact.files) {
+      /* `inherited` files are unchanged passthroughs of inputs the caller
+       * already owns (skill files, prior session inputs, inherited
+       * .dirkeep markers). Skip post-processing: re-downloading with the
+       * user's session key 403s when the file is entity-scoped, and the
+       * input is already persisted at its origin. They remain available
+       * to subsequent calls via primeInvokedSkills / session inheritance. */
+      if (file.inherited) {
+        continue;
+      }
       const { id, name } = file;
       artifactPromises.push(
         (async () => {
-          const result = await loadAuthValues({
-            userId: req.user.id,
-            authFields: [EnvVar.CODE_API_KEY],
-          });
           const fileMetadata = await processCodeOutput({
             req,
             id,
             name,
-            apiKey: result[EnvVar.CODE_API_KEY],
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
-            session_id: output.artifact.session_id,
+            /**
+             * Use the FILE's session_id (storage session), not the
+             * top-level artifact session_id (exec session). The codeapi
+             * worker reports two distinct ids on a tool result:
+             *   - `artifact.session_id` is the EXEC session — the
+             *     sandbox VM that ran the bash command. Files don't
+             *     live there; it's torn down post-execution.
+             *   - `file.session_id` is the STORAGE session — the
+             *     file-server bucket prefix where artifacts actually
+             *     live and are served from.
+             * `processCodeOutput` builds `/download/{session_id}/{id}`,
+             * so passing the exec id resolves to a path the file-server
+             * doesn't know about and 404s. Fall back to artifact-level
+             * for older worker payloads that may not populate per-file
+             * ids.
+             */
+            session_id: file.session_id ?? output.artifact.session_id,
           });
 
           if (!fileMetadata) {
@@ -668,8 +838,62 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
   };
 }
 
+const ALLOWED_LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
+
+function agentLogHandler(_event, data) {
+  if (!data) {
+    return;
+  }
+  const logFn = ALLOWED_LOG_LEVELS.has(data.level) ? logger[data.level] : logger.debug;
+  const meta = typeof data.data === 'object' && data.data != null ? data.data : {};
+  logFn(`[agents:${data.scope ?? 'unknown'}] ${data.message ?? ''}`, {
+    ...meta,
+    runId: data.runId,
+    agentId: data.agentId,
+  });
+}
+
+function markSummarizationUsage(usage, metadata) {
+  const node = metadata?.langgraph_node;
+  if (typeof node === 'string' && node.startsWith(GraphNodeKeys.SUMMARIZE)) {
+    return { ...usage, usage_type: 'summarization' };
+  }
+  return usage;
+}
+
+const agentLogHandlerObj = { handle: agentLogHandler };
+
+/**
+ * Builds the three summarization SSE event handlers.
+ * In streaming mode, each event is forwarded to the client via `res.write`.
+ * In non-streaming mode, the handlers are no-ops.
+ * @param {{ isStreaming: boolean, res: import('express').Response }} opts
+ */
+function buildSummarizationHandlers({ isStreaming, res }) {
+  if (!isStreaming) {
+    const noop = { handle: () => {} };
+    return { on_summarize_start: noop, on_summarize_delta: noop, on_summarize_complete: noop };
+  }
+  const writeEvent = (name) => ({
+    handle: async (_event, data) => {
+      if (!res.writableEnded) {
+        res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+      }
+    },
+  });
+  return {
+    on_summarize_start: writeEvent('on_summarize_start'),
+    on_summarize_delta: writeEvent('on_summarize_delta'),
+    on_summarize_complete: writeEvent('on_summarize_complete'),
+  };
+}
+
 module.exports = {
+  agentLogHandler,
+  agentLogHandlerObj,
   getDefaultHandlers,
   createToolEndCallback,
+  markSummarizationUsage,
+  buildSummarizationHandlers,
   createResponsesToolEndCallback,
 };

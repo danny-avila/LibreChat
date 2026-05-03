@@ -1,10 +1,11 @@
-import { useRecoilValue } from 'recoil';
 import { useEffect, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useDeleteFilesMutation } from '~/data-provider';
+import useResetArtifactsOnConversationChange from '~/hooks/Artifacts/useResetArtifactsOnConversationChange';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
-import { EditorProvider, SidePanelProvider, ArtifactsProvider } from '~/Providers';
+import { EditorProvider, ArtifactsProvider } from '~/Providers';
+import { useDeleteFilesMutation } from '~/data-provider';
 import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { useSetFilesToDelete } from '~/hooks';
@@ -13,6 +14,16 @@ import store from '~/store';
 export default function Presentation({ children }: { children: React.ReactNode }) {
   const artifacts = useRecoilValue(store.artifactsState);
   const artifactsVisibility = useRecoilValue(store.artifactsVisibility);
+  // Render-gating the panel on `currentArtifactId != null` (in addition
+  // to visibility + non-empty artifacts) means the side panel only opens
+  // when *something* is actively focused. Conversation navigation
+  // resets `currentArtifactId` to null, so the panel stays closed when
+  // a user revisits an old conversation full of artifacts. New artifacts
+  // arriving via SSE auto-focus through `ToolArtifactCard`'s mount effect
+  // (gated on `isSubmitting`), restoring the legacy streaming UX.
+  const currentArtifactId = useRecoilValue(store.currentArtifactId);
+
+  useResetArtifactsOnConversationChange();
 
   const setFilesToDelete = useSetFilesToDelete();
 
@@ -47,22 +58,12 @@ export default function Presentation({ children }: { children: React.ReactNode }
     mutateAsync({ files });
   }, [mutateAsync]);
 
-  const defaultLayout = useMemo(() => {
-    const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
-    return typeof resizableLayout === 'string' ? JSON.parse(resizableLayout) : undefined;
-  }, []);
-  const defaultCollapsed = useMemo(() => {
-    const collapsedPanels = localStorage.getItem('react-resizable-panels:collapsed');
-    return typeof collapsedPanels === 'string' ? JSON.parse(collapsedPanels) : true;
-  }, []);
-  const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
-
-  /**
-   * Memoize artifacts JSX to prevent recreating it on every render
-   * This is critical for performance - prevents entire artifact tree from re-rendering
-   */
   const artifactsElement = useMemo(() => {
-    if (artifactsVisibility === true && Object.keys(artifacts ?? {}).length > 0) {
+    if (
+      artifactsVisibility === true &&
+      currentArtifactId != null &&
+      Object.keys(artifacts ?? {}).length > 0
+    ) {
       return (
         <ArtifactsProvider>
           <EditorProvider>
@@ -72,22 +73,15 @@ export default function Presentation({ children }: { children: React.ReactNode }
       );
     }
     return null;
-  }, [artifactsVisibility, artifacts]);
+  }, [artifactsVisibility, artifacts, currentArtifactId]);
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
-      <SidePanelProvider>
-        <SidePanelGroup
-          defaultLayout={defaultLayout}
-          fullPanelCollapse={fullCollapse}
-          defaultCollapsed={defaultCollapsed}
-          artifacts={artifactsElement}
-        >
-          <main className="flex h-full flex-col overflow-y-auto" role="main">
-            {children}
-          </main>
-        </SidePanelGroup>
-      </SidePanelProvider>
+      <SidePanelGroup artifacts={artifactsElement}>
+        <main className="flex h-full flex-col overflow-y-auto" role="main">
+          {children}
+        </main>
+      </SidePanelGroup>
     </DragDropWrapper>
   );
 }

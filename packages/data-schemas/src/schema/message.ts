@@ -5,7 +5,6 @@ const messageSchema: Schema<IMessage> = new Schema(
   {
     messageId: {
       type: String,
-      unique: true,
       required: true,
       index: true,
       meiliIndex: true,
@@ -114,7 +113,31 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: String,
     },
     metadata: { type: mongoose.Schema.Types.Mixed },
+    contextMeta: {
+      type: {
+        calibrationRatio: { type: Number },
+        encoding: { type: String },
+      },
+      _id: false,
+      default: undefined,
+    },
     attachments: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
+    /**
+     * Skill names the user invoked manually via the `$` popover on this turn.
+     * UI metadata only — `SkillPills` on the frontend renders these on
+     * the user message bubble so the selection persists through reload and
+     * shows in history. Runtime skill resolution lives separately on the
+     * request body, not on the message itself.
+     */
+    manualSkills: { type: [String], default: undefined },
+    /**
+     * Skill names auto-primed on this turn because their frontmatter declares
+     * `always-apply: true`. Persisted at turn time (not reconstructed on
+     * render) because `Skill.alwaysApply` is mutable — if an admin flips the
+     * flag off later, historical turns must still show the pinned badges on
+     * the user bubble to preserve the audit trail of what actually ran.
+     */
+    alwaysAppliedSkills: { type: [String], default: undefined },
     /*
     attachments: {
       type: [
@@ -144,13 +167,17 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: Boolean,
       default: undefined,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   { timestamps: true },
 );
 
 messageSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 messageSchema.index({ createdAt: 1 });
-messageSchema.index({ messageId: 1, user: 1 }, { unique: true });
+messageSchema.index({ messageId: 1, user: 1, tenantId: 1 }, { unique: true });
 
 // index for MeiliSearch sync operations
 messageSchema.index({ _meiliIndex: 1, expiredAt: 1 });

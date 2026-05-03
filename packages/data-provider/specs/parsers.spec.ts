@@ -7,22 +7,38 @@ import type { TUser, TConversation } from '../src/types';
 
 // Mock dayjs module with consistent date/time values regardless of environment
 jest.mock('dayjs', () => {
-  // Create a mock implementation that returns fixed values
-  const mockDayjs = () => ({
+  const mockDayjs = (input?: unknown) => ({
     format: (format: string) => {
+      if (input === '2023-12-31T23:59:58.000Z') {
+        if (format === 'YYYY-MM-DD') {
+          return '2023-12-31';
+        }
+        if (format === 'YYYY-MM-DD HH:mm:ss Z') {
+          return '2023-12-31 23:59:58 +00:00';
+        }
+        if (format === 'dddd') {
+          return 'Sunday';
+        }
+      }
       if (format === 'YYYY-MM-DD') {
         return '2024-04-29';
       }
-      if (format === 'YYYY-MM-DD HH:mm:ss') {
-        return '2024-04-29 12:34:56';
+      if (format === 'YYYY-MM-DD HH:mm:ss Z') {
+        return '2024-04-29 12:34:56 -04:00';
       }
-      return format; // fallback
+      if (format === 'dddd') {
+        return 'Monday';
+      }
+      throw new Error(
+        `Unhandled dayjs().format() call in mock: "${format}". Update the mock in parsers.spec.ts`,
+      );
     },
-    day: () => 1, // 1 = Monday
-    toISOString: () => '2024-04-29T16:34:56.000Z',
+    toISOString: () =>
+      input === '2023-12-31T23:59:58.000Z'
+        ? '2023-12-31T23:59:58.000Z'
+        : '2024-04-29T16:34:56.000Z',
   });
 
-  // Add any static methods needed
   mockDayjs.extend = jest.fn();
 
   return mockDayjs;
@@ -47,18 +63,36 @@ describe('replaceSpecialVars', () => {
 
   test('should replace {{current_date}} with the current date', () => {
     const result = replaceSpecialVars({ text: 'Today is {{current_date}}' });
-    // dayjs().day() returns 1 for Monday (April 29, 2024 is a Monday)
-    expect(result).toBe('Today is 2024-04-29 (1)');
+    expect(result).toBe('Today is 2024-04-29 (Monday)');
   });
 
   test('should replace {{current_datetime}} with the current datetime', () => {
     const result = replaceSpecialVars({ text: 'Now is {{current_datetime}}' });
-    expect(result).toBe('Now is 2024-04-29 12:34:56 (1)');
+    expect(result).toBe('Now is 2024-04-29 12:34:56 -04:00 (Monday)');
   });
 
   test('should replace {{iso_datetime}} with the ISO datetime', () => {
     const result = replaceSpecialVars({ text: 'ISO time: {{iso_datetime}}' });
     expect(result).toBe('ISO time: 2024-04-29T16:34:56.000Z');
+  });
+
+  test('should use supplied anchor time for date variables', () => {
+    const result = replaceSpecialVars({
+      text: '{{current_date}} | {{current_datetime}} | {{iso_datetime}}',
+      now: '2023-12-31T23:59:58.000Z',
+    });
+    expect(result).toBe(
+      '2023-12-31 (Sunday) | 2023-12-31 23:59:58 +00:00 (Sunday) | 2023-12-31T23:59:58.000Z',
+    );
+  });
+
+  test('should replace special variables with surrounding whitespace', () => {
+    const result = replaceSpecialVars({
+      text: '{{ current_date }} | {{ current_user }}',
+      user: mockUser,
+    });
+
+    expect(result).toBe('2024-04-29 (Monday) | Test User');
   });
 
   test('should replace {{current_user}} with the user name if provided', () => {
@@ -90,7 +124,7 @@ describe('replaceSpecialVars', () => {
       user: mockUser,
     });
     expect(result).toBe(
-      'Hello Test User! Today is 2024-04-29 (1) and the time is 2024-04-29 12:34:56 (1). ISO: 2024-04-29T16:34:56.000Z',
+      'Hello Test User! Today is 2024-04-29 (Monday) and the time is 2024-04-29 12:34:56 -04:00 (Monday). ISO: 2024-04-29T16:34:56.000Z',
     );
   });
 
@@ -99,7 +133,7 @@ describe('replaceSpecialVars', () => {
       text: 'Date: {{CURRENT_DATE}}, User: {{Current_User}}',
       user: mockUser,
     });
-    expect(result).toBe('Date: 2024-04-29 (1), User: Test User');
+    expect(result).toBe('Date: 2024-04-29 (Monday), User: Test User');
   });
 
   test('should confirm all specialVariables from config.ts get parsed', () => {
@@ -120,8 +154,8 @@ describe('replaceSpecialVars', () => {
     });
 
     // Verify the expected replacements
-    expect(result).toContain('2024-04-29 (1)'); // current_date
-    expect(result).toContain('2024-04-29 12:34:56 (1)'); // current_datetime
+    expect(result).toContain('2024-04-29 (Monday)'); // current_date
+    expect(result).toContain('2024-04-29 12:34:56 -04:00 (Monday)'); // current_datetime
     expect(result).toContain('2024-04-29T16:34:56.000Z'); // iso_datetime
     expect(result).toContain('Test User'); // current_user
   });
