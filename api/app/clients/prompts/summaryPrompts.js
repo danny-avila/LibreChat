@@ -1,4 +1,4 @@
-const { PromptTemplate } = require('@langchain/core/prompts');
+const { PromptTemplate } = require('@librechat/agents/langchain/prompts');
 /*
  * Without `{summary}` and `{new_lines}`, token count is 98
  * We are counting this towards the max context tokens for summaries, +3 for the assistant label (101)

@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { nanoid } = require('nanoid');
-const { tool } = require('@langchain/core/tools');
 const { GraphEvents, sleep } = require('@librechat/agents');
+const { tool } = require('@librechat/agents/langchain/tools');
 const { logger, encryptV2, decryptV2 } = require('@librechat/data-schemas');
 const {
   sendEvent,

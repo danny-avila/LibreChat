@@ -106,8 +106,8 @@ const validateTools = async (user, tools = []) => {
   }
 };
 
-/** @typedef {typeof import('@langchain/core/tools').Tool} ToolConstructor */
-/** @typedef {import('@langchain/core/tools').Tool} Tool */
+/** @typedef {typeof import('@librechat/agents/langchain/tools').Tool} ToolConstructor */
+/** @typedef {import('@librechat/agents/langchain/tools').Tool} Tool */
 
 /**
  * Initializes a tool with authentication values for the given user, supporting alternate authentication fields.

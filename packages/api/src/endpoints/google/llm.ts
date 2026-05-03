@@ -1,9 +1,23 @@
 import { Providers } from '@librechat/agents';
 import { googleSettings, AuthKeys, removeNullishValues } from 'librechat-data-provider';
 import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
-import type { GoogleAIToolType } from '@langchain/google-common';
+import type { GoogleAIToolType } from '@librechat/agents/langchain/google-common';
 import type * as t from '~/types';
 import { isEnabled } from '~/utils';
+
+type GoogleThinkingLevel = 'THINKING_LEVEL_UNSPECIFIED' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
+type GoogleThinkingConfig = {
+  includeThoughts: boolean;
+  thinkingLevel?: GoogleThinkingLevel;
+};
+
+const googleThinkingLevels = new Set<GoogleThinkingLevel>([
+  'THINKING_LEVEL_UNSPECIFIED',
+  'MINIMAL',
+  'LOW',
+  'MEDIUM',
+  'HIGH',
+]);
 
 /** Known Google/Vertex AI parameters that map directly to the client config */
 export const knownGoogleParams = new Set([
@@ -68,6 +82,17 @@ function getThresholdMapping(model: string) {
   }
 
   return (value: string) => value;
+}
+
+function normalizeGoogleThinkingLevel(value: unknown): GoogleThinkingLevel | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const normalized = value.toUpperCase() as GoogleThinkingLevel;
+  if (!googleThinkingLevels.has(normalized)) {
+    return undefined;
+  }
+  return normalized;
 }
 
 export function getSafetySettings(
@@ -206,22 +231,23 @@ export function getGoogleConfig(
    * with `includeThoughts: true`. The `thinkingBudget` param is ignored for Gemini 3+.
    *
    * For Vertex AI, top-level `includeThoughts` is still required because
-   * `@langchain/google-common`'s `formatGenerationConfig` reads it separately
+   * `@librechat/agents/langchain/google-common`'s `formatGenerationConfig` reads it separately
    * from `thinkingConfig` — they serve different purposes in the request pipeline.
    */
   const isGemini3Plus = /gemini-([3-9]|\d{2,})/i.test(modelName);
 
   if (isGemini3Plus && thinking) {
-    const thinkingConfig: { includeThoughts: boolean; thinkingLevel?: string } = {
+    const thinkingConfig: GoogleThinkingConfig = {
       includeThoughts: true,
     };
-    if (thinkingLevel) {
-      thinkingConfig.thinkingLevel = thinkingLevel as string;
+    const normalizedThinkingLevel = normalizeGoogleThinkingLevel(thinkingLevel);
+    if (normalizedThinkingLevel) {
+      thinkingConfig.thinkingLevel = normalizedThinkingLevel;
     }
     if (provider === Providers.GOOGLE) {
-      (llmConfig as GoogleClientOptions).thinkingConfig = thinkingConfig;
+      (llmConfig as { thinkingConfig?: GoogleThinkingConfig }).thinkingConfig = thinkingConfig;
     } else if (provider === Providers.VERTEXAI) {
-      (llmConfig as Record<string, unknown>).thinkingConfig = thinkingConfig;
+      (llmConfig as { thinkingConfig?: GoogleThinkingConfig }).thinkingConfig = thinkingConfig;
       (llmConfig as VertexAIClientOptions).includeThoughts = true;
     }
   } else if (!isGemini3Plus) {

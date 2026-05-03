@@ -1,5 +1,5 @@
 import { Constants } from 'librechat-data-provider';
-import { DynamicStructuredTool } from '@langchain/core/tools';
+import { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { Agent, TEphemeralAgent } from 'librechat-data-provider';
 import type { LCTool } from '@librechat/agents';
 import type { Logger } from 'winston';

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { openAISchema } from 'librechat-data-provider';
-import type { TConfig } from 'librechat-data-provider';
+import type { BindToolsInput } from '@librechat/agents/langchain/language_models/chat_models';
 import type { OpenAIClientOptions, Providers } from '@librechat/agents';
-import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
+import type { TConfig } from 'librechat-data-provider';
 import type { AzureOptions } from './azure';
 
 export type OpenAIParameters = z.infer<typeof openAISchema>;

@@ -1,12 +1,12 @@
 const { logger } = require('@librechat/data-schemas');
-const { tool: toolFn, DynamicStructuredTool } = require('@langchain/core/tools');
+const { tool: toolFn, DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 const {
   sleep,
   StepTypes,
   GraphEvents,
   createToolSearch,
-  Constants: AgentConstants,
   createBashExecutionTool,
+  Constants: AgentConstants,
   createProgrammaticToolCallingTool,
 } = require('@librechat/agents');
 const {
@@ -17,10 +17,10 @@ const {
   GenerationJobManager,
   isActionDomainAllowed,
   buildWebSearchContext,
-  buildWebSearchDynamicContext,
   buildImageToolContext,
-  buildToolClassification,
   buildOAuthToolCallName,
+  buildToolClassification,
+  buildWebSearchDynamicContext,
 } = require('@librechat/api');
 const {
   Time,
