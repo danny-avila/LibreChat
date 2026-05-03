@@ -1112,6 +1112,7 @@ export const webSearchSchema = z.object({
       includeImageDescriptions: z.boolean().optional(),
       includeFavicon: z.boolean().optional(),
       chunksPerSource: z.number().int().min(1).max(3).optional(),
+      safeSearch: z.boolean().optional(),
       timeout: z.number().int().nonnegative().optional(),
     })
     .optional(),
@@ -1120,7 +1121,6 @@ export const webSearchSchema = z.object({
       extractDepth: z.enum(['basic', 'advanced']).optional(),
       includeImages: z.boolean().optional(),
       includeFavicon: z.boolean().optional(),
-      chunksPerSource: z.number().int().min(1).max(5).optional(),
       format: z.enum(['markdown', 'text']).optional(),
       timeout: z.number().int().nonnegative().optional(),
     })

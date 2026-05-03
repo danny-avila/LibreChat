@@ -467,10 +467,12 @@ describe('webSearchSchema', () => {
       tavilySearchOptions: {
         includeAnswer: 'advanced',
         includeRawContent: 'markdown',
+        safeSearch: false,
       },
     });
 
     expect(result.tavilySearchOptions?.includeAnswer).toBe('advanced');
     expect(result.tavilySearchOptions?.includeRawContent).toBe('markdown');
+    expect(result.tavilySearchOptions?.safeSearch).toBe(false);
   });
 });

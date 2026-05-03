@@ -146,13 +146,13 @@ export interface TavilyConfig {
     includeImageDescriptions?: boolean;
     includeFavicon?: boolean;
     chunksPerSource?: number;
+    safeSearch?: boolean;
     timeout?: number;
   };
   tavilyScraperOptions?: {
     extractDepth?: 'basic' | 'advanced';
     includeImages?: boolean;
     includeFavicon?: boolean;
-    chunksPerSource?: number;
     format?: 'markdown' | 'text';
     timeout?: number;
   };

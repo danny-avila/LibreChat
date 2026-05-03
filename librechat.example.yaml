@@ -651,6 +651,7 @@ endpoints:
 #     # includeImages: true     # Include images in results
 #     # includeFavicon: true    # Include favicon URL for each result
 #     # chunksPerSource: 3      # Chunks per source, only with 'advanced' depth (1-3)
+#     # safeSearch: false       # Override Tavily safe search filtering
 #     # includeDomains:         # Restrict search to specific domains (max 300)
 #     #   - 'example.com'
 #     #   - 'docs.example.com'
@@ -662,7 +663,6 @@ endpoints:
 #     extractDepth: basic       # 'basic' (1 credit/5 URLs) or 'advanced' (2 credits/5 URLs, more thorough)
 #     # includeImages: false    # Include images extracted from URLs
 #     # includeFavicon: false   # Include favicon URL for each result
-#     # chunksPerSource: 3      # Content chunks per source, 1-5 (default: 3)
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
 #     # timeout: 15000          # HTTP request timeout in milliseconds
 
