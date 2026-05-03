@@ -10,7 +10,7 @@ export enum DATE_RANGE {
   PAST_YEAR = 'y',
 }
 
-export type SearchProvider = 'serper' | 'searxng';
+export type SearchProvider = 'serper' | 'searxng' | 'tavily';
 export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none';
 
 export interface Highlight {
@@ -73,6 +73,9 @@ export interface SearchConfig {
   serperApiKey?: string;
   searxngInstanceUrl?: string;
   searxngApiKey?: string;
+  tavilyApiKey?: string;
+  tavilySearchUrl?: string;
+  tavilySearchOptions?: TavilyConfig['tavilySearchOptions'];
 }
 
 export type References = {
