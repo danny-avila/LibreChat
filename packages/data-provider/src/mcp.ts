@@ -163,6 +163,12 @@ export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
 export const SSEOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('sse').default('sse'),
   headers: z.record(z.string(), z.string()).optional(),
+  /**
+   * Keys in `headers` whose values are encrypted at rest for DB-stored server configs
+   * (and masked in API responses); YAML-defined configs remain plaintext on disk and
+   * are not exposed via API responses.
+   */
+  secretHeaderKeys: z.array(z.string()).optional(),
   url: z
     .string()
     .transform((val: string) => extractEnvVariable(val))
@@ -181,6 +187,12 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
 export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
   type: z.union([z.literal('streamable-http'), z.literal('http')]),
   headers: z.record(z.string(), z.string()).optional(),
+  /**
+   * Keys in `headers` whose values are encrypted at rest for DB-stored server configs
+   * (and masked in API responses); YAML-defined configs remain plaintext on disk and
+   * are not exposed via API responses.
+   */
+  secretHeaderKeys: z.array(z.string()).optional(),
   url: z
     .string()
     .transform((val: string) => extractEnvVariable(val))
@@ -216,10 +228,7 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     timeout: true,
     sseReadTimeout: true,
     initTimeout: true,
-    chatMenu: true,
-    serverInstructions: true,
     requiresOAuth: true,
-    customUserVars: true,
     oauth_headers: true,
   });
 
@@ -242,8 +251,9 @@ const userUrlSchema = (protocolCheck: (val: string) => boolean, message: string)
 
 /**
  * MCP Server configuration that comes from UI/API input only.
- * Omits server-managed fields like startup, timeout, customUserVars, etc.
- * Allows: title, description, url, iconPath, oauth (user credentials)
+ * Omits server-managed fields like startup, timeout, oauth_headers, etc.
+ * Allows user-controlled fields such as: title, description, url, iconPath, headers,
+ * customUserVars, oauth (user credentials), chatMenu, serverInstructions, secretHeaderKeys.
  *
  * SECURITY: Stdio transport is intentionally excluded from user input.
  * Stdio allows arbitrary command execution and should only be configured
@@ -256,16 +266,54 @@ const userUrlSchema = (protocolCheck: (val: string) => boolean, message: string)
  * Protocol checks use positive allowlists (http(s) / ws(s)) to block
  * file://, ftp://, javascript:, and other non-network schemes.
  */
-export const MCPServerUserInputSchema = z.union([
-  omitServerManagedFields(WebSocketOptionsSchema).extend({
-    url: userUrlSchema(isWsProtocol, 'WebSocket URL must use ws:// or wss://'),
-  }),
-  omitServerManagedFields(SSEOptionsSchema).extend({
-    url: userUrlSchema(isHttpProtocol, 'SSE URL must use http:// or https://'),
-  }),
-  omitServerManagedFields(StreamableHTTPOptionsSchema).extend({
-    url: userUrlSchema(isHttpProtocol, 'Streamable HTTP URL must use http:// or https://'),
-  }),
-]);
+
+// Helper to validate secretHeaderKeys is subset of headers
+// Uses 'unknown' to work with Zod's omit/extend type transformations
+const validateSecretHeaderKeys = (data: unknown) => {
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    'secretHeaderKeys' in data &&
+    Array.isArray(data.secretHeaderKeys) &&
+    data.secretHeaderKeys.length > 0
+  ) {
+    if (
+      !('headers' in data) ||
+      typeof data.headers !== 'object' ||
+      data.headers === null ||
+      Object.keys(data.headers).length === 0
+    ) {
+      return false;
+    }
+    const headerKeys = new Set(Object.keys(data.headers));
+    return data.secretHeaderKeys.every((key: unknown) => {
+      return typeof key === 'string' && headerKeys.has(key);
+    });
+  }
+  return true;
+};
+
+export const MCPServerUserInputSchema = z
+  .discriminatedUnion('type', [
+    omitServerManagedFields(WebSocketOptionsSchema).extend({
+      type: z.literal('websocket'),
+      url: userUrlSchema(isWsProtocol, 'WebSocket URL must use ws:// or wss://'),
+    }),
+    omitServerManagedFields(SSEOptionsSchema).extend({
+      type: z.literal('sse'),
+      url: userUrlSchema(isHttpProtocol, 'SSE URL must use http:// or https://'),
+    }),
+    omitServerManagedFields(StreamableHTTPOptionsSchema).extend({
+      type: z.literal('streamable-http'),
+      url: userUrlSchema(isHttpProtocol, 'Streamable HTTP URL must use http:// or https://'),
+    }),
+    omitServerManagedFields(StreamableHTTPOptionsSchema).extend({
+      type: z.literal('http'),
+      url: userUrlSchema(isHttpProtocol, 'Streamable HTTP URL must use http:// or https://'),
+    }),
+  ])
+  .refine(validateSecretHeaderKeys, {
+    message: 'secretHeaderKeys must be a subset of header keys',
+  });
 
 export type MCPServerUserInput = z.infer<typeof MCPServerUserInputSchema>;
