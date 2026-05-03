@@ -170,28 +170,30 @@ export async function extractCodeArtifactText(
   mimeType: string,
   category: CodeArtifactCategory,
 ): Promise<string | null> {
-  if (category === 'other') {
-    return null;
-  }
   if (buffer.length > MAX_TEXT_EXTRACT_BYTES) {
     return null;
   }
   try {
-    /* Office HTML preview takes precedence for any file the dispatcher
-     * recognizes — by extension OR by MIME. The MIME fallback matters for
-     * extensionless tool outputs (e.g. `data` with `text/csv`); without
-     * it we'd ship raw CSV text to the client's SPREADSHEET bucket which
-     * expects a full HTML document. The `document`/`pptx` category checks
-     * keep the path open for sniffed `application/zip`/`octet-stream` MIMEs
-     * where neither the extension nor the MIME alone is dispositive. */
-    if (hasOfficeHtmlPath(name, mimeType) || category === 'document' || category === 'pptx') {
+    /* Office HTML preview is independent of `category` — `officeHtmlBucket`
+     * routes by extension OR (parameter-normalized) MIME, and may route
+     * inputs the legacy classifier labels as 'other'. Concrete cases:
+     *   - extensionless `application/csv` (CSV MIMEs aren't in the
+     *     classifier's text-MIME set and don't start with `text/`)
+     *   - extensionless office MIMEs with parameters like
+     *     `application/vnd...spreadsheetml.sheet; charset=binary`
+     * Without checking `hasOfficeHtmlPath` BEFORE the `category === 'other'`
+     * early return, those inputs would silently fall back to download-only
+     * even though the new dispatcher and the client both expect HTML. */
+    if (hasOfficeHtmlPath(name, mimeType)) {
       const html = await renderOfficeHtml(buffer, name, mimeType);
       if (html != null) {
         return html;
       }
-      /* HTML producer returned null — fall through to text-only extraction
-       * for the `document` category (PDFs and ODT still need text), or to
-       * utf8-text for CSV. PPTX has no text fallback (returns null below). */
+      /* HTML producer returned null — fall through to category-based
+       * dispatch, which may itself return null for unsupported types. */
+    }
+    if (category === 'other') {
+      return null;
     }
     if (category === 'utf8-text') {
       return extractUtf8(buffer);

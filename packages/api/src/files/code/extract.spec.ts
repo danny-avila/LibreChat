@@ -371,5 +371,49 @@ describe('extractCodeArtifactText', () => {
       // assertion is that we don't crash and don't leak the bomb error.
       expect(text).toBe(docxText);
     });
+
+    /* Regression for Codex P2 review on PR #12934. The classifier returns
+     * 'other' for a small but real set of inputs that the new dispatcher
+     * can still route — extensionless `application/csv`, extensionless
+     * office MIMEs with parameters, etc. The early `category === 'other'`
+     * return must NOT short-circuit before `hasOfficeHtmlPath` is checked,
+     * or those inputs silently lose the rich preview. */
+    it('routes extensionless application/csv through office HTML even when category=other', async () => {
+      mockOfficeHtml.mockResolvedValueOnce('<!DOCTYPE html><table><tr><td>1</td></tr></table>');
+      const text = await extractCodeArtifactText(
+        Buffer.from('a,b\n1,2', 'utf-8'),
+        'data',
+        'application/csv',
+        'other',
+      );
+      expect(mockOfficeHtml).toHaveBeenCalledWith(expect.any(Buffer), 'data', 'application/csv');
+      expect(text).toContain('<table>');
+    });
+
+    it('routes extensionless office MIME with parameters through office HTML even when category=other', async () => {
+      mockOfficeHtml.mockResolvedValueOnce('<!DOCTYPE html><body>x</body></html>');
+      const text = await extractCodeArtifactText(
+        Buffer.from('PK'),
+        'workbook',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=binary',
+        'other',
+      );
+      expect(mockOfficeHtml).toHaveBeenCalled();
+      expect(text).toContain('<body>');
+    });
+
+    it('still returns null for true binary "other" files (no MIME match)', async () => {
+      /* Defense check: the category=other early return is preserved when
+       * `hasOfficeHtmlPath` returns false. A JPEG should not be handed to
+       * the office producer. */
+      const text = await extractCodeArtifactText(
+        Buffer.from([0xff, 0xd8, 0xff]),
+        'photo.jpg',
+        'image/jpeg',
+        'other',
+      );
+      expect(mockOfficeHtml).not.toHaveBeenCalled();
+      expect(text).toBeNull();
+    });
   });
 });
