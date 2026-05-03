@@ -646,7 +646,8 @@ endpoints:
 #     searchDepth: basic        # 'basic', 'advanced', 'fast', or 'ultra-fast' (default: basic)
 #     maxResults: 5             # 0-20 results per search (default: 5)
 #     topic: general            # 'general', 'news', or 'finance'
-#     # includeAnswer: true     # Include AI-generated answer summary
+#     # includeAnswer: basic    # Include answer summary: true, 'basic', or 'advanced'
+#     # includeRawContent: markdown # Include raw content: true, 'markdown', or 'text'
 #     # includeImages: true     # Include images in results
 #     # includeFavicon: true    # Include favicon URL for each result
 #     # chunksPerSource: 3      # Chunks per source, only with 'advanced' depth (1-3)

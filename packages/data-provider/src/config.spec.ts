@@ -1,7 +1,13 @@
 import type { TEndpointsConfig } from './types';
 import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
 import { getEndpointFileConfig, mergeFileConfig } from './file-config';
-import { allowedAddressesSchema, configSchema, resolveEndpointType, excludedKeys } from './config';
+import {
+  allowedAddressesSchema,
+  configSchema,
+  excludedKeys,
+  resolveEndpointType,
+  webSearchSchema,
+} from './config';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
@@ -452,5 +458,19 @@ describe('allowedAddressesSchema', () => {
       });
       expect(result.success).toBe(false);
     });
+  });
+});
+
+describe('webSearchSchema', () => {
+  it('accepts Tavily string modes for answer and raw content options', () => {
+    const result = webSearchSchema.parse({
+      tavilySearchOptions: {
+        includeAnswer: 'advanced',
+        includeRawContent: 'markdown',
+      },
+    });
+
+    expect(result.tavilySearchOptions?.includeAnswer).toBe('advanced');
+    expect(result.tavilySearchOptions?.includeRawContent).toBe('markdown');
   });
 });

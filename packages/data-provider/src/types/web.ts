@@ -137,8 +137,8 @@ export interface TavilyConfig {
     searchDepth?: 'basic' | 'advanced' | 'fast' | 'ultra-fast';
     maxResults?: number;
     includeImages?: boolean;
-    includeAnswer?: boolean;
-    includeRawContent?: boolean;
+    includeAnswer?: boolean | 'basic' | 'advanced';
+    includeRawContent?: boolean | 'markdown' | 'text';
     includeDomains?: string[];
     excludeDomains?: string[];
     topic?: 'general' | 'news' | 'finance';
