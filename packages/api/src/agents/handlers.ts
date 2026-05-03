@@ -694,13 +694,13 @@ async function handleReadFileCall(
     }
 
     const stream = await strategy.getDownloadStream(req, file.filepath);
-    const chunks: Buffer[] = [];
+    const chunks: Uint8Array[] = [];
     // Use the larger binary limit as streaming cap; cheaper type-specific
     // checks happen after binary detection on the assembled buffer.
     const streamLimit = MAX_BINARY_BYTES;
     let streamedBytes = 0;
-    for await (const chunk of stream as AsyncIterable<Buffer>) {
-      streamedBytes += chunk.length;
+    for await (const chunk of stream as AsyncIterable<Uint8Array>) {
+      streamedBytes += chunk.byteLength;
       if (streamedBytes > streamLimit) {
         // Destroy the stream if possible to free resources
         if (

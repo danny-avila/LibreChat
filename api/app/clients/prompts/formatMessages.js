@@ -195,7 +195,7 @@ const formatAgentMessages = (payload) => {
         let args = _args;
         try {
           args = JSON.parse(_args);
-        } catch (e) {
+        } catch (_e) {
           if (typeof _args === 'string') {
             args = { input: _args };
           }
