@@ -886,6 +886,15 @@ export class MCPOAuthHandler {
    * Validates an OAuth URL is not targeting a private/internal address.
    * Skipped when the full URL (hostname + protocol + port) matches an admin-trusted
    * allowedDomains entry, honoring protocol/port constraints when the admin specifies them.
+   *
+   * SECURITY: when `allowedDomains` is configured and the URL did NOT match it
+   * (i.e., we are in the SSRF fallback path because the admin's strict bound
+   * rejected this URL), the address exemption must NOT broaden that bound — a
+   * malicious MCP server could otherwise advertise OAuth metadata at any
+   * private address the admin permitted for an unrelated purpose (e.g. a
+   * self-hosted LLM). When `allowedDomains` is empty, `allowedAddresses` is
+   * the only opt-in mechanism for permitting private OAuth endpoints, so it
+   * is consulted normally.
    */
   private static async validateOAuthUrl(
     url: string,
@@ -904,11 +913,14 @@ export class MCPOAuthHandler {
       throw new Error(`Invalid OAuth ${fieldName}: ${sanitizeUrlForLogging(url)}`);
     }
 
-    if (isSSRFTarget(hostname, allowedAddresses)) {
+    const allowedDomainsActive = Array.isArray(allowedDomains) && allowedDomains.length > 0;
+    const effectiveAddresses = allowedDomainsActive ? null : allowedAddresses;
+
+    if (isSSRFTarget(hostname, effectiveAddresses)) {
       throw new Error(`OAuth ${fieldName} targets a blocked address`);
     }
 
-    if (await resolveHostnameSSRF(hostname, allowedAddresses)) {
+    if (await resolveHostnameSSRF(hostname, effectiveAddresses)) {
       throw new Error(`OAuth ${fieldName} resolves to a private IP address`);
     }
   }

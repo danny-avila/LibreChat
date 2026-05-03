@@ -160,6 +160,39 @@ export function isPrivateIP(ip: string): boolean {
   return false;
 }
 
+/** Returns true when the (already-normalized) string looks like an IPv4 or IPv6 literal. */
+function isIPLiteral(normalized: string): boolean {
+  if (/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(normalized)) {
+    return true;
+  }
+  return normalized.includes(':');
+}
+
+/**
+ * Normalizes an `allowedAddresses` entry for matching. Lowercases, trims, and
+ * strips IPv6 bracket form (`[::1]` → `::1`). Returns an empty string for
+ * obviously-invalid shapes (URLs, paths, CIDR ranges, ports) — those are
+ * rejected here as well as by the schema refinement so a misconfigured entry
+ * never silently grants exemption.
+ */
+function normalizeAddressEntry(entry: string): string {
+  if (entry.includes('://') || entry.includes('/')) {
+    return '';
+  }
+  const normalized = entry
+    .toLowerCase()
+    .trim()
+    .replace(/^\[|\]$/g, '');
+  if (!normalized) {
+    return '';
+  }
+  // Bare IPs or hostnames only — no `host:port` or paths.
+  if (!normalized.includes(':') && normalized.includes(' ')) {
+    return '';
+  }
+  return normalized;
+}
+
 /**
  * Checks whether a hostname or IP literal appears in an admin-supplied
  * exemption list. Match is case-insensitive and bracket-stripped, so
@@ -169,6 +202,18 @@ export function isPrivateIP(ip: string): boolean {
  * hostname or its resolved IP appears here, SSRF callers treat the target
  * as safe even though it falls inside the private/reserved IP space that
  * would otherwise be blocked. Public destinations are not affected.
+ *
+ * SECURITY — scoped to private IP space:
+ *  - If the candidate is an IP literal that is not private, the function
+ *    returns false even on textual match. Public IPs are never SSRF targets,
+ *    so an exemption there has no defensive purpose and must not grant
+ *    "trusted" status to traffic the SSRF block would not have caught.
+ *  - If an `allowedAddresses` entry is itself an IP literal that is not
+ *    private, it is ignored. This prevents a misconfigured public-IP entry
+ *    from broadening trust beyond the documented private-IP-only scope.
+ *  - Hostname candidates and hostname entries pass through. The resolved IP
+ *    is checked separately by callers (e.g. `resolveHostnameSSRF`), and only
+ *    a private resolved IP is meaningful in the SSRF block path.
  */
 export function isAddressAllowed(
   hostnameOrIP: string,
@@ -181,15 +226,21 @@ export function isAddressAllowed(
     .toLowerCase()
     .trim()
     .replace(/^\[|\]$/g, '');
+  if (isIPLiteral(normalized) && !isPrivateIP(normalized)) {
+    return false;
+  }
   for (const entry of allowedAddresses) {
     if (typeof entry !== 'string') {
       continue;
     }
-    const normalizedEntry = entry
-      .toLowerCase()
-      .trim()
-      .replace(/^\[|\]$/g, '');
-    if (normalizedEntry.length > 0 && normalizedEntry === normalized) {
+    const normalizedEntry = normalizeAddressEntry(entry);
+    if (!normalizedEntry) {
+      continue;
+    }
+    if (isIPLiteral(normalizedEntry) && !isPrivateIP(normalizedEntry)) {
+      continue;
+    }
+    if (normalizedEntry === normalized) {
       return true;
     }
   }

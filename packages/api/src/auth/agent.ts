@@ -2,7 +2,52 @@ import dns from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
 import type { LookupFunction } from 'node:net';
-import { isPrivateIP, isAddressAllowed } from './domain';
+import { isPrivateIP } from './domain';
+
+/**
+ * Pre-normalizes an admin `allowedAddresses` list into a Set of canonical
+ * entries (lowercased, trimmed, IPv6 brackets stripped) so that the connect-
+ * time DNS lookup — which runs once per outbound request — does an O(1)
+ * membership check instead of re-iterating and re-normalizing the array on
+ * every call.
+ *
+ * SECURITY: scoped to private IP space. Entries that contain `://`, `/`,
+ * whitespace, or that are public IP literals are dropped here. The schema
+ * refinement also rejects them at config-load time; this is defense in depth
+ * so a misconfigured runtime list never grants a public address an exemption.
+ */
+function normalizeAllowedAddressesSet(allowedAddresses?: string[] | null): Set<string> | null {
+  if (!Array.isArray(allowedAddresses) || allowedAddresses.length === 0) {
+    return null;
+  }
+  const set = new Set<string>();
+  for (const entry of allowedAddresses) {
+    if (typeof entry !== 'string') continue;
+    if (entry.includes('://') || entry.includes('/') || /\s/.test(entry)) continue;
+    const normalized = entry
+      .toLowerCase()
+      .trim()
+      .replace(/^\[|\]$/g, '');
+    if (!normalized) continue;
+    const isIPv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(normalized);
+    const isIPv6 = !isIPv4 && normalized.includes(':');
+    if ((isIPv4 || isIPv6) && !isPrivateIP(normalized)) continue;
+    set.add(normalized);
+  }
+  return set.size > 0 ? set : null;
+}
+
+function isExempt(set: Set<string> | null, candidate: string): boolean {
+  if (!set) return false;
+  const normalized = candidate
+    .toLowerCase()
+    .trim()
+    .replace(/^\[|\]$/g, '');
+  const isIPv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(normalized);
+  const isIPv6 = !isIPv4 && normalized.includes(':');
+  if ((isIPv4 || isIPv6) && !isPrivateIP(normalized)) return false;
+  return set.has(normalized);
+}
 
 /**
  * Builds a DNS lookup wrapper that blocks resolution to private/reserved IP
@@ -12,8 +57,9 @@ import { isPrivateIP, isAddressAllowed } from './domain';
  * protection for everything else.
  */
 function buildSSRFSafeLookup(allowedAddresses?: string[] | null): LookupFunction {
+  const exemptSet = normalizeAllowedAddressesSet(allowedAddresses);
   return (hostname, options, callback) => {
-    const hostnameAllowed = isAddressAllowed(hostname, allowedAddresses);
+    const hostnameAllowed = isExempt(exemptSet, hostname);
     dns.lookup(hostname, options, (err, address, family) => {
       if (err) {
         callback(err, '', 0);
@@ -23,7 +69,7 @@ function buildSSRFSafeLookup(allowedAddresses?: string[] | null): LookupFunction
         !hostnameAllowed &&
         typeof address === 'string' &&
         isPrivateIP(address) &&
-        !isAddressAllowed(address, allowedAddresses)
+        !isExempt(exemptSet, address)
       ) {
         const ssrfError = Object.assign(
           new Error(`SSRF protection: ${hostname} resolved to blocked address ${address}`),
