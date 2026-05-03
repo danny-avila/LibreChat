@@ -31,8 +31,6 @@ on:
 
 permissions:
   contents: read
-  actions: write # dispatch gitnexus-deploy.yml on bot-triggered runs
-  pull-requests: write # post completion comments for /gitnexus command runs
 
 concurrency:
   # When triggered by the /gitnexus command, group by PR number so rapid
@@ -45,6 +43,9 @@ env:
 
 jobs:
   index:
+    permissions:
+      contents: read
+      pull-requests: read # read changed files to decide whether embeddings are needed
     # Push + dispatch run unconditionally. Native pull_request events
     # are restricted to PRs authored by danny-avila only — this keeps
     # automatic CI spend low on a repo with 200+ open PRs.
@@ -60,34 +61,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          # When the /gitnexus command dispatches us with a pr_ref, it's
-          # a refs/pull/<N>/head ref that GitHub mirrors into the base
-          # repo for every PR, so checkout works for fork PRs too. When
-          # pr_ref is empty (native push/pull_request), fall back to the
-          # default ref actions/checkout would use.
-          ref: ${{ inputs.pr_ref || '' }}
-          fetch-depth: 1
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Cache npm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: gitnexus-npm-${{ runner.os }}-${{ env.GITNEXUS_VERSION }}
-          restore-keys: gitnexus-npm-${{ runner.os }}-
-
-      - name: Run GitNexus Analyze
+      - name: Resolve GitNexus flags
+        id: flags
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          FLAGS="--skip-agents-md --verbose"
+          set -euo pipefail
 
           # Decide whether to generate embeddings. Rules:
           #   push (main/dev)      -> always embed
@@ -121,12 +100,74 @@ jobs:
           esac
 
           if [ "$ENABLE_EMBEDDINGS" = "true" ]; then
-            FLAGS="$FLAGS --embeddings"
+            echo "enable_embeddings=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enable_embeddings=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install GitNexus CLI
+        working-directory: ${{ runner.temp }}
+        env:
+          NPM_CONFIG_AUDIT: false
+          NPM_CONFIG_CACHE: ${{ runner.temp }}/gitnexus-npm-cache
+          NPM_CONFIG_FUND: false
+          NPM_CONFIG_GLOBALCONFIG: ${{ runner.temp }}/gitnexus-cli/global-npmrc
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/gitnexus-cli/.npmrc
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gitnexus-cli" "$RUNNER_TEMP/gitnexus-npm-cache"
+          : > "$RUNNER_TEMP/gitnexus-cli/global-npmrc"
+          printf '%s\n' \
+            'registry=https://registry.npmjs.org/' \
+            'audit=false' \
+            'fund=false' \
+            > "$RUNNER_TEMP/gitnexus-cli/.npmrc"
+          npm install \
+            --prefix "$RUNNER_TEMP/gitnexus-cli" \
+            --no-save \
+            --no-package-lock \
+            "gitnexus@${{ env.GITNEXUS_VERSION }}"
+          test -x "$RUNNER_TEMP/gitnexus-cli/node_modules/.bin/gitnexus"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # When the /gitnexus command dispatches us with a pr_ref, it's
+          # a refs/pull/<N>/head ref that GitHub mirrors into the base
+          # repo for every PR, so checkout works for fork PRs too. When
+          # pr_ref is empty (native push/pull_request), fall back to the
+          # default ref actions/checkout would use.
+          ref: ${{ inputs.pr_ref || '' }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run GitNexus Analyze
+        working-directory: ${{ runner.temp }}
+        env:
+          GITNEXUS_BIN: ${{ runner.temp }}/gitnexus-cli/node_modules/.bin/gitnexus
+          NPM_CONFIG_AUDIT: false
+          NPM_CONFIG_CACHE: ${{ runner.temp }}/gitnexus-npm-cache
+          NPM_CONFIG_FUND: false
+          NPM_CONFIG_GLOBALCONFIG: ${{ runner.temp }}/gitnexus-cli/global-npmrc
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/gitnexus-cli/.npmrc
+        run: |
+          set -euo pipefail
+          FLAGS=(--skip-agents-md --verbose)
+
+          if [ "${{ steps.flags.outputs.enable_embeddings }}" = "true" ]; then
+            FLAGS+=(--embeddings)
           fi
           if [ "${{ inputs.force }}" = "true" ]; then
-            FLAGS="$FLAGS --force"
+            FLAGS+=(--force)
           fi
-          npx --yes gitnexus@${{ env.GITNEXUS_VERSION }} analyze . $FLAGS
+          "$GITNEXUS_BIN" analyze "$GITHUB_WORKSPACE" "${FLAGS[@]}"
 
       - name: Verify index
         run: |
@@ -158,6 +199,19 @@ jobs:
           include-hidden-files: true
           retention-days: 30
 
+  post-index:
+    needs: index
+    if: |
+      always() &&
+      (inputs.pr_number != '' ||
+       (github.triggering_actor == 'github-actions[bot]' && needs.index.result == 'success'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write # dispatch gitnexus-deploy.yml on bot-triggered runs
+      pull-requests: write # post completion comments for /gitnexus command runs
+    steps:
       # GitHub suppresses workflow_run events for workflow runs whose
       # triggering actor is GITHUB_TOKEN (to prevent recursive chaining).
       # That means when this workflow is dispatched by gitnexus-pr-command
@@ -166,7 +220,7 @@ jobs:
       # specific case — user-triggered runs continue to rely on the
       # existing workflow_run trigger, so we don't double-deploy.
       - name: Trigger deploy workflow for bot-triggered runs
-        if: github.triggering_actor == 'github-actions[bot]'
+        if: github.triggering_actor == 'github-actions[bot]' && needs.index.result == 'success'
         uses: actions/github-script@v7
         with:
           script: |
@@ -186,16 +240,16 @@ jobs:
             });
 
       # Reply on the PR when the /gitnexus command path runs so the
-      # requester knows the index step finished. This only fires when
-      # inputs.pr_number is set (command-triggered) AND the rest of the
-      # job succeeded. A separate comment posts from the deploy workflow
-      # when the live server has the fresh index.
+      # requester knows the index step finished. This fires when
+      # inputs.pr_number is set and reports the index job result. A
+      # separate comment posts from the deploy workflow when the live
+      # server has the fresh index.
       - name: Comment on PR — index complete
-        if: always() && inputs.pr_number != ''
+        if: inputs.pr_number != ''
         uses: actions/github-script@v7
         with:
           script: |
-            const outcome = '${{ job.status }}' === 'success' ? '✅ indexed' : '❌ index failed';
+            const outcome = '${{ needs.index.result }}' === 'success' ? '✅ indexed' : '❌ index failed';
             const prNum = parseInt('${{ inputs.pr_number }}', 10);
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const embeddingsFlag = '${{ inputs.embeddings }}' === 'true' ? 'with embeddings' : 'graph-only';
@@ -205,7 +259,7 @@ jobs:
               `PR #${prNum} was indexed ${embeddingsFlag}.`,
               `[Index run](${runUrl})`,
               '',
-              '${{ job.status }}' === 'success'
+              '${{ needs.index.result }}' === 'success'
                 ? '⏳ Waiting for deploy to serve the fresh index…'
                 : '_Index run failed — the previous index (if any) continues to be served._',
             ].join('\n');
