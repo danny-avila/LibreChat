@@ -6,6 +6,7 @@ import {
   csvToHtml,
   excelSheetToHtml,
   pptxToSlideListHtml,
+  sanitizeOfficeHtml,
   wordDocToHtml,
 } from './html';
 
@@ -215,6 +216,72 @@ describe('Office HTML producers', () => {
       );
       expect(html).not.toBeNull();
       expect(html!).toContain('lc-docx');
+    });
+  });
+
+  describe('sanitizeOfficeHtml security', () => {
+    test('strips <script> tags entirely', async () => {
+      const out = await sanitizeOfficeHtml('<p>before<script>alert(1)</script>after</p>');
+      expect(out).not.toMatch(/<script\b/i);
+      expect(out).not.toContain('alert(1)');
+      expect(out).toContain('before');
+      expect(out).toContain('after');
+    });
+
+    test('drops event-handler attributes from surviving tags', async () => {
+      const out = await sanitizeOfficeHtml('<img src="https://x.test/a.png" onerror="alert(1)">');
+      expect(out).not.toMatch(/onerror=/i);
+      expect(out).toContain('https://x.test/a.png');
+    });
+
+    test('strips javascript: URLs from anchors', async () => {
+      const out = await sanitizeOfficeHtml('<a href="javascript:alert(1)">click</a>');
+      expect(out).not.toMatch(/javascript:/i);
+      // The text survives even when the href is dropped.
+      expect(out).toContain('click');
+    });
+
+    test('rejects data: URLs in <a href> (only <img src> may use data:)', async () => {
+      /* The Sandpack iframe sandbox does NOT gate `target="_blank"`
+       * navigations. A surviving `<a href="data:text/html,...">` would
+       * open attacker-controlled HTML in a new tab on click. The
+       * sanitizer scopes `data:` to <img> only — global schemes are
+       * http/https/mailto. Regression guard for the Codex review on
+       * PR #12934. */
+      const out = await sanitizeOfficeHtml(
+        '<a href="data:text/html,<script>alert(1)</script>">click</a>',
+      );
+      expect(out).not.toContain('data:');
+      expect(out).not.toContain('script');
+      expect(out).toContain('click');
+    });
+
+    test('preserves data: URLs in <img src> (mammoth inlines DOCX images as base64)', async () => {
+      const tinyPng =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      const out = await sanitizeOfficeHtml(`<img src="${tinyPng}" alt="dot">`);
+      expect(out).toContain(tinyPng);
+      expect(out).toContain('alt="dot"');
+    });
+
+    test('preserves http(s) and mailto links on anchors', async () => {
+      const out = await sanitizeOfficeHtml(
+        '<a href="https://example.com">site</a> <a href="mailto:a@b.test">mail</a>',
+      );
+      expect(out).toContain('https://example.com');
+      expect(out).toContain('mailto:a@b.test');
+    });
+
+    test('forces target=_blank rel=noopener on surviving anchors', async () => {
+      const out = await sanitizeOfficeHtml('<a href="https://example.com">link</a>');
+      expect(out).toContain('target="_blank"');
+      expect(out).toContain('rel="noopener noreferrer"');
+    });
+
+    test('strips <iframe> entirely', async () => {
+      const out = await sanitizeOfficeHtml('<p>x</p><iframe src="https://evil.test"></iframe>');
+      expect(out).not.toMatch(/<iframe\b/i);
+      expect(out).not.toContain('evil.test');
     });
   });
 });

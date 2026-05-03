@@ -58,7 +58,7 @@ function stripColorStyles(style: string | undefined): string | undefined {
  * The Sandpack iframe is itself a sandbox — this is defense in depth, not
  * the sole barrier.
  */
-async function sanitizeOfficeHtml(html: string): Promise<string> {
+export async function sanitizeOfficeHtml(html: string): Promise<string> {
   const sanitizeHtml = await getSanitizer();
   return sanitizeHtml(html, {
     allowedTags: [
@@ -121,7 +121,14 @@ async function sanitizeOfficeHtml(html: string): Promise<string> {
       h5: ['id'],
       h6: ['id'],
     },
-    allowedSchemes: ['http', 'https', 'data', 'mailto'],
+    /* `data:` is intentionally NOT in the global scheme list — it's only
+     * allowed for `<img src>` (mammoth inlines DOCX images as base64
+     * `data:image/...` URIs). Without this scoping, an `<a href="data:
+     * text/html,<script>…</script>">` smuggled through DOCX/PPTX would
+     * survive sanitization and open attacker-controlled HTML in a new
+     * tab when clicked — the Sandpack iframe sandbox doesn't gate
+     * `target="_blank"` navigations. */
+    allowedSchemes: ['http', 'https', 'mailto'],
     allowedSchemesByTag: {
       img: ['http', 'https', 'data'],
     },
