@@ -396,6 +396,15 @@ export const megabyte = 1024 * 1024;
 /** Helper function to get megabytes value */
 export const mbToBytes = (mb: number): number => mb * megabyte;
 
+export function formatMB(bytes: number): string {
+  if (bytes === 0) return '0';
+  const mb = bytes / megabyte;
+  if (mb >= 1) return String(Math.round(mb));
+  const value = Number(mb.toFixed(2));
+  if (value < 0.01) return '< 0.01';
+  return String(value);
+}
+
 const defaultSizeLimit = mbToBytes(512);
 const defaultTokenLimit = 100000;
 const assistantsFileConfig = {
@@ -486,6 +495,13 @@ export const fileConfigSchema = z.object({
   text: z
     .object({
       supportedMimeTypes: supportedMimeTypesSchema.optional(),
+    })
+    .optional(),
+  storageQuota: z
+    .object({
+      enabled: z.boolean().optional(),
+      defaultLimit: z.number().min(0).optional(),
+      warningThreshold: z.number().min(0).max(1).default(0.8),
     })
     .optional(),
 });
@@ -708,6 +724,13 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     };
     if (textMimeTypes) {
       mergedConfig.text.supportedMimeTypes = convertStringsToRegex(textMimeTypes);
+    }
+  }
+
+  if (dynamic.storageQuota !== undefined) {
+    mergedConfig.storageQuota = { ...dynamic.storageQuota };
+    if (dynamic.storageQuota.defaultLimit !== undefined) {
+      mergedConfig.storageQuota.defaultLimit = mbToBytes(dynamic.storageQuota.defaultLimit);
     }
   }
 

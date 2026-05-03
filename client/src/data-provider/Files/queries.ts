@@ -53,6 +53,20 @@ export const useGetFileConfig = <TData = t.FileConfig>(
   );
 };
 
+export const useGetStorageUsage = (
+  config?: UseQueryOptions<t.StorageUsageResponse, unknown, t.StorageUsageResponse>,
+): QueryObserverResult<t.StorageUsageResponse, unknown> => {
+  return useQuery<t.StorageUsageResponse, unknown, t.StorageUsageResponse>(
+    [QueryKeys.storageUsage],
+    () => dataService.getStorageUsage(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      ...config,
+    },
+  );
+};
+
 export const useFileDownload = (userId?: string, file_id?: string): QueryObserverResult<string> => {
   const queryClient = useQueryClient();
   return useQuery(

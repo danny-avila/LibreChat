@@ -2,7 +2,10 @@ const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { verifyAgentUploadPermission, resolveUploadErrorMessage } = require('@librechat/api');
+const {
+  verifyAgentUploadPermission,
+  resolveUploadErrorMessage,
+} = require('@librechat/api');
 const { isAssistantsEndpoint } = require('librechat-data-provider');
 const {
   processAgentFileUpload,
@@ -11,10 +14,11 @@ const {
 } = require('~/server/services/Files/process');
 const { checkPermission } = require('~/server/services/PermissionService');
 const db = require('~/models');
+const checkStorageQuota = require('~/server/middleware/checkStorageQuota');
 
 const router = express.Router();
 
-router.post('/', async (req, res) => {
+router.post('/', checkStorageQuota, async (req, res) => {
   const metadata = req.body;
   const appConfig = req.config;
 

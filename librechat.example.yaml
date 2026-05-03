@@ -542,6 +542,10 @@ endpoints:
 #         model: "gpt-4o-mini"
 
 # fileConfig:
+#   storageQuota:
+#     enabled: true
+#     defaultLimit: 100            # Per-user limit in MB; omit to leave users unlimited. Admin can override per-user in storageusages collection (bytesLimit field).
+#     warningThreshold: 0.8        # Emit a quotaWarning in upload response when usage crosses this ratio.
 #   endpoints:
 #     assistants:
 #       fileLimit: 5
