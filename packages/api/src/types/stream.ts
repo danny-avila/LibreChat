@@ -20,9 +20,11 @@ export interface GenerationJobMetadata {
   model?: string;
   /** Prompt token count for abort token spending */
   promptTokens?: number;
+  /** Set when the job is paused for human review (status === 'requires_action') */
+  pendingAction?: Agents.PendingAction;
 }
 
-export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted';
+export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
 
 export interface GenerationJob {
   streamId: string;
