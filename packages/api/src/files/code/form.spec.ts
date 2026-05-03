@@ -49,4 +49,33 @@ describe('code env FormData filenames', () => {
       filepath: 'pptx/pptx.py',
     });
   });
+
+  it('does not preserve traversal paths as filepath options', async () => {
+    expect(getCodeEnvFileOptions('../../evil.py')).toEqual({ filename: 'evil.py' });
+
+    const disposition = await renderMultipartDisposition((form) => {
+      appendCodeEnvFile(form, Readable.from(['x']), '../../evil.py');
+    });
+
+    expect(disposition).toContain('filename="evil.py"');
+    expect(disposition).not.toContain('../');
+  });
+
+  it('does not preserve absolute paths as filepath options', () => {
+    expect(getCodeEnvFileOptions('/tmp/evil.py')).toEqual({ filename: 'evil.py' });
+    expect(getCodeEnvFileOptions('C:\\tmp\\evil.py')).toEqual({ filename: 'evil.py' });
+  });
+
+  it('does not preserve empty or dot path segments as filepath options', () => {
+    expect(getCodeEnvFileOptions('pptx//pptx.py')).toEqual({ filename: 'pptx.py' });
+    expect(getCodeEnvFileOptions('pptx/./pptx.py')).toEqual({ filename: 'pptx.py' });
+    expect(getCodeEnvFileOptions('pptx/..')).toEqual({ filename: 'file' });
+    expect(getCodeEnvFileOptions('pptx/')).toEqual({ filename: 'pptx' });
+  });
+
+  it('keeps unsafe flat filenames flat instead of rewriting user-visible names', () => {
+    expect(getCodeEnvFileOptions('my notes @ draft.py')).toEqual({
+      filename: 'my notes @ draft.py',
+    });
+  });
 });
