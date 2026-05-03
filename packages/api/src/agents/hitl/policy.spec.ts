@@ -1,125 +1,198 @@
-import type { TToolApprovalPolicy } from 'librechat-data-provider';
-import { decideToolApproval, requiresApproval, buildPendingAction } from './policy';
+import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
+import {
+  isHITLEnabled,
+  mapToolApprovalPolicy,
+  buildToolApprovalPayload,
+  buildAskUserQuestionPayload,
+  buildPendingAction,
+} from './policy';
 
-describe('decideToolApproval', () => {
-  test('returns "allow" when no policy is configured', () => {
-    expect(decideToolApproval(undefined, { name: 'shell' })).toBe('allow');
+describe('isHITLEnabled', () => {
+  test('default-on when no policy configured (SDK default)', () => {
+    expect(isHITLEnabled(undefined)).toBe(true);
   });
 
-  test('returns the configured default when no rule matches', () => {
-    const policy: TToolApprovalPolicy = { default: 'ask' };
-    expect(decideToolApproval(policy, { name: 'unmapped' })).toBe('ask');
+  test('default-on when policy is configured but `enabled` is omitted', () => {
+    expect(isHITLEnabled({})).toBe(true);
+    expect(isHITLEnabled({ mode: 'default', allow: ['read_*'] })).toBe(true);
   });
 
-  test('falls back to "allow" when default is omitted', () => {
-    const policy: TToolApprovalPolicy = { required: ['shell'] };
-    expect(decideToolApproval(policy, { name: 'web_search' })).toBe('allow');
+  test('explicit false is the only off signal', () => {
+    expect(isHITLEnabled({ enabled: false })).toBe(false);
   });
 
-  test('returns "ask" when tool is in required list', () => {
-    const policy: TToolApprovalPolicy = { required: ['shell', 'execute_code'] };
-    expect(decideToolApproval(policy, { name: 'execute_code' })).toBe('ask');
-  });
-
-  test('returns "allow" for tools in excluded list, even when default is "ask"', () => {
-    const policy: TToolApprovalPolicy = { default: 'ask', excluded: ['web_search'] };
-    expect(decideToolApproval(policy, { name: 'web_search' })).toBe('allow');
-  });
-
-  test('excluded wins over required when a tool appears in both (defensive)', () => {
-    const policy: TToolApprovalPolicy = {
-      default: 'allow',
-      required: ['shell'],
-      excluded: ['shell'],
-    };
-    expect(decideToolApproval(policy, { name: 'shell' })).toBe('allow');
-  });
-
-  test('returns the default when tool name is missing', () => {
-    const policy: TToolApprovalPolicy = { default: 'ask', required: ['shell'] };
-    expect(decideToolApproval(policy, {})).toBe('ask');
+  test('explicit true is on', () => {
+    expect(isHITLEnabled({ enabled: true })).toBe(true);
   });
 });
 
-describe('requiresApproval', () => {
-  test('true only when decision is "ask"', () => {
-    const policy: TToolApprovalPolicy = { required: ['shell'] };
-    expect(requiresApproval(policy, { name: 'shell' })).toBe(true);
-    expect(requiresApproval(policy, { name: 'web_search' })).toBe(false);
-    expect(requiresApproval(undefined, { name: 'shell' })).toBe(false);
+describe('mapToolApprovalPolicy', () => {
+  test('returns undefined when no policy is configured', () => {
+    expect(mapToolApprovalPolicy(undefined)).toBeUndefined();
+  });
+
+  test('returns undefined when policy is empty after stripping enabled', () => {
+    expect(mapToolApprovalPolicy({ enabled: true })).toBeUndefined();
+    expect(mapToolApprovalPolicy({ enabled: false })).toBeUndefined();
+  });
+
+  test('returns undefined when only empty arrays are present', () => {
+    expect(mapToolApprovalPolicy({ allow: [], deny: [], ask: [] })).toBeUndefined();
+  });
+
+  test('passes through mode/allow/deny/ask/reason verbatim', () => {
+    const policy: TToolApprovalPolicy = {
+      mode: 'dontAsk',
+      allow: ['read_*', 'mcp:github:*'],
+      deny: ['delete_*'],
+      ask: ['execute_*'],
+      reason: 'Tool {tool} requires review',
+    };
+    expect(mapToolApprovalPolicy(policy)).toEqual({
+      mode: 'dontAsk',
+      allow: ['read_*', 'mcp:github:*'],
+      deny: ['delete_*'],
+      ask: ['execute_*'],
+      reason: 'Tool {tool} requires review',
+    });
+  });
+
+  test('strips enabled regardless of value (LibreChat-only field)', () => {
+    expect(mapToolApprovalPolicy({ enabled: false, mode: 'bypass' })).toEqual({
+      mode: 'bypass',
+    });
+    expect(mapToolApprovalPolicy({ enabled: true, allow: ['read_*'] })).toEqual({
+      allow: ['read_*'],
+    });
+  });
+
+  test('omits empty list fields from the output', () => {
+    expect(mapToolApprovalPolicy({ mode: 'default', allow: [], deny: ['rm'] })).toEqual({
+      mode: 'default',
+      deny: ['rm'],
+    });
+  });
+});
+
+describe('buildToolApprovalPayload', () => {
+  const calls = [
+    {
+      name: 'shell',
+      arguments: { command: 'ls' },
+      tool_call_id: 'call_abc',
+      description: 'List files',
+    },
+  ];
+
+  test('produces a tool_approval-discriminated payload', () => {
+    const payload = buildToolApprovalPayload(calls);
+    expect(payload.type).toBe('tool_approval');
+    expect(payload.action_requests).toEqual([
+      {
+        name: 'shell',
+        arguments: { command: 'ls' },
+        tool_call_id: 'call_abc',
+        description: 'List files',
+      },
+    ]);
+  });
+
+  test("default decisions exclude 'respond' (reserved for AskUserQuestion semantics)", () => {
+    const payload = buildToolApprovalPayload(calls);
+    expect(payload.review_configs[0].allowed_decisions).toEqual(['approve', 'reject', 'edit']);
+  });
+
+  test('respects per-tool decision overrides', () => {
+    const payload = buildToolApprovalPayload(calls, {
+      shell: ['approve', 'reject'],
+    });
+    expect(payload.review_configs[0].allowed_decisions).toEqual(['approve', 'reject']);
+  });
+
+  test('produces one review_config per call, in order', () => {
+    const payload = buildToolApprovalPayload([
+      { name: 'a', arguments: {}, tool_call_id: '1' },
+      { name: 'b', arguments: {}, tool_call_id: '2' },
+    ]);
+    expect(payload.review_configs.map((r) => r.action_name)).toEqual(['a', 'b']);
+  });
+});
+
+describe('buildAskUserQuestionPayload', () => {
+  test('produces an ask_user_question-discriminated payload', () => {
+    const payload = buildAskUserQuestionPayload({
+      question: 'Which environment?',
+      options: [
+        { label: 'Staging', value: 'staging' },
+        { label: 'Production', value: 'production' },
+      ],
+    });
+    expect(payload.type).toBe('ask_user_question');
+    expect(payload.question.question).toBe('Which environment?');
+    expect(payload.question.options).toHaveLength(2);
+  });
+
+  test('options are optional', () => {
+    const payload = buildAskUserQuestionPayload({ question: 'Free-form?' });
+    expect(payload.question.options).toBeUndefined();
   });
 });
 
 describe('buildPendingAction', () => {
-  const baseInput = {
+  const ctx = {
     streamId: 'stream-1',
     conversationId: 'conv-1',
     runId: 'run-1',
     responseMessageId: 'msg-1',
-    toolCalls: [
-      {
-        name: 'shell',
-        arguments: { command: 'ls' },
-        tool_call_id: 'call_abc',
-        description: 'List files',
-      },
-    ],
   };
 
-  test('produces a payload mirroring LangChain HumanInterrupt shape', () => {
-    const action = buildPendingAction(baseInput);
-    expect(action.payload.type).toBe('tool_approval');
-    expect(action.payload.action_requests).toEqual([
-      {
-        name: 'shell',
-        arguments: { command: 'ls' },
-        tool_call_id: 'call_abc',
-        description: 'List files',
-      },
-    ]);
-    expect(action.payload.review_configs).toEqual([
-      { action_name: 'shell', allowed_decisions: ['approve', 'reject', 'edit'] },
-    ]);
+  const toolApprovalPayload: Agents.ToolApprovalInterruptPayload = {
+    type: 'tool_approval',
+    action_requests: [{ name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_abc' }],
+    review_configs: [{ action_name: 'shell', allowed_decisions: ['approve', 'reject'] }],
+  };
+
+  test('wraps a tool_approval payload with job context', () => {
+    const action = buildPendingAction(toolApprovalPayload, ctx);
+    expect(action.streamId).toBe('stream-1');
+    expect(action.conversationId).toBe('conv-1');
+    expect(action.runId).toBe('run-1');
+    expect(action.responseMessageId).toBe('msg-1');
+    expect(action.payload).toBe(toolApprovalPayload);
+    expect(typeof action.createdAt).toBe('number');
   });
 
-  test('respects per-tool decision overrides', () => {
-    const action = buildPendingAction({
-      ...baseInput,
-      decisionsByToolName: { shell: ['approve', 'reject'] },
-    });
-    expect(action.payload.review_configs[0].allowed_decisions).toEqual(['approve', 'reject']);
+  test('wraps an ask_user_question payload with the same envelope', () => {
+    const askPayload: Agents.AskUserQuestionInterruptPayload = {
+      type: 'ask_user_question',
+      question: { question: 'Which env?' },
+    };
+    const action = buildPendingAction(askPayload, ctx);
+    expect(action.payload.type).toBe('ask_user_question');
   });
 
   test('generates a uuid actionId by default', () => {
-    const a = buildPendingAction(baseInput);
-    const b = buildPendingAction(baseInput);
+    const a = buildPendingAction(toolApprovalPayload, ctx);
+    const b = buildPendingAction(toolApprovalPayload, ctx);
     expect(a.actionId).not.toBe(b.actionId);
     expect(a.actionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
   });
 
   test('honours an explicit actionId', () => {
-    const action = buildPendingAction({ ...baseInput, actionId: 'fixed-id' });
+    const action = buildPendingAction(toolApprovalPayload, { ...ctx, actionId: 'fixed-id' });
     expect(action.actionId).toBe('fixed-id');
   });
 
   test('sets expiresAt only when ttlMs is provided', () => {
-    const without = buildPendingAction(baseInput);
+    const without = buildPendingAction(toolApprovalPayload, ctx);
     expect(without.expiresAt).toBeUndefined();
 
     const ttl = 5_000;
     const before = Date.now();
-    const withTtl = buildPendingAction({ ...baseInput, ttlMs: ttl });
+    const withTtl = buildPendingAction(toolApprovalPayload, { ...ctx, ttlMs: ttl });
     const after = Date.now();
     expect(withTtl.expiresAt).toBeDefined();
     expect(withTtl.expiresAt).toBeGreaterThanOrEqual(before + ttl);
     expect(withTtl.expiresAt).toBeLessThanOrEqual(after + ttl);
-  });
-
-  test('preserves stream/conversation/run identifiers', () => {
-    const action = buildPendingAction(baseInput);
-    expect(action.streamId).toBe('stream-1');
-    expect(action.conversationId).toBe('conv-1');
-    expect(action.runId).toBe('run-1');
-    expect(action.responseMessageId).toBe('msg-1');
   });
 });
