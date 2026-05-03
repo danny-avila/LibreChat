@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const { Tool } = require('@langchain/core/tools');
 const { Calculator } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { zodToJsonSchema } = require('zod-to-json-schema');
+const { Tool } = require('@librechat/agents/langchain/tools');
 const { Tools, ImageVisionTool } = require('librechat-data-provider');
 const { getToolkitKey, oaiToolkit, geminiToolkit } = require('@librechat/api');
 const { toolkits } = require('~/app/clients/tools/manifest');

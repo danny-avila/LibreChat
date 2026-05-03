@@ -10,12 +10,12 @@ import type {
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
 import { Types } from 'mongoose';
-import type { StructuredToolInterface } from '@langchain/core/tools';
+import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
+import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
+import { buildSkillPrimeMessage } from './skills';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
-import type { SkillFileRecord } from './skillFiles';
-import { buildSkillPrimeMessage } from './skills';
 import { runOutsideTracing } from '~/utils';
 
 export interface ToolEndCallbackData {

@@ -896,7 +896,7 @@ describe('AgentClient - titleConvo', () => {
                 },
                 'codex-mini': {
                   apiKey: '${AZURE_API_KEY}',
-                  baseURL: 'https://example.cognitiveservices.azure.com/openai/',
+                  baseURL: 'https://example.cognitiveservices.azure.com/agents/langchain/openai/',
                   version: '2025-04-01-preview',
                   serverless: true,
                   models: {
@@ -1250,7 +1250,7 @@ describe('AgentClient - titleConvo', () => {
         '# MCP Server Instructions\n\nTest MCP instructions here',
       );
 
-      const { DynamicStructuredTool } = require('@langchain/core/tools');
+      const { DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 
       // Create mock MCP tools with the delimiter pattern
       const mockMCPTool1 = new DynamicStructuredTool({
@@ -1482,7 +1482,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should filter out image URLs from message content', async () => {
-      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const { HumanMessage, AIMessage } = require('@librechat/agents/langchain/messages');
       const messages = [
         new HumanMessage({
           content: [
@@ -1538,7 +1538,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should handle messages with only text content', async () => {
-      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const { HumanMessage, AIMessage } = require('@librechat/agents/langchain/messages');
       const messages = [
         new HumanMessage('Hello, how are you?'),
         new AIMessage('I am doing well, thank you!'),
@@ -1556,7 +1556,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should handle mixed content types correctly', async () => {
-      const { HumanMessage } = require('@langchain/core/messages');
+      const { HumanMessage } = require('@librechat/agents/langchain/messages');
       const { ContentTypes } = require('librechat-data-provider');
 
       const messages = [
@@ -1593,7 +1593,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should preserve original messages without mutation', async () => {
-      const { HumanMessage } = require('@langchain/core/messages');
+      const { HumanMessage } = require('@librechat/agents/langchain/messages');
       const originalContent = [
         {
           type: 'text',
@@ -1622,7 +1622,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should handle message window size correctly', async () => {
-      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const { HumanMessage, AIMessage } = require('@librechat/agents/langchain/messages');
       const messages = [
         new HumanMessage('Message 1'),
         new AIMessage('Response 1'),
@@ -1646,7 +1646,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should return early if processMemory is not set', async () => {
-      const { HumanMessage } = require('@langchain/core/messages');
+      const { HumanMessage } = require('@librechat/agents/langchain/messages');
       client.processMemory = null;
 
       const result = await client.runMemory([new HumanMessage('Test')]);
