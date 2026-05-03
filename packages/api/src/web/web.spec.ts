@@ -1165,6 +1165,76 @@ describe('web.ts', () => {
       });
     });
 
+    it('should not use tavilyScraperOptions.timeout for firecrawl scraper', async () => {
+      const webSearchConfig = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        tavilyApiKey: '${TAVILY_API_KEY}',
+        jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+        tavilyScraperOptions: {
+          timeout: 22000,
+        },
+      } as TCustomConfig['webSearch'];
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.scraperTimeout).toBe(7500);
+    });
+
+    it('should use tavilyScraperOptions.timeout for tavily scraper', async () => {
+      const webSearchConfig = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        tavilyApiKey: '${TAVILY_API_KEY}',
+        jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'tavily' as ScraperProviders,
+        firecrawlOptions: {
+          timeout: 12000,
+        },
+        tavilyScraperOptions: {
+          timeout: 22000,
+        },
+      } as TCustomConfig['webSearch'];
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.scraperTimeout).toBe(22000);
+    });
+
     it('should handle firecrawlOptions.formats when only formats is provided', async () => {
       // Initialize a webSearchConfig with only firecrawlOptions.formats
       const webSearchConfig = {
