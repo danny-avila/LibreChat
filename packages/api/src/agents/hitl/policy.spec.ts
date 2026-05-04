@@ -116,6 +116,25 @@ describe('buildToolApprovalPayload', () => {
     ]);
     expect(payload.review_configs.map((r) => r.action_name)).toEqual(['a', 'b']);
   });
+
+  test('carries tool_call_id on each review_config (join key for duplicate-tool batches)', () => {
+    const payload = buildToolApprovalPayload([
+      { name: 'mcp:server:search', arguments: { q: 'a' }, tool_call_id: 'call_1' },
+      { name: 'mcp:server:search', arguments: { q: 'b' }, tool_call_id: 'call_2' },
+    ]);
+    expect(payload.review_configs).toEqual([
+      {
+        action_name: 'mcp:server:search',
+        tool_call_id: 'call_1',
+        allowed_decisions: ['approve', 'reject', 'edit'],
+      },
+      {
+        action_name: 'mcp:server:search',
+        tool_call_id: 'call_2',
+        allowed_decisions: ['approve', 'reject', 'edit'],
+      },
+    ]);
+  });
 });
 
 describe('buildAskUserQuestionPayload', () => {
@@ -149,7 +168,9 @@ describe('buildPendingAction', () => {
   const toolApprovalPayload: Agents.ToolApprovalInterruptPayload = {
     type: 'tool_approval',
     action_requests: [{ name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_abc' }],
-    review_configs: [{ action_name: 'shell', allowed_decisions: ['approve', 'reject'] }],
+    review_configs: [
+      { action_name: 'shell', tool_call_id: 'call_abc', allowed_decisions: ['approve', 'reject'] },
+    ],
   };
 
   test('wraps a tool_approval payload with job context', () => {

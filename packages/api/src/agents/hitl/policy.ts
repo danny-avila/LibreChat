@@ -18,6 +18,14 @@ const DEFAULT_REVIEW_DECISIONS: Agents.ToolApprovalDecisionType[] = ['approve', 
  * checkpointer fallback and skips installing the policy hook entirely.
  * Users wanting "stop asking me" should use `mode: 'bypass'` instead, which
  * keeps the machinery in place but auto-approves.
+ *
+ * **Wiring caveat (Slice B):** when this returns `true` and the host passes
+ * `humanInTheLoop: { enabled: true }` to `Run.create`, the host MUST also
+ * supply `compileOptions.checkpointer` with a durable saver
+ * (`LibreChatCheckpointSaver`). Otherwise the SDK installs a process-local
+ * `MemorySaver` fallback, which silently breaks resume across worker hops in
+ * any multi-process deployment. Pair this predicate with the checkpointer
+ * assignment at the `Run.create` call site.
  */
 export function isHITLEnabled(policy: TToolApprovalPolicy | undefined): boolean {
   return policy?.enabled !== false;
@@ -83,6 +91,7 @@ export function buildToolApprovalPayload(
     })),
     review_configs: toolCalls.map((tc) => ({
       action_name: tc.name,
+      tool_call_id: tc.tool_call_id,
       allowed_decisions: decisionsByToolName?.[tc.name] ?? DEFAULT_REVIEW_DECISIONS,
     })),
   };
