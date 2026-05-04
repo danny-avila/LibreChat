@@ -7,16 +7,46 @@ export interface CodeEnvFileOptions {
   filepath?: string;
 }
 
+const CODE_ENV_SAFE_FILEPATH_PATTERN = /^[a-zA-Z0-9._\-/]+$/;
+const CODE_ENV_FILENAME_CONTROL_CHARS_PATTERN = /[\x00-\x1f\x7f]/g;
+
+function isSafeCodeEnvFilepath(filepath: string): boolean {
+  if (!filepath || filepath.startsWith('/') || !CODE_ENV_SAFE_FILEPATH_PATTERN.test(filepath)) {
+    return false;
+  }
+
+  const segments = filepath.split('/');
+  return segments.every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+}
+
+function getCodeEnvBasename(filepath: string): string {
+  const basename = getSafeCodeEnvFilename(path.posix.basename(filepath));
+
+  if (!basename || basename === '.' || basename === '..') {
+    return 'file';
+  }
+
+  return basename;
+}
+
+function getSafeCodeEnvFilename(filename: string): string {
+  return filename.replace(CODE_ENV_FILENAME_CONTROL_CHARS_PATTERN, '_');
+}
+
 /**
  * Uses `filepath` for nested names because `form-data` strips directories from
- * the bare string filename overload before codeapi can preserve them.
+ * the bare string filename overload before codeapi can preserve safe paths.
  */
 export function getCodeEnvFileOptions(filename: string): CodeEnvFileOptions {
   const normalized = filename.replace(/\\/g, '/');
-  const basename = path.posix.basename(normalized);
+  const basename = getCodeEnvBasename(normalized);
 
-  if (normalized === basename) {
-    return { filename };
+  if (normalized === filename && filename === basename) {
+    return { filename: getSafeCodeEnvFilename(filename) };
+  }
+
+  if (!isSafeCodeEnvFilepath(normalized)) {
+    return { filename: basename };
   }
 
   return { filename: basename, filepath: normalized };
