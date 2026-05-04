@@ -477,11 +477,23 @@ describe('Office HTML producers', () => {
         const html = await _internal.pptxToHtmlViaCdn(pptx);
         /* The wrapper class used by the CSS rules. */
         expect(html).toContain('lc-slide-wrap');
-        /* The wrap function + the scale computation derived from
-         * `clientWidth / SLIDE_W`. */
+        /* The wrap function + the per-slide scale function. The scale
+         * uses each slide's actual rendered native width (not a
+         * constant) so panels wider than 960px still fill — no
+         * upscale cap means we never leave whitespace on the sides
+         * of the panel. */
         expect(html).toContain('wrapSlides');
-        expect(html).toContain('SLIDE_W');
-        expect(html).toContain('available / SLIDE_W');
+        expect(html).toContain('scaleFor');
+        expect(html).toContain('availableWidth');
+        /* The scale formula divides available width by the slides
+         * rendered native width — this is the line that ensures full
+         * panel coverage. */
+        expect(html).toContain('availableWidth() / (nativeW || SLIDE_W)');
+        /* Negative assertion: the previous version capped the scale
+         * at 1.0 with `Math.min(1, ...)`, which left whitespace on
+         * panels wider than 960px. The new code must not reintroduce
+         * that cap. */
+        expect(html).not.toContain('Math.min(1');
         /* Container is hidden during render and revealed by the
          * `finalize` step so the unscaled flash never reaches the
          * user. */

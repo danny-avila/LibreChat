@@ -1161,10 +1161,21 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
     container.style.visibility = 'hidden';
     var previewer = pptxPreview.init(container, { width: SLIDE_W, height: SLIDE_H });
 
-    function computeScale() {
-      var available = (container.clientWidth || window.innerWidth) - 32;
-      if (available <= 0) { available = 600; }
-      return Math.min(1, available / SLIDE_W);
+    function availableWidth() {
+      /* clientWidth includes the 16px padding on each side via
+       * box-sizing:border-box; we subtract both so the wrap exactly
+       * fills the content box without spilling into padding. */
+      var w = (container.clientWidth || window.innerWidth) - 32;
+      return w > 0 ? w : 600;
+    }
+
+    /* Per-slide scale: divides each slides actual rendered native
+     * width into the panel width, so we always fill the panel. No
+     * upscale cap — pptx-preview always rasterizes against the init
+     * canvas (960×540 here), so text/charts inside the slide are
+     * vector or canvas-rendered and stay legible when scaled up. */
+    function scaleFor(nativeW) {
+      return availableWidth() / (nativeW || SLIDE_W);
     }
 
     /* Wrap each rendered slide and apply the scale. Called ONCE,
@@ -1172,19 +1183,23 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
      * move slides out from under the librarys references and break
      * its internal state. */
     function wrapSlides() {
-      var scale = computeScale();
       var children = Array.prototype.slice.call(container.children);
       for (var i = 0; i < children.length; i++) {
         var slide = children[i];
         if (!slide.classList || slide.classList.contains('lc-slide-wrap') || slide.classList.contains('lc-pptx-loading')) {
           continue;
         }
+        /* Cache the slides actual rendered size BEFORE applying any
+         * transform — measurements after a CSS scale no longer reflect
+         * native pixels and would feed back into wrong sizing on
+         * resize. */
         var nativeW = slide.offsetWidth || SLIDE_W;
         var nativeH = slide.offsetHeight || SLIDE_H;
         if (slide.dataset) {
           slide.dataset.lcNativeW = String(nativeW);
           slide.dataset.lcNativeH = String(nativeH);
         }
+        var scale = scaleFor(nativeW);
         var wrap = document.createElement('div');
         wrap.className = 'lc-slide-wrap';
         wrap.style.width = (nativeW * scale) + 'px';
@@ -1200,7 +1215,6 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
      * resize). Reads the cached native dimensions from the slides
      * dataset so we never re-measure an already-scaled box. */
     function refit() {
-      var scale = computeScale();
       var wraps = container.querySelectorAll('.lc-slide-wrap');
       for (var i = 0; i < wraps.length; i++) {
         var wrap = wraps[i];
@@ -1208,6 +1222,7 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
         if (!inner || !inner.dataset) { continue; }
         var nativeW = parseFloat(inner.dataset.lcNativeW) || SLIDE_W;
         var nativeH = parseFloat(inner.dataset.lcNativeH) || SLIDE_H;
+        var scale = scaleFor(nativeW);
         wrap.style.width = (nativeW * scale) + 'px';
         wrap.style.height = (nativeH * scale) + 'px';
         inner.style.transform = 'scale(' + scale + ')';
