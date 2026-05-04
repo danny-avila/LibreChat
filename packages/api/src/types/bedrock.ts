@@ -19,6 +19,8 @@ export interface GuardrailConfiguration {
   guardrailVersion: string;
   /** The trace behavior for the guardrail */
   trace?: 'enabled' | 'disabled' | 'enabled_full';
+  /** The processing mode for guardrail; 'sync' is the default guardrail behavior if unset */
+  streamProcessingMode?: 'sync' | 'async';
 }
 
 /**
