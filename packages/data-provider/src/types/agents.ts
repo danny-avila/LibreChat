@@ -300,9 +300,18 @@ export namespace Agents {
     description?: string;
   }
 
-  /** Per-tool review configuration: which decisions the user is allowed to make. */
+  /**
+   * Per-call review configuration: which decisions the user is allowed to make.
+   *
+   * `tool_call_id` (NOT `action_name`) is the join key against
+   * {@link ToolApprovalRequest.tool_call_id}. By-position mapping breaks the
+   * moment a single batch contains the same tool called twice — e.g. a model
+   * fanning out two `mcp:server:search` calls in parallel — so always join
+   * by `tool_call_id`. `action_name` is retained for display only.
+   */
   export interface ToolReviewConfig {
     action_name: string;
+    tool_call_id: string;
     allowed_decisions: ToolApprovalDecisionType[];
   }
 
