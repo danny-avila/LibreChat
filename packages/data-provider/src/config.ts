@@ -420,6 +420,61 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
+const LOCAL_REMOTE_OIDC_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+export function isRemoteOidcUrlAllowed(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:') return true;
+    if (url.protocol !== 'http:') return false;
+
+    const hostname = url.hostname.toLowerCase();
+    return LOCAL_REMOTE_OIDC_HOSTS.has(hostname) || hostname.endsWith('.localhost');
+  } catch {
+    return false;
+  }
+}
+
+const remoteApiOidcUrlSchema = z
+  .string()
+  .url()
+  .refine(isRemoteOidcUrlAllowed, { message: 'must use https:// unless targeting localhost' });
+
+const remoteApiOidcScopeSchema = z.string().refine((scope) => !scope.includes(','), {
+  message: 'scopes must be space-separated',
+});
+
+const remoteApiOidcSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    issuer: remoteApiOidcUrlSchema.optional(),
+    audience: z.string().optional(),
+    jwksUri: remoteApiOidcUrlSchema.optional(),
+    scope: remoteApiOidcScopeSchema.optional(),
+  })
+  .superRefine((oidc, ctx) => {
+    if (oidc.enabled === true && !oidc.issuer) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['issuer'],
+        message: 'issuer is required when OIDC auth is enabled',
+      });
+    }
+  });
+
+const remoteApiAuthSchema = z.object({
+  apiKey: z
+    .object({
+      enabled: z.boolean().default(true),
+    })
+    .optional(),
+  oidc: remoteApiOidcSchema.optional(),
+});
+
+const remoteApiSchema = z.object({
+  auth: remoteApiAuthSchema.optional(),
+});
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -436,6 +491,7 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      remoteApi: remoteApiSchema.optional(),
     }),
   )
   .default({
