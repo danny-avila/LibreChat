@@ -724,7 +724,7 @@ describe('isPreviewOnlyArtifact', () => {
     [TOOL_ARTIFACT_TYPES.MERMAID, false],
     [TOOL_ARTIFACT_TYPES.CODE, false],
     [TOOL_ARTIFACT_TYPES.PLAIN_TEXT, false],
-  ])('returns %s for type %s', (type, expected) => {
+  ])('type %s returns %s', (type, expected) => {
     expect(isPreviewOnlyArtifact(type)).toBe(expected);
   });
 
