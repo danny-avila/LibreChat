@@ -327,6 +327,7 @@ interface StreamState {
   reasoningContentStarted: boolean;
   activeToolCalls: Set<string>;
   completedToolCalls: Set<string>;
+  currentStepToolCallIds: string[];
 }
 
 /**
@@ -344,6 +345,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     reasoningContentStarted: false,
     activeToolCalls: new Set(),
     completedToolCalls: new Set(),
+    currentStepToolCallIds: [],
   };
 
   /**
@@ -386,6 +388,41 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
       emitReasoningContentPartAdded(config);
       state.reasoningContentStarted = true;
     }
+  };
+
+  /**
+   * Complete a tool call once — idempotent via `completedToolCalls`. Called
+   * from both `on_run_step_completed` (primary) and `on_tool_end` (fallback
+   * for provider-side tools). When streaming deltas didn't cover the full
+   * argument string, `finalArgs` tops up the accumulator so the `.done` event
+   * and `response.completed.output` carry the complete arguments.
+   */
+  const completeToolCall = (
+    callId: string | undefined,
+    output: string,
+    finalArgs?: string,
+  ): void => {
+    if (!callId || !state.activeToolCalls.has(callId) || state.completedToolCalls.has(callId)) {
+      return;
+    }
+    state.completedToolCalls.add(callId);
+    if (finalArgs != null) {
+      const accumulated = config.tracker.accumulatedArguments.get(callId) ?? '';
+      if (finalArgs !== accumulated) {
+        if (finalArgs.startsWith(accumulated)) {
+          emitFunctionCallArgumentsDelta(config, callId, finalArgs.slice(accumulated.length));
+        } else {
+          const item = config.tracker.functionCalls.get(callId);
+          if (item) {
+            config.tracker.accumulatedArguments.set(callId, finalArgs);
+            item.arguments = finalArgs;
+          }
+        }
+      }
+    }
+    emitFunctionCallArgumentsDone(config, callId);
+    emitFunctionCallItemDone(config, callId);
+    emitFunctionCallOutputItem(config, callId, output);
   };
 
   /**
@@ -475,14 +512,21 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
           // Close any open message/reasoning before tool calls
           closeOpenStreams();
 
+          state.currentStepToolCallIds = [];
+
           for (const tc of stepDetails.tool_calls) {
             const callId = tc.id ?? '';
             const name = tc.name ?? '';
 
-            if (callId && !state.activeToolCalls.has(callId)) {
+            if (!callId) {
+              continue;
+            }
+
+            if (!state.activeToolCalls.has(callId)) {
               state.activeToolCalls.add(callId);
               emitFunctionCallItemAdded(config, callId, name);
             }
+            state.currentStepToolCallIds.push(callId);
           }
         }
       },
@@ -494,7 +538,10 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     on_run_step_delta: {
       handle: (_event: string, data: unknown): void => {
         const deltaData = data as {
-          delta?: { type: string; tool_calls?: Array<{ index?: number; args?: string }> };
+          delta?: {
+            type: string;
+            tool_calls?: Array<{ index?: number; id?: string; args?: string }>;
+          };
         };
         const delta = deltaData?.delta;
 
@@ -505,9 +552,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
               continue;
             }
 
-            // Find the call_id for this tool call by index
-            const toolCallsArray = Array.from(state.activeToolCalls);
-            const callId = toolCallsArray[tc.index ?? 0];
+            const callId = tc.id ?? state.currentStepToolCallIds[tc.index ?? 0];
 
             if (callId) {
               emitFunctionCallArgumentsDelta(config, callId, args);
@@ -518,24 +563,47 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     },
 
     /**
-     * Handle tool end (tool execution complete)
+     * Handle run step completed — the primary tool-completion path. Dispatched
+     * by @librechat/agents' ToolNode for every tool call with the full output.
+     */
+    on_run_step_completed: {
+      handle: (_event: string, data: unknown): void => {
+        const stepData = data as {
+          result?: {
+            type?: string;
+            tool_call?: {
+              id?: string;
+              args?: string | Record<string, unknown>;
+              output?: string;
+            };
+          };
+        };
+        const result = stepData?.result;
+        if (result?.type !== 'tool_call' || !result.tool_call) {
+          return;
+        }
+        const { id, args, output } = result.tool_call;
+        let finalArgs: string | undefined;
+        if (args != null) {
+          finalArgs = typeof args === 'string' ? args : JSON.stringify(args);
+        }
+        completeToolCall(id, output ?? '', finalArgs);
+      },
+    },
+
+    /**
+     * Tool execution complete. A no-op for standard tool calls (completion
+     * already emitted via `on_run_step_completed`); the active path is for
+     * provider-side tools (e.g. web_search) whose results arrive here as a
+     * LangChain ToolMessage under `output`, not under `result.tool_call`.
      */
     on_tool_end: {
       handle: (_event: string, data: unknown): void => {
-        const toolData = data as { tool_call_id?: string; output?: string };
-        const callId = toolData?.tool_call_id;
-        const output = toolData?.output ?? '';
-
-        if (callId && state.activeToolCalls.has(callId) && !state.completedToolCalls.has(callId)) {
-          state.completedToolCalls.add(callId);
-
-          // Complete the function call item
-          emitFunctionCallArgumentsDone(config, callId);
-          emitFunctionCallItemDone(config, callId);
-
-          // Emit the function call output (internal tool result)
-          emitFunctionCallOutputItem(config, callId, output);
-        }
+        const toolData = data as {
+          output?: { tool_call_id?: string; name?: string; content?: string };
+        };
+        const toolOutput = toolData?.output;
+        completeToolCall(toolOutput?.tool_call_id, toolOutput?.content ?? '');
       },
     },
 
@@ -757,6 +825,7 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
   }
 > {
   const activeToolCalls = new Set<string>();
+  let currentStepToolCallIds: string[] = [];
 
   return {
     on_message_delta: {
@@ -800,14 +869,20 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
         const stepDetails = stepData?.stepDetails;
 
         if (stepDetails?.type === 'tool_calls' && stepDetails.tool_calls) {
+          currentStepToolCallIds = [];
           for (const tc of stepDetails.tool_calls) {
             const callId = tc.id ?? '';
             const name = tc.name ?? '';
 
-            if (callId && !activeToolCalls.has(callId)) {
+            if (!callId) {
+              continue;
+            }
+
+            if (!activeToolCalls.has(callId)) {
               activeToolCalls.add(callId);
               aggregator.toolCalls.set(callId, { id: callId, name, arguments: '' });
             }
+            currentStepToolCallIds.push(callId);
           }
         }
       },
@@ -816,7 +891,10 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
     on_run_step_delta: {
       handle: (_event: string, data: unknown): void => {
         const deltaData = data as {
-          delta?: { type: string; tool_calls?: Array<{ index?: number; args?: string }> };
+          delta?: {
+            type: string;
+            tool_calls?: Array<{ index?: number; id?: string; args?: string }>;
+          };
         };
         const delta = deltaData?.delta;
 
@@ -827,8 +905,7 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
               continue;
             }
 
-            const toolCallsArray = Array.from(activeToolCalls);
-            const callId = toolCallsArray[tc.index ?? 0];
+            const callId = tc.id ?? currentStepToolCallIds[tc.index ?? 0];
 
             if (callId) {
               const existing = aggregator.toolCalls.get(callId);
@@ -841,14 +918,42 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
       },
     },
 
+    on_run_step_completed: {
+      handle: (_event: string, data: unknown): void => {
+        const stepData = data as {
+          result?: {
+            type?: string;
+            tool_call?: {
+              id?: string;
+              args?: string | Record<string, unknown>;
+              output?: string;
+            };
+          };
+        };
+        const result = stepData?.result;
+        if (result?.type !== 'tool_call' || !result.tool_call?.id) {
+          return;
+        }
+        const { id, args, output } = result.tool_call;
+        aggregator.toolOutputs.set(id, output ?? '');
+        const existing = aggregator.toolCalls.get(id);
+        if (existing && !existing.arguments && args != null) {
+          existing.arguments = typeof args === 'string' ? args : JSON.stringify(args);
+        }
+      },
+    },
+
     on_tool_end: {
       handle: (_event: string, data: unknown): void => {
-        const toolData = data as { tool_call_id?: string; output?: string };
-        const callId = toolData?.tool_call_id;
-        const output = toolData?.output ?? '';
+        const toolData = data as {
+          output?: { tool_call_id?: string; name?: string; content?: string };
+        };
+        const toolOutput = toolData?.output;
+        const callId = toolOutput?.tool_call_id;
+        const content = toolOutput?.content ?? '';
 
         if (callId) {
-          aggregator.toolOutputs.set(callId, output);
+          aggregator.toolOutputs.set(callId, content);
         }
       },
     },

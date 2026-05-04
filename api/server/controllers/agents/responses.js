@@ -651,6 +651,10 @@ const createResponse = async (req, res) => {
         ...getSkillToolDeps(),
       };
 
+      // Attachment side-effects run alongside the Responses-API tool-end
+      // emitters; both must fire on every tool end.
+      const toolEndHandler = new ToolEndHandler(toolEndCallback, logger);
+
       // Combine handlers
       const handlers = {
         on_message_delta: responsesHandlers.on_message_delta,
@@ -667,8 +671,13 @@ const createResponse = async (req, res) => {
             }
           },
         },
-        on_tool_end: new ToolEndHandler(toolEndCallback, logger),
-        on_run_step_completed: { handle: () => {} },
+        on_tool_end: {
+          handle: async (event, data, metadata, graph) => {
+            await toolEndHandler.handle(event, data, metadata, graph);
+            responsesHandlers.on_tool_end.handle(event, data);
+          },
+        },
+        on_run_step_completed: responsesHandlers.on_run_step_completed,
         on_chain_stream: { handle: () => {} },
         on_chain_end: { handle: () => {} },
         on_agent_update: { handle: () => {} },
@@ -827,6 +836,10 @@ const createResponse = async (req, res) => {
         ...getSkillToolDeps(),
       };
 
+      // Attachment side-effects run alongside the aggregator's on_tool_end,
+      // which records tool outputs for `buildAggregatedResponse`.
+      const toolEndHandler = new ToolEndHandler(toolEndCallback, logger);
+
       const handlers = {
         on_message_delta: aggregatorHandlers.on_message_delta,
         on_reasoning_delta: aggregatorHandlers.on_reasoning_delta,
@@ -842,8 +855,13 @@ const createResponse = async (req, res) => {
             }
           },
         },
-        on_tool_end: new ToolEndHandler(toolEndCallback, logger),
-        on_run_step_completed: { handle: () => {} },
+        on_tool_end: {
+          handle: async (event, data, metadata, graph) => {
+            await toolEndHandler.handle(event, data, metadata, graph);
+            aggregatorHandlers.on_tool_end.handle(event, data);
+          },
+        },
+        on_run_step_completed: aggregatorHandlers.on_run_step_completed,
         on_chain_stream: { handle: () => {} },
         on_chain_end: { handle: () => {} },
         on_agent_update: { handle: () => {} },
