@@ -225,9 +225,15 @@ async function getJwksClient(oidcConfig: EnabledOidcConfig): Promise<jwksRsa.Jwk
 }
 
 function getVerifyOptions(oidcConfig: EnabledOidcConfig): VerifyOptions {
+  const normalizedIssuer = normalizeOpenIdIssuer(oidcConfig.issuer);
+  const issuer =
+    normalizedIssuer && normalizedIssuer !== oidcConfig.issuer
+      ? [oidcConfig.issuer, normalizedIssuer]
+      : oidcConfig.issuer;
+
   return {
     algorithms: JWT_ALGORITHMS,
-    issuer: oidcConfig.issuer,
+    issuer,
     ...(oidcConfig.audience ? { audience: oidcConfig.audience } : {}),
   };
 }

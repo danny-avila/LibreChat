@@ -400,7 +400,7 @@ describe('createRemoteAgentAuth', () => {
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
 
-    it('preserves exact configured issuer when verifying JWTs', async () => {
+    it('allows exact and normalized configured issuers when verifying JWTs', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
       const issuer = `${BASE_ISSUER}/`;
       const deps = makeDeps(makeConfig({ issuer }));
@@ -412,7 +412,7 @@ describe('createRemoteAgentAuth', () => {
       );
 
       expect((jwt.verify as jest.Mock).mock.calls[0][2]).toEqual(
-        expect.objectContaining({ issuer }),
+        expect.objectContaining({ issuer: [issuer, BASE_ISSUER] }),
       );
       expect(mockNext).toHaveBeenCalledWith();
     });
@@ -904,7 +904,7 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).toHaveBeenCalled();
     });
 
-    it('normalizes discovery document issuer URL only when fetching discovery metadata', async () => {
+    it('normalizes discovery document issuer URL for discovery and issuer validation', async () => {
       const issuer = 'https://issuer-discovery-url.example.com/.well-known/openid-configuration';
       const normalizedIssuer = 'https://issuer-discovery-url.example.com';
 
@@ -926,7 +926,7 @@ describe('createRemoteAgentAuth', () => {
         expect.objectContaining({ signal: expect.any(Object) }),
       );
       expect((jwt.verify as jest.Mock).mock.calls[0][2]).toEqual(
-        expect.objectContaining({ issuer }),
+        expect.objectContaining({ issuer: [issuer, normalizedIssuer] }),
       );
       expect(mockNext).toHaveBeenCalled();
     });
