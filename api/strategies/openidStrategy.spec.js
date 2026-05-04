@@ -1870,4 +1870,97 @@ describe('setupOpenId', () => {
       expect(details).toEqual({ message: 'Email domain not allowed' });
     });
   });
+
+  describe('setupOpenId discovery retry', () => {
+    let discovery;
+
+    beforeAll(() => {
+      discovery = require('openid-client').discovery;
+    });
+
+    afterEach(() => {
+      // Restore the default mock so the parent beforeEach setupOpenId() call succeeds for sibling tests
+      discovery.mockResolvedValue({
+        clientId: 'fake_client_id',
+        clientSecret: 'fake_client_secret',
+        issuer: 'https://fake-issuer.com',
+      });
+      delete process.env.OPENID_DISCOVERY_RETRIES;
+    });
+
+    it('should retry discovery on transient failure and succeed', async () => {
+      discovery.mockClear();
+      discovery
+        .mockRejectedValueOnce(new Error('transient network error'))
+        .mockRejectedValueOnce(new Error('connection refused'))
+        .mockResolvedValueOnce({
+          clientId: 'fake_client_id',
+          clientSecret: 'fake_client_secret',
+          issuer: 'https://fake-issuer.com',
+        });
+
+      process.env.OPENID_DISCOVERY_RETRIES = '3';
+
+      const result = await setupOpenId();
+
+      expect(result).not.toBeNull();
+      expect(discovery).toHaveBeenCalledTimes(3);
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Discovery failed (attempt 1/4)'),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Discovery failed (attempt 2/4)'),
+      );
+    });
+
+    it('should return null after exhausting retries', async () => {
+      discovery.mockClear();
+      discovery.mockRejectedValue(new Error('persistent failure'));
+
+      process.env.OPENID_DISCOVERY_RETRIES = '2';
+
+      const result = await setupOpenId();
+
+      expect(result).toBeNull();
+      expect(discovery).toHaveBeenCalledTimes(3);
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Discovery failed after 3 attempts'),
+        expect.any(Error),
+      );
+    });
+
+    it('should respect OPENID_DISCOVERY_RETRIES=0 (no retry)', async () => {
+      discovery.mockClear();
+      discovery.mockRejectedValue(new Error('one-shot failure'));
+
+      process.env.OPENID_DISCOVERY_RETRIES = '0';
+
+      const result = await setupOpenId();
+
+      expect(result).toBeNull();
+      expect(discovery).toHaveBeenCalledTimes(1);
+    });
+
+    it('should fail fast on invalid OPENID_ISSUER URL', async () => {
+      discovery.mockClear();
+      process.env.OPENID_ISSUER = 'not-a-url';
+      process.env.OPENID_DISCOVERY_RETRIES = '3';
+
+      const result = await setupOpenId();
+
+      expect(result).toBeNull();
+      expect(discovery).not.toHaveBeenCalled();
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid OPENID_ISSUER URL'),
+        expect.any(String),
+      );
+
+      // Restore issuer for other tests
+      process.env.OPENID_ISSUER = 'https://fake-issuer.com';
+      delete process.env.OPENID_DISCOVERY_RETRIES;
+    });
+  });
 });
