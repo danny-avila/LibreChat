@@ -297,6 +297,30 @@ export const TOOL_ARTIFACT_TYPES = {
 export type ToolArtifactType = (typeof TOOL_ARTIFACT_TYPES)[keyof typeof TOOL_ARTIFACT_TYPES];
 
 /**
+ * Artifact types whose preview is server-rendered HTML — there's no
+ * source for a "code" view because the underlying file is binary, and
+ * showing the generated HTML blob in a code editor would just be
+ * noise. Used by the artifacts panel to hide the code tab and snap
+ * the active tab to "preview" when one of these is selected.
+ *
+ * Exposed via a predicate (rather than the bare set) so callers can't
+ * accidentally widen the set and so the membership check is unit-
+ * testable without mounting the full Artifacts component.
+ */
+const PREVIEW_ONLY_ARTIFACT_TYPES: ReadonlySet<ToolArtifactType> = new Set([
+  TOOL_ARTIFACT_TYPES.DOCX,
+  TOOL_ARTIFACT_TYPES.SPREADSHEET,
+  TOOL_ARTIFACT_TYPES.PRESENTATION,
+]);
+
+export function isPreviewOnlyArtifact(type: string | null | undefined): boolean {
+  if (type == null) {
+    return false;
+  }
+  return PREVIEW_ONLY_ARTIFACT_TYPES.has(type as ToolArtifactType);
+}
+
+/**
  * Extension → fenced-code-block language hint for the CODE bucket. The
  * key is the lowercased file extension (no dot); the value is the
  * identifier `marked` reads off the fence (e.g. ```` ```python ```` ).

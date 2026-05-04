@@ -1,7 +1,3 @@
-import * as os from 'os';
-import * as path from 'path';
-import * as fs from 'fs/promises';
-import { randomUUID } from 'crypto';
 import yauzl from 'yauzl';
 import { excelMimeTypes, megabyte } from 'librechat-data-provider';
 import { assertSafeZipSize } from './zipSafety';
@@ -29,24 +25,6 @@ async function getSanitizer(): Promise<typeof import('sanitize-html')> {
   const mod = await import('sanitize-html');
   sanitizeHtmlModule = (mod.default ?? mod) as typeof import('sanitize-html');
   return sanitizeHtmlModule;
-}
-
-/**
- * Strip color-bearing inline styles so the dark/light wrapper around the
- * sandboxed iframe controls foreground/background. Mammoth and SheetJS both
- * emit hardcoded `color: black` / `background-color: white` declarations that
- * make the preview unreadable in dark mode otherwise.
- */
-const COLOR_PROPERTY_PATTERN = /(?:^|;)\s*(?:color|background|background-color)\s*:[^;]*/gi;
-function stripColorStyles(style: string | undefined): string | undefined {
-  if (!style) {
-    return style;
-  }
-  const cleaned = style
-    .replace(COLOR_PROPERTY_PATTERN, '')
-    .replace(/^\s*;+\s*/, '')
-    .trim();
-  return cleaned.length > 0 ? cleaned : undefined;
 }
 
 /**
@@ -139,7 +117,6 @@ export async function sanitizeOfficeHtml(html: string): Promise<string> {
         attribs: { ...attribs, rel: 'noopener noreferrer', target: '_blank' },
       }),
     },
-    exclusiveFilter: () => false,
     /* sanitize-html runs `allowedAttributes` BEFORE per-attribute filtering, so
      * `style` only survives where we explicitly allow it (td/th/col/colgroup).
      * For those we still want to drop color declarations — defense against the
@@ -432,10 +409,6 @@ export async function csvToHtml(buffer: Buffer): Promise<string> {
    * formats; the default sheet name for CSV is `Sheet1` which we relabel
    * below for a friendlier tab. */
   const workbook = XLSX.read(text, { type: 'string', raw: true });
-  if (workbook.SheetNames.length > 0) {
-    const original = workbook.SheetNames[0];
-    workbook.Sheets[original]['!_lc_csv_label'] = 'CSV';
-  }
   const sheets = await renderWorkbookSheets(workbook, XLSX);
   // Single sheet for CSV — relabel to "CSV" for clarity, no tab strip emitted.
   const sanitized = await Promise.all(
@@ -460,27 +433,19 @@ interface PptxSlide {
  * counts real decompressed bytes mid-inflate so a falsified central-directory
  * `uncompressedSize` cannot bypass the cap. Returns slides in slide-number
  * order; ignores everything else in the archive.
+ *
+ * Uses `yauzl.fromBuffer` (no disk I/O) — the safety pre-flight in
+ * `assertSafeZipSize` already proved the buffer is well-formed enough
+ * to walk, and fromBuffer keeps the hot path memory-only.
  */
-async function extractPptxSlideXml(
-  buffer: Buffer,
-): Promise<Array<{ number: number; xml: string }>> {
-  const tempPath = path.join(os.tmpdir(), `pptx-${randomUUID()}`);
-  await fs.writeFile(tempPath, buffer);
-  try {
-    return await readSlidesFromZip(tempPath);
-  } finally {
-    fs.unlink(tempPath).catch(() => {});
-  }
-}
-
-function readSlidesFromZip(filePath: string): Promise<Array<{ number: number; xml: string }>> {
+function extractPptxSlideXml(buffer: Buffer): Promise<Array<{ number: number; xml: string }>> {
   return new Promise((resolve, reject) => {
-    yauzl.open(filePath, { lazyEntries: true }, (err, zipfile) => {
+    yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, zipfile) => {
       if (err) {
         return reject(err);
       }
       if (!zipfile) {
-        return reject(new Error('Failed to open PPTX file'));
+        return reject(new Error('Failed to open PPTX buffer'));
       }
 
       let settled = false;
@@ -490,7 +455,15 @@ function readSlidesFromZip(filePath: string): Promise<Array<{ number: number; xm
           return;
         }
         settled = true;
-        zipfile.close();
+        try {
+          zipfile.close();
+        } catch {
+          /* zipfile.close() is best-effort — yauzl will throw if a
+           * stream is mid-flight. We've already settled the outer
+           * promise, so swallow this so the original error (if any)
+           * isn't replaced by a close-time exception. Mirrors
+           * `assertSafeZipSize`'s defensive pattern in zipSafety.ts. */
+        }
         if (error) {
           reject(error);
         } else {

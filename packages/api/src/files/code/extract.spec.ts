@@ -322,7 +322,13 @@ describe('extractCodeArtifactText', () => {
       expect(parseDocumentCalls.length).toBe(0);
     });
 
-    it('truncates HTML output when it exceeds the cache cap', async () => {
+    it('substitutes a "preview too large" banner when HTML exceeds the cache cap', async () => {
+      /* Regression for review finding #2 on PR #12934. The earlier
+       * implementation byte-truncated the producer's HTML at the
+       * UTF-8 boundary, which would land mid-tag and ship malformed
+       * markup like `<table><tr><td>con\n…[truncated]` to the iframe.
+       * The new behavior swaps the entire payload for a small valid
+       * HTML banner — under the cap by construction. */
       const huge = 'X'.repeat(MAX_TEXT_CACHE_BYTES + 5_000);
       mockOfficeHtml.mockResolvedValueOnce(huge);
       const text = await extractCodeArtifactText(
@@ -332,8 +338,27 @@ describe('extractCodeArtifactText', () => {
         'document',
       );
       expect(text).not.toBeNull();
-      expect(text!.endsWith('…[truncated]')).toBe(true);
+      // Always under the cap.
       expect(Buffer.byteLength(text!, 'utf-8')).toBeLessThanOrEqual(MAX_TEXT_CACHE_BYTES);
+      // Valid HTML doc, not byte-truncated markup.
+      expect(text!).toMatch(/^<!DOCTYPE html>/);
+      expect(text!).toContain('</html>');
+      // No truncation marker (which would only appear on the legacy path).
+      expect(text!).not.toContain('…[truncated]');
+      // User-facing banner content.
+      expect(text!).toContain('Preview exceeds the size limit');
+    });
+
+    it('passes through HTML output unchanged when within the cache cap', async () => {
+      const small = '<!DOCTYPE html><html><body><p>hello</p></body></html>';
+      mockOfficeHtml.mockResolvedValueOnce(small);
+      const text = await extractCodeArtifactText(
+        Buffer.from('PK'),
+        'small.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'document',
+      );
+      expect(text).toBe(small);
     });
 
     it('falls back to parseDocument for pdf (HTML producer returns null for unsupported types)', async () => {

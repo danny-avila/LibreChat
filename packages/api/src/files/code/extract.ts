@@ -115,15 +115,36 @@ const extractDocument = async (
 };
 
 /**
+ * Minimal valid HTML document substituted when a producer's output
+ * exceeds `MAX_TEXT_CACHE_BYTES`. Byte-truncating the producer's HTML
+ * would land mid-tag (e.g. `<table><tr><td>con\n…[truncated]`) and the
+ * Sandpack iframe would render the malformed markup unpredictably —
+ * see review finding #2 on PR #12934. The banner stays under the cap by
+ * construction.
+ */
+const OVERSIZED_HTML_BANNER = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Preview</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#6b7280;padding:16px;font-size:14px;line-height:1.5}@media(prefers-color-scheme:dark){body{color:#9ca3af;background:#1a1a2e}}</style>
+</head><body>Preview exceeds the size limit. Download the file to view the full contents.</body></html>`;
+
+/**
  * Render an office-format buffer as a sanitized HTML preview document. Used
  * for docx, xlsx/xls/ods, csv, and pptx — produces interactive HTML the
  * frontend feeds into the Sandpack `static` template via `index.html`.
  *
- * Soft-fails: returns `null` if the file isn't an office type, rendering
- * timed out, or the parser threw. Caller can fall through to the existing
- * text-extraction path on null. This is intentional graceful degradation —
- * a malformed `.docx` whose HTML rendering fails should still get a plain-
- * text preview if `parseDocument` can salvage one.
+ * **HTML-or-null contract** (security-critical, do NOT relax). Returns
+ * `null` if the file isn't an office type, rendering timed out, or the
+ * parser threw. Callers MUST NOT fall back to plain-text extraction on
+ * null — the client routes office types into `index.html` and would
+ * inject any text-shaped fallback as executable HTML, creating an XSS
+ * vector. The pre-fix versions of this function permitted text fallback
+ * and that path was a real vulnerability; see Codex P1 review on
+ * PR #12934 (commit b06f08a) for the original bug and remediation.
+ *
+ * On oversized output (>`MAX_TEXT_CACHE_BYTES`), returns a small
+ * "preview too large" banner document instead of byte-truncating the
+ * producer's HTML — slicing mid-tag would ship malformed markup to the
+ * iframe.
  */
 const renderOfficeHtml = async (
   buffer: Buffer,
@@ -139,7 +160,10 @@ const renderOfficeHtml = async (
     if (html == null) {
       return null;
     }
-    return truncate(html);
+    if (Buffer.byteLength(html, 'utf-8') > MAX_TEXT_CACHE_BYTES) {
+      return OVERSIZED_HTML_BANNER;
+    }
+    return html;
   } catch (error) {
     logger.debug(
       `[renderOfficeHtml] Failed to render "${name}" (${mimeType}): ${(error as Error).message}`,

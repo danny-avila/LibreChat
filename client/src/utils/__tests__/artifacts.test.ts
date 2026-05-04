@@ -2,6 +2,7 @@ import {
   buildSandpackOptions,
   detectArtifactTypeFromFile,
   fileToArtifact,
+  isPreviewOnlyArtifact,
   languageForFilename,
   TOOL_ARTIFACT_TYPES,
 } from '../artifacts';
@@ -703,4 +704,34 @@ describe('fileToArtifact', () => {
     const artifact = fileToArtifact({ ...baseFile, file_id: undefined as unknown as string });
     expect(artifact!.id).toBe('tool-artifact-index.html');
   });
+});
+
+describe('isPreviewOnlyArtifact', () => {
+  /* The Artifacts panel hides the "code" tab and snaps `activeTab` to
+   * 'preview' when the current artifact is preview-only — i.e. the
+   * underlying file is binary and the generated HTML blob isn't a
+   * useful "code" view. Regression for review finding #6 on PR #12934.
+   * Without this test, removing a type from the predicate (or adding a
+   * non-office type) would silently leave users seeing the raw HTML
+   * blob in the code tab. */
+  it.each([
+    [TOOL_ARTIFACT_TYPES.DOCX, true],
+    [TOOL_ARTIFACT_TYPES.SPREADSHEET, true],
+    [TOOL_ARTIFACT_TYPES.PRESENTATION, true],
+    [TOOL_ARTIFACT_TYPES.HTML, false],
+    [TOOL_ARTIFACT_TYPES.REACT, false],
+    [TOOL_ARTIFACT_TYPES.MARKDOWN, false],
+    [TOOL_ARTIFACT_TYPES.MERMAID, false],
+    [TOOL_ARTIFACT_TYPES.CODE, false],
+    [TOOL_ARTIFACT_TYPES.PLAIN_TEXT, false],
+  ])('returns %s for type %s', (type, expected) => {
+    expect(isPreviewOnlyArtifact(type)).toBe(expected);
+  });
+
+  it.each([[null], [undefined], [''], ['application/pdf'], ['text/plain'], ['some/random-type']])(
+    'returns false for non-artifact type %s',
+    (type) => {
+      expect(isPreviewOnlyArtifact(type)).toBe(false);
+    },
+  );
 });
