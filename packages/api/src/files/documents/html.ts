@@ -1076,11 +1076,12 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
 /* Body fills the iframe viewport vertically and inherits the dark bg
  * so even when total slide content is shorter than the panel (e.g. a
  * single-slide deck) the artifact card has no visible "white below"
- * gap — DOCX flows naturally and never has this issue, but PPTX
- * slides are fixed-aspect and don't grow with the panel. */
+ * gap. We do NOT make body a flex container — pptx-preview's
+ * internal layout assumes block flow; turning body into a flex
+ * column made slide content render but stay invisible (manual e2e
+ * regression on PR #12934, "black screen for slides"). */
 html, body { min-height: 100vh; }
-body { display: flex; flex-direction: column; }
-#lc-render { padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 16px; flex: 1 0 auto; }
+#lc-render { padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 16px; }
 /* Each rendered slide is wrapped post-hoc by the bootstrap script in
  * an .lc-slide-wrap div with explicit width/height set inline. The
  * inner slide keeps its native pixel size and gets transformed via

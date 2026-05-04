@@ -499,6 +499,13 @@ describe('Office HTML producers', () => {
          * dark bg so a short deck (single slide) never reveals a
          * "white below" gap below the slides. */
         expect(html).toContain('min-height: 100vh');
+        /* Negative assertion: turning the body itself into a flex
+         * container caused pptx-preview's slides to render as black
+         * rectangles (manual e2e regression on PR #12934). The
+         * library's internal layout assumes block flow on its
+         * ancestor elements; the bg-fill effect must come from
+         * `min-height` alone, not from `body { display: flex }`. */
+        expect(html).not.toMatch(/body\s*\{[^}]*display:\s*flex/);
         /* Container is hidden during render and revealed by the
          * `finalize` step so the unscaled flash never reaches the
          * user. */
