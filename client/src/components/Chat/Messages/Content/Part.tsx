@@ -244,6 +244,7 @@ const Part = memo(function Part({
           isSubmitting={isSubmitting}
           attachments={attachments}
           auth={toolCall.auth}
+          validation={toolCall.validation}
           isLast={isLast}
         />
       );

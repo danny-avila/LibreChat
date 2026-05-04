@@ -367,6 +367,7 @@ export default function useStepHandler({
         args,
         type: ToolCallTypes.TOOL_CALL,
         auth: contentPart.tool_call.auth,
+        validation: contentPart.tool_call.validation,
         expires_at: contentPart.tool_call.expires_at,
       };
 
@@ -709,6 +710,11 @@ export default function useStepHandler({
 
             if (runStepDelta.delta.auth != null) {
               contentPart.tool_call.auth = runStepDelta.delta.auth;
+              contentPart.tool_call.expires_at = runStepDelta.delta.expires_at;
+            }
+
+            if (runStepDelta.delta.validation != null) {
+              contentPart.tool_call.validation = runStepDelta.delta.validation;
               contentPart.tool_call.expires_at = runStepDelta.delta.expires_at;
             }
 
