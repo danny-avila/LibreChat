@@ -300,27 +300,211 @@ const DOCX_EXTRA_CSS = `
 .lc-docx blockquote { border-left: 3px solid var(--border); color: var(--muted); margin: 0.8em 0; padding: 0.2em 0 0.2em 0.8em; }
 `.trim();
 
-/**
- * Convert a `.docx` buffer to a sandboxed HTML document. Uses mammoth's
- * default conversion (paragraph styles, runs, tables, hyperlinks, lists,
- * inline images as base64 `data:` URIs) augmented by `DOCX_STYLE_MAP`
- * for richer heading detection and `DOCX_EXTRA_CSS` for table-first-row
- * + section-heading heuristics that compensate for mammoth's habit of
- * stripping direct-formatted presentation.
+/* =============================================================================
+ * DOCX CDN renderer (high-fidelity path)
  *
- * Pre-flights the buffer through `assertSafeZipSize` so a zip-bomb DOCX
- * is rejected BEFORE it reaches mammoth — mammoth's internal extraction
- * has no decompressed-size cap and would happily inflate a sub-1MB
- * compressed bomb to 200+ MB of XML, blocking the event loop and
- * spiking RSS. See SEC review on PR #12934.
+ * Embeds the binary as base64 inside a self-contained HTML document and
+ * relies on `docx-preview` loaded from a pinned CDN URL with SRI
+ * integrity to render it inside the Sandpack iframe. The iframe is a
+ * real browser DOM — `docx-preview`'s "browser-first" design is a
+ * feature here, not a limitation: we get cell shading, run-level
+ * colors/fonts, headers/footers, columns, and inline images at no
+ * server-side parsing cost.
+ *
+ * Trade-offs vs the mammoth path:
+ *   + Far higher visual fidelity (4/5 vs 2/5).
+ *   + No server-side jsdom; no extra Node deps; iframe sandbox isolates
+ *     any parser bug from the API process.
+ *   − base64 inflates the binary by ~33%, so files above
+ *     `MAX_DOCX_CDN_BINARY_BYTES` fall back to the mammoth path so the
+ *     wrapped HTML doesn't blow the `MAX_TEXT_CACHE_BYTES` (512KB) cap
+ *     on `attachment.text`. Telemetry should track how often we hit the
+ *     fallback — if it's frequent, the next move is to lift the cap
+ *     for office types specifically rather than embed via signed URL.
+ *
+ * Library + version pinning (jsdelivr SRI hashes computed at the
+ * version listed; refresh by `openssl dgst -sha384 -binary FILE |
+ * openssl base64 -A` on the file at the URL):
+ *   docx-preview 0.3.7 — Apache-2.0, ~75KB UMD
+ *   jszip 3.10.1 — MIT, ~98KB (peer dep of docx-preview)
+ * Both are pinned to specific minor versions; SRI guarantees the byte
+ * content can't change underneath us even if the version were ever
+ * republished.
  */
-export async function wordDocToHtml(buffer: Buffer): Promise<string> {
-  await assertSafeZipSize(buffer, { name: 'docx' });
+const DOCX_PREVIEW_CDN = {
+  jszip: {
+    src: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
+    integrity: 'sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG',
+  },
+  docxPreview: {
+    src: 'https://cdn.jsdelivr.net/npm/docx-preview@0.3.7/dist/docx-preview.min.js',
+    integrity: 'sha384-Fw+ZM2MtvxCe867uRzZY5GtGP+gs0NLvrlJS768RZWuKhOHMN4Fln3i3gMt1NSyQ',
+  },
+} as const;
+
+/**
+ * Maximum DOCX binary size (in bytes) we'll embed via the CDN-rendered
+ * path. Empirical headroom: with ~33% base64 inflation and ~5KB of
+ * wrapper boilerplate, 350KB of binary fits well under the 512KB
+ * `MAX_TEXT_CACHE_BYTES` cap on `attachment.text` with margin to spare.
+ */
+const MAX_DOCX_CDN_BINARY_BYTES = 350 * 1024;
+
+/**
+ * Build the CDN-rendered HTML document for a DOCX. The base64 payload
+ * lives inside a `<script type="application/octet-stream;base64">`
+ * — this is HTML5-spec-compliant for "data block" scripts (browsers
+ * treat unrecognized script types as opaque text) and avoids any risk
+ * of HTML escaping a `</script>` substring inside the binary.
+ *
+ * The CSP locks the page down to the pinned CDN host: scripts only
+ * from jsdelivr (with SRI), no outbound `fetch`/`XHR`, no eval, images
+ * only `self`/`data:`/`blob:` (docx-preview uses `URL.createObjectURL`
+ * for inline images), styles inline (`docx-preview` injects per-doc
+ * styles into `<head>` at render time).
+ */
+function buildDocxCdnDocument(base64: string): string {
+  const csp = [
+    "default-src 'none'",
+    "script-src https://cdn.jsdelivr.net 'unsafe-inline'",
+    "style-src 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    'font-src data:',
+    "connect-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join('; ');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
+<title>Preview</title>
+<style>
+:root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1a1a2e; --fg: #e5e7eb; --muted: #9ca3af; } }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+#lc-render { padding: 16px; }
+#lc-fallback { padding: 24px; font-size: 14px; line-height: 1.5; color: var(--muted); text-align: center; }
+.lc-docx-loading { display: flex; align-items: center; justify-content: center; height: 60vh; color: var(--muted); font-size: 14px; }
+/* docx-preview emits its own per-document <style> tags inside #lc-render
+ * — leave them be. These rules just keep the host frame consistent with
+ * dark mode and bound the rendered document width. */
+#lc-render .docx-wrapper { background: transparent !important; }
+#lc-render .docx { max-width: 100%; }
+@media (prefers-color-scheme: dark) {
+  #lc-render .docx { color: var(--fg); }
+}
+</style>
+<script src="${DOCX_PREVIEW_CDN.jszip.src}" integrity="${DOCX_PREVIEW_CDN.jszip.integrity}" crossorigin="anonymous"></script>
+<script src="${DOCX_PREVIEW_CDN.docxPreview.src}" integrity="${DOCX_PREVIEW_CDN.docxPreview.integrity}" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="lc-render"><div class="lc-docx-loading">Loading preview…</div></div>
+<div id="lc-fallback" hidden>Preview unavailable. Please download the file to view it.</div>
+<script id="lc-doc-data" type="application/octet-stream;base64">${base64}</script>
+<script>
+(function () {
+  function showFallback(reason) {
+    var loading = document.querySelector('.lc-docx-loading');
+    if (loading) { loading.remove(); }
+    var fallback = document.getElementById('lc-fallback');
+    if (fallback) {
+      fallback.hidden = false;
+      if (reason) { fallback.title = String(reason).slice(0, 200); }
+    }
+  }
+  if (typeof docx === 'undefined' || typeof docx.renderAsync !== 'function') {
+    showFallback('renderer-not-loaded');
+    return;
+  }
+  try {
+    var b64 = document.getElementById('lc-doc-data').textContent.trim();
+    var bytes = Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
+    docx.renderAsync(bytes.buffer, document.getElementById('lc-render'), null, {
+      className: 'docx',
+      inWrapper: true,
+      ignoreWidth: false,
+      ignoreHeight: false,
+      ignoreFonts: false,
+      breakPages: true,
+      ignoreLastRenderedPageBreak: true,
+      experimental: false,
+      trimXmlDeclaration: true,
+      useBase64URL: false,
+      useMathMLPolyfill: false,
+      renderHeaders: true,
+      renderFooters: true,
+      renderFootnotes: true,
+      renderEndnotes: true,
+    }).then(function () {
+      var loading = document.querySelector('.lc-docx-loading');
+      if (loading) { loading.remove(); }
+    }).catch(function (err) {
+      showFallback(err && err.message);
+    });
+  } catch (err) {
+    showFallback(err && err.message);
+  }
+})();
+</script>
+</body>
+</html>`;
+}
+
+async function wordDocToHtmlViaCdn(buffer: Buffer): Promise<string> {
+  return buildDocxCdnDocument(buffer.toString('base64'));
+}
+
+async function wordDocToHtmlViaMammoth(buffer: Buffer): Promise<string> {
   const { convertToHtml } = await import('mammoth');
   const result = await convertToHtml({ buffer }, { styleMap: DOCX_STYLE_MAP });
   const sanitized = await sanitizeOfficeHtml(result.value);
   return wrapAsDocument(`<article class="lc-docx">${sanitized}</article>`, DOCX_EXTRA_CSS);
 }
+
+/**
+ * Convert a `.docx` buffer to a sandboxed HTML document. Two render
+ * paths, chosen by file size:
+ *
+ *   1. **CDN-rendered (default for files ≤ 350 KB binary)**: embeds the
+ *      binary as base64 and lets `docx-preview` render it inside the
+ *      Sandpack iframe. High visual fidelity — preserves cell shading,
+ *      run-level colors/fonts, headers/footers, columns, and images.
+ *   2. **Mammoth (fallback for larger files)**: server-side semantic
+ *      HTML conversion. Lower fidelity (flat paragraphs, no shading)
+ *      but produces compact output that fits the
+ *      `MAX_TEXT_CACHE_BYTES` (512 KB) cap on `attachment.text` even
+ *      for large documents.
+ *
+ * Both paths pre-flight through `assertSafeZipSize` so a zip-bomb DOCX
+ * is rejected before either renderer touches it — mammoth's internal
+ * extraction has no decompressed-size cap and would happily inflate a
+ * sub-1MB compressed bomb to 200+ MB of XML. See SEC review on PR
+ * #12934 for the original DoS finding.
+ */
+export async function wordDocToHtml(buffer: Buffer): Promise<string> {
+  await assertSafeZipSize(buffer, { name: 'docx' });
+  if (buffer.length <= MAX_DOCX_CDN_BINARY_BYTES) {
+    return wordDocToHtmlViaCdn(buffer);
+  }
+  return wordDocToHtmlViaMammoth(buffer);
+}
+
+/**
+ * Test-only re-exports. Each path has distinct visual-fidelity and
+ * size characteristics that warrant direct testing rather than
+ * round-tripping through the size-based dispatcher with synthetically
+ * padded fixtures. Not part of the public API — callers in production
+ * code should always go through `wordDocToHtml`.
+ */
+export const _internal = {
+  wordDocToHtmlViaCdn,
+  wordDocToHtmlViaMammoth,
+  MAX_DOCX_CDN_BINARY_BYTES,
+  DOCX_PREVIEW_CDN,
+};
 
 /* =============================================================================
  * XLSX / XLS / ODS → HTML (multi-sheet with pure-CSS tab strip)

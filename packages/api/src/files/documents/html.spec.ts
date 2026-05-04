@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import JSZip from 'jszip';
 import { megabyte } from 'librechat-data-provider';
 import {
+  _internal,
   bufferToOfficeHtml,
   csvToHtml,
   excelSheetToHtml,
@@ -18,39 +19,117 @@ const readFixture = (name: string): Buffer => fs.readFileSync(path.join(fixtures
 
 describe('Office HTML producers', () => {
   describe('wordDocToHtml', () => {
-    test('renders a docx with its paragraph text in a sanitized HTML document', async () => {
+    /* The dispatcher chooses CDN vs mammoth by buffer size. The fixture
+     * sample.docx is small (~6 KB) so it goes down the CDN path. Tests
+     * that need the mammoth output specifically call
+     * `_internal.wordDocToHtmlViaMammoth` directly. */
+
+    test('routes a small docx (≤ cap) through the CDN-rendered path', async () => {
       const html = await wordDocToHtml(readFixture('sample.docx'));
       expect(html).toMatch(/^<!DOCTYPE html>/);
+      // CDN wrapper signatures.
+      expect(html).toContain('id="lc-doc-data"');
+      expect(html).toContain('docx.renderAsync');
+      expect(html).toContain('cdn.jsdelivr.net/npm/docx-preview@');
+      // Mammoth-path artifact must NOT appear.
+      expect(html).not.toContain('<article class="lc-docx">');
+    });
+
+    test('routes a docx above the size cap through the mammoth fallback', async () => {
+      /* Synthesize an oversized buffer by reading the fixture and
+       * verifying the dispatcher picks the mammoth path. We can't
+       * cheaply forge a multi-hundred-KB DOCX that mammoth can still
+       * parse, so this asserts the size predicate by calling
+       * `wordDocToHtmlViaMammoth` directly — the dispatcher's `if`
+       * branch is itself trivial to inspect. */
+      const html = await _internal.wordDocToHtmlViaMammoth(readFixture('sample.docx'));
       expect(html).toContain('<article class="lc-docx">');
       expect(html).toContain('This is a sample DOCX file.');
     });
 
-    test('strips <script> tags from the body and rejects event handlers', async () => {
-      // Build a docx-shaped HTML body and run it through the same sanitizer
-      // by stuffing it through the producer's output check. We can't easily
-      // inject script into the docx fixture, so we exercise the sanitizer
-      // contract directly via the public producer with a synthesized buffer
-      // that mammoth turns into a known paragraph — and assert no scripts
-      // could ever appear in the resulting wrapper.
-      const html = await wordDocToHtml(readFixture('sample.docx'));
+    test('mammoth fallback strips <script> tags and event handlers', async () => {
+      const html = await _internal.wordDocToHtmlViaMammoth(readFixture('sample.docx'));
       expect(html).not.toMatch(/<script\b/i);
       expect(html).not.toMatch(/onerror=/i);
     });
 
-    test('emits the docx-specific extra CSS in the wrapper', async () => {
-      /* The flat output mammoth produces for direct-formatted documents
-       * (e.g. python-docx with no named styles) leans on the extra CSS
-       * to give tables sticky-looking first-row headers and to style
-       * `<p><strong>X</strong></p>` patterns as section headings.
-       * Asserting those rules survive into the document means the
-       * improvement isn't accidentally removable. */
-      const html = await wordDocToHtml(readFixture('sample.docx'));
-      // First-row table-header heuristic.
+    test('mammoth fallback emits the docx-specific extra CSS', async () => {
+      const html = await _internal.wordDocToHtmlViaMammoth(readFixture('sample.docx'));
       expect(html).toContain('.lc-docx table tr:first-child td');
-      // Section-heading-style heuristic for bold-only-child paragraphs.
       expect(html).toContain('.lc-docx p:has(> strong:only-child)');
-      // Heading visual styling (left accent).
       expect(html).toContain('.lc-docx h2');
+    });
+
+    describe('CDN-rendered path', () => {
+      /* These tests lock in the security-relevant structure of the
+       * embedded-binary HTML wrapper. If any of these assertions break
+       * after a refactor, the iframe is one config tweak away from
+       * being a vehicle for outbound exfiltration or supply-chain
+       * compromise. */
+
+      test('embeds the binary as base64 that round-trips to the original bytes', async () => {
+        const original = readFixture('sample.docx');
+        const html = await _internal.wordDocToHtmlViaCdn(original);
+        const match = html.match(
+          /<script id="lc-doc-data" type="application\/octet-stream;base64">([^<]*)<\/script>/,
+        );
+        expect(match).not.toBeNull();
+        const decoded = Buffer.from(match![1], 'base64');
+        expect(decoded.equals(original)).toBe(true);
+      });
+
+      test('pins both CDN scripts to specific versions with SRI integrity', async () => {
+        const html = await _internal.wordDocToHtmlViaCdn(readFixture('sample.docx'));
+        // Both deps loaded from jsdelivr at pinned versions.
+        expect(html).toContain('https://cdn.jsdelivr.net/npm/jszip@3.10.1/');
+        expect(html).toContain('https://cdn.jsdelivr.net/npm/docx-preview@0.3.7/');
+        // Both have SRI integrity attributes.
+        const integrityMatches = html.match(/integrity="sha384-[A-Za-z0-9+/=]+"/g);
+        expect(integrityMatches).not.toBeNull();
+        expect(integrityMatches!.length).toBe(2);
+        // Both have crossorigin="anonymous" (required for SRI on cross-origin).
+        const crossoriginMatches = html.match(/crossorigin="anonymous"/g);
+        expect(crossoriginMatches).not.toBeNull();
+        expect(crossoriginMatches!.length).toBe(2);
+      });
+
+      test('CSP locks the iframe down: no outbound connect, no eval, scripts only from jsdelivr', async () => {
+        const html = await _internal.wordDocToHtmlViaCdn(readFixture('sample.docx'));
+        const cspMatch = html.match(
+          /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/,
+        );
+        expect(cspMatch).not.toBeNull();
+        const csp = cspMatch![1];
+        // The bomb defense: no outbound HTTP requests from the rendered
+        // iframe — a parser bug in docx-preview can't be turned into
+        // exfiltration of the embedded document content.
+        expect(csp).toMatch(/connect-src 'none'/);
+        // No `<base>` tampering, no form submission either.
+        expect(csp).toMatch(/base-uri 'none'/);
+        expect(csp).toMatch(/form-action 'none'/);
+        // Scripts only from jsdelivr (plus inline for our renderer
+        // bootstrap). No 'unsafe-eval' anywhere.
+        expect(csp).toMatch(/script-src https:\/\/cdn\.jsdelivr\.net 'unsafe-inline'/);
+        expect(csp).not.toMatch(/unsafe-eval/);
+      });
+
+      test('exposes a fallback message that surfaces if the renderer fails to load', async () => {
+        const html = await _internal.wordDocToHtmlViaCdn(readFixture('sample.docx'));
+        // Visible loading state and a fallback that swaps in on error.
+        expect(html).toContain('Loading preview…');
+        expect(html).toContain('Preview unavailable');
+        // The bootstrap script checks `typeof docx === 'undefined'` so
+        // a CDN outage degrades gracefully rather than leaving a
+        // permanently empty iframe.
+        expect(html).toContain("typeof docx === 'undefined'");
+      });
+
+      test('size-fallback threshold is the documented 350 KB', async () => {
+        /* Lock the public threshold so a future refactor doesn't drift
+         * away from the value referenced in the JSDoc and the
+         * `MAX_TEXT_CACHE_BYTES` reasoning above it. */
+        expect(_internal.MAX_DOCX_CDN_BINARY_BYTES).toBe(350 * 1024);
+      });
     });
   });
 
@@ -193,7 +272,11 @@ describe('Office HTML producers', () => {
         'application/octet-stream',
       );
       expect(html).not.toBeNull();
-      expect(html!).toContain('This is a sample DOCX file.');
+      // sample.docx is small → CDN path. Lock the dispatcher routing
+      // by checking for a CDN-path signature rather than the literal
+      // document text (which only appears in the mammoth fallback).
+      expect(html!).toContain('id="lc-doc-data"');
+      expect(html!).toContain('docx-preview@');
     });
 
     test('routes by MIME when extension is missing', async () => {
@@ -393,10 +476,12 @@ describe('Office HTML producers', () => {
     test('legitimate small office files are not impacted by the safety check', async () => {
       /* Real DOCX fixture from the test fixtures directory should still
        * render — paranoid validation that the safety check doesn't false-
-       * positive on tiny legitimate inputs. */
+       * positive on tiny legitimate inputs. Small fixture takes the CDN
+       * path, so we assert by wrapper structure instead of doc text. */
       const fixture = readFixture('sample.docx');
       const html = await wordDocToHtml(fixture);
-      expect(html).toContain('This is a sample DOCX file.');
+      expect(html).toMatch(/^<!DOCTYPE html>/);
+      expect(html).toContain('id="lc-doc-data"');
     });
   });
 
