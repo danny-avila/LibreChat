@@ -420,6 +420,51 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
+/**
+ * Permission mode applied to a tool call. Mirrors `@librechat/agents`'s
+ * `ToolPolicyMode` 1:1.
+ *
+ * - `default`: ask the user about anything not explicitly allowed (default-on).
+ * - `dontAsk`: deny anything not explicitly allowed (headless / API-key flows).
+ * - `bypass`: auto-approve everything that isn't explicitly denied
+ *   (the user-facing "stop asking me" toggle).
+ *
+ * Subagents inherit the parent's mode; this is enforced by the SDK and not
+ * overridable per-subagent.
+ */
+export const toolApprovalModeSchema = z.enum(['default', 'dontAsk', 'bypass']);
+export type ToolApprovalMode = z.infer<typeof toolApprovalModeSchema>;
+
+/**
+ * Per-endpoint tool-approval policy.
+ *
+ * Shape mirrors `@librechat/agents`'s `ToolPolicyConfig` so the host can map it
+ * directly into `createToolPolicyHook(config)`. The SDK does the evaluation
+ * (`deny → bypass → allow → ask → dontAsk → fallthrough(ask)`); this config
+ * just describes the surface.
+ *
+ * Conventions:
+ * - All list entries are matched as globs (`*`). Use `mcp:server:*` to scope
+ *   a rule to every tool from a single MCP server.
+ * - `deny` always wins, including under `bypass`.
+ * - `enabled: false` is a LibreChat-only kill switch that disables the entire
+ *   HITL machinery for this endpoint (no checkpointer, no hooks, no prompts).
+ *   This is admin-level; users toggle prompting via `mode: 'bypass'` instead.
+ */
+export const toolApprovalPolicySchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    mode: toolApprovalModeSchema.optional(),
+    allow: z.array(z.string()).optional(),
+    deny: z.array(z.string()).optional(),
+    ask: z.array(z.string()).optional(),
+    /** Optional reason template surfaced in the prompt; `{tool}` is interpolated. */
+    reason: z.string().optional(),
+  })
+  .optional();
+
+export type TToolApprovalPolicy = z.infer<typeof toolApprovalPolicySchema>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -436,6 +481,8 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      /** Human-in-the-loop tool approval policy. Off by default. */
+      toolApproval: toolApprovalPolicySchema,
     }),
   )
   .default({

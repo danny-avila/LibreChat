@@ -1083,6 +1083,54 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Transition a job to `requires_action` and persist the pending review record.
+   *
+   * The job is NOT cleaned up: chunks, run steps, and user-active-set membership
+   * remain so the resume path can rebuild context. The Redis job-hash TTL is
+   * refreshed by the store to give the user the full TTL window to respond.
+   *
+   * @param streamId - The stream identifier
+   * @param pendingAction - The pending review record (tool approval, etc.)
+   */
+  async markRequiresAction(streamId: string, pendingAction: Agents.PendingAction): Promise<void> {
+    await this.jobStore.updateJob(streamId, {
+      status: 'requires_action',
+      pendingAction,
+    });
+    logger.debug(
+      `[GenerationJobManager] Job awaiting human review: ${streamId} action=${pendingAction.actionId}`,
+    );
+  }
+
+  /**
+   * Read the pending review record for a job.
+   *
+   * Returns null when the job doesn't exist, isn't in `requires_action`,
+   * or has no recorded pending action. Callers (status endpoint, approval routes)
+   * should treat null as "nothing to approve."
+   */
+  async getPendingAction(streamId: string): Promise<Agents.PendingAction | null> {
+    const jobData = await this.jobStore.getJob(streamId);
+    if (!jobData || jobData.status !== 'requires_action') {
+      return null;
+    }
+    return jobData.pendingAction ?? null;
+  }
+
+  /**
+   * Clear the pending review record and return the job to `running`.
+   * Called by the resume path after a user approval/rejection has been accepted
+   * and the run is about to be re-driven.
+   */
+  async clearPendingAction(streamId: string): Promise<void> {
+    await this.jobStore.updateJob(streamId, {
+      status: 'running',
+      pendingAction: undefined,
+    });
+    logger.debug(`[GenerationJobManager] Cleared pending action: ${streamId}`);
+  }
+
+  /**
    * Get resume state for reconnecting clients.
    */
   async getResumeState(streamId: string): Promise<t.ResumeState | null> {
@@ -1261,13 +1309,14 @@ class GenerationJobManagerClass {
    * Get job count by status.
    */
   async getJobCountByStatus(): Promise<Record<t.GenerationJobStatus, number>> {
-    const [running, complete, error, aborted] = await Promise.all([
+    const [running, complete, error, aborted, requires_action] = await Promise.all([
       this.jobStore.getJobCountByStatus('running'),
       this.jobStore.getJobCountByStatus('complete'),
       this.jobStore.getJobCountByStatus('error'),
       this.jobStore.getJobCountByStatus('aborted'),
+      this.jobStore.getJobCountByStatus('requires_action'),
     ]);
-    return { running, complete, error, aborted };
+    return { running, complete, error, aborted, requires_action };
   }
 
   /**

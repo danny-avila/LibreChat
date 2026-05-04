@@ -241,8 +241,9 @@ export class InMemoryJobStore implements IJobStore {
 
     for (const streamId of trackedIds) {
       const job = this.jobs.get(streamId);
-      // Only include if job exists AND is still running
-      if (job && job.status === 'running') {
+      // Include running jobs and jobs paused for human review (e.g. tool approval).
+      // A pending-approval job still occupies the user's conversation slot.
+      if (job && (job.status === 'running' || job.status === 'requires_action')) {
         activeIds.push(streamId);
       } else {
         // Self-healing: job completed/deleted but mapping wasn't cleaned - fix it now
