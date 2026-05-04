@@ -189,6 +189,26 @@ describe('Office HTML producers', () => {
           _internal.OFFICE_HTML_OUTPUT_CAP,
         );
       });
+
+      test('locks color-scheme to light so OS dark-mode does not fade body text', async () => {
+        /* docx-preview emits page-style rendering (white pages with
+         * the doc's native colors). When the iframe declares both
+         * light and dark color-schemes AND the OS is in dark mode,
+         * browsers inherit dark-mode colors for unset text properties
+         * — docx-preview's body text (no explicit color) inherited
+         * our `--fg: #e5e7eb` on the white page bg, rendering as
+         * barely-visible light grey. Manual e2e regression on PR
+         * #12934. The CDN doc must declare ONLY light scheme; the
+         * mammoth-only fallback (`wrapAsDocument`) is unaffected
+         * because it owns its own bg + text colors. */
+        const html = await _internal.wordDocToHtmlViaCdn(
+          readFixture('sample.docx'),
+          '<p>fallback</p>',
+        );
+        expect(html).toMatch(/color-scheme:\s*light\b/);
+        expect(html).not.toMatch(/color-scheme:\s*light\s+dark/);
+        expect(html).not.toMatch(/prefers-color-scheme:\s*dark/);
+      });
     });
 
     describe('OFFICE_PREVIEW_DISABLE_CDN escape hatch', () => {
@@ -477,34 +497,33 @@ describe('Office HTML producers', () => {
         const html = await _internal.pptxToHtmlViaCdn(pptx);
         /* The wrapper class used by the CSS rules. */
         expect(html).toContain('lc-slide-wrap');
-        /* The wrap function + the per-slide scale function. The scale
-         * uses each slide's actual rendered native width AND height
-         * so panels of any aspect fill correctly — no upscale cap
-         * means we never leave whitespace on either axis. */
+        /* The wrap function + the per-slide scale function. The
+         * scale uses each slide's actual rendered native width (not
+         * a constant) so panels wider than 960px still fill — no
+         * upscale cap means we never leave whitespace on the sides
+         * of the panel. */
         expect(html).toContain('wrapSlides');
         expect(html).toContain('scaleFor');
         expect(html).toContain('availableWidth');
-        expect(html).toContain('availableHeight');
-        /* The scale is `min(width-fit, height-fit)` so each slide is
-         * the largest it can be in the iframe viewport without
-         * overflowing either dimension — manual e2e feedback on
-         * PR #12934. */
-        expect(html).toContain('Math.min(sw, sh)');
-        /* Negative assertion: the previous version capped the scale
-         * at 1.0 with `Math.min(1, ...)`, which left whitespace on
-         * panels wider than 960px. The new code must not reintroduce
-         * that cap. */
+        /* The width-only scale formula. Negative assertion below
+         * forbids re-introducing the height-aware variant — that
+         * caused pptx-preview to render slides as solid-black
+         * rectangles (manual e2e regression on PR #12934). */
+        expect(html).toContain('availableWidth() / (nativeW || SLIDE_W)');
+        /* Negative assertions for two failed iterations:
+         *   - `Math.min(1, ...)` upscale cap left whitespace on
+         *     panels wider than 960px.
+         *   - `Math.min(sw, sh)` height-aware scale + viewport-
+         *     derived height calculations interacted with pptx-
+         *     preview's internal layout and produced black slides.
+         *   - `body { display: flex }` and `min-height: 100vh` on
+         *     html/body also broke pptx-preview's render path.
+         * Vertical empty space below short decks is acceptable; the
+         * iframe bg shows through and matches the panel theme. */
         expect(html).not.toMatch(/Math\.min\(\s*1\s*,/);
-        /* Body fills the iframe viewport vertically and inherits the
-         * dark bg so a short deck (single slide) never reveals a
-         * "white below" gap below the slides. */
-        expect(html).toContain('min-height: 100vh');
-        /* Negative assertion: turning the body itself into a flex
-         * container caused pptx-preview's slides to render as black
-         * rectangles (manual e2e regression on PR #12934). The
-         * library's internal layout assumes block flow on its
-         * ancestor elements; the bg-fill effect must come from
-         * `min-height` alone, not from `body { display: flex }`. */
+        expect(html).not.toContain('Math.min(sw, sh)');
+        expect(html).not.toContain('availableHeight');
+        expect(html).not.toContain('min-height: 100vh');
         expect(html).not.toMatch(/body\s*\{[^}]*display:\s*flex/);
         /* Container is hidden during render and revealed by the
          * `finalize` step so the unscaled flash never reaches the

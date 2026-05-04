@@ -405,8 +405,17 @@ function buildDocxCdnDocument(base64: string, mammothFallbackHtml: string): stri
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <title>Preview</title>
 <style>
-:root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; --link: #2563eb; --border: #e5e7eb; --header-bg: #f3f4f6; --row-alt: #f9fafb; }
-@media (prefers-color-scheme: dark) { :root { --bg: #1a1a2e; --fg: #e5e7eb; --muted: #9ca3af; --link: #93c5fd; --border: #2d3142; --header-bg: #232842; --row-alt: #1f2440; } }
+/* Lock the docx-preview iframe to LIGHT color-scheme. docx-preview
+ * is designed for page-style rendering (white pages with the docs
+ * native colors). When the OS is in dark mode and we declare
+ * color-scheme as both light and dark, browsers inherit dark-mode
+ * colors for inheritable text properties, which made docx-previews
+ * body text (no explicit color) inherit our light-grey --fg on the
+ * white page bg — barely-visible translucent rendering on PR #12934
+ * manual e2e. Hardcoding light keeps the page contrast right; the
+ * mammoth-only path (wrapAsDocument) still respects the users OS
+ * scheme since it owns its own bg + text colors. */
+:root { color-scheme: light; --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; --link: #2563eb; --border: #e5e7eb; --header-bg: #f3f4f6; --row-alt: #f9fafb; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 #lc-render { padding: 16px; }
 #lc-fallback { padding: 24px 24px 32px; font-size: 14px; line-height: 1.5; color: var(--fg); }
@@ -435,9 +444,10 @@ ${DOCX_EXTRA_CSS}
   box-shadow: none !important;
   margin: 0 0 1em 0 !important;
 }
-@media (prefers-color-scheme: dark) {
-  #lc-render .docx { color: var(--fg); }
-}
+/* Removed dark-mode override here — locking the CDN doc to
+ * color-scheme: light means --fg is always the light-mode dark-grey.
+ * Re-introducing a dark-mode media query would override docx-previews
+ * native text color and re-create the translucent rendering issue. */
 </style>
 <script src="${DOCX_PREVIEW_CDN.jszip.src}" integrity="${DOCX_PREVIEW_CDN.jszip.integrity}" crossorigin="anonymous"></script>
 <script src="${DOCX_PREVIEW_CDN.docxPreview.src}" integrity="${DOCX_PREVIEW_CDN.docxPreview.integrity}" crossorigin="anonymous"></script>
@@ -1073,14 +1083,6 @@ function buildPptxCdnDocument(base64: string): string {
 :root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; }
 @media (prefers-color-scheme: dark) { :root { --bg: #1a1a2e; --fg: #e5e7eb; --muted: #9ca3af; } }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-/* Body fills the iframe viewport vertically and inherits the dark bg
- * so even when total slide content is shorter than the panel (e.g. a
- * single-slide deck) the artifact card has no visible "white below"
- * gap. We do NOT make body a flex container — pptx-preview's
- * internal layout assumes block flow; turning body into a flex
- * column made slide content render but stay invisible (manual e2e
- * regression on PR #12934, "black screen for slides"). */
-html, body { min-height: 100vh; }
 #lc-render { padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 16px; }
 /* Each rendered slide is wrapped post-hoc by the bootstrap script in
  * an .lc-slide-wrap div with explicit width/height set inline. The
@@ -1176,30 +1178,25 @@ html, body { min-height: 100vh; }
       var w = (container.clientWidth || window.innerWidth) - 32;
       return w > 0 ? w : 600;
     }
-    function availableHeight() {
-      /* Viewport height inside the iframe minus the same 16px top+
-       * bottom padding so a single-slide deck can grow up to the full
-       * panel height without spilling. */
-      var h = (window.innerHeight || document.documentElement.clientHeight || 0) - 32;
-      return h > 0 ? h : 400;
-    }
 
-    /* Per-slide scale: the largest factor that lets the slide fit in
-     * the iframe viewport without overflowing either dimension. No
-     * upscale cap — pptx-preview rasterizes against the init canvas
-     * (960×540), text/charts are vector or canvas-rendered, so they
-     * stay legible when scaled up.
+    /* Width-only scale: each slide divides the panel width by its
+     * actual rendered native width, so we always fill the panel
+     * horizontally. No upscale cap — pptx-preview rasterizes against
+     * the init canvas (960×540), text/charts are vector or canvas-
+     * rendered, so they stay legible when scaled up.
      *
-     * Why the height-aware version (vs. width-only): a tall artifact
-     * panel with a short deck would otherwise leave the slide at
-     * panel_w × (panel_w·9/16) and waste the rest of the viewport
-     * vertically. Min-of-fits makes the slide grow until ONE
-     * dimension is the constraint, exactly the contain-fit pattern
-     * the rest of the iframe expects. */
-    function scaleFor(nativeW, nativeH) {
-      var sw = availableWidth() / (nativeW || SLIDE_W);
-      var sh = availableHeight() / (nativeH || SLIDE_H);
-      return Math.min(sw, sh);
+     * NOTE: a previous iteration tried min(width-fit, height-fit) to
+     * also fill the panel vertically. That broke pptx-previews
+     * rendering (slides came out as solid black rectangles). The
+     * librarys internal layout interacts unpredictably with min-height
+     * 100vh on the document root and viewport-derived height
+     * calculations during its CSS injection step. Sticking to
+     * width-only keeps rendering reliable; vertical empty space below
+     * a short deck shows the bodys bg color, which inherits from
+     * var(--bg) and matches the panel theme — manual e2e feedback on
+     * PR #12934. */
+    function scaleFor(nativeW) {
+      return availableWidth() / (nativeW || SLIDE_W);
     }
 
     /* Wrap each rendered slide and apply the scale. Called ONCE,
@@ -1223,7 +1220,7 @@ html, body { min-height: 100vh; }
           slide.dataset.lcNativeW = String(nativeW);
           slide.dataset.lcNativeH = String(nativeH);
         }
-        var scale = scaleFor(nativeW, nativeH);
+        var scale = scaleFor(nativeW);
         var wrap = document.createElement('div');
         wrap.className = 'lc-slide-wrap';
         wrap.style.width = (nativeW * scale) + 'px';
@@ -1246,7 +1243,7 @@ html, body { min-height: 100vh; }
         if (!inner || !inner.dataset) { continue; }
         var nativeW = parseFloat(inner.dataset.lcNativeW) || SLIDE_W;
         var nativeH = parseFloat(inner.dataset.lcNativeH) || SLIDE_H;
-        var scale = scaleFor(nativeW, nativeH);
+        var scale = scaleFor(nativeW);
         wrap.style.width = (nativeW * scale) + 'px';
         wrap.style.height = (nativeH * scale) + 'px';
         inner.style.transform = 'scale(' + scale + ')';
