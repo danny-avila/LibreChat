@@ -29,6 +29,35 @@ const hasOfficeHtmlPath = (name: string, mimeType: string): boolean =>
   officeHtmlBucket(name, mimeType) !== null;
 
 /**
+ * Classify the format of a string returned by `extractCodeArtifactText`
+ * so callers can persist it alongside the text and the client can gate
+ * "inject into iframe as HTML" on a trusted signal. Returns:
+ *   - `'html'` when the file went down the office-HTML producer path
+ *     (output is a complete sanitized HTML document)
+ *   - `'text'` for everything else (utf8 plain text, parseDocument
+ *     output for PDF/ODT, etc.)
+ *   - `null` when there's no text to format (caller should also skip
+ *     setting `textFormat` on the record)
+ *
+ * Inference is by extension/MIME via `officeHtmlBucket`, mirroring the
+ * dispatch logic inside `extractCodeArtifactText` exactly. Keeping the
+ * inference at the caller (rather than baking format into the
+ * extractor's return type) avoids breaking the existing function
+ * signature and its 30+ tests, while still giving downstream consumers
+ * a definitive trust signal.
+ */
+export function getExtractedTextFormat(
+  name: string,
+  mimeType: string,
+  text: string | null,
+): 'html' | 'text' | null {
+  if (text == null) {
+    return null;
+  }
+  return hasOfficeHtmlPath(name, mimeType) ? 'html' : 'text';
+}
+
+/**
  * Truncate UTF-8 content to fit within MAX_TEXT_CACHE_BYTES. Walks back to a
  * code-point boundary so the cut never lands inside a multi-byte sequence
  * (which would emit a U+FFFD replacement character — a real concern for CJK

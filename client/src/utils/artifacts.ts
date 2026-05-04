@@ -662,8 +662,21 @@ const MIME_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
  * and Mermaid buckets still require real content because their viewers
  * (sandpack / mermaid.js) error on empty input.
  */
+/**
+ * Office preview buckets the backend MUST mark as `textFormat: 'html'`
+ * before the client will inject `attachment.text` as `index.html`.
+ * Routing to these buckets without the trust flag would let plain
+ * text from RAG-uploaded `.docx` etc. (mammoth.extractRawText output)
+ * be rendered as HTML — Codex P1 review on PR #12934.
+ */
+const OFFICE_HTML_BUCKETS: ReadonlySet<ToolArtifactType> = new Set([
+  TOOL_ARTIFACT_TYPES.DOCX,
+  TOOL_ARTIFACT_TYPES.SPREADSHEET,
+  TOOL_ARTIFACT_TYPES.PRESENTATION,
+]);
+
 export function detectArtifactTypeFromFile(
-  attachment: Partial<Pick<TFile, 'filename' | 'type' | 'text'>>,
+  attachment: Partial<Pick<TFile, 'filename' | 'type' | 'text' | 'textFormat'>>,
 ): ToolArtifactType | null {
   /* Compute the basename once and reuse it across the extension AND
    * bare-name lookups. Both `extensionOf(filename)` and
@@ -693,6 +706,22 @@ export function detectArtifactTypeFromFile(
   const type = byExtension ?? byBareName ?? byMime ?? null;
   if (type == null) {
     return null;
+  }
+  /* SECURITY GATE: office HTML buckets inject `attachment.text` into
+   * the iframe via `index.html`. Plain text from a RAG-extracted
+   * .docx (mammoth output) would become executable markup here.
+   * Require the backend's explicit `textFormat: 'html'` trust signal
+   * before allowing this routing — fall back to PLAIN_TEXT (markdown
+   * viewer, escapes content) for everything else.
+   *
+   * Legacy attachments stored before this field existed have
+   * `textFormat === undefined`; they may have HTML in `text` from the
+   * pre-flag period and the safe default ('text' bucket) is OK for
+   * those — they were rendering correctly before this flag, and the
+   * markdown viewer escaping HTML is a safety upgrade, not a
+   * regression. Codex P1 review on PR #12934. */
+  if (OFFICE_HTML_BUCKETS.has(type) && attachment.textFormat !== 'html') {
+    return TOOL_ARTIFACT_TYPES.PLAIN_TEXT;
   }
   if (
     !attachment.text &&

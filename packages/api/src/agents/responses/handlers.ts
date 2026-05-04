@@ -832,6 +832,16 @@ export interface AttachmentData {
    * (binary, oversized, or unsupported).
    */
   text?: string | null;
+  /**
+   * Format of the `text` field — `'html'` if `text` is a complete
+   * sanitized HTML document the client is permitted to inject into the
+   * iframe via `index.html`, `'text'` if it's plain text. Clients MUST
+   * gate office-bucket routing on `textFormat === 'html'`; legacy
+   * attachments and RAG-extracted plain text don't have this set and
+   * must default to safe (markdown-escaped) rendering. Codex P1 review
+   * on PR #12934.
+   */
+  textFormat?: 'html' | 'text' | null;
   /** Additional metadata */
   [key: string]: unknown;
 }

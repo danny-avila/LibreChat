@@ -6,6 +6,7 @@ import {
   languageForFilename,
   TOOL_ARTIFACT_TYPES,
 } from '../artifacts';
+import type { ToolArtifactType } from '../artifacts';
 
 const TAILWIND_CDN = 'https://cdn.tailwindcss.com/3.4.17#tailwind.js';
 
@@ -64,24 +65,46 @@ describe('detectArtifactTypeFromFile', () => {
     ['sheet.ods', TOOL_ARTIFACT_TYPES.SPREADSHEET],
     ['slides.pptx', TOOL_ARTIFACT_TYPES.PRESENTATION],
   ])('classifies %s by extension', (filename, expected) => {
-    expect(detectArtifactTypeFromFile({ filename, type: '', text: 'content' })).toBe(expected);
+    /* Office types require `textFormat: 'html'` to route to their HTML
+     * preview buckets — the security gate added for Codex P1 review on
+     * PR #12934. Plain-text/markdown/code/etc. don't take that path so
+     * they pass through unchanged. */
+    const isOfficeBucket = (
+      [
+        TOOL_ARTIFACT_TYPES.DOCX,
+        TOOL_ARTIFACT_TYPES.SPREADSHEET,
+        TOOL_ARTIFACT_TYPES.PRESENTATION,
+      ] as ToolArtifactType[]
+    ).includes(expected);
+    const textFormat = isOfficeBucket ? ('html' as const) : undefined;
+    expect(detectArtifactTypeFromFile({ filename, type: '', text: 'content', textFormat })).toBe(
+      expected,
+    );
   });
 
   it.each([
-    ['index.html', TOOL_ARTIFACT_TYPES.HTML],
-    ['App.tsx', TOOL_ARTIFACT_TYPES.REACT],
-    ['flow.mmd', TOOL_ARTIFACT_TYPES.MERMAID],
+    ['index.html', TOOL_ARTIFACT_TYPES.HTML, undefined],
+    ['App.tsx', TOOL_ARTIFACT_TYPES.REACT, undefined],
+    ['flow.mmd', TOOL_ARTIFACT_TYPES.MERMAID, undefined],
     /* Office preview buckets need server-rendered HTML in `text` to render
      * — the empty-text gate keeps the artifact off the panel until the
-     * backend's `bufferToOfficeHtml` finishes. */
-    ['report.docx', TOOL_ARTIFACT_TYPES.DOCX],
-    ['data.csv', TOOL_ARTIFACT_TYPES.SPREADSHEET],
-    ['workbook.xlsx', TOOL_ARTIFACT_TYPES.SPREADSHEET],
-    ['slides.pptx', TOOL_ARTIFACT_TYPES.PRESENTATION],
-  ])('returns null when %s has no text (renderer needs real content)', (filename, _expected) => {
-    expect(detectArtifactTypeFromFile({ filename, type: '', text: '' })).toBeNull();
-    expect(detectArtifactTypeFromFile({ filename, type: '', text: undefined })).toBeNull();
-  });
+     * backend's `bufferToOfficeHtml` finishes. The `textFormat: 'html'`
+     * trust flag is required for the routing to even land on the office
+     * bucket; without it, the security gate downgrades to PLAIN_TEXT
+     * (Codex P1 review). The strict empty-text gate then returns null. */
+    ['report.docx', TOOL_ARTIFACT_TYPES.DOCX, 'html' as const],
+    ['data.csv', TOOL_ARTIFACT_TYPES.SPREADSHEET, 'html' as const],
+    ['workbook.xlsx', TOOL_ARTIFACT_TYPES.SPREADSHEET, 'html' as const],
+    ['slides.pptx', TOOL_ARTIFACT_TYPES.PRESENTATION, 'html' as const],
+  ])(
+    'returns null when %s has no text (renderer needs real content)',
+    (filename, _expected, textFormat) => {
+      expect(detectArtifactTypeFromFile({ filename, type: '', text: '', textFormat })).toBeNull();
+      expect(
+        detectArtifactTypeFromFile({ filename, type: '', text: undefined, textFormat }),
+      ).toBeNull();
+    },
+  );
 
   it.each([
     ['readme.txt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
@@ -131,9 +154,75 @@ describe('detectArtifactTypeFromFile', () => {
       TOOL_ARTIFACT_TYPES.PRESENTATION,
     ],
   ])('routes office MIME %s to its preview bucket when extension is missing', (mime, expected) => {
+    /* `textFormat: 'html'` is required so the security gate (Codex P1 on
+     * PR #12934) lets routing proceed to the office HTML bucket — without
+     * it, the gate would downgrade to PLAIN_TEXT to keep RAG-extracted
+     * plain-text from being injected as HTML. */
     expect(
-      detectArtifactTypeFromFile({ filename: 'noext', type: mime, text: '<html>x</html>' }),
+      detectArtifactTypeFromFile({
+        filename: 'noext',
+        type: mime,
+        text: '<html>x</html>',
+        textFormat: 'html',
+      }),
     ).toBe(expected);
+  });
+
+  /* Codex P1 SECURITY: office HTML routing requires the backend's explicit
+   * `textFormat: 'html'` trust flag. Without it (e.g. RAG-uploaded `.docx`
+   * with mammoth.extractRawText plain text in `attachment.text`, or any
+   * legacy attachment from before this flag existed), routing falls back
+   * to PLAIN_TEXT so the markdown viewer escapes content rather than
+   * letting useArtifactProps inject the text as `index.html`. */
+  it('downgrades office types to PLAIN_TEXT when textFormat is missing (legacy attachments)', () => {
+    expect(
+      detectArtifactTypeFromFile({
+        filename: 'report.docx',
+        type: '',
+        text: 'Plain text mammoth extracted from a docx — must NOT render as HTML.',
+      }),
+    ).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+    expect(
+      detectArtifactTypeFromFile({
+        filename: 'data.csv',
+        type: 'text/csv',
+        text: 'col1,col2\n1,2',
+      }),
+    ).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+    expect(
+      detectArtifactTypeFromFile({
+        filename: 'slides.pptx',
+        type: '',
+        text: 'Slide 1: Intro\nSlide 2: Outro',
+      }),
+    ).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+  });
+
+  it('downgrades office types to PLAIN_TEXT when textFormat is "text" (explicit non-HTML)', () => {
+    /* The backend marks RAG/text-extraction output as `textFormat: 'text'`
+     * to make the trust contract explicit. Either no flag or 'text' both
+     * route to PLAIN_TEXT — only 'html' unlocks the office HTML bucket. */
+    expect(
+      detectArtifactTypeFromFile({
+        filename: 'report.docx',
+        type: '',
+        text: '<script>alert(1)</script>',
+        textFormat: 'text',
+      }),
+    ).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+  });
+
+  it('downgrades office types to PLAIN_TEXT when textFormat is null (DB legacy)', () => {
+    /* Mongoose returns `null` for fields the document was saved without
+     * — covers attachments persisted before the textFormat field existed. */
+    expect(
+      detectArtifactTypeFromFile({
+        filename: 'workbook.xlsx',
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        text: '<table><tr><td>1</td></tr></table>',
+        textFormat: null,
+      }),
+    ).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
   });
 
   it('falls back to MIME when the extension is unknown', () => {
@@ -591,12 +680,17 @@ describe('fileToArtifact', () => {
   });
 
   it('returns null for office preview buckets without text (strict gate)', () => {
+    /* `textFormat: 'html'` is required for routing to land on the office
+     * bucket in the first place; without it the security gate downgrades
+     * to PLAIN_TEXT (which has the lenient empty-text gate). The strict
+     * empty-text gate then fires and the artifact stays unregistered. */
     expect(
       fileToArtifact({
         ...baseFile,
         filename: 'slides.pptx',
         type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
         text: undefined,
+        textFormat: 'html',
       }),
     ).toBeNull();
     expect(
@@ -605,6 +699,7 @@ describe('fileToArtifact', () => {
         filename: 'report.docx',
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         text: '',
+        textFormat: 'html',
       }),
     ).toBeNull();
     expect(
@@ -613,6 +708,7 @@ describe('fileToArtifact', () => {
         filename: 'data.csv',
         type: 'text/csv',
         text: undefined,
+        textFormat: 'html',
       }),
     ).toBeNull();
   });
@@ -623,6 +719,7 @@ describe('fileToArtifact', () => {
       filename: 'data.csv',
       type: 'text/csv',
       text: '<!DOCTYPE html><table><tr><td>1</td></tr></table>',
+      textFormat: 'html',
     });
     expect(csv).not.toBeNull();
     expect(csv!.type).toBe(TOOL_ARTIFACT_TYPES.SPREADSHEET);
@@ -634,6 +731,7 @@ describe('fileToArtifact', () => {
       filename: 'workbook.xlsx',
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       text: '<!DOCTYPE html><body>sheet</body>',
+      textFormat: 'html',
     });
     expect(xlsx).not.toBeNull();
     expect(xlsx!.type).toBe(TOOL_ARTIFACT_TYPES.SPREADSHEET);
@@ -645,6 +743,7 @@ describe('fileToArtifact', () => {
       filename: 'report.docx',
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       text: '<!DOCTYPE html><body><p>hello</p></body>',
+      textFormat: 'html',
     });
     expect(artifact).not.toBeNull();
     expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.DOCX);
@@ -656,9 +755,29 @@ describe('fileToArtifact', () => {
       filename: 'deck.pptx',
       type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       text: '<!DOCTYPE html><body><ol><li>Slide 1</li></ol></body>',
+      textFormat: 'html',
     });
     expect(artifact).not.toBeNull();
     expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PRESENTATION);
+  });
+
+  /* Codex P1 SECURITY companion: legacy/RAG path where `textFormat` is
+   * missing — the security gate downgrades to PLAIN_TEXT, which has the
+   * lenient empty-text gate. The text round-trips into the markdown
+   * viewer as escaped content rather than being injected as HTML. */
+  it('downgrades to a PLAIN_TEXT artifact when an office file has text but no textFormat flag', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'report.docx',
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      /* This is what mammoth.extractRawText returns for a RAG upload —
+       * not sanitized HTML, just the document's flowed text. The
+       * security gate ensures it's never injected as HTML. */
+      text: 'Document body text from extractRawText. <script>alert(1)</script>',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+    expect(artifact!.content).toContain('<script>');
   });
 
   it('preserves an empty string as legitimate content (does not fall through to placeholder)', () => {

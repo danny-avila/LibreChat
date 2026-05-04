@@ -1,6 +1,11 @@
 import * as os from 'os';
 import * as path from 'path';
-import { extractCodeArtifactText, MAX_TEXT_CACHE_BYTES, MAX_TEXT_EXTRACT_BYTES } from './extract';
+import {
+  extractCodeArtifactText,
+  getExtractedTextFormat,
+  MAX_TEXT_CACHE_BYTES,
+  MAX_TEXT_EXTRACT_BYTES,
+} from './extract';
 
 const docxText = '__DOCX_PARSED__';
 /* parseDocument throws on any originalname containing this token, so
@@ -494,5 +499,101 @@ describe('extractCodeArtifactText', () => {
       expect(mockOfficeHtml).not.toHaveBeenCalled();
       expect(text).toBeNull();
     });
+  });
+});
+
+/* `getExtractedTextFormat` is the trust-flag classifier consumed by
+ * `processCodeOutput` (api/server/services/Files/Code/process.js) to
+ * persist `textFormat` on the file record. The client's security gate
+ * in `detectArtifactTypeFromFile` reads that flag to decide whether
+ * routing an office attachment to the HTML preview bucket is safe.
+ * These tests pin the contract: HTML for office paths, 'text' for
+ * everything else, null for missing input. Codex P1 review on PR #12934. */
+describe('getExtractedTextFormat', () => {
+  it.each([
+    ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['data.csv', 'text/csv'],
+    ['workbook.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['legacy.xls', 'application/vnd.ms-excel'],
+    ['sheet.ods', 'application/vnd.oasis.opendocument.spreadsheet'],
+    ['slides.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ])('returns "html" for office path %s (%s)', (name, mime) => {
+    expect(getExtractedTextFormat(name, mime, '<table>...</table>')).toBe('html');
+  });
+
+  it.each([
+    ['noext', 'application/x-ms-excel', '<table></table>'],
+    ['noext', 'application/x-msexcel', '<table></table>'],
+    ['noext', 'application/msexcel', '<table></table>'],
+    ['noext', 'application/x-excel', '<table></table>'],
+    ['noext', 'application/x-dos_ms_excel', '<table></table>'],
+    ['noext', 'application/xls', '<table></table>'],
+    ['noext', 'application/x-xls', '<table></table>'],
+  ])('returns "html" for legacy XLS MIME alias %s (%s)', (name, mime, text) => {
+    /* Mirrors the client's `excelMimeTypes` regex acceptance — keeping
+     * the trust flag aligned across boundaries means no extensionless
+     * XLS upload with a legacy MIME ever lands on the HTML bucket
+     * without `textFormat: 'html'`. */
+    expect(getExtractedTextFormat(name, mime, text)).toBe('html');
+  });
+
+  it('returns "text" for plain UTF-8 outputs (notes, source code, JSON)', () => {
+    expect(getExtractedTextFormat('note.txt', 'text/plain', 'hello world')).toBe('text');
+    expect(getExtractedTextFormat('script.py', 'text/x-python', 'print(1)')).toBe('text');
+    expect(getExtractedTextFormat('data.json', 'application/json', '{"a":1}')).toBe('text');
+  });
+
+  it('returns "text" for parseDocument paths that are NOT office HTML buckets', () => {
+    /* PDF/ODT/HTML go through `parseDocument` and produce plain text;
+     * mark them as such so the client never injects them as HTML. */
+    expect(getExtractedTextFormat('doc.pdf', 'application/pdf', 'extracted text')).toBe('text');
+    expect(
+      getExtractedTextFormat('notes.odt', 'application/vnd.oasis.opendocument.text', 'odt text'),
+    ).toBe('text');
+    expect(getExtractedTextFormat('page.html', 'text/html', '<p>raw</p>')).toBe('text');
+  });
+
+  it('returns null when the extractor produced nothing', () => {
+    /* `text == null` (extraction skipped, parser failed, binary unsupported)
+     * → no `textFormat` to persist. The downstream caller short-circuits
+     * the field so the DB doesn't carry a half-truth. */
+    expect(
+      getExtractedTextFormat(
+        'report.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        null,
+      ),
+    ).toBeNull();
+    expect(getExtractedTextFormat('photo.jpg', 'image/jpeg', null)).toBeNull();
+  });
+
+  it('returns "html" even when text is empty (the path is what counts, not content length)', () => {
+    /* An office producer that returns "" is still an office path — the
+     * trust flag follows the dispatch decision, not the byte count. The
+     * client's empty-text gate keeps the artifact off the panel anyway. */
+    expect(
+      getExtractedTextFormat(
+        'report.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '',
+      ),
+    ).toBe('html');
+  });
+
+  it('classifies by MIME alone when the filename has no recognized extension', () => {
+    /* extensionless office files (e.g. tool-emitted blobs with a generic
+     * name) still get the right trust flag if the MIME is canonical. */
+    expect(
+      getExtractedTextFormat(
+        'noext',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '<table></table>',
+      ),
+    ).toBe('html');
+  });
+
+  it('returns "text" when neither extension nor MIME marks the file as office', () => {
+    expect(getExtractedTextFormat('noext', 'application/octet-stream', 'whatever')).toBe('text');
+    expect(getExtractedTextFormat('', '', 'whatever')).toBe('text');
   });
 });
