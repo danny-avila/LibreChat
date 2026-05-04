@@ -253,6 +253,118 @@ describe('web.ts', () => {
       expect(result.authResult.firecrawlApiUrl).toBeUndefined();
     });
 
+    it('should ignore user-provided Tavily custom URLs unless explicitly enabled', async () => {
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          TAVILY_API_KEY: 'system-tavily-api-key',
+          TAVILY_SEARCH_URL: 'https://api.tavily.com/search',
+          TAVILY_EXTRACT_URL: 'https://api.tavily.com/extract',
+        };
+
+        const tavilyConfig = {
+          tavilyApiKey: '${TAVILY_API_KEY}',
+          tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+          tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
+          searchProvider: 'tavily' as SearchProviders,
+          scraperProvider: 'tavily' as ScraperProviders,
+          rerankerType: 'none' as RerankerTypes,
+        } as TWebSearchConfig;
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'TAVILY_API_KEY') {
+              result[field] = 'system-tavily-api-key';
+            } else if (field === 'TAVILY_SEARCH_URL') {
+              result[field] = 'https://attacker.example/search';
+            } else if (field === 'TAVILY_EXTRACT_URL') {
+              result[field] = 'https://attacker.example/extract';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: tavilyConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authenticated).toBe(true);
+        expect(result.authResult.searchProvider).toBe('tavily');
+        expect(result.authResult.scraperProvider).toBe('tavily');
+        expect(result.authResult.tavilyApiKey).toBe('system-tavily-api-key');
+        expect(result.authResult.tavilySearchUrl).toBeUndefined();
+        expect(result.authResult.tavilyExtractUrl).toBeUndefined();
+        expect(result.authTypes).toEqual([
+          ['providers', AuthType.SYSTEM_DEFINED],
+          ['scrapers', AuthType.SYSTEM_DEFINED],
+          ['rerankers', AuthType.SYSTEM_DEFINED],
+        ]);
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
+    it('should allow user-provided Tavily custom URLs when explicitly enabled', async () => {
+      mockIsSSRFTarget.mockReturnValue(false);
+      mockResolveHostnameSSRF.mockResolvedValue(false);
+
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          TAVILY_API_KEY: 'system-tavily-api-key',
+          TAVILY_SEARCH_URL: AuthType.USER_PROVIDED,
+          TAVILY_EXTRACT_URL: AuthType.USER_PROVIDED,
+        };
+
+        const tavilyConfig = {
+          tavilyApiKey: '${TAVILY_API_KEY}',
+          tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+          tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
+          searchProvider: 'tavily' as SearchProviders,
+          scraperProvider: 'tavily' as ScraperProviders,
+          rerankerType: 'none' as RerankerTypes,
+        } as TWebSearchConfig;
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'TAVILY_API_KEY') {
+              result[field] = 'system-tavily-api-key';
+            } else if (field === 'TAVILY_SEARCH_URL') {
+              result[field] = 'https://tenant-search.example/search';
+            } else if (field === 'TAVILY_EXTRACT_URL') {
+              result[field] = 'https://tenant-extract.example/extract';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: tavilyConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authenticated).toBe(true);
+        expect(result.authResult.tavilySearchUrl).toBe('https://tenant-search.example/search');
+        expect(result.authResult.tavilyExtractUrl).toBe('https://tenant-extract.example/extract');
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('tenant-search.example');
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('tenant-extract.example');
+        expect(result.authTypes).toEqual([
+          ['providers', AuthType.USER_PROVIDED],
+          ['scrapers', AuthType.USER_PROVIDED],
+          ['rerankers', AuthType.SYSTEM_DEFINED],
+        ]);
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
     it('should preserve safeSearch setting from webSearchConfig', async () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
@@ -732,50 +844,60 @@ describe('web.ts', () => {
     });
 
     it('should authenticate Tavily as a search provider and pass options through', async () => {
-      const webSearchConfig: TCustomConfig['webSearch'] = {
-        tavilyApiKey: '${TAVILY_API_KEY}',
-        tavilySearchUrl: '${TAVILY_SEARCH_URL}',
-        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
-        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
-        safeSearch: SafeSearchTypes.MODERATE,
-        searchProvider: 'tavily' as SearchProviders,
-        scraperProvider: 'firecrawl' as ScraperProviders,
-        rerankerType: 'none' as RerankerTypes,
-        tavilySearchOptions: {
-          searchDepth: 'advanced',
-          maxResults: 5,
-          includeRawContent: 'markdown',
-        },
-      };
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          TAVILY_SEARCH_URL: 'https://api.tavily.com/search',
+        };
 
-      mockLoadAuthValues.mockImplementation(({ authFields }) => {
-        const result: Record<string, string> = {};
-        authFields.forEach((field: string) => {
-          if (field === 'TAVILY_API_KEY') {
-            result[field] = 'tavily-api-key';
-          } else if (field === 'TAVILY_SEARCH_URL') {
-            result[field] = 'https://api.tavily.com/search';
-          } else if (field === 'FIRECRAWL_API_URL') {
-            result[field] = 'https://api.firecrawl.dev';
-          } else {
-            result[field] = 'test-api-key';
-          }
+        const webSearchConfig: TCustomConfig['webSearch'] = {
+          tavilyApiKey: '${TAVILY_API_KEY}',
+          tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+          safeSearch: SafeSearchTypes.MODERATE,
+          searchProvider: 'tavily' as SearchProviders,
+          scraperProvider: 'firecrawl' as ScraperProviders,
+          rerankerType: 'none' as RerankerTypes,
+          tavilySearchOptions: {
+            searchDepth: 'advanced',
+            maxResults: 5,
+            includeRawContent: 'markdown',
+          },
+        };
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'TAVILY_API_KEY') {
+              result[field] = 'tavily-api-key';
+            } else if (field === 'TAVILY_SEARCH_URL') {
+              result[field] = 'https://api.tavily.com/search';
+            } else if (field === 'FIRECRAWL_API_URL') {
+              result[field] = 'https://api.firecrawl.dev';
+            } else {
+              result[field] = 'test-api-key';
+            }
+          });
+          return Promise.resolve(result);
         });
-        return Promise.resolve(result);
-      });
 
-      const result = await loadWebSearchAuth({
-        userId,
-        webSearchConfig,
-        loadAuthValues: mockLoadAuthValues,
-      });
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
 
-      expect(result.authenticated).toBe(true);
-      expect(result.authResult.searchProvider).toBe('tavily');
-      expect(result.authResult.tavilyApiKey).toBe('tavily-api-key');
-      expect(result.authResult.tavilySearchUrl).toBe('https://api.tavily.com/search');
-      expect(result.authResult.tavilySearchOptions).toEqual(webSearchConfig.tavilySearchOptions);
-      expect(result.authResult.safeSearch).toBeUndefined();
+        expect(result.authenticated).toBe(true);
+        expect(result.authResult.searchProvider).toBe('tavily');
+        expect(result.authResult.tavilyApiKey).toBe('tavily-api-key');
+        expect(result.authResult.tavilySearchUrl).toBe('https://api.tavily.com/search');
+        expect(result.authResult.tavilySearchOptions).toEqual(webSearchConfig.tavilySearchOptions);
+        expect(result.authResult.safeSearch).toBeUndefined();
+      } finally {
+        process.env = originalEnv;
+      }
     });
 
     it('should fail authentication when Tavily search API key is missing', async () => {
@@ -1555,7 +1677,7 @@ describe('web.ts', () => {
       expect(scrapersAuth).toBe(AuthType.USER_PROVIDED);
     });
 
-    it('should block user-provided tavilySearchUrl targeting localhost', async () => {
+    it('should ignore user-provided tavilySearchUrl without admin opt-in', async () => {
       mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === 'localhost');
 
       const webSearchConfig: TCustomConfig['webSearch'] = {
@@ -1588,10 +1710,10 @@ describe('web.ts', () => {
       expect(result.authResult.tavilySearchUrl).toBeUndefined();
       expect(result.authResult.searchProvider).toBe('tavily');
       expect(result.authenticated).toBe(true);
-      expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost');
+      expect(mockIsSSRFTarget).not.toHaveBeenCalled();
     });
 
-    it('should block user-provided tavilyExtractUrl resolving to private IP', async () => {
+    it('should ignore user-provided tavilyExtractUrl without admin opt-in', async () => {
       mockResolveHostnameSSRF.mockImplementation((hostname: string) =>
         Promise.resolve(hostname === 'extract.internal-service.com'),
       );
@@ -1628,6 +1750,101 @@ describe('web.ts', () => {
       expect(result.authenticated).toBe(true);
       const scrapersAuth = result.authTypes.find(([c]) => c === 'scrapers')?.[1];
       expect(scrapersAuth).toBe(AuthType.USER_PROVIDED);
+      expect(mockResolveHostnameSSRF).not.toHaveBeenCalled();
+    });
+
+    it('should block opted-in tavilySearchUrl targeting localhost', async () => {
+      mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === 'localhost');
+
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          TAVILY_SEARCH_URL: AuthType.USER_PROVIDED,
+        };
+
+        const webSearchConfig: TCustomConfig['webSearch'] = {
+          tavilyApiKey: '${TAVILY_API_KEY}',
+          tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          safeSearch: SafeSearchTypes.MODERATE,
+          searchProvider: 'tavily' as SearchProviders,
+          rerankerType: 'none' as RerankerTypes,
+        };
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'TAVILY_SEARCH_URL') {
+              result[field] = 'http://localhost:8080/search';
+            } else {
+              result[field] = 'test-api-key';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authResult.tavilySearchUrl).toBeUndefined();
+        expect(result.authResult.searchProvider).toBe('tavily');
+        expect(result.authenticated).toBe(true);
+        expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost');
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
+    it('should block opted-in tavilyExtractUrl resolving to a private host', async () => {
+      mockResolveHostnameSSRF.mockImplementation((hostname: string) =>
+        Promise.resolve(hostname === 'extract.internal-service.com'),
+      );
+
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          TAVILY_EXTRACT_URL: AuthType.USER_PROVIDED,
+        };
+
+        const webSearchConfig: TCustomConfig['webSearch'] = {
+          serperApiKey: '${SERPER_API_KEY}',
+          tavilyApiKey: '${TAVILY_API_KEY}',
+          tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
+          safeSearch: SafeSearchTypes.MODERATE,
+          scraperProvider: 'tavily' as ScraperProviders,
+          rerankerType: 'none' as RerankerTypes,
+        };
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'TAVILY_EXTRACT_URL') {
+              result[field] = 'https://extract.internal-service.com/extract';
+            } else {
+              result[field] = 'test-api-key';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authResult.tavilyExtractUrl).toBeUndefined();
+        expect(result.authResult.scraperProvider).toBe('tavily');
+        expect(result.authenticated).toBe(true);
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('extract.internal-service.com');
+      } finally {
+        process.env = originalEnv;
+      }
     });
 
     it('should block user-provided searxngInstanceUrl targeting metadata endpoint', async () => {
