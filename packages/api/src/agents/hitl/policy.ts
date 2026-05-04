@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import type { ToolPolicyConfig } from '@librechat/agents';
 import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
 
 /**
@@ -9,22 +10,6 @@ import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
  * a stock approval prompt. Hosts that want it can pass an override.
  */
 const DEFAULT_REVIEW_DECISIONS: Agents.ToolApprovalDecisionType[] = ['approve', 'reject', 'edit'];
-
-/**
- * Structural mirror of `@librechat/agents`'s `ToolPolicyConfig`.
- *
- * Defined here (rather than imported) so this module compiles before the SDK
- * version that ships `createToolPolicyHook` is published. When the SDK is
- * pinned, callers in Slice B can `import type { ToolPolicyConfig }` and
- * the structural identity holds.
- */
-export interface ToolPolicyConfig {
-  mode?: 'default' | 'dontAsk' | 'bypass';
-  allow?: string[];
-  deny?: string[];
-  ask?: string[];
-  reason?: string;
-}
 
 /**
  * Whether the HITL machinery should run for this policy.
