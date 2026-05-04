@@ -129,6 +129,7 @@ describe('web.ts', () => {
       expect(result.authResult).toHaveProperty('searchProvider', 'serper');
       expect(result.authResult).toHaveProperty('scraperProvider', 'firecrawl');
       expect(['jina', 'cohere']).toContain(result.authResult.rerankerType as string);
+      expect(result.authResult.safeSearch).toBe(SafeSearchTypes.MODERATE);
     });
 
     it('should return authenticated=false when a required category is not authenticated', async () => {
@@ -774,6 +775,7 @@ describe('web.ts', () => {
       expect(result.authResult.tavilyApiKey).toBe('tavily-api-key');
       expect(result.authResult.tavilySearchUrl).toBe('https://api.tavily.com/search');
       expect(result.authResult.tavilySearchOptions).toEqual(webSearchConfig.tavilySearchOptions);
+      expect(result.authResult.safeSearch).toBeUndefined();
     });
 
     it('should fail authentication when Tavily search API key is missing', async () => {

@@ -2,14 +2,14 @@ import {
   AuthType,
   SafeSearchTypes,
   SearchCategories,
+  SearchProviders,
+  ScraperProviders,
   extractVariableName,
 } from 'librechat-data-provider';
 import { webSearchAuth } from '@librechat/data-schemas';
 import type {
   RerankerTypes,
   TCustomConfig,
-  SearchProviders,
-  ScraperProviders,
   TWebSearchConfig,
 } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
@@ -248,15 +248,18 @@ export async function loadWebSearchAuth({
   }
 
   const scraperProvider =
-    authResult.scraperProvider ?? webSearchConfig?.scraperProvider ?? 'firecrawl';
+    authResult.scraperProvider ?? webSearchConfig?.scraperProvider ?? ScraperProviders.FIRECRAWL;
   let scraperOptionsTimeout: number | undefined;
-  if (scraperProvider === 'tavily') {
+  if (scraperProvider === ScraperProviders.TAVILY) {
     scraperOptionsTimeout = webSearchConfig?.tavilyScraperOptions?.timeout;
-  } else if (scraperProvider === 'firecrawl') {
+  } else if (scraperProvider === ScraperProviders.FIRECRAWL) {
     scraperOptionsTimeout = webSearchConfig?.firecrawlOptions?.timeout;
   }
 
-  authResult.safeSearch = webSearchConfig?.safeSearch ?? SafeSearchTypes.MODERATE;
+  const searchProvider = authResult.searchProvider ?? webSearchConfig?.searchProvider;
+  if (searchProvider !== SearchProviders.TAVILY) {
+    authResult.safeSearch = webSearchConfig?.safeSearch ?? SafeSearchTypes.MODERATE;
+  }
   authResult.scraperTimeout = webSearchConfig?.scraperTimeout ?? scraperOptionsTimeout ?? 7500;
   authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
   authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;

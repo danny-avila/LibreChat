@@ -651,7 +651,7 @@ endpoints:
 #     # includeImages: true     # Include images in results
 #     # includeFavicon: true    # Include favicon URL for each result
 #     # chunksPerSource: 3      # Chunks per source, only with 'advanced' depth (1-3)
-#     # safeSearch: false       # Override Tavily safe search filtering
+#     # safeSearch: false       # Override Tavily safe_search filtering (true is enterprise-only)
 #     # includeDomains:         # Restrict search to specific domains (max 300)
 #     #   - 'example.com'
 #     #   - 'docs.example.com'
