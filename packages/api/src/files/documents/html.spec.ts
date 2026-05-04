@@ -8,6 +8,7 @@ import {
   csvToHtml,
   excelSheetToHtml,
   officeHtmlBucket,
+  pptxToHtml,
   pptxToSlideListHtml,
   sanitizeOfficeHtml,
   wordDocToHtml,
@@ -303,6 +304,120 @@ describe('Office HTML producers', () => {
       const html = await pptxToSlideListHtml(pptx);
       expect(html).toContain('A &amp; B'); // re-escaped on output
       expect(html).toContain('x &lt; y');
+    });
+  });
+
+  describe('pptxToHtml dispatcher', () => {
+    /** Mirror the buildPptx helper from the slide-list block. */
+    const buildPptx = async (
+      slides: Array<{ title: string; body?: string[] }>,
+    ): Promise<Buffer> => {
+      const zip = new JSZip();
+      const slideXml = (title: string, body: string[] = []) => {
+        const titleP = `<a:p><a:r><a:t>${title}</a:t></a:r></a:p>`;
+        const bodyPs = body.map((b) => `<a:p><a:r><a:t>${b}</a:t></a:r></a:p>`).join('');
+        return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+       xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:spTree><p:sp><p:txBody>${titleP}${bodyPs}</p:txBody></p:sp></p:spTree></p:cSld>
+</p:sld>`;
+      };
+      slides.forEach((s, i) => {
+        zip.file(`ppt/slides/slide${i + 1}.xml`, slideXml(s.title, s.body));
+      });
+      zip.file('docProps/core.xml', '<core/>');
+      return zip.generateAsync({ type: 'nodebuffer' });
+    };
+
+    test('routes a small pptx (≤ cap) through the CDN-rendered path', async () => {
+      const pptx = await buildPptx([{ title: 'Hello', body: ['First slide'] }]);
+      const html = await pptxToHtml(pptx);
+      expect(html).toMatch(/^<!DOCTYPE html>/);
+      expect(html).toContain('id="lc-doc-data"');
+      expect(html).toContain('pptxPreview.init');
+      expect(html).toContain('cdn.jsdelivr.net/npm/pptx-preview@');
+      // Slide-list signature must NOT appear (those are <ol class="lc-pptx-list">).
+      expect(html).not.toContain('class="lc-pptx-list"');
+    });
+
+    describe('CDN-rendered path', () => {
+      test('embeds the binary as base64 that round-trips to the original bytes', async () => {
+        const original = await buildPptx([{ title: 'Test' }]);
+        const html = await _internal.pptxToHtmlViaCdn(original);
+        const match = html.match(
+          /<script id="lc-doc-data" type="application\/octet-stream;base64">([^<]*)<\/script>/,
+        );
+        expect(match).not.toBeNull();
+        const decoded = Buffer.from(match![1], 'base64');
+        expect(decoded.equals(original)).toBe(true);
+      });
+
+      test('pins pptx-preview to a specific version with SRI integrity', async () => {
+        const pptx = await buildPptx([{ title: 'X' }]);
+        const html = await _internal.pptxToHtmlViaCdn(pptx);
+        expect(html).toContain('https://cdn.jsdelivr.net/npm/pptx-preview@1.0.7/');
+        expect(html).toMatch(/integrity="sha384-[A-Za-z0-9+/=]+"/);
+        expect(html).toContain('crossorigin="anonymous"');
+      });
+
+      test('CSP locks the iframe down: connect-src none, no eval, no base/form tampering', async () => {
+        const pptx = await buildPptx([{ title: 'X' }]);
+        const html = await _internal.pptxToHtmlViaCdn(pptx);
+        const cspMatch = html.match(
+          /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/,
+        );
+        expect(cspMatch).not.toBeNull();
+        const csp = cspMatch![1];
+        expect(csp).toMatch(/connect-src 'none'/);
+        expect(csp).toMatch(/base-uri 'none'/);
+        expect(csp).toMatch(/form-action 'none'/);
+        expect(csp).toMatch(/script-src https:\/\/cdn\.jsdelivr\.net 'unsafe-inline'/);
+        expect(csp).not.toMatch(/unsafe-eval/);
+      });
+
+      test('exposes a fallback message that surfaces if the renderer fails to load', async () => {
+        const pptx = await buildPptx([{ title: 'X' }]);
+        const html = await _internal.pptxToHtmlViaCdn(pptx);
+        expect(html).toContain('Loading preview…');
+        expect(html).toContain('Preview unavailable');
+        expect(html).toContain("typeof pptxPreview === 'undefined'");
+      });
+
+      test('size-fallback threshold is the documented 350 KB', () => {
+        expect(_internal.MAX_PPTX_CDN_BINARY_BYTES).toBe(350 * 1024);
+      });
+    });
+
+    describe('OFFICE_PREVIEW_DISABLE_CDN escape hatch', () => {
+      const ORIGINAL = process.env.OFFICE_PREVIEW_DISABLE_CDN;
+      afterEach(() => {
+        if (ORIGINAL === undefined) {
+          delete process.env.OFFICE_PREVIEW_DISABLE_CDN;
+        } else {
+          process.env.OFFICE_PREVIEW_DISABLE_CDN = ORIGINAL;
+        }
+      });
+
+      test('default behavior (env unset): small pptx → CDN path', async () => {
+        delete process.env.OFFICE_PREVIEW_DISABLE_CDN;
+        const pptx = await buildPptx([{ title: 'Hello' }]);
+        const html = await pptxToHtml(pptx);
+        expect(html).toContain('id="lc-doc-data"');
+      });
+
+      it.each([['true'], ['1'], ['yes'], ['TRUE']])(
+        'env=%s forces the slide-list fallback even for small files',
+        async (value) => {
+          process.env.OFFICE_PREVIEW_DISABLE_CDN = value;
+          const pptx = await buildPptx([{ title: 'Hello', body: ['Line 1'] }]);
+          const html = await pptxToHtml(pptx);
+          // Slide-list signature.
+          expect(html).toContain('class="lc-pptx-list"');
+          expect(html).toContain('Hello');
+          expect(html).not.toContain('id="lc-doc-data"');
+          expect(html).not.toContain('cdn.jsdelivr.net');
+        },
+      );
     });
   });
 

@@ -518,20 +518,6 @@ export async function wordDocToHtml(buffer: Buffer): Promise<string> {
   return wordDocToHtmlViaMammoth(buffer);
 }
 
-/**
- * Test-only re-exports. Each path has distinct visual-fidelity and
- * size characteristics that warrant direct testing rather than
- * round-tripping through the size-based dispatcher with synthetically
- * padded fixtures. Not part of the public API — callers in production
- * code should always go through `wordDocToHtml`.
- */
-export const _internal = {
-  wordDocToHtmlViaCdn,
-  wordDocToHtmlViaMammoth,
-  MAX_DOCX_CDN_BINARY_BYTES,
-  DOCX_PREVIEW_CDN,
-};
-
 /* =============================================================================
  * XLSX / XLS / ODS → HTML (multi-sheet with pure-CSS tab strip)
  * ============================================================================= */
@@ -891,10 +877,12 @@ function renderPptxSlidesHtml(slides: PptxSlide[]): string {
 }
 
 /**
- * Convert a `.pptx` buffer to a sandboxed HTML document rendering each slide
- * as a card (slide number, title, body bullets). Honest about being a
- * text-only preview — complex visual layouts, charts, and embedded media are
- * not represented. Higher-fidelity rendering is a deferred follow-up.
+ * Convert a `.pptx` buffer to a slide-list HTML document — text-only
+ * preview rendering each slide as a card (slide number, title, body
+ * bullets). Honest about NOT preserving complex visual layouts,
+ * charts, theming, or embedded media. Used as the safe fallback path
+ * when the CDN renderer is disabled, the binary exceeds the embed
+ * size cap, or the high-fidelity path can't be reached.
  *
  * Pre-flights through `assertSafeZipSize` so a zip-bomb PPTX can't blow
  * up the slide-XML extraction pass.
@@ -908,6 +896,192 @@ export async function pptxToSlideListHtml(buffer: Buffer): Promise<string> {
   });
   return renderPptxSlidesHtml(slides);
 }
+
+/* =============================================================================
+ * PPTX CDN renderer (high-fidelity path)
+ *
+ * Mirrors the DOCX CDN architecture: embeds the binary as base64 and
+ * lets `pptx-preview` (loaded from a pinned jsdelivr URL with SRI) do
+ * the rendering inside the Sandpack iframe. The library is ISC-licensed
+ * (npm package permits commercial use) and ships a UMD bundle that
+ * exposes a global `pptxPreview.init(container, options)` →
+ * `previewer.preview(arrayBuffer)` API per the package README.
+ *
+ * Trade-offs vs the slide-list path:
+ *   + Far higher visual fidelity — preserves slide layouts, theme
+ *     colors, fonts, basic shape positioning, embedded images.
+ *   + No server-side rendering cost; iframe sandbox isolates parser
+ *     bugs from the API process.
+ *   − UMD bundle is ~1.36 MB (contains echarts, tslib, lodash, uuid,
+ *     jszip). Loaded once per iframe lifetime; browser-cached after.
+ *   − Renderer hasn't been broadly browser-tested by us across the
+ *     full spectrum of decks. See PR #12934 commit notes — fallback
+ *     paths cover the cases where we hit a class of files that don't
+ *     render: client-side "Preview unavailable" UX (CDN unreachable
+ *     or `typeof pptxPreview === 'undefined'`) and the
+ *     `OFFICE_PREVIEW_DISABLE_CDN` env-var hatch (forces the slide-
+ *     list server-side).
+ */
+const PPTX_PREVIEW_CDN = {
+  pptxPreview: {
+    src: 'https://cdn.jsdelivr.net/npm/pptx-preview@1.0.7/dist/pptx-preview.umd.js',
+    integrity: 'sha384-CwntHHT2FbwZXuCmbf6K93YaEB9xRVVLaqFJ7pdMykeQABb/3MA0sbt2lGbgi1Mr',
+  },
+} as const;
+
+/**
+ * Same 350 KB binary cap as DOCX — keeps the base64-inflated wrapped
+ * HTML under `MAX_TEXT_CACHE_BYTES` (512 KB) on `attachment.text`.
+ * PPTX files often exceed this once embedded media is involved; the
+ * dispatcher's slide-list fallback handles the larger cases.
+ */
+const MAX_PPTX_CDN_BINARY_BYTES = 350 * 1024;
+
+/**
+ * Build the CDN-rendered HTML document for a PPTX. Same wrapper shape
+ * and CSP as the DOCX equivalent — see `buildDocxCdnDocument` for the
+ * security-relevant rationale on script-src/connect-src/base-uri/etc.
+ *
+ * Slides need a fixed-size container for `pptx-preview` to render into
+ * — it computes per-slide layouts against the configured width/height
+ * rather than against the iframe's variable size. We use 960×540
+ * (16:9 standard) and let CSS scale the rendered output to fit the
+ * iframe via `transform: scale(...)`. The slides scroll vertically
+ * once the renderer paints them.
+ */
+function buildPptxCdnDocument(base64: string): string {
+  const csp = [
+    "default-src 'none'",
+    "script-src https://cdn.jsdelivr.net 'unsafe-inline'",
+    "style-src 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    'font-src data:',
+    "connect-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join('; ');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
+<title>Preview</title>
+<style>
+:root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1a1a2e; --fg: #e5e7eb; --muted: #9ca3af; } }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+#lc-render { padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+#lc-render > * { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1); border-radius: 4px; max-width: 100%; }
+#lc-fallback { padding: 24px; font-size: 14px; line-height: 1.5; color: var(--muted); text-align: center; }
+.lc-pptx-loading { display: flex; align-items: center; justify-content: center; height: 60vh; color: var(--muted); font-size: 14px; }
+</style>
+<script src="${PPTX_PREVIEW_CDN.pptxPreview.src}" integrity="${PPTX_PREVIEW_CDN.pptxPreview.integrity}" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="lc-render"><div class="lc-pptx-loading">Loading preview…</div></div>
+<div id="lc-fallback" hidden>Preview unavailable. Please download the file to view it.</div>
+<script id="lc-doc-data" type="application/octet-stream;base64">${base64}</script>
+<script>
+(function () {
+  function showFallback(reason) {
+    var loading = document.querySelector('.lc-pptx-loading');
+    if (loading) { loading.remove(); }
+    var fallback = document.getElementById('lc-fallback');
+    if (fallback) {
+      fallback.hidden = false;
+      if (reason) { fallback.title = String(reason).slice(0, 200); }
+    }
+  }
+  if (typeof pptxPreview === 'undefined' || typeof pptxPreview.init !== 'function') {
+    showFallback('renderer-not-loaded');
+    return;
+  }
+  try {
+    var b64 = document.getElementById('lc-doc-data').textContent.trim();
+    var bytes = Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
+    var container = document.getElementById('lc-render');
+    var loading = document.querySelector('.lc-pptx-loading');
+    if (loading) { loading.remove(); }
+    var previewer = pptxPreview.init(container, { width: 960, height: 540 });
+    var result = previewer.preview(bytes.buffer);
+    if (result && typeof result.catch === 'function') {
+      result.catch(function (err) { showFallback(err && err.message); });
+    }
+  } catch (err) {
+    showFallback(err && err.message);
+  }
+})();
+</script>
+</body>
+</html>`;
+}
+
+async function pptxToHtmlViaCdn(buffer: Buffer): Promise<string> {
+  return buildPptxCdnDocument(buffer.toString('base64'));
+}
+
+/**
+ * Convert a `.pptx` buffer to a sandboxed HTML document. Two render
+ * paths, chosen by file size and the `OFFICE_PREVIEW_DISABLE_CDN`
+ * escape hatch:
+ *
+ *   1. **CDN-rendered (default for files ≤ 350 KB binary)**: embeds
+ *      the binary as base64 and lets `pptx-preview` render it inside
+ *      the Sandpack iframe. High visual fidelity.
+ *   2. **Slide-list (fallback)**: server-side text-only extraction
+ *      (each slide → card with title + bullets). Lower fidelity but
+ *      compact, network-independent, and proven against arbitrary
+ *      decks. Triggered when the binary exceeds the embed cap, when
+ *      `OFFICE_PREVIEW_DISABLE_CDN=true` is set (air-gapped /
+ *      filtered networks), or when the CDN script fails to load
+ *      (handled iframe-side).
+ *
+ * Pre-flights through `assertSafeZipSize` so a zip-bomb PPTX is
+ * rejected before either renderer touches it.
+ */
+export async function pptxToHtml(buffer: Buffer): Promise<string> {
+  await assertSafeZipSize(buffer, { name: 'pptx' });
+  if (isOfficePreviewCdnDisabled()) {
+    return pptxToSlideListHtmlInternal(buffer);
+  }
+  if (buffer.length <= MAX_PPTX_CDN_BINARY_BYTES) {
+    return pptxToHtmlViaCdn(buffer);
+  }
+  return pptxToSlideListHtmlInternal(buffer);
+}
+
+/**
+ * Slide-list path that skips its own `assertSafeZipSize` call — used
+ * by `pptxToHtml` after the dispatcher has already validated the
+ * buffer. `pptxToSlideListHtml` (public, validating) stays the entry
+ * point for tests and direct callers.
+ */
+async function pptxToSlideListHtmlInternal(buffer: Buffer): Promise<string> {
+  const rawSlides = await extractPptxSlideXml(buffer);
+  const slides: PptxSlide[] = rawSlides.map(({ number, xml }) => {
+    const { title, body } = extractSlideText(xml);
+    return { number, title, body };
+  });
+  return renderPptxSlidesHtml(slides);
+}
+
+/**
+ * Test-only re-exports. Each path has distinct visual-fidelity and
+ * size characteristics that warrant direct testing rather than
+ * round-tripping through the size-based dispatcher with synthetically
+ * padded fixtures. Not part of the public API — callers in production
+ * code should always go through `wordDocToHtml` / `pptxToHtml`.
+ */
+export const _internal = {
+  wordDocToHtmlViaCdn,
+  wordDocToHtmlViaMammoth,
+  MAX_DOCX_CDN_BINARY_BYTES,
+  DOCX_PREVIEW_CDN,
+  pptxToHtmlViaCdn,
+  MAX_PPTX_CDN_BINARY_BYTES,
+  PPTX_PREVIEW_CDN,
+};
 
 /* =============================================================================
  * Dispatcher
@@ -1026,7 +1200,7 @@ export async function bufferToOfficeHtml(
     case 'spreadsheet':
       return excelSheetToHtml(buffer);
     case 'pptx':
-      return pptxToSlideListHtml(buffer);
+      return pptxToHtml(buffer);
     default:
       return null;
   }
