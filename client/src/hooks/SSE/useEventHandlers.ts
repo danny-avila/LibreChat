@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -27,6 +27,7 @@ import {
   logger,
   setDraft,
   scrollToEnd,
+  scrollToMessageStart,
   getAllContentText,
   addConvoToAllQueries,
   updateConvoInAllQueries,
@@ -58,6 +59,7 @@ export type EventHandlerParams = {
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
   setIsSubmitting: SetterOrUpdater<boolean>;
+  setAbortScroll: SetterOrUpdater<boolean>;
   setConversation?: SetterOrUpdater<TConversation | null>;
   newConversation?: ConvoGenerator;
   setShowStopButton: SetterOrUpdater<boolean>;
@@ -172,6 +174,7 @@ export default function useEventHandlers({
   isAddedRequest = false,
   setConversation,
   setIsSubmitting,
+  setAbortScroll,
   newConversation,
   setShowStopButton,
   resetLatestMessage,
@@ -179,7 +182,7 @@ export default function useEventHandlers({
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
-  const setAbortScroll = useSetRecoilState(store.abortScroll);
+  const autoScrollDuringGeneration = useRecoilValue(store.autoScrollDuringGeneration);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -465,6 +468,7 @@ export default function useEventHandlers({
         logger.log('latest_message', 'createdHandler: resetting latest message');
         resetLatestMessage();
       }
+
       scrollToEnd(() => setAbortScroll(false));
     },
     [
@@ -493,9 +497,6 @@ export default function useEventHandlers({
         // Handle early abort - aborted during tool loading before any messages saved
         // Don't update conversation state, just reset UI and stay on new chat
         if ((data as Record<string, unknown>).earlyAbort) {
-          console.log(
-            '[finalHandler] Early abort detected - no messages saved, staying on new chat',
-          );
           setShowStopButton(false);
           setIsSubmitting(false);
           // Navigate to new chat if not already there

@@ -30,9 +30,7 @@ const NODE_POLYFILL_SHIMS: Record<string, string> = {
 
 // https://vitejs.dev/config/
 const backendPort = (process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT)) || 3080;
-const backendURL = process.env.HOST
-  ? `http://${process.env.HOST}:${backendPort}`
-  : `http://localhost:${backendPort}`;
+const backendURL = `http://localhost:${backendPort}`;
 
 export default defineConfig(({ command }) => ({
   base: '',

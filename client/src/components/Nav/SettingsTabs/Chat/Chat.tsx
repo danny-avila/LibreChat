@@ -72,6 +72,13 @@ const toggleSwitchConfigs = [
     key: 'saveDrafts',
   },
   {
+    stateAtom: store.autoScrollDuringGeneration,
+    localizationKey: 'com_nav_auto_scroll_generation' as const,
+    switchId: 'autoScrollDuringGeneration',
+    hoverCardText: undefined,
+    key: 'autoScrollDuringGeneration',
+  },
+  {
     stateAtom: store.showScrollButton,
     localizationKey: 'com_nav_scroll_button' as const,
     switchId: 'showScrollButton',
@@ -117,6 +124,7 @@ function Chat() {
             localizationKey={config.localizationKey}
             hoverCardText={config.hoverCardText}
             switchId={config.switchId}
+            onCheckedChange={config.onCheckedChange as ((value: boolean) => void) | undefined}
           />
         </div>
       ))}

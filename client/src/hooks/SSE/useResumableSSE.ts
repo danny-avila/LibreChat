@@ -123,6 +123,7 @@ export default function useResumableSSE(
     isAddedRequest,
     setConversation,
     setIsSubmitting,
+    setAbortScroll,
     newConversation,
     setShowStopButton,
     resetLatestMessage,
