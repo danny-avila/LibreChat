@@ -98,6 +98,8 @@ export interface AppConfig {
   /** Available tools */
   availableTools?: Record<string, FunctionTool>;
   endpoints?: {
+    /** Admin exemption list of hostnames/IPs that bypass the SSRF private-IP block */
+    allowedAddresses?: string[];
     /** OpenAI endpoint configuration */
     openAI?: Partial<TEndpoint>;
     /** Google endpoint configuration */

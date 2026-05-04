@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, getTenantId } from '@librechat/data-schemas';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
@@ -242,7 +242,6 @@ describe('MCPConnectionFactory', () => {
         },
       };
 
-      const { getTenantId } = require('@librechat/data-schemas');
       (getTenantId as jest.Mock).mockReturnValue('test-tenant');
 
       mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
@@ -276,6 +275,7 @@ describe('MCPConnectionFactory', () => {
         undefined,
         undefined,
         oauthOptions.tokenMethods.findToken,
+        undefined,
       );
 
       // initFlow must be awaited BEFORE the redirect to guarantee state is stored

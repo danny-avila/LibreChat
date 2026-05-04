@@ -131,6 +131,7 @@ export class MCPOAuthHandler {
     serverUrl: string,
     oauthHeaders: Record<string, string>,
     allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
   ): Promise<{
     metadata: OAuthMetadata;
     resourceMetadata?: OAuthProtectedResourceMetadata;
@@ -171,6 +172,7 @@ export class MCPOAuthHandler {
           hint.resourceMetadataUrl.toString(),
           'resource_metadata',
           allowedDomains,
+          allowedAddresses,
         );
         hintUrl = hint.resourceMetadataUrl;
         logger.debug(
@@ -213,7 +215,12 @@ export class MCPOAuthHandler {
 
       if (resourceMetadata.authorization_servers?.length) {
         const discoveredAuthServer = resourceMetadata.authorization_servers[0];
-        await this.validateOAuthUrl(discoveredAuthServer, 'authorization_server', allowedDomains);
+        await this.validateOAuthUrl(
+          discoveredAuthServer,
+          'authorization_server',
+          allowedDomains,
+          allowedAddresses,
+        );
         authServerUrl = new URL(discoveredAuthServer);
         logger.debug(
           `[MCPOAuth] Found authorization server from resource metadata: ${authServerUrl}`,
@@ -273,12 +280,18 @@ export class MCPOAuthHandler {
           metadata.registration_endpoint,
           'registration_endpoint',
           allowedDomains,
+          allowedAddresses,
         ),
       );
     }
     if (metadata.token_endpoint) {
       endpointChecks.push(
-        this.validateOAuthUrl(metadata.token_endpoint, 'token_endpoint', allowedDomains),
+        this.validateOAuthUrl(
+          metadata.token_endpoint,
+          'token_endpoint',
+          allowedDomains,
+          allowedAddresses,
+        ),
       );
     }
     if (endpointChecks.length > 0) {
@@ -431,6 +444,7 @@ export class MCPOAuthHandler {
     config?: MCPOptions['oauth'],
     allowedDomains?: string[] | null,
     findToken?: TokenMethods['findToken'],
+    allowedAddresses?: string[] | null,
   ): Promise<{ authorizationUrl: string; flowId: string; flowMetadata: MCPOAuthFlowMetadata }> {
     logger.debug(
       `[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${sanitizeUrlForLogging(serverUrl)}`,
@@ -446,8 +460,13 @@ export class MCPOAuthHandler {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
 
         await Promise.all([
-          this.validateOAuthUrl(config.authorization_url, 'authorization_url', allowedDomains),
-          this.validateOAuthUrl(config.token_url, 'token_url', allowedDomains),
+          this.validateOAuthUrl(
+            config.authorization_url,
+            'authorization_url',
+            allowedDomains,
+            allowedAddresses,
+          ),
+          this.validateOAuthUrl(config.token_url, 'token_url', allowedDomains, allowedAddresses),
         ]);
 
         const skipCodeChallengeCheck =
@@ -550,6 +569,7 @@ export class MCPOAuthHandler {
         serverUrl,
         oauthHeaders,
         allowedDomains,
+        allowedAddresses,
       );
 
       logger.debug(
@@ -866,13 +886,23 @@ export class MCPOAuthHandler {
    * Validates an OAuth URL is not targeting a private/internal address.
    * Skipped when the full URL (hostname + protocol + port) matches an admin-trusted
    * allowedDomains entry, honoring protocol/port constraints when the admin specifies them.
+   *
+   * SECURITY: when `allowedDomains` is configured and the URL did NOT match it
+   * (i.e., we are in the SSRF fallback path because the admin's strict bound
+   * rejected this URL), the address exemption must NOT broaden that bound — a
+   * malicious MCP server could otherwise advertise OAuth metadata at any
+   * private address the admin permitted for an unrelated purpose (e.g. a
+   * self-hosted LLM). When `allowedDomains` is empty, `allowedAddresses` is
+   * the only opt-in mechanism for permitting private OAuth endpoints, so it
+   * is consulted normally.
    */
   private static async validateOAuthUrl(
     url: string,
     fieldName: string,
     allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
   ): Promise<void> {
-    if (isOAuthUrlAllowed(url, allowedDomains)) {
+    if (isOAuthUrlAllowed(url, allowedDomains, allowedAddresses)) {
       return;
     }
 
@@ -883,11 +913,14 @@ export class MCPOAuthHandler {
       throw new Error(`Invalid OAuth ${fieldName}: ${sanitizeUrlForLogging(url)}`);
     }
 
-    if (isSSRFTarget(hostname)) {
+    const allowedDomainsActive = Array.isArray(allowedDomains) && allowedDomains.length > 0;
+    const effectiveAddresses = allowedDomainsActive ? null : allowedAddresses;
+
+    if (isSSRFTarget(hostname, effectiveAddresses)) {
       throw new Error(`OAuth ${fieldName} targets a blocked address`);
     }
 
-    if (await resolveHostnameSSRF(hostname)) {
+    if (await resolveHostnameSSRF(hostname, effectiveAddresses)) {
       throw new Error(`OAuth ${fieldName} resolves to a private IP address`);
     }
   }
@@ -988,6 +1021,7 @@ export class MCPOAuthHandler {
     oauthHeaders: Record<string, string>,
     config?: MCPOptions['oauth'],
     allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
   ): Promise<MCPOAuthTokens> {
     logger.debug(`[MCPOAuth] Refreshing tokens for ${metadata.serverName}`);
 
@@ -1013,7 +1047,12 @@ export class MCPOAuthHandler {
         let tokenUrl: string;
         let authMethods: string[] | undefined;
         if (config?.token_url) {
-          await this.validateOAuthUrl(config.token_url, 'token_url', allowedDomains);
+          await this.validateOAuthUrl(
+            config.token_url,
+            'token_url',
+            allowedDomains,
+            allowedAddresses,
+          );
           tokenUrl = config.token_url;
           authMethods = config.token_endpoint_auth_methods_supported;
         } else if (!metadata.serverUrl) {
@@ -1043,7 +1082,7 @@ export class MCPOAuthHandler {
             tokenUrl = oauthMetadata.token_endpoint;
             authMethods = oauthMetadata.token_endpoint_auth_methods_supported;
           }
-          await this.validateOAuthUrl(tokenUrl, 'token_url', allowedDomains);
+          await this.validateOAuthUrl(tokenUrl, 'token_url', allowedDomains, allowedAddresses);
         }
 
         const body = new URLSearchParams({
@@ -1120,7 +1159,12 @@ export class MCPOAuthHandler {
       if (config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for token refresh`);
 
-        await this.validateOAuthUrl(config.token_url, 'token_url', allowedDomains);
+        await this.validateOAuthUrl(
+          config.token_url,
+          'token_url',
+          allowedDomains,
+          allowedAddresses,
+        );
         const tokenUrl = new URL(config.token_url);
 
         const body = new URLSearchParams({
@@ -1219,7 +1263,7 @@ export class MCPOAuthHandler {
       } else {
         tokenUrl = new URL(oauthMetadata.token_endpoint);
       }
-      await this.validateOAuthUrl(tokenUrl.href, 'token_url', allowedDomains);
+      await this.validateOAuthUrl(tokenUrl.href, 'token_url', allowedDomains, allowedAddresses);
 
       const body = new URLSearchParams({
         grant_type: 'refresh_token',
@@ -1269,12 +1313,18 @@ export class MCPOAuthHandler {
     },
     oauthHeaders: Record<string, string> = {},
     allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
   ): Promise<void> {
     const revokeUrl: URL =
       metadata.revocationEndpoint != null
         ? new URL(metadata.revocationEndpoint)
         : new URL('/revoke', metadata.serverUrl);
-    await this.validateOAuthUrl(revokeUrl.href, 'revocation_endpoint', allowedDomains);
+    await this.validateOAuthUrl(
+      revokeUrl.href,
+      'revocation_endpoint',
+      allowedDomains,
+      allowedAddresses,
+    );
 
     const authMethods = metadata.revocationEndpointAuthMethodsSupported ?? ['client_secret_basic'];
     const authMethod = resolveTokenEndpointAuthMethod({ tokenAuthMethods: authMethods });

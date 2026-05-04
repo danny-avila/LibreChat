@@ -82,6 +82,7 @@ describe('initializeOpenAI – SSRF guard wiring', () => {
     expect(mockValidateEndpointURL).toHaveBeenCalledWith(
       'https://user-proxy.example.com/v1',
       EModelEndpoint.openAI,
+      undefined,
     );
   });
 

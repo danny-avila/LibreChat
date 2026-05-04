@@ -1033,6 +1033,7 @@ describe('MCP SSRF protection – WebSocket DNS resolution', () => {
     await expect(conn.connect()).rejects.toThrow(/SSRF protection/);
     expect(mockedResolveHostnameSSRF).toHaveBeenCalledWith(
       expect.stringContaining('evil.example.com'),
+      null,
     );
   });
 
@@ -1048,6 +1049,7 @@ describe('MCP SSRF protection – WebSocket DNS resolution', () => {
     await expect(conn.connect()).rejects.toThrow(/SSRF protection/);
     expect(mockedResolveHostnameSSRF).toHaveBeenCalledWith(
       expect.stringContaining('allowlisted.example.com'),
+      null,
     );
   });
 

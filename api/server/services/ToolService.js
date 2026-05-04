@@ -360,6 +360,7 @@ async function processRequiredActions(client, requiredActions) {
           const isDomainAllowed = await isActionDomainAllowed(
             action.metadata.domain,
             appConfig?.actions?.allowedDomains,
+            appConfig?.actions?.allowedAddresses,
           );
           if (!isDomainAllowed) {
             continue;
@@ -428,6 +429,7 @@ async function processRequiredActions(client, requiredActions) {
 
       // We've already decrypted the metadata, so we can pass it directly
       const _allowedDomains = appConfig?.actions?.allowedDomains;
+      const _allowedAddresses = appConfig?.actions?.allowedAddresses;
       tool = await createActionTool({
         userId: client.req.user.id,
         res: client.res,
@@ -436,6 +438,7 @@ async function processRequiredActions(client, requiredActions) {
         // Note: intentionally not passing zodSchema, name, and description for assistants API
         encrypted, // Pass the encrypted values for OAuth flow
         useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
+        allowedAddresses: _allowedAddresses,
       });
       if (!tool) {
         logger.warn(
@@ -659,6 +662,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const definitions = [];
     const allowedDomains = appConfig?.actions?.allowedDomains;
+    const allowedAddresses = appConfig?.actions?.allowedAddresses;
     const normalizedToolNames = new Set(
       actionToolNames.map((n) => n.replace(domainSeparatorRegex, '_')),
     );
@@ -670,7 +674,11 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       const legacyDomain = legacyDomainEncode(action.metadata.domain);
       const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
 
-      const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
+      const isDomainAllowed = await isActionDomainAllowed(
+        action.metadata.domain,
+        allowedDomains,
+        allowedAddresses,
+      );
       if (!isDomainAllowed) {
         logger.warn(
           `[Actions] Domain "${action.metadata.domain}" not in allowedDomains. ` +
@@ -1094,6 +1102,7 @@ async function loadAgentTools({
     const isDomainAllowed = await isActionDomainAllowed(
       action.metadata.domain,
       appConfig?.actions?.allowedDomains,
+      appConfig?.actions?.allowedAddresses,
     );
     if (!isDomainAllowed) {
       continue;
@@ -1165,6 +1174,7 @@ async function loadAgentTools({
 
     const { action, encrypted, zodSchema, requestBuilder, functionSignature } = entry;
     const _allowedDomains = appConfig?.actions?.allowedDomains;
+    const _allowedAddresses = appConfig?.actions?.allowedAddresses;
     const tool = await createActionTool({
       userId: req.user.id,
       res,
@@ -1176,6 +1186,7 @@ async function loadAgentTools({
       description: functionSignature.description,
       streamId,
       useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
+      allowedAddresses: _allowedAddresses,
     });
 
     if (!tool) {
@@ -1406,6 +1417,7 @@ async function loadActionToolsForExecution({
   // See registerActionTools for the key-shape rationale.
   const toolToAction = new Map();
   const allowedDomains = appConfig?.actions?.allowedDomains;
+  const allowedAddresses = appConfig?.actions?.allowedAddresses;
 
   for (const action of actionSets) {
     const domain = await domainParser(action.metadata.domain, true);
@@ -1413,7 +1425,11 @@ async function loadActionToolsForExecution({
     const legacyDomain = legacyDomainEncode(action.metadata.domain);
     const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
 
-    const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
+    const isDomainAllowed = await isActionDomainAllowed(
+      action.metadata.domain,
+      allowedDomains,
+      allowedAddresses,
+    );
     if (!isDomainAllowed) {
       logger.warn(
         `[Actions] Domain "${action.metadata.domain}" not in allowedDomains. ` +
@@ -1487,6 +1503,7 @@ async function loadActionToolsForExecution({
       name: toolName,
       description: functionSignature.description,
       useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
+      allowedAddresses,
     });
 
     if (!tool) {
