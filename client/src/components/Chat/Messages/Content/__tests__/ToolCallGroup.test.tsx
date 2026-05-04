@@ -105,7 +105,7 @@ describe('ToolCallGroup image hoisting', () => {
     ),
   } satisfies React.ComponentProps<typeof ToolCallGroup>;
 
-  it('renders an image-only AttachmentGroup outside the collapsible container', () => {
+  it('renders an AttachmentGroup outside the collapsible container with all attachments', () => {
     renderGroup({
       ...baseProps,
       groupAttachments: [imageAttachment, fileAttachment],
@@ -113,8 +113,19 @@ describe('ToolCallGroup image hoisting', () => {
 
     const group = screen.getByTestId('attachment-group');
     expect(group).toBeInTheDocument();
-    expect(group.getAttribute('data-variant')).toBe('images');
+    expect(group.getAttribute('data-variant')).toBe('all');
     expect(group.getAttribute('data-count')).toBe('2');
+  });
+
+  it('hoists non-image attachments so they survive collapse', () => {
+    renderGroup({
+      ...baseProps,
+      groupAttachments: [fileAttachment],
+    });
+
+    const group = screen.getByTestId('attachment-group');
+    expect(group).toBeInTheDocument();
+    expect(group.getAttribute('data-count')).toBe('1');
   });
 
   it('does not render an AttachmentGroup when there are no group attachments', () => {
