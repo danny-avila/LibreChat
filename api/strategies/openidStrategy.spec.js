@@ -3,7 +3,7 @@ const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
-const { resolveAppConfigForUser } = require('@librechat/api');
+const { getOpenIdIssuer, resolveAppConfigForUser } = require('@librechat/api');
 const { getAppConfig } = require('~/server/services/Config');
 const { setupOpenId } = require('./openidStrategy');
 
@@ -27,6 +27,7 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => false),
   isEmailDomainAllowed: jest.fn(() => true),
   findOpenIDUser: jest.requireActual('@librechat/api').findOpenIDUser,
+  getOpenIdEmail: jest.requireActual('@librechat/api').getOpenIdEmail,
   getBalanceConfig: jest.fn(() => ({
     enabled: false,
   })),
@@ -203,6 +204,12 @@ describe('setupOpenId', () => {
 
     // Assert
     expect(user.username).toBe(userinfo.preferred_username);
+    expect(getOpenIdIssuer).toHaveBeenCalledTimes(1);
+    expect(getOpenIdIssuer.mock.calls[0]).toHaveLength(2);
+    expect(getOpenIdIssuer.mock.calls[0][0]).toEqual(userinfo);
+    expect(getOpenIdIssuer.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ issuer: 'https://fake-issuer.com' }),
+    );
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: 'openid',

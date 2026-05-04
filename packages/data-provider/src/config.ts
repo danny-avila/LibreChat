@@ -343,13 +343,17 @@ const remoteApiOidcUrlSchema = z
   .url()
   .refine(isRemoteOidcUrlAllowed, { message: 'must use https:// unless targeting localhost' });
 
+const remoteApiOidcScopeSchema = z.string().refine((scope) => !scope.includes(','), {
+  message: 'scopes must be space-separated',
+});
+
 const remoteApiOidcSchema = z
   .object({
     enabled: z.boolean().default(false),
     issuer: remoteApiOidcUrlSchema.optional(),
     audience: z.string().optional(),
     jwksUri: remoteApiOidcUrlSchema.optional(),
-    scope: z.string().optional(),
+    scope: remoteApiOidcScopeSchema.optional(),
   })
   .superRefine((oidc, ctx) => {
     if (oidc.enabled === true && !oidc.issuer) {

@@ -17,6 +17,7 @@ export type OpenIdIssuerSource = {
 };
 
 type OpenIdLookupField = 'openidId' | 'idOnTheSource';
+type OpenIdUserResolution = { user: IUser | null; error: string | null; migration: boolean };
 
 const OPENID_DISCOVERY_PATH = '/.well-known/openid-configuration';
 
@@ -84,6 +85,33 @@ function isUserIssuerAllowed(user: IUser, openidIssuer: string | undefined): boo
   return isLegacyOpenIdIssuer(openidIssuer);
 }
 
+function resolveIssuerBoundUser(
+  user: IUser | null,
+  normalizedIssuer: string | undefined,
+  strategyName: string,
+  context: string,
+): OpenIdUserResolution | null {
+  if (!user?.openidId) return null;
+
+  if (!isUserIssuerAllowed(user, normalizedIssuer)) {
+    logger.warn(
+      `[${strategyName}] Rejected ${context} for ${user.email}: stored openidIssuer does not match token issuer`,
+    );
+    return { user: null, error: ErrorTypes.AUTH_FAILED, migration: false };
+  }
+
+  if (normalizedIssuer && !normalizeOpenIdIssuer(user.openidIssuer)) {
+    user.openidIssuer = normalizedIssuer;
+    return { user, error: null, migration: true };
+  }
+
+  return null;
+}
+
+/**
+ * Resolves the OpenID user identifier claim, honoring OPENID_EMAIL_CLAIM before
+ * email/preferred_username/upn fallbacks.
+ */
 export function getOpenIdEmail(
   claims: OpenIdEmailClaims | null | undefined,
   strategyName = 'openidStrategy',
@@ -130,7 +158,7 @@ export async function findOpenIDUser({
   openidIssuer?: string;
   idOnTheSource?: string;
   strategyName?: string;
-}): Promise<{ user: IUser | null; error: string | null; migration: boolean }> {
+}): Promise<OpenIdUserResolution> {
   const normalizedIssuer = normalizeOpenIdIssuer(openidIssuer);
   const primaryConditions = [
     ...getIssuerBoundConditions('openidId', openidId, normalizedIssuer),
@@ -142,17 +170,13 @@ export async function findOpenIDUser({
     user = await findUser({ $or: primaryConditions });
   }
 
-  if (user?.openidId && !isUserIssuerAllowed(user, normalizedIssuer)) {
-    logger.warn(
-      `[${strategyName}] Rejected OpenID lookup for ${user.email}: stored openidIssuer does not match token issuer`,
-    );
-    return { user: null, error: ErrorTypes.AUTH_FAILED, migration: false };
-  }
-
-  if (user?.openidId && normalizedIssuer && !normalizeOpenIdIssuer(user.openidIssuer)) {
-    user.openidIssuer = normalizedIssuer;
-    return { user, error: null, migration: true };
-  }
+  const primaryIssuerResolution = resolveIssuerBoundUser(
+    user,
+    normalizedIssuer,
+    strategyName,
+    'OpenID lookup',
+  );
+  if (primaryIssuerResolution) return primaryIssuerResolution;
 
   if (!user && email) {
     user = await findUser({ email });
@@ -175,17 +199,13 @@ export async function findOpenIDUser({
       return { user: null, error: ErrorTypes.AUTH_FAILED, migration: false };
     }
 
-    if (user?.openidId && !isUserIssuerAllowed(user, normalizedIssuer)) {
-      logger.warn(
-        `[${strategyName}] Rejected email fallback for ${user.email}: stored openidIssuer does not match token issuer`,
-      );
-      return { user: null, error: ErrorTypes.AUTH_FAILED, migration: false };
-    }
-
-    if (user?.openidId && normalizedIssuer && !normalizeOpenIdIssuer(user.openidIssuer)) {
-      user.openidIssuer = normalizedIssuer;
-      return { user, error: null, migration: true };
-    }
+    const emailIssuerResolution = resolveIssuerBoundUser(
+      user,
+      normalizedIssuer,
+      strategyName,
+      'email fallback',
+    );
+    if (emailIssuerResolution) return emailIssuerResolution;
 
     if (user && !user.openidId) {
       logger.info(

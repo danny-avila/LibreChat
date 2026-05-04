@@ -789,6 +789,10 @@ describe('getOpenIdEmail', () => {
     ).toBe('user@example.com');
   });
 
+  it('returns undefined when default claims are absent', () => {
+    expect(getOpenIdEmail({})).toBeUndefined();
+  });
+
   it('skips empty fallback claims', () => {
     expect(
       getOpenIdEmail({

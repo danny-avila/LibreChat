@@ -434,6 +434,22 @@ describe('agentsEndpointSchema', () => {
 
     expect(result.success).toBe(true);
   });
+
+  it('requires space-separated remote OIDC scopes', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+            scope: 'remote_agent,admin',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('azureEndpointSchema', () => {
