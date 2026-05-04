@@ -1,3 +1,4 @@
+require('./telemetry');
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -23,6 +24,7 @@ const {
   updateInterfacePermissions,
   preAuthTenantMiddleware,
 } = require('@librechat/api');
+const { telemetryMiddleware, telemetryErrorMiddleware } = require('@librechat/api/telemetry');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { getRoleByName, updateAccessPermissions, seedDatabase } = require('~/models');
@@ -116,6 +118,7 @@ const startServer = async () => {
   app.use(mongoSanitize());
   app.use(cors());
   app.use(cookieParser());
+  app.use(telemetryMiddleware);
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
@@ -206,6 +209,8 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
+  /** Record trace errors before the final error controller. */
+  app.use(telemetryErrorMiddleware);
   /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
   app.use(ErrorController);
 

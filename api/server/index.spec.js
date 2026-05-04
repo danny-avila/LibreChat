@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
@@ -31,6 +32,47 @@ jest.mock('~/config', () => ({
     getAppToolFunctions: jest.fn().mockResolvedValue({}),
   }),
 }));
+
+jest.mock(
+  '@librechat/api/telemetry',
+  () => ({
+    initializeTelemetry: jest.fn(() => ({
+      enabled: false,
+      status: 'disabled',
+      shutdown: jest.fn(),
+    })),
+    telemetryMiddleware: jest.fn((_req, _res, next) => next()),
+    telemetryErrorMiddleware: jest.fn((err, _req, _res, next) => next(err)),
+  }),
+  { virtual: true },
+);
+
+describe('Telemetry wiring', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+
+  it('loads telemetry before other server imports', () => {
+    const firstStatement = source
+      .split('\n')
+      .map((line) => line.trim())
+      .find(Boolean);
+
+    expect(firstStatement).toBe("require('./telemetry');");
+  });
+
+  it('mounts telemetry middleware before routes and telemetry errors before ErrorController', () => {
+    const telemetryMiddlewareIndex = source.indexOf('app.use(telemetryMiddleware);');
+    const apiRoutesIndex = source.indexOf("app.use('/api/auth'");
+    const telemetryErrorMiddlewareIndex = source.indexOf('app.use(telemetryErrorMiddleware);');
+    const errorControllerIndex = source.indexOf('app.use(ErrorController);');
+
+    expect(telemetryMiddlewareIndex).toBeGreaterThan(-1);
+    expect(apiRoutesIndex).toBeGreaterThan(-1);
+    expect(telemetryErrorMiddlewareIndex).toBeGreaterThan(-1);
+    expect(errorControllerIndex).toBeGreaterThan(-1);
+    expect(telemetryMiddlewareIndex).toBeLessThan(apiRoutesIndex);
+    expect(telemetryErrorMiddlewareIndex).toBeLessThan(errorControllerIndex);
+  });
+});
 
 describe('Server Configuration', () => {
   // Increase the default timeout to allow for Mongo cleanup
