@@ -480,7 +480,9 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     serverConfig.oauth?.revocation_endpoint_auth_methods_supported ??
     clientMetadata.revocation_endpoint_auth_methods_supported;
   const oauthHeaders = serverConfig.oauth_headers ?? {};
-  const allowedDomains = getMCPServersRegistry().getAllowedDomains();
+  const registry = getMCPServersRegistry();
+  const allowedDomains = registry.getAllowedDomains();
+  const allowedAddresses = registry.getAllowedAddresses();
 
   if (tokens?.access_token) {
     try {
@@ -497,6 +499,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
         },
         oauthHeaders,
         allowedDomains,
+        allowedAddresses,
       );
     } catch (error) {
       logger.error(
@@ -521,6 +524,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
         },
         oauthHeaders,
         allowedDomains,
+        allowedAddresses,
       );
     } catch (error) {
       logger.error(

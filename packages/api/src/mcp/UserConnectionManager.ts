@@ -168,6 +168,7 @@ export abstract class UserConnectionManager {
           dbSourced: isUserSourced(config),
           useSSRFProtection: registry.shouldEnableSSRFProtection(),
           allowedDomains: registry.getAllowedDomains(),
+          allowedAddresses: registry.getAllowedAddresses(),
         },
         {
           useOAuth: true,

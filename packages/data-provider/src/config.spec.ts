@@ -1,7 +1,7 @@
 import type { TEndpointsConfig } from './types';
 import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
 import { getEndpointFileConfig, mergeFileConfig } from './file-config';
-import { resolveEndpointType, excludedKeys } from './config';
+import { allowedAddressesSchema, configSchema, resolveEndpointType, excludedKeys } from './config';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
@@ -322,4 +322,135 @@ describe('any custom endpoint is document-supported regardless of name', () => {
       expect(directType).toBe(agentType);
     },
   );
+});
+
+describe('allowedAddressesSchema', () => {
+  describe('accepts valid entries', () => {
+    it.each([
+      ['localhost', 'lowercase hostname'],
+      ['LOCALHOST', 'uppercase hostname (preserved as-is by Zod)'],
+      ['ollama.internal', 'private-tld hostname'],
+      ['host.docker.internal', 'multi-segment hostname'],
+      ['10.0.0.5', 'RFC 1918 10.x'],
+      ['192.168.1.1', 'RFC 1918 192.168.x'],
+      ['172.16.0.1', 'RFC 1918 172.16.x'],
+      ['127.0.0.1', 'loopback IPv4'],
+      ['169.254.169.254', 'link-local / cloud metadata'],
+      ['192.0.0.1', 'RFC 5736 IETF protocol assignments'],
+      ['100.64.0.1', 'CGNAT'],
+      ['::1', 'IPv6 loopback'],
+      ['[::1]', 'bracketed IPv6 loopback'],
+      ['fc00::1', 'IPv6 unique-local'],
+      ['fd00::1', 'IPv6 unique-local'],
+      ['fe80::1', 'IPv6 link-local'],
+    ])('accepts "%s" (%s)', (entry) => {
+      expect(allowedAddressesSchema.parse([entry])).toEqual([entry]);
+    });
+
+    it('accepts an empty / omitted list', () => {
+      expect(allowedAddressesSchema.parse(undefined)).toBeUndefined();
+      expect(allowedAddressesSchema.parse([])).toEqual([]);
+    });
+  });
+
+  describe('rejects invalid shapes', () => {
+    it.each([
+      ['', 'empty string'],
+      ['   ', 'whitespace-only'],
+      ['10.0.0.5\t', 'embedded tab'],
+      ['10.0.0.5\n', 'embedded newline'],
+      ['10.0.0.5 ', 'trailing space'],
+      ['http://10.0.0.5', 'http URL'],
+      ['https://internal.example', 'https URL'],
+      ['ws://10.0.0.5', 'ws URL'],
+      ['10.0.0.0/24', 'CIDR range'],
+      ['/path', 'leading slash / path'],
+      ['10.0.0.5/api', 'embedded path'],
+    ])('rejects "%s" (%s)', (entry) => {
+      expect(() => allowedAddressesSchema.parse([entry])).toThrow();
+    });
+
+    it.each([['localhost:8080'], ['10.0.0.5:11434'], ['ollama.internal:443'], ['[::1]:8080']])(
+      'rejects host:port shape "%s"',
+      (entry) => {
+        const result = allowedAddressesSchema.safeParse([entry]);
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.issues[0]?.message).toMatch(/must not include a port/);
+        }
+      },
+    );
+  });
+
+  describe('private-IP scoping', () => {
+    it.each([
+      ['8.8.8.8', 'public DNS'],
+      ['1.1.1.1', 'public DNS'],
+      ['93.184.216.34', 'public web (example.com)'],
+      ['172.32.0.1', 'just outside RFC 1918'],
+      ['172.15.255.255', 'just outside RFC 1918 lower'],
+      ['169.253.255.255', 'just outside link-local'],
+      ['100.63.255.255', 'just outside CGNAT'],
+      ['100.128.0.1', 'just outside CGNAT upper'],
+      ['198.20.0.1', 'just outside benchmarking range'],
+      ['2001:4860:4860::8888', 'public IPv6 (Google DNS)'],
+      ['2606:4700:4700::1111', 'public IPv6 (Cloudflare DNS)'],
+    ])('rejects public IP literal "%s" (%s)', (entry) => {
+      const result = allowedAddressesSchema.safeParse([entry]);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0]?.message).toMatch(/scoped to private IP space/);
+      }
+    });
+  });
+
+  describe('integration with configSchema', () => {
+    it('accepts the field on endpoints', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        endpoints: { allowedAddresses: ['10.0.0.5', 'ollama.internal'] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts the field on mcpSettings', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        mcpSettings: { allowedAddresses: ['127.0.0.1'] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts the field on actions', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        actions: { allowedAddresses: ['host.docker.internal'] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects a public IP at the endpoints location', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        endpoints: { allowedAddresses: ['8.8.8.8'] },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a CIDR range at the mcpSettings location', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        mcpSettings: { allowedAddresses: ['10.0.0.0/24'] },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a host:port at the actions location', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        actions: { allowedAddresses: ['localhost:8080'] },
+      });
+      expect(result.success).toBe(false);
+    });
+  });
 });

@@ -175,6 +175,7 @@ async function loadActionSets(searchParams) {
  * @param {{ oauth_client_id?: string; oauth_client_secret?: string; }} params.encrypted - The encrypted values for the action.
  * @param {string | null} [params.streamId] - The stream ID for resumable streams.
  * @param {boolean} [params.useSSRFProtection] - When true, uses SSRF-safe HTTP agents that validate resolved IPs at connect time.
+ * @param {string[] | null} [params.allowedAddresses] - Optional admin exemption list of hostnames/IPs that bypass the SSRF private-IP block.
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createActionTool({
@@ -188,8 +189,9 @@ async function createActionTool({
   encrypted,
   streamId = null,
   useSSRFProtection = false,
+  allowedAddresses,
 }) {
-  const ssrfAgents = useSSRFProtection ? createSSRFSafeAgents() : undefined;
+  const ssrfAgents = useSSRFProtection ? createSSRFSafeAgents(allowedAddresses) : undefined;
   /** @type {(toolInput: Object | string, config: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolInput, config) => {
     try {

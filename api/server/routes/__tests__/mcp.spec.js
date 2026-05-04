@@ -22,6 +22,8 @@ const mockRegistryInstance = {
   addServer: jest.fn(),
   updateServer: jest.fn(),
   removeServer: jest.fn(),
+  getAllowedDomains: jest.fn().mockReturnValue(null),
+  getAllowedAddresses: jest.fn().mockReturnValue(null),
 };
 
 jest.mock('@librechat/api', () => {
@@ -210,6 +212,9 @@ describe('MCP Routes', () => {
         'test-user-id',
         {},
         { clientId: 'test-client-id' },
+        null,
+        undefined,
+        null,
       );
     });
 
