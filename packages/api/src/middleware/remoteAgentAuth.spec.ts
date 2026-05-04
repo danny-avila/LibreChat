@@ -400,6 +400,94 @@ describe('createRemoteAgentAuth', () => {
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
 
+    it('re-evaluates OIDC auth config after resolving the user tenant', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', scope: 'remote_agent' });
+      const deps = makeDeps();
+      deps.findUser = makeFindUser(makeUser({ tenantId: 'tenant-strict' }));
+      deps.getAppConfig.mockImplementation(async (options) =>
+        options?.tenantId === 'tenant-strict'
+          ? makeConfig({ audience: 'tenant-audience', scope: 'remote_agent' }, { enabled: false })
+          : makeConfig({ audience: undefined, scope: undefined }, { enabled: true }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, { tenantId: 'tenant-strict' });
+      expect(jwt.verify).toHaveBeenCalledTimes(2);
+      expect((jwt.verify as jest.Mock).mock.calls[1][2]).toEqual(
+        expect.objectContaining({ audience: 'tenant-audience' }),
+      );
+      expect(req.user).toMatchObject({ id: 'uid123', tenantId: 'tenant-strict' });
+      expect(mockNext).toHaveBeenCalledWith();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+    });
+
+    it('rejects OIDC auth when the resolved user tenant requires a missing scope', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', scope: 'openid profile' });
+      const deps = makeDeps();
+      deps.findUser = makeFindUser(
+        makeUser({
+          tenantId: 'tenant-strict',
+          provider: undefined,
+          openidId: undefined,
+          openidIssuer: undefined,
+        }),
+      );
+      deps.getAppConfig.mockImplementation(async (options) =>
+        options?.tenantId === 'tenant-strict'
+          ? makeConfig({ scope: 'remote_agent' }, { enabled: false })
+          : makeConfig({ scope: undefined }, { enabled: true }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(req as Request, res, mockNext);
+
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, { tenantId: 'tenant-strict' });
+      expect(jwt.verify).toHaveBeenCalledTimes(2);
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(req.user).toBeUndefined();
+      expect(mockNext).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+      expect(deps.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects OIDC auth when the resolved user tenant disables OIDC', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      const deps = makeDeps();
+      deps.findUser = makeFindUser(
+        makeUser({
+          tenantId: 'tenant-api-key-only',
+          provider: undefined,
+          openidId: undefined,
+          openidIssuer: undefined,
+        }),
+      );
+      deps.getAppConfig.mockImplementation(async (options) =>
+        options?.tenantId === 'tenant-api-key-only'
+          ? makeConfig({ enabled: false }, { enabled: true })
+          : makeConfig({}, { enabled: true }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(req as Request, res, mockNext);
+
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, { tenantId: 'tenant-api-key-only' });
+      expect(jwt.verify).toHaveBeenCalledTimes(1);
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(req.user).toBeUndefined();
+      expect(mockNext).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+      expect(deps.updateUser).not.toHaveBeenCalled();
+    });
+
     it('allows exact and normalized configured issuers when verifying JWTs', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
       const issuer = `${BASE_ISSUER}/`;

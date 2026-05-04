@@ -36,7 +36,7 @@ type CacheEntry<T> = {
 };
 type ScopeClaim = string | string[] | undefined;
 type UserResolution =
-  | { status: 'resolved'; user: IUser }
+  | { status: 'resolved'; user: IUser; updateData: Partial<IUser> }
   | { status: 'missing' }
   | { status: 'rejected'; error: string };
 
@@ -246,8 +246,29 @@ function getConfigOptions(req: Request): GetAppConfigOptions {
   return { baseOnly: true };
 }
 
+function getUserConfigOptions(user: IUser): GetAppConfigOptions {
+  if (user.tenantId) return { tenantId: user.tenantId };
+  return { baseOnly: true };
+}
+
+function isResolvedUserConfigScope(initialOptions: GetAppConfigOptions, user: IUser): boolean {
+  const userOptions = getUserConfigOptions(user);
+  return (
+    initialOptions.tenantId === userOptions.tenantId &&
+    initialOptions.baseOnly === userOptions.baseOnly
+  );
+}
+
 function getRemoteAuthConfig(config: AppConfig): AgentAuthConfig | undefined {
   return config.endpoints?.agents?.remoteApi?.auth;
+}
+
+function getEnabledOidcConfig(
+  authConfig: AgentAuthConfig | undefined,
+): EnabledOidcConfig | undefined {
+  if (authConfig?.oidc?.enabled !== true) return undefined;
+  if (!authConfig.oidc.issuer) throw new Error('OIDC issuer is required when OIDC auth is enabled');
+  return { ...authConfig.oidc, issuer: authConfig.oidc.issuer };
 }
 
 function isApiKeyEnabled(config: AppConfig): boolean {
@@ -291,6 +312,34 @@ async function runApiKeyAuth(
 
   await Promise.resolve(apiKeyMiddleware(req, res, wrappedNext));
   if (postAuth) await postAuth;
+}
+
+async function enforceOidcTenantPolicy(
+  token: string,
+  user: IUser,
+  initialOptions: GetAppConfigOptions,
+  getAppConfig: RemoteAgentAuthDeps['getAppConfig'],
+): Promise<boolean> {
+  if (isResolvedUserConfigScope(initialOptions, user)) return true;
+
+  const config = await getAppConfig(getUserConfigOptions(user));
+  const oidcConfig = getEnabledOidcConfig(getRemoteAuthConfig(config));
+  if (!oidcConfig) {
+    logger.warn('[remoteAgentAuth] OIDC rejected by resolved tenant auth policy');
+    return false;
+  }
+
+  try {
+    const payload = await verifyOidcBearer(token, oidcConfig);
+    if (hasRequiredScopes(oidcConfig.scope, payload)) return true;
+    logger.warn(
+      `[remoteAgentAuth] Token missing resolved tenant required scope: ${oidcConfig.scope}`,
+    );
+  } catch (err) {
+    logger.warn('[remoteAgentAuth] OIDC token rejected by resolved tenant auth policy:', err);
+  }
+
+  return false;
 }
 
 function verifyJwt(
@@ -347,7 +396,6 @@ async function resolveUser(
   payload: JwtPayload,
   oidcConfig: EnabledOidcConfig,
   findUser: UserMethods['findUser'],
-  updateUser: UserMethods['updateUser'],
 ): Promise<UserResolution> {
   if (typeof payload.sub !== 'string' || payload.sub.trim() === '') {
     return { status: 'rejected', error: 'missing_sub_claim' };
@@ -380,15 +428,11 @@ async function resolveUser(
     updateData.role = SystemRoles.USER;
   }
 
-  if (Object.keys(updateData).length > 0) {
-    await updateUser(user.id, updateData);
-  }
-
   user.federatedTokens = {
     access_token: token,
     ...(payload.exp != null ? { expires_at: payload.exp } : {}),
   };
-  return { status: 'resolved', user };
+  return { status: 'resolved', user, updateData };
 }
 
 /**
@@ -420,7 +464,8 @@ export function createRemoteAgentAuth({
 }: RemoteAgentAuthDeps): RequestHandler {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const config = await getAppConfig(getConfigOptions(req));
+      const initialConfigOptions = getConfigOptions(req);
+      const config = await getAppConfig(initialConfigOptions);
       const authConfig = getRemoteAuthConfig(config);
       const apiKeyEnabled = isApiKeyEnabled(config);
 
@@ -439,10 +484,8 @@ export function createRemoteAgentAuth({
         return;
       }
 
-      const oidcConfig: EnabledOidcConfig = {
-        ...authConfig.oidc,
-        issuer: authConfig.oidc.issuer,
-      };
+      const oidcConfig = getEnabledOidcConfig(authConfig);
+      if (!oidcConfig) throw new Error('OIDC issuer is required when OIDC auth is enabled');
 
       const token = extractBearer(req.headers.authorization);
       if (token == null) {
@@ -474,7 +517,7 @@ export function createRemoteAgentAuth({
         return;
       }
 
-      const userResolution = await resolveUser(token, payload, oidcConfig, findUser, updateUser);
+      const userResolution = await resolveUser(token, payload, oidcConfig, findUser);
 
       if (userResolution.status === 'rejected') {
         logger.warn(`[remoteAgentAuth] OpenID user rejected: ${userResolution.error}`);
@@ -490,6 +533,22 @@ export function createRemoteAgentAuth({
         }
         res.status(401).json({ error: 'Unauthorized' });
         return;
+      }
+
+      if (
+        !(await enforceOidcTenantPolicy(
+          token,
+          userResolution.user,
+          initialConfigOptions,
+          getAppConfig,
+        ))
+      ) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      if (Object.keys(userResolution.updateData).length > 0) {
+        await updateUser(userResolution.user.id, userResolution.updateData);
       }
 
       req.user = userResolution.user;
