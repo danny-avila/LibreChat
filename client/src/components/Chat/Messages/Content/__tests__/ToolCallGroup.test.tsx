@@ -35,10 +35,12 @@ jest.mock('../ToolOutput', () => ({
 
 jest.mock('lucide-react', () => ({
   ChevronDown: () => <span>{'chevron'}</span>,
+  Users: () => <span>{'users'}</span>,
 }));
 
 jest.mock('~/utils', () => ({
   cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
+  getToolDisplayLabel: (name: string) => name,
 }));
 
 jest.mock('../Parts', () => ({
