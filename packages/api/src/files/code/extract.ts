@@ -183,14 +183,20 @@ export async function extractCodeArtifactText(
      *     `application/vnd...spreadsheetml.sheet; charset=binary`
      * Without checking `hasOfficeHtmlPath` BEFORE the `category === 'other'`
      * early return, those inputs would silently fall back to download-only
-     * even though the new dispatcher and the client both expect HTML. */
+     * even though the new dispatcher and the client both expect HTML.
+     *
+     * For office types it is **HTML-or-null** with no text fallback.
+     * The client routes these by extension/MIME to the office preview
+     * buckets and feeds `attachment.text` straight into the Sandpack
+     * iframe's `index.html`. Substituting plain text on producer failure
+     * (timeout, malformed file, zip-bomb rejection) would render literal
+     * `<script>` from a DOCX/XLSX/CSV body as executable markup — a
+     * direct XSS vector. Returning null here lets the client's empty-
+     * text gate keep the artifact off the panel and fall back to the
+     * regular download UI, matching what PPTX already does. */
     if (hasOfficeHtmlPath(name, mimeType)) {
       const html = await renderOfficeHtml(buffer, name, mimeType);
-      if (html != null) {
-        return html;
-      }
-      /* HTML producer returned null — fall through to category-based
-       * dispatch, which may itself return null for unsupported types. */
+      return html;
     }
     if (category === 'other') {
       return null;
@@ -199,9 +205,15 @@ export async function extractCodeArtifactText(
       return extractUtf8(buffer);
     }
     if (category === 'document') {
+      /* Reaches here only for non-office documents (PDF, ODT) — neither
+       * is routed to an HTML preview bucket on the client (PDF has no
+       * client routing, ODT routes to PLAIN_TEXT which renders through
+       * the markdown viewer with proper escaping). Plain text is safe. */
       return await extractDocument(buffer, name, mimeType);
     }
-    /* category === 'pptx' with no HTML output → no preview available. */
+    /* category === 'pptx' that didn't go through the office HTML path
+     * (shouldn't happen — pptx ext is in OFFICE_HTML_EXTENSIONS — but
+     * defended in depth). */
     return null;
   } catch (error) {
     logger.debug(

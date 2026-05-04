@@ -3,13 +3,17 @@ import * as path from 'path';
 import { extractCodeArtifactText, MAX_TEXT_CACHE_BYTES, MAX_TEXT_EXTRACT_BYTES } from './extract';
 
 const docxText = '__DOCX_PARSED__';
+/* parseDocument throws on any originalname containing this token, so
+ * tests can force a failure with whatever extension/MIME they need
+ * (the legacy docx-named constant is preserved for backward-compat
+ * with tests that still reference it). */
 const docxFailureName = 'force-docx-failure.docx';
 const parseDocumentCalls: Array<{ path: string; originalname: string }> = [];
 
 jest.mock('~/files/documents/crud', () => ({
   parseDocument: jest.fn(async ({ file }: { file: { path: string; originalname: string } }) => {
     parseDocumentCalls.push({ path: file.path, originalname: file.originalname });
-    if (file.originalname === docxFailureName) {
+    if (file.originalname.includes('force-docx-failure')) {
       throw new Error('parse failed');
     }
     return { text: docxText, filename: file.originalname, bytes: docxText.length };
@@ -92,73 +96,78 @@ describe('extractCodeArtifactText', () => {
   });
 
   describe('document', () => {
+    /* These tests exercise the legacy `extractDocument` path, which now
+     * only fires for `category === 'document'` files that the office HTML
+     * dispatcher does NOT claim — i.e. PDF and ODT. All ZIP-backed office
+     * formats (DOCX/XLSX/XLS/ODS) bypass `extractDocument` entirely
+     * because they're HTML-or-null per the SEC fix in PR #12934
+     * (Codex P1 review: text-fallback under `index.html` was XSS). */
     beforeEach(() => {
       parseDocumentCalls.length = 0;
     });
 
-    it('routes through parseDocument and returns its text', async () => {
-      const buffer = Buffer.from('PKfake-docx');
+    it('routes through parseDocument and returns its text (ODT)', async () => {
+      const buffer = Buffer.from('PKfake-odt');
       const text = await extractCodeArtifactText(
         buffer,
-        'report.docx',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'notes.odt',
+        'application/vnd.oasis.opendocument.text',
         'document',
       );
       expect(text).toBe(docxText);
     });
 
     it('returns null when parseDocument throws', async () => {
-      const buffer = Buffer.from('PKfake-docx');
+      const buffer = Buffer.from('PKfake-odt');
       const text = await extractCodeArtifactText(
         buffer,
-        docxFailureName,
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        docxFailureName.replace('.docx', '.odt'),
+        'application/vnd.oasis.opendocument.text',
         'document',
       );
       expect(text).toBeNull();
     });
 
-    it('rewrites a generic sniffed MIME to the canonical document MIME by extension', async () => {
+    it('rewrites a generic sniffed MIME to the canonical document MIME by extension (ODT)', async () => {
       // Code-output buffers for office docs are commonly sniffed as
       // application/zip — without canonicalization, parseDocument would
       // reject these and inline previews would silently disappear.
-      const buffer = Buffer.from('PKfake-docx');
-      await extractCodeArtifactText(buffer, 'report.docx', 'application/zip', 'document');
-      expect(parseDocumentCalls[0]?.originalname).toBe('report.docx');
+      const buffer = Buffer.from('PKfake-odt');
+      await extractCodeArtifactText(buffer, 'notes.odt', 'application/zip', 'document');
+      expect(parseDocumentCalls[0]?.originalname).toBe('notes.odt');
     });
 
     it.each([
-      [
-        'report.docx',
-        'application/zip',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      ],
-      [
-        'data.xlsx',
-        'application/octet-stream',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      ],
-      ['legacy.xls', 'application/octet-stream', 'application/vnd.ms-excel'],
-      ['sheet.ods', 'application/zip', 'application/vnd.oasis.opendocument.spreadsheet'],
       ['notes.odt', 'application/zip', 'application/vnd.oasis.opendocument.text'],
-    ])('passes canonical mimetype for %s when sniff returns %s', async (name, sniffed, _canon) => {
-      const parseDocumentMock = (
-        jest.requireMock('~/files/documents/crud') as {
-          parseDocument: jest.Mock;
-        }
-      ).parseDocument;
-      parseDocumentMock.mockClear();
-      await extractCodeArtifactText(Buffer.from('PK'), name, sniffed, 'document');
-      const call = parseDocumentMock.mock.calls[0]?.[0];
-      expect(call?.file?.mimetype).toBe(_canon);
-    });
+      ['report.pdf', 'application/octet-stream', 'application/pdf'],
+    ])(
+      'passes canonical mimetype for %s when sniff returns %s (legacy parseDocument path)',
+      async (name, sniffed, _canon) => {
+        const parseDocumentMock = (
+          jest.requireMock('~/files/documents/crud') as {
+            parseDocument: jest.Mock;
+          }
+        ).parseDocument;
+        parseDocumentMock.mockClear();
+        await extractCodeArtifactText(Buffer.from('PK'), name, sniffed, 'document');
+        const call = parseDocumentMock.mock.calls[0]?.[0];
+        /* PDF doesn't have an entry in `documentMimeFromExtension` so the
+         * sniffed MIME passes through unchanged. ODT does — gets
+         * canonicalized to ODT_MIME. */
+        expect(call?.file?.mimetype).toBe(_canon === 'application/pdf' ? sniffed : _canon);
+      },
+    );
 
     it('writes the temp file inside os.tmpdir() regardless of artifact name', async () => {
-      const buffer = Buffer.from('PKfake-docx');
+      /* Path traversal defense — even a malicious filename like
+       * `../../../etc/passwd.odt` must end up inside os.tmpdir() with a
+       * sanitized basename. Uses ODT since the office HTML path now
+       * short-circuits all ZIP-backed office formats. */
+      const buffer = Buffer.from('PKfake-odt');
       await extractCodeArtifactText(
         buffer,
-        '../../../etc/passwd.docx',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '../../../etc/passwd.odt',
+        'application/vnd.oasis.opendocument.text',
         'document',
       );
       const call = parseDocumentCalls[0];
@@ -166,7 +175,24 @@ describe('extractCodeArtifactText', () => {
       const tmpRoot = path.resolve(os.tmpdir());
       expect(path.resolve(call.path).startsWith(tmpRoot)).toBe(true);
       expect(call.path).not.toContain('..');
-      expect(call.originalname).toBe('passwd.docx');
+      expect(call.originalname).toBe('passwd.odt');
+    });
+
+    it('does NOT call parseDocument for office HTML types (DOCX/XLSX/XLS/ODS)', async () => {
+      /* Lock in the SEC contract: the four office HTML buckets are
+       * HTML-or-null and never fall back to `extractDocument`. */
+      mockOfficeHtml.mockResolvedValue(null);
+      const cases: Array<[string, string]> = [
+        ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+        ['data.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        ['legacy.xls', 'application/vnd.ms-excel'],
+        ['sheet.ods', 'application/vnd.oasis.opendocument.spreadsheet'],
+      ];
+      for (const [name, mime] of cases) {
+        const text = await extractCodeArtifactText(Buffer.from('PK'), name, mime, 'document');
+        expect(text).toBeNull();
+      }
+      expect(parseDocumentCalls.length).toBe(0);
     });
   });
 
@@ -233,7 +259,13 @@ describe('extractCodeArtifactText', () => {
       expect(text).toContain('<table>');
     });
 
-    it('falls back to raw utf-8 text for csv when HTML rendering returns null', async () => {
+    /* SECURITY: office types are HTML-or-null, with NO text fallback.
+     * Codex P1 review on PR #12934 caught that the previous fallback
+     * shipped raw text under an `index.html` slot on the client — a
+     * literal `<script>` in document body would have been rendered as
+     * executable markup. The tests below lock in the safe contract:
+     * failed HTML rendering → null → file becomes download-only. */
+    it('returns null (does not fall back to raw text) when CSV HTML rendering fails', async () => {
       mockOfficeHtml.mockResolvedValueOnce(null);
       const text = await extractCodeArtifactText(
         Buffer.from('a,b\n1,2\n', 'utf-8'),
@@ -241,10 +273,10 @@ describe('extractCodeArtifactText', () => {
         'text/csv',
         'utf8-text',
       );
-      expect(text).toBe('a,b\n1,2\n');
+      expect(text).toBeNull();
     });
 
-    it('falls back to parseDocument for docx when HTML rendering returns null', async () => {
+    it('returns null (does not fall back to parseDocument) when DOCX HTML rendering returns null', async () => {
       mockOfficeHtml.mockResolvedValueOnce(null);
       const text = await extractCodeArtifactText(
         Buffer.from('PKfake-docx'),
@@ -252,11 +284,13 @@ describe('extractCodeArtifactText', () => {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'document',
       );
-      expect(text).toBe(docxText);
-      expect(parseDocumentCalls[0]?.originalname).toBe('report.docx');
+      expect(text).toBeNull();
+      /* parseDocument MUST NOT be called — its plain-text output would
+       * be injected into the iframe as HTML. */
+      expect(parseDocumentCalls.length).toBe(0);
     });
 
-    it('falls back to parseDocument for docx when HTML rendering throws', async () => {
+    it('returns null (does not fall back to parseDocument) when DOCX HTML rendering throws', async () => {
       mockOfficeHtml.mockRejectedValueOnce(new Error('mammoth blew up'));
       const text = await extractCodeArtifactText(
         Buffer.from('PKfake-docx'),
@@ -264,8 +298,28 @@ describe('extractCodeArtifactText', () => {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'document',
       );
-      expect(text).toBe(docxText);
-      expect(parseDocumentCalls[0]?.originalname).toBe('report.docx');
+      expect(text).toBeNull();
+      expect(parseDocumentCalls.length).toBe(0);
+    });
+
+    it('XSS regression: failed XLSX HTML render does not ship raw text containing <script>', async () => {
+      /* If an attacker-controlled .xlsx makes mammoth/SheetJS time out
+       * or throw, the previous fallback would call extractDocument and
+       * ship its plain-text output verbatim in `attachment.text`. The
+       * client routes by extension to SPREADSHEET and feeds that text
+       * into `index.html`. A spreadsheet cell containing the literal
+       * string `<script>alert(1)</script>` would then execute inside
+       * the Sandpack iframe. The fix returns null instead, and the
+       * client's empty-text gate keeps the artifact off the panel. */
+      mockOfficeHtml.mockResolvedValueOnce(null);
+      const text = await extractCodeArtifactText(
+        Buffer.from('PKfake-xlsx'),
+        'attack.xlsx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'document',
+      );
+      expect(text).toBeNull();
+      expect(parseDocumentCalls.length).toBe(0);
     });
 
     it('truncates HTML output when it exceeds the cache cap', async () => {
@@ -353,8 +407,10 @@ describe('extractCodeArtifactText', () => {
        * DOCX/XLSX/PPTX got through the compressed-size gate), the outer
        * extractor must swallow it and return null — that signals to the
        * code-output controller to register the file as a regular
-       * download instead of a panel artifact. Without this, an
-       * unhandled rejection would crash the request. */
+       * download instead of a panel artifact. Crucially, it must NOT
+       * fall back to `extractDocument` text either: the client would
+       * inject that text into `index.html` and a literal `<script>`
+       * tag in the document body would execute (Codex P1 review). */
       const bombError = Object.assign(new Error('zip bomb suspected'), {
         name: 'ZipBombError',
         code: 'ZIP_BOMB',
@@ -366,10 +422,8 @@ describe('extractCodeArtifactText', () => {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'document',
       );
-      // Falls through to parseDocument which is also mocked — returns
-      // the docx-mock text via the legacy text-extraction path. The key
-      // assertion is that we don't crash and don't leak the bomb error.
-      expect(text).toBe(docxText);
+      expect(text).toBeNull();
+      expect(parseDocumentCalls.length).toBe(0);
     });
 
     /* Regression for Codex P2 review on PR #12934. The classifier returns
