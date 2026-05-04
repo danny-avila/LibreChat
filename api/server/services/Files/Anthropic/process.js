@@ -150,10 +150,6 @@ async function processAnthropicFile({
 
     await createFile(fileRecord, true);
 
-    logger.warn(
-      `[processAnthropicFile][SKILLS-DEBUG] Saved ${realFilename} (${buffer.length} bytes) -> ${filepath}`,
-    );
-
     return Object.assign({}, fileRecord, { messageId, conversationId });
   } catch (error) {
     logger.error('[processAnthropicFile] Failed to download/persist Anthropic file', {

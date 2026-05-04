@@ -38,6 +38,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import store from '~/store';
 import { useSubmitMessage } from '~/hooks';
+import useWarmupSkillsContainer from '~/hooks/Anthropic/useWarmupSkillsContainer';
 import Conversation from '~/components/Conversations/Convo';
 import useConversationNameForm from '~/hooks/Plugins/useConversationNameForm';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
@@ -87,6 +88,7 @@ function StudentDetailsFormButton({
   const setMode = useSetRecoilState(modeState);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const warmupSkillsContainer = useWarmupSkillsContainer();
   // const { conversation } = store.useCreateConversationAtom(index);
   const { conversation, newConversation } = useChatContext();
   const [currentMode] = useRecoilState(modeState);
@@ -168,6 +170,10 @@ function StudentDetailsFormButton({
     const spec = findSpecByName(modelSpecs, 'help-others');
     if (!spec) return;
 
+    /* Kick off Skills container pre-warm in the background. By the time the
+     * user types their first message, the container should be ready. */
+    warmupSkillsContainer();
+
     setMode(mode);
     queryClient.setQueryData<TMessage[]>(
       [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
@@ -197,6 +203,8 @@ function StudentDetailsFormButton({
     const spec = findSpecByName(modelSpecs, 'help-others');
     if (!spec) return;
     console.log('setting mode to:', mode);
+    /* Pre-warm the Skills container in the background. */
+    warmupSkillsContainer();
     setMode(mode);
 
     queryClient.setQueryData<TMessage[]>(

@@ -16,6 +16,7 @@ import { cn } from '~/utils';
 import store from '~/store';
 import { modeState, Mode } from '~/store/mode';
 import { useRecoilState, useSetRecoilState } from 'recoil';
+import useWarmupSkillsContainer from '~/hooks/Anthropic/useWarmupSkillsContainer';
 
 
 interface ConversationProps {
@@ -48,6 +49,7 @@ export default function Conversation({
 
   const previousTitle = useRef(title);
   const setMode = useSetRecoilState(modeState);
+  const warmupSkillsContainer = useWarmupSkillsContainer();
 
 
   useEffect(() => {
@@ -130,6 +132,10 @@ export default function Conversation({
 
     if (spec === 'help-others') {
       setMode('student');
+      /* Pre-warm the Skills container in the background so generating a
+       * doc in this re-opened Help Others conversation doesn't pay the
+       * full cold-start. Triggered only for help-others per design. */
+      warmupSkillsContainer();
     } else if (spec === 'help-myself') {
       setMode('classroom');
     } else if (spec === 'application-help') {

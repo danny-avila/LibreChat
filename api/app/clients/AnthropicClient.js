@@ -27,6 +27,10 @@ const { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } = require('
 const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { processAnthropicFile } = require('~/server/services/Files/Anthropic/process');
+const {
+  peekWarmContainer,
+  invalidateWarmContainer,
+} = require('~/server/services/Anthropic/containerCache');
 const { createFetch, createStreamEventHandlers } = require('./generators');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { sleep } = require('~/server/utils');
@@ -45,8 +49,43 @@ class SplitStreamHandler extends _Handler {
   }
 }
 
-/** Helper function to introduce a delay before retrying */
-function delayBeforeRetry(attempts, baseDelay = 1000) {
+/**
+ * Detect whether an Anthropic SDK error represents a 429 rate-limit response.
+ * The SDK can surface the status as `status`, `statusCode`, or buried in the
+ * raw message string, so we check all three.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isRateLimitError(error) {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const status = /** @type {{ status?: number, statusCode?: number }} */ (error).status
+    ?? /** @type {{ statusCode?: number }} */ (error).statusCode;
+  if (status === 429) {
+    return true;
+  }
+  const message = /** @type {{ message?: string }} */ (error).message ?? '';
+  return /\b429\b/.test(message) || /rate_limit_error/i.test(message);
+}
+
+/**
+ * Helper function to introduce a delay before retrying.
+ * For 429 (rate-limit) errors, waits ~30s on the first retry then backs off
+ * further, since Anthropic's rate limits reset on a per-minute basis and
+ * tight retries (350ms x attempt = ~2s total) are guaranteed to all hit the
+ * same rate-limited window.
+ * @param {number} attempts
+ * @param {number} [baseDelay=1000]
+ * @param {unknown} [error]
+ */
+function delayBeforeRetry(attempts, baseDelay = 1000, error) {
+  if (isRateLimitError(error)) {
+    /* 30s, 60s, 90s — keeps the absolute wall-clock retry time bounded
+     * while giving Anthropic's per-minute window time to clear. */
+    const delay = 30000 * attempts;
+    return new Promise((resolve) => setTimeout(resolve, delay));
+  }
   return new Promise((resolve) => setTimeout(resolve, baseDelay * attempts));
 }
 
@@ -746,17 +785,8 @@ class AnthropicClient extends BaseClient {
     }
     const blockType = block.type ?? '';
 
-    /** TEMP verbose logging while debugging Skills file capture. Log every
-     *  content_block_start so we can see exactly what Anthropic streams.
-     *  Remove or downgrade once stable. */
-    logger.warn(
-      '[AnthropicClient][SKILLS-DEBUG] content_block_start',
-      JSON.stringify(block).slice(0, 800),
-    );
-
     if (blockType === 'container_upload' && block.file_id) {
       this.generatedFiles.push({ file_id: block.file_id });
-      logger.warn('[AnthropicClient][SKILLS-DEBUG] Captured container_upload', block.file_id);
       return;
     }
 
@@ -773,10 +803,6 @@ class AnthropicClient extends BaseClient {
             file_id: item.file_id,
             filename: typeof item.filename === 'string' ? item.filename : undefined,
           });
-          logger.warn(
-            '[AnthropicClient][SKILLS-DEBUG] Captured file_id from tool result',
-            item.file_id,
-          );
         }
       }
       return;
@@ -881,12 +907,26 @@ class AnthropicClient extends BaseClient {
         ...(requestOptions.tools ?? []),
         { type: 'code_execution_20250825', name: 'code_execution' },
       ];
-      requestOptions.container = {
+      const containerConfig = {
         skills: [
           { type: 'anthropic', skill_id: 'docx', version: 'latest' },
           { type: 'anthropic', skill_id: 'pdf', version: 'latest' },
         ],
       };
+      /* If the user has a warm container from a prior pre-warm, attach its
+       * id so Anthropic skips provisioning. The cache lookup is a fast local
+       * cache hit (no network). If absent, Anthropic creates a fresh
+       * container and we save its id back below. */
+      const warmContainerId = await peekWarmContainer(this.user);
+      if (warmContainerId) {
+        containerConfig.id = warmContainerId;
+        logger.info(`[WARMUP] reusing warm container ${warmContainerId} for user ${this.user}`);
+      } else {
+        logger.info(
+          `[WARMUP] no warm container cached for user ${this.user}; Anthropic will provision a new one`,
+        );
+      }
+      requestOptions.container = containerConfig;
 
       const skillsDirective =
         'When you need to generate a document, spreadsheet, presentation, or PDF, ' +
@@ -912,26 +952,6 @@ class AnthropicClient extends BaseClient {
     }
 
     logger.debug('[AnthropicClient]', { ...requestOptions });
-
-    /** TEMP — surface the outgoing messages array shape so we can find which
-     *  history entry has malformed content (Skills/code-exec interactions
-     *  occasionally leave non-object content[] elements). Remove once stable. */
-    if (Array.isArray(requestOptions.messages)) {
-      logger.warn(
-        '[AnthropicClient][SKILLS-DEBUG] outgoing messages shape',
-        JSON.stringify(
-          requestOptions.messages.map((m, i) => ({
-            i,
-            role: m?.role,
-            contentType: Array.isArray(m?.content)
-              ? `array[${m.content.length}] of ${m.content
-                  .map((c) => (c == null ? 'null' : typeof c === 'string' ? 'string' : c?.type ?? 'object'))
-                  .join(',')}`
-              : typeof m?.content,
-          })),
-        ),
-      );
-    }
     const handlers = createStreamEventHandlers(this.options.res);
     this.streamHandler = new SplitStreamHandler({
       accumulate: true,
@@ -977,8 +997,26 @@ class AnthropicClient extends BaseClient {
             `User: ${this.user} | Anthropic Request ${attempts} failed: ${error.message}`,
           );
 
+          /* If the warm container id we sent is stale (Anthropic destroyed
+           * it / it expired), the request errors before any tokens stream.
+           * Drop the id from requestOptions and clear the cache so the
+           * retry provisions a fresh container. */
+          const errorMessage = (error && error.message) || '';
+          const looksLikeContainerError =
+            /container/i.test(errorMessage) &&
+            (/not\s*found/i.test(errorMessage) ||
+              /expired/i.test(errorMessage) ||
+              /invalid/i.test(errorMessage));
+          if (looksLikeContainerError && requestOptions.container?.id) {
+            logger.warn(
+              `[AnthropicClient] Stale warm container for user ${this.user}; clearing cache and retrying without id.`,
+            );
+            await invalidateWarmContainer(this.user);
+            delete requestOptions.container.id;
+          }
+
           if (attempts < maxRetries) {
-            await delayBeforeRetry(attempts, 350);
+            await delayBeforeRetry(attempts, 350, error);
           } else if (this.streamHandler && this.streamHandler.reasoningTokens.length) {
             return this.getStreamText();
           } else if (intermediateReply.length > 0) {
@@ -999,18 +1037,24 @@ class AnthropicClient extends BaseClient {
 
     await processResponse.bind(this)();
 
-    logger.warn(
-      `[AnthropicClient][SKILLS-DEBUG] stream loop complete. generatedFiles count = ${this.generatedFiles.length}`,
-    );
+    /* If Anthropic returned a fresh container (because none was cached or
+     * the previous one expired), save its id so subsequent requests reuse
+     * it. message_start carries the message envelope which includes the
+     * container reference. */
+    /* Note: Anthropic does NOT surface container.id in streaming events
+     * (verified empirically — message_start, message_delta, message_stop
+     * all lack it). The cache is populated exclusively by the warmup
+     * endpoint, which makes a non-streaming code-execution call where
+     * container.id appears in the response body. If a chat lands here
+     * without a warm container, this request creates a new one Anthropic-
+     * side that we have no way to track for reuse. The next user message
+     * will pay another cold start unless the warmup endpoint ran first. */
 
     if (this.generatedFiles.length > 0) {
       if (!this.artifactPromises) {
         this.artifactPromises = [];
       }
       for (const fileEntry of this.generatedFiles) {
-        logger.warn(
-          `[AnthropicClient][SKILLS-DEBUG] Queueing fetch for file_id=${fileEntry.file_id}`,
-        );
         this.artifactPromises.push(
           processAnthropicFile({
             req: this.options.req,
