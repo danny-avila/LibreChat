@@ -67,12 +67,14 @@ export default function ReadFileCall({
   args,
   output = '',
   attachments,
+  hideAttachments = false,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
+  hideAttachments?: boolean;
 }) {
   const localize = useLocalize();
   const filePath = useMemo(() => parseJsonField(args, 'file_path'), [args]);
@@ -123,7 +125,9 @@ export default function ReadFileCall({
           )}
         </div>
       </div>
-      {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
+      {!hideAttachments && attachments && attachments.length > 0 && (
+        <AttachmentGroup attachments={attachments} />
+      )}
     </>
   );
 }

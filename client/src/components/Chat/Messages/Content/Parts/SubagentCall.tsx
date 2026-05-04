@@ -38,6 +38,7 @@ interface SubagentCallProps {
    *  runs recorded before the persistence path landed will not have this
    *  field; those fall back to the atom (or the raw `output` string). */
   persistedContent?: TMessageContentParts[];
+  hideAttachments?: boolean;
 }
 
 const TICKER_MAX_LINES = 3;
@@ -161,6 +162,7 @@ export default function SubagentCall({
   output,
   attachments,
   persistedContent,
+  hideAttachments = false,
 }: SubagentCallProps) {
   const localize = useLocalize();
   const progress = useRecoilValue(subagentProgressByToolCallId(toolCallId));
@@ -561,7 +563,9 @@ export default function SubagentCall({
         </OGDialogContent>
       </OGDialog>
 
-      {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
+      {!hideAttachments && attachments && attachments.length > 0 && (
+        <AttachmentGroup attachments={attachments} />
+      )}
     </>
   );
 }

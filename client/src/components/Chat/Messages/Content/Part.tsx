@@ -171,6 +171,7 @@ const Part = memo(function Part({
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
           attachments={attachments}
+          hideAttachments={hideAttachments}
         />
       );
     } else if (isToolCall && toolCall.name === Constants.SUBAGENT) {
@@ -194,6 +195,7 @@ const Part = memo(function Part({
           isSubmitting={isSubmitting}
           attachments={attachments}
           persistedContent={persistedContent}
+          hideAttachments={hideAttachments}
         />
       );
     } else if (isToolCall && toolCall.name === 'read_file') {
@@ -204,6 +206,7 @@ const Part = memo(function Part({
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
           attachments={attachments}
+          hideAttachments={hideAttachments}
         />
       );
     } else if (isToolCall && toolCall.name === 'bash_tool') {
@@ -214,6 +217,7 @@ const Part = memo(function Part({
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
           attachments={attachments}
+          hideAttachments={hideAttachments}
         />
       );
     } else if (isToolCall && toolCall.name === Tools.web_search) {
