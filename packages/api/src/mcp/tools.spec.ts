@@ -3,6 +3,16 @@ import { createMCPToolCacheService } from './tools';
 import type { LCAvailableTools } from './types';
 import type { MCPToolInput, MCPToolCacheDeps } from './tools';
 
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  logger: {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  },
+}));
+
 function createMockDeps(overrides: Partial<MCPToolCacheDeps> = {}): MCPToolCacheDeps {
   return {
     getCachedTools: jest.fn().mockResolvedValue(null),
@@ -67,6 +77,49 @@ describe('createMCPToolCacheService', () => {
       await expect(
         updateMCPServerTools({ userId: 'u1', serverName: 'srv', tools }),
       ).rejects.toThrow('Redis down');
+    });
+
+    it('warns when the composed tool name exceeds the OpenAI 64-char limit', async () => {
+      const { logger } = jest.requireMock('@librechat/data-schemas') as {
+        logger: { warn: jest.Mock; debug: jest.Mock; error: jest.Mock };
+      };
+      logger.warn.mockClear();
+
+      const deps = createMockDeps();
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      // 25 + 5 (delimiter "_mcp_") + 40 = 70 > 64
+      const longServerName = 'my-very-long-mcp-server-1';
+      const longToolName = 'execute_extremely_descriptive_action_name';
+      const tools: MCPToolInput[] = [{ name: longToolName }];
+
+      await updateMCPServerTools({
+        userId: 'u1',
+        serverName: longServerName,
+        tools,
+      });
+
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      const message = logger.warn.mock.calls[0][0] as string;
+      expect(message).toContain(longServerName);
+      expect(message).toContain(longToolName);
+      expect(message).toContain('exceeds');
+      expect(message).toContain('64');
+    });
+
+    it('does not warn for tool names within the OpenAI 64-char limit', async () => {
+      const { logger } = jest.requireMock('@librechat/data-schemas') as {
+        logger: { warn: jest.Mock; debug: jest.Mock; error: jest.Mock };
+      };
+      logger.warn.mockClear();
+
+      const deps = createMockDeps();
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      const tools: MCPToolInput[] = [{ name: 'search' }];
+      await updateMCPServerTools({ userId: 'u1', serverName: 'brave', tools });
+
+      expect(logger.warn).not.toHaveBeenCalled();
     });
   });
 
