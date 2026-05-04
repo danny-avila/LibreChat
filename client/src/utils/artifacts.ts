@@ -1,5 +1,5 @@
 import dedent from 'dedent';
-import { shadcnComponents } from 'librechat-data-provider';
+import { excelMimeTypes, shadcnComponents } from 'librechat-data-provider';
 import type {
   SandpackProviderProps,
   SandpackPredefinedTemplate,
@@ -679,8 +679,18 @@ export function detectArtifactTypeFromFile(
   const byBareName = byExtension
     ? undefined
     : EXTENSION_TO_TOOL_ARTIFACT_TYPE[bareNameFromBasename(base)];
-  const type =
-    byExtension ?? byBareName ?? MIME_TO_TOOL_ARTIFACT_TYPE[baseMime(attachment.type)] ?? null;
+  /* Exact-match MIME lookup first; for the spreadsheet bucket the
+   * backend's `officeHtmlBucket` accepts the broad `excelMimeTypes`
+   * regex (covers `application/x-ms-excel`, `application/x-xls`,
+   * `application/msexcel`, `application/x-dos_ms_excel`, etc.). The
+   * client must accept the same set or extensionless XLS uploads with
+   * legacy MIMEs would have backend HTML produced but never get
+   * routed/registered on the panel. */
+  const normalizedMime = baseMime(attachment.type);
+  const byMime =
+    MIME_TO_TOOL_ARTIFACT_TYPE[normalizedMime] ??
+    (excelMimeTypes.test(normalizedMime) ? TOOL_ARTIFACT_TYPES.SPREADSHEET : undefined);
+  const type = byExtension ?? byBareName ?? byMime ?? null;
   if (type == null) {
     return null;
   }

@@ -113,6 +113,19 @@ describe('detectArtifactTypeFromFile', () => {
      * would be skipped despite the backend producing valid HTML.
      * Regression for Codex P3 review on PR #12934. */
     ['text/comma-separated-values', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    /* Legacy XLS MIME aliases — backend's `excelMimeTypes` regex
+     * accepts the full set used by older browsers/servers; the client
+     * mirrors via the same regex so an extensionless XLS with any of
+     * these legacy MIMEs gets routed to the spreadsheet bucket and
+     * the artifact actually shows up on the panel. Regression for
+     * Codex P1 review on PR #12934. */
+    ['application/x-ms-excel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/x-msexcel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/msexcel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/x-excel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/x-dos_ms_excel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/xls', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/x-xls', TOOL_ARTIFACT_TYPES.SPREADSHEET],
     [
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       TOOL_ARTIFACT_TYPES.PRESENTATION,

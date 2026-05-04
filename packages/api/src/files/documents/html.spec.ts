@@ -131,6 +131,48 @@ describe('Office HTML producers', () => {
         expect(_internal.MAX_DOCX_CDN_BINARY_BYTES).toBe(350 * 1024);
       });
     });
+
+    describe('OFFICE_PREVIEW_DISABLE_CDN escape hatch', () => {
+      /* Air-gapped / corporate-filtered networks where jsdelivr is
+       * unreachable need a way to force the mammoth path so DOCX
+       * previews don't degrade to "Preview unavailable" on every open.
+       * Codex P2 review on PR #12934. */
+      const ORIGINAL = process.env.OFFICE_PREVIEW_DISABLE_CDN;
+      afterEach(() => {
+        if (ORIGINAL === undefined) {
+          delete process.env.OFFICE_PREVIEW_DISABLE_CDN;
+        } else {
+          process.env.OFFICE_PREVIEW_DISABLE_CDN = ORIGINAL;
+        }
+      });
+
+      test('default behavior (env unset): small docx → CDN path', async () => {
+        delete process.env.OFFICE_PREVIEW_DISABLE_CDN;
+        const html = await wordDocToHtml(readFixture('sample.docx'));
+        expect(html).toContain('id="lc-doc-data"');
+      });
+
+      it.each([['true'], ['1'], ['yes'], ['TRUE'], ['Yes'], ['  true  ']])(
+        'env=%s forces the mammoth fallback even for small files',
+        async (value) => {
+          process.env.OFFICE_PREVIEW_DISABLE_CDN = value;
+          const html = await wordDocToHtml(readFixture('sample.docx'));
+          // Mammoth-path signature, NOT CDN path.
+          expect(html).toContain('<article class="lc-docx">');
+          expect(html).not.toContain('id="lc-doc-data"');
+          expect(html).not.toContain('cdn.jsdelivr.net');
+        },
+      );
+
+      it.each([['false'], ['0'], ['no'], [''], ['anything-else']])(
+        'env=%j does not disable the CDN path',
+        async (value) => {
+          process.env.OFFICE_PREVIEW_DISABLE_CDN = value;
+          const html = await wordDocToHtml(readFixture('sample.docx'));
+          expect(html).toContain('id="lc-doc-data"');
+        },
+      );
+    });
   });
 
   describe('excelSheetToHtml', () => {

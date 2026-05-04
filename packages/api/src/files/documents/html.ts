@@ -465,6 +465,28 @@ async function wordDocToHtmlViaMammoth(buffer: Buffer): Promise<string> {
 }
 
 /**
+ * Whether the CDN-rendered DOCX path is enabled for this process.
+ * Operators on air-gapped or filtered corporate networks (where
+ * `cdn.jsdelivr.net` is blocked) should set
+ * `OFFICE_PREVIEW_DISABLE_CDN=true` so DOCX previews fall back to the
+ * server-side mammoth renderer instead of degrading to "Preview
+ * unavailable" in the iframe — Codex P2 review on PR #12934.
+ *
+ * Read at call time (rather than module load) so jest tests can flip
+ * the env in a `beforeEach` without `jest.resetModules()`. The cost is
+ * a single property access per render. Truthy values: `true`, `1`,
+ * `yes` (case-insensitive). Anything else (including unset) means
+ * "use the CDN path when the size dispatcher picks it."
+ */
+function isOfficePreviewCdnDisabled(): boolean {
+  const v = process.env.OFFICE_PREVIEW_DISABLE_CDN;
+  if (v == null) {
+    return false;
+  }
+  return /^(1|true|yes)$/i.test(v.trim());
+}
+
+/**
  * Convert a `.docx` buffer to a sandboxed HTML document. Two render
  * paths, chosen by file size:
  *
@@ -472,11 +494,12 @@ async function wordDocToHtmlViaMammoth(buffer: Buffer): Promise<string> {
  *      binary as base64 and lets `docx-preview` render it inside the
  *      Sandpack iframe. High visual fidelity — preserves cell shading,
  *      run-level colors/fonts, headers/footers, columns, and images.
- *   2. **Mammoth (fallback for larger files)**: server-side semantic
- *      HTML conversion. Lower fidelity (flat paragraphs, no shading)
- *      but produces compact output that fits the
- *      `MAX_TEXT_CACHE_BYTES` (512 KB) cap on `attachment.text` even
- *      for large documents.
+ *   2. **Mammoth (fallback for larger files OR when the CDN path is
+ *      explicitly disabled via `OFFICE_PREVIEW_DISABLE_CDN=true`)**:
+ *      server-side semantic HTML conversion. Lower fidelity (flat
+ *      paragraphs, no shading) but produces compact output that fits
+ *      the `MAX_TEXT_CACHE_BYTES` (512 KB) cap on `attachment.text`
+ *      even for large documents, and works without external network.
  *
  * Both paths pre-flight through `assertSafeZipSize` so a zip-bomb DOCX
  * is rejected before either renderer touches it — mammoth's internal
@@ -486,6 +509,9 @@ async function wordDocToHtmlViaMammoth(buffer: Buffer): Promise<string> {
  */
 export async function wordDocToHtml(buffer: Buffer): Promise<string> {
   await assertSafeZipSize(buffer, { name: 'docx' });
+  if (isOfficePreviewCdnDisabled()) {
+    return wordDocToHtmlViaMammoth(buffer);
+  }
   if (buffer.length <= MAX_DOCX_CDN_BINARY_BYTES) {
     return wordDocToHtmlViaCdn(buffer);
   }
