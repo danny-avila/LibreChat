@@ -1073,8 +1073,29 @@ function buildPptxCdnDocument(base64: string): string {
 :root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; }
 @media (prefers-color-scheme: dark) { :root { --bg: #1a1a2e; --fg: #e5e7eb; --muted: #9ca3af; } }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-#lc-render { padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
-#lc-render > * { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1); border-radius: 4px; max-width: 100%; }
+#lc-render { padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+/* Each rendered slide is wrapped post-hoc by the bootstrap script in
+ * an .lc-slide-wrap div with explicit width/height set inline. The
+ * inner slide keeps its native pixel size and gets transformed via
+ * a CSS scale so it fits the iframe width without horizontal
+ * scrolling. Without this, pptx-preview emits slides at whatever
+ * resolution it computed against (typically 960×540) and overflows
+ * narrow panels — manual e2e feedback on PR #12934. */
+.lc-slide-wrap {
+  position: relative;
+  margin: 0 auto;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.lc-slide-wrap > * {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}
 #lc-fallback { padding: 24px; font-size: 14px; line-height: 1.5; color: var(--muted); text-align: center; }
 .lc-pptx-loading { display: flex; align-items: center; justify-content: center; height: 60vh; color: var(--muted); font-size: 14px; }
 </style>
@@ -1129,16 +1150,101 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
     var container = document.getElementById('lc-render');
     var loading = document.querySelector('.lc-pptx-loading');
     if (loading) { loading.remove(); }
-    var previewer = pptxPreview.init(container, { width: 960, height: 540 });
+    /* pptx-preview renders into a fixed pixel size; we keep it at the
+     * native 16:9 default so its internal layout calculations are
+     * right, then post-process to scale each slide to the iframe's
+     * width via CSS transform. The wrap+transform approach (vs.
+     * shrinking the init dimensions) preserves font metrics, image
+     * resolution, and chart positioning that pptx-preview computed
+     * against the 960×540 canvas. */
+    var SLIDE_W = 960, SLIDE_H = 540;
+    var previewer = pptxPreview.init(container, { width: SLIDE_W, height: SLIDE_H });
+
+    /* Wrap a single slide element in a sized container and apply the
+     * scale transform. Native size is cached on the slide's dataset
+     * so subsequent fits don't measure the already-transformed box. */
+    function wrapAndFit(slide, scale) {
+      if (slide.parentNode && slide.parentNode.classList && slide.parentNode.classList.contains('lc-slide-wrap')) {
+        return slide.parentNode;
+      }
+      var nativeW = parseFloat(slide.dataset.lcNativeW);
+      var nativeH = parseFloat(slide.dataset.lcNativeH);
+      if (!nativeW || !nativeH) {
+        nativeW = slide.offsetWidth || SLIDE_W;
+        nativeH = slide.offsetHeight || SLIDE_H;
+        slide.dataset.lcNativeW = String(nativeW);
+        slide.dataset.lcNativeH = String(nativeH);
+      }
+      var wrap = document.createElement('div');
+      wrap.className = 'lc-slide-wrap';
+      slide.parentNode.insertBefore(wrap, slide);
+      wrap.appendChild(slide);
+      wrap.style.width = (nativeW * scale) + 'px';
+      wrap.style.height = (nativeH * scale) + 'px';
+      slide.style.transform = 'scale(' + scale + ')';
+      return wrap;
+    }
+
+    function computeScale() {
+      /* clientWidth excludes vertical scrollbar but includes our
+       * 16px horizontal padding (set via box-sizing:border-box). The
+       * cap at 1.0 means slides smaller than the panel render at 1:1
+       * rather than upscaling and getting blurry. */
+      var available = (container.clientWidth || window.innerWidth) - 32;
+      if (available <= 0) { available = 600; }
+      return Math.min(1, available / SLIDE_W);
+    }
+
+    function fitAll() {
+      var scale = computeScale();
+      /* Re-fit any already-wrapped slides (window resize). */
+      var wraps = container.querySelectorAll('.lc-slide-wrap');
+      for (var i = 0; i < wraps.length; i++) {
+        var wrap = wraps[i];
+        var inner = wrap.firstElementChild;
+        if (!inner) { continue; }
+        var nativeW = parseFloat(inner.dataset.lcNativeW) || SLIDE_W;
+        var nativeH = parseFloat(inner.dataset.lcNativeH) || SLIDE_H;
+        wrap.style.width = (nativeW * scale) + 'px';
+        wrap.style.height = (nativeH * scale) + 'px';
+        inner.style.transform = 'scale(' + scale + ')';
+      }
+      /* Wrap any newly-appended slides (pptx-preview emits them
+       * incrementally as parsing completes). */
+      var children = container.children;
+      for (var j = 0; j < children.length; j++) {
+        var el = children[j];
+        if (el.classList && (el.classList.contains('lc-slide-wrap') || el.classList.contains('lc-pptx-loading'))) {
+          continue;
+        }
+        wrapAndFit(el, scale);
+      }
+    }
+
+    /* Watch the container for slide insertions so streaming renders
+     * get scaled as they arrive (vs. waiting for the whole preview
+     * promise to settle). */
+    if (typeof MutationObserver !== 'undefined') {
+      new MutationObserver(fitAll).observe(container, { childList: true });
+    }
+
+    /* Re-fit on iframe resize (panel drag, window resize). */
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(fitAll).observe(container);
+    } else {
+      window.addEventListener('resize', fitAll);
+    }
+
     var result = previewer.preview(bytes.buffer);
     if (result && typeof result.then === 'function') {
-      result.then(markSuccess).catch(function (err) { showFallback(err && err.message); });
+      result.then(function () { fitAll(); markSuccess(); }).catch(function (err) { showFallback(err && err.message); });
     }
     /* Final safety net: if 8 seconds in the renderer hasn't appended
      * anything visible to the container, assume it failed silently. */
     setTimeout(function () {
       if (settled) { return; }
       if (container && container.children.length > 0) {
+        fitAll();
         markSuccess();
         return;
       }

@@ -459,6 +459,32 @@ describe('Office HTML producers', () => {
       test('size-fallback threshold is the documented 350 KB', () => {
         expect(_internal.MAX_PPTX_CDN_BINARY_BYTES).toBe(350 * 1024);
       });
+
+      test('bootstrap wraps + scales each slide so it fits the iframe width', async () => {
+        /* pptx-preview emits slides at the init dimensions (960×540
+         * by default). Without post-processing, narrow artifact panels
+         * scroll horizontally and slides spill outside the viewport.
+         * The bootstrap wraps each rendered slide in `.lc-slide-wrap`
+         * and applies `transform: scale(panel_width / 960)` so the
+         * panel always fits — manual e2e feedback on PR #12934. */
+        const pptx = await buildPptx([{ title: 'A' }, { title: 'B' }]);
+        const html = await _internal.pptxToHtmlViaCdn(pptx);
+        /* The wrapper class — used by the CSS rules that own the
+         * sized container. */
+        expect(html).toContain('lc-slide-wrap');
+        /* The bootstrap script's wrap function name + the scale
+         * computation derived from `clientWidth / SLIDE_W`. */
+        expect(html).toContain('wrapAndFit');
+        expect(html).toContain('SLIDE_W');
+        expect(html).toContain('available / SLIDE_W');
+        /* MutationObserver watches for streaming slide insertions;
+         * ResizeObserver re-fits on panel resize. */
+        expect(html).toContain('MutationObserver');
+        expect(html).toContain('ResizeObserver');
+        /* Native dimensions cached on the slide so re-fitting on
+         * resize doesn't measure the already-transformed box. */
+        expect(html).toContain('lcNativeW');
+      });
     });
 
     describe('OFFICE_PREVIEW_DISABLE_CDN escape hatch', () => {
