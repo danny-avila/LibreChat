@@ -1469,6 +1469,14 @@ export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
+  [EModelEndpoint.azureOpenAI]: [
+    ...sharedOpenAIModels,
+    'chatgpt-4o-latest',
+    'gpt-4-vision-preview',
+    'gpt-3.5-turbo-instruct-0914',
+    'gpt-3.5-turbo-instruct',
+    'sora',
+  ],
   [EModelEndpoint.google]: [
     // Gemini 3.1 Models
     'gemini-3.1-pro-preview',
@@ -1498,13 +1506,14 @@ const fitlerAssistantModels = (str: string) => {
 };
 
 const openAIModels = defaultModels[EModelEndpoint.openAI];
+const azureOpenAIModels = defaultModels[EModelEndpoint.azureOpenAI];
 
 export const initialModelsConfig: TModelsConfig = {
   initial: [],
   [EModelEndpoint.openAI]: openAIModels,
   [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
   [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
-  [EModelEndpoint.azureOpenAI]: openAIModels,
+  [EModelEndpoint.azureOpenAI]: azureOpenAIModels,
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
