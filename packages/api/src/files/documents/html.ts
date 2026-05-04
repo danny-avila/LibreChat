@@ -93,12 +93,21 @@ export async function sanitizeOfficeHtml(html: string): Promise<string> {
       div: ['class'],
       span: ['class'],
       section: ['class', 'aria-labelledby'],
-      h1: ['id'],
-      h2: ['id'],
-      h3: ['id'],
-      h4: ['id'],
-      h5: ['id'],
-      h6: ['id'],
+      h1: ['id', 'class'],
+      h2: ['id', 'class'],
+      h3: ['id', 'class'],
+      h4: ['id', 'class'],
+      h5: ['id', 'class'],
+      h6: ['id', 'class'],
+      p: ['class'],
+      ol: ['class'],
+      ul: ['class'],
+      li: ['class'],
+      blockquote: ['class'],
+      tbody: ['class'],
+      thead: ['class'],
+      tr: ['class'],
+      tfoot: ['class'],
     },
     /* `data:` is intentionally NOT in the global scheme list — it's only
      * allowed for `<img src>` (mammoth inlines DOCX images as base64
@@ -235,10 +244,69 @@ ${bodyHtml}
  * ============================================================================= */
 
 /**
+ * Style-map directives that broaden mammoth's default heading detection.
+ * Mammoth's stock map only promotes paragraphs whose ms-word style name
+ * matches `Heading 1`/`Heading 2`/etc. — useless for code-generated
+ * docs (e.g. python-docx output) that apply direct character formatting
+ * instead of named styles. The `Title`/`Subtitle` mappings catch the
+ * built-in title styles used by Word's Insert > Cover Page workflow;
+ * explicit `Heading 1` thru `Heading 6` mappings retain mammoth's
+ * defaults; and `:fresh` tells mammoth not to merge consecutive
+ * matching paragraphs into a single heading element.
+ */
+const DOCX_STYLE_MAP = [
+  "p[style-name='Title'] => h1.lc-docx-title:fresh",
+  "p[style-name='Subtitle'] => h2.lc-docx-subtitle:fresh",
+  "p[style-name='Heading 1'] => h1:fresh",
+  "p[style-name='Heading 2'] => h2:fresh",
+  "p[style-name='Heading 3'] => h3:fresh",
+  "p[style-name='Heading 4'] => h4:fresh",
+  "p[style-name='Heading 5'] => h5:fresh",
+  "p[style-name='Heading 6'] => h6:fresh",
+  "p[style-name='Quote'] => blockquote:fresh",
+];
+
+/**
+ * CSS layered on top of `wrapAsDocument`'s base styles to give mammoth's
+ * flat output more visual structure. Mammoth strips the navy banners,
+ * cell shading, and column layouts that direct-formatted docs apply, so
+ * the source loses most of its presentation. We compensate with three
+ * targeted heuristics:
+ *
+ *   1. The first row of any `<table>` gets sticky-header styling
+ *      regardless of `<thead>` (mammoth never emits `<thead>`).
+ *   2. Tables get alternating row stripes so dense data blocks stay
+ *      scannable even without the source's hand-tuned shading.
+ *   3. A bold-only-child paragraph (`<p><strong>X</strong></p>`) is the
+ *      python-docx idiom for a "section heading"; styled as a
+ *      pseudo-h2 with a thin accent border so the document's structure
+ *      survives the round-trip.
+ */
+const DOCX_EXTRA_CSS = `
+.lc-docx h1 { font-size: 1.5rem; font-weight: 700; margin: 1em 0 0.5em; padding-bottom: 0.3em; border-bottom: 2px solid var(--border); }
+.lc-docx h2 { font-size: 1.2rem; font-weight: 600; margin: 1em 0 0.4em; padding-left: 0.6em; border-left: 3px solid var(--link); }
+.lc-docx h3 { font-size: 1.05rem; font-weight: 600; margin: 0.8em 0 0.3em; color: var(--link); }
+.lc-docx-title { text-align: center; border-bottom: none; }
+.lc-docx-subtitle { text-align: center; border-left: none; padding-left: 0; color: var(--muted); font-style: italic; font-weight: 400; }
+.lc-docx p { margin: 0.5em 0; }
+.lc-docx p:has(> strong:only-child) { margin: 1em 0 0.4em; padding-left: 0.6em; border-left: 3px solid var(--link); font-size: 1.05rem; }
+.lc-docx p:has(> strong:only-child) strong { font-weight: 600; }
+.lc-docx table { width: 100%; max-width: 100%; }
+.lc-docx td, .lc-docx th { white-space: normal; }
+.lc-docx table tr:first-child td { background: var(--header-bg); font-weight: 600; }
+.lc-docx table tr:nth-child(even):not(:first-child) td { background: var(--row-alt); }
+.lc-docx ul, .lc-docx ol { margin: 0.5em 0; padding-left: 1.6em; }
+.lc-docx li { margin: 0.15em 0; }
+.lc-docx blockquote { border-left: 3px solid var(--border); color: var(--muted); margin: 0.8em 0; padding: 0.2em 0 0.2em 0.8em; }
+`.trim();
+
+/**
  * Convert a `.docx` buffer to a sandboxed HTML document. Uses mammoth's
- * default style map (paragraph styles, runs, tables, hyperlinks, lists) and
- * inlines images as base64 `data:` URIs. The output is sanitized and wrapped
- * in our document template before return.
+ * default conversion (paragraph styles, runs, tables, hyperlinks, lists,
+ * inline images as base64 `data:` URIs) augmented by `DOCX_STYLE_MAP`
+ * for richer heading detection and `DOCX_EXTRA_CSS` for table-first-row
+ * + section-heading heuristics that compensate for mammoth's habit of
+ * stripping direct-formatted presentation.
  *
  * Pre-flights the buffer through `assertSafeZipSize` so a zip-bomb DOCX
  * is rejected BEFORE it reaches mammoth — mammoth's internal extraction
@@ -249,9 +317,9 @@ ${bodyHtml}
 export async function wordDocToHtml(buffer: Buffer): Promise<string> {
   await assertSafeZipSize(buffer, { name: 'docx' });
   const { convertToHtml } = await import('mammoth');
-  const result = await convertToHtml({ buffer });
+  const result = await convertToHtml({ buffer }, { styleMap: DOCX_STYLE_MAP });
   const sanitized = await sanitizeOfficeHtml(result.value);
-  return wrapAsDocument(`<article class="lc-docx">${sanitized}</article>`);
+  return wrapAsDocument(`<article class="lc-docx">${sanitized}</article>`, DOCX_EXTRA_CSS);
 }
 
 /* =============================================================================

@@ -12,6 +12,7 @@ import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
 import ArtifactTabs from './ArtifactTabs';
 import { isPreviewOnlyArtifact } from '~/utils/artifacts';
+import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -98,10 +99,21 @@ export default function Artifacts() {
    * snap the active tab when the user lands on an office artifact while
    * the code tab is selected. */
   const isPreviewOnly = isPreviewOnlyArtifact(currentArtifact?.type);
-  const tabOptions = useMemo(
-    () => (isPreviewOnly ? allTabOptions.filter((opt) => opt.value !== 'code') : allTabOptions),
-    [allTabOptions, isPreviewOnly],
-  );
+  const tabOptions = useMemo(() => {
+    if (!isPreviewOnly) {
+      return allTabOptions;
+    }
+    /* When only the preview tab is shown, the generic "Preview" label is
+     * a no-op pill — surface the document filename there instead. The
+     * Play icon stays as a visual cue for "rendered preview". `displayFilename`
+     * handles the sandbox dotfile suffix the upload pipeline applies. */
+    const filename = displayFilename(currentArtifact?.title);
+    const previewTab = allTabOptions.find((opt) => opt.value === 'preview');
+    if (!previewTab) {
+      return allTabOptions;
+    }
+    return [filename ? { ...previewTab, label: filename } : previewTab];
+  }, [allTabOptions, isPreviewOnly, currentArtifact?.title]);
   useEffect(() => {
     if (isPreviewOnly && activeTab === 'code') {
       setActiveTab('preview');

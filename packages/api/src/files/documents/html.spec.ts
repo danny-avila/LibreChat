@@ -36,6 +36,22 @@ describe('Office HTML producers', () => {
       expect(html).not.toMatch(/<script\b/i);
       expect(html).not.toMatch(/onerror=/i);
     });
+
+    test('emits the docx-specific extra CSS in the wrapper', async () => {
+      /* The flat output mammoth produces for direct-formatted documents
+       * (e.g. python-docx with no named styles) leans on the extra CSS
+       * to give tables sticky-looking first-row headers and to style
+       * `<p><strong>X</strong></p>` patterns as section headings.
+       * Asserting those rules survive into the document means the
+       * improvement isn't accidentally removable. */
+      const html = await wordDocToHtml(readFixture('sample.docx'));
+      // First-row table-header heuristic.
+      expect(html).toContain('.lc-docx table tr:first-child td');
+      // Section-heading-style heuristic for bold-only-child paragraphs.
+      expect(html).toContain('.lc-docx p:has(> strong:only-child)');
+      // Heading visual styling (left accent).
+      expect(html).toContain('.lc-docx h2');
+    });
   });
 
   describe('excelSheetToHtml', () => {
