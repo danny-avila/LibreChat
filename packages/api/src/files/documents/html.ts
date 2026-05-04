@@ -391,8 +391,25 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
 /* docx-preview emits its own per-document <style> tags inside #lc-render
  * — leave them be. These rules just keep the host frame consistent with
  * dark mode and bound the rendered document width. */
-#lc-render .docx-wrapper { background: transparent !important; }
-#lc-render .docx { max-width: 100%; }
+/* docx-preview wraps each section in .docx-wrapper and sets explicit
+ * inline width on .docx from the source pageSize. With ignoreWidth:true
+ * set on the renderer those inline widths are skipped, but we override
+ * defensively so the doc fills the artifact panel even if a future
+ * library version regresses. padding:0 on the wrapper drops the margin
+ * docx-preview otherwise reserves for page-edge whitespace. */
+#lc-render .docx-wrapper {
+  background: transparent !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+#lc-render .docx-wrapper > section.docx {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  margin: 0 0 1em 0 !important;
+}
 @media (prefers-color-scheme: dark) {
   #lc-render .docx { color: var(--fg); }
 }
@@ -425,7 +442,12 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
     docx.renderAsync(bytes.buffer, document.getElementById('lc-render'), null, {
       className: 'docx',
       inWrapper: true,
-      ignoreWidth: false,
+      /* ignoreWidth: true tells docx-preview to skip the document's
+       * native page width (8.5in / 21cm typically) and render at the
+       * iframe container's full width. Without this the rendered doc
+       * floats with whitespace on either side in a wide artifact
+       * panel — fine on letter-sized screens, ugly in our context. */
+      ignoreWidth: true,
       ignoreHeight: false,
       ignoreFonts: false,
       breakPages: true,
