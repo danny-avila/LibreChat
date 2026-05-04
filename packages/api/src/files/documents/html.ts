@@ -1073,7 +1073,14 @@ function buildPptxCdnDocument(base64: string): string {
 :root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; }
 @media (prefers-color-scheme: dark) { :root { --bg: #1a1a2e; --fg: #e5e7eb; --muted: #9ca3af; } }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-#lc-render { padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+/* Body fills the iframe viewport vertically and inherits the dark bg
+ * so even when total slide content is shorter than the panel (e.g. a
+ * single-slide deck) the artifact card has no visible "white below"
+ * gap — DOCX flows naturally and never has this issue, but PPTX
+ * slides are fixed-aspect and don't grow with the panel. */
+html, body { min-height: 100vh; }
+body { display: flex; flex-direction: column; }
+#lc-render { padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 16px; flex: 1 0 auto; }
 /* Each rendered slide is wrapped post-hoc by the bootstrap script in
  * an .lc-slide-wrap div with explicit width/height set inline. The
  * inner slide keeps its native pixel size and gets transformed via
@@ -1168,14 +1175,30 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
       var w = (container.clientWidth || window.innerWidth) - 32;
       return w > 0 ? w : 600;
     }
+    function availableHeight() {
+      /* Viewport height inside the iframe minus the same 16px top+
+       * bottom padding so a single-slide deck can grow up to the full
+       * panel height without spilling. */
+      var h = (window.innerHeight || document.documentElement.clientHeight || 0) - 32;
+      return h > 0 ? h : 400;
+    }
 
-    /* Per-slide scale: divides each slides actual rendered native
-     * width into the panel width, so we always fill the panel. No
-     * upscale cap — pptx-preview always rasterizes against the init
-     * canvas (960×540 here), so text/charts inside the slide are
-     * vector or canvas-rendered and stay legible when scaled up. */
-    function scaleFor(nativeW) {
-      return availableWidth() / (nativeW || SLIDE_W);
+    /* Per-slide scale: the largest factor that lets the slide fit in
+     * the iframe viewport without overflowing either dimension. No
+     * upscale cap — pptx-preview rasterizes against the init canvas
+     * (960×540), text/charts are vector or canvas-rendered, so they
+     * stay legible when scaled up.
+     *
+     * Why the height-aware version (vs. width-only): a tall artifact
+     * panel with a short deck would otherwise leave the slide at
+     * panel_w × (panel_w·9/16) and waste the rest of the viewport
+     * vertically. Min-of-fits makes the slide grow until ONE
+     * dimension is the constraint, exactly the contain-fit pattern
+     * the rest of the iframe expects. */
+    function scaleFor(nativeW, nativeH) {
+      var sw = availableWidth() / (nativeW || SLIDE_W);
+      var sh = availableHeight() / (nativeH || SLIDE_H);
+      return Math.min(sw, sh);
     }
 
     /* Wrap each rendered slide and apply the scale. Called ONCE,
@@ -1199,7 +1222,7 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
           slide.dataset.lcNativeW = String(nativeW);
           slide.dataset.lcNativeH = String(nativeH);
         }
-        var scale = scaleFor(nativeW);
+        var scale = scaleFor(nativeW, nativeH);
         var wrap = document.createElement('div');
         wrap.className = 'lc-slide-wrap';
         wrap.style.width = (nativeW * scale) + 'px';
@@ -1222,7 +1245,7 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
         if (!inner || !inner.dataset) { continue; }
         var nativeW = parseFloat(inner.dataset.lcNativeW) || SLIDE_W;
         var nativeH = parseFloat(inner.dataset.lcNativeH) || SLIDE_H;
-        var scale = scaleFor(nativeW);
+        var scale = scaleFor(nativeW, nativeH);
         wrap.style.width = (nativeW * scale) + 'px';
         wrap.style.height = (nativeH * scale) + 'px';
         inner.style.transform = 'scale(' + scale + ')';

@@ -478,22 +478,27 @@ describe('Office HTML producers', () => {
         /* The wrapper class used by the CSS rules. */
         expect(html).toContain('lc-slide-wrap');
         /* The wrap function + the per-slide scale function. The scale
-         * uses each slide's actual rendered native width (not a
-         * constant) so panels wider than 960px still fill — no
-         * upscale cap means we never leave whitespace on the sides
-         * of the panel. */
+         * uses each slide's actual rendered native width AND height
+         * so panels of any aspect fill correctly — no upscale cap
+         * means we never leave whitespace on either axis. */
         expect(html).toContain('wrapSlides');
         expect(html).toContain('scaleFor');
         expect(html).toContain('availableWidth');
-        /* The scale formula divides available width by the slides
-         * rendered native width — this is the line that ensures full
-         * panel coverage. */
-        expect(html).toContain('availableWidth() / (nativeW || SLIDE_W)');
+        expect(html).toContain('availableHeight');
+        /* The scale is `min(width-fit, height-fit)` so each slide is
+         * the largest it can be in the iframe viewport without
+         * overflowing either dimension — manual e2e feedback on
+         * PR #12934. */
+        expect(html).toContain('Math.min(sw, sh)');
         /* Negative assertion: the previous version capped the scale
          * at 1.0 with `Math.min(1, ...)`, which left whitespace on
          * panels wider than 960px. The new code must not reintroduce
          * that cap. */
-        expect(html).not.toContain('Math.min(1');
+        expect(html).not.toMatch(/Math\.min\(\s*1\s*,/);
+        /* Body fills the iframe viewport vertically and inherits the
+         * dark bg so a short deck (single slide) never reveals a
+         * "white below" gap below the slides. */
+        expect(html).toContain('min-height: 100vh');
         /* Container is hidden during render and revealed by the
          * `finalize` step so the unscaled flash never reaches the
          * user. */
