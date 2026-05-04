@@ -128,11 +128,13 @@ jobs:
             'audit=false' \
             'fund=false' \
             > "$RUNNER_TEMP/gitnexus-cli/.npmrc"
+          # Keep GitNexus' native DB dependency deterministic in fresh CI installs.
           npm install \
             --prefix "$RUNNER_TEMP/gitnexus-cli" \
             --no-save \
             --no-package-lock \
-            "gitnexus@${{ env.GITNEXUS_VERSION }}"
+            "gitnexus@${{ env.GITNEXUS_VERSION }}" \
+            "@ladybugdb/core@0.15.2"
           test -x "$RUNNER_TEMP/gitnexus-cli/node_modules/.bin/gitnexus"
 
       - name: Checkout repository
