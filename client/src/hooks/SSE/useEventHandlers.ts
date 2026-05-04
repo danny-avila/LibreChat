@@ -491,7 +491,7 @@ export default function useEventHandlers({
         requestMessage.parentMessageId === Constants.NO_PARENT
       ) {
         setTimeout(() => {
-          // genTitle.mutate({ conversationId: conversation.conversationId as string });
+          genTitle.mutate({ conversationId: conversation.conversationId as string });
         }, 2500);
       }
 

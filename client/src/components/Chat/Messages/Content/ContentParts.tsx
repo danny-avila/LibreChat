@@ -7,12 +7,12 @@ import type {
   TAttachment,
   Agents,
 } from 'librechat-data-provider';
-import { ThinkingButton } from '~/components/Artifacts/Thinking';
 import { MessageContext, SearchContext } from '~/Providers';
 import Sources from '~/components/Web/Sources';
 import useLocalize from '~/hooks/useLocalize';
 import { mapAttachments } from '~/utils/map';
 import { EditTextPart } from './Parts';
+import ThinkingIndicator from './ThinkingIndicator';
 import store from '~/store';
 import Part from './Part';
 
@@ -104,21 +104,9 @@ const ContentParts = memo(
       <>
         <SearchContext.Provider value={{ searchResults }}>
           <Sources />
-          {hasReasoningParts && (
+          {hasReasoningParts && isSubmitting === true && isLast === true && (
             <div className="mb-5">
-              <ThinkingButton
-                isExpanded={isExpanded}
-                onClick={() =>
-                  setIsExpanded((prev) => {
-                    const val = !prev;
-                    setShowThinking(val);
-                    return val;
-                  })
-                }
-                label={
-                  isSubmitting && isLast ? localize('com_ui_thinking') : localize('com_ui_thoughts')
-                }
-              />
+              <ThinkingIndicator />
             </div>
           )}
           {content
