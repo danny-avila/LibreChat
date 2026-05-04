@@ -252,8 +252,11 @@ router.get('/download/:userId/:file_id', async (req, res) => {
       return;
     }
 
-    // Local/S3/Azure Blob/etc. branch
-    const fileStream = getDownloadStream(file_id);
+    // Local/S3/Azure Blob/etc. branch — these strategies' getDownloadStream
+    // signatures all take (req, filepath); pre-existing bug here was passing
+    // just file_id, which caused "Cannot read properties of undefined" when
+    // resolving the path. Fixed for the My Files panel download flow.
+    const fileStream = await getDownloadStream(req, file.filepath);
     setHeaders();
     fileStream.pipe(res);
   } catch (error) {

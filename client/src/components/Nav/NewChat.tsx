@@ -34,15 +34,19 @@ export default function NewChat({
   const { conversation } = store.useCreateConversationAtom(index);
 
   const setMode = useSetRecoilState(modeState);
+  const clearAllSubmissions = store.useClearSubmissionState();
 
   const clickHandler: React.MouseEventHandler<HTMLButtonElement> = useCallback(
     (e) => {
-      console.log(modeState);
-      setMode(null);
       if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
         window.open('/c/new', '_blank');
         return;
       }
+      // Abort any in-flight SSE submissions before tearing down the view.
+      // Otherwise the stream keeps writing into the messages cache after we
+      // clear it, leaving the old chat layered on top of the new-chat UI.
+      clearAllSubmissions();
+      setMode(null);
       queryClient.setQueryData<TMessage[]>(
         [QueryKeys.messages, conversation?.conversationId ?? Constants.NEW_CONVO],
         [],
@@ -50,12 +54,11 @@ export default function NewChat({
       queryClient.invalidateQueries([QueryKeys.messages]);
       newConvo();
       navigate('/c/new', { state: { focusChat: true } });
-      // localStorage.setItem('navVisible', 'true');
       if (isSmallScreen) {
         toggleNav();
       }
     },
-    [queryClient, conversation, newConvo, navigate, toggleNav, isSmallScreen],
+    [queryClient, conversation, newConvo, navigate, toggleNav, isSmallScreen, clearAllSubmissions, setMode],
   );
 
   return (

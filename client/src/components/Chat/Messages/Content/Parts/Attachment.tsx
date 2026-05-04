@@ -1,17 +1,57 @@
 import { memo, useState, useEffect } from 'react';
-import { imageExtRegex, Tools } from 'librechat-data-provider';
+import { imageExtRegex, Tools, request } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
 import { useAttachmentLink } from './LogLink';
+import { useToastContext } from '~/Providers';
 import { cn } from '~/utils';
 
 const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const [isVisible, setIsVisible] = useState(false);
-  const { handleDownload } = useAttachmentLink({
+  const { showToast } = useToastContext();
+  const { handleDownload: handleCodeOutputDownload } = useAttachmentLink({
     href: attachment.filepath ?? '',
     filename: attachment.filename ?? '',
   });
+
+  /** Skill-generated / user-uploaded files have a file_id + user and live
+   *  at /uploads/... — use the standard /api/files/download/:userId/:file_id
+   *  endpoint with an authenticated blob fetch. Code-execution outputs (no
+   *  file_id, virtual code-download path) keep using the existing hook. */
+  const file = attachment as Partial<TFile>;
+  const userId = (file as any).user as string | undefined;
+  const file_id = file.file_id;
+  const useStandardDownload =
+    Boolean(file_id) && Boolean(userId) && (file.filepath?.startsWith('/uploads/') ?? false);
+
+  const handleStandardDownload = async (
+    event: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    try {
+      const url = `/api/files/download/${encodeURIComponent(userId!)}/${encodeURIComponent(file_id!)}`;
+      const res: any = await request.getResponse(url, {
+        responseType: 'blob',
+        withCredentials: true,
+      } as any);
+      const blob = res.data as Blob;
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.setAttribute('download', attachment.filename ?? 'download');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      showToast({ status: 'error', message: 'Error downloading file' });
+    }
+  };
+
+  const handleDownload = useStandardDownload ? handleStandardDownload : handleCodeOutputDownload;
+
   const extension = attachment.filename?.split('.').pop();
 
   useEffect(() => {
