@@ -1,5 +1,6 @@
 import yauzl from 'yauzl';
 import { excelMimeTypes, megabyte } from 'librechat-data-provider';
+import { tryLibreOfficePreview } from './libreoffice';
 import { assertSafeZipSize } from './zipSafety';
 
 /**
@@ -582,6 +583,16 @@ function isOfficePreviewCdnDisabled(): boolean {
  */
 export async function wordDocToHtml(buffer: Buffer): Promise<string> {
   await assertSafeZipSize(buffer, { name: 'docx' });
+  /* Opt-in LibreOffice path: highest fidelity for any DOCX feature
+   * mammoth/docx-preview can't reproduce (complex tables, drawing
+   * objects, charts, embedded objects). Returns null when disabled,
+   * binary missing, conversion failed, or output exceeds the cache
+   * cap — falls through to the existing pipeline in any of those
+   * cases so a misconfiguration doesn't break previews. */
+  const lo = await tryLibreOfficePreview(buffer, 'docx', OFFICE_HTML_OUTPUT_CAP);
+  if (lo) {
+    return lo;
+  }
   if (isOfficePreviewCdnDisabled() || buffer.length > MAX_DOCX_CDN_BINARY_BYTES) {
     return wordDocToHtmlViaMammoth(buffer);
   }
@@ -1167,6 +1178,14 @@ async function pptxToHtmlViaCdn(buffer: Buffer): Promise<string> {
  */
 export async function pptxToHtml(buffer: Buffer): Promise<string> {
   await assertSafeZipSize(buffer, { name: 'pptx' });
+  /* Opt-in LibreOffice path: PDF rendering of slides preserves layout,
+   * fonts, charts, and embedded objects far better than the slide-list
+   * fallback or even pptx-preview's canvas approach. Falls through on
+   * any error per the contract in `tryLibreOfficePreview`. */
+  const lo = await tryLibreOfficePreview(buffer, 'pptx', OFFICE_HTML_OUTPUT_CAP);
+  if (lo) {
+    return lo;
+  }
   if (isOfficePreviewCdnDisabled()) {
     return pptxToSlideListHtmlInternal(buffer);
   }
