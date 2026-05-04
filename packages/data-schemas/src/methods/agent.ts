@@ -1,5 +1,11 @@
 import crypto from 'node:crypto';
-import { Constants, EToolResources, ResourceType, actionDelimiter } from 'librechat-data-provider';
+import {
+  Constants,
+  EToolResources,
+  ResourceType,
+  actionDelimiter,
+  sanitizeModelParameters,
+} from 'librechat-data-provider';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IAgent, IAclEntry } from '~/types';
@@ -248,6 +254,11 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
    */
   async function createAgent(agentData: Record<string, unknown>): Promise<IAgent> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
+    if (agentData.model_parameters !== undefined) {
+      agentData.model_parameters = sanitizeModelParameters(
+        agentData.model_parameters as Record<string, unknown> | null,
+      );
+    }
     const { author: _author, ...versionData } = agentData;
     const timestamp = new Date();
     const initialAgentData = {
@@ -299,6 +310,18 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const { updatingUserId = null, forceVersion = false, skipVersioning = false } = options;
     const mongoOptions = { new: true, upsert: false };
+
+    if (updateData.model_parameters !== undefined) {
+      updateData.model_parameters = sanitizeModelParameters(
+        updateData.model_parameters as Record<string, unknown> | null,
+      );
+    }
+    const $set = updateData.$set as Record<string, unknown> | undefined;
+    if ($set && $set.model_parameters !== undefined) {
+      $set.model_parameters = sanitizeModelParameters(
+        $set.model_parameters as Record<string, unknown> | null,
+      );
+    }
 
     const currentAgent = await Agent.findOne(searchParameter);
     if (currentAgent) {
