@@ -734,6 +734,21 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   const imageFiles = tool_resources?.[EToolResources.image_edit]?.files ?? [];
   if (imageFiles.length > 0) {
+    const visualMemoryAnalyzeTools = filteredTools.filter(
+      (toolName) => toolName.includes('analyze_image') || toolName.includes('analyze_image_url'),
+    );
+    for (const toolName of visualMemoryAnalyzeTools) {
+      const toolContext = buildImageToolContext({
+        imageFiles,
+        toolName,
+        contextDescription: 'image analysis',
+      });
+      if (toolContext) {
+        toolContextMap[toolName] =
+          `${toolContext}\n- Mandatory routing: if user provided an image attachment, call this tool before final response unless user explicitly says not to use tools.`;
+      }
+    }
+
     const hasOaiImageGen = filteredTools.includes('image_gen_oai');
     const hasGeminiImageGen = filteredTools.includes('gemini_image_gen');
 

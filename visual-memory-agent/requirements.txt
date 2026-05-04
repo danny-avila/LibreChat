@@ -1,0 +1,7 @@
+fastapi==0.116.1
+uvicorn==0.35.0
+httpx==0.28.1
+pydantic==2.11.9
+python-dotenv==1.1.1
+mcp[cli]>=1.0.0
+pillow==11.3.0
