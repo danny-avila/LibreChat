@@ -23,6 +23,8 @@ const WEB_SEARCH_URL_KEYS = new Set<TWebSearchKeys>([
   'searxngInstanceUrl',
   'firecrawlApiUrl',
   'jinaApiUrl',
+  'tavilySearchUrl',
+  'tavilyExtractUrl',
 ]);
 
 /**
@@ -245,10 +247,20 @@ export async function loadWebSearchAuth({
     authTypes.push([category, isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED]);
   }
 
+  const scraperProvider =
+    authResult.scraperProvider ?? webSearchConfig?.scraperProvider ?? 'firecrawl';
+  let scraperOptionsTimeout: number | undefined;
+  if (scraperProvider === 'tavily') {
+    scraperOptionsTimeout = webSearchConfig?.tavilyScraperOptions?.timeout;
+  } else if (scraperProvider === 'firecrawl') {
+    scraperOptionsTimeout = webSearchConfig?.firecrawlOptions?.timeout;
+  }
+
   authResult.safeSearch = webSearchConfig?.safeSearch ?? SafeSearchTypes.MODERATE;
-  authResult.scraperTimeout =
-    webSearchConfig?.scraperTimeout ?? webSearchConfig?.firecrawlOptions?.timeout ?? 7500;
+  authResult.scraperTimeout = webSearchConfig?.scraperTimeout ?? scraperOptionsTimeout ?? 7500;
   authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
+  authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
+  authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;
 
   return {
     authTypes,

@@ -628,9 +628,43 @@ endpoints:
 #   serperApiKey: '${SERPER_API_KEY}'
 #   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
 #   searxngApiKey: '${SEARXNG_API_KEY}'
+#   # Tavily (search provider and/or scraper)
+#   tavilyApiKey: '${TAVILY_API_KEY}'
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+#
+# Tavily as both search and scraper provider example:
+# webSearch:
+#   searchProvider: tavily
+#   scraperProvider: tavily
+#   tavilyApiKey: '${TAVILY_API_KEY}'
+#   # Optional: custom API URLs (defaults to https://api.tavily.com/search and https://api.tavily.com/extract)
+#   # tavilySearchUrl: '${TAVILY_SEARCH_URL}'
+#   # tavilyExtractUrl: '${TAVILY_EXTRACT_URL}'
+#   tavilySearchOptions:
+#     searchDepth: basic        # 'basic', 'advanced', 'fast', or 'ultra-fast' (default: basic)
+#     maxResults: 5             # 1-20 results per search (default: 5)
+#     topic: general            # 'general', 'news', or 'finance'
+#     # includeAnswer: basic    # Include answer summary: true, 'basic', or 'advanced'
+#     # includeRawContent: markdown # Include raw content: true, 'markdown', or 'text'
+#     # includeImages: true     # Include images in results
+#     # includeFavicon: true    # Include favicon URL for each result
+#     # chunksPerSource: 3      # Chunks per source, only with 'advanced' depth (1-3)
+#     # safeSearch: false       # Override Tavily safe search filtering
+#     # includeDomains:         # Restrict search to specific domains (max 300)
+#     #   - 'example.com'
+#     #   - 'docs.example.com'
+#     # excludeDomains:         # Exclude specific domains from results (max 150)
+#     #   - 'spam.com'
+#     # timeRange: week         # 'day', 'week', 'month', or 'year'
+#     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000)
+#   tavilyScraperOptions:
+#     extractDepth: basic       # 'basic' (1 credit/5 URLs) or 'advanced' (2 credits/5 URLs, more thorough)
+#     # includeImages: false    # Include images extracted from URLs
+#     # includeFavicon: false   # Include favicon URL for each result
+#     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
+#     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
 
 # Memory configuration for user memories
 # memory:

@@ -57,6 +57,9 @@ describe('loadWebSearchConfig', () => {
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         rerankerType: undefined,
+        tavilyApiKey: '${TAVILY_API_KEY}',
+        tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+        tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
       });
     });
 

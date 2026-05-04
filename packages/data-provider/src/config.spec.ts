@@ -1,7 +1,13 @@
 import type { TEndpointsConfig } from './types';
 import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
 import { getEndpointFileConfig, mergeFileConfig } from './file-config';
-import { allowedAddressesSchema, configSchema, resolveEndpointType, excludedKeys } from './config';
+import {
+  allowedAddressesSchema,
+  configSchema,
+  excludedKeys,
+  resolveEndpointType,
+  webSearchSchema,
+} from './config';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
@@ -452,5 +458,71 @@ describe('allowedAddressesSchema', () => {
       });
       expect(result.success).toBe(false);
     });
+  });
+});
+
+describe('webSearchSchema', () => {
+  it('accepts Tavily string modes for answer and raw content options', () => {
+    const result = webSearchSchema.parse({
+      tavilySearchOptions: {
+        includeAnswer: 'advanced',
+        includeRawContent: 'markdown',
+        safeSearch: false,
+      },
+    });
+
+    expect(result.tavilySearchOptions?.includeAnswer).toBe('advanced');
+    expect(result.tavilySearchOptions?.includeRawContent).toBe('markdown');
+    expect(result.tavilySearchOptions?.safeSearch).toBe(false);
+  });
+
+  it('accepts Tavily scraper options', () => {
+    const result = webSearchSchema.parse({
+      tavilyScraperOptions: {
+        extractDepth: 'advanced',
+        format: 'text',
+        includeFavicon: true,
+        timeout: 15000,
+      },
+    });
+
+    expect(result.tavilyScraperOptions?.extractDepth).toBe('advanced');
+    expect(result.tavilyScraperOptions?.format).toBe('text');
+    expect(result.tavilyScraperOptions?.includeFavicon).toBe(true);
+    expect(result.tavilyScraperOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Tavily search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        tavilySearchOptions: {
+          searchDepth: 'invalid',
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        tavilySearchOptions: {
+          maxResults: 0,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        tavilySearchOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        tavilyScraperOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
   });
 });
