@@ -719,8 +719,19 @@ export function detectArtifactTypeFromFile(
    * pre-flag period and the safe default ('text' bucket) is OK for
    * those — they were rendering correctly before this flag, and the
    * markdown viewer escaping HTML is a safety upgrade, not a
-   * regression. Codex P1 review on PR #12934. */
+   * regression. Codex P1 review on PR #12934.
+   *
+   * Empty-text exception: if the office attachment has NO text at all,
+   * downgrading to PLAIN_TEXT would route an empty-text-tolerant
+   * bucket onto the panel (a half-rendered card showing only the
+   * filename). The historical contract for office types with missing
+   * text is "fall through to the legacy download path"; preserve that
+   * by returning null here. The downgrade only matters when there's
+   * actual text content that needs safe-escaping. */
   if (OFFICE_HTML_BUCKETS.has(type) && attachment.textFormat !== 'html') {
+    if (!attachment.text) {
+      return null;
+    }
     return TOOL_ARTIFACT_TYPES.PLAIN_TEXT;
   }
   if (

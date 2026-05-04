@@ -225,6 +225,27 @@ describe('detectArtifactTypeFromFile', () => {
     ).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
   });
 
+  /* Regression: an office attachment with no `text` AND no `textFormat`
+   * must NOT downgrade to PLAIN_TEXT (which has the lenient empty-text
+   * gate and would render as a half-empty panel card). The historical
+   * contract for office types with missing extraction is "fall through
+   * to the legacy download UI"; the security gate's empty-text exception
+   * preserves that. CI regression on PR #12934 — `LogContent.test.tsx`
+   * "falls back to the legacy download branch for an office file with
+   * no extracted text" was the canary. */
+  it.each([
+    ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['data.csv', 'text/csv'],
+    ['workbook.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['slides.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ])(
+    '%s with no text and no textFormat returns null (preserves legacy download path)',
+    (filename, type) => {
+      expect(detectArtifactTypeFromFile({ filename, type, text: '' })).toBeNull();
+      expect(detectArtifactTypeFromFile({ filename, type, text: undefined })).toBeNull();
+    },
+  );
+
   it('falls back to MIME when the extension is unknown', () => {
     expect(detectArtifactTypeFromFile({ filename: 'noext', type: 'text/html', text: 'x' })).toBe(
       TOOL_ARTIFACT_TYPES.HTML,
