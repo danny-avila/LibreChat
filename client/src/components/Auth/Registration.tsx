@@ -9,6 +9,7 @@ import type { TRegisterUser, TError } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { ErrorMessage } from './ErrorMessage';
+import PasswordInput from './PasswordInput';
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
@@ -163,21 +164,35 @@ const Registration: React.FC = () => {
                 message: localize('com_auth_email_pattern'),
               },
             })}
-            {renderInput('password', 'com_auth_password', 'password', {
-              required: localize('com_auth_password_required'),
-              minLength: {
-                value: startupConfig?.minPasswordLength || 8,
-                message: localize('com_auth_password_min_length'),
-              },
-              maxLength: {
-                value: 128,
-                message: localize('com_auth_password_max_length'),
-              },
-            })}
-            {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
-              validate: (value: string) =>
-                value === password || localize('com_auth_password_not_match'),
-            })}
+            <PasswordInput
+              id="password"
+              label={localize('com_auth_password')}
+              autoComplete="new-password"
+              register={register('password', {
+                required: localize('com_auth_password_required'),
+                minLength: {
+                  value: startupConfig?.minPasswordLength || 8,
+                  message: localize('com_auth_password_min_length'),
+                },
+                maxLength: {
+                  value: 128,
+                  message: localize('com_auth_password_max_length'),
+                },
+              })}
+              error={errors.password}
+              data-testid="password"
+            />
+            <PasswordInput
+              id="confirm_password"
+              label={localize('com_auth_password_confirm')}
+              autoComplete="new-password"
+              register={register('confirm_password', {
+                validate: (value) =>
+                  value === password || localize('com_auth_password_not_match'),
+              })}
+              error={errors.confirm_password}
+              data-testid="confirm_password"
+            />
 
             {startupConfig?.turnstile?.siteKey && (
               <div className="my-4 flex justify-center">
