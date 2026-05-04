@@ -466,23 +466,33 @@ describe('Office HTML producers', () => {
          * scroll horizontally and slides spill outside the viewport.
          * The bootstrap wraps each rendered slide in `.lc-slide-wrap`
          * and applies `transform: scale(panel_width / 960)` so the
-         * panel always fits — manual e2e feedback on PR #12934. */
+         * panel always fits — manual e2e feedback on PR #12934.
+         *
+         * The wrap is applied ONCE, after `previewer.preview` resolves
+         * (and the post-render container is visible). Wrapping during
+         * streaming via MutationObserver caused pptx-preview to throw
+         * — its internal pipeline holds references to the appended
+         * slides and broke when we moved them under a parent wrap. */
         const pptx = await buildPptx([{ title: 'A' }, { title: 'B' }]);
         const html = await _internal.pptxToHtmlViaCdn(pptx);
-        /* The wrapper class — used by the CSS rules that own the
-         * sized container. */
+        /* The wrapper class used by the CSS rules. */
         expect(html).toContain('lc-slide-wrap');
-        /* The bootstrap script's wrap function name + the scale
-         * computation derived from `clientWidth / SLIDE_W`. */
-        expect(html).toContain('wrapAndFit');
+        /* The wrap function + the scale computation derived from
+         * `clientWidth / SLIDE_W`. */
+        expect(html).toContain('wrapSlides');
         expect(html).toContain('SLIDE_W');
         expect(html).toContain('available / SLIDE_W');
-        /* MutationObserver watches for streaming slide insertions;
-         * ResizeObserver re-fits on panel resize. */
-        expect(html).toContain('MutationObserver');
+        /* Container is hidden during render and revealed by the
+         * `finalize` step so the unscaled flash never reaches the
+         * user. */
+        expect(html).toContain("container.style.visibility = 'hidden'");
+        expect(html).toContain("container.style.visibility = 'visible'");
+        /* ResizeObserver re-fits on panel resize. (No
+         * MutationObserver — streaming wraps broke pptx-preview.) */
         expect(html).toContain('ResizeObserver');
-        /* Native dimensions cached on the slide so re-fitting on
-         * resize doesn't measure the already-transformed box. */
+        expect(html).not.toContain('MutationObserver');
+        /* Native dimensions cached on the slide dataset so re-fitting
+         * on resize never measures an already-transformed box. */
         expect(html).toContain('lcNativeW');
       });
     });

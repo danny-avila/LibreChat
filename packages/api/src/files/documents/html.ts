@@ -1153,99 +1153,91 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
     /* pptx-preview renders into a fixed pixel size; we keep it at the
      * native 16:9 default so its internal layout calculations are
      * right, then post-process to scale each slide to the iframe's
-     * width via CSS transform. The wrap+transform approach (vs.
-     * shrinking the init dimensions) preserves font metrics, image
-     * resolution, and chart positioning that pptx-preview computed
-     * against the 960×540 canvas. */
+     * width via CSS transform. */
     var SLIDE_W = 960, SLIDE_H = 540;
+    /* Hide the container while pptx-preview renders so the user
+     * doesnt see the unscaled 960px-wide flash. We reveal once
+     * wrap+scale has settled. */
+    container.style.visibility = 'hidden';
     var previewer = pptxPreview.init(container, { width: SLIDE_W, height: SLIDE_H });
 
-    /* Wrap a single slide element in a sized container and apply the
-     * scale transform. Native size is cached on the slide's dataset
-     * so subsequent fits don't measure the already-transformed box. */
-    function wrapAndFit(slide, scale) {
-      if (slide.parentNode && slide.parentNode.classList && slide.parentNode.classList.contains('lc-slide-wrap')) {
-        return slide.parentNode;
-      }
-      var nativeW = parseFloat(slide.dataset.lcNativeW);
-      var nativeH = parseFloat(slide.dataset.lcNativeH);
-      if (!nativeW || !nativeH) {
-        nativeW = slide.offsetWidth || SLIDE_W;
-        nativeH = slide.offsetHeight || SLIDE_H;
-        slide.dataset.lcNativeW = String(nativeW);
-        slide.dataset.lcNativeH = String(nativeH);
-      }
-      var wrap = document.createElement('div');
-      wrap.className = 'lc-slide-wrap';
-      slide.parentNode.insertBefore(wrap, slide);
-      wrap.appendChild(slide);
-      wrap.style.width = (nativeW * scale) + 'px';
-      wrap.style.height = (nativeH * scale) + 'px';
-      slide.style.transform = 'scale(' + scale + ')';
-      return wrap;
-    }
-
     function computeScale() {
-      /* clientWidth excludes vertical scrollbar but includes our
-       * 16px horizontal padding (set via box-sizing:border-box). The
-       * cap at 1.0 means slides smaller than the panel render at 1:1
-       * rather than upscaling and getting blurry. */
       var available = (container.clientWidth || window.innerWidth) - 32;
       if (available <= 0) { available = 600; }
       return Math.min(1, available / SLIDE_W);
     }
 
-    function fitAll() {
+    /* Wrap each rendered slide and apply the scale. Called ONCE,
+     * after pptx-preview is done — wrapping during streaming would
+     * move slides out from under the librarys references and break
+     * its internal state. */
+    function wrapSlides() {
       var scale = computeScale();
-      /* Re-fit any already-wrapped slides (window resize). */
+      var children = Array.prototype.slice.call(container.children);
+      for (var i = 0; i < children.length; i++) {
+        var slide = children[i];
+        if (!slide.classList || slide.classList.contains('lc-slide-wrap') || slide.classList.contains('lc-pptx-loading')) {
+          continue;
+        }
+        var nativeW = slide.offsetWidth || SLIDE_W;
+        var nativeH = slide.offsetHeight || SLIDE_H;
+        if (slide.dataset) {
+          slide.dataset.lcNativeW = String(nativeW);
+          slide.dataset.lcNativeH = String(nativeH);
+        }
+        var wrap = document.createElement('div');
+        wrap.className = 'lc-slide-wrap';
+        wrap.style.width = (nativeW * scale) + 'px';
+        wrap.style.height = (nativeH * scale) + 'px';
+        slide.style.transformOrigin = 'top left';
+        slide.style.transform = 'scale(' + scale + ')';
+        container.insertBefore(wrap, slide);
+        wrap.appendChild(slide);
+      }
+    }
+
+    /* Re-fit existing wraps on iframe resize (panel drag, window
+     * resize). Reads the cached native dimensions from the slides
+     * dataset so we never re-measure an already-scaled box. */
+    function refit() {
+      var scale = computeScale();
       var wraps = container.querySelectorAll('.lc-slide-wrap');
       for (var i = 0; i < wraps.length; i++) {
         var wrap = wraps[i];
         var inner = wrap.firstElementChild;
-        if (!inner) { continue; }
+        if (!inner || !inner.dataset) { continue; }
         var nativeW = parseFloat(inner.dataset.lcNativeW) || SLIDE_W;
         var nativeH = parseFloat(inner.dataset.lcNativeH) || SLIDE_H;
         wrap.style.width = (nativeW * scale) + 'px';
         wrap.style.height = (nativeH * scale) + 'px';
         inner.style.transform = 'scale(' + scale + ')';
       }
-      /* Wrap any newly-appended slides (pptx-preview emits them
-       * incrementally as parsing completes). */
-      var children = container.children;
-      for (var j = 0; j < children.length; j++) {
-        var el = children[j];
-        if (el.classList && (el.classList.contains('lc-slide-wrap') || el.classList.contains('lc-pptx-loading'))) {
-          continue;
-        }
-        wrapAndFit(el, scale);
+    }
+
+    function finalize() {
+      wrapSlides();
+      container.style.visibility = 'visible';
+      /* Resize observer set up AFTER the wrap so it doesnt fire
+       * during the wrap pass. */
+      if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(refit).observe(document.body);
+      } else {
+        window.addEventListener('resize', refit);
       }
-    }
-
-    /* Watch the container for slide insertions so streaming renders
-     * get scaled as they arrive (vs. waiting for the whole preview
-     * promise to settle). */
-    if (typeof MutationObserver !== 'undefined') {
-      new MutationObserver(fitAll).observe(container, { childList: true });
-    }
-
-    /* Re-fit on iframe resize (panel drag, window resize). */
-    if (typeof ResizeObserver !== 'undefined') {
-      new ResizeObserver(fitAll).observe(container);
-    } else {
-      window.addEventListener('resize', fitAll);
+      markSuccess();
     }
 
     var result = previewer.preview(bytes.buffer);
     if (result && typeof result.then === 'function') {
-      result.then(function () { fitAll(); markSuccess(); }).catch(function (err) { showFallback(err && err.message); });
+      result.then(finalize).catch(function (err) { showFallback(err && err.message); });
     }
-    /* Final safety net: if 8 seconds in the renderer hasn't appended
-     * anything visible to the container, assume it failed silently. */
+    /* Safety net: if 8 seconds in the preview promise hasnt resolved,
+     * accept whatever pptx-preview managed to render and apply the
+     * wrap+scale to it. Empty container → fallback. */
     setTimeout(function () {
       if (settled) { return; }
       if (container && container.children.length > 0) {
-        fitAll();
-        markSuccess();
+        finalize();
         return;
       }
       showFallback('renderer-timeout');
