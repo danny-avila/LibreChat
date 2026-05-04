@@ -651,8 +651,14 @@ const sttOpenaiSchema = z.object({
   url: z.string().optional(),
   apiKey: z.string(),
   model: z.string(),
+  language: z
+    .string()
+    .regex(/^[a-z]{2}(-[a-z]{2})?$/i)
+    .optional(),
+  extraParams: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
 });
 
+/** Note: language and extraParams are only supported for the OpenAI provider. */
 const sttAzureOpenAISchema = z.object({
   instanceName: z.string(),
   apiKey: z.string(),
