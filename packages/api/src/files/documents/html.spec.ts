@@ -32,8 +32,16 @@ describe('Office HTML producers', () => {
       expect(html).toContain('id="lc-doc-data"');
       expect(html).toContain('docx.renderAsync');
       expect(html).toContain('cdn.jsdelivr.net/npm/docx-preview@');
-      // Mammoth-path artifact must NOT appear.
-      expect(html).not.toContain('<article class="lc-docx">');
+      /* The CDN doc now ALSO embeds the mammoth-rendered fallback in a
+       * hidden `#lc-fallback` block — Codex P2 review on PR #12934. The
+       * iframe bootstrap reveals it whenever `docx-preview` can't load
+       * (corporate firewall, offline) so air-gapped operators see a
+       * readable preview instead of "Preview unavailable". The
+       * fallback's `<article class="lc-docx">` wrapper is the
+       * server-rendered mammoth output, sanitized through the same
+       * pipeline as the standalone mammoth path. */
+      expect(html).toContain('id="lc-fallback"');
+      expect(html).toContain('<article class="lc-docx">');
     });
 
     test('routes a docx above the size cap through the mammoth fallback', async () => {
@@ -68,9 +76,17 @@ describe('Office HTML producers', () => {
        * being a vehicle for outbound exfiltration or supply-chain
        * compromise. */
 
+      /* `wordDocToHtmlViaCdn` now takes a pre-rendered mammoth body
+       * string as a second argument (Codex P2 review on PR #12934 —
+       * the body is embedded inside `#lc-fallback` for air-gapped
+       * deployments). Tests use a placeholder body to assert pure
+       * wrapper-structure behavior; the dispatcher-level test above
+       * exercises the real mammoth body from the sample fixture. */
+      const FAKE_FALLBACK_BODY = '<p>fallback-body</p>';
+
       test('embeds the binary as base64 that round-trips to the original bytes', async () => {
         const original = readFixture('sample.docx');
-        const html = await _internal.wordDocToHtmlViaCdn(original);
+        const html = await _internal.wordDocToHtmlViaCdn(original, FAKE_FALLBACK_BODY);
         const match = html.match(
           /<script id="lc-doc-data" type="application\/octet-stream;base64">([^<]*)<\/script>/,
         );
@@ -80,7 +96,10 @@ describe('Office HTML producers', () => {
       });
 
       test('pins both CDN scripts to specific versions with SRI integrity', async () => {
-        const html = await _internal.wordDocToHtmlViaCdn(readFixture('sample.docx'));
+        const html = await _internal.wordDocToHtmlViaCdn(
+          readFixture('sample.docx'),
+          FAKE_FALLBACK_BODY,
+        );
         // Both deps loaded from jsdelivr at pinned versions.
         expect(html).toContain('https://cdn.jsdelivr.net/npm/jszip@3.10.1/');
         expect(html).toContain('https://cdn.jsdelivr.net/npm/docx-preview@0.3.7/');
@@ -95,7 +114,10 @@ describe('Office HTML producers', () => {
       });
 
       test('CSP locks the iframe down: no outbound connect, no eval, scripts only from jsdelivr', async () => {
-        const html = await _internal.wordDocToHtmlViaCdn(readFixture('sample.docx'));
+        const html = await _internal.wordDocToHtmlViaCdn(
+          readFixture('sample.docx'),
+          FAKE_FALLBACK_BODY,
+        );
         const cspMatch = html.match(
           /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/,
         );
@@ -114,15 +136,30 @@ describe('Office HTML producers', () => {
         expect(csp).not.toMatch(/unsafe-eval/);
       });
 
-      test('exposes a fallback message that surfaces if the renderer fails to load', async () => {
-        const html = await _internal.wordDocToHtmlViaCdn(readFixture('sample.docx'));
-        // Visible loading state and a fallback that swaps in on error.
+      test('embeds the mammoth-rendered fallback body in #lc-fallback (air-gapped deployments)', async () => {
+        const html = await _internal.wordDocToHtmlViaCdn(
+          readFixture('sample.docx'),
+          FAKE_FALLBACK_BODY,
+        );
+        /* Visible loading state. */
         expect(html).toContain('Loading preview…');
-        expect(html).toContain('Preview unavailable');
-        // The bootstrap script checks `typeof docx === 'undefined'` so
-        // a CDN outage degrades gracefully rather than leaving a
-        // permanently empty iframe.
+        /* The fallback body now contains the server-rendered mammoth
+         * output (the placeholder body in this test). When the iframe
+         * detects `docx-preview` failed to load, `showFallback`
+         * un-hides this block — Codex P2 review on PR #12934. The old
+         * static "Preview unavailable" text is gone in favor of a
+         * notice + the actual document content. */
+        expect(html).toContain('id="lc-fallback"');
+        expect(html).toContain(FAKE_FALLBACK_BODY);
+        expect(html).toContain('High-fidelity renderer unavailable');
+        /* The bootstrap script checks `typeof docx === 'undefined'`
+         * so a CDN outage degrades to the fallback rather than an
+         * empty iframe. */
         expect(html).toContain("typeof docx === 'undefined'");
+        /* And it hides the empty render slot when fallback shows so
+         * the mammoth content owns the viewport. */
+        expect(html).toContain("document.getElementById('lc-render')");
+        expect(html).toContain('render.hidden = true');
       });
 
       test('size-fallback threshold is the documented 350 KB', async () => {
@@ -130,6 +167,27 @@ describe('Office HTML producers', () => {
          * away from the value referenced in the JSDoc and the
          * `MAX_TEXT_CACHE_BYTES` reasoning above it. */
         expect(_internal.MAX_DOCX_CDN_BINARY_BYTES).toBe(350 * 1024);
+      });
+
+      test('output cap mirrors `MAX_TEXT_CACHE_BYTES` from extract.ts', async () => {
+        /* Pin the cycle-avoidance constant. If the upstream
+         * `MAX_TEXT_CACHE_BYTES` ever changes (e.g. lifting the cap
+         * for office types specifically), update both at the same
+         * time or the dispatcher's size-budget path will misfire. */
+        expect(_internal.OFFICE_HTML_OUTPUT_CAP).toBe(512 * 1024);
+      });
+
+      test('output stays within the cache cap for the standard fixture', async () => {
+        /* The fixture isn't large enough to hit the size-budget
+         * fallback, but the resulting HTML *must* fit under the cap so
+         * `attachment.text` doesn't get truncated mid-document.
+         * Pinning this on the standard fixture catches regressions
+         * where wrapper boilerplate or DOCX_EXTRA_CSS grows past the
+         * 512 KB ceiling. Codex P2 review on PR #12934. */
+        const html = await wordDocToHtml(readFixture('sample.docx'));
+        expect(Buffer.byteLength(html, 'utf-8')).toBeLessThanOrEqual(
+          _internal.OFFICE_HTML_OUTPUT_CAP,
+        );
       });
     });
 

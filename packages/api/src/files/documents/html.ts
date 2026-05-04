@@ -351,6 +351,19 @@ const DOCX_PREVIEW_CDN = {
 const MAX_DOCX_CDN_BINARY_BYTES = 350 * 1024;
 
 /**
+ * Mirror of `MAX_TEXT_CACHE_BYTES` from `~/files/code/extract` — the
+ * 512 KB ceiling that `attachment.text` is truncated to before hitting
+ * the SSE wire and the database. We mirror (rather than import) to
+ * avoid the cycle: `extract.ts` already imports `bufferToOfficeHtml`
+ * from this module. The dispatcher uses this to drop CDN-with-fallback
+ * docs that would exceed the cap and fall back to mammoth-only.
+ *
+ * If the upstream constant ever changes, update this value too. The
+ * `cap-mirrors-extract` test in `html.spec.ts` pins the relationship.
+ */
+const OFFICE_HTML_OUTPUT_CAP = 512 * 1024;
+
+/**
  * Build the CDN-rendered HTML document for a DOCX. The base64 payload
  * lives inside a `<script type="application/octet-stream;base64">`
  * — this is HTML5-spec-compliant for "data block" scripts (browsers
@@ -363,7 +376,7 @@ const MAX_DOCX_CDN_BINARY_BYTES = 350 * 1024;
  * for inline images), styles inline (`docx-preview` injects per-doc
  * styles into `<head>` at render time).
  */
-function buildDocxCdnDocument(base64: string): string {
+function buildDocxCdnDocument(base64: string, mammothFallbackHtml: string): string {
   const csp = [
     "default-src 'none'",
     "script-src https://cdn.jsdelivr.net 'unsafe-inline'",
@@ -374,6 +387,15 @@ function buildDocxCdnDocument(base64: string): string {
     "base-uri 'none'",
     "form-action 'none'",
   ].join('; ');
+  /* Body styling for the embedded mammoth fallback. The CDN-rendered
+   * path normally hides this content, but on air-gapped networks where
+   * `cdn.jsdelivr.net` is blocked the fallback handler reveals it so
+   * the user gets a readable preview instead of the legacy "Preview
+   * unavailable" message — Codex P2 review on PR #12934. We inline the
+   * shared `DOCX_EXTRA_CSS` rules here (rather than `<link>` to a
+   * cross-origin sheet) because the CSP locks `style-src` to inline
+   * only and the wrapped mammoth output uses the same `.lc-docx`
+   * classes. */
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -382,12 +404,14 @@ function buildDocxCdnDocument(base64: string): string {
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <title>Preview</title>
 <style>
-:root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; }
-@media (prefers-color-scheme: dark) { :root { --bg: #1a1a2e; --fg: #e5e7eb; --muted: #9ca3af; } }
+:root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; --link: #2563eb; --border: #e5e7eb; --header-bg: #f3f4f6; --row-alt: #f9fafb; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1a1a2e; --fg: #e5e7eb; --muted: #9ca3af; --link: #93c5fd; --border: #2d3142; --header-bg: #232842; --row-alt: #1f2440; } }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 #lc-render { padding: 16px; }
-#lc-fallback { padding: 24px; font-size: 14px; line-height: 1.5; color: var(--muted); text-align: center; }
+#lc-fallback { padding: 24px 24px 32px; font-size: 14px; line-height: 1.5; color: var(--fg); }
+#lc-fallback-notice { font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 0 0 16px; }
 .lc-docx-loading { display: flex; align-items: center; justify-content: center; height: 60vh; color: var(--muted); font-size: 14px; }
+${DOCX_EXTRA_CSS}
 /* docx-preview emits its own per-document <style> tags inside #lc-render
  * — leave them be. These rules just keep the host frame consistent with
  * dark mode and bound the rendered document width. */
@@ -419,13 +443,21 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
 </head>
 <body>
 <div id="lc-render"><div class="lc-docx-loading">Loading preview…</div></div>
-<div id="lc-fallback" hidden>Preview unavailable. Please download the file to view it.</div>
+<div id="lc-fallback" hidden>
+<p id="lc-fallback-notice">High-fidelity renderer unavailable (CDN blocked or offline). Showing the simplified preview below.</p>
+<article class="lc-docx">${mammothFallbackHtml}</article>
+</div>
 <script id="lc-doc-data" type="application/octet-stream;base64">${base64}</script>
 <script>
 (function () {
   function showFallback(reason) {
     var loading = document.querySelector('.lc-docx-loading');
     if (loading) { loading.remove(); }
+    /* Hide the empty render slot so the embedded mammoth preview owns
+     * the viewport — otherwise a stripe of padded empty space sits
+     * above the fallback content. Codex P2 review on PR #12934. */
+    var render = document.getElementById('lc-render');
+    if (render) { render.hidden = true; }
     var fallback = document.getElementById('lc-fallback');
     if (fallback) {
       fallback.hidden = false;
@@ -475,14 +507,25 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
 </html>`;
 }
 
-async function wordDocToHtmlViaCdn(buffer: Buffer): Promise<string> {
-  return buildDocxCdnDocument(buffer.toString('base64'));
+/**
+ * Run mammoth + sanitization to produce the inner DOCX body HTML
+ * (the `<article>` contents). Shared between the standalone mammoth
+ * path and the CDN path's fallback embedding so both render through
+ * the exact same pipeline — no diverging sanitization rules. Codex P2
+ * review on PR #12934.
+ */
+async function renderMammothBody(buffer: Buffer): Promise<string> {
+  const { convertToHtml } = await import('mammoth');
+  const result = await convertToHtml({ buffer }, { styleMap: DOCX_STYLE_MAP });
+  return sanitizeOfficeHtml(result.value);
+}
+
+async function wordDocToHtmlViaCdn(buffer: Buffer, mammothFallbackBody: string): Promise<string> {
+  return buildDocxCdnDocument(buffer.toString('base64'), mammothFallbackBody);
 }
 
 async function wordDocToHtmlViaMammoth(buffer: Buffer): Promise<string> {
-  const { convertToHtml } = await import('mammoth');
-  const result = await convertToHtml({ buffer }, { styleMap: DOCX_STYLE_MAP });
-  const sanitized = await sanitizeOfficeHtml(result.value);
+  const sanitized = await renderMammothBody(buffer);
   return wrapAsDocument(`<article class="lc-docx">${sanitized}</article>`, DOCX_EXTRA_CSS);
 }
 
@@ -516,12 +559,20 @@ function isOfficePreviewCdnDisabled(): boolean {
  *      binary as base64 and lets `docx-preview` render it inside the
  *      Sandpack iframe. High visual fidelity — preserves cell shading,
  *      run-level colors/fonts, headers/footers, columns, and images.
- *   2. **Mammoth (fallback for larger files OR when the CDN path is
- *      explicitly disabled via `OFFICE_PREVIEW_DISABLE_CDN=true`)**:
- *      server-side semantic HTML conversion. Lower fidelity (flat
- *      paragraphs, no shading) but produces compact output that fits
- *      the `MAX_TEXT_CACHE_BYTES` (512 KB) cap on `attachment.text`
- *      even for large documents, and works without external network.
+ *      The mammoth-rendered HTML is *also* embedded as a hidden
+ *      `<div id="lc-fallback">` block; the iframe's bootstrap script
+ *      reveals it whenever `docx-preview` fails to load (corporate
+ *      firewall blocking jsdelivr, offline desktop, etc.) so air-
+ *      gapped deployments still get a readable preview instead of a
+ *      "Preview unavailable" message — Codex P2 review on PR #12934.
+ *   2. **Mammoth-only (fallback for larger files, files where the
+ *      combined CDN-doc-with-fallback would blow the cache cap, OR
+ *      when the CDN path is explicitly disabled via
+ *      `OFFICE_PREVIEW_DISABLE_CDN=true`)**: server-side semantic HTML
+ *      conversion. Lower fidelity (flat paragraphs, no shading) but
+ *      produces compact output that fits the `MAX_TEXT_CACHE_BYTES`
+ *      (512 KB) cap on `attachment.text` even for large documents,
+ *      and works without external network.
  *
  * Both paths pre-flight through `assertSafeZipSize` so a zip-bomb DOCX
  * is rejected before either renderer touches it — mammoth's internal
@@ -531,13 +582,21 @@ function isOfficePreviewCdnDisabled(): boolean {
  */
 export async function wordDocToHtml(buffer: Buffer): Promise<string> {
   await assertSafeZipSize(buffer, { name: 'docx' });
-  if (isOfficePreviewCdnDisabled()) {
+  if (isOfficePreviewCdnDisabled() || buffer.length > MAX_DOCX_CDN_BINARY_BYTES) {
     return wordDocToHtmlViaMammoth(buffer);
   }
-  if (buffer.length <= MAX_DOCX_CDN_BINARY_BYTES) {
-    return wordDocToHtmlViaCdn(buffer);
+  /* Render mammoth first so its sanitized output can be embedded as
+   * the iframe's air-gapped fallback. If the combined size would
+   * exceed the 512 KB cache cap, drop to mammoth-only — the user
+   * loses high-fidelity rendering but still sees the document. The
+   * size budget applies after mammoth runs because we can't know its
+   * output size from the binary size alone. */
+  const mammothBody = await renderMammothBody(buffer);
+  const cdnDoc = await wordDocToHtmlViaCdn(buffer, mammothBody);
+  if (Buffer.byteLength(cdnDoc, 'utf-8') > OFFICE_HTML_OUTPUT_CAP) {
+    return wrapAsDocument(`<article class="lc-docx">${mammothBody}</article>`, DOCX_EXTRA_CSS);
   }
-  return wordDocToHtmlViaMammoth(buffer);
+  return cdnDoc;
 }
 
 /* =============================================================================
@@ -1142,7 +1201,9 @@ async function pptxToSlideListHtmlInternal(buffer: Buffer): Promise<string> {
 export const _internal = {
   wordDocToHtmlViaCdn,
   wordDocToHtmlViaMammoth,
+  renderMammothBody,
   MAX_DOCX_CDN_BINARY_BYTES,
+  OFFICE_HTML_OUTPUT_CAP,
   DOCX_PREVIEW_CDN,
   pptxToHtmlViaCdn,
   MAX_PPTX_CDN_BINARY_BYTES,
