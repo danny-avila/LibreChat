@@ -1,0 +1,14 @@
+[Unit]
+Description=LibreChat FerretDB backup with SeaweedFS object storage
+Requires=docker.service
+After=docker.service librechat-ferretdb-seaweedfs.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/librechat
+Environment=COMPOSE_PROJECT_NAME=librechat-ferretdb
+Environment=ENV_FILE=/opt/librechat/deploy/ferretdb/.env
+Environment=COMPOSE_FILES=/opt/librechat/deploy-compose.ferretdb.yml,/opt/librechat/deploy-compose.ferretdb.seaweedfs.yml
+Environment=BACKUP_ROOT=/srv/librechat/backups
+Environment=BACKUP_RETENTION_DAYS=14
+ExecStart=/opt/librechat/deploy/ferretdb/bin/backup.sh

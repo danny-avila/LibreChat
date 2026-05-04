@@ -76,15 +76,20 @@ librechat.yaml
 librechat.yml
 
 # Environment
+.direnv/
 .npmrc
 .env*
+!.envrc
 my.secrets
 !**/.env.example
+!**/.env.*.example
 !**/.env.test.example
 cache.json
 api/data/
 owner.yml
 archive
+backups/
+artifacts/
 .vscode/settings.json
 src/style - official.css
 /e2e/specs/.test-results/

@@ -1,0 +1,13 @@
+[Unit]
+Description=LibreChat FerretDB backup
+Requires=docker.service
+After=docker.service librechat-ferretdb.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/librechat
+Environment=COMPOSE_PROJECT_NAME=librechat-ferretdb
+Environment=ENV_FILE=/opt/librechat/deploy/ferretdb/.env
+Environment=BACKUP_ROOT=/srv/librechat/backups
+Environment=BACKUP_RETENTION_DAYS=14
+ExecStart=/opt/librechat/deploy/ferretdb/bin/backup.sh

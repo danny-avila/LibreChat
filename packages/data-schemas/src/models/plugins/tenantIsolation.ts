@@ -145,6 +145,7 @@ export function applyTenantIsolation(schema: Schema): void {
   schema.pre('deleteOne', queryMiddleware);
   schema.pre('deleteMany', queryMiddleware);
   schema.pre('countDocuments', queryMiddleware);
+  schema.pre('distinct', queryMiddleware);
   schema.pre('replaceOne', queryMiddleware);
 
   schema.pre('findOneAndUpdate', updateGuard);

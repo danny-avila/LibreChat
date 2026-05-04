@@ -1,0 +1,10 @@
+[Unit]
+Description=Run LibreChat FerretDB SeaweedFS healthcheck every five minutes
+
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

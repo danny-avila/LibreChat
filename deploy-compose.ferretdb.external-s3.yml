@@ -1,0 +1,24 @@
+services:
+  api:
+    depends_on: !override
+      ferretdb:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    environment:
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:?set AWS_ENDPOINT_URL for the external S3-compatible service}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID for the external S3-compatible service}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY for the external S3-compatible service}
+      AWS_BUCKET_NAME: ${AWS_BUCKET_NAME:?set AWS_BUCKET_NAME for the external S3-compatible service}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_FORCE_PATH_STYLE: ${AWS_FORCE_PATH_STYLE:-true}
+
+  minio:
+    profiles:
+      - internal-minio
+
+  minio-init:
+    profiles:
+      - internal-minio

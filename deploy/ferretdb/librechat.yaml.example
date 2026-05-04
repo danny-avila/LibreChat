@@ -1,0 +1,34 @@
+version: 1.3.9
+
+cache: true
+fileStrategy: s3
+
+interface:
+  modelSelect: true
+  parameters: true
+  presets: true
+  prompts:
+    use: true
+    create: true
+    share: false
+    public: false
+  bookmarks: true
+  multiConvo: true
+  agents:
+    use: true
+    create: true
+    share: false
+    public: false
+  peoplePicker:
+    users: true
+    groups: true
+    roles: true
+  marketplace:
+    use: false
+  fileCitations: true
+
+registration:
+  socialLogins: []
+
+actions:
+  allowedDomains: []

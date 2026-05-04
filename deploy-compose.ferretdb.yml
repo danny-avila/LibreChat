@@ -1,0 +1,179 @@
+name: librechat-ferretdb
+
+x-librechat-env-file: &librechat-env-file
+  - ${LIBRECHAT_ENV_FILE:-./deploy/ferretdb/.env}
+
+services:
+  gateway:
+    image: ${GATEWAY_IMAGE:-nginx:1.27.0-alpine}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '${LIBRECHAT_BIND_ADDRESS:-127.0.0.1}:${LIBRECHAT_HTTP_PORT:-3080}:80'
+    volumes:
+      - ./deploy/ferretdb/tenant-gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
+    environment:
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx/conf.d
+    healthcheck:
+      test: ['CMD', 'nginx', '-t']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.multi
+      target: api-build
+      args:
+        NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-6144}
+    image: ${LIBRECHAT_API_IMAGE:-librechat-api:ferretdb}
+    restart: unless-stopped
+    depends_on:
+      ferretdb:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    env_file: *librechat-env-file
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3080
+      NODE_ENV: production
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      TENANT_ISOLATION_STRICT: 'true'
+      MONGO_URI: mongodb://${DOCUMENTDB_USER:?set DOCUMENTDB_USER}:${DOCUMENTDB_PASSWORD:?set DOCUMENTDB_PASSWORD}@ferretdb:27017/LibreChat
+      MONGO_MAX_POOL_SIZE: ${MONGO_MAX_POOL_SIZE:-50}
+      MONGO_MIN_POOL_SIZE: ${MONGO_MIN_POOL_SIZE:-5}
+      MONGO_AUTO_INDEX: ${MONGO_AUTO_INDEX:-true}
+      MEILI_HOST: http://meilisearch:7700
+      USE_REDIS: 'true'
+      USE_REDIS_STREAMS: 'true'
+      REDIS_URI: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-librechat}
+      CDN_PROVIDER: s3
+      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      AWS_BUCKET_NAME: ${MINIO_BUCKET:-librechat}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_FORCE_PATH_STYLE: 'true'
+      CONFIG_PATH: /app/librechat.yaml
+    volumes:
+      - ${LIBRECHAT_YAML_PATH:-./librechat.yaml}:/app/librechat.yaml:ro
+      - ./images:/app/client/public/images
+      - ./uploads:/app/uploads
+      - ./logs:/app/api/logs
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3080/health']
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  documentdb:
+    image: ${DOCUMENTDB_IMAGE:-ghcr.io/ferretdb/postgres-documentdb:17-0.107.0-ferretdb-2.7.0}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DOCUMENTDB_USER:?set DOCUMENTDB_USER}
+      POSTGRES_PASSWORD: ${DOCUMENTDB_PASSWORD:?set DOCUMENTDB_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - documentdb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  ferretdb:
+    image: ${FERRETDB_IMAGE:-ghcr.io/ferretdb/ferretdb:2.7.0}
+    restart: unless-stopped
+    depends_on:
+      documentdb:
+        condition: service_healthy
+    environment:
+      FERRETDB_POSTGRESQL_URL: postgres://${DOCUMENTDB_USER:?set DOCUMENTDB_USER}:${DOCUMENTDB_PASSWORD:?set DOCUMENTDB_PASSWORD}@documentdb:5432/postgres
+      FERRETDB_TELEMETRY: ${FERRETDB_TELEMETRY:-disable}
+
+  redis:
+    image: ${VALKEY_IMAGE:-valkey/valkey:8.1-alpine}
+    restart: unless-stopped
+    command:
+      [
+        'valkey-server',
+        '--appendonly',
+        'yes',
+        '--requirepass',
+        '${REDIS_PASSWORD:?set REDIS_PASSWORD}',
+      ]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'valkey-cli -a "$${REDIS_PASSWORD}" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+
+  meilisearch:
+    image: ${MEILI_IMAGE:-getmeili/meilisearch:v1.35.1}
+    restart: unless-stopped
+    environment:
+      MEILI_NO_ANALYTICS: 'true'
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY}
+    volumes:
+      - meili_data:/meili_data
+
+  minio:
+    image: ${MINIO_IMAGE:?set MINIO_IMAGE to a pinned MinIO image tag or digest}
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'mc alias set local http://127.0.0.1:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 && mc ready local >/dev/null 2>&1',
+        ]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 30s
+
+  minio-init:
+    image: ${MINIO_MC_IMAGE:?set MINIO_MC_IMAGE to a pinned MinIO client image tag or digest}
+    restart: 'no'
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-librechat}
+    entrypoint: /bin/sh
+    command:
+      - -ceu
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing "local/$${MINIO_BUCKET}"
+        mc anonymous set none "local/$${MINIO_BUCKET}"
+
+volumes:
+  documentdb_data:
+  meili_data:
+  minio_data:
+  redis_data:

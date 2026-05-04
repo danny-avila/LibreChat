@@ -1,0 +1,31 @@
+# Public Caddy auth gateway in front of the local LibreChat tenant gateway.
+#
+# Replace:
+# - chat.example.com
+# - http://auth-gateway.internal:8080
+
+chat.example.com {
+	encode zstd gzip
+
+	request_body {
+		max_size 25MB
+	}
+
+	# Strip browser-controlled tenant headers before auth and before proxying.
+	request_header -X-Tenant-Id
+	request_header -X-Auth-Tenant-Id
+
+	forward_auth http://auth-gateway.internal:8080 {
+		uri /auth/verify
+		copy_headers X-Auth-Tenant-Id
+		header_up X-Original-Method {method}
+		header_up X-Original-URI {uri}
+	}
+
+	reverse_proxy 127.0.0.1:3080 {
+		header_up Host {host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Auth-Tenant-Id {http.request.header.X-Auth-Tenant-Id}
+		header_up -X-Tenant-Id
+	}
+}

@@ -1,0 +1,40 @@
+# Public Traefik dynamic file-provider config in front of the local
+# LibreChat tenant gateway.
+#
+# Replace:
+# - chat.example.com
+# - http://auth-gateway.internal:8080/auth/verify
+# - certificate resolver name if using ACME
+
+http:
+  routers:
+    librechat:
+      rule: Host(`chat.example.com`)
+      entryPoints:
+        - websecure
+      service: librechat-tenant-gateway
+      middlewares:
+        - strip-client-tenant-headers
+        - librechat-forward-auth
+      tls:
+        certResolver: letsencrypt
+
+  middlewares:
+    strip-client-tenant-headers:
+      headers:
+        customRequestHeaders:
+          X-Tenant-Id: ''
+          X-Auth-Tenant-Id: ''
+
+    librechat-forward-auth:
+      forwardAuth:
+        address: http://auth-gateway.internal:8080/auth/verify
+        trustForwardHeader: false
+        authResponseHeaders:
+          - X-Auth-Tenant-Id
+
+  services:
+    librechat-tenant-gateway:
+      loadBalancer:
+        servers:
+          - url: http://127.0.0.1:3080

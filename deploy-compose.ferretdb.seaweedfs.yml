@@ -1,0 +1,73 @@
+services:
+  api:
+    depends_on: !override
+      ferretdb:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      seaweedfs-init:
+        condition: service_completed_successfully
+    environment:
+      AWS_ENDPOINT_URL: http://seaweedfs:8333
+      AWS_ACCESS_KEY_ID: ${SEAWEEDFS_ACCESS_KEY:?set SEAWEEDFS_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${SEAWEEDFS_SECRET_KEY:?set SEAWEEDFS_SECRET_KEY}
+      AWS_BUCKET_NAME: ${SEAWEEDFS_BUCKET:-librechat}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_FORCE_PATH_STYLE: 'true'
+
+  minio:
+    profiles:
+      - internal-minio
+
+  minio-init:
+    profiles:
+      - internal-minio
+
+  seaweedfs:
+    image: ${SEAWEEDFS_IMAGE:-chrislusf/seaweedfs:latest}
+    restart: unless-stopped
+    command:
+      [
+        'server',
+        '-dir=/data',
+        '-s3',
+        '-ip=seaweedfs',
+        '-ip.bind=0.0.0.0',
+        '-master.telemetry=false',
+        '-master.volumeSizeLimitMB=${SEAWEEDFS_VOLUME_SIZE_LIMIT_MB:-30000}',
+        '-volume.max=${SEAWEEDFS_VOLUME_MAX:-100}',
+      ]
+    environment:
+      AWS_ACCESS_KEY_ID: ${SEAWEEDFS_ACCESS_KEY:?set SEAWEEDFS_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${SEAWEEDFS_SECRET_KEY:?set SEAWEEDFS_SECRET_KEY}
+    volumes:
+      - seaweedfs_data:/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'nc -z 127.0.0.1 8333 && echo "s3.bucket.list" | weed shell -master=127.0.0.1:9333 -filer=127.0.0.1:8888 >/dev/null 2>&1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  seaweedfs-init:
+    image: ${SEAWEEDFS_IMAGE:-chrislusf/seaweedfs:latest}
+    restart: 'no'
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    environment:
+      SEAWEEDFS_BUCKET: ${SEAWEEDFS_BUCKET:-librechat}
+    entrypoint: /bin/sh
+    command:
+      - -ceu
+      - |
+        echo "s3.bucket.create -name $${SEAWEEDFS_BUCKET}" | weed shell -master=seaweedfs:9333 -filer=seaweedfs:8888
+
+volumes:
+  seaweedfs_data:

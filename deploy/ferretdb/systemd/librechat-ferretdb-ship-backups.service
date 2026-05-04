@@ -1,0 +1,13 @@
+[Unit]
+Description=Ship LibreChat FerretDB backups off-host
+Requires=docker.service
+After=docker.service librechat-ferretdb-seaweedfs-backup.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/librechat
+Environment=COMPOSE_PROJECT_NAME=librechat-ferretdb
+Environment=ENV_FILE=/opt/librechat/deploy/ferretdb/.env
+Environment=BACKUP_ROOT=/srv/librechat/backups
+Environment=SHIP_ENV_FILE=/opt/librechat/deploy/ferretdb/.env.backup-shipping
+ExecStart=/opt/librechat/deploy/ferretdb/bin/ship-backups.sh

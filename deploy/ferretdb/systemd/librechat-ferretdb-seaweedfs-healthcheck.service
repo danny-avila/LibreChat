@@ -1,0 +1,15 @@
+[Unit]
+Description=LibreChat FerretDB SeaweedFS healthcheck
+Requires=docker.service
+After=docker.service librechat-ferretdb-seaweedfs.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/librechat
+Environment=COMPOSE_PROJECT_NAME=librechat-ferretdb
+Environment=ENV_FILE=/opt/librechat/deploy/ferretdb/.env
+Environment=COMPOSE_FILES=/opt/librechat/deploy-compose.ferretdb.yml,/opt/librechat/deploy-compose.ferretdb.seaweedfs.yml
+Environment=BACKUP_ROOT=/srv/librechat/backups
+Environment=BACKUP_MAX_AGE_HOURS=30
+Environment=DISK_WARN_PERCENT=85
+ExecStart=/opt/librechat/deploy/ferretdb/bin/healthcheck.sh

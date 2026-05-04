@@ -112,6 +112,14 @@ describe('applyTenantIsolation', () => {
       expect(count).toBe(1);
     });
 
+    it('injects tenantId filter into distinct', async () => {
+      const names = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        TestModel.distinct('name', {}),
+      );
+
+      expect(names).toEqual(['tenant-a-doc']);
+    });
+
     it('injects tenantId filter into findOneAndUpdate', async () => {
       const doc = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
         TestModel.findOneAndUpdate(

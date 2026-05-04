@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   logAgentMigrationWarning,
   logPromptMigrationWarning,
@@ -14,25 +14,29 @@ const { findRoleByIdentifier } = require('~/models');
  */
 async function checkMigrations() {
   try {
-    const agentMigrationResult = await checkAgentPermissionsMigration({
-      mongoose,
-      methods: {
-        findRoleByIdentifier,
-      },
-      AgentModel: mongoose.models.Agent,
-    });
+    const agentMigrationResult = await runAsSystem(() =>
+      checkAgentPermissionsMigration({
+        mongoose,
+        methods: {
+          findRoleByIdentifier,
+        },
+        AgentModel: mongoose.models.Agent,
+      }),
+    );
     logAgentMigrationWarning(agentMigrationResult);
   } catch (error) {
     logger.error('Failed to check agent permissions migration:', error);
   }
   try {
-    const promptMigrationResult = await checkPromptPermissionsMigration({
-      mongoose,
-      methods: {
-        findRoleByIdentifier,
-      },
-      PromptGroupModel: mongoose.models.PromptGroup,
-    });
+    const promptMigrationResult = await runAsSystem(() =>
+      checkPromptPermissionsMigration({
+        mongoose,
+        methods: {
+          findRoleByIdentifier,
+        },
+        PromptGroupModel: mongoose.models.PromptGroup,
+      }),
+    );
     logPromptMigrationWarning(promptMigrationResult);
   } catch (error) {
     logger.error('Failed to check prompt permissions migration:', error);

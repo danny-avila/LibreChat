@@ -1,0 +1,10 @@
+[Unit]
+Description=Run LibreChat backup shipping after daily backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=20m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

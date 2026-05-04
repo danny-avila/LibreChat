@@ -1,0 +1,10 @@
+[Unit]
+Description=Run LibreChat FerretDB SeaweedFS backup daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+RandomizedDelaySec=20m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

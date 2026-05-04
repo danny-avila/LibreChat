@@ -1,0 +1,35 @@
+services:
+  api:
+    depends_on:
+      rag_api:
+        condition: service_started
+    environment:
+      RAG_PORT: ${RAG_PORT:-8000}
+      RAG_API_URL: http://rag_api:${RAG_PORT:-8000}
+
+  vectordb:
+    image: ${PGVECTOR_IMAGE:-pgvector/pgvector:0.8.0-pg15-trixie}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${RAG_POSTGRES_DB:-rag}
+      POSTGRES_USER: ${RAG_POSTGRES_USER:-rag}
+      POSTGRES_PASSWORD: ${RAG_POSTGRES_PASSWORD:?set RAG_POSTGRES_PASSWORD}
+    volumes:
+      - rag_pgdata:/var/lib/postgresql/data
+
+  rag_api:
+    image: ${RAG_API_IMAGE:?set RAG_API_IMAGE to a pinned LibreChat RAG API image tag or digest}
+    restart: unless-stopped
+    depends_on:
+      - vectordb
+    env_file:
+      - ${LIBRECHAT_ENV_FILE:-./deploy/ferretdb/.env}
+    environment:
+      DB_HOST: vectordb
+      POSTGRES_DB: ${RAG_POSTGRES_DB:-rag}
+      POSTGRES_USER: ${RAG_POSTGRES_USER:-rag}
+      POSTGRES_PASSWORD: ${RAG_POSTGRES_PASSWORD:?set RAG_POSTGRES_PASSWORD}
+      RAG_PORT: ${RAG_PORT:-8000}
+
+volumes:
+  rag_pgdata:

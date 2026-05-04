@@ -1,0 +1,20 @@
+[Unit]
+Description=LibreChat FerretDB Compose stack with SeaweedFS object storage
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/librechat
+Environment=COMPOSE_PROJECT_NAME=librechat-ferretdb
+Environment=ENV_FILE=/opt/librechat/deploy/ferretdb/.env
+Environment=COMPOSE_FILES=/opt/librechat/deploy-compose.ferretdb.yml,/opt/librechat/deploy-compose.ferretdb.seaweedfs.yml
+ExecStartPre=/opt/librechat/deploy/ferretdb/bin/validate-env.sh
+ExecStart=/usr/bin/docker compose --env-file deploy/ferretdb/.env -f deploy-compose.ferretdb.yml -f deploy-compose.ferretdb.seaweedfs.yml up -d
+ExecStop=/usr/bin/docker compose --env-file deploy/ferretdb/.env -f deploy-compose.ferretdb.yml -f deploy-compose.ferretdb.seaweedfs.yml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,76 @@
+# Public Nginx auth gateway in front of the local LibreChat tenant gateway.
+#
+# Replace:
+# - chat.example.com
+# - http://auth-gateway.internal:8080/auth/verify
+# - TLS certificate paths
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    "" close;
+}
+
+upstream librechat_tenant_gateway {
+    server 127.0.0.1:3080;
+    keepalive 32;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name chat.example.com;
+    server_tokens off;
+
+    ssl_certificate /etc/letsencrypt/live/chat.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/chat.example.com/privkey.pem;
+
+    client_max_body_size 25M;
+
+    location = /_auth {
+        internal;
+        proxy_pass http://auth-gateway.internal:8080/auth/verify;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Original-Method $request_method;
+        proxy_set_header X-Original-URI $request_uri;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Authorization $http_authorization;
+        proxy_set_header Cookie $http_cookie;
+
+        # Never let a browser-provided tenant header influence auth.
+        proxy_set_header X-Tenant-Id "";
+        proxy_set_header X-Auth-Tenant-Id "";
+    }
+
+    location / {
+        auth_request /_auth;
+        auth_request_set $auth_tenant_id $upstream_http_x_auth_tenant_id;
+
+        proxy_http_version 1.1;
+        proxy_pass http://librechat_tenant_gateway;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        # Strip browser-controlled tenant headers and set only the auth result.
+        proxy_set_header X-Tenant-Id "";
+        proxy_set_header X-Auth-Tenant-Id $auth_tenant_id;
+    }
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name chat.example.com;
+    return 301 https://$host$request_uri;
+}
