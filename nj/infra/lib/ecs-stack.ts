@@ -58,6 +58,8 @@ export class EcsStack extends cdk.Stack {
     this.loadBalancer = librechatService.loadBalancer;
     this.service = librechatService;
 
+    const ragApiService = this.CreateRagApiService(props, commonExecRole, cluster, librechatService);
+
     if (!isProd) {
       this.CreateDatabaseSidecars(props, commonExecRole, vpc, cluster, librechatService);
     }
@@ -348,34 +350,6 @@ export class EcsStack extends cdk.Stack {
     );
     mongoFs.connections.allowDefaultPortFrom(mongoService);
 
-    // Create RAG API service
-    const ragApiService = this.CreateRagApiService(props, commonExecRole, cluster);
-
-    // Allow RAG API to connect to RDS
-    if (props.rdsSecurityGroup && props.rdsPort) {
-      ragApiService.connections.allowTo(
-        props.rdsSecurityGroup,
-        ec2.Port.tcp(5432),
-        'RAG API to RDS',
-      );
-    }
-
-    // Allow LibreChat to connect to RAG API
-    ragApiService.connections.allowFrom(
-      librechatService.service,
-      ec2.Port.tcp(8000),
-      'LibreChat to RAG API',
-    );
-
-    // Allow LibreChat to connect to RDS
-    if (props.rdsSecurityGroup && props.rdsPort) {
-      librechatService.service.connections.allowTo(
-        props.rdsSecurityGroup,
-        ec2.Port.tcp(5432),
-        'LibreChat to RDS',
-      );
-    }
-
     this.mongoService = mongoService;
     new cdk.CfnOutput(this, 'MongoImageUri', { value: props.mongoImage });
     new cdk.CfnOutput(this, 'RagApiImageUri', {
@@ -387,6 +361,7 @@ export class EcsStack extends cdk.Stack {
     props: EcsServicesProps,
     commonExecRole: iam.Role,
     cluster: ecs.Cluster,
+    librechatService: ecsPatterns.ApplicationLoadBalancedFargateService,
   ): ecs.FargateService {
     const ragApiTaskDef = new ecs.FargateTaskDefinition(this, 'RagApiTaskDef', {
       cpu: 512,
@@ -440,6 +415,31 @@ export class EcsStack extends cdk.Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
 
+
+    // Allow RAG API to connect to RDS
+    if (props.rdsSecurityGroup && props.rdsPort) {
+      ragApiService.connections.allowTo(
+        props.rdsSecurityGroup,
+        ec2.Port.tcp(5432),
+        'RAG API to RDS',
+      );
+    }
+
+    // Allow LibreChat to connect to RAG API
+    ragApiService.connections.allowFrom(
+      librechatService.service,
+      ec2.Port.tcp(8000),
+      'LibreChat to RAG API',
+    );
+
+    // Allow LibreChat to connect to RDS
+    if (props.rdsSecurityGroup && props.rdsPort) {
+      librechatService.service.connections.allowTo(
+        props.rdsSecurityGroup,
+        ec2.Port.tcp(5432),
+        'LibreChat to RDS',
+      );
+    }
     return ragApiService;
   }
 

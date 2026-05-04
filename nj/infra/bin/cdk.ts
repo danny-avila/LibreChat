@@ -73,7 +73,7 @@ const envVars = {
 
 const ragApiJwtSecretSuffix: Record<AwsEnv, string> = {
   dev: '5vHiQq',
-  prod: '', // TODO: populate after secret is created in prod
+  prod: 'YipukF',
 };
 
 const commonTags = {

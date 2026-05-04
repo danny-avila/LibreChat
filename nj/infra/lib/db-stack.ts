@@ -40,14 +40,11 @@ export class DatabaseStack extends cdk.Stack {
       this.CreateDocumentDBInstance(vpc);
     }
 
-    // RDS PostgreSQL only in dev
-    if (!isProd) {
-      const rds = this.CreateRDSPostgres(vpc);
-      this.rdsEndpoint = rds.endpoint;
-      this.rdsPort = rds.port;
-      this.rdsSecurityGroup = rds.securityGroup;
-      this.rdsSecret = rds.secret;
-    }
+    const rds = this.CreateRDSPostgres(vpc);
+    this.rdsEndpoint = rds.endpoint;
+    this.rdsPort = rds.port;
+    this.rdsSecurityGroup = rds.securityGroup;
+    this.rdsSecret = rds.secret;
 
     // Redis in both dev and prod
     const redis = this.CreateElastiCacheRedis(vpc);
