@@ -87,7 +87,7 @@ export function loadWebSearchConfig(
   const rerankerType = config?.rerankerType;
 
   return {
-    ...config,
+    ...config, // Preserve provider-specific option blocks such as firecrawlOptions and tavilySearchOptions.
     safeSearch,
     jinaApiKey,
     jinaApiUrl,

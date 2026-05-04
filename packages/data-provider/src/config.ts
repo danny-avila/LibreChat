@@ -1101,7 +1101,7 @@ export const webSearchSchema = z.object({
   tavilySearchOptions: z
     .object({
       searchDepth: z.enum(['basic', 'advanced', 'fast', 'ultra-fast']).optional(),
-      maxResults: z.number().int().min(0).max(20).optional(),
+      maxResults: z.number().int().min(1).max(20).optional(),
       includeImages: z.boolean().optional(),
       includeAnswer: z.union([z.boolean(), z.enum(['basic', 'advanced'])]).optional(),
       includeRawContent: z.union([z.boolean(), z.enum(['markdown', 'text'])]).optional(),

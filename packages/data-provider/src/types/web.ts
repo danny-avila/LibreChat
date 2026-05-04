@@ -1,4 +1,6 @@
 import type { Logger as WinstonLogger } from 'winston';
+import type { z } from 'zod';
+import type { webSearchSchema } from '../config';
 
 export type SearchRefType = 'search' | 'image' | 'news' | 'video' | 'ref';
 
@@ -11,6 +13,7 @@ export enum DATE_RANGE {
 }
 
 export type SearchProvider = 'serper' | 'searxng' | 'tavily';
+export type ScraperProvider = 'firecrawl' | 'serper' | 'tavily';
 export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none';
 
 export interface Highlight {
@@ -136,29 +139,8 @@ export interface TavilyConfig {
   tavilyApiKey?: string;
   tavilySearchUrl?: string;
   tavilyExtractUrl?: string;
-  tavilySearchOptions?: {
-    searchDepth?: 'basic' | 'advanced' | 'fast' | 'ultra-fast';
-    maxResults?: number;
-    includeImages?: boolean;
-    includeAnswer?: boolean | 'basic' | 'advanced';
-    includeRawContent?: boolean | 'markdown' | 'text';
-    includeDomains?: string[];
-    excludeDomains?: string[];
-    topic?: 'general' | 'news' | 'finance';
-    timeRange?: 'day' | 'week' | 'month' | 'year' | 'd' | 'w' | 'm' | 'y';
-    includeImageDescriptions?: boolean;
-    includeFavicon?: boolean;
-    chunksPerSource?: number;
-    safeSearch?: boolean;
-    timeout?: number;
-  };
-  tavilyScraperOptions?: {
-    extractDepth?: 'basic' | 'advanced';
-    includeImages?: boolean;
-    includeFavicon?: boolean;
-    format?: 'markdown' | 'text';
-    timeout?: number;
-  };
+  tavilySearchOptions?: z.infer<typeof webSearchSchema>['tavilySearchOptions'];
+  tavilyScraperOptions?: z.infer<typeof webSearchSchema>['tavilyScraperOptions'];
 }
 
 export interface ScraperContentResult {

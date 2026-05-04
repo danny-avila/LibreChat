@@ -475,4 +475,38 @@ describe('webSearchSchema', () => {
     expect(result.tavilySearchOptions?.includeRawContent).toBe('markdown');
     expect(result.tavilySearchOptions?.safeSearch).toBe(false);
   });
+
+  it('accepts Tavily scraper options', () => {
+    const result = webSearchSchema.parse({
+      tavilyScraperOptions: {
+        extractDepth: 'advanced',
+        format: 'text',
+        includeFavicon: true,
+        timeout: 15000,
+      },
+    });
+
+    expect(result.tavilyScraperOptions?.extractDepth).toBe('advanced');
+    expect(result.tavilyScraperOptions?.format).toBe('text');
+    expect(result.tavilyScraperOptions?.includeFavicon).toBe(true);
+    expect(result.tavilyScraperOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Tavily search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        tavilySearchOptions: {
+          searchDepth: 'invalid',
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        tavilySearchOptions: {
+          maxResults: 0,
+        },
+      }),
+    ).toThrow();
+  });
 });

@@ -644,7 +644,7 @@ endpoints:
 #   # tavilyExtractUrl: '${TAVILY_EXTRACT_URL}'
 #   tavilySearchOptions:
 #     searchDepth: basic        # 'basic', 'advanced', 'fast', or 'ultra-fast' (default: basic)
-#     maxResults: 5             # 0-20 results per search (default: 5)
+#     maxResults: 5             # 1-20 results per search (default: 5)
 #     topic: general            # 'general', 'news', or 'finance'
 #     # includeAnswer: basic    # Include answer summary: true, 'basic', or 'advanced'
 #     # includeRawContent: markdown # Include raw content: true, 'markdown', or 'text'
@@ -664,7 +664,7 @@ endpoints:
 #     # includeImages: false    # Include images extracted from URLs
 #     # includeFavicon: false   # Include favicon URL for each result
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
-#     # timeout: 15000          # HTTP request timeout in milliseconds
+#     # timeout: 15000          # HTTP request timeout in milliseconds; Tavily Extract receives seconds clamped to 1-60
 
 # Memory configuration for user memories
 # memory:
