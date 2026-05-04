@@ -179,6 +179,26 @@ export function getOpenAILLMConfig({
   }
 
   let enableWebSearch = web_search;
+  let builtInToolTypes: string[] = [];
+
+  const parseBuiltInTools = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const v of value) {
+      if (typeof v !== 'string') {
+        continue;
+      }
+      const trimmed = v.trim();
+      if (trimmed !== '' && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        result.push(trimmed);
+      }
+    }
+    return result;
+  };
 
   /** Apply defaultParams first - only if fields are undefined */
   if (defaultParams && typeof defaultParams === 'object') {
@@ -187,6 +207,14 @@ export function getOpenAILLMConfig({
       if (key === 'web_search') {
         if (enableWebSearch === undefined && typeof value === 'boolean') {
           enableWebSearch = value;
+        }
+        continue;
+      }
+
+      /** Handle builtInTools separately - provider-specific server-side tools */
+      if (key === 'builtInTools') {
+        if (builtInToolTypes.length === 0) {
+          builtInToolTypes = parseBuiltInTools(value);
         }
         continue;
       }
@@ -213,12 +241,40 @@ export function getOpenAILLMConfig({
         }
         continue;
       }
+
+      /** Handle builtInTools - addParams overrides defaultParams */
+      if (key === 'builtInTools') {
+        builtInToolTypes = parseBuiltInTools(value);
+        continue;
+      }
       if (knownOpenAIParams.has(key)) {
         (llmConfig as Record<string, unknown>)[key] = value;
       } else {
         hasModelKwargs = true;
         modelKwargs[key] = value;
       }
+    }
+  }
+
+  /** Check if web_search or builtInTools should be disabled via dropParams */
+  if (dropParams && dropParams.includes('web_search')) {
+    enableWebSearch = false;
+  }
+  if (dropParams && dropParams.includes('builtInTools')) {
+    builtInToolTypes = [];
+  }
+
+  /**
+   * Pre-determine if builtInTools will force the Responses API, so reasoning params
+   * are serialized in the correct format. The actual tool injection happens later.
+   */
+  if (builtInToolTypes.length > 0 && !useOpenRouter) {
+    const droppedCheck = new Set(dropParams ?? []);
+    const hasNonDroppedTools = builtInToolTypes.some(
+      (t) => !droppedCheck.has(t) && !(t === 'web_search' && enableWebSearch),
+    );
+    if (hasNonDroppedTools) {
+      llmConfig.useResponsesApi = true;
     }
   }
 
@@ -259,9 +315,9 @@ export function getOpenAILLMConfig({
 
   const tools: BindToolsInput[] = [];
 
-  /** Check if web_search should be disabled via dropParams */
-  if (dropParams && dropParams.includes('web_search')) {
-    enableWebSearch = false;
+  /** For OpenRouter, translate builtInTools web_search into the plugins format */
+  if (useOpenRouter && !enableWebSearch && builtInToolTypes.includes('web_search')) {
+    enableWebSearch = true;
   }
 
   if (useOpenRouter && enableWebSearch) {
@@ -272,6 +328,20 @@ export function getOpenAILLMConfig({
     /** Standard OpenAI web search uses tools API */
     llmConfig.useResponsesApi = true;
     tools.push({ type: 'web_search' });
+  }
+
+  /** Inject provider-specific built-in server-side tools (e.g., xAI x_search, code_execution) */
+  if (builtInToolTypes.length > 0 && !useOpenRouter) {
+    const droppedTools = new Set(dropParams ?? []);
+    for (const toolType of builtInToolTypes) {
+      if (droppedTools.has(toolType)) {
+        continue;
+      }
+      if (toolType === 'web_search' && enableWebSearch) {
+        continue;
+      }
+      tools.push({ type: toolType });
+    }
   }
 
   /**
