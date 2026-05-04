@@ -904,6 +904,33 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).toHaveBeenCalled();
     });
 
+    it('normalizes discovery document issuer URL only when fetching discovery metadata', async () => {
+      const issuer = 'https://issuer-discovery-url.example.com/.well-known/openid-configuration';
+      const normalizedIssuer = 'https://issuer-discovery-url.example.com';
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ jwks_uri: `${normalizedIssuer}/protocol/openid-connect/certs` }),
+      });
+
+      const deps = makeDeps(makeConfig({ jwksUri: undefined, issuer }));
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${normalizedIssuer}/.well-known/openid-configuration`,
+        expect.objectContaining({ signal: expect.any(Object) }),
+      );
+      expect((jwt.verify as jest.Mock).mock.calls[0][2]).toEqual(
+        expect.objectContaining({ issuer }),
+      );
+      expect(mockNext).toHaveBeenCalled();
+    });
+
     it('rejects insecure JWKS URIs returned by discovery', async () => {
       const issuer = 'https://issuer-discovery-insecure.example.com';
 

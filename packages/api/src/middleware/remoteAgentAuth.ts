@@ -134,7 +134,9 @@ function ensureRemoteOidcUrlAllowed(value: string, label: string): string {
 }
 
 async function discoverJwksUri(issuer: string): Promise<string> {
-  const normalizedIssuer = ensureRemoteOidcUrlAllowed(issuer, 'OIDC issuer').replace(/\/$/, '');
+  const normalizedIssuer = normalizeOpenIdIssuer(ensureRemoteOidcUrlAllowed(issuer, 'OIDC issuer'));
+  if (!normalizedIssuer) throw new Error('OIDC issuer is required');
+
   const discoveryUrl = `${normalizedIssuer}/.well-known/openid-configuration`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OIDC_DISCOVERY_TIMEOUT_MS);
