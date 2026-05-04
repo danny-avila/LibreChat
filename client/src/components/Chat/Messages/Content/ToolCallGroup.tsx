@@ -215,7 +215,7 @@ export default function ToolCallGroup({
         </div>
       </div>
       {groupAttachments && groupAttachments.length > 0 && (
-        <AttachmentGroup attachments={groupAttachments} variant="images" />
+        <AttachmentGroup attachments={groupAttachments} />
       )}
     </div>
   );
