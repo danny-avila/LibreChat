@@ -373,14 +373,29 @@ describe('Office HTML producers', () => {
         expect(csp).toMatch(/form-action 'none'/);
         expect(csp).toMatch(/script-src https:\/\/cdn\.jsdelivr\.net 'unsafe-inline'/);
         expect(csp).not.toMatch(/unsafe-eval/);
+        /* PPTX must allow blob:-only Web Workers — pptx-preview's
+         * bundled echarts dep spins up workers via blob: URLs for
+         * chart rendering. Without this, the renderer's async
+         * pipeline throws unhandled rejections and the iframe shows
+         * a black screen. */
+        expect(csp).toMatch(/worker-src blob:/);
       });
 
-      test('exposes a fallback message that surfaces if the renderer fails to load', async () => {
+      test('exposes a fallback message that surfaces if the renderer fails to load or times out', async () => {
         const pptx = await buildPptx([{ title: 'X' }]);
         const html = await _internal.pptxToHtmlViaCdn(pptx);
+        // Visible loading state + fallback that swaps in on error.
         expect(html).toContain('Loading preview…');
         expect(html).toContain('Preview unavailable');
+        // The renderer-not-loaded check.
         expect(html).toContain("typeof pptxPreview === 'undefined'");
+        // The unhandledrejection + error listeners — pptx-preview's
+        // bundled deps raise async rejections that don't surface
+        // through the outer Promise.
+        expect(html).toContain("addEventListener('unhandledrejection'");
+        expect(html).toContain("addEventListener('error'");
+        // The 8-second timeout safety net for silent renderer failures.
+        expect(html).toContain('renderer-timeout');
       });
 
       test('size-fallback threshold is the documented 350 KB', () => {

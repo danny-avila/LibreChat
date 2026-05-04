@@ -972,10 +972,20 @@ const MAX_PPTX_CDN_BINARY_BYTES = 350 * 1024;
  * once the renderer paints them.
  */
 function buildPptxCdnDocument(base64: string): string {
+  /* PPTX-specific CSP relaxations vs DOCX:
+   *   - `worker-src blob:` — pptx-preview's bundled echarts dep spins up
+   *     Web Workers via blob: URLs for chart rendering. Without this,
+   *     workers default to `default-src 'none'`, get blocked, and
+   *     echarts throws an unhandled-rejection deep inside its async
+   *     pipeline that we can't catch from the bootstrap script. The
+   *     visible symptom is a black iframe with the renderer half-
+   *     started. Allowing blob:-only workers is the minimum surface to
+   *     unblock rendering without permitting arbitrary worker URLs. */
   const csp = [
     "default-src 'none'",
     "script-src https://cdn.jsdelivr.net 'unsafe-inline'",
     "style-src 'unsafe-inline'",
+    'worker-src blob:',
     "img-src 'self' data: blob:",
     'font-src data:',
     "connect-src 'none'",
@@ -1006,15 +1016,39 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
 <script id="lc-doc-data" type="application/octet-stream;base64">${base64}</script>
 <script>
 (function () {
+  var settled = false;
   function showFallback(reason) {
+    if (settled) { return; }
+    settled = true;
     var loading = document.querySelector('.lc-pptx-loading');
     if (loading) { loading.remove(); }
+    var container = document.getElementById('lc-render');
+    if (container) {
+      // Wipe any partial render the library left behind so the
+      // fallback message isn't competing with a half-rendered slide.
+      container.innerHTML = '';
+    }
     var fallback = document.getElementById('lc-fallback');
     if (fallback) {
       fallback.hidden = false;
       if (reason) { fallback.title = String(reason).slice(0, 200); }
     }
   }
+  function markSuccess() { settled = true; }
+
+  /* pptx-preview bundled deps (echarts, etc.) raise rejections deep
+   * inside their async pipelines that the outer Promise from
+   * previewer.preview does not always surface. Listen at the window
+   * level so we do not go silent on any of them. */
+  window.addEventListener('unhandledrejection', function (e) {
+    if (settled) { return; }
+    showFallback((e.reason && e.reason.message) || 'unhandled-rejection');
+  });
+  window.addEventListener('error', function (e) {
+    if (settled) { return; }
+    showFallback((e.error && e.error.message) || e.message || 'script-error');
+  });
+
   if (typeof pptxPreview === 'undefined' || typeof pptxPreview.init !== 'function') {
     showFallback('renderer-not-loaded');
     return;
@@ -1027,9 +1061,19 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
     if (loading) { loading.remove(); }
     var previewer = pptxPreview.init(container, { width: 960, height: 540 });
     var result = previewer.preview(bytes.buffer);
-    if (result && typeof result.catch === 'function') {
-      result.catch(function (err) { showFallback(err && err.message); });
+    if (result && typeof result.then === 'function') {
+      result.then(markSuccess).catch(function (err) { showFallback(err && err.message); });
     }
+    /* Final safety net: if 8 seconds in the renderer hasn't appended
+     * anything visible to the container, assume it failed silently. */
+    setTimeout(function () {
+      if (settled) { return; }
+      if (container && container.children.length > 0) {
+        markSuccess();
+        return;
+      }
+      showFallback('renderer-timeout');
+    }, 8000);
   } catch (err) {
     showFallback(err && err.message);
   }
