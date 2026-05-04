@@ -94,7 +94,7 @@
     "@azure/storage-blob": "^12.30.0",
     "@google/genai": "^1.19.0",
     "@keyv/redis": "^4.3.3",
-    "@librechat/agents": "^3.1.75-dev.1",
+    "@librechat/agents": "^3.1.76",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@smithy/node-http-handler": "^4.4.5",
