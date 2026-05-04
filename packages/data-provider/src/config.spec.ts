@@ -508,5 +508,21 @@ describe('webSearchSchema', () => {
         },
       }),
     ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        tavilySearchOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        tavilyScraperOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
   });
 });

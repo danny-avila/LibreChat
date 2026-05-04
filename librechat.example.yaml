@@ -658,13 +658,13 @@ endpoints:
 #     # excludeDomains:         # Exclude specific domains from results (max 150)
 #     #   - 'spam.com'
 #     # timeRange: week         # 'day', 'week', 'month', or 'year'
-#     # timeout: 15000          # HTTP request timeout in milliseconds
+#     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000)
 #   tavilyScraperOptions:
 #     extractDepth: basic       # 'basic' (1 credit/5 URLs) or 'advanced' (2 credits/5 URLs, more thorough)
 #     # includeImages: false    # Include images extracted from URLs
 #     # includeFavicon: false   # Include favicon URL for each result
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
-#     # timeout: 15000          # HTTP request timeout in milliseconds; Tavily Extract receives seconds clamped to 1-60
+#     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
 
 # Memory configuration for user memories
 # memory:

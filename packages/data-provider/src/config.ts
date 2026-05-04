@@ -1113,7 +1113,7 @@ export const webSearchSchema = z.object({
       includeFavicon: z.boolean().optional(),
       chunksPerSource: z.number().int().min(1).max(3).optional(),
       safeSearch: z.boolean().optional(),
-      timeout: z.number().int().nonnegative().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
     })
     .optional(),
   tavilyScraperOptions: z
@@ -1122,7 +1122,7 @@ export const webSearchSchema = z.object({
       includeImages: z.boolean().optional(),
       includeFavicon: z.boolean().optional(),
       format: z.enum(['markdown', 'text']).optional(),
-      timeout: z.number().int().nonnegative().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
     })
     .optional(),
 });
