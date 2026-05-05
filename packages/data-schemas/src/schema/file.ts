@@ -75,6 +75,12 @@ const file: Schema<IMongoFile> = new Schema(
     },
     previewError: {
       type: String,
+      /* Bounded to short machine-readable reasons (`'timeout'`,
+       * `'parser-error'`, `'orphaned'`, `'unexpected'`). Cap prevents a
+       * future codepath from accidentally persisting a stack trace or
+       * full error message — would bloat documents and ship a wall of
+       * text into the UI tooltip. */
+      maxlength: 200,
     },
     context: {
       type: String,

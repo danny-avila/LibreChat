@@ -15,7 +15,7 @@ const {
   createToolExecuteHandler,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
-const { processCodeOutput } = require('~/server/services/Files/Code/process');
+const { processCodeOutput, runPhase2Finalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
 class ModelEndHandler {
@@ -423,52 +423,6 @@ function writeAttachmentUpdate(res, streamId, attachment) {
 }
 
 /**
- * Build the wire-format attachment payload from a phase-1 or phase-2
- * file metadata record. Centralizes the field projection so phase-1
- * (pending), phase-2 (ready/failed), and pre-existing legacy callers
- * all emit the same shape.
- *
- * `runtimeMessageId` overrides whatever messageId the record carries
- * — required for phase-2 emits because `processCodeOutput` intentionally
- * preserves the original DB messageId across cross-turn filename reuse
- * (so `getCodeGeneratedFiles` can still trace the file back to the
- * assistant message that originally produced it). Routing the SSE
- * update by the persisted id would land the patch on a stale message
- * slot — turn-N's pending placeholder would stay stuck pending while
- * turn-1's already-resolved attachment got re-merged. The phase-1
- * emit path mirrors this by reading `result.file.messageId`, which
- * `processCodeOutput` runtime-overlays via `Object.assign`. (Codex P1
- * review on PR #12957.)
- */
-function attachmentFromFileMetadata(fileMetadata, toolCallId, runtimeMessageId) {
-  return {
-    file_id: fileMetadata.file_id,
-    filename: fileMetadata.filename,
-    filepath: fileMetadata.filepath,
-    type: fileMetadata.type,
-    width: fileMetadata.width,
-    height: fileMetadata.height,
-    conversationId: fileMetadata.conversationId,
-    messageId: runtimeMessageId ?? fileMetadata.messageId,
-    toolCallId: toolCallId ?? fileMetadata.toolCallId,
-    /* Inline text / sanitized HTML preview from the extractor — drives
-     * the file artifact panel's rich preview for DOCX/XLSX/CSV/PPTX.
-     * Pass null explicitly (rather than undefined) so the wire format
-     * is stable for the empty-text gate on the client. */
-    text: fileMetadata.text ?? null,
-    /* Trust signal so the client routes office types to the HTML
-     * bucket only when the backend produced sanitized full-document
-     * HTML (Codex P1 review on PR #12934). */
-    textFormat: fileMetadata.textFormat ?? null,
-    /* Two-phase preview lifecycle: phase-1 emits 'pending', phase-2
-     * patches to 'ready' or 'failed'. Absent for files that don't
-     * expect a preview (images, plain text). */
-    status: fileMetadata.status,
-    previewError: fileMetadata.previewError,
-  };
-}
-
-/**
  *
  * @param {Object} params
  * @param {ServerRequest} params.req
@@ -671,32 +625,29 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
            * after the HTTP response closes. If the stream is still open
            * when phase-2 lands, push an `attachment` update event so
            * the UI patches in place; otherwise React Query polling on
-           * `/api/files/:file_id/preview` picks it up. */
-          if (typeof finalize === 'function') {
-            finalize()
-              .then((updated) => {
-                if (!updated) {
-                  return;
-                }
-                writeAttachmentUpdate(
-                  res,
-                  streamId,
-                  /* Pass `metadata.run_id` as the runtime messageId
-                   * override — see attachmentFromFileMetadata's JSDoc.
-                   * `updated` carries the DB-persisted messageId which,
-                   * on cross-turn filename reuse (e.g. agent emits
-                   * `output.csv` again on turn N), is the original
-                   * turn's id rather than the current one. Without this
-                   * override the SSE update routes to the wrong
-                   * message slot and the current turn's pending chip
-                   * stays stuck. */
-                  attachmentFromFileMetadata(updated, toolCallId, metadata.run_id),
-                );
-              })
-              .catch((error) => {
-                logger.error('Error in phase-2 preview extraction:', error);
+           * `/api/files/:file_id/preview` picks it up.
+           *
+           * Spread the full updated record (mirroring the phase-1 emit
+           * shape) and overlay `messageId`/`toolCallId` from the
+           * current run. The DB record preserves the original
+           * `messageId` across cross-turn filename reuse so
+           * `getCodeGeneratedFiles` can trace the file back to its
+           * original assistant message; routing the SSE update by the
+           * persisted id would land the patch on a stale message
+           * slot — turn-N's pending placeholder would stay stuck while
+           * turn-1's already-resolved attachment got re-merged.
+           * (Codex P1 review on PR #12957.) */
+          runPhase2Finalize({
+            finalize,
+            fileId: fileMetadata.file_id,
+            onResolved: (updated) => {
+              writeAttachmentUpdate(res, streamId, {
+                ...updated,
+                messageId: metadata.run_id,
+                toolCallId,
               });
-          }
+            },
+          });
           return fileMetadata;
         })().catch((error) => {
           logger.error('Error processing code output:', error);
@@ -937,26 +888,21 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
            * so the client merges the resolved record over the pending
            * placeholder. Fire-and-forget — survives response close;
            * polling covers the post-close gap. */
-          if (typeof finalize === 'function') {
-            finalize()
-              .then((updated) => {
-                if (!updated) {
-                  return;
-                }
-                if (!res || res.writableEnded || !res.headersSent) {
-                  return;
-                }
-                writeResponsesAttachment(
-                  res,
-                  tracker,
-                  buildResponsesAttachment(updated, toolCallId),
-                  metadata,
-                );
-              })
-              .catch((error) => {
-                logger.error('Error in phase-2 preview extraction:', error);
-              });
-          }
+          runPhase2Finalize({
+            finalize,
+            fileId: fileMetadata.file_id,
+            onResolved: (updated) => {
+              if (!res || res.writableEnded || !res.headersSent) {
+                return;
+              }
+              writeResponsesAttachment(
+                res,
+                tracker,
+                buildResponsesAttachment(updated, toolCallId),
+                metadata,
+              );
+            },
+          });
 
           return fileMetadata;
         })().catch((error) => {

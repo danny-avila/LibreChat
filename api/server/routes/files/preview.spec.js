@@ -179,7 +179,7 @@ describe('GET /files/:file_id/preview', () => {
   });
 
   it('defaults to status:ready for legacy records with no status field (back-compat)', async () => {
-    /* Records pre-dating PR #12952 have no `status` field. The endpoint
+    /* Records pre-dating PR #12957 have no `status` field. The endpoint
      * MUST treat that as 'ready' so legacy code-execution attachments
      * don't suddenly poll forever. If text exists, surface it. */
     mockGetFiles.mockResolvedValueOnce([

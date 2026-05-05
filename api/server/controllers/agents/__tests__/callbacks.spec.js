@@ -28,6 +28,28 @@ jest.mock('~/server/services/Files/Citations', () => ({
 
 jest.mock('~/server/services/Files/Code/process', () => ({
   processCodeOutput: jest.fn(),
+  /* `runPhase2Finalize` is the runtime pairing for `finalize` (defined
+   * alongside processCodeOutput in process.js). The callback wires
+   * phase-2 through it; reproduce the basic happy-path here so the
+   * SSE-emit assertions still work. The catch/defensive-updateFile
+   * branch is unit-tested directly against the real helper in
+   * process.spec.js — exercising it here would add test coupling
+   * without coverage benefit. */
+  runPhase2Finalize: ({ finalize, onResolved }) => {
+    if (typeof finalize !== 'function') {
+      return;
+    }
+    finalize()
+      .then((updated) => {
+        if (!updated || !onResolved) {
+          return;
+        }
+        onResolved(updated);
+      })
+      .catch(() => {
+        /* swallowed in the mock — see process.spec.js for catch coverage */
+      });
+  },
 }));
 
 jest.mock('~/server/services/Tools/credentials', () => ({
@@ -427,6 +449,15 @@ describe('createToolEndCallback', () => {
       expect(phase2.status).toBe('ready');
       expect(phase2.text).toBe('<table></table>');
       expect(phase2.toolCallId).toBe('tool-2');
+      /* Wire-shape parity with phase-1: phase-2 emits the full updated
+       * record so the client doesn't see one shape on phase-1 and a
+       * narrower projection on phase-2. (Codex audit on PR #12957
+       * Finding 1.) */
+      expect(phase2.filename).toBe('output.csv');
+      expect(phase2.filepath).toBe('/uploads/output.csv');
+      expect(phase2.type).toBe('text/csv');
+      expect(phase2.conversationId).toBe('thread789');
+      expect(phase2.textFormat).toBe('html');
     });
 
     it('phase-2 emit is skipped when finalize resolves to null (no DB update happened)', async () => {

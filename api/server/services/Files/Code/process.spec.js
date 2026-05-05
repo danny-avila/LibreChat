@@ -973,6 +973,98 @@ describe('Code Process', () => {
     });
   });
 
+  describe('runPhase2Finalize', () => {
+    /* The runtime pairing for `processCodeOutput`'s `finalize` thunk.
+     * `finalizePreview` is designed to never throw (translates errors
+     * to `status: 'failed'` internally). The helper's catch is the
+     * safety net for unexpected programming errors that would
+     * otherwise leave the DB record stuck at `status: 'pending'`
+     * forever — we attempt a best-effort `updateFile` to mark it
+     * `'failed'` with `previewError: 'unexpected'` so the UI stops
+     * polling and the next-turn LLM context surfaces the failure.
+     * (Codex audit on PR #12957 Finding 4.) */
+    const { runPhase2Finalize } = require('./process');
+    const { updateFile } = require('~/models');
+
+    beforeEach(() => {
+      updateFile.mockReset();
+      updateFile.mockResolvedValue({});
+    });
+
+    it('is a no-op when finalize is undefined (non-office files)', () => {
+      expect(() =>
+        runPhase2Finalize({ finalize: undefined, fileId: 'fid-1', onResolved: jest.fn() }),
+      ).not.toThrow();
+      expect(updateFile).not.toHaveBeenCalled();
+    });
+
+    it('calls onResolved with the resolved record on success', async () => {
+      const onResolved = jest.fn();
+      const finalize = jest
+        .fn()
+        .mockResolvedValue({ file_id: 'fid-1', status: 'ready', text: '<x/>' });
+      runPhase2Finalize({ finalize, fileId: 'fid-1', onResolved });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(onResolved).toHaveBeenCalledWith(
+        expect.objectContaining({ file_id: 'fid-1', status: 'ready' }),
+      );
+      expect(updateFile).not.toHaveBeenCalled();
+    });
+
+    it('skips onResolved when finalize resolves to null (DB write failed inside finalizePreview)', async () => {
+      const onResolved = jest.fn();
+      const finalize = jest.fn().mockResolvedValue(null);
+      runPhase2Finalize({ finalize, fileId: 'fid-1', onResolved });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(onResolved).not.toHaveBeenCalled();
+    });
+
+    it('marks the record as failed (previewError: "unexpected") when finalize throws', async () => {
+      const onResolved = jest.fn();
+      const finalize = jest.fn().mockRejectedValue(new Error('unexpected ref error'));
+      runPhase2Finalize({ finalize, fileId: 'fid-boom', onResolved });
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(onResolved).not.toHaveBeenCalled();
+      expect(updateFile).toHaveBeenCalledWith({
+        file_id: 'fid-boom',
+        status: 'failed',
+        previewError: 'unexpected',
+      });
+      expect(logger.error).toHaveBeenCalledWith(
+        'Error in phase-2 preview extraction:',
+        expect.any(Error),
+      );
+    });
+
+    it('logs but does not throw when the defensive updateFile itself fails', async () => {
+      const onResolved = jest.fn();
+      const finalize = jest.fn().mockRejectedValue(new Error('original error'));
+      updateFile.mockRejectedValueOnce(new Error('mongo down'));
+      runPhase2Finalize({ finalize, fileId: 'fid-doublefail', onResolved });
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(onResolved).not.toHaveBeenCalled();
+      // Two logger.error calls: one for the original throw, one for the failed mark.
+      expect(logger.error.mock.calls.some((c) => /also failed to mark/.test(c[0]))).toBe(true);
+    });
+
+    it('does not attempt the defensive updateFile when fileId is missing', async () => {
+      const finalize = jest.fn().mockRejectedValue(new Error('boom'));
+      runPhase2Finalize({ finalize, fileId: undefined });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(updateFile).not.toHaveBeenCalled();
+    });
+
+    it('skips onResolved gracefully when caller omits it (e.g., tools.js direct endpoint)', async () => {
+      const finalize = jest.fn().mockResolvedValue({ file_id: 'fid-1', status: 'ready' });
+      // No onResolved — non-streaming caller.
+      expect(() => runPhase2Finalize({ finalize, fileId: 'fid-1' })).not.toThrow();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(updateFile).not.toHaveBeenCalled();
+    });
+  });
+
   describe('readSandboxFile', () => {
     /**
      * `readSandboxFile` shells `cat <file_path>` through the sandbox

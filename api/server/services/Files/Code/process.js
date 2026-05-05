@@ -98,8 +98,16 @@ const PHASE_TWO_TIMEOUT_MS = 60_000;
  * thing that can lose progress — covered by the boot-time orphan sweep.
  *
  * @param {object} params
- * @param {Buffer} params.buffer - The file contents (held in closure;
- *   bounded by `MAX_TEXT_EXTRACT_BYTES = 1MB` from the extractor).
+ * @param {Buffer} params.buffer - The full downloaded file contents,
+ *   bounded by the server's `fileSizeLimit` config (defaults far above
+ *   the 1MB extractor cap). The buffer is captured by the closure
+ *   returned in `{ finalize }`, so when many office files queue behind
+ *   the inner concurrency limiter (cap 2), all queued buffers stay
+ *   resident until each one's slot frees. For a tool result emitting
+ *   N office files, peak heap usage from this path is up to
+ *   `N * fileSizeLimit`. Acceptable for typical agent runs (a handful
+ *   of files at a few hundred KB each); pathological cases are bounded
+ *   by the inner per-file 12s timeout and the outer 60s phase-2 cap.
  * @param {string} params.leafName - Basename for classification.
  * @param {string} params.mimeType - Detected/inferred MIME.
  * @param {string} params.category - Classifier output.
@@ -153,6 +161,66 @@ const finalizePreview = async ({ buffer, leafName, mimeType, category, file_id }
     );
     return null;
   }
+};
+
+/**
+ * Run the background phase-2 thunk returned by `processCodeOutput` and
+ * route the resolved record to the caller's emit logic. Shared between
+ * `callbacks.js` (chat-completions + Open Responses) and `tools.js`
+ * (direct tool endpoint) so the fire-and-forget pattern doesn't drift
+ * across callsites.
+ *
+ * `onResolved` receives the post-update DB record and is the only piece
+ * that varies — chat-completions writes the legacy `attachment` SSE
+ * event, Open Responses writes the spec-shaped `librechat:attachment`
+ * event with a sequence number, and the direct tool endpoint has no
+ * stream to write to (caller passes a no-op).
+ *
+ * The catch path is the safety net for unexpected programming errors
+ * inside `finalizePreview`. The function is designed to never throw
+ * (extraction and DB failures are translated to `status: 'failed'`
+ * inside it), but a ref error or future regression would otherwise
+ * leave the DB record stuck at `'pending'` until the boot-time orphan
+ * sweep — potentially hours away on a stable server. We attempt a
+ * best-effort `updateFile` to mark the record `'failed'` with
+ * `previewError: 'unexpected'` so the UI stops polling and the
+ * next-turn LLM context surfaces the failure.
+ *
+ * @param {object} params
+ * @param {(() => Promise<object | null>) | undefined} params.finalize - The
+ *   thunk returned by `processCodeOutput`. No-op when undefined.
+ * @param {string | undefined} params.fileId - DB key for the failure
+ *   marker; if absent the catch only logs.
+ * @param {(updated: object) => void} [params.onResolved] - Called once
+ *   on success with the post-update record.
+ */
+const runPhase2Finalize = ({ finalize, fileId, onResolved }) => {
+  if (typeof finalize !== 'function') {
+    return;
+  }
+  finalize()
+    .then((updated) => {
+      if (!updated || !onResolved) {
+        return;
+      }
+      onResolved(updated);
+    })
+    .catch((error) => {
+      logger.error('Error in phase-2 preview extraction:', error);
+      if (!fileId) {
+        return;
+      }
+      updateFile({
+        file_id: fileId,
+        status: 'failed',
+        previewError: 'unexpected',
+      }).catch((updateErr) => {
+        logger.error(
+          `[runPhase2Finalize] also failed to mark ${fileId} as failed after error:`,
+          updateErr,
+        );
+      });
+    });
 };
 
 /**
@@ -782,4 +850,5 @@ module.exports = {
   getSessionInfo,
   processCodeOutput,
   readSandboxFile,
+  runPhase2Finalize,
 };
