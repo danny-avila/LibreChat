@@ -12,6 +12,7 @@ const {
   codeServerHttpAgent,
   codeServerHttpsAgent,
   extractCodeArtifactText,
+  getExtractedTextFormat,
 } = require('@librechat/api');
 const {
   Tools,
@@ -271,6 +272,15 @@ const processCodeOutput = async ({
     const leafName = path.basename(safeName);
     const category = classifyCodeArtifact(leafName, mimeType);
     const text = await extractCodeArtifactText(buffer, leafName, mimeType, category);
+    /* `textFormat` accompanies `text` so the client can gate
+     * office-HTML-bucket routing on a trusted signal — clients MUST
+     * NOT inject `text` into the iframe as HTML unless `textFormat ===
+     * 'html'`. RAG-uploaded `.docx` etc. arrive with plain text from
+     * mammoth.extractRawText and would otherwise be hijacked by the
+     * extension-based office routing into the HTML-injection path
+     * (Codex P1 review on PR #12934). null on extract failure — the
+     * client treats absence as 'text' for safety. */
+    const textFormat = getExtractedTextFormat(leafName, mimeType, text);
 
     const file = {
       file_id,
@@ -293,6 +303,7 @@ const processCodeOutput = async ({
       // text — `createFile` uses findOneAndUpdate with $set semantics, which
       // would otherwise leave a stale value behind.
       text: text ?? null,
+      textFormat: textFormat ?? null,
     };
 
     await createFile(file, true);

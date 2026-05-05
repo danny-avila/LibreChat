@@ -54,6 +54,16 @@ const file: Schema<IMongoFile> = new Schema(
     text: {
       type: String,
     },
+    textFormat: {
+      /* 'html' when the backend produced a sanitized HTML preview
+       * (office-type CDN/mammoth output), 'text' for plain-text
+       * extracts (RAG / pdf-parse / mammoth.extractRawText). Clients
+       * gate office-bucket routing on textFormat === 'html' to
+       * prevent injecting RAG-extracted plain text into the iframe
+       * as HTML. See Codex P1 review on PR #12934. */
+      type: String,
+      enum: ['html', 'text'],
+    },
     context: {
       type: String,
     },

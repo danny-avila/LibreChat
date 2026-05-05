@@ -823,6 +823,25 @@ export interface AttachmentData {
   height?: number;
   /** Associated tool call ID */
   tool_call_id?: string;
+  /**
+   * Inline text or sanitized HTML preview (sized to MAX_TEXT_CACHE_BYTES).
+   * Populated by `extractCodeArtifactText` for tool-output files: raw text
+   * for plain-text artifacts, sanitized rich HTML for office formats
+   * (DOCX/XLSX/CSV/PPTX). The frontend feeds HTML through the Sandpack
+   * `static` template via `index.html`. Null if extraction was unavailable
+   * (binary, oversized, or unsupported).
+   */
+  text?: string | null;
+  /**
+   * Format of the `text` field — `'html'` if `text` is a complete
+   * sanitized HTML document the client is permitted to inject into the
+   * iframe via `index.html`, `'text'` if it's plain text. Clients MUST
+   * gate office-bucket routing on `textFormat === 'html'`; legacy
+   * attachments and RAG-extracted plain text don't have this set and
+   * must default to safe (markdown-escaped) rendering. Codex P1 review
+   * on PR #12934.
+   */
+  textFormat?: 'html' | 'text' | null;
   /** Additional metadata */
   [key: string]: unknown;
 }

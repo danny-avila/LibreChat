@@ -117,6 +117,15 @@ export type TFile = {
   expiresAt?: string | Date;
   preview?: string;
   text?: string;
+  /**
+   * Format of the `text` field. `'html'` means the backend produced
+   * a sanitized full-document HTML preview the client may inject as
+   * `index.html` inside the office artifact iframe. `'text'` (or
+   * `undefined` for legacy records) is plain text and MUST NOT be
+   * injected as HTML — render through the markdown/escaping path.
+   * See Codex P1 review on PR #12934.
+   */
+  textFormat?: 'html' | 'text' | null;
   metadata?: { fileIdentifier?: string };
   createdAt?: string | Date;
   updatedAt?: string | Date;

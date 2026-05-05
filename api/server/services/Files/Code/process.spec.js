@@ -43,6 +43,7 @@ mockAxios.isAxiosError = jest.fn(() => false);
 
 const mockClassifyCodeArtifact = jest.fn(() => 'other');
 const mockExtractCodeArtifactText = jest.fn(async () => null);
+const mockGetExtractedTextFormat = jest.fn((_name, _mime, text) => (text == null ? null : 'text'));
 jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
@@ -63,6 +64,15 @@ jest.mock('@librechat/api', () => {
      */
     classifyCodeArtifact: (...args) => mockClassifyCodeArtifact(...args),
     extractCodeArtifactText: (...args) => mockExtractCodeArtifactText(...args),
+    /* `processCodeOutput` derives the `textFormat` trust flag for
+     * `IMongoFile` from this helper — Codex P1 review on PR #12934.
+     * The mock returns 'text' for non-null extractor output and null
+     * otherwise so the downstream `file.textFormat` field is set to
+     * a believable shape without modeling the office-HTML branch
+     * (the dispatcher under test isn't exercising that path). Per-
+     * test overrides via `mockGetExtractedTextFormat.mockReturnValue`
+     * if a case needs to assert the 'html' value. */
+    getExtractedTextFormat: (...args) => mockGetExtractedTextFormat(...args),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
   };
