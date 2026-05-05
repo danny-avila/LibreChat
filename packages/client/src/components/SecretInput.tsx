@@ -73,9 +73,9 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
           id={id}
           type={isVisible ? 'text' : 'password'}
           className={cn(
-            'flex h-10 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
-            showCopy ? 'pr-20' : 'pr-10',
+            'flex h-10 w-full rounded-lg border border-border-light bg-transparent py-2 pl-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
             className ?? '',
+            showCopy ? 'pr-20' : 'pr-11',
           )}
           ref={ref}
           disabled={disabled}
@@ -89,17 +89,17 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
             {label}
           </label>
         )}
-        <div className={cn('absolute right-1 flex items-center gap-0.5', controlsClassName)}>
+        <div
+          className={cn('absolute inset-y-0 right-2 flex items-center gap-0.5', controlsClassName)}
+        >
           {showCopy && (
             <button
               type="button"
               onClick={handleCopy}
               disabled={disabled || !value}
               className={cn(
-                'flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors',
-                disabled || !value
-                  ? 'cursor-not-allowed opacity-50'
-                  : 'hover:bg-surface-hover hover:text-text-primary',
+                'flex size-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                disabled || !value ? 'cursor-not-allowed opacity-50' : 'hover:text-text-primary',
                 buttonClassName,
               )}
               aria-label={isCopied ? 'Copied' : 'Copy to clipboard'}
@@ -112,10 +112,8 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
             onClick={toggleVisibility}
             disabled={disabled}
             className={cn(
-              'flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors',
-              disabled
-                ? 'cursor-not-allowed opacity-50'
-                : 'hover:bg-surface-hover hover:text-text-primary',
+              'flex size-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+              disabled ? 'cursor-not-allowed opacity-50' : 'hover:text-text-primary',
               buttonClassName,
             )}
             aria-label={isVisible ? 'Hide secret' : 'Show secret'}
