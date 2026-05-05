@@ -1,6 +1,7 @@
 ## README
 
 # Start in development mode:
+
 - run `docker-compose up` in the root folder
 - stop the LibreChat server in your docker for desktop app
 - open http://localhost:3090 in your browser
@@ -8,15 +9,20 @@
 - run npm run backend:dev in the root folder
 - run npm run frontend:dev in the root folder
 
+- docker compose down && docker compose up -d mongodb meilisearch vectordb rag_api
+- npm run backend:dev
+- npm run frontend:dev
+- cd client && npm run build
+- npm run create-user
 
 # To Create new users from their email address:
+
 - go to the scripts folder
-- run "sh create_user.sh"   (no quotes)
+- run "sh create_user.sh" (no quotes)
 
 # URL For the Live APP:
 
 https://libreclient.bluedune-a4438afc.eastus.azurecontainerapps.io/c/new
-
 
 # Create a new user:
 
@@ -44,6 +50,7 @@ https://libreclient.bluedune-a4438afc.eastus.azurecontainerapps.io/c/new
 - go to : test > users > (search for user) > click the item > add 'disabled' field with value 'true'
 
 #Theme Colors:
+
 - Orange: #c28770
 - Green: #72b147
 - Blue: #007BFF

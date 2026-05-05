@@ -1,0 +1,919 @@
+SCBF THERAPEUTIC ACTIVITY ASSIGNMENT LIBRARY
+St. Clair Butterfly Foundation -- Version 1.0
+============================================================
+
+DOCUMENT SCOPE: This document is only relevant when generating Option C therapeutic activity assignments (Phase 4 selection through Phase 6 generation). If you are responding to Options A or B, conducting pre-generation clarification (Phases 1-3 of Option C), or engaged in general conversation, this document contains no relevant information for those tasks. The therapeutic goal taxonomy used for goal mapping and pre-generation clarification is embedded in the main prompt under <goal_taxonomy>.
+
+AI GENERATION INSTRUCTIONS: Each entry defines what is unique to that assignment. The Therapeutic Framing field shapes how Claude personalizes the activity -- preserve its essence while adapting for the specific student. Do NOT reproduce Therapeutic Framing verbatim in any output. Educator documentation and lesson plan structure are handled by the lesson plan template. Student-facing output (Part 2) is derived from Student-Facing Components and Instructions -- age-calibrate language using age calibration guidelines. If no existing assignment matches the request, generate from scratch using the goal taxonomy and student profile.
+
+TWO-PART OUTPUT REMINDER: Every generated lesson plan is a single document with two parts separated by a page break. Part 1 is the full educator lesson plan. Part 2 is the clean student-facing document -- no therapeutic framing, no clinical language, no DOK levels. Age-calibrated to the specific student.
+
+OUTPUT FORMAT FLEXIBILITY: Therapeutic value lives in structure and framing, not output format. Unless Physical Limitations restricts a format, consider the full range of output formats. Each entry includes Suggested Output Formats. When student interests suggest a format (video lover, dancer, musician), reflect that in the lesson plan. Part 2 must clearly describe the chosen format.
+
+============================================================
+SECTION 1: ASSIGNMENT INDEX
+============================================================
+
+Assignment                      | Category          | Grades | Primary Goal
+--------------------------------|-------------------|--------|----------------------------------
+Mystical Creature Profile       | Writing           | 4-12   | Processing trauma indirectly
+Enchanted Object Creation       | Writing           | 4-12   | Emotional expression
+Time Traveler's Diary           | Writing           | 5-12   | Hope and future orientation
+Alien Encounter Story           | Writing           | 4-12   | Empathy and perspective-taking
+Superhero Origin Story          | Writing           | 3-12   | Self-identity and self-worth
+Fantasy World Creation          | Writing           | 5-12   | Hope and future orientation
+Haunted House Story             | Writing           | 5-12   | Anger and frustration release
+Dystopian Society Story         | Writing           | 7-12   | Resilience and coping
+Mythical Quest Story            | Writing           | 4-12   | Resilience and coping
+Mystery Investigation Story     | Writing           | 4-12   | Problem-solving
+Futuristic City Sculpture       | Art               | 4-12   | Hope and future orientation
+Enchanted Forest Creature       | Art               | 3-12   | Self-identity and self-worth
+Mysterious Door Design          | Art               | 3-12   | Emotional expression
+Rhythm and Emotion Expression   | Music             | K-12   | Emotional expression
+Melodic Storytelling            | Music             | 3-12   | Mastery and accomplishment
+Sound Exploration               | Music             | K-12   | Anger and frustration release
+Plant Buddy Project             | Gardening         | K-12   | Responsibility and follow-through
+Sensory Garden Exploration      | Gardening         | K-12   | Grounding and mindfulness
+Mindful Planting and Reflection | Gardening         | 3-12   | Building self-regulation skills
+Journey to Calm Mountain        | Stretching [ES]   | K-12   | Calming and immediate self-regulation
+Desert Oasis Adventure          | Stretching [ES]   | K-12   | Resilience and coping
+Lighthouse Beacon               | Stretching [ES]   | K-12   | Grounding and mindfulness
+The Memory Keeper               | Writing or Art    | 3-12   | Grief and loss
+The Time Capsule                | Writing or Art    | 3-12   | Grief and loss
+The Most Ridiculous Story Ever  | Writing / Joy     | 3-12   | Celebration and joy
+My Celebration Collection       | Art / Joy         | K-12   | Celebration and joy
+Dream Day                       | Writing or Art    | 2-12   | Celebration and joy
+
+============================================================
+SECTION 2: ASSIGNMENTS BY CATEGORY
+============================================================
+
+All writing assignments can be completed handwritten, typed, or dictated.
+
+============================================================
+CREATIVE WRITING ASSIGNMENTS
+============================================================
+
+Creative writing uses narrative and imagination as a therapeutic buffer, allowing students to explore difficult emotions through the safety of fictional or metaphorical distance.
+
+------------------------------------------------------------
+MYSTICAL CREATURE PROFILE
+------------------------------------------------------------
+Category: Creative Writing
+Grade Range: Grades 4-12
+Activity Type: Standard
+Physical Space Required: Desk space only
+Physical Limitations: Allow typed or dictated responses for fine motor difficulties.
+Suggested Output Formats: Written story or profile; illustrated profile or comic; voice recording; video presentation; digital slideshow
+Therapeutic Goals: Primary: Processing trauma indirectly | Secondary: Self-identity and self-worth; Emotional expression; Hope and future orientation
+
+Therapeutic Framing:
+Works through projection -- creature safely contains feelings student cannot yet name. History component: students often place their own origin story here; treat with care. Role in Story: mirrors how student wishes to be seen. Abilities: reflect what student wishes they possessed. PRESERVE: fantasy framing at all times. Never push toward explicit personal connection. The distance IS the safety.
+
+Description:
+Create a mystical creature that lives in a world of your own making -- give it a history, unique abilities, and a role in the story.
+
+Student-Facing Components:
+- Appearance: Physical features, size, colors, distinguishing characteristics
+- History: Origin story and any myths or legends associated with it
+- Abilities: Unique powers or skills and how they were acquired
+- Role in the Story: Who interacts with it, what does it need or want?
+
+Student Instructions:
+1. Create your creature using all four components
+2. Write a short story or detailed profile bringing it to life
+3. Use vivid descriptions -- engage all senses where you can
+4. Let your imagination guide you. There are no wrong answers
+
+------------------------------------------------------------
+ENCHANTED OBJECT CREATION
+------------------------------------------------------------
+Category: Creative Writing
+Grade Range: Grades 4-12
+Activity Type: Standard
+Physical Space Required: Desk space only
+Physical Limitations: Allow typed or dictated responses for fine motor difficulties.
+Suggested Output Formats: Written story; illustrated design with written description; voice recording; video showcase of the object
+Therapeutic Goals: Primary: Emotional expression | Secondary: Processing trauma indirectly; Self-identity and self-worth; Mastery and accomplishment
+
+Therapeutic Framing:
+Objects carry emotional weight more safely than direct self-expression. Powers component: students express what they wish they had or could do. Origin/Folklore: often surfaces family and cultural narrative. Role in Story: frequently maps to the student's relational world. PRESERVE: deliberate sequencing from physical description to emotional role -- builds distance before meaning. Do not reorder components.
+
+Description:
+Imagine an enchanted object with magical properties and craft a story centered around it.
+
+Student-Facing Components:
+- Description: Appearance, materials, colors, unusual features
+- Origin: History of the object, how it was created, folklore connected to it
+- Powers: Magical abilities and how they are activated
+- Role in the Story: Characters connected to it -- protectors, seekers, or at its mercy
+
+Student Instructions:
+1. Work through all four components to fully develop your object and its world
+2. Write a short story centered around your object
+3. Use rich, sensory descriptions to make it feel real
+4. Dive into the emotions and experiences your object and characters carry
+
+------------------------------------------------------------
+TIME TRAVELER'S DIARY
+------------------------------------------------------------
+Category: Creative Writing
+Grade Range: Grades 5-12
+Activity Type: Standard
+Physical Space Required: Desk space only
+Physical Limitations: Allow typed or dictated responses. Journal format can adapt to voice recording.
+Suggested Output Formats: Written diary entry; voice recording as audio diary; video diary; illustrated journal; digital slideshow
+Therapeutic Goals: Primary: Hope and future orientation | Secondary: Self-identity and self-worth; Resilience and coping; Improving focus and attention
+
+Therapeutic Framing:
+Does two things simultaneously: revisiting the past with new perspective (processing) and inhabiting a positive future (hope). Diary format returns authorship to students who feel their story is being written for them. Reflections component is the therapeutic core -- students safely articulate growth or insight without autobiographical pressure. Setting component may surface material tied to specific times/places -- do not redirect; fictional frame provides sufficient protection.
+
+Description:
+Write a diary entry from the perspective of a time traveler who has journeyed to a historical or future time period.
+
+Student-Facing Components:
+- Time Period: What historical or future time is visited?
+- Setting: Environment, culture, sensory details
+- Experiences: Adventures and events encountered
+- Reflections: How the journey impacted the traveler personally
+
+Student Instructions:
+1. Write from the first-person perspective of the time traveler
+2. Make the time period and setting come alive with vivid details
+3. Include at least one unexpected discovery or challenge
+4. End with a personal reflection on how the journey changed your traveler
+
+------------------------------------------------------------
+ALIEN ENCOUNTER STORY
+------------------------------------------------------------
+Category: Creative Writing
+Grade Range: Grades 4-12
+Activity Type: Standard
+Physical Space Required: Desk space only
+Physical Limitations: Allow typed or dictated responses.
+Suggested Output Formats: Written story; comic strip or storyboard; dramatic performance or monologue; voice recording; video short film
+Therapeutic Goals: Primary: Empathy and perspective-taking | Secondary: Developing social skills; Problem-solving; Processing trauma indirectly
+
+Therapeutic Framing:
+Maximum psychological safety through maximum otherness -- projection onto the alien feels completely safe. Deep structure is about communication across difference, conflict, and resolution -- the exact relational skills traumatized students struggle with. Communication component: how understanding is built where none exists (powerful for students who feel chronically misunderstood). The alien's difference also safely mirrors feeling alien oneself.
+
+Description:
+Write a short story about a first encounter between humans and an alien being.
+
+Student-Facing Components:
+- First Contact: The first meeting -- what does the alien look like?
+- Communication: How do humans and alien begin to understand each other?
+- Conflict: Challenges or tensions that arise
+- Resolution: How is the conflict resolved?
+
+Student Instructions:
+1. Imagine unique and interesting characteristics for your alien
+2. Think carefully about how communication might work across completely different worlds
+3. Develop the conflict in a way that feels real
+4. Write a resolution that feels earned, not too easy
+
+------------------------------------------------------------
+SUPERHERO ORIGIN STORY
+------------------------------------------------------------
+Category: Creative Writing
+Grade Range: Grades 3-12
+Activity Type: Standard
+Physical Space Required: Desk space only
+Physical Limitations: Allow typed or dictated responses. Younger students can draw alongside writing.
+Suggested Output Formats: Written story; comic strip; illustrated profile; video origin story; voice recording; costume or physical prop creation
+Therapeutic Goals: Primary: Self-identity and self-worth | Secondary: Recognizing personal strengths; Resilience and coping; Hope and future orientation
+
+Therapeutic Framing:
+Most direct therapeutic assignment in the library -- invitation to reimagine the self as powerful. Background component: often surfaces autobiographical material the student has processed enough to narrate. Powers component: students articulate what they wish they had -- these wishes are data about needs and fears. Challenges: most therapeutically important component -- students write deeply personal challenges under fictional cover; preserve this space carefully. Heroic Deeds: the student's alter ego succeeds -- for many traumatized students, a rare experience of authoring their own victory.
+
+Description:
+Invent a superhero and write their origin story -- how they came to have powers, what challenges they face, and what heroic things they do.
+
+Student-Facing Components:
+- Background: Who was your superhero before gaining powers?
+- Powers: What abilities do they have and how did they get them?
+- Challenges: Personal and external challenges -- what makes their journey hard?
+- Heroic Deeds: What actions do they take? What difference do they make?
+
+Student Instructions:
+1. Create a superhero who feels real and relatable -- not just powerful, but human
+2. Give your superhero genuine challenges that make their story meaningful
+3. Show how they use abilities to help others
+4. Let your own imagination shape every detail
+
+------------------------------------------------------------
+FANTASY WORLD CREATION
+------------------------------------------------------------
+Category: Creative Writing
+Grade Range: Grades 5-12
+Activity Type: Standard
+Physical Space Required: Desk space only. Students may draw maps or illustrations.
+Physical Limitations: Allow typed or dictated responses. Map-drawing is optional.
+Suggested Output Formats: Written description; illustrated map or artwork; video world tour; digital design; physical model or diorama
+Therapeutic Goals: Primary: Hope and future orientation | Secondary: Choice and autonomy; Self-identity and self-worth; Improving focus and attention
+
+Therapeutic Framing:
+World-building gives absolute control over an entire reality -- profound counterexperience to trauma-induced powerlessness. Students often create worlds safer or more just than their own, or mirror danger they've experienced but with rules they control. History/Legends component: frequently contains processed personal narrative. Culture component: reveals what the student believes people should value. PRESERVE: allow the student to build without redirection. Goal is not a coherent world but a student who has experienced creating and controlling something entirely their own.
+
+Description:
+Create a detailed fantasy world entirely of your own invention -- you decide what exists, who lives there, what they believe, and what has happened.
+
+Student-Facing Components:
+- Geography: Physical landscape, climate, natural features
+- Inhabitants: Who or what lives here?
+- Culture: What do inhabitants believe and value?
+- History: Important events, legends, stories inhabitants tell
+
+Student Instructions:
+1. Let your imagination run freely -- no rules about what a fantasy world must contain
+2. Make your world feel real by thinking through small details, not just big ones
+3. Consider how geography, inhabitants, and culture influence each other
+4. You may draw a map or illustrations alongside your writing
+
+------------------------------------------------------------
+HAUNTED HOUSE STORY
+------------------------------------------------------------
+Category: Creative Writing
+Grade Range: Grades 5-12
+Activity Type: Standard
+Physical Space Required: Desk space only
+Physical Limitations: Allow typed or dictated responses.
+Suggested Output Formats: Written story; comic strip or storyboard; dramatic reading or performance; voice recording; video short film
+Therapeutic Goals: Primary: Anger and frustration release | Secondary: Processing trauma indirectly; Emotional expression; Resilience and coping
+
+Therapeutic Framing:
+Horror and suspense are legitimate therapeutic spaces -- gives structured fictional container for fear, dread, and unprocessed threat. Haunted house = space that should be safe but isn't, resonating for students whose homes have been frightening. Resolution component: student authors how the haunting ends -- act of agency over fear.
+
+TWO VERSIONS -- select based on what you know about this student:
+STANDARD VERSION (default): Use when haunted house is clearly fictional distance.
+CONTRAINDICATED: Do not use when trauma involves home instability, frightening home environment, domestic violence, or housing insecurity -- the metaphor is their reality. Offer alternative. If risk emerges mid-activity, stop immediately. Distress closes down; engagement opens up.
+
+Description:
+Write a story about a haunted house -- a place with a mysterious history, strange events, and characters who must face what lives within it.
+
+Student-Facing Components:
+- Setting: What does the house look, feel, sound like?
+- Characters: Who encounters the house and why?
+- Haunting Events: What supernatural events occur? Build the tension
+- Resolution: How do characters deal with the haunting?
+
+Student Instructions:
+1. Use descriptive language to create atmosphere
+2. Develop your characters so the reader cares what happens to them
+3. Build suspense gradually
+4. Give your story a satisfying ending that resolves the haunting
+
+------------------------------------------------------------
+DYSTOPIAN SOCIETY STORY
+------------------------------------------------------------
+Category: Creative Writing
+Grade Range: Grades 7-12
+Activity Type: Standard
+Physical Space Required: Desk space only
+Physical Limitations: Higher complexity -- adapt language for language barriers or learning disabilities.
+Suggested Output Formats: Written story; video monologue from protagonist; illustrated world map; dramatic performance; voice recording
+Therapeutic Goals: Primary: Resilience and coping | Secondary: Problem-solving; Hope and future orientation; Self-identity and self-worth
+
+Therapeutic Framing:
+Powerful vehicle for adolescents processing powerlessness, injustice, and systemic failure. Society Description: externalizes oppressive or chaotic systems into fictional construct student can examine safely. Protagonist: student places surrogate self here -- often with characteristics they admire or wish they possessed. Students who feel powerless often write protagonists who find unexpected agency. Most appropriate for grades 7+ who have developmental capacity for social-systemic thinking.
+
+Description:
+Write a story set in a dystopian society -- a world where things have gone wrong. Your protagonist must navigate, resist, or survive within this world.
+
+Student-Facing Components:
+- Society Description: Rules, structure, atmosphere -- what went wrong?
+- Protagonist: Who are they? What do they believe and want?
+- Conflict: What struggle does your protagonist face?
+- Resolution: How does the protagonist respond? What happens?
+
+Student Instructions:
+1. Create a dystopian world that feels believable and specific
+2. Develop a protagonist whose motivations make sense given their world
+3. Think about themes of power, control, resistance, and survival
+4. Give your protagonist a genuine choice -- and consequences for that choice
+
+------------------------------------------------------------
+MYTHICAL QUEST STORY
+------------------------------------------------------------
+Category: Creative Writing
+Grade Range: Grades 4-12
+Activity Type: Standard
+Physical Space Required: Desk space only
+Physical Limitations: Allow typed or dictated responses. Younger students work with simpler quest structures.
+Suggested Output Formats: Written story; illustrated map of the journey; dramatic performance; voice recording; video short film; comic strip
+Therapeutic Goals: Primary: Resilience and coping | Secondary: Recognizing personal strengths; Hope and future orientation; Problem-solving
+
+Therapeutic Framing:
+The quest narrative is humanity's oldest therapeutic structure -- maps onto going through something hard and arriving somewhere different. Writing a quest is unconscious rehearsal of resilience. Journey and Challenges components: obstacles almost always mirror student's real internal and external obstacles. Outcome: students in unresolved situations sometimes write deeply wishful outcomes here -- valuable clinical information. The transformation arc of the quest mirrors the arc of healing.
+
+Description:
+Write a story about a mythical quest -- an epic journey toward an important goal, full of challenges and discoveries.
+
+Student-Facing Components:
+- Quest Objective: What is the goal and why does it matter?
+- Journey: Where do characters go and what do they discover?
+- Challenges: What obstacles and difficulties test them?
+- Outcome: How does the quest end? What has changed?
+
+Student Instructions:
+1. Give your quest a goal that feels meaningful and worth the difficulty
+2. Include vivid descriptions of the journey
+3. Make the challenges genuinely hard -- the harder the obstacle, the more powerful the outcome
+4. Think about who your characters are at the end vs. the beginning
+
+------------------------------------------------------------
+MYSTERY INVESTIGATION STORY
+------------------------------------------------------------
+Category: Creative Writing
+Grade Range: Grades 4-12
+Activity Type: Standard
+Physical Space Required: Desk space only
+Physical Limitations: Allow typed or dictated responses.
+Suggested Output Formats: Written story; video presentation as detective; illustrated clue board; dramatic reading; voice recording
+Therapeutic Goals: Primary: Problem-solving | Secondary: Improving focus and attention; Mastery and accomplishment; Choice and autonomy
+
+Therapeutic Framing:
+Mystery genre has an unusual therapeutic property: promises that things which are hidden and confusing will eventually make sense -- counterexperience for students whose lives have been marked by unpredictability. Investigation component teaches slowing down and reasoning carefully before concluding -- transfers directly to emotional regulation. Detective role confers agency and competence. Students who appear disorganized often demonstrate striking focus when engaged in mystery writing.
+
+Description:
+Write a mystery story -- a puzzle to be solved through careful investigation, smart thinking, and persistence.
+
+Student-Facing Components:
+- Mystery Introduction: What is the mystery? Introduce with curiosity
+- Clues: What evidence is discovered and how do clues connect?
+- Investigation: How do characters work to solve it? Dead ends? Breakthroughs?
+- Solution: How is it solved?
+
+Student Instructions:
+1. Create a mystery that is genuinely puzzling -- just enough to think but not enough to be certain
+2. Plant clues carefully -- good mysteries are fair to the reader
+3. Show characters reasoning through the problem
+4. Give your story a satisfying resolution
+
+============================================================
+ART ASSIGNMENTS
+============================================================
+
+Visual art gives students a non-verbal expressive channel. All art assignments should offer choice of medium wherever possible.
+
+------------------------------------------------------------
+FUTURISTIC CITY SCULPTURE
+------------------------------------------------------------
+Category: Art
+Grade Range: Grades 4-12
+Activity Type: Standard
+Physical Space Required: Desk or table space with room for materials. Surface protection recommended.
+Physical Limitations: Fine motor difficulties -- use larger materials or found object assembly. Offer 2D design alternative for significant motor limitations.
+Suggested Output Formats: Physical sculpture (default); 2D architectural drawing; digital design tool; video tour of the creation; photography with captions
+Therapeutic Goals: Primary: Hope and future orientation | Secondary: Choice and autonomy; Mastery and accomplishment; Improving focus and attention
+
+Therapeutic Framing:
+Building a future city is an act of hope -- student literally constructs a world they believe is possible. Technology component: imagining solutions to problems is a fundamentally optimistic cognitive act. Cultural Identity: surfaces student's own values and aspirations without making them the subject. Interaction component: subtly asks student to imagine safe, purposeful human connection. Three-dimensional nature is important -- students are not just describing a future, they are physically constructing it.
+
+Description:
+Create a sculpture representing a building, monument, or public space in an imaginary futuristic city.
+
+Student-Facing Components:
+- Architecture: Shapes, forms, and materials that define it
+- Technology: An element of advanced technology enhancing the space
+- Cultural Identity: Something reflecting the city's values in the design
+- Interaction: How would people use or relate to this sculpture?
+
+Student Instructions:
+1. Choose your sculpting medium (clay, paper mache, wire, cardboard, found objects, or a combination)
+2. Sketch your ideas before building if that helps
+3. Build with attention to all four components
+4. Be prepared to share what your sculpture represents and why you made your choices
+
+------------------------------------------------------------
+ENCHANTED FOREST CREATURE
+------------------------------------------------------------
+Category: Art
+Grade Range: Grades 3-12
+Activity Type: Standard
+Physical Space Required: Desk or table space with room for art materials
+Physical Limitations: Offer range of mediums for fine motor differences. Younger students may benefit from pre-drawn templates.
+Suggested Output Formats: Drawing or painting; sculpture or model; digital art; collage; photography; video presentation of the creature
+Therapeutic Goals: Primary: Self-identity and self-worth | Secondary: Recognizing personal strengths; Empathy and perspective-taking; Processing trauma indirectly
+
+Therapeutic Framing:
+Invites exploration of identity, role, and belonging without autobiographical pressure. Abilities component: students almost always choose powers reflecting something they need or wish they possessed. Role in Ecosystem: what is this creature's purpose? Profound therapeutic question for students who feel like a burden. Legend component: how would this creature be remembered if seen truly -- allows students to imagine being perceived at their best. Grounds activity in SCBF principle that all living things have inherent value.
+
+Description:
+Create an art piece featuring a creature that lives in an enchanted forest -- entirely unique with its own appearance, abilities, habitat, and role in the ecosystem.
+
+Student-Facing Components:
+- Appearance: Colors, size, distinguishing features
+- Abilities: Magical or extraordinary abilities -- how do they help it or the forest?
+- Habitat: Where does it live and how does it interact with surroundings?
+- Role in the Ecosystem: What is its purpose? How does it maintain balance?
+- Legend: Is there a story or myth about this creature that other inhabitants tell?
+
+Student Instructions:
+1. Choose your art medium (drawing, painting, sculpture, collage, digital -- whatever feels right)
+2. Develop all five components to create a fully realized creature
+3. Use color, texture, and detail to bring it to life
+4. Think about what makes your creature special -- not just what it looks like but what it means
+
+------------------------------------------------------------
+MYSTERIOUS DOOR DESIGN
+------------------------------------------------------------
+Category: Art
+Grade Range: Grades 3-12
+Activity Type: Standard
+Physical Space Required: Desk or table space with room for art materials
+Physical Limitations: Range of mediums for fine motor differences. Digital design is an appropriate alternative.
+Suggested Output Formats: Drawing or painting; mixed media collage; digital design; photography of a real door with added elements; video walkthrough
+Therapeutic Goals: Primary: Emotional expression | Secondary: Processing trauma indirectly; Self-identity and self-worth; Hope and future orientation
+
+Therapeutic Framing:
+The door represents transition, threshold, choice, and the boundary between known and unknown. For traumatized students: boundary between past and possible future, unsafe and safe, who they have been and who they might become. Backstory: often surfaces origin and history narrative. Functionality (where does it lead?): student projects hope, fear, or longing about what lies ahead. Personal Connection is deliberately last -- student arrives at personal meaning after creative distance is established. NEVER force the personal connection -- fictional layer is sufficient and valuable for many students.
+
+Description:
+Create an art piece featuring a mysterious door with a unique design, history, and special purpose.
+
+Student-Facing Components:
+- Description: Color, material, symbols, patterns
+- Backstory: History of the door -- who built it and what has it been used for?
+- Functionality: Where does it lead? What or who is on the other side?
+- Role in the Story: Who is connected to this door?
+- Personal Connection: Does this door remind you of anything? (Optional and private)
+
+Student Instructions:
+1. Choose your art medium
+2. Make your door feel like it has a real history -- let the design tell a story
+3. Develop all components to give your door a complete identity
+4. The personal connection component is always optional
+
+============================================================
+MUSIC ASSIGNMENTS
+============================================================
+
+Music engages emotional and embodied dimensions that bypass verbal defenses. No musical training required for any assignment.
+
+------------------------------------------------------------
+RHYTHM AND EMOTION EXPRESSION
+------------------------------------------------------------
+Category: Music
+Grade Range: Grades K-12
+Activity Type: Standard
+Physical Space Required: Standard classroom space with room to play.
+Physical Limitations: Vocal percussion, foot tapping, or body percussion for limb differences. Discuss auditory sensitivities in advance.
+Suggested Output Formats: Live performance (default); audio recording; video performance; body percussion; movement-based expression; dance
+Therapeutic Goals: Primary: Emotional expression | Secondary: Anger and frustration release; Developing social skills (group version); Calming and immediate self-regulation
+
+Therapeutic Framing:
+Rhythm is one of the most direct routes to emotional regulation available in a classroom. For students who struggle to name emotions, creating a rhythm that expresses a feeling is often easier and more authentic than verbal expression. Physical playing provides safe discharge for anger, anxiety, or grief. Classroom objects deliberately lower the threshold -- no musical skill required. Reflection component builds bridge between somatic experience and cognitive understanding. In groups: builds empathy and attunement as students experience each other's emotional rhythms.
+
+Description:
+Create a rhythm using objects around you that expresses a specific emotion. Perform it and reflect on how rhythm and feeling connect.
+
+Student-Facing Components:
+- Emotion Selection: Choose an emotion to express (any emotion is valid)
+- Rhythm Creation: Create a unique rhythm -- consider tempo, intensity, and pattern
+- Performance: Perform it, letting your body language express the emotion
+- Reflection: Share how you used rhythm to express your emotion and what you discovered
+
+Student Instructions:
+1. Choose an emotion that feels real to you right now or one you want to explore
+2. Experiment with different objects and combinations
+3. When you perform, let your whole body be part of the expression
+4. Reflect: did the rhythm change how you felt while playing it?
+
+------------------------------------------------------------
+MELODIC STORYTELLING
+------------------------------------------------------------
+Category: Music
+Grade Range: Grades 3-12
+Activity Type: Standard
+Physical Space Required: Standard classroom space. Access to instrument, voice recording device, or digital music tool required.
+Physical Limitations: Vocal melody is accessible to most students. Digital music tools for vocal difficulties.
+Suggested Output Formats: Live performance; audio recording; video performance; digital music tool; voice only; instrument
+Therapeutic Goals: Primary: Mastery and accomplishment | Secondary: Emotional expression; Self-identity and self-worth; Processing trauma indirectly
+
+Therapeutic Framing:
+Composing a melody requires sustained focus, iterative problem-solving, and personal decision-making -- builds executive function skills trauma disrupts. Artist Statement: articulating the connection between creative choices and intended meaning is a metacognitive skill transferring to emotional intelligence. Students frequently choose to tell their own stories through musical narrative when they would not tell them in words. Performance or recording creates tangible artifact of accomplishment the student can keep and return to.
+
+Description:
+Create a short melody that tells a story or carries a message using your voice, an instrument, or a digital tool.
+
+Student-Facing Components:
+- Story or Message: What will your melody express?
+- Melody Creation: Compose a short melody (30-60 seconds)
+- Performance or Recording: Perform for others or record it
+- Artist Statement: 3-5 sentences explaining what your melody is about
+
+Student Instructions:
+1. Start with a feeling or image you want to create, then find the sounds that fit it
+2. Experiment -- try different pitches, tempos, and rhythms
+3. Your melody does not need to be technically perfect. It needs to be true
+4. Write your artist statement honestly
+
+------------------------------------------------------------
+SOUND EXPLORATION AND EMOTION REFLECTION
+------------------------------------------------------------
+Category: Music
+Grade Range: Grades K-12
+Activity Type: Standard
+Physical Space Required: Standard classroom space with variety of objects. Recording device needed.
+Physical Limitations: Fully accessible to students with mobility limitations. Discuss auditory processing differences in advance.
+Suggested Output Formats: Audio recording (default); video recording of creation process; live shared listening session; written reflection alongside recording
+Therapeutic Goals: Primary: Anger and frustration release | Secondary: Grounding and mindfulness; Emotional expression; Calming and immediate self-regulation
+
+Therapeutic Framing:
+Sound exploration activates present-moment attention -- to really hear a sound requires being here, now. Powerful grounding tool for students who dissociate or ruminate. Students gain control over their sensory environment -- therapeutic for those who experienced uncontrollable environments. Emotional Reflection builds interoceptive awareness. Group sharing reveals that different people respond differently to the same sound -- important lesson in the validity of one's own emotional responses.
+
+Description:
+Explore how different sounds make you feel by creating a sound collage and reflecting on your emotional responses.
+
+Student-Facing Components:
+- Sound Collection: Gather objects and materials that make interesting sounds
+- Sound Collage Creation: Experiment with combinations and record your collage
+- Emotional Reflection: Write 5-7 sentences about how each sound makes you feel and why
+- Sharing and Discussion: Share your collage and listen to others
+
+Student Instructions:
+1. Collect materials with very different kinds of sounds -- soft, sharp, rhythmic, random
+2. Experiment freely before recording
+3. Be honest about your emotional responses, even if they surprise you
+4. In discussion, listen with curiosity -- others may respond very differently
+
+============================================================
+GARDENING ASSIGNMENTS
+============================================================
+
+Gardening uses the student-plant relationship as a therapeutic vehicle. These assignments work best as ongoing activities. Educators should have basic plant care knowledge before implementing.
+
+------------------------------------------------------------
+PLANT BUDDY PROJECT
+------------------------------------------------------------
+Category: Gardening
+Grade Range: Grades K-12
+Activity Type: Standard (ongoing -- recommended 4-12 weeks)
+Physical Space Required: Designated space for the plant. Plant and basic care supplies required.
+Physical Limitations: Adapt care tasks for mobility or fine motor limitations. Observing and journaling are valid participation.
+Suggested Output Formats: Written journal (default); photo journal; video diary; drawn observation sketches; voice recording reflections
+Therapeutic Goals: Primary: Responsibility and follow-through | Secondary: Building trust with adults; Empathy and perspective-taking; Resilience and coping; Self-identity and self-worth
+
+Therapeutic Framing:
+For students who experienced inconsistent or harmful caregiving, being the reliable caregiver for another living thing is a corrective experience -- they become the source of safety they may not have received. Student-plant relationship mirrors educator-student relationship: trust, attention, and consistency produce growth. Reflection and Life Lessons component: students who are ready make connections between plant experience and their own -- do not prompt these connections directly; let them emerge. Ongoing nature (weeks, not days) is essential -- the relationship must have time to become real.
+
+Description:
+Choose a plant to be your plant buddy and care for it throughout the program. Observe its growth, document your observations, and reflect on what you learn.
+
+Student-Facing Components:
+- Plant Buddy Selection: Choose a plant you feel drawn to
+- Care and Nurturing: Learn what it needs and provide it consistently
+- Observation and Documentation: Regularly document growth through sketches, photos, or written notes
+- Reflection and Life Lessons: Reflect on what you learn from caring for your plant
+
+Student Instructions:
+1. Choose a plant that genuinely interests you
+2. Research what your plant needs and commit to providing it consistently
+3. Keep your plant buddy journal updated -- observations do not need to be long, just honest
+4. Let your reflections come naturally
+
+------------------------------------------------------------
+SENSORY GARDEN EXPLORATION
+------------------------------------------------------------
+Category: Gardening
+Grade Range: Grades K-12
+Activity Type: Standard (ongoing -- recommended 4-8 weeks)
+Physical Space Required: Container garden or garden plot. Multiple plants with diverse sensory qualities. Outdoor preferred but indoor container gardening is viable.
+Physical Limitations: Highly accessible. Students with allergies should avoid fragrant plants. Discuss soil sensory sensitivity in advance -- gloves available.
+Suggested Output Formats: Written journal; photo journal (highly recommended); video diary; drawn sketches; voice recording
+Therapeutic Goals: Primary: Grounding and mindfulness | Secondary: Calming and immediate self-regulation; Body awareness and physical safety; Developing social skills (sharing component); Building self-regulation skills
+
+Therapeutic Framing:
+Sensory engagement is one of the most direct routes to present-moment grounding in a school setting. Deliberately activates multiple senses -- anchors student in here-and-now, interrupting rumination or dissociation. Pairing sensory experience with emotional reflection builds interoceptive awareness: students learn to connect physical sensation to emotional state. Daily engagement builds a practice of mindful attention extending beyond the garden. Particularly effective for students who resist talk-based regulation approaches.
+
+Description:
+Create and care for a small sensory garden filled with plants that engage different senses. Spend time with it regularly and reflect on how sensory experiences affect how you feel.
+
+Student-Facing Components:
+- Plant Selection: Fragrant herbs, soft textures, bright colors, interesting sounds in wind
+- Garden Design: Plan how to arrange plants to create an inviting, calming space
+- Planting and Care: Plant and provide regular care
+- Sensory Exploration and Reflection: Daily visits -- touch, smell, observe, record emotional responses
+
+Student Instructions:
+1. Choose plants that genuinely appeal to your senses -- this garden is for you
+2. Take at least two minutes to be fully present with your garden before doing anything else
+3. In your journal, be specific: not just "I felt calm" but "When I touched the lamb's ear..."
+4. Notice how your responses to the same plants change over time
+
+------------------------------------------------------------
+MINDFUL PLANTING AND REFLECTION
+------------------------------------------------------------
+Category: Gardening
+Grade Range: Grades 3-12
+Activity Type: Standard (ongoing -- recommended 6-12 weeks)
+Physical Space Required: Space for a planting container or garden plot. Soil, seeds or seedlings, and basic tools required.
+Physical Limitations: Adapt physical tasks as needed. Reflective journaling is the therapeutic core and accessible to all.
+Suggested Output Formats: Written journal (default); photo journal; video diary; drawn observation sketches; voice recording reflections
+Therapeutic Goals: Primary: Building self-regulation skills | Secondary: Grounding and mindfulness; Resilience and coping; Improving focus and attention; Calming and immediate self-regulation
+
+Therapeutic Framing:
+Deliberate pairing of physical planting with reflective journaling distinguishes this from general gardening. Mindful Planting component introduces mindfulness as practical embodied experience -- students who resist formal mindfulness often engage readily because the plant gives attention something concrete to rest on. Over weeks of journaling, students inevitably write about their own growth and challenges. Parallel between plant growth and personal growth should be gently offered but never forced. Educator's key role: consistency -- checking in regularly and treating the reflection as meaningful, not a homework task.
+
+Description:
+Mindfully plant a seed or seedling and care for it over the program. As your plant grows, reflect on your own growth and what you learn from caring for another living thing.
+
+Student-Facing Components:
+- Plant Selection: Choose a seed or seedling that resonates with you
+- Mindful Planting: Plant with full awareness and intention -- notice everything
+- Daily Care and Observation: Tend to your plant daily; notice its growth and changes
+- Reflective Journaling: Write about experiences, observations, and any connections you notice
+
+Student Instructions:
+1. When you plant, do it slowly and deliberately -- notice everything you can
+2. Care for your plant every day, even if just for a few minutes
+3. Write at least a few sentences after each observation
+4. Let connections between your plant and your own life come naturally
+
+============================================================
+MINDFUL STRETCHING SESSIONS (EDUCATOR-LED)
+============================================================
+
+Educator-led sessions combining physical movement, narrative imagination, and breath work. NOT for independent completion -- educator actively facilitates in real time. Physical space for movement required. All sessions: opening and grounding, journey through challenges, arrival at peace, reflection and return.
+
+IMPORTANT: When generating a lesson plan for an [ES] session, Section 5 of the lesson plan must include the full session narrative script adapted for the specific student -- not just a summary. The educator should be able to run the session directly from the script.
+
+------------------------------------------------------------
+JOURNEY TO CALM MOUNTAIN
+------------------------------------------------------------
+Category: Mindful Stretching [ES]
+Grade Range: Grades K-12
+Activity Type: Educator-Led Session [ES]
+Physical Space Required: Open floor space for movement and lying down. Desks to perimeter. Yoga mats recommended for Summit phase.
+Physical Limitations: All poses have seated or modified alternatives. No competitive element.
+Suggested Output Formats: Movement session led by educator (fixed). Student reflection output: verbal sharing; written; drawing; voice recording
+Therapeutic Goals: Primary: Calming and immediate self-regulation | Secondary: Grounding and mindfulness; Building self-regulation skills; Improving focus and attention; Body awareness and physical safety
+
+Therapeutic Framing:
+Mountain journey maps onto emotional experience of regulation: effort of the climb (managing arousal), achievement of the summit (reaching calm), descent (returning with something gained). Summit phase may be genuinely novel for students who have never experienced sustained calm -- some will resist as tension releases; facilitate with sensitivity. Four-phase structure provides predictability traumatized students need. Descent and reflection MUST NOT be rushed -- this is where students integrate the experience. Key phrase: "you can visit Calm Mountain any time you need peace" -- plants a self-regulation anchor.
+
+Description:
+A guided mindful stretching journey to Calm Mountain -- using breath, movement, and imagination to find peace and stillness within.
+
+Student-Facing Components:
+- Warm-Up: Breathing exercises and gentle stretches to prepare
+- Ascend: Focused stretches building balance and flexibility
+- Summit: Deep relaxation and mindfulness at the peak
+- Descend: Gentle cooldown and reflection, returning renewed
+
+Student Instructions:
+1. Find a comfortable position and follow the educator's guidance
+2. Move at your own pace -- there is no right or wrong way
+3. Use the breathing exercises whenever you feel uncomfortable
+4. After the session, notice what feels different in your body and mind
+
+------------------------------------------------------------
+DESERT OASIS ADVENTURE
+------------------------------------------------------------
+Category: Mindful Stretching [ES]
+Grade Range: Grades K-12
+Activity Type: Educator-Led Session [ES]
+Physical Space Required: Open floor space for movement and lying down. Shaded Rest pose requires space to lie flat.
+Physical Limitations: All poses have seated or standing alternatives. Shaded Rest can be done seated with eyes closed.
+Suggested Output Formats: Movement session led by educator (fixed). Student reflection output: verbal sharing; written; drawing; voice recording
+Therapeutic Goals: Primary: Resilience and coping | Secondary: Calming and immediate self-regulation; Grounding and mindfulness; Hope and future orientation; Body awareness and physical safety
+
+Therapeutic Framing:
+Most explicitly resilience-focused session in the library. Student crosses a difficult landscape (the trauma experience) to discover peace and strength are already within them (the oasis is not found outside -- it is discovered within). Particularly powerful for students who feel inner resources depleted. Sun Warrior stretch gives physical form to inner strength. Shaded Rest MUST be given full time -- rushing a student out of deep relaxation defeats the therapeutic purpose. Closing reminder that oasis is always within the student is the most important moment in the session -- deliver with care and conviction. Best for students who are resilient but exhausted.
+
+Description:
+A guided mindful stretching adventure across an imaginary desert to discover a hidden oasis of inner calm.
+
+Student-Facing Components:
+- Setting Out: Warm-up breathing and stretches, preparing for the journey
+- Crossing the Dunes: Balance and strength poses, building resilience
+- Discovering the Oasis: Flowing, graceful stretches as destination comes into view
+- Resting in the Shade: Deep relaxation, receiving the peace of the oasis
+- Journey Homeward: Gentle return, reflection, carrying the oasis within
+
+Student Instructions:
+1. Follow the educator's guidance and move at your own pace
+2. When the journey feels challenging, focus on your breath
+3. In the resting phase, let yourself fully arrive -- you have earned this moment
+4. Notice what you are carrying with you from the oasis
+
+------------------------------------------------------------
+LIGHTHOUSE BEACON
+------------------------------------------------------------
+Category: Mindful Stretching [ES]
+Grade Range: Grades K-12
+Activity Type: Educator-Led Session [ES]
+Physical Space Required: Open floor space for movement. Beacon's Glow meditation can be seated or lying down.
+Physical Limitations: All movements have seated alternatives. Balance poses offer wall support option.
+Suggested Output Formats: Movement session led by educator (fixed). Student reflection output: verbal sharing; written; drawing; voice recording
+Therapeutic Goals: Primary: Grounding and mindfulness | Secondary: Calming and immediate self-regulation; Self-identity and self-worth; Building trust with adults; Resilience and coping
+
+Therapeutic Framing:
+Lighthouse = fixed point of light in darkness, guide that does not move, signal that says "you are not alone and you are not lost." Lighthouse Twists physicalize seeking orientation and perspective. Beacon's Glow meditation is the emotional climax -- students experience light enveloping them, a direct somatic experience of safety and being held. Closing affirmation plants a self-regulation anchor. Best for students in difficult transitions or who feel they have lost direction. Continuous flow emphasis models the SCBF principle that challenges and peace are part of the same journey.
+
+Description:
+A guided mindful stretching voyage to a lighthouse -- using movement, breath, and imagination to find guidance, safety, and inner light.
+
+Student-Facing Components:
+- Setting Sail: Seated breathing and opening stretches
+- Navigating the Waves: Flowing arm sweeps synchronized with breath
+- Guiding Light: Lighthouse Twists seeking perspective and orientation
+- Reaching the Shore: Grounded walking steps arriving at stability
+- Ascending the Lighthouse: Mindful climbing movement toward clarity
+- Beacon's Glow: Restorative meditation in the lighthouse light
+
+Student Instructions:
+1. Follow the educator's guidance and let the story carry you
+2. When the ocean feels rough, breathe slowly and find the lighthouse
+3. In the Beacon's Glow, let yourself rest fully in that light
+4. Remember that the lighthouse -- your inner guide -- is always there
+
+============================================================
+GRIEF AND LOSS ASSIGNMENTS
+============================================================
+
+Grief assignments provide a structured container for loss without forcing catharsis, resolution, or positive reframe. Three principles: (1) fictional distance maintained -- student never required to name loss directly; (2) sadness is a valid endpoint -- no component requires hope or transformation; (3) pace belongs to the student -- components can be engaged shallowly or deeply. Not appropriate for students in the first days or weeks of acute loss.
+
+------------------------------------------------------------
+THE MEMORY KEEPER
+------------------------------------------------------------
+Category: Creative Writing or Art
+Grade Range: Grades 3-12
+Activity Type: Standard
+Physical Space Required: Desk space only. Art version requires table space and materials.
+Physical Limitations: Fully flexible -- written, drawn, sculpted, or verbally described.
+Suggested Output Formats: Written description or story; drawing or sculpture; photography of real objects; voice recording; video; mixed media collage
+Therapeutic Goals: Primary: Grief and loss | Secondary: Emotional expression; Processing trauma indirectly; Self-identity and self-worth
+
+Therapeutic Framing:
+Works through externalization -- grief placed into a fictional object, place, or creature that bears its weight so the student does not have to hold it alone. Student controls how much they put in -- can engage at surface level (description and abilities) or at great depth (specific memories). This is the most important clinical feature. CRITICAL: the Memory Keeper does not fix anything, promise return, or offer comfort beyond the act of remembering. It simply holds. Do not add components requiring resolution, transformation, or hope. A Memory Keeper that preserves perfectly and forever IS the therapeutic message.
+
+Description:
+Create a Memory Keeper -- a special object, creature, or place whose entire purpose is to hold memories so they are never lost.
+
+Student-Facing Components:
+- What is your Memory Keeper? Describe its appearance, size, qualities
+- How does it work? How does it collect and hold memories?
+- What does it hold? What memories or moments has it gathered? (Share as much or as little as feels right)
+- Where does it live? Where does it exist and who knows about it?
+
+Student Instructions:
+1. Your Memory Keeper can be anything -- object, creature, place, or something entirely invented
+2. You can write about it, draw it, or both
+3. Share as much or as little about what it holds as feels right
+4. There is no right or wrong Memory Keeper -- only yours
+
+------------------------------------------------------------
+THE TIME CAPSULE
+------------------------------------------------------------
+Category: Creative Writing or Art
+Grade Range: Grades 3-12
+Activity Type: Standard
+Physical Space Required: Desk space only. Physical version requires table space and materials.
+Physical Limitations: Fully flexible. Physical container version is optional.
+Suggested Output Formats: Written and drawn contents; physical decorated box or container; photo collage; voice recorded letter; video message; digital slideshow
+Therapeutic Goals: Primary: Grief and loss | Secondary: Hope and future orientation; Self-identity and self-worth; Emotional expression; Processing trauma indirectly
+
+Therapeutic Framing:
+Culturally familiar concept -- eliminates friction and gets directly to therapeutic work. Act of preserving carries implicit message that what is saved matters and is worth remembering -- therapeutic for students whose losses made them feel nothing good lasts.
+
+TWO OPTIONAL COMPONENTS -- neither required, both valuable:
+
+COMPONENT 1 -- PRESERVING WHAT WAS (Grief as preservation): Student fills capsule with things to remember. Focus: honoring what existed rather than mourning what is gone. Appropriate at almost any grief stage -- asks only what mattered, not why it is gone. Students not ready to engage with loss directly can participate fully by focusing on objects and memories without naming grief.
+
+COMPONENT 2 -- A MESSAGE FORWARD (Grief as legacy): Letter to whoever opens the capsule in the future. Focus: connection across time and the idea that what mattered will still matter to someone. Requires more stable relationship with the future. Most appropriate for students past acute phase beginning to find meaning. DO NOT push student toward this if still in acute loss -- may feel cruel to imagine a future reader when the present is still unbearable.
+
+When both components completed together: this is what was, and this is what I want someone to know about it. A significant therapeutic achievement.
+
+Description:
+Create a time capsule -- a collection of things worth preserving and remembering. You decide what goes in it and who it is for.
+
+Student-Facing Components:
+- What does your time capsule look like? Describe or draw the container
+- What goes inside? Fill it with things worth preserving (share as much or as little as feels right)
+- A message forward (optional): Write a short letter to whoever opens your capsule
+
+Student Instructions:
+1. Your time capsule can hold anything -- objects, memories, drawings, words, or feelings
+2. The message forward section is completely optional
+3. There are no rules about what belongs. If it matters to you, it belongs
+4. You can make it physical by decorating a small box or envelope if you would like something real to hold
+
+============================================================
+JOY AND CELEBRATION ASSIGNMENTS
+============================================================
+
+Joy assignments are distinct from every other category. Their therapeutic value IS the experience itself -- pure positive affect, play, and delight. The moment an activity feels like a therapeutic exercise it stops working. The therapeutic framing lives entirely in the educator document. Do not add reflection prompts, growth arcs, or meaning-making components to student-facing content.
+
+------------------------------------------------------------
+THE MOST RIDICULOUS STORY EVER
+------------------------------------------------------------
+Category: Creative Writing / Joy and Celebration
+Grade Range: Grades 3-12
+Activity Type: Standard (collaborative -- educator and student together)
+Physical Space Required: Desk space only
+Physical Limitations: No physical limitations. Can be done verbally.
+Suggested Output Formats: Written collaborative story (default); verbal improvisation; dramatic performance; comic strip; video recording of the telling
+Therapeutic Goals: Primary: Celebration and joy | Secondary: Building trust with adults; Sense of belonging and community; Emotional expression
+
+Therapeutic Framing:
+Laughter and shared absurdity activate the social engagement system -- same neurological circuit that registers safety and connection. For students whose adult interactions have been tense or transactional, genuine shared laughter with an educator is a profound relational repair experience. Collaborative turn-taking: neither party controls the story -- both are surprised, both laugh. This equality is therapeutic for students who expect adult interactions to be hierarchical and evaluative. There is no way to fail this assignment. EDUCATOR NOTE: commit fully to the absurdity. Students will match the educator's willingness to be ridiculous. Half-hearted participation produces half-hearted engagement.
+
+Description:
+You and your educator are going to write the most ridiculous story ever created. Two rules: it has to be as funny and absurd as possible, and you take turns.
+
+Student-Facing Components:
+- Turn 1 (educator starts): Sets up a completely normal situation about to go wrong
+- Turn 2 (student): Makes something ridiculous happen
+- Turn 3 (educator): Escalates the ridiculousness
+- Continue until the story reaches a gloriously absurd conclusion
+
+Student Instructions:
+1. There are no wrong answers -- the more ridiculous the better
+2. Yes, and... -- always accept what your partner adds and build on it
+3. The goal is to make each other laugh
+4. When the story feels complete (or out of control), give it a title
+
+------------------------------------------------------------
+MY CELEBRATION COLLECTION
+------------------------------------------------------------
+Category: Art / Joy and Celebration
+Grade Range: Grades K-12
+Activity Type: Standard
+Physical Space Required: Desk or table space. Can be completed digitally.
+Physical Limitations: Fully accessible -- drawn, cut and pasted, digitally assembled, or verbally described and documented.
+Suggested Output Formats: Physical collage (default); digital mood board; photo collection; drawn illustrations; mixed media; playlist with annotations
+Therapeutic Goals: Primary: Celebration and joy | Secondary: Self-identity and self-worth; Hope and future orientation; Grounding and mindfulness
+
+Therapeutic Framing:
+Traumatized students have difficulty accessing positive memories -- attention disproportionately captured by threat. Deliberately collecting and dwelling on sources of pleasure is gentle exposure to positive emotional states. NO structure, NO analysis, NO reflection requirements -- this is intentional. Simply accumulating things they love without explaining why IS the therapeutic act. The completed collection becomes a regulation resource -- something the student made that is purely about what they love. Grade calibration: younger students collect freely; older students may benefit from category prompts (foods, places, people, moments) but never required to explain choices.
+
+Description:
+Create a collection of everything that makes you genuinely happy. No rules, no explanations needed. Just things you love.
+
+Student-Facing Components:
+- Gather or create images, words, colors, and drawings of things that make you happy
+- Arrange them however feels right
+- Fill the space completely -- the more the better
+- Give your collection a title if you want to
+
+Student Instructions:
+1. Include anything that genuinely makes you happy -- foods, places, animals, people, jokes, songs, colors, memories, anything
+2. You do not need to explain why you love something. You just do, and that is enough
+3. There are no wrong answers and nothing is too small or too silly
+4. This collection is yours to keep
+
+------------------------------------------------------------
+DREAM DAY
+------------------------------------------------------------
+Category: Writing or Art / Joy and Celebration
+Grade Range: Grades 2-12
+Activity Type: Standard
+Physical Space Required: Desk space only. Can be written, drawn, mapped, or collage.
+Physical Limitations: Fully flexible format. Verbal description documented by educator is valid.
+Suggested Output Formats: Written diary entry; drawn comic or illustrated itinerary; video vlog of the day; voice recording; digital slideshow; collage
+Therapeutic Goals: Primary: Celebration and joy | Secondary: Hope and future orientation; Choice and autonomy; Self-identity and self-worth
+
+Therapeutic Framing:
+Delivers value through uncomplicated positive experience -- permission to want things, imagination without performance anxiety. No challenges, lessons, or reflection requirements -- intentional and important. Do not add reflective prompts or meaning-making components. The dream is enough.
+
+TWO VERSIONS -- select based on what you know about this student:
+
+UNCONSTRAINED VERSION (default): "Design your perfect day with no limits." Use when student has stable enough relationship with hope and imagination to enjoy positive fantasy freely. Appropriate when no significant deprivation, housing instability, food insecurity, or chronic unmet needs indicated.
+
+GROUNDED VERSION: "What would make this week feel good? Design your perfect afternoon -- something that could actually happen." Use when circumstances include active deprivation, economic stress, housing instability, or any context where unconstrained fantasy risks activating grief, resentment, or painful awareness of what is missing.
+
+When in doubt, use Grounded Version. A student who could handle Unconstrained still benefits from Grounded. A student who needed Grounded and received Unconstrained may disengage, feel mocked, or be actively harmed.
+For either version: do not use until educator-student relationship is strong enough that the student can be honest about discomfort.
+
+Description:
+Design a perfect day (or perfect afternoon) entirely your way. No obstacles, no problems to solve. Just a good time from start to finish.
+
+Student-Facing Components:
+- Where are you? Describe where your day takes place
+- Who is there? Who do you want with you?
+- What do you do? Walk through the day from beginning to end
+- What do you eat, hear, see, feel? Make it real and specific
+
+Student Instructions:
+1. There are no wrong answers -- this is your day, exactly as you want it
+2. Be as specific as possible -- the small details make a dream day feel real
+3. You can write it, draw it, map it as a schedule, or build it as a collage
+4. Nothing is too simple or too grand to include
+
+============================================================
+MAINTAINING THIS LIBRARY
+============================================================
+
+When adding new assignments:
+- Follow the entry format exactly -- every field must be completed
+- Tag therapeutic goals from the goal taxonomy in the main prompt, ranked by relevance with primary goal first
+- Write the Therapeutic Framing field with care -- this is the SCBF identity of the assignment
+- Update the Assignment Index in Section 1
+- Notify whoever maintains the main prompt to update the goal taxonomy if a gap goal is addressed
+
+When updating existing assignments:
+- Update the Therapeutic Framing if SCBF methodology guidance changes
+- Update grade ranges if field experience shows the assignment works better or worse at certain ages
+- Do not change Student-Facing Components or Instructions without reviewing Therapeutic Goals

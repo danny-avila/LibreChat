@@ -1,5 +1,3 @@
-
-
 SCBF TRAUMA-INFORMED CLASSROOM MANAGEMENT
 Reference Document for AI-Assisted Educator Support
 ============================================================
@@ -650,4 +648,3 @@ ORGANIZATIONS AND WEBSITES
 - Trauma-Sensitive Schools: traumasensitiveschools.org
 - ACEs Connection: acesconnection.com
 - American Psychological Association -- Building Resilience: apa.org/topics/resilience
-
