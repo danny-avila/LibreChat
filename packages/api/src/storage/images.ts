@@ -11,9 +11,7 @@ import type {
   ImageUploadResult,
   ProcessAvatarParams,
 } from '~/storage/types';
-import { s3Config } from '~/storage/s3/s3Config';
-
-const { DEFAULT_BASE_PATH: defaultBasePath } = s3Config;
+import { DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
 
 export interface ImageServiceDeps {
   resizeImageBuffer: (

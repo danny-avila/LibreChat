@@ -14,6 +14,7 @@ import type {
 } from '~/storage/types';
 import { getCloudFrontConfig } from '~/cdn/cloudfront';
 import { s3Config } from '~/storage/s3/s3Config';
+import { DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
 import {
   getS3Key,
   saveBufferToS3,
@@ -23,8 +24,6 @@ import {
   getS3FileStream,
   extractKeyFromS3Url,
 } from '~/storage/s3/crud';
-
-const { DEFAULT_BASE_PATH: defaultBasePath } = s3Config;
 
 let _cloudFrontClient: CloudFrontClient | null = null;
 
@@ -48,8 +47,8 @@ function buildCloudFrontUrl(s3Key: string): string {
   if (!config?.domain) {
     throw new Error('[buildCloudFrontUrl] CloudFront not initialized.');
   }
-  const cleanDomain = config.domain.endsWith('/') ? config.domain.slice(0, -1) : config.domain;
-  const cleanKey = s3Key.startsWith('/') ? s3Key.slice(1) : s3Key;
+  const cleanDomain = config.domain.replace(/\/+$/, '');
+  const cleanKey = s3Key.replace(/^\/+/, '');
   return `${cleanDomain}/${cleanKey}`;
 }
 

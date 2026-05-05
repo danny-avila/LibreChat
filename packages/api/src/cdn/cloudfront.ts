@@ -61,6 +61,6 @@ export function initializeCloudFront(config: CloudFrontConfig): boolean {
   return true;
 }
 
-export function getCloudFrontConfig(): CloudFrontFullConfig | null {
+export function getCloudFrontConfig(): Readonly<CloudFrontFullConfig> | null {
   return cloudFrontConfig;
 }

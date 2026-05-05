@@ -50,6 +50,7 @@ function makeConfig(overrides: Partial<CloudFrontFullConfig> = {}): CloudFrontFu
     invalidateOnDelete: false,
     imageSigning: 'none',
     urlExpiry: 3600,
+    cookieExpiry: 1800,
     privateKey: null,
     keyPairId: null,
     ...overrides,
@@ -92,8 +93,24 @@ describe('CloudFront CRUD', () => {
       expect(url).toBe('https://d123.cloudfront.net/images/user1/photo.webp');
     });
 
+    it('strips multiple trailing slashes from domain', async () => {
+      mockGetCloudFrontConfig.mockReturnValue(
+        makeConfig({ domain: 'https://d123.cloudfront.net///' }),
+      );
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({ userId: 'user1', fileName: 'photo.webp' });
+      expect(url).toBe('https://d123.cloudfront.net/images/user1/photo.webp');
+    });
+
     it('strips leading slash from S3 key', async () => {
       mockGetS3Key.mockReturnValue('/images/user1/photo.webp');
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({ userId: 'user1', fileName: 'photo.webp' });
+      expect(url).toBe('https://d123.cloudfront.net/images/user1/photo.webp');
+    });
+
+    it('strips multiple leading slashes from S3 key', async () => {
+      mockGetS3Key.mockReturnValue('///images/user1/photo.webp');
       const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
       const url = await getCloudFrontURL({ userId: 'user1', fileName: 'photo.webp' });
       expect(url).toBe('https://d123.cloudfront.net/images/user1/photo.webp');
