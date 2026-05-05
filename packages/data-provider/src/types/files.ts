@@ -129,7 +129,7 @@ export type TFile = {
   textFormat?: 'html' | 'text' | null;
   /**
    * Lifecycle of the inline preview rendered from `text`. `'pending'`
-   * while background HTML extraction is in flight (phase-2 of the
+   * while background HTML extraction is in flight (deferred-preview
    * code-execution flow), `'ready'` once `text`/`textFormat` are set,
    * `'failed'` if extraction errored or hit the 60s ceiling. `undefined`
    * for legacy records and for files that never expect a preview —
@@ -151,9 +151,9 @@ export type TFileUpload = TFile & {
 };
 
 /**
- * Shape returned by `GET /api/files/:file_id/preview`. The two-phase
- * code-execution flow polls this until status is terminal:
- *   - `pending`: phase-2 HTML extraction is still running. No `text`.
+ * Shape returned by `GET /api/files/:file_id/preview`. The deferred-
+ * preview code-execution flow polls this until status is terminal:
+ *   - `pending`: HTML extraction is still running. No `text`.
  *   - `ready`: extraction succeeded; `text` + `textFormat` populated
  *     iff the file produced inline preview content (binary/oversized
  *     files reach `ready` with no text — render download-only).

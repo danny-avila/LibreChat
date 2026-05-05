@@ -74,7 +74,7 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
     source: file.source,
   });
   const extension = attachment.filename?.split('.').pop();
-  /* Bridge the two-phase preview lifecycle: poll the backend for the
+  /* Bridge the deferred-preview lifecycle: poll the backend for the
    * resolved record while pending+isSubmitting, and surface a small
    * UI indicator. The hook is a no-op for terminal states (legacy
    * records, ready, failed already-known) so calling it

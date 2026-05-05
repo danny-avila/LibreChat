@@ -74,13 +74,17 @@ const startServer = async () => {
   }
 
   await runAsSystem(seedDatabase);
-  /* Recover any code-execution file records left at `status: 'pending'`
-   * by a prior process restart mid-extraction. The two-phase preview
-   * flow runs phase-2 in-process; if the backend died before it
-   * finished, those records would otherwise stay pending forever and
-   * the frontend would poll indefinitely. Cheap — `status` is indexed
-   * and the candidate set is bounded by what was in flight at shutdown.
-   * Fire-and-forget so a transient error here doesn't block boot. */
+  /* Bulk recovery: code-execution files left at `status: 'pending'`
+   * by a prior process restart mid-render are marked `failed` so the
+   * frontend stops polling. The deferred preview render runs in-process,
+   * so a backend crash before it finished would otherwise leave those
+   * records pending forever. Cheap — `status` is indexed and the
+   * candidate set is bounded by what was in flight at shutdown.
+   * Fire-and-forget so a transient error here doesn't block boot.
+   *
+   * Quick-restart edge case (records younger than the sweep cutoff)
+   * is covered by a lazy sweep inside the preview endpoint itself —
+   * see `PREVIEW_LAZY_SWEEP_CUTOFF_MS` in `routes/files/files.js`. */
   sweepOrphanedPreviews().catch((err) => {
     logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
   });

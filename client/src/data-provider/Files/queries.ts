@@ -107,8 +107,8 @@ export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => 
 };
 
 /**
- * Poll the lifecycle of an inline file preview while phase-2 HTML
- * extraction runs in the background.
+ * Poll the lifecycle of an inline file preview while background HTML
+ * extraction runs.
  *
  * Caller wires `enabled` to `(attachment.status === 'pending') && isSubmitting`
  * so the query is dormant for terminal-status records and stops the

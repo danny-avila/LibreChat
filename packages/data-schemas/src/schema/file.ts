@@ -65,10 +65,10 @@ const file: Schema<IMongoFile> = new Schema(
       enum: ['html', 'text'],
     },
     status: {
-      /* Two-phase code-execution flow: phase-1 emits the attachment
-       * record immediately with 'pending'; background phase-2 (HTML
-       * extraction) updates to 'ready' or 'failed'. Absent on legacy
-       * records and on file kinds that never expect a preview. */
+      /* Deferred-preview code-execution flow: the immediate persist
+       * step writes the record with 'pending'; the background render
+       * (HTML extraction) updates to 'ready' or 'failed'. Absent on
+       * legacy records and on file kinds that never expect a preview. */
       type: String,
       enum: ['pending', 'ready', 'failed'],
       index: true,
@@ -81,6 +81,18 @@ const file: Schema<IMongoFile> = new Schema(
        * full error message — would bloat documents and ship a wall of
        * text into the UI tooltip. */
       maxlength: 200,
+    },
+    previewRevision: {
+      /* Generation marker for the deferred-preview lifecycle. Stamped
+       * by the immediate persist step on every emit (each new emit
+       * gets a fresh UUID); the deferred preview render's `updateFile`
+       * only commits when the marker still matches what it was when
+       * extraction started. Without this, two turns reusing the same
+       * `(filename, conversationId)` share a `file_id`, and an older
+       * render finishing after a newer one would silently overwrite
+       * the newer record with stale `text`/`status`. (Codex P1 review
+       * on PR #12957.) */
+      type: String,
     },
     context: {
       type: String,

@@ -12,7 +12,7 @@ jest.mock('~/hooks', () => ({
     (key: string): string =>
       key,
   /* `FileAttachment` calls this hook unconditionally to bridge the
-   * two-phase preview lifecycle into the attachment cache. The
+   * deferred-preview lifecycle into the attachment cache. The
    * routing tests don't exercise the preview flow itself — stub it
    * to a no-op so it doesn't blow up jsdom rendering. */
   useAttachmentPreviewSync: () => ({ status: 'ready', previewError: undefined, isPolling: false }),

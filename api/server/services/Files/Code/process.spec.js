@@ -44,7 +44,7 @@ mockAxios.isAxiosError = jest.fn(() => false);
 const mockClassifyCodeArtifact = jest.fn(() => 'other');
 const mockExtractCodeArtifactText = jest.fn(async () => null);
 const mockGetExtractedTextFormat = jest.fn((_name, _mime, text) => (text == null ? null : 'text'));
-/* `hasOfficeHtmlPath` gates the two-phase split: when true, processCodeOutput
+/* `hasOfficeHtmlPath` gates the persist-then-render split: when true, processCodeOutput
  * returns `{ file, finalize }` with the file persisted at `status: 'pending'`
  * and `finalize` runs the background extraction. Default false here so the
  * legacy single-phase tests below (txt/png/etc) exercise the inline path
@@ -801,15 +801,15 @@ describe('Code Process', () => {
       });
     });
 
-    describe('two-phase preview flow (office-bucket files)', () => {
+    describe('deferred-preview flow (office-bucket files)', () => {
       /* Office-bucket files (DOCX/XLSX/etc.) split into:
-       *   phase-1 (await): persist `text: null, status: 'pending'`,
+       *   the initial emit (await): persist `text: null, status: 'pending'`,
        *     return `{ file, finalize }` so the caller can ship the
        *     attachment to the client immediately;
-       *   phase-2 (background): finalize() invokes the extractor and
+       *   the deferred render (background): finalize() invokes the extractor and
        *     transitions the record to 'ready' (with text/textFormat) or
        *     'failed' (with previewError). The agent's final response
-       *     never blocks on phase-2.
+       *     never blocks on the deferred render.
        *
        * The `hasOfficeHtmlPath` mock is the gate. Other tests keep it
        * at `false` (legacy single-phase path); we flip it on here. */
@@ -824,7 +824,7 @@ describe('Code Process', () => {
         mockHasOfficeHtmlPath.mockReturnValue(false);
       });
 
-      it('persists phase-1 with status:pending and text:null, deferring extraction', async () => {
+      it('persists the initial emit with status:pending and text:null, deferring extraction', async () => {
         mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
         determineFileType.mockResolvedValue({
           mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -840,9 +840,9 @@ describe('Code Process', () => {
           textFormat: null,
         });
         expect(typeof result.finalize).toBe('function');
-        // Extractor MUST NOT have been called yet — that's phase-2 work.
+        // Extractor MUST NOT have been called yet — that's deferred preview work.
         expect(mockExtractCodeArtifactText).not.toHaveBeenCalled();
-        // Phase-1 record persisted with the pending status.
+        // Persisted record with the pending status.
         expect(createFile).toHaveBeenCalledWith(
           expect.objectContaining({ status: 'pending', text: null, textFormat: null }),
           true,
@@ -861,13 +861,21 @@ describe('Code Process', () => {
         await finalize();
 
         expect(mockExtractCodeArtifactText).toHaveBeenCalledTimes(1);
-        expect(updateFile).toHaveBeenCalledWith({
-          file_id: 'mock-uuid-1234',
-          text: '<table><tr><td>1</td></tr></table>',
-          textFormat: 'html',
-          status: 'ready',
-          previewError: null,
-        });
+        /* Update is conditional on `previewRevision` so an older render
+         * can't overwrite a newer turn's record on cross-turn filename
+         * reuse. The uuid mock returns the same value for every v4()
+         * call, so file_id and previewRevision happen to coincide here
+         * — what matters is the second arg carries the revision filter. */
+        expect(updateFile).toHaveBeenCalledWith(
+          {
+            file_id: 'mock-uuid-1234',
+            text: '<table><tr><td>1</td></tr></table>',
+            textFormat: 'html',
+            status: 'ready',
+            previewError: null,
+          },
+          { previewRevision: 'mock-uuid-1234' },
+        );
       });
 
       it('finalize() transitions to failed with previewError when extractor returns null (HTML-or-null contract)', async () => {
@@ -890,6 +898,7 @@ describe('Code Process', () => {
             status: 'failed',
             previewError: 'parser-error',
           }),
+          { previewRevision: 'mock-uuid-1234' },
         );
       });
 
@@ -906,7 +915,7 @@ describe('Code Process', () => {
           mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         });
         mockExtractCodeArtifactText.mockImplementationOnce(async () => {
-          throw new Error('Phase-2 extraction exceeded 60000ms');
+          throw new Error('Preview extraction exceeded 60000ms');
         });
 
         const { finalize } = await processCodeOutput({ ...baseParams, name: 'data.xlsx' });
@@ -918,6 +927,7 @@ describe('Code Process', () => {
             status: 'failed',
             previewError: 'timeout',
           }),
+          { previewRevision: 'mock-uuid-1234' },
         );
       });
 
@@ -933,7 +943,7 @@ describe('Code Process', () => {
         const { finalize } = await processCodeOutput({ ...baseParams, name: 'data.xlsx' });
         await expect(finalize()).resolves.toBeNull();
         expect(logger.error).toHaveBeenCalledWith(
-          expect.stringContaining('failed to persist phase-2 result'),
+          expect.stringContaining('failed to persist preview result'),
         );
       });
     });
@@ -973,7 +983,7 @@ describe('Code Process', () => {
     });
   });
 
-  describe('runPhase2Finalize', () => {
+  describe('runPreviewFinalize', () => {
     /* The runtime pairing for `processCodeOutput`'s `finalize` thunk.
      * `finalizePreview` is designed to never throw (translates errors
      * to `status: 'failed'` internally). The helper's catch is the
@@ -983,7 +993,7 @@ describe('Code Process', () => {
      * `'failed'` with `previewError: 'unexpected'` so the UI stops
      * polling and the next-turn LLM context surfaces the failure.
      * (Codex audit on PR #12957 Finding 4.) */
-    const { runPhase2Finalize } = require('./process');
+    const { runPreviewFinalize } = require('./process');
     const { updateFile } = require('~/models');
 
     beforeEach(() => {
@@ -993,7 +1003,7 @@ describe('Code Process', () => {
 
     it('is a no-op when finalize is undefined (non-office files)', () => {
       expect(() =>
-        runPhase2Finalize({ finalize: undefined, fileId: 'fid-1', onResolved: jest.fn() }),
+        runPreviewFinalize({ finalize: undefined, fileId: 'fid-1', onResolved: jest.fn() }),
       ).not.toThrow();
       expect(updateFile).not.toHaveBeenCalled();
     });
@@ -1003,7 +1013,7 @@ describe('Code Process', () => {
       const finalize = jest
         .fn()
         .mockResolvedValue({ file_id: 'fid-1', status: 'ready', text: '<x/>' });
-      runPhase2Finalize({ finalize, fileId: 'fid-1', onResolved });
+      runPreviewFinalize({ finalize, fileId: 'fid-1', onResolved });
       await new Promise((resolve) => setImmediate(resolve));
       expect(onResolved).toHaveBeenCalledWith(
         expect.objectContaining({ file_id: 'fid-1', status: 'ready' }),
@@ -1014,7 +1024,7 @@ describe('Code Process', () => {
     it('skips onResolved when finalize resolves to null (DB write failed inside finalizePreview)', async () => {
       const onResolved = jest.fn();
       const finalize = jest.fn().mockResolvedValue(null);
-      runPhase2Finalize({ finalize, fileId: 'fid-1', onResolved });
+      runPreviewFinalize({ finalize, fileId: 'fid-1', onResolved });
       await new Promise((resolve) => setImmediate(resolve));
       expect(onResolved).not.toHaveBeenCalled();
     });
@@ -1022,17 +1032,28 @@ describe('Code Process', () => {
     it('marks the record as failed (previewError: "unexpected") when finalize throws', async () => {
       const onResolved = jest.fn();
       const finalize = jest.fn().mockRejectedValue(new Error('unexpected ref error'));
-      runPhase2Finalize({ finalize, fileId: 'fid-boom', onResolved });
+      runPreviewFinalize({
+        finalize,
+        fileId: 'fid-boom',
+        previewRevision: 'rev-A',
+        onResolved,
+      });
       await new Promise((resolve) => setImmediate(resolve));
       await new Promise((resolve) => setImmediate(resolve));
       expect(onResolved).not.toHaveBeenCalled();
-      expect(updateFile).toHaveBeenCalledWith({
-        file_id: 'fid-boom',
-        status: 'failed',
-        previewError: 'unexpected',
-      });
+      /* Defensive update is conditional on the same `previewRevision`
+       * the deferred render started with — a newer turn that has
+       * since rotated the revision is left untouched. */
+      expect(updateFile).toHaveBeenCalledWith(
+        {
+          file_id: 'fid-boom',
+          status: 'failed',
+          previewError: 'unexpected',
+        },
+        { previewRevision: 'rev-A' },
+      );
       expect(logger.error).toHaveBeenCalledWith(
-        'Error in phase-2 preview extraction:',
+        'Error rendering deferred preview:',
         expect.any(Error),
       );
     });
@@ -1041,7 +1062,7 @@ describe('Code Process', () => {
       const onResolved = jest.fn();
       const finalize = jest.fn().mockRejectedValue(new Error('original error'));
       updateFile.mockRejectedValueOnce(new Error('mongo down'));
-      runPhase2Finalize({ finalize, fileId: 'fid-doublefail', onResolved });
+      runPreviewFinalize({ finalize, fileId: 'fid-doublefail', onResolved });
       await new Promise((resolve) => setImmediate(resolve));
       await new Promise((resolve) => setImmediate(resolve));
       expect(onResolved).not.toHaveBeenCalled();
@@ -1051,7 +1072,7 @@ describe('Code Process', () => {
 
     it('does not attempt the defensive updateFile when fileId is missing', async () => {
       const finalize = jest.fn().mockRejectedValue(new Error('boom'));
-      runPhase2Finalize({ finalize, fileId: undefined });
+      runPreviewFinalize({ finalize, fileId: undefined });
       await new Promise((resolve) => setImmediate(resolve));
       expect(updateFile).not.toHaveBeenCalled();
     });
@@ -1059,7 +1080,7 @@ describe('Code Process', () => {
     it('skips onResolved gracefully when caller omits it (e.g., tools.js direct endpoint)', async () => {
       const finalize = jest.fn().mockResolvedValue({ file_id: 'fid-1', status: 'ready' });
       // No onResolved — non-streaming caller.
-      expect(() => runPhase2Finalize({ finalize, fileId: 'fid-1' })).not.toThrow();
+      expect(() => runPreviewFinalize({ finalize, fileId: 'fid-1' })).not.toThrow();
       await new Promise((resolve) => setImmediate(resolve));
       expect(updateFile).not.toHaveBeenCalled();
     });
@@ -1467,7 +1488,7 @@ describe('Code Process', () => {
     });
 
     it('does not annotate a legacy file (no status field, back-compat)', async () => {
-      /* Records pre-dating the two-phase flow have no `status`. They
+      /* Records pre-dating the deferred-preview flow have no `status`. They
        * MUST render exactly as before — no suffix at all. */
       setupSessionInfoOk();
       getFiles.mockResolvedValue([makeFile({})]); // no status override

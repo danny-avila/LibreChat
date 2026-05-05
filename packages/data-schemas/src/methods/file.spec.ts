@@ -256,6 +256,89 @@ describe('File Methods', () => {
       expect(updated?.bytes).toBe(200);
       expect(updated?.expiresAt).toBeUndefined();
     });
+
+    /* The optional `extraFilter` enables conditional updates — used by
+     * the deferred-preview render's `finalizePreview` to guard against
+     * an older render of the same `file_id` overwriting a newer turn's
+     * record on cross-turn filename reuse. (Codex P1 review on PR
+     * #12957.) */
+    describe('extraFilter (conditional update)', () => {
+      it('commits when the extra filter matches the current document', async () => {
+        const fileId = uuidv4();
+        const userId = new mongoose.Types.ObjectId();
+        await fileMethods.createFile({
+          file_id: fileId,
+          user: userId,
+          filename: 'data.xlsx',
+          filepath: '/uploads/data.xlsx',
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          bytes: 100,
+          status: 'pending',
+          previewRevision: 'rev-A',
+        });
+
+        const updated = await fileMethods.updateFile(
+          { file_id: fileId, status: 'ready', text: '<table></table>' },
+          { previewRevision: 'rev-A' },
+        );
+
+        expect(updated).not.toBeNull();
+        expect(updated?.status).toBe('ready');
+        expect(updated?.text).toBe('<table></table>');
+      });
+
+      it('returns null and skips the write when the extra filter does NOT match', async () => {
+        const fileId = uuidv4();
+        const userId = new mongoose.Types.ObjectId();
+        await fileMethods.createFile({
+          file_id: fileId,
+          user: userId,
+          filename: 'data.xlsx',
+          filepath: '/uploads/data.xlsx',
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          bytes: 100,
+          status: 'pending',
+          previewRevision: 'rev-B', // newer turn has rotated the revision
+        });
+
+        /* An older render that started while revision was 'rev-A' tries
+         * to commit. The newer turn has since rotated to 'rev-B'. The
+         * conditional update silently no-ops. */
+        const updated = await fileMethods.updateFile(
+          { file_id: fileId, status: 'ready', text: '<stale/>' },
+          { previewRevision: 'rev-A' },
+        );
+
+        expect(updated).toBeNull();
+
+        /* Critical: the newer record's text MUST be untouched. */
+        const fresh = await fileMethods.findFileById(fileId);
+        expect(fresh?.previewRevision).toBe('rev-B');
+        expect(fresh?.status).toBe('pending');
+        expect(fresh?.text).toBeUndefined();
+      });
+
+      it('falls back to single-key update when extraFilter is omitted (back-compat)', async () => {
+        const fileId = uuidv4();
+        const userId = new mongoose.Types.ObjectId();
+        await fileMethods.createFile({
+          file_id: fileId,
+          user: userId,
+          filename: 'plain.txt',
+          filepath: '/uploads/plain.txt',
+          type: 'text/plain',
+          bytes: 50,
+        });
+
+        const updated = await fileMethods.updateFile({
+          file_id: fileId,
+          bytes: 99,
+        });
+
+        expect(updated).not.toBeNull();
+        expect(updated?.bytes).toBe(99);
+      });
+    });
   });
 
   describe('updateFileUsage', () => {
@@ -531,7 +614,7 @@ describe('File Methods', () => {
   });
 
   describe('sweepOrphanedPreviews', () => {
-    /* The two-phase preview flow runs phase-2 in-process. If the
+    /* The deferred-preview flow runs the deferred render in-process. If the
      * backend restarts mid-extraction, records stay at `status: 'pending'`
      * forever. The boot-time sweep transitions stale ones to 'failed'
      * with `previewError: 'orphaned'` so the frontend stops polling. */

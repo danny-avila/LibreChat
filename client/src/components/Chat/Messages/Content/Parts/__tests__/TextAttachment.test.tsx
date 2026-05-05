@@ -14,7 +14,7 @@ jest.mock('~/hooks', () => ({
       return translations[key] ?? key;
     },
   /* `FileAttachment` calls this hook unconditionally to bridge the
-   * two-phase preview lifecycle. Stub to a no-op for tests that
+   * deferred-preview lifecycle. Stub to a no-op for tests that
    * don't exercise the preview flow. */
   useAttachmentPreviewSync: () => ({ status: 'ready', previewError: undefined, isPolling: false }),
 }));

@@ -1,6 +1,6 @@
 /**
  * Coverage for `useAttachmentPreviewSync` — the bridge between the
- * two-phase code-execution preview lifecycle and the attachment cache.
+ * deferred-preview code-execution lifecycle and the attachment cache.
  *
  * Behavior under test:
  *   1. Polling enables only when `attachment.status === 'pending'` AND
@@ -169,7 +169,7 @@ describe('useAttachmentPreviewSync', () => {
     expect(ctx.result.current.status).toBe('ready');
   });
 
-  it('upserts the resolved preview into messageAttachmentsMap when phase-2 reports ready', () => {
+  it('upserts the resolved preview into messageAttachmentsMap when preview reports ready', () => {
     const ctx = setup({
       attachment: makeAttachment({ status: 'pending' }),
       isSubmitting: true,
@@ -186,7 +186,7 @@ describe('useAttachmentPreviewSync', () => {
     expect(ctx.result.current.status).toBe('ready');
   });
 
-  it('upserts the resolved preview when phase-2 reports failed (with previewError)', () => {
+  it('upserts the resolved preview when preview reports failed (with previewError)', () => {
     const ctx = setup({
       attachment: makeAttachment({ status: 'pending' }),
       isSubmitting: true,

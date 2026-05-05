@@ -33,7 +33,7 @@ jest.mock('@librechat/api', () => {
      * downstream consumers don't see a phantom format. */
     getExtractedTextFormat: jest.fn(() => null),
     /* Pass-through `withTimeout`: this suite asserts traversal sanitization,
-     * not phase-2 timing. */
+     * not deferred preview timing. */
     withTimeout: async (promise) => promise,
     /* These traversal cases all use non-office filenames — keep the
      * inline (non-finalize) path so existing assertions on a single

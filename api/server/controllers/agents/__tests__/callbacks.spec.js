@@ -28,14 +28,14 @@ jest.mock('~/server/services/Files/Citations', () => ({
 
 jest.mock('~/server/services/Files/Code/process', () => ({
   processCodeOutput: jest.fn(),
-  /* `runPhase2Finalize` is the runtime pairing for `finalize` (defined
+  /* `runPreviewFinalize` is the runtime pairing for `finalize` (defined
    * alongside processCodeOutput in process.js). The callback wires
-   * phase-2 through it; reproduce the basic happy-path here so the
+   * the deferred render through it; reproduce the basic happy-path here so the
    * SSE-emit assertions still work. The catch/defensive-updateFile
    * branch is unit-tested directly against the real helper in
    * process.spec.js — exercising it here would add test coupling
    * without coverage benefit. */
-  runPhase2Finalize: ({ finalize, onResolved }) => {
+  runPreviewFinalize: ({ finalize, onResolved }) => {
     if (typeof finalize !== 'function') {
       return;
     }
@@ -349,17 +349,17 @@ describe('createToolEndCallback', () => {
     });
   });
 
-  describe('code execution two-phase preview emit', () => {
-    /* The two-phase code-execution flow emits the attachment twice over
-     * SSE: phase-1 with `status: 'pending'` and the current run's
-     * messageId, phase-2 with the resolved record. The phase-2 emit
+  describe('code execution deferred-preview emit', () => {
+    /* The deferred-preview code-execution flow emits the attachment twice over
+     * SSE: the initial emit with `status: 'pending'` and the current run's
+     * messageId, the deferred render with the resolved record. The preview update emit
      * must use the CURRENT run's messageId (not the persisted DB one)
      * because `processCodeOutput` intentionally preserves the original
      * `messageId` on cross-turn filename reuse — `getCodeGeneratedFiles`
      * needs that for prior-turn priming.
      *
      * Codex P1 review on PR #12957: shipping `updated.messageId`
-     * straight from the DB record routed phase-2 patches to the wrong
+     * straight from the DB record routed preview-update patches to the wrong
      * message slot, leaving the current turn's pending chip stuck. */
 
     const { processCodeOutput } = require('~/server/services/Files/Code/process');
@@ -385,7 +385,7 @@ describe('createToolEndCallback', () => {
       return JSON.parse(dataLine.slice('data: '.length));
     }
 
-    it('phase-2 emit uses the current run messageId, not the persisted DB messageId (cross-turn filename reuse)', async () => {
+    it('the preview update emit uses the current run messageId, not the persisted DB messageId (cross-turn filename reuse)', async () => {
       /* Simulate turn-2 reusing `output.csv` from turn-1. The DB record
        * surfaced by `updateFile` carries the original `turn-1-msg`
        * messageId; the runtime emit must rewrite to `turn-2-msg`. */
@@ -430,18 +430,18 @@ describe('createToolEndCallback', () => {
       // Wait one more tick so the fire-and-forget finalize() chain settles.
       await new Promise((resolve) => setImmediate(resolve));
 
-      // Two SSE writes: phase-1 (pending) and phase-2 (ready).
+      // Two SSE writes: the initial emit (pending) and the deferred render (ready).
       expect(res.write).toHaveBeenCalledTimes(2);
       const phase1 = parseSseAttachment(res.write.mock.calls[0]);
       const phase2 = parseSseAttachment(res.write.mock.calls[1]);
 
-      // Phase-1 already used the runtime messageId (sourced from result.file).
+      // Initial emit already used the runtime messageId (sourced from result.file).
       expect(phase1.messageId).toBe('turn-2-current-run');
       expect(phase1.status).toBe('pending');
 
-      /* Phase-2 MUST also route to the current run's messageId so the
+      /* The preview update MUST also route to the current run's messageId so the
        * frontend's `useAttachmentHandler` upserts under the same
-       * messageAttachmentsMap slot as phase-1. Routing to
+       * messageAttachmentsMap slot as the initial emit. Routing to
        * `turn-1-original-msg` would land the patch on a stale message
        * and leave turn-2's pending chip stuck. */
       expect(phase2.messageId).toBe('turn-2-current-run');
@@ -449,9 +449,9 @@ describe('createToolEndCallback', () => {
       expect(phase2.status).toBe('ready');
       expect(phase2.text).toBe('<table></table>');
       expect(phase2.toolCallId).toBe('tool-2');
-      /* Wire-shape parity with phase-1: phase-2 emits the full updated
-       * record so the client doesn't see one shape on phase-1 and a
-       * narrower projection on phase-2. (Codex audit on PR #12957
+      /* Wire-shape parity with the initial emit: preview update emits the full updated
+       * record so the client doesn't see one shape on the initial emit and a
+       * narrower projection on the deferred render. (Codex audit on PR #12957
        * Finding 1.) */
       expect(phase2.filename).toBe('output.csv');
       expect(phase2.filepath).toBe('/uploads/output.csv');
@@ -460,7 +460,7 @@ describe('createToolEndCallback', () => {
       expect(phase2.textFormat).toBe('html');
     });
 
-    it('phase-2 emit is skipped when finalize resolves to null (no DB update happened)', async () => {
+    it('the preview update emit is skipped when finalize resolves to null (no DB update happened)', async () => {
       res.headersSent = true;
       processCodeOutput.mockResolvedValue({
         file: {
@@ -487,11 +487,11 @@ describe('createToolEndCallback', () => {
       await Promise.all(artifactPromises);
       await new Promise((resolve) => setImmediate(resolve));
 
-      // Only phase-1 fired; phase-2 noop'd because finalize returned null.
+      // Only the initial emit fired; preview update noop'd because finalize returned null.
       expect(res.write).toHaveBeenCalledTimes(1);
     });
 
-    it('phase-2 emit is skipped when the response stream has already closed', async () => {
+    it('the preview update emit is skipped when the response stream has already closed', async () => {
       res.headersSent = true;
       /* Hand-rolled deferred so we can hold finalize() open until
        * AFTER setting `res.writableEnded = true`. Otherwise the mock
@@ -525,8 +525,8 @@ describe('createToolEndCallback', () => {
       });
       await toolEndCallback({ output: event.output }, event.metadata);
       await Promise.all(artifactPromises);
-      // Simulate the response closing AFTER phase-1 fires but BEFORE
-      // phase-2 lands. The frontend's polling path will catch the
+      // Simulate the response closing AFTER the initial emit fires but BEFORE
+      // the deferred render lands. The frontend's polling path will catch the
       // resolved record on its next tick.
       res.writableEnded = true;
       // Now resolve finalize and let the .then() chain run.
@@ -540,7 +540,7 @@ describe('createToolEndCallback', () => {
       });
       await new Promise((resolve) => setImmediate(resolve));
 
-      // Phase-1 wrote; phase-2 noop'd because writableEnded.
+      // Initial emit wrote; preview update noop'd because writableEnded.
       expect(res.write).toHaveBeenCalledTimes(1);
     });
 
@@ -554,7 +554,7 @@ describe('createToolEndCallback', () => {
           type: 'text/plain',
           messageId: 'run-1',
           toolCallId: 'tool-1',
-          // No status — non-office files skip phase-2 entirely.
+          // No status — non-office files skip the deferred render entirely.
         },
         // No finalize key — caller should not call anything.
       });

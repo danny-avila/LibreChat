@@ -6,7 +6,7 @@ import store from '~/store';
 
 interface UseAttachmentPreviewSyncResult {
   /**
-   * Effective lifecycle status: `'pending'` while phase-2 HTML
+   * Effective lifecycle status: `'pending'` while background HTML
    * extraction is in flight, `'ready'` once it completes successfully
    * (or for legacy / non-office files that never had a status), and
    * `'failed'` when extraction errored or hit the 60s ceiling. Drives
@@ -21,16 +21,16 @@ interface UseAttachmentPreviewSyncResult {
 }
 
 /**
- * Bridge the two-phase code-execution preview lifecycle to the
+ * Bridge the deferred-preview code-execution lifecycle to the
  * attachment cache.
  *
- * Phase-1 (handled in callbacks.js + processCodeOutput) emits the
- * attachment record at `status: 'pending'` immediately so the agent's
- * response stops blocking on extraction. Phase-2 runs in the
- * background; if the SSE stream is still open when it lands, an
+ * The immediate persist step (in callbacks.js + processCodeOutput)
+ * emits the attachment record at `status: 'pending'` so the agent's
+ * response stops blocking on extraction. The background render runs
+ * separately; if the SSE stream is still open when it lands, an
  * `attachment` update event arrives and the SSE handler upserts by
  * `file_id`. If the stream has already closed (the model finished
- * generating before phase-2 resolved), this hook covers the gap by
+ * generating before the render resolved), this hook covers the gap by
  * polling `GET /api/files/:file_id/preview` and writing the resolved
  * record back into `messageAttachmentsMap` — which triggers
  * re-classification through `artifactTypeForAttachment`, so the file

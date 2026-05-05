@@ -225,8 +225,8 @@ if (cluster.isMaster) {
     /** Seed database (idempotent) */
     await seedDatabase();
 
-    /* Recover any code-execution file records left at `status: 'pending'`
-     * by a prior process restart mid-extraction. Mirror of the path in
+    /* Bulk recovery for code-execution files left at `status: 'pending'`
+     * by a prior process restart. Mirror of the path in
      * `server/index.js`; see comment there for context. */
     sweepOrphanedPreviews().catch((err) => {
       logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);

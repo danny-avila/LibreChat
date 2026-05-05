@@ -71,31 +71,31 @@ const createDownloadFallback = ({
 };
 
 /**
- * Hard ceiling on phase-2 (background HTML extraction + DB update). The
- * inner office-render path already has its own 12s timeout and a
- * concurrency-limited queue; this is the outer guard that catches
+ * Hard ceiling on the deferred preview rendering (HTML extraction + DB
+ * update). The inner office-render path already has its own 12s timeout
+ * and a concurrency-limited queue; this is the outer guard that catches
  * pathological cases where queue wait + render + DB write would
  * otherwise hang the file in `status: 'pending'` indefinitely.
  *
  * If the timeout fires the record is updated to `status: 'failed'`
  * with `previewError: 'timeout'` and the UI shows download-only.
  */
-const PHASE_TWO_TIMEOUT_MS = 60_000;
+const PREVIEW_FINALIZE_TIMEOUT_MS = 60_000;
 
 /**
- * Run the background phase-2 work for a code-execution file: extract
- * the HTML preview (or plain text for non-office buckets that still
- * benefit from caching), then atomically transition the DB record to
- * `status: 'ready'` (with `text`/`textFormat`) or `status: 'failed'`
- * (with `previewError`).
+ * Render the inline HTML preview for a code-execution file (or plain
+ * text for non-office buckets that still benefit from caching), then
+ * atomically transition the DB record to `status: 'ready'` (with
+ * `text`/`textFormat`) or `status: 'failed'` (with `previewError`).
  *
  * Decoupled from `processCodeOutput` so the agent's final response is
  * not blocked on potentially slow office rendering. The caller fires
  * this without awaiting; promises continue running after the HTTP
  * response closes (Node doesn't kill them) and the frontend learns of
- * completion via `attachment.update` SSE (if the stream is still open)
- * or via React Query polling otherwise. Process restart is the only
- * thing that can lose progress — covered by the boot-time orphan sweep.
+ * completion via the `attachment` update SSE event (if the stream is
+ * still open) or via React Query polling otherwise. Process restart
+ * is the only thing that can lose progress — covered by the boot-time
+ * orphan sweep.
  *
  * @param {object} params
  * @param {Buffer} params.buffer - The full downloaded file contents,
@@ -107,7 +107,7 @@ const PHASE_TWO_TIMEOUT_MS = 60_000;
  *   N office files, peak heap usage from this path is up to
  *   `N * fileSizeLimit`. Acceptable for typical agent runs (a handful
  *   of files at a few hundred KB each); pathological cases are bounded
- *   by the inner per-file 12s timeout and the outer 60s phase-2 cap.
+ *   by the inner per-file 12s timeout and the outer 60s render cap.
  * @param {string} params.leafName - Basename for classification.
  * @param {string} params.mimeType - Detected/inferred MIME.
  * @param {string} params.category - Classifier output.
@@ -116,14 +116,21 @@ const PHASE_TWO_TIMEOUT_MS = 60_000;
  *   success; `null` if the DB update itself failed (extraction failure
  *   is reflected as `status: 'failed'`, not a thrown error).
  */
-const finalizePreview = async ({ buffer, leafName, mimeType, category, file_id }) => {
+const finalizePreview = async ({
+  buffer,
+  leafName,
+  mimeType,
+  category,
+  file_id,
+  previewRevision,
+}) => {
   let text = null;
   let previewError;
   try {
     text = await withTimeout(
       extractCodeArtifactText(buffer, leafName, mimeType, category),
-      PHASE_TWO_TIMEOUT_MS,
-      `Phase-2 extraction exceeded ${PHASE_TWO_TIMEOUT_MS}ms`,
+      PREVIEW_FINALIZE_TIMEOUT_MS,
+      `Preview extraction exceeded ${PREVIEW_FINALIZE_TIMEOUT_MS}ms`,
     );
   } catch (_error) {
     /* `extractCodeArtifactText` swallows its own errors and returns null,
@@ -131,7 +138,7 @@ const finalizePreview = async ({ buffer, leafName, mimeType, category, file_id }
      * the queue + render combined exceeded the outer 60s ceiling. */
     previewError = 'timeout';
     logger.warn(
-      `[finalizePreview] ${file_id}: extraction timed out after ${PHASE_TWO_TIMEOUT_MS}ms`,
+      `[finalizePreview] ${file_id}: extraction timed out after ${PREVIEW_FINALIZE_TIMEOUT_MS}ms`,
     );
   }
   /* Office-bucket files are HTML-or-null per the PR #12934 SEC fix:
@@ -148,27 +155,41 @@ const finalizePreview = async ({ buffer, leafName, mimeType, category, file_id }
     previewError = 'parser-error';
   }
   try {
-    return await updateFile({
-      file_id,
-      text,
-      textFormat,
-      status,
-      previewError: failed ? previewError : null,
-    });
+    /* Conditional update: commit only if `previewRevision` still
+     * matches what the immediate persist step stamped. If a newer
+     * emit has rotated the revision (cross-turn filename reuse),
+     * `updateFile` returns null and the stale render is silently
+     * discarded. (Codex P1 review on PR #12957.) */
+    const updated = await updateFile(
+      {
+        file_id,
+        text,
+        textFormat,
+        status,
+        previewError: failed ? previewError : null,
+      },
+      previewRevision ? { previewRevision } : undefined,
+    );
+    if (!updated && previewRevision) {
+      logger.debug(
+        `[finalizePreview] ${file_id}: stale render skipped — newer emit has superseded revision ${previewRevision}`,
+      );
+    }
+    return updated;
   } catch (error) {
     logger.error(
-      `[finalizePreview] ${file_id}: failed to persist phase-2 result: ${error?.message ?? error}`,
+      `[finalizePreview] ${file_id}: failed to persist preview result: ${error?.message ?? error}`,
     );
     return null;
   }
 };
 
 /**
- * Run the background phase-2 thunk returned by `processCodeOutput` and
- * route the resolved record to the caller's emit logic. Shared between
- * `callbacks.js` (chat-completions + Open Responses) and `tools.js`
- * (direct tool endpoint) so the fire-and-forget pattern doesn't drift
- * across callsites.
+ * Run the background `finalize` thunk returned by `processCodeOutput`
+ * and route the resolved record to the caller's emit logic. Shared
+ * between `callbacks.js` (chat-completions + Open Responses) and
+ * `tools.js` (direct tool endpoint) so the fire-and-forget pattern
+ * doesn't drift across callsites.
  *
  * `onResolved` receives the post-update DB record and is the only piece
  * that varies — chat-completions writes the legacy `attachment` SSE
@@ -191,10 +212,16 @@ const finalizePreview = async ({ buffer, leafName, mimeType, category, file_id }
  *   thunk returned by `processCodeOutput`. No-op when undefined.
  * @param {string | undefined} params.fileId - DB key for the failure
  *   marker; if absent the catch only logs.
+ * @param {string | undefined} [params.previewRevision] - Generation
+ *   marker stamped by the immediate persist step. The defensive
+ *   `updateFile` in the catch is conditional on this — if a newer
+ *   emit has rotated the revision, the stale failure marker is
+ *   silently discarded so a programming error from an older render
+ *   doesn't override a newer turn's record.
  * @param {(updated: object) => void} [params.onResolved] - Called once
  *   on success with the post-update record.
  */
-const runPhase2Finalize = ({ finalize, fileId, onResolved }) => {
+const runPreviewFinalize = ({ finalize, fileId, previewRevision, onResolved }) => {
   if (typeof finalize !== 'function') {
     return;
   }
@@ -206,17 +233,20 @@ const runPhase2Finalize = ({ finalize, fileId, onResolved }) => {
       onResolved(updated);
     })
     .catch((error) => {
-      logger.error('Error in phase-2 preview extraction:', error);
+      logger.error('Error rendering deferred preview:', error);
       if (!fileId) {
         return;
       }
-      updateFile({
-        file_id: fileId,
-        status: 'failed',
-        previewError: 'unexpected',
-      }).catch((updateErr) => {
+      updateFile(
+        {
+          file_id: fileId,
+          status: 'failed',
+          previewError: 'unexpected',
+        },
+        previewRevision ? { previewRevision } : undefined,
+      ).catch((updateErr) => {
         logger.error(
-          `[runPhase2Finalize] also failed to mark ${fileId} as failed after error:`,
+          `[runPreviewFinalize] also failed to mark ${fileId} as failed after error:`,
           updateErr,
         );
       });
@@ -230,12 +260,12 @@ const runPhase2Finalize = ({ finalize, fileId, onResolved }) => {
  *
  * Returns a two-part shape so callers can ship the attachment to the
  * client immediately and run preview extraction in the background:
- *   - `file`: phase-1 metadata (file is persisted, downloadable, and
+ *   - `file`: persisted metadata (file is on disk, downloadable, and
  *     has `status: 'pending'` if a preview is still being rendered).
- *   - `finalize` (optional): a thunk returning the phase-2 result
- *     promise. Present only when an inline HTML preview is expected
- *     (office buckets — DOCX/XLSX/XLS/ODS/CSV/PPTX). Caller decides
- *     whether to await or fire-and-forget.
+ *   - `finalize` (optional): a thunk returning the deferred preview
+ *     result promise. Present only when an inline HTML preview is
+ *     expected (office buckets — DOCX/XLSX/XLS/ODS/CSV/PPTX). Caller
+ *     decides whether to await or fire-and-forget.
  *
  * Existing fallback paths (size limit, missing storage strategy, error
  * catch) return `{ file }` with no `finalize` — there's nothing to
@@ -446,13 +476,13 @@ const processCodeOutput = async ({
     const leafName = path.basename(safeName);
     const category = classifyCodeArtifact(leafName, mimeType);
 
-    /* Two-phase split: office-bucket files (DOCX/XLSX/XLS/ODS/CSV/PPTX)
-     * route through `bufferToOfficeHtml` which is CPU-heavy. Persist
-     * the record now with `status: 'pending'` and `text: null` so the
-     * agent's response isn't blocked, then return a `finalize` thunk
-     * the caller can run in the background. Non-office files have
-     * cheap or no extraction — run it inline so the caller gets a
-     * fully-resolved record without juggling a finalize step. */
+    /* Office-bucket files (DOCX/XLSX/XLS/ODS/CSV/PPTX) route through
+     * `bufferToOfficeHtml` which is CPU-heavy. Persist the record now
+     * with `status: 'pending'` and `text: null` so the agent's response
+     * isn't blocked, then return a `finalize` thunk the caller can run
+     * in the background. Non-office files have cheap or no extraction
+     * — run it inline so the caller gets a fully-resolved record
+     * without juggling a finalize step. */
     const expectsPreview = hasOfficeHtmlPath(leafName, mimeType);
 
     const baseFile = {
@@ -474,21 +504,33 @@ const processCodeOutput = async ({
     };
 
     if (expectsPreview) {
-      /* Phase-1: persist with `status: 'pending'` and explicit
+      /* Persist with `status: 'pending'` and explicit
        * `text: null` / `textFormat: null` so an update that previously
-       * had cached text gets cleared. Phase-2 transitions to 'ready'
-       * (with text/textFormat) or 'failed' (with previewError). */
+       * had cached text gets cleared. The deferred finalize transitions
+       * to 'ready' (with text/textFormat) or 'failed' (with
+       * previewError).
+       *
+       * `previewRevision` is a fresh UUID stamped on every emit. The
+       * deferred finalize's `updateFile` is conditional on this — if
+       * a newer turn (cross-turn filename reuse) has rotated the
+       * revision before this render finishes, the stale render is
+       * silently discarded rather than overwriting the newer record.
+       * (Codex P1 review on PR #12957.) */
+      const previewRevision = v4();
       const file = {
         ...baseFile,
         text: null,
         textFormat: null,
         status: 'pending',
         previewError: null,
+        previewRevision,
       };
       await createFile(file, true);
       return {
         file: Object.assign(file, { messageId, toolCallId }),
-        finalize: () => finalizePreview({ buffer, leafName, mimeType, category, file_id }),
+        finalize: () =>
+          finalizePreview({ buffer, leafName, mimeType, category, file_id, previewRevision }),
+        previewRevision,
       };
     }
 
@@ -676,12 +718,12 @@ const primeFiles = async (options) => {
 
         const entity_id = overrideEntityId ?? queryParams.entity_id;
 
-        /* Surface the two-phase preview lifecycle so the LLM knows when
-         * a prior-turn artifact's rich preview didn't materialize. The
-         * file blob is always available (phase-1 persists it before
-         * returning), so the model can still tell the user "you can
-         * download it" even when the preview never resolved. Absent
-         * status means legacy or non-office — render normally. */
+        /* Surface the preview lifecycle so the LLM knows when a
+         * prior-turn artifact's rich preview didn't materialize. The
+         * file blob is always available (`processCodeOutput` persists
+         * it before returning), so the model can still tell the user
+         * "you can download it" even when the preview never resolved.
+         * Absent status means legacy or non-office — render normally. */
         let previewSuffix = '';
         if (file.status === 'pending') {
           previewSuffix = ' (preview not yet generated)';
@@ -850,5 +892,5 @@ module.exports = {
   getSessionInfo,
   processCodeOutput,
   readSandboxFile,
-  runPhase2Finalize,
+  runPreviewFinalize,
 };

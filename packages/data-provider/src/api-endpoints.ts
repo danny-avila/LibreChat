@@ -284,9 +284,9 @@ export const fileUpload = () => `${BASE_URL}/api/files`;
 export const fileDelete = () => `${BASE_URL}/api/files`;
 export const fileDownload = (userId: string, fileId: string) =>
   `${BASE_URL}/api/files/download/${userId}/${fileId}`;
-/* Two-phase code-execution preview lifecycle endpoint. Returns
+/* Deferred-preview lifecycle endpoint. Returns
  * `{ status, text?, textFormat?, previewError? }` so the frontend can
- * poll while phase-2 HTML extraction is in flight. See PR #12957. */
+ * poll while background HTML extraction is in flight. See PR #12957. */
 export const filePreview = (fileId: string) =>
   `${BASE_URL}/api/files/${encodeURIComponent(fileId)}/preview`;
 export const fileConfig = () => `${BASE_URL}/api/files/config`;

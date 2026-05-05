@@ -15,7 +15,7 @@ const {
   createToolExecuteHandler,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
-const { processCodeOutput, runPhase2Finalize } = require('~/server/services/Files/Code/process');
+const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
 class ModelEndHandler {
@@ -398,12 +398,13 @@ function writeAttachment(res, streamId, attachment) {
 }
 
 /**
- * Emit a phase-2 update for an attachment that was previously sent with
+ * Emit an update for an attachment that was previously sent with
  * `status: 'pending'`. Fire-and-forget: if the response stream has
- * already closed (the agent finished generating before phase-2 resolved)
- * the frontend's React Query polling on `/api/files/:file_id/preview`
- * picks up the resolved record on its next tick. Skipping the write in
- * that case avoids `ERR_STREAM_WRITE_AFTER_END`.
+ * already closed (the agent finished generating before the deferred
+ * preview resolved) the frontend's React Query polling on
+ * `/api/files/:file_id/preview` picks up the resolved record on its
+ * next tick. Skipping the write in that case avoids
+ * `ERR_STREAM_WRITE_AFTER_END`.
  *
  * Reuses the `attachment` SSE event name with a discriminated payload:
  * the frontend's `useAttachmentHandler` upserts by `file_id`, so a
@@ -614,32 +615,33 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
           if (!fileMetadata) {
             return null;
           }
-          /* Phase-1 emit: ship the attachment to the client immediately
+          /* Initial emit: ship the attachment to the client immediately
            * (carries `status: 'pending'` for office buckets so the UI
            * shows "preparing preview…"). The agent's response stops
            * blocking on extraction here. */
           if (streamId || res.headersSent) {
             writeAttachment(res, streamId, fileMetadata);
           }
-          /* Phase-2 fire-and-forget: extraction continues running even
-           * after the HTTP response closes. If the stream is still open
-           * when phase-2 lands, push an `attachment` update event so
-           * the UI patches in place; otherwise React Query polling on
-           * `/api/files/:file_id/preview` picks it up.
+          /* Deferred preview rendering: extraction continues running
+           * even after the HTTP response closes. If the stream is still
+           * open when the preview resolves, push an `attachment`
+           * update event so the UI patches in place; otherwise React
+           * Query polling on `/api/files/:file_id/preview` picks it up.
            *
-           * Spread the full updated record (mirroring the phase-1 emit
+           * Spread the full updated record (mirroring the initial emit
            * shape) and overlay `messageId`/`toolCallId` from the
            * current run. The DB record preserves the original
            * `messageId` across cross-turn filename reuse so
            * `getCodeGeneratedFiles` can trace the file back to its
-           * original assistant message; routing the SSE update by the
+           * original assistant message; routing the update SSE by the
            * persisted id would land the patch on a stale message
            * slot — turn-N's pending placeholder would stay stuck while
            * turn-1's already-resolved attachment got re-merged.
            * (Codex P1 review on PR #12957.) */
-          runPhase2Finalize({
+          runPreviewFinalize({
             finalize,
             fileId: fileMetadata.file_id,
+            previewRevision: result?.previewRevision,
             onResolved: (updated) => {
               writeAttachmentUpdate(res, streamId, {
                 ...updated,
@@ -872,7 +874,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
             return null;
           }
 
-          /* Phase-1 emit (Open Responses extension format). The agent's
+          /* Initial emit (Open Responses extension format). The agent's
            * response no longer blocks on extraction. */
           if (res.headersSent && !res.writableEnded) {
             writeResponsesAttachment(
@@ -883,14 +885,15 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
             );
           }
 
-          /* Phase-2: extract HTML preview in the background and emit
-           * a follow-up `librechat:attachment` with the same `file_id`
-           * so the client merges the resolved record over the pending
-           * placeholder. Fire-and-forget — survives response close;
-           * polling covers the post-close gap. */
-          runPhase2Finalize({
+          /* Deferred preview rendering: extract HTML in the background
+           * and emit a follow-up `librechat:attachment` with the same
+           * `file_id` so the client merges the resolved record over the
+           * pending placeholder. Fire-and-forget — survives response
+           * close; polling covers the post-close gap. */
+          runPreviewFinalize({
             finalize,
             fileId: fileMetadata.file_id,
+            previewRevision: result?.previewRevision,
             onResolved: (updated) => {
               if (!res || res.writableEnded || !res.headersSent) {
                 return;
@@ -917,8 +920,8 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
 /**
  * Project a file metadata record into the Open Responses attachment
  * shape. Mirrors the legacy inline projection but adds `status` and
- * `previewError` so phase-2 updates carry the lifecycle signal the
- * client uses to upsert by `file_id`.
+ * `previewError` so deferred preview updates carry the lifecycle
+ * signal the client uses to upsert by `file_id`.
  */
 function buildResponsesAttachment(fileMetadata, toolCallId) {
   return {

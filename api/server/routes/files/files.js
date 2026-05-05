@@ -295,13 +295,23 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
   }
 });
 
+/* Lazy-sweep cutoff for the preview endpoint. If a polled record is
+ * still `pending` AND its last update is older than this, an in-process
+ * deferred preview render is no longer plausible (the outer 60s ceiling
+ * has long since fired) — mark it `failed` with `previewError:
+ * 'orphaned'` on the spot so the UI stops polling. Catches the
+ * quick-restart case the boot-time sweep skips: a process crash at
+ * t=0 followed by a restart at t=2min leaves records with `updatedAt
+ * < 5min`, so the boot sweep (default 5min cutoff) doesn't touch
+ * them. (Codex P2 review on PR #12957.) */
+const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 5 * 60 * 1000;
+
 /**
  * Poll the lifecycle status of a code-execution file's inline preview.
  *
- * Two-phase code-execution flow: phase-1 persists the file blob and
- * emits the attachment record at `status: 'pending'`; phase-2 runs
- * HTML extraction in the background and transitions the record to
- * `'ready'` (with `text` + `textFormat`) or `'failed'` (with
+ * Deferred-preview flow: the immediate persist step writes the file
+ * record at `status: 'pending'`; the background render transitions
+ * it to `'ready'` (with `text` + `textFormat`) or `'failed'` (with
  * `previewError`). The frontend's `useFilePreview` React Query hook
  * polls this endpoint at ~2.5s intervals while `status === 'pending'`
  * and `isSubmitting === true`, then auto-stops on terminal status.
@@ -314,6 +324,9 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
  *     office bucket files MUST NOT receive plain-text fallbacks).
  *   - `previewError` only when status is 'failed'.
  *
+ * Lazy-sweeps stale `pending` records on the spot — see
+ * `PREVIEW_LAZY_SWEEP_CUTOFF_MS` for the rationale.
+ *
  * Reuses the `fileAccess` middleware so ACL is identical to download.
  *
  * @route GET /files/:file_id/preview
@@ -325,12 +338,32 @@ router.get('/:file_id/preview', fileAccess, async (req, res) => {
      * by default. Re-fetch via `findFileById` here so the response can
      * include the extracted preview when ready. By-id lookup is indexed,
      * so the second hit is cheap. */
-    const file = await db.findFileById(file_id);
+    let file = await db.findFileById(file_id);
     if (!file) {
       return res.status(404).json({ error: 'Not Found', message: 'File not found' });
     }
+    /* Lazy sweep: if this record is stuck `pending` past the cutoff,
+     * mark it `failed` before responding so the client stops polling
+     * and the LLM context surfaces the failure on the next turn.
+     * Conditional on the same `updatedAt` we just observed — a
+     * concurrent legitimate update wins. */
+    if (file.status === 'pending' && file.updatedAt instanceof Date) {
+      const ageMs = Date.now() - file.updatedAt.getTime();
+      if (ageMs > PREVIEW_LAZY_SWEEP_CUTOFF_MS) {
+        const swept = await db.updateFile(
+          { file_id, status: 'failed', previewError: 'orphaned' },
+          { status: 'pending', updatedAt: file.updatedAt },
+        );
+        if (swept) {
+          file = swept;
+          logger.info(
+            `[/files/:file_id/preview] Lazy-swept orphaned pending record ${file_id} (age ${Math.round(ageMs / 1000)}s)`,
+          );
+        }
+      }
+    }
     /* Default to 'ready' for back-compat: legacy records pre-date the
-     * field, and non-office files never get a status set in phase-1. */
+     * field, and non-office files never get a status set on persist. */
     const status = file.status ?? 'ready';
     const payload = { file_id, status };
     if (status === 'ready' && file.text != null) {
