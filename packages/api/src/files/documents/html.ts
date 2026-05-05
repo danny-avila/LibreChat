@@ -944,14 +944,11 @@ function decodeXmlEntities(input: string): string {
   return input.replace(/&(?:lt|gt|amp|quot|apos);/g, (m) => XML_ENTITIES[m] ?? m);
 }
 
-function renderPptxSlidesHtml(slides: PptxSlide[]): string {
-  if (slides.length === 0) {
-    return wrapAsDocument(
-      '<p class="lc-banner">This presentation contains no readable slides.</p>',
-    );
-  }
-
-  const slideCss = `
+/* CSS for the slide-list view. Extracted to a constant so it can also
+ * be inlined into the CDN doc when the slide-list is embedded as a
+ * fallback there — Codex feedback / manual e2e on PR #12934 ("pptx-
+ * preview created an empty wrapper for the pptxgenjs deck"). */
+const PPTX_SLIDE_LIST_CSS = `
 .lc-pptx-list { display: flex; flex-direction: column; gap: 16px; padding: 0; margin: 0; list-style: none; }
 .lc-pptx-slide {
   border: 1px solid var(--border);
@@ -974,6 +971,17 @@ function renderPptxSlidesHtml(slides: PptxSlide[]): string {
 .lc-pptx-slide-empty { color: var(--muted); font-style: italic; margin: 0; }
 `.trim();
 
+/**
+ * Build the slide-list body HTML (just the `<ol>` element, no document
+ * wrapper). Used both for standalone slide-list rendering and for
+ * embedding inside the CDN doc as an air-gap / parser-failure
+ * fallback — same pattern as the mammoth fallback inside the DOCX CDN
+ * doc. Returns an empty-state banner for zero-slide decks.
+ */
+function renderPptxSlidesBody(slides: PptxSlide[]): string {
+  if (slides.length === 0) {
+    return '<p class="lc-banner">This presentation contains no readable slides.</p>';
+  }
   const items = slides
     .map((slide) => {
       const titleHtml = slide.title
@@ -992,8 +1000,11 @@ function renderPptxSlidesHtml(slides: PptxSlide[]): string {
 </li>`;
     })
     .join('\n');
+  return `<ol class="lc-pptx-list">${items}</ol>`;
+}
 
-  return wrapAsDocument(`<ol class="lc-pptx-list">${items}</ol>`, slideCss);
+function renderPptxSlidesHtml(slides: PptxSlide[]): string {
+  return wrapAsDocument(renderPptxSlidesBody(slides), PPTX_SLIDE_LIST_CSS);
 }
 
 /**
@@ -1069,7 +1080,7 @@ const MAX_PPTX_CDN_BINARY_BYTES = 350 * 1024;
  * iframe via `transform: scale(...)`. The slides scroll vertically
  * once the renderer paints them.
  */
-function buildPptxCdnDocument(base64: string): string {
+function buildPptxCdnDocument(base64: string, slideListFallbackBody: string): string {
   /* PPTX-specific CSP relaxations vs DOCX:
    *   - `worker-src blob:` — pptx-preview's bundled echarts dep spins up
    *     Web Workers via blob: URLs for chart rendering. Without this,
@@ -1137,16 +1148,25 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
   left: 0;
   transform-origin: top left;
 }
-#lc-fallback { padding: 24px; font-size: 14px; line-height: 1.5; color: var(--muted); text-align: center; }
+#lc-fallback { padding: 16px; font-size: 14px; line-height: 1.5; color: var(--fg); }
+#lc-fallback-notice { font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 0 0 16px; }
 .lc-pptx-loading { display: flex; align-items: center; justify-content: center; height: 60vh; color: var(--muted); font-size: 14px; }
+/* Slide-list fallback styles. Inlined here so the fallback renders
+ * with the same look as the standalone slide-list path when the CDN
+ * renderer fails. CSS variable defaults match wrapAsDocument so
+ * dark-mode borders/muted text resolve sensibly. */
+:root { --border: rgba(128, 128, 128, 0.25); --link: #2563eb; }
+@media (prefers-color-scheme: dark) { :root { --border: rgba(128, 128, 128, 0.35); --link: #60a5fa; } }
+${PPTX_SLIDE_LIST_CSS}
 </style>
 <script src="${PPTX_PREVIEW_CDN.pptxPreview.src}" integrity="${PPTX_PREVIEW_CDN.pptxPreview.integrity}" crossorigin="anonymous"></script>
 </head>
 <body>
 <div id="lc-render"><div class="lc-pptx-loading">Loading preview…</div></div>
 <div id="lc-fallback" hidden>
-  <p style="margin: 0 0 8px;">Preview unavailable. Please download the file to view it.</p>
-  <details style="font-size: 12px; color: var(--muted); margin: 0;">
+  <p id="lc-fallback-notice">High-fidelity renderer unavailable or returned no slide content. Showing the simplified slide-list view below.</p>
+  ${slideListFallbackBody}
+  <details style="font-size: 12px; color: var(--muted); margin: 16px 0 0;">
     <summary style="cursor: pointer;">Diagnostic details</summary>
     <div id="lc-fallback-reason" style="margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word;"></div>
   </details>
@@ -1162,8 +1182,10 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
     if (loading) { loading.remove(); }
     var container = document.getElementById('lc-render');
     if (container) {
-      // Wipe any partial render the library left behind so the
-      // fallback message isn't competing with a half-rendered slide.
+      /* Hide the render slot (which may contain pptx-previews
+       * empty/black wrappers) so the slide-list fallback owns the
+       * viewport. */
+      container.hidden = true;
       container.innerHTML = '';
     }
     var fallback = document.getElementById('lc-fallback');
@@ -1300,8 +1322,32 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
       }
     }
 
+    /* Detect the silent-failure case: pptx-preview created the slide
+     * wrappers but didnt populate them with content. Common with
+     * pptxgenjs-generated PPTXs — pptx-previews parser handles
+     * Microsoft PowerPoint XML but chokes on subtle convention
+     * differences and produces empty 960x540 wrappers. Check if every
+     * wrapped slide has zero children; if so, the render failed and
+     * the slide-list fallback should take over. Manual e2e on PR
+     * #12934. */
+    function hasRenderedContent() {
+      var wraps = container.querySelectorAll('.lc-slide-wrap');
+      if (wraps.length === 0) { return false; }
+      for (var i = 0; i < wraps.length; i++) {
+        var inner = wraps[i].firstElementChild;
+        if (inner && inner.children.length > 0) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     function finalize() {
       wrapSlides();
+      if (!hasRenderedContent()) {
+        showFallback('renderer-produced-empty-wrappers (pptx-preview compatibility issue with this PPTX format — falling back to slide-list view)');
+        return;
+      }
       container.style.visibility = 'visible';
       /* Resize observer set up AFTER the wrap so it doesnt fire
        * during the wrap pass. */
@@ -1337,8 +1383,21 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
 </html>`;
 }
 
-async function pptxToHtmlViaCdn(buffer: Buffer): Promise<string> {
-  return buildPptxCdnDocument(buffer.toString('base64'));
+/**
+ * Render the slide-list body (just the `<ol>` HTML) for a buffer.
+ * Used by `pptxToHtml` to embed as a fallback inside the CDN doc and
+ * by `pptxToSlideListHtmlInternal` for the standalone path. */
+async function renderPptxSlidesBodyForBuffer(buffer: Buffer): Promise<string> {
+  const rawSlides = await extractPptxSlideXml(buffer);
+  const slides: PptxSlide[] = rawSlides.map(({ number, xml }) => {
+    const { title, body } = extractSlideText(xml);
+    return { number, title, body };
+  });
+  return renderPptxSlidesBody(slides);
+}
+
+async function pptxToHtmlViaCdn(buffer: Buffer, slideListFallbackBody: string): Promise<string> {
+  return buildPptxCdnDocument(buffer.toString('base64'), slideListFallbackBody);
 }
 
 /**
@@ -1370,13 +1429,25 @@ export async function pptxToHtml(buffer: Buffer): Promise<string> {
   if (lo) {
     return lo;
   }
-  if (isOfficePreviewCdnDisabled()) {
+  if (isOfficePreviewCdnDisabled() || buffer.length > MAX_PPTX_CDN_BINARY_BYTES) {
     return pptxToSlideListHtmlInternal(buffer);
   }
-  if (buffer.length <= MAX_PPTX_CDN_BINARY_BYTES) {
-    return pptxToHtmlViaCdn(buffer);
+  /* Render the slide-list first so we can embed it inside the CDN doc
+   * as a runtime fallback. pptx-preview is unreliable on PPTXs not
+   * generated by Microsoft PowerPoint (e.g. pptxgenjs decks) — it
+   * silently produces empty wrappers. The iframe bootstrap detects
+   * the empty-render case and reveals this slide-list fallback so the
+   * user always gets readable content. Manual e2e on PR #12934. */
+  const slideListBody = await renderPptxSlidesBodyForBuffer(buffer);
+  const cdnDoc = await pptxToHtmlViaCdn(buffer, slideListBody);
+  /* Combined size budget: if base64 binary + slide-list fallback +
+   * wrapper would exceed the cache cap, drop CDN entirely and ship
+   * the slide-list standalone. Same pattern as the DOCX dispatcher's
+   * size budget. */
+  if (Buffer.byteLength(cdnDoc, 'utf-8') > OFFICE_HTML_OUTPUT_CAP) {
+    return pptxToSlideListHtmlInternal(buffer);
   }
-  return pptxToSlideListHtmlInternal(buffer);
+  return cdnDoc;
 }
 
 /**

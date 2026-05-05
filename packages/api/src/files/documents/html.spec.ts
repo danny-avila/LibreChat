@@ -419,14 +419,23 @@ describe('Office HTML producers', () => {
       expect(html).toContain('id="lc-doc-data"');
       expect(html).toContain('pptxPreview.init');
       expect(html).toContain('cdn.jsdelivr.net/npm/pptx-preview@');
-      // Slide-list signature must NOT appear (those are <ol class="lc-pptx-list">).
-      expect(html).not.toContain('class="lc-pptx-list"');
+      /* The slide-list `<ol class="lc-pptx-list">` is now embedded
+       * INSIDE the CDN doc as a runtime fallback for the silent-
+       * empty-render case (pptx-preview's compatibility issues with
+       * pptxgenjs decks). It lives in the hidden `#lc-fallback`
+       * block; the bootstrap reveals it when `hasRenderedContent()`
+       * detects empty wrappers. Manual e2e on PR #12934. */
+      expect(html).toContain('class="lc-pptx-list"');
+      expect(html).toContain('id="lc-fallback"');
     });
 
     describe('CDN-rendered path', () => {
       test('embeds the binary as base64 that round-trips to the original bytes', async () => {
         const original = await buildPptx([{ title: 'Test' }]);
-        const html = await _internal.pptxToHtmlViaCdn(original);
+        const html = await _internal.pptxToHtmlViaCdn(
+          original,
+          '<ol class="lc-pptx-list"><li>fb</li></ol>',
+        );
         const match = html.match(
           /<script id="lc-doc-data" type="application\/octet-stream;base64">([^<]*)<\/script>/,
         );
@@ -437,7 +446,10 @@ describe('Office HTML producers', () => {
 
       test('pins pptx-preview to a specific version with SRI integrity', async () => {
         const pptx = await buildPptx([{ title: 'X' }]);
-        const html = await _internal.pptxToHtmlViaCdn(pptx);
+        const html = await _internal.pptxToHtmlViaCdn(
+          pptx,
+          '<ol class="lc-pptx-list"><li>fb</li></ol>',
+        );
         expect(html).toContain('https://cdn.jsdelivr.net/npm/pptx-preview@1.0.7/');
         expect(html).toMatch(/integrity="sha384-[A-Za-z0-9+/=]+"/);
         expect(html).toContain('crossorigin="anonymous"');
@@ -445,7 +457,10 @@ describe('Office HTML producers', () => {
 
       test('CSP locks the iframe down: connect-src restricted, no eval, no base/form tampering', async () => {
         const pptx = await buildPptx([{ title: 'X' }]);
-        const html = await _internal.pptxToHtmlViaCdn(pptx);
+        const html = await _internal.pptxToHtmlViaCdn(
+          pptx,
+          '<ol class="lc-pptx-list"><li>fb</li></ol>',
+        );
         const cspMatch = html.match(
           /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/,
         );
@@ -473,10 +488,19 @@ describe('Office HTML producers', () => {
 
       test('exposes a fallback message that surfaces if the renderer fails to load or times out', async () => {
         const pptx = await buildPptx([{ title: 'X' }]);
-        const html = await _internal.pptxToHtmlViaCdn(pptx);
+        const html = await _internal.pptxToHtmlViaCdn(
+          pptx,
+          '<ol class="lc-pptx-list"><li>fb</li></ol>',
+        );
         // Visible loading state + fallback that swaps in on error.
         expect(html).toContain('Loading preview…');
-        expect(html).toContain('Preview unavailable');
+        /* Fallback now embeds the slide-list view + a notice
+         * explaining the high-fidelity renderer failed. The old
+         * static "Preview unavailable" text is replaced with the
+         * actual readable content. Manual e2e on PR #12934 (pptxgenjs
+         * compatibility issue with pptx-preview). */
+        expect(html).toContain('High-fidelity renderer unavailable');
+        expect(html).toContain('class="lc-pptx-list"');
         // The renderer-not-loaded check.
         expect(html).toContain("typeof pptxPreview === 'undefined'");
         // The unhandledrejection + error listeners — pptx-preview's
@@ -504,6 +528,32 @@ describe('Office HTML producers', () => {
         expect(_internal.MAX_PPTX_CDN_BINARY_BYTES).toBe(350 * 1024);
       });
 
+      test('embeds the slide-list fallback in the CDN doc with empty-render detection', async () => {
+        /* pptx-preview silently produces empty 960×540 wrappers for
+         * pptxgenjs-generated decks (manual e2e on PR #12934 — it
+         * parses the file enough to create the placeholder, then
+         * fails to populate it). The bootstrap now detects the
+         * empty-render case via `hasRenderedContent()` and reveals
+         * the embedded slide-list fallback so the user always gets
+         * readable content. */
+        const pptx = await buildPptx([{ title: 'A' }, { title: 'B' }]);
+        const html = await _internal.pptxToHtmlViaCdn(
+          pptx,
+          '<ol class="lc-pptx-list"><li>SENTINEL_FALLBACK</li></ol>',
+        );
+        /* Slide-list fallback body is embedded inside `#lc-fallback`. */
+        expect(html).toContain('id="lc-fallback"');
+        expect(html).toContain('SENTINEL_FALLBACK');
+        /* Empty-render detection helper exists in the bootstrap. */
+        expect(html).toContain('hasRenderedContent');
+        expect(html).toContain('renderer-produced-empty-wrappers');
+        /* The slide-list fallback CSS is inlined so the fallback
+         * renders with the same look as the standalone slide-list
+         * path (CSP locks `style-src` to inline only). */
+        expect(html).toContain('.lc-pptx-list');
+        expect(html).toContain('.lc-pptx-slide');
+      });
+
       test('bootstrap wraps + scales each slide so it fits the iframe width', async () => {
         /* pptx-preview emits slides at the init dimensions (960×540
          * by default). Without post-processing, narrow artifact panels
@@ -518,7 +568,10 @@ describe('Office HTML producers', () => {
          * — its internal pipeline holds references to the appended
          * slides and broke when we moved them under a parent wrap. */
         const pptx = await buildPptx([{ title: 'A' }, { title: 'B' }]);
-        const html = await _internal.pptxToHtmlViaCdn(pptx);
+        const html = await _internal.pptxToHtmlViaCdn(
+          pptx,
+          '<ol class="lc-pptx-list"><li>fb</li></ol>',
+        );
         /* The wrapper class used by the CSS rules. */
         expect(html).toContain('lc-slide-wrap');
         /* The wrap function + the per-slide scale function. The
