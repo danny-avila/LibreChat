@@ -510,6 +510,8 @@ describe('Office HTML producers', () => {
         expect(html).toContain("addEventListener('error'");
         // The 8-second timeout safety net for silent renderer failures.
         expect(html).toContain('renderer-timeout');
+        expect(html).toContain('renderer-empty-slide-list');
+        expect(html).toContain("querySelectorAll('.pptx-preview-slide-wrapper')");
         /* Diagnostic surfacing: the failure reason must be exposed
          * three ways so a debugging user can find it without reading
          * source — manual e2e on PR #12934 ("'Preview unavailable'
@@ -546,7 +548,8 @@ describe('Office HTML producers', () => {
         expect(html).toContain('SENTINEL_FALLBACK');
         /* Empty-render detection helper exists in the bootstrap. */
         expect(html).toContain('hasRenderedContent');
-        expect(html).toContain('renderer-produced-empty-wrappers');
+        expect(html).toContain('renderer-empty-slide-list');
+        expect(html).toContain("querySelectorAll('.pptx-preview-slide-wrapper')");
         /* The slide-list fallback CSS is inlined so the fallback
          * renders with the same look as the standalone slide-list
          * path (CSP locks `style-src` to inline only). */

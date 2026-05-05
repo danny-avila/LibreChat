@@ -1208,6 +1208,9 @@ ${PPTX_SLIDE_LIST_CSS}
     }
   }
   function markSuccess() { settled = true; }
+  function renderedSlideCount() {
+    return container ? container.querySelectorAll('.pptx-preview-slide-wrapper').length : 0;
+  }
 
   /* pptx-preview bundled deps (echarts, etc.) raise rejections deep
    * inside their async pipelines that the outer Promise from
@@ -1322,20 +1325,16 @@ ${PPTX_SLIDE_LIST_CSS}
       }
     }
 
-    /* Detect the silent-failure case: pptx-preview created the slide
-     * wrappers but didnt populate them with content. Common with
-     * pptxgenjs-generated PPTXs — pptx-previews parser handles
-     * Microsoft PowerPoint XML but chokes on subtle convention
-     * differences and produces empty 960x540 wrappers. Check if every
-     * wrapped slide has zero children; if so, the render failed and
-     * the slide-list fallback should take over. Manual e2e on PR
-     * #12934. */
+    /* Detect the silent-failure case: pptx-preview resolves without
+     * rendering any real slide nodes. Common with pptxgenjs-generated
+     * PPTXs — the parser creates an empty host wrapper, but never
+     * populates pptx-preview slide nodes with slide content.
+     * Manual e2e on PR #12934. */
     function hasRenderedContent() {
-      var wraps = container.querySelectorAll('.lc-slide-wrap');
-      if (wraps.length === 0) { return false; }
-      for (var i = 0; i < wraps.length; i++) {
-        var inner = wraps[i].firstElementChild;
-        if (inner && inner.children.length > 0) {
+      var slides = container.querySelectorAll('.pptx-preview-slide-wrapper');
+      if (slides.length === 0) { return false; }
+      for (var i = 0; i < slides.length; i++) {
+        if (slides[i].children.length > 0 || (slides[i].textContent || '').trim().length > 0) {
           return true;
         }
       }
@@ -1345,7 +1344,7 @@ ${PPTX_SLIDE_LIST_CSS}
     function finalize() {
       wrapSlides();
       if (!hasRenderedContent()) {
-        showFallback('renderer-produced-empty-wrappers (pptx-preview compatibility issue with this PPTX format — falling back to slide-list view)');
+        showFallback('renderer-empty-slide-list');
         return;
       }
       container.style.visibility = 'visible';
@@ -1361,14 +1360,22 @@ ${PPTX_SLIDE_LIST_CSS}
 
     var result = previewer.preview(bytes.buffer);
     if (result && typeof result.then === 'function') {
-      result.then(finalize).catch(function (err) { showFallback(err && err.message); });
+      result
+        .then(function (pptx) {
+          if (!pptx || !pptx.slides || pptx.slides.length === 0) {
+            showFallback('renderer-empty-slide-list');
+            return;
+          }
+          finalize();
+        })
+        .catch(function (err) { showFallback(err && err.message); });
     }
     /* Safety net: if 8 seconds in the preview promise hasnt resolved,
      * accept whatever pptx-preview managed to render and apply the
      * wrap+scale to it. Empty container → fallback. */
     setTimeout(function () {
       if (settled) { return; }
-      if (container && container.children.length > 0) {
+      if (renderedSlideCount() > 0) {
         finalize();
         return;
       }
