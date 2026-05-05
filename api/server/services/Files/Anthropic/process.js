@@ -1,9 +1,5 @@
-const path = require('path');
 const mime = require('mime');
-const { v4 } = require('uuid');
-const { FileContext, FileSources } = require('librechat-data-provider');
-const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { createFile } = require('~/models/File');
+const { saveBufferAsAttachment } = require('./saveAttachment');
 const { logger } = require('~/config');
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
@@ -66,10 +62,11 @@ async function downloadFileBytes(apiKey, fileId) {
  * it to LibreChat's configured file storage. Returns metadata that can be
  * pushed onto the assistant message's attachments array.
  *
- * Mirrors the pattern used by `processCodeOutput` in
- * api/server/services/Files/Code/process.js, but pulls bytes from the
- * Anthropic Files API (via raw fetch) instead of the LibreChat
- * code-execution sidecar.
+ * The persist + DB-record + return-shape work is shared with the
+ * [DOCUMENT]-block parser path — both call `saveBufferAsAttachment` so the
+ * resulting attachment is identical regardless of where the bytes came
+ * from. This file is concerned only with the Skills-specific Files API
+ * download.
  *
  * @param {object} params
  * @param {ServerRequest} params.req
@@ -100,57 +97,14 @@ async function processAnthropicFile({
 
     const buffer = await downloadFileBytes(apiKey, file_id);
 
-    const fileSource = req.app.locals.fileStrategy;
-    const { saveBuffer } = getStrategyFunctions(fileSource);
-    if (!saveBuffer) {
-      throw new Error(`File strategy "${fileSource}" does not support saveBuffer`);
-    }
-
-    const newFileId = v4();
-    const ext = path.extname(realFilename) || `.${mime.getExtension(mimeType) ?? 'bin'}`;
-    const storedName = `${newFileId}${ext}`;
-
-    let filepath = await saveBuffer({
-      userId: req.user.id,
+    return await saveBufferAsAttachment({
+      req,
       buffer,
-      fileName: storedName,
-      basePath: 'documents',
-    });
-
-    /* Local strategy quirk: saveLocalBuffer writes the bytes to
-     * `paths.uploads/documents/{userId}/{file}` on disk but returns
-     * `/documents/{userId}/{file}` as the URL. The download route at
-     * GET /api/files/download/:userId/:file_id reads file.filepath via
-     * getLocalFileStream, which only matches paths containing `/uploads/`
-     * or `/images/`. Prepend `/uploads` so the on-disk location and the
-     * URL prefix line up without modifying core LibreChat code. */
-    if (
-      fileSource === FileSources.local &&
-      typeof filepath === 'string' &&
-      !filepath.startsWith('/uploads/') &&
-      !filepath.startsWith('/images/')
-    ) {
-      filepath = `/uploads${filepath}`;
-    }
-
-    const now = new Date().toISOString();
-    const fileRecord = {
-      file_id: newFileId,
-      user: req.user.id,
       filename: realFilename,
-      filepath,
-      bytes: buffer.length,
-      type: mimeType,
-      source: fileSource,
-      context: FileContext.message_attachment,
-      usage: 1,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await createFile(fileRecord, true);
-
-    return Object.assign({}, fileRecord, { messageId, conversationId });
+      mimeType,
+      conversationId,
+      messageId,
+    });
   } catch (error) {
     logger.error('[processAnthropicFile] Failed to download/persist Anthropic file', {
       file_id,

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '/^=========+$/{getline next; if \\(next ~ /^[A-Z][A-Z 0-9:-]+$/\\) print NR-1\": \"next}' api/app/clients/prompts/assistant/03-assignment-generation.txt)"
+    ]
+  }
+}

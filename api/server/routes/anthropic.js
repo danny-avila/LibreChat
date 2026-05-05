@@ -18,6 +18,14 @@ router.use(requireJwtAuth);
  * no-op and returns immediately. Concurrent calls dedupe to one provision.
  */
 router.post('/warmup', async (req, res) => {
+  /* Skills container pre-warm is only useful when Skills is actually being
+   * used. When ENABLE_CUSTOM_SKILLS is off, the chat path doesn't include
+   * a container, and provisioning one here would be a wasted 5-min
+   * Anthropic reservation. Short-circuit silently — frontends can keep
+   * calling this on Help Others clicks without conditional logic. */
+  if (process.env.ENABLE_CUSTOM_SKILLS !== 'true') {
+    return res.status(200).json({ ok: false, reason: 'skills_disabled' });
+  }
   logger.info(`[WARMUP] /warmup hit by user ${req.user?.id ?? '<no user>'}`);
   try {
     const { ANTHROPIC_API_KEY } = process.env;

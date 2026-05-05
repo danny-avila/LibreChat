@@ -31,6 +31,19 @@ const {
   peekWarmContainer,
   invalidateWarmContainer,
 } = require('~/server/services/Anthropic/containerCache');
+const {
+  customSkillsEnabled,
+  getCustomSkills,
+  getSlimSystemPrompt,
+  documentBlocksEnabled,
+} = require('~/server/services/Anthropic/featureFlags');
+const { DocBlockFilter } = require('~/server/services/Anthropic/documentBlocks');
+const {
+  markdownToDocxBuffer,
+  inferFilenameFromMarkdown,
+  DOCX_MIME,
+} = require('~/server/services/Files/Anthropic/markdownToDocx');
+const { saveBufferAsAttachment } = require('~/server/services/Files/Anthropic/saveAttachment');
 const { createFetch, createStreamEventHandlers } = require('./generators');
 const Tokenizer = require('~/server/services/Tokenizer');
 const { sleep } = require('~/server/utils');
@@ -41,11 +54,39 @@ const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
 
 class SplitStreamHandler extends _Handler {
-  getDeltaContent(chunk) {
-    return (chunk?.delta?.text ?? chunk?.completion) || '';
+  constructor(opts) {
+    super(opts);
+    /** @type {DocBlockFilter | null} Activated lazily on first delta when the
+     *  ENABLE_DOCUMENT_BLOCKS flag is on. Filters [DOCUMENT]...[/DOCUMENT]
+     *  spans out of the user-visible stream and accumulates them for the
+     *  post-stream markdown→docx conversion. Null when the flag is off, in
+     *  which case getDeltaContent passes the raw text through unchanged. */
+    this.docFilter = documentBlocksEnabled() ? new DocBlockFilter() : null;
   }
+
+  getDeltaContent(chunk) {
+    const raw = (chunk?.delta?.text ?? chunk?.completion) || '';
+    if (this.docFilter && raw) {
+      return this.docFilter.feed(raw);
+    }
+    return raw;
+  }
+
   getReasoningDelta(chunk) {
     return chunk?.delta?.thinking || '';
+  }
+
+  /**
+   * Flush the document filter at end of stream and return any captured
+   * [DOCUMENT] blocks. Returns an empty array if the filter is disabled
+   * or no blocks were seen.
+   * @returns {{ trailingText: string, documents: string[] }}
+   */
+  finalizeDocFilter() {
+    if (!this.docFilter) {
+      return { trailingText: '', documents: [] };
+    }
+    return this.docFilter.finalize();
   }
 }
 
@@ -882,16 +923,28 @@ class AnthropicClient extends BaseClient {
       requestOptions.topK = top_k;
     }
 
-    if (this.systemMessage && this.supportsCacheControl === true) {
+    /* When ENABLE_SLIM_PROMPT is on (rides on ENABLE_CUSTOM_SKILLS by default
+     * but can be set independently), swap the full 174KB combined prompt
+     * for the slim ~10k-token core (just 01-general-instructions.txt). */
+    const slimPrompt = getSlimSystemPrompt();
+    const effectiveSystemMessage = slimPrompt ?? this.systemMessage;
+    logger.info(
+      `[ANTHROPIC_FLAGS] custom_skills=${customSkillsEnabled()} ` +
+        `slim_prompt=${!!slimPrompt} document_blocks=${documentBlocksEnabled()} ` +
+        `system_prompt_chars=${(effectiveSystemMessage ?? '').length} ` +
+        `(was=${(this.systemMessage ?? '').length})`,
+    );
+
+    if (effectiveSystemMessage && this.supportsCacheControl === true) {
       requestOptions.system = [
         {
           type: 'text',
-          text: this.systemMessage,
+          text: effectiveSystemMessage,
           cache_control: { type: 'ephemeral' },
         },
       ];
-    } else if (this.systemMessage) {
-      requestOptions.system = this.systemMessage;
+    } else if (effectiveSystemMessage) {
+      requestOptions.system = effectiveSystemMessage;
     }
 
     if (this.supportsCacheControl === true && this.useMessages) {
@@ -899,9 +952,10 @@ class AnthropicClient extends BaseClient {
     }
 
     if (
-      /claude-(?:sonnet|opus|haiku)-[4-9]/.test(model) ||
-      /claude-[4-9]-(?:sonnet|opus|haiku)?/.test(model) ||
-      /claude-4(?:-(?:sonnet|opus|haiku))?/.test(model)
+      customSkillsEnabled() &&
+      (/claude-(?:sonnet|opus|haiku)-[4-9]/.test(model) ||
+        /claude-[4-9]-(?:sonnet|opus|haiku)?/.test(model) ||
+        /claude-4(?:-(?:sonnet|opus|haiku))?/.test(model))
     ) {
       requestOptions.tools = [
         ...(requestOptions.tools ?? []),
@@ -911,6 +965,9 @@ class AnthropicClient extends BaseClient {
         skills: [
           { type: 'anthropic', skill_id: 'docx', version: 'latest' },
           { type: 'anthropic', skill_id: 'pdf', version: 'latest' },
+          /* Custom skills uploaded via api/app/clients/skills/upload-skills.js.
+           * Empty array when ENABLE_CUSTOM_SKILLS is off. */
+          ...getCustomSkills(),
         ],
       };
       /* If the user has a warm container from a prior pre-warm, attach its
@@ -1064,6 +1121,43 @@ class AnthropicClient extends BaseClient {
             conversationId: this.conversationId,
             messageId: this.responseMessageId,
           }),
+        );
+      }
+    }
+
+    /* When ENABLE_DOCUMENT_BLOCKS is on, finalize the streaming filter:
+     * any [DOCUMENT]...[/DOCUMENT] content that came through the stream
+     * is now ready to be converted to .docx and attached to the message.
+     * This produces the SAME attachment shape as the Skills path above —
+     * both go through saveBufferAsAttachment so downstream rendering and
+     * download flows don't have to know which path generated the file. */
+    const { documents: docBlocks } = this.streamHandler.finalizeDocFilter();
+    if (docBlocks.length > 0) {
+      if (!this.artifactPromises) {
+        this.artifactPromises = [];
+      }
+      for (const markdown of docBlocks) {
+        this.artifactPromises.push(
+          (async () => {
+            try {
+              const buffer = await markdownToDocxBuffer(markdown);
+              const filename = `${inferFilenameFromMarkdown(markdown)}.docx`;
+              return await saveBufferAsAttachment({
+                req: this.options.req,
+                buffer,
+                filename,
+                mimeType: DOCX_MIME,
+                conversationId: this.conversationId,
+                messageId: this.responseMessageId,
+              });
+            } catch (error) {
+              logger.error(
+                '[AnthropicClient] [DOCUMENT] block conversion failed',
+                error?.message ?? error,
+              );
+              return null;
+            }
+          })(),
         );
       }
     }
