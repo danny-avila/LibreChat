@@ -482,9 +482,15 @@ ${DOCX_EXTRA_CSS}
     var render = document.getElementById('lc-render');
     if (render) { render.hidden = true; }
     var fallback = document.getElementById('lc-fallback');
+    var reasonText = reason ? String(reason).slice(0, 500) : 'no reason reported';
     if (fallback) {
       fallback.hidden = false;
-      if (reason) { fallback.title = String(reason).slice(0, 200); }
+      fallback.title = reasonText;
+    }
+    /* Mirror to DevTools so the reason is visible without inspecting
+     * the title attribute or expanding details elements. */
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[docx-preview] CDN renderer fell through to mammoth:', reasonText);
     }
   }
   if (typeof docx === 'undefined' || typeof docx.renderAsync !== 'function') {
@@ -1138,7 +1144,13 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
 </head>
 <body>
 <div id="lc-render"><div class="lc-pptx-loading">Loading preview…</div></div>
-<div id="lc-fallback" hidden>Preview unavailable. Please download the file to view it.</div>
+<div id="lc-fallback" hidden>
+  <p style="margin: 0 0 8px;">Preview unavailable. Please download the file to view it.</p>
+  <details style="font-size: 12px; color: var(--muted); margin: 0;">
+    <summary style="cursor: pointer;">Diagnostic details</summary>
+    <div id="lc-fallback-reason" style="margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word;"></div>
+  </details>
+</div>
 <script id="lc-doc-data" type="application/octet-stream;base64">${base64}</script>
 <script>
 (function () {
@@ -1155,9 +1167,22 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
       container.innerHTML = '';
     }
     var fallback = document.getElementById('lc-fallback');
+    var reasonText = reason ? String(reason).slice(0, 500) : 'no reason reported';
     if (fallback) {
       fallback.hidden = false;
-      if (reason) { fallback.title = String(reason).slice(0, 200); }
+      /* Title (hover tooltip) AND inline diagnostic block. The block
+       * is folded behind a details element so the friendly message
+       * stays the primary read but the reason is one click away —
+       * no need to open DevTools to figure out why a preview failed. */
+      fallback.title = reasonText;
+      var reasonEl = document.getElementById('lc-fallback-reason');
+      if (reasonEl) { reasonEl.textContent = reasonText; }
+    }
+    /* Mirror to DevTools so power users see the reason in red without
+     * having to find and expand the details element. The console
+     * message survives even after the iframe is detached. */
+    if (typeof console !== 'undefined' && console.error) {
+      console.error('[pptx-preview] fallback fired:', reasonText);
     }
   }
   function markSuccess() { settled = true; }

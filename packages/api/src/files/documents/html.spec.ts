@@ -486,6 +486,18 @@ describe('Office HTML producers', () => {
         expect(html).toContain("addEventListener('error'");
         // The 8-second timeout safety net for silent renderer failures.
         expect(html).toContain('renderer-timeout');
+        /* Diagnostic surfacing: the failure reason must be exposed
+         * three ways so a debugging user can find it without reading
+         * source — manual e2e on PR #12934 ("'Preview unavailable'
+         * with no way to know why"):
+         *   1. Visible inline via a `<details>` element so it's one
+         *      click away in the iframe itself
+         *   2. `title` attribute on the fallback for hover tooltip
+         *   3. `console.error` so DevTools shows it in red */
+        expect(html).toContain('id="lc-fallback-reason"');
+        expect(html).toContain('Diagnostic details');
+        expect(html).toContain('fallback.title = reasonText');
+        expect(html).toContain("console.error('[pptx-preview] fallback fired:'");
       });
 
       test('size-fallback threshold is the documented 350 KB', () => {
