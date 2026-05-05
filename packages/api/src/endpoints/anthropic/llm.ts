@@ -138,7 +138,7 @@ function getLLMConfig(
   let requestOptions: AnthropicClientOptions & { stream?: boolean } = {
     model: mergedOptions.model,
     stream: mergedOptions.stream,
-    temperature: mergedOptions.temperature,
+    temperature: mergedOptions.temperature ?? undefined,
     stopSequences: mergedOptions.stop,
     maxTokens:
       mergedOptions.maxOutputTokens || anthropicSettings.maxOutputTokens.reset(mergedOptions.model),

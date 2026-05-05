@@ -65,6 +65,103 @@ export enum SettingsViews {
 /** Validates any FileSources value — use for file metadata, DB records, and upload routing. */
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
+/**
+ * `allowedAddresses` is an SSRF exemption list scoped to private IP space.
+ * Validate at config-load time:
+ *  - Reject URLs, paths, CIDR ranges, host:port forms, and whitespace.
+ *  - Reject IPv4 literals that fall outside the private/loopback/link-local
+ *    ranges. Public IPs are never SSRF targets, so listing one has no
+ *    defensive purpose and must not silently grant trust.
+ *  - Hostnames pass through; their resolved IP is checked at runtime by
+ *    `resolveHostnameSSRF` and only a private resolved IP is meaningful.
+ *
+ * Mirrors a minimal subset of `isPrivateIP` from `@librechat/api` to avoid a
+ * circular package dependency. The runtime helper is the authoritative check;
+ * this refinement is a UX guardrail.
+ */
+function isPrivateIPv4Literal(value: string): boolean {
+  const match = value.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!match) {
+    return false;
+  }
+  const [a, b, c] = match.slice(1).map(Number) as [number, number, number, number];
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 0) return true; // RFC 5736 IETF protocol assignments
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a >= 224) return true; // multicast/reserved
+  return false;
+}
+
+function isPrivateIPv6Literal(value: string): boolean {
+  if (!value.includes(':')) return false;
+  if (value === '::1' || value === '::') return true;
+  if (value.startsWith('fc') || value.startsWith('fd')) return true; // fc00::/7
+  // fe80::/10 — first hextet 0xfe80–0xfebf
+  const firstHextet = value.split(':', 1)[0];
+  if (/^[0-9a-f]{1,4}$/.test(firstHextet ?? '')) {
+    const hextet = parseInt(firstHextet, 16);
+    if ((hextet & 0xffc0) === 0xfe80) return true;
+  }
+  // 4-in-6: ::ffff:A.B.C.D
+  const mappedMatch = value.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (mappedMatch) return isPrivateIPv4Literal(mappedMatch[1]);
+  return false;
+}
+
+/**
+ * Detects `host:port` and `[ipv6]:port` shapes — both are invalid as
+ * allowedAddresses entries. Bare `::1`, `[::1]`, and other IPv6 literals
+ * with no port are intentionally not matched.
+ *
+ * Mirrors `looksLikeHostPort` in `@librechat/api`'s `auth/allowedAddresses`.
+ * Kept as a local copy because the data-provider package cannot import from
+ * `@librechat/api` without creating a circular dependency. Keep the two
+ * implementations in sync.
+ */
+function looksLikeHostPort(entry: string): boolean {
+  if (/^\[[^\]]+\]:\d+$/.test(entry)) return true;
+  const colonCount = (entry.match(/:/g) ?? []).length;
+  if (colonCount !== 1) return false;
+  return /^[^:]+:\d+$/.test(entry);
+}
+
+const allowedAddressEntrySchema = z
+  .string()
+  .refine((entry) => entry.length > 0 && entry.trim().length > 0, {
+    message: 'allowedAddresses entries must be non-empty',
+  })
+  .refine((entry) => !entry.includes('://') && !entry.includes('/') && !/\s/.test(entry), {
+    message:
+      'allowedAddresses entries must be bare hostnames or IPs — no URLs, paths, CIDR ranges, or whitespace',
+  })
+  .refine((entry) => !looksLikeHostPort(entry), {
+    message: 'allowedAddresses entries must not include a port — list the bare hostname or IP only',
+  })
+  .refine(
+    (entry) => {
+      const stripped = entry
+        .toLowerCase()
+        .trim()
+        .replace(/^\[|\]$/g, '');
+      const isIPv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(stripped);
+      const isIPv6 = !isIPv4 && stripped.includes(':');
+      if (!isIPv4 && !isIPv6) {
+        return true; // hostname — checked at runtime via DNS
+      }
+      return isIPv4 ? isPrivateIPv4Literal(stripped) : isPrivateIPv6Literal(stripped);
+    },
+    {
+      message:
+        'allowedAddresses is scoped to private IP space — public IP literals are not permitted (use a hostname if it resolves to a private IP)',
+    },
+  );
+
+export const allowedAddressesSchema = z.array(allowedAddressEntrySchema).optional();
+
 /** Storage backend strategies only — use for config fields that set where files are stored. */
 const FILE_STORAGE_BACKENDS = [
   FileSources.local,
@@ -83,6 +180,7 @@ export const fileStrategiesSchema = z
     avatar: fileStorageSchema.optional(),
     image: fileStorageSchema.optional(),
     document: fileStorageSchema.optional(),
+    skills: fileStorageSchema.optional(),
   })
   .optional();
 
@@ -222,8 +320,10 @@ export enum AgentCapabilities {
   file_search = 'file_search',
   web_search = 'web_search',
   artifacts = 'artifacts',
+  subagents = 'subagents',
   actions = 'actions',
   context = 'context',
+  skills = 'skills',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -311,8 +411,10 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.file_search,
   AgentCapabilities.web_search,
   AgentCapabilities.artifacts,
+  AgentCapabilities.subagents,
   AgentCapabilities.actions,
   AgentCapabilities.context,
+  AgentCapabilities.skills,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
@@ -720,6 +822,7 @@ export const interfaceSchema = z
       .optional(),
     temporaryChat: z.boolean().optional(),
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
+    autoSubmitFromUrl: z.boolean().optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     peoplePicker: z
@@ -744,6 +847,18 @@ export const interfaceSchema = z
         public: z.boolean().optional(),
       })
       .optional(),
+    skills: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+          defaultActiveOnShare: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
     modelSelect: true,
@@ -765,6 +880,7 @@ export const interfaceSchema = z
       public: false,
     },
     temporaryChat: true,
+    autoSubmitFromUrl: true,
     runCode: true,
     webSearch: true,
     peoplePicker: {
@@ -788,6 +904,13 @@ export const interfaceSchema = z
       create: false,
       share: false,
       public: false,
+    },
+    skills: {
+      use: true,
+      create: true,
+      share: false,
+      public: false,
+      defaultActiveOnShare: false,
     },
   });
 
@@ -903,16 +1026,19 @@ export enum SearchCategories {
 export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
+  TAVILY = 'tavily',
 }
 
 export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
+  TAVILY = 'tavily',
 }
 
 export enum RerankerTypes {
   JINA = 'jina',
   COHERE = 'cohere',
+  NONE = 'none',
 }
 
 export enum SafeSearchTypes {
@@ -928,6 +1054,9 @@ export const webSearchSchema = z.object({
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
+  tavilyApiKey: z.string().optional().default('${TAVILY_API_KEY}'),
+  tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
+  tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
@@ -969,6 +1098,33 @@ export const webSearchSchema = z.object({
         .optional(),
     })
     .optional(),
+  tavilySearchOptions: z
+    .object({
+      searchDepth: z.enum(['basic', 'advanced', 'fast', 'ultra-fast']).optional(),
+      maxResults: z.number().int().min(1).max(20).optional(),
+      includeImages: z.boolean().optional(),
+      includeAnswer: z.union([z.boolean(), z.enum(['basic', 'advanced'])]).optional(),
+      includeRawContent: z.union([z.boolean(), z.enum(['markdown', 'text'])]).optional(),
+      includeDomains: z.array(z.string()).optional(),
+      excludeDomains: z.array(z.string()).optional(),
+      topic: z.enum(['general', 'news', 'finance']).optional(),
+      timeRange: z.enum(['day', 'week', 'month', 'year', 'd', 'w', 'm', 'y']).optional(),
+      includeImageDescriptions: z.boolean().optional(),
+      includeFavicon: z.boolean().optional(),
+      chunksPerSource: z.number().int().min(1).max(3).optional(),
+      safeSearch: z.boolean().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
+  tavilyScraperOptions: z
+    .object({
+      extractDepth: z.enum(['basic', 'advanced']).optional(),
+      includeImages: z.boolean().optional(),
+      includeFavicon: z.boolean().optional(),
+      format: z.enum(['markdown', 'text']).optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
 });
 
 export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
@@ -1006,9 +1162,11 @@ export const memorySchema = z.object({
   agent: z
     .union([
       z.object({
+        enabled: z.boolean().optional(),
         id: z.string(),
       }),
       z.object({
+        enabled: z.boolean().optional(),
         provider: z.string(),
         model: z.string(),
         instructions: z.string().optional(),
@@ -1075,6 +1233,7 @@ export const configSchema = z.object({
   mcpSettings: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
+      allowedAddresses: allowedAddressesSchema,
     })
     .optional(),
   interface: interfaceSchema,
@@ -1084,6 +1243,7 @@ export const configSchema = z.object({
   actions: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
+      allowedAddresses: allowedAddressesSchema,
     })
     .optional(),
   registration: z
@@ -1106,6 +1266,7 @@ export const configSchema = z.object({
   modelSpecs: specsConfigSchema.optional(),
   endpoints: z
     .object({
+      allowedAddresses: allowedAddressesSchema,
       all: baseEndpointSchema.omit({ baseURL: true }).optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),
@@ -1903,7 +2064,12 @@ export enum Constants {
   EPHEMERAL_AGENT_ID = 'ephemeral',
   /** Programmatic Tool Calling tool name */
   PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_code',
+  /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
+  SUBAGENT = 'subagent',
 }
+
+/** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
+export const MAX_SUBAGENTS = 10;
 
 export enum LocalStorageKeys {
   /** Key for the admin defined App Title */
@@ -1948,6 +2114,8 @@ export enum LocalStorageKeys {
   LAST_FILE_SEARCH_TOGGLE_ = 'LAST_FILE_SEARCH_TOGGLE_',
   /** Last checked toggle for Artifacts per conversation ID */
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
+  /** Last checked toggle for Skills per conversation ID */
+  LAST_SKILLS_TOGGLE_ = 'LAST_SKILLS_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */

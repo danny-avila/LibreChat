@@ -37,6 +37,8 @@ export * from './memory';
 export * from './agents';
 /* Prompts */
 export * from './prompts';
+/* Skills */
+export * from './skills';
 /* Endpoints */
 export * from './endpoints';
 /* Files */

@@ -18,9 +18,9 @@
     "isolatedModules": true,
     "noEmit": true,
     "sourceMap": true,
-    "baseUrl": ".",
     "paths": {
-      "librechat-data-provider/react-query": ["./src/react-query/index.ts"]
+      "librechat-data-provider/react-query": ["./src/react-query/index.ts"],
+      "src/*": ["./src/*"]
     }
   },
   "exclude": ["node_modules", "dist", "types"],

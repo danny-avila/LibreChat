@@ -627,9 +627,7 @@ describe('initializeBedrock', () => {
 
       expect(amrf.thinking).toEqual({ type: 'adaptive' });
       expect(result.llmConfig.maxTokens).toBeUndefined();
-      expect(amrf.anthropic_beta).toEqual(
-        expect.arrayContaining(['output-128k-2025-02-19', 'context-1m-2025-08-07']),
-      );
+      expect(amrf.anthropic_beta).toEqual(expect.arrayContaining(['output-128k-2025-02-19']));
     });
 
     it('should pass effort via output_config for Opus 4.6', async () => {

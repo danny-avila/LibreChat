@@ -25,6 +25,7 @@ export * from './types/files';
 export * from './types/mcpServers';
 export * from './types/mutations';
 export * from './types/queries';
+export * from './types/skills';
 export * from './types/runs';
 export * from './types/web';
 export * from './types/graph';

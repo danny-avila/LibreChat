@@ -160,10 +160,8 @@ describe('tModelSpecPresetSchema', () => {
     }
   });
 
-  it('strips frontend-only fields', () => {
+  it('strips client-managed and preset-override fields', () => {
     const result = tModelSpecPresetSchema.safeParse({
-      greeting: 'Hello!',
-      iconURL: 'https://example.com/icon.png',
       spec: 'some-spec',
       presetOverride: { model: 'other' },
       model: 'gpt-4o',
@@ -171,10 +169,22 @@ describe('tModelSpecPresetSchema', () => {
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data).not.toHaveProperty('greeting');
-      expect(result.data).not.toHaveProperty('iconURL');
       expect(result.data).not.toHaveProperty('spec');
       expect(result.data).not.toHaveProperty('presetOverride');
+    }
+  });
+
+  it('preserves admin-configurable display fields (greeting, iconURL)', () => {
+    const result = tModelSpecPresetSchema.safeParse({
+      greeting: 'Hello!',
+      iconURL: 'https://example.com/icon.png',
+      model: 'gpt-4o',
+      endpoint: EModelEndpoint.openAI,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toHaveProperty('greeting', 'Hello!');
+      expect(result.data).toHaveProperty('iconURL', 'https://example.com/icon.png');
     }
   });
 
