@@ -39,9 +39,9 @@ export interface PrimeSkillFilesParams {
   getSessionInfo?: (fileIdentifier: string) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
-  /** Persists codeEnvIdentifier on skill files after upload. Returns the
-   *  bulkWrite result so callers can surface partial-write warnings — a
-   *  silent miss here turns every subsequent prime into a fresh upload. */
+  /** Persists codeEnvIdentifier on skill files after upload. Implementations
+   *  warn-log on partial writes (matchedCount/modifiedCount mismatch)
+   *  internally — caller can fire-and-forget without losing visibility. */
   updateSkillFileCodeEnvIds?: (
     updates: Array<{
       skillId: Types.ObjectId | string;
@@ -220,12 +220,17 @@ export async function primeSkillFiles(
     }
 
     /**
-     * Persist codeEnvIdentifiers on skill files. Awaited (no longer
-     * fire-and-forget): a missed write turns every subsequent prime into
-     * a fresh upload, so the ~10–50ms bulkWrite latency is a worthwhile
-     * tradeoff for cache reliability. Failures are logged at warn but
-     * don't fail the prime — the file refs returned to the caller are
-     * still valid for the current call.
+     * Persist codeEnvIdentifiers on skill files. Awaited (not
+     * fire-and-forget) so the next prime — which can start within
+     * milliseconds when many users hit the same skill concurrently —
+     * sees the cache pointer instead of racing the read against an
+     * in-flight write. Without the await, a fire-and-forget under
+     * concurrency stays in cache-miss steady-state for the duration
+     * of the burst (each user's prime reads stale, re-uploads, then
+     * fires its own forget that the next user also misses). Latency
+     * cost is ~10–50ms on the prime that does the upload; subsequent
+     * primes save an entire batch upload. Failures don't fail the
+     * prime — the file refs returned to the caller are still valid.
      */
     if (updateSkillFileCodeEnvIds) {
       const updates = result.files
@@ -237,12 +242,7 @@ export async function primeSkillFiles(
         }));
       if (updates.length > 0) {
         try {
-          const writeResult = await updateSkillFileCodeEnvIds(updates);
-          if (writeResult && writeResult.modifiedCount < updates.length) {
-            logger.warn(
-              `[primeSkillFiles] Persisted ${writeResult.modifiedCount}/${updates.length} codeEnvIdentifiers for skill "${skill.name}" (matched ${writeResult.matchedCount}). Subsequent primes will re-upload unmatched files.`,
-            );
-          }
+          await updateSkillFileCodeEnvIds(updates);
         } catch (err: unknown) {
           logger.warn(
             '[primeSkillFiles] Failed to persist codeEnvIdentifiers:',

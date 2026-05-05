@@ -171,15 +171,14 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     ]);
   });
 
-  it('awaits codeEnvIdentifier persistence and exposes partial-write counts', async () => {
-    /* Regression for cross-user skill caching: a fire-and-forget persist
-     * (the prior shape) could race with the next prime, and a write
-     * silently filtered by tenant scoping (the actual prod cause) would
-     * never persist at all. Both make every prime re-upload — N×M egress
-     * at scale instead of M. The persist call must (a) be awaited so
-     * partial writes are observable, and (b) return matched/modified
-     * counts so the caller can warn when a tenant filter or schema-plugin
-     * dropped the write. */
+  it('awaits updateSkillFileCodeEnvIds before resolving to avoid concurrent-prime cache misses', async () => {
+    /* Concurrency regression: when many users hit the same skill at
+     * once, fire-and-forget keeps the cache in miss-steady-state for
+     * the burst — User N's prime reads SkillFile docs before User N-1's
+     * persist commits, sees no `codeEnvIdentifier`, re-uploads, and
+     * fires its own forget that User N+1 also races. Awaiting the
+     * persist before the prime resolves ensures the next concurrent
+     * caller observes the cache pointer instead of racing a write. */
     const fileRecords = [
       {
         relativePath: 'references/style.md',
