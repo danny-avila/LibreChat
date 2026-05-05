@@ -368,7 +368,7 @@ export class EcsStack extends cdk.Stack {
     this.mongoService = mongoService;
     new cdk.CfnOutput(this, 'MongoImageUri', { value: props.mongoImage });
     new cdk.CfnOutput(this, 'RagApiImageUri', {
-      value: '152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/rag-api:latest',
+      value: `${this.account}.dkr.ecr.${this.region}.amazonaws.com/newjersey/rag-api:latest`,
     });
   }
 
@@ -410,10 +410,10 @@ export class EcsStack extends cdk.Stack {
       envSecrets.POSTGRES_DB = ecs.Secret.fromSecretsManager(props.rdsSecret, 'dbname');
     }
 
+    const ragApiImage = `${this.account}.dkr.ecr.${this.region}.amazonaws.com/newjersey/rag-api:latest`;
+
     ragApiTaskDef.addContainer('rag_api', {
-      image: ecs.ContainerImage.fromRegistry(
-        '152320432929.dkr.ecr.us-east-1.amazonaws.com/newjersey/rag-api:latest',
-      ),
+      image: ecs.ContainerImage.fromRegistry(ragApiImage),
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'rag-api' }),
       environment: environment,
       secrets: envSecrets,
