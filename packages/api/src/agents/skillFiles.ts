@@ -51,7 +51,17 @@ export interface PrimeSkillFilesParams {
 
 export interface PrimeSkillFilesResult {
   session_id: string;
-  files: Array<{ id: string; session_id: string; name: string }>;
+  files: Array<{ id: string; session_id: string; name: string; entity_id?: string }>;
+}
+
+/** Parses `entity_id` out of a persisted `codeEnvIdentifier`'s query string.
+ *  Returns `undefined` when the identifier has no query string or no
+ *  `entity_id` (legacy user-attachment uploads). */
+function parseEntityIdFromCodeEnvIdentifier(identifier: string): string | undefined {
+  const queryString = identifier.split('?')[1];
+  if (!queryString) return undefined;
+  const value = new URLSearchParams(queryString).get('entity_id');
+  return value && value.length > 0 ? value : undefined;
 }
 
 /**
@@ -109,8 +119,15 @@ export async function primeSkillFiles(
         if (allActive) {
           const files: PrimeSkillFilesResult['files'] = [];
           for (const sf of skillFiles) {
-            const [sid, fid] = (sf.codeEnvIdentifier as string).split('?')[0].split('/');
-            files.push({ id: fid, session_id: sid, name: `${skill.name}/${sf.relativePath}` });
+            const identifier = sf.codeEnvIdentifier as string;
+            const [sid, fid] = identifier.split('?')[0].split('/');
+            const entity_id = parseEntityIdFromCodeEnvIdentifier(identifier);
+            files.push({
+              id: fid,
+              session_id: sid,
+              name: `${skill.name}/${sf.relativePath}`,
+              ...(entity_id != null ? { entity_id } : {}),
+            });
           }
 
           if (files.length > 0) {
@@ -183,6 +200,7 @@ export async function primeSkillFiles(
         id: f.fileId,
         session_id: result.session_id,
         name: f.filename,
+        entity_id: entityId,
       }));
 
     // Treat partial upload failures as a priming failure — missing bundled
@@ -349,8 +367,15 @@ export async function primeInvokedSkills(
             r.files
               .filter((f) => f.codeEnvIdentifier)
               .map((f) => {
-                const [sid, fid] = (f.codeEnvIdentifier as string).split('?')[0].split('/');
-                return { id: fid, name: `${r.skill.name}/${f.relativePath}`, session_id: sid };
+                const identifier = f.codeEnvIdentifier as string;
+                const [sid, fid] = identifier.split('?')[0].split('/');
+                const entity_id = parseEntityIdFromCodeEnvIdentifier(identifier);
+                return {
+                  id: fid,
+                  name: `${r.skill.name}/${f.relativePath}`,
+                  session_id: sid,
+                  ...(entity_id != null ? { entity_id } : {}),
+                };
               }),
           );
           if (cachedFiles.length > 0) {
@@ -374,7 +399,12 @@ export async function primeInvokedSkills(
     // Per-skill upload: each skill gets its own session with entity_id=skillId.
     // primeSkillFiles handles freshness caching per-skill, so only expired
     // skills re-upload. The code env handles mixed session_ids natively.
-    const allPrimedFiles: Array<{ id: string; name: string; session_id: string }> = [];
+    const allPrimedFiles: Array<{
+      id: string;
+      name: string;
+      session_id: string;
+      entity_id?: string;
+    }> = [];
     const primeResults = await Promise.allSettled(
       fileListResults.map(async ({ skill, files }) => {
         const result = await primeSkillFiles({
@@ -393,7 +423,12 @@ export async function primeInvokedSkills(
     for (const r of primeResults) {
       if (r.status === 'fulfilled' && r.value.result) {
         for (const f of r.value.result.files) {
-          allPrimedFiles.push({ id: f.id, name: f.name, session_id: f.session_id });
+          allPrimedFiles.push({
+            id: f.id,
+            name: f.name,
+            session_id: f.session_id,
+            ...(f.entity_id != null ? { entity_id: f.entity_id } : {}),
+          });
         }
       } else if (r.status === 'rejected') {
         logger.warn('[primeInvokedSkills] Failed to prime skill files:', r.reason);

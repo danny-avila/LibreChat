@@ -127,4 +127,86 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     expect(result).toEqual({});
     expect(deps.getSkillByName).not.toHaveBeenCalled();
   });
+
+  it('forwards entity_id on every file in initialSessions after fresh upload', async () => {
+    /* Regression: codeapi now resolves sessionKey per-file using `entity_id`.
+     * Skill files must carry `entity_id=<skillId>` through priming so that
+     * a subsequent execute mixing skill files and a user attachment can be
+     * authorized — both files in the same call resolve to their own scope
+     * instead of collapsing onto a single request-level entity. */
+    const listSkillFiles = jest.fn().mockResolvedValue([
+      {
+        relativePath: 'references/style.md',
+        filename: 'style.md',
+        filepath: '/storage/brand-guidelines/references/style.md',
+        source: 's3',
+        bytes: 256,
+      },
+    ]);
+    const getStrategyFunctions = jest.fn().mockReturnValue({
+      getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from(''))),
+    });
+    const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
+      session_id: 'session-42',
+      files: [{ fileId: 'file-1', filename: 'brand-guidelines/references/style.md' }],
+    });
+
+    const deps = makeDeps({
+      codeEnvAvailable: true,
+      listSkillFiles,
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+    });
+
+    const result = await primeInvokedSkills(deps);
+
+    const codeSession = result.initialSessions?.get('execute_code');
+    expect(codeSession?.files).toEqual([
+      {
+        id: 'file-1',
+        name: 'brand-guidelines/references/style.md',
+        session_id: 'session-42',
+        entity_id: SKILL_ID.toString(),
+      },
+    ]);
+  });
+
+  it('parses entity_id off codeEnvIdentifier in the cached-skills hot path', async () => {
+    /* When all skill files are still active in codeapi, primeInvokedSkills
+     * skips the batch upload entirely and reconstructs file refs from each
+     * skill file's persisted `codeEnvIdentifier`. The query string carries
+     * `?entity_id=<skillId>`, which must survive into `_injected_files` so
+     * downstream authorization still uses the skill's scope. */
+    const listSkillFiles = jest.fn().mockResolvedValue([
+      {
+        relativePath: 'references/style.md',
+        filename: 'style.md',
+        filepath: '/storage/brand-guidelines/references/style.md',
+        source: 's3',
+        bytes: 256,
+        codeEnvIdentifier: `session-cached/file-cached?entity_id=${SKILL_ID.toString()}`,
+      },
+    ]);
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeDeps({
+      codeEnvAvailable: true,
+      listSkillFiles,
+      batchUploadCodeEnvFiles,
+      getSessionInfo: jest.fn().mockResolvedValue('2026-05-05T00:00:00Z'),
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    const result = await primeInvokedSkills(deps);
+
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+    const codeSession = result.initialSessions?.get('execute_code');
+    expect(codeSession?.files).toEqual([
+      {
+        id: 'file-cached',
+        name: 'brand-guidelines/references/style.md',
+        session_id: 'session-cached',
+        entity_id: SKILL_ID.toString(),
+      },
+    ]);
+  });
 });

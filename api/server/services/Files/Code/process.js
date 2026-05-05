@@ -430,9 +430,14 @@ const primeFiles = async (options) => {
       const [path, queryString] = file.metadata.fileIdentifier.split('?');
       const [session_id, id] = path.split('/');
 
+      let queryParams = {};
+      if (queryString) {
+        queryParams = Object.fromEntries(new URLSearchParams(queryString).entries());
+      }
+
       /**
        * `pushFile` accepts optional overrides so the reupload path can
-       * push the FRESH `(session_id, id)` parsed off the new
+       * push the FRESH `(session_id, id, entity_id)` parsed off the new
        * `fileIdentifier`. Without these overrides, the closure would
        * capture the stale pre-reupload refs from the outer loop and
        * the in-memory `files` array (now consumed by
@@ -441,8 +446,12 @@ const primeFiles = async (options) => {
        * gets the new identifier via `updateFile`, but the seed would
        * still inject the old one — bash_tool / read_file would 404
        * trying to mount the file until the next turn re-reads metadata.
+       *
+       * `entity_id` is forwarded so codeapi can resolve sessionKey
+       * per-file, allowing one execute to mix files uploaded under
+       * different entities (e.g. a skill bundle plus a user attachment).
        */
-      const pushFile = (overrideSessionId, overrideId) => {
+      const pushFile = (overrideSessionId, overrideId, overrideEntityId) => {
         if (!toolContext) {
           toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
         }
@@ -455,22 +464,19 @@ const primeFiles = async (options) => {
               : ' (attached by user)';
         }
 
+        const entity_id = overrideEntityId ?? queryParams.entity_id;
         toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}`;
         files.push({
           id: overrideId ?? id,
           session_id: overrideSessionId ?? session_id,
           name: file.filename,
+          ...(entity_id ? { entity_id } : {}),
         });
       };
 
       if (sessions.has(session_id)) {
         pushFile();
         continue;
-      }
-
-      let queryParams = {};
-      if (queryString) {
-        queryParams = Object.fromEntries(new URLSearchParams(queryString).entries());
       }
 
       const reuploadFile = async () => {
@@ -504,11 +510,18 @@ const primeFiles = async (options) => {
            * top of this iteration refer to the old, expired/missing
            * sandbox object — using them here would silently re-introduce
            * the bug `Graph.sessions` seeding is supposed to fix.
+           *
+           * `entity_id` survives the round-trip: the upload was tagged
+           * with `queryParams.entity_id` above, so the new identifier
+           * carries the same scope.
            */
-          const [newPath] = fileIdentifier.split('?');
+          const [newPath, newQuery] = fileIdentifier.split('?');
           const [newSessionId, newId] = newPath.split('/');
+          const newQueryParams = newQuery
+            ? Object.fromEntries(new URLSearchParams(newQuery).entries())
+            : {};
           sessions.set(newSessionId, true);
-          pushFile(newSessionId, newId);
+          pushFile(newSessionId, newId, newQueryParams.entity_id);
         } catch (error) {
           logger.error(
             `Error re-uploading file ${id} in session ${session_id}: ${error.message}`,
