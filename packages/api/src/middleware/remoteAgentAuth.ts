@@ -462,7 +462,7 @@ export function createRemoteAgentAuth({
   updateUser,
   getAppConfig,
 }: RemoteAgentAuthDeps): RequestHandler {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  const handler: RequestHandler = async (req, res, next) => {
     try {
       const initialConfigOptions = getConfigOptions(req);
       const config = await getAppConfig(initialConfigOptions);
@@ -559,4 +559,5 @@ export function createRemoteAgentAuth({
       return;
     }
   };
+  return handler;
 }
