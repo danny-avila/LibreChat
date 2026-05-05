@@ -22,7 +22,7 @@ type TContentProps = {
   isLatestMessage: boolean;
 };
 
-const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
+const Markdown = memo(({ content = '' }: TContentProps) => {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
 
@@ -58,13 +58,7 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
   ];
 
   if (isInitializing) {
-    return (
-      <div className="absolute">
-        <p className="relative">
-          <span className={isLatestMessage ? 'result-thinking' : ''} />
-        </p>
-      </div>
-    );
+    return <p />;
   }
 
   return (
