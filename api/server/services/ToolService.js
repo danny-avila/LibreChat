@@ -12,6 +12,7 @@ const {
 const {
   sendEvent,
   getToolkitKey,
+  createSafeUser,
   getUserMCPAuthMap,
   loadToolDefinitions,
   GenerationJobManager,
@@ -1252,7 +1253,35 @@ async function loadToolsForExecution({
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
+  /**
+   * Re-inject user identity into the configurable returned to the
+   * `ON_TOOL_EXECUTE` handler. The handler merges this onto whatever
+   * configurable arrived with the dispatched event:
+   *   `{ ...configurable, ...toolConfigurable }`
+   * For the parent agent the outer stream config (set in AgentClient /
+   * Responses / OpenAI controllers) already carries `user` and `user_id`;
+   * re-injecting the same values from `req.user` is a no-op there.
+   *
+   * For SUBAGENT tool calls the SDK's `SubagentExecutor` invokes the child
+   * workflow with a fresh configurable of `{ thread_id }` only — the
+   * parent's `user`, `user_id`, and `userMCPAuthMap` are dropped on the way
+   * into the child graph. Without this re-injection, downstream MCP tools
+   * read `config.configurable.user?.id || user_id === undefined` and
+   * `MCPManager.getConnection` throws "No connection found for server X"
+   * (it can't fall through to the user-connection path without a userId).
+   *
+   * Only set the keys when `req.user.id` is present. Because
+   * `toolConfigurable` wins the merge, writing `user_id: undefined`
+   * unconditionally would clobber the outer config's `'api-user'`
+   * fallback (set by Responses/OpenAI controllers when `req.user` is
+   * absent). Omitting the keys lets the merge preserve whatever the
+   * outer configurable already had.
+   */
   const configurable = { userMCPAuthMap };
+  if (req.user?.id) {
+    configurable.user = createSafeUser(req.user);
+    configurable.user_id = req.user.id;
+  }
 
   if (actionsEnabled === undefined) {
     const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent?.id);
