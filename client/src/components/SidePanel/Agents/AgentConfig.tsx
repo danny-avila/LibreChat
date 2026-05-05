@@ -1,4 +1,7 @@
-import React, { useState, useMemo, useCallback } from 'react';
+/* eslint-disable i18next/no-literal-string */
+/* ^ We're not worried about i18n for this app ^ */
+
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
@@ -10,6 +13,7 @@ import {
   validateEmail,
   getIconKey,
   cn,
+  createProviderOption,
 } from '~/utils';
 import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
@@ -29,8 +33,13 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
+import uswdsIcons from '@uswds/uswds/img/sprite.svg';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import { X } from 'lucide-react';
 
-const labelClass = 'mb-2 text-token-text-primary block text-sm font-medium';
+const sectionLabelClass = 'text-sm font-semibold';
+const labelClass = 'mb-2 text-token-text-primary block text-sm font-semibold';
 const inputClass = cn(
   defaultTextProps,
   'flex w-full px-3 py-2 border-border-light bg-surface-secondary focus-visible:ring-2 focus-visible:ring-ring-primary',
@@ -44,6 +53,7 @@ export default function AgentConfig() {
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
   const [showMCPToolDialog, setShowMCPToolDialog] = useState(false);
+  const [showComplexBanner, setShowComplexBanner] = useState(true);
   const {
     actions,
     setAction,
@@ -147,6 +157,15 @@ export default function AgentConfig() {
     return _agent.code_files ?? [];
   }, [agent, agent_id, mergedFileMap]);
 
+  // NJ: We don't allow users to select their model, so we have to set it by default
+  const defaultPreset = useRecoilValue(store.defaultPreset);
+  useEffect(() => {
+    if (defaultPreset?.endpoint && defaultPreset?.model) {
+      methods.setValue('provider', createProviderOption(defaultPreset.endpoint));
+      methods.setValue('model', defaultPreset.model);
+    }
+  }, [defaultPreset, methods]);
+
   const handleAddActions = useCallback(() => {
     if (isEphemeralAgent(agent_id)) {
       showToast({
@@ -177,6 +196,156 @@ export default function AgentConfig() {
   }
 
   const { toolIds, mcpServerNames } = useVisibleTools(tools, regularTools, mcpServersMap);
+
+  /**
+   * NJ: There are enough customizations that we simply return our own component lib
+   *
+   * Make sure to check that the LibreChat implementation hasn't drifted too far functionality-wise!
+   */
+  return (
+    <div className="mb-2 h-auto pt-3">
+      {/* Identity */}
+      <div className="mx-3 pb-3">
+        <h3 className={sectionLabelClass}>Identity</h3>
+        <p className="mt-1 text-sm text-text-secondary">
+          Give your agent a clear, descriptive name
+        </p>
+      </div>
+
+      <hr className="mb-4 border-border-heavy" />
+
+      <div className="mx-3 mb-4">
+        <label className={labelClass} htmlFor="name">
+          Agent Name
+          <span className="ml-1 text-red-500">*</span>
+        </label>
+        <Controller
+          name="name"
+          rules={{ required: localize('com_ui_agent_name_is_required') }}
+          control={control}
+          render={({ field }) => (
+            <>
+              <input
+                {...field}
+                value={field.value ?? ''}
+                maxLength={256}
+                className={inputClass}
+                id="name"
+                type="text"
+                placeholder="Required: give your agent a name"
+              />
+              <div
+                className={cn(
+                  'mt-1 w-56 text-sm text-red-500',
+                  errors.name ? 'visible h-auto' : 'invisible h-0',
+                )}
+                role="alert"
+              >
+                {errors.name ? errors.name.message : ' '}
+              </div>
+            </>
+          )}
+        />
+      </div>
+
+      <div className="mx-3 mb-4">
+        <label className={labelClass} htmlFor="description">
+          Description
+        </label>
+        <Controller
+          name="description"
+          control={control}
+          render={({ field }) => (
+            <input
+              {...field}
+              value={field.value ?? ''}
+              maxLength={512}
+              className={inputClass}
+              id="description"
+              type="text"
+              placeholder={localize('com_agents_description_placeholder')}
+              aria-label="Agent description"
+            />
+          )}
+        />
+      </div>
+
+      <hr className="mb-4 border-border-heavy" />
+
+      {/* Instructions */}
+      <div className="mx-3 pb-3">
+        <h3 className={sectionLabelClass}>Instructions</h3>
+        <p className="mt-1 text-sm text-text-secondary">
+          Define what your agent does, how it behaves, and what it should focus on.
+        </p>
+        <p className="mt-1 text-xs text-text-secondary">
+          Read example instructions in the{' '}
+          <a
+            href="https://innovation.nj.gov/skills/ai-how-tos/"
+            className="text-blue-500 underline hover:text-blue-600"
+            target="_blank"
+            rel="noreferrer"
+          >
+            prompting guide
+          </a>
+        </p>
+      </div>
+
+      <hr className="mb-4 border-border-heavy" />
+
+      <div className="mx-3">
+        <Instructions />
+      </div>
+
+      {showComplexBanner && (
+        <div className="mx-3 mb-4 rounded-lg border border-border-light bg-surface-secondary p-3">
+          <div className="flex items-start gap-2">
+            <svg
+              className="usa-icon usa-icon--size-2 mt-0.5 flex-shrink-0 text-jersey-blue"
+              aria-hidden="true"
+              focusable="false"
+              role="img"
+            >
+              <use href={`${uswdsIcons}#lightbulb_outline`} />
+            </svg>
+            <div className="flex-grow">
+              <p className="text-sm font-medium">Building complex instructions?</p>
+              <p className="mt-1 text-sm text-text-secondary">
+                For longer or more complex instructions, you can upload them as a file instead of
+                writing them here.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowComplexBanner(false)}
+              className="flex-shrink-0 text-text-tertiary hover:text-text-secondary"
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <hr className="mb-4 border-border-heavy" />
+
+      {/* File context */}
+      <div className="mx-3 pb-3">
+        <h3 className={sectionLabelClass}>{localize('com_agents_file_context_label')}</h3>
+        <p className="mt-1 text-sm text-text-secondary">
+          Upload reference materials, examples, templates, or any other relevant docs.
+        </p>
+      </div>
+
+      <hr className="mb-4 border-border-heavy" />
+
+      {contextEnabled && (
+        <div className="mx-3">
+          <FileContext agent_id={agent_id} files={context_files} />
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <>
