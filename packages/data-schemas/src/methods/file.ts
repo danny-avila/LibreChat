@@ -368,6 +368,38 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     return results.filter((result): result is IMongoFile => result != null);
   }
 
+  /**
+   * Mark stale `status: 'pending'` file records as `'failed'` with
+   * `previewError: 'orphaned'`. Recovers from the only case the
+   * in-process two-phase preview flow can't handle: a backend restart
+   * mid-extraction loses the in-memory phase-2 promise, leaving the
+   * record stuck pending forever.
+   *
+   * Cheap to run on boot — the `status` field is indexed and the typical
+   * cutoff (5 min) bounds the candidate set to whatever was in flight at
+   * the prior shutdown. The 60s phase-2 timeout means anything older
+   * than a few minutes that's still pending is definitively orphaned.
+   *
+   * @param maxAgeMs - Cutoff in milliseconds; records whose `updatedAt`
+   *   is older than `now - maxAgeMs` are marked failed. Defaults to 5
+   *   minutes (well above the 60s phase-2 ceiling).
+   * @returns Number of records updated.
+   */
+  async function sweepOrphanedPreviews(maxAgeMs: number = 5 * 60 * 1000): Promise<number> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const cutoff = new Date(Date.now() - maxAgeMs);
+    const result = await File.updateMany(
+      { status: 'pending', updatedAt: { $lt: cutoff } },
+      { $set: { status: 'failed', previewError: 'orphaned' } },
+    );
+    if (result.modifiedCount > 0) {
+      logger.info(
+        `[sweepOrphanedPreviews] Marked ${result.modifiedCount} stale 'pending' files as 'failed' (cutoff: ${cutoff.toISOString()})`,
+      );
+    }
+    return result.modifiedCount ?? 0;
+  }
+
   return {
     findFileById,
     getFiles,
@@ -383,6 +415,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     deleteFileByFilter,
     batchUpdateFiles,
     updateFilesUsage,
+    sweepOrphanedPreviews,
   };
 }
 

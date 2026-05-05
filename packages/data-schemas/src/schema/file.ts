@@ -64,6 +64,18 @@ const file: Schema<IMongoFile> = new Schema(
       type: String,
       enum: ['html', 'text'],
     },
+    status: {
+      /* Two-phase code-execution flow: phase-1 emits the attachment
+       * record immediately with 'pending'; background phase-2 (HTML
+       * extraction) updates to 'ready' or 'failed'. Absent on legacy
+       * records and on file kinds that never expect a preview. */
+      type: String,
+      enum: ['pending', 'ready', 'failed'],
+      index: true,
+    },
+    previewError: {
+      type: String,
+    },
     context: {
       type: String,
     },
