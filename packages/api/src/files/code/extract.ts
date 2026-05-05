@@ -7,7 +7,7 @@ import type { CodeArtifactCategory } from './classify';
 import { parseDocument } from '~/files/documents/crud';
 import { bufferToOfficeHtml, officeHtmlBucket } from '~/files/documents/html';
 import { isBinaryBuffer } from '~/skills/binary';
-import { withTimeout } from '~/utils/promise';
+import { createConcurrencyLimiter, withTimeout } from '~/utils/promise';
 
 export const MAX_TEXT_CACHE_BYTES = 512 * 1024;
 export const MAX_TEXT_EXTRACT_BYTES = 1024 * 1024;
@@ -15,6 +15,21 @@ const DOCUMENT_PARSE_TIMEOUT_MS = 8_000;
 const OFFICE_HTML_TIMEOUT_MS = 12_000;
 const TRUNCATION_MARKER = '\n\n…[truncated]';
 const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER, 'utf-8');
+
+/**
+ * Cap simultaneous office-HTML renders process-wide. Mammoth (DOCX), SheetJS
+ * (XLSX/XLS/ODS), the CSV producer, and the PPTX renderer are CPU-heavy and
+ * synchronous; left unbounded, a tool result with N office files fans out
+ * into N parallel parses that compete with the still-running agent inference
+ * for event-loop time. Two slots keeps a single bursty tool result from
+ * starving inference while still allowing meaningful parallelism. Tasks
+ * queue in FIFO — none are dropped, only their start is deferred. Shared
+ * across every flow: streaming Responses, non-streaming Responses,
+ * chat-completions BaseClient, and the `tools.js` direct endpoint all
+ * funnel through this module.
+ */
+const OFFICE_HTML_CONCURRENCY = 2;
+const officeHtmlLimit = createConcurrencyLimiter(OFFICE_HTML_CONCURRENCY);
 
 /**
  * Decide whether a buffer is a candidate for rich HTML preview. Wraps the
@@ -181,10 +196,12 @@ const renderOfficeHtml = async (
   mimeType: string,
 ): Promise<string | null> => {
   try {
-    const html = await withTimeout(
-      bufferToOfficeHtml(buffer, name, mimeType),
-      OFFICE_HTML_TIMEOUT_MS,
-      `bufferToOfficeHtml exceeded ${OFFICE_HTML_TIMEOUT_MS}ms`,
+    const html = await officeHtmlLimit(() =>
+      withTimeout(
+        bufferToOfficeHtml(buffer, name, mimeType),
+        OFFICE_HTML_TIMEOUT_MS,
+        `bufferToOfficeHtml exceeded ${OFFICE_HTML_TIMEOUT_MS}ms`,
+      ),
     );
     if (html == null) {
       return null;
