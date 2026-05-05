@@ -123,10 +123,15 @@ describe('Office HTML producers', () => {
         );
         expect(cspMatch).not.toBeNull();
         const csp = cspMatch![1];
-        // The bomb defense: no outbound HTTP requests from the rendered
-        // iframe — a parser bug in docx-preview can't be turned into
-        // exfiltration of the embedded document content.
-        expect(csp).toMatch(/connect-src 'none'/);
+        /* `connect-src` is restricted to self + jsdelivr (where the
+         * renderer script came from). Allowing these is necessary for
+         * DevTools sourcemap fetches; broader exfiltration paths
+         * (arbitrary HTTPS, websockets, etc.) stay blocked. Manual
+         * e2e on PR #12934 — strict `'none'` filled DevTools console
+         * with `.min.js.map` violations every time the iframe was
+         * inspected. */
+        expect(csp).toMatch(/connect-src 'self' https:\/\/cdn\.jsdelivr\.net/);
+        expect(csp).not.toMatch(/connect-src[^;]*\*/); // no wildcard
         // No `<base>` tampering, no form submission either.
         expect(csp).toMatch(/base-uri 'none'/);
         expect(csp).toMatch(/form-action 'none'/);
@@ -438,7 +443,7 @@ describe('Office HTML producers', () => {
         expect(html).toContain('crossorigin="anonymous"');
       });
 
-      test('CSP locks the iframe down: connect-src none, no eval, no base/form tampering', async () => {
+      test('CSP locks the iframe down: connect-src restricted, no eval, no base/form tampering', async () => {
         const pptx = await buildPptx([{ title: 'X' }]);
         const html = await _internal.pptxToHtmlViaCdn(pptx);
         const cspMatch = html.match(
@@ -446,7 +451,14 @@ describe('Office HTML producers', () => {
         );
         expect(cspMatch).not.toBeNull();
         const csp = cspMatch![1];
-        expect(csp).toMatch(/connect-src 'none'/);
+        /* `connect-src` allows self + jsdelivr (the script's origin)
+         * so DevTools sourcemap fetches succeed and any same-origin
+         * fetches the renderer makes at runtime work. Wildcard
+         * exfiltration paths stay blocked. Manual e2e on PR #12934 —
+         * strict `'none'` filled DevTools console with `.min.js.map`
+         * violations every time the iframe was inspected. */
+        expect(csp).toMatch(/connect-src 'self' https:\/\/cdn\.jsdelivr\.net/);
+        expect(csp).not.toMatch(/connect-src[^;]*\*/); // no wildcard
         expect(csp).toMatch(/base-uri 'none'/);
         expect(csp).toMatch(/form-action 'none'/);
         expect(csp).toMatch(/script-src https:\/\/cdn\.jsdelivr\.net 'unsafe-inline'/);

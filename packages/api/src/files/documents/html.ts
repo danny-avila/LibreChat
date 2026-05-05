@@ -378,13 +378,25 @@ const OFFICE_HTML_OUTPUT_CAP = 512 * 1024;
  * styles into `<head>` at render time).
  */
 function buildDocxCdnDocument(base64: string, mammothFallbackHtml: string): string {
+  /* `connect-src` allows fetches to:
+   *   - `'self'`: the sandpack-static-server origin the iframe runs in
+   *     (covers any same-origin sourcemap fetches the bundler embedded)
+   *   - `https://cdn.jsdelivr.net`: where the renderer script came from
+   *     (DevTools fetches `.min.js.map` from the same host as the script
+   *     to map minified line numbers; with `'none'` the console fills
+   *     with CSP violations every time DevTools is open)
+   *
+   * Exfiltration risk is minimal: the iframe is cross-origin to the
+   * LibreChat host so an attacker can't read application data from it,
+   * and the only meaningful target ('self' or jsdelivr) isn't useful
+   * for exfiltrating slide content to a host the attacker controls. */
   const csp = [
     "default-src 'none'",
     "script-src https://cdn.jsdelivr.net 'unsafe-inline'",
     "style-src 'unsafe-inline'",
     "img-src 'self' data: blob:",
     'font-src data:',
-    "connect-src 'none'",
+    "connect-src 'self' https://cdn.jsdelivr.net",
     "base-uri 'none'",
     "form-action 'none'",
   ].join('; ');
@@ -1061,6 +1073,19 @@ function buildPptxCdnDocument(base64: string): string {
    *     visible symptom is a black iframe with the renderer half-
    *     started. Allowing blob:-only workers is the minimum surface to
    *     unblock rendering without permitting arbitrary worker URLs. */
+  /* `connect-src` allows fetches to:
+   *   - `'self'`: the sandpack-static-server origin the iframe runs in
+   *     (covers any same-origin fetches pptx-preview or its bundled
+   *     echarts make at render time, plus same-origin sourcemap loads)
+   *   - `https://cdn.jsdelivr.net`: where the renderer script came from
+   *     (DevTools fetches `.min.js.map` from there to map minified
+   *     line numbers; with `'none'` the console fills with CSP
+   *     violations every time DevTools is open)
+   *
+   * Exfiltration risk is minimal: the iframe is cross-origin to the
+   * LibreChat host so an attacker can't read application data, and
+   * the only meaningful targets ('self' or jsdelivr) aren't useful
+   * for exfiltrating slide content to a host the attacker controls. */
   const csp = [
     "default-src 'none'",
     "script-src https://cdn.jsdelivr.net 'unsafe-inline'",
@@ -1068,7 +1093,7 @@ function buildPptxCdnDocument(base64: string): string {
     'worker-src blob:',
     "img-src 'self' data: blob:",
     'font-src data:',
-    "connect-src 'none'",
+    "connect-src 'self' https://cdn.jsdelivr.net",
     "base-uri 'none'",
     "form-action 'none'",
   ].join('; ');
