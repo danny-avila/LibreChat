@@ -13,7 +13,7 @@ cache: true
 # Custom interface configuration
 interface:
   fileCitations: false
-  customWelcome: "Welcome to Kaleidoscope! Enjoy your experience."
+  customWelcome: 'Welcome to Kaleidoscope! Enjoy your experience.'
   # Privacy policy settings
   privacyPolicy:
     externalUrl: 'https://librechat.ai/privacy-policy'
@@ -24,7 +24,7 @@ interface:
     externalUrl: 'https://librechat.ai/tos'
     openNewTab: true
     modalAcceptance: true
-    modalTitle: "Kaleidoscope Terms of Service"
+    modalTitle: 'Kaleidoscope Terms of Service'
     modalContent: |
       *Effective Date: July 6, 2025*
 
@@ -119,9 +119,8 @@ interface:
 # # Example Registration Object Structure (optional)
 # registration:
 #   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
-  # allowedDomains:
-  # - "gmail.com"
-
+# allowedDomains:
+# - "gmail.com"
 
 # Example Balance settings
 # balance:
@@ -201,17 +200,26 @@ endpoints:
     titleModel: 'claude-haiku-4-5'
   assistants:
     disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
-    pollIntervalMs: 3000  # Polling interval for checking assistant updates
-    timeoutMs: 180000  # Timeout for assistant operations
-#   #   # Should only be one or the other, either `supportedIds` or `excludedIds`
-    supportedIds: ["asst_MbxQpSNgSc0QG4MFRhfPTU6Z", "asst_nMVHhlYGOylY81IAJuI17a4j", "asst_Qz7DWMoUtp9cKAR7HRQ3fTYZ", "asst_W4338pmKtKG5opAjNEK7iAFA", "asst_PSrtphPk13nA0f2YjeH5PEth", "asst_CIZHPxU8AG3FEJzgsG4en5BB", "asst_FXINoLvYPXEaPotzXKvfMKdb"]
+    pollIntervalMs: 3000 # Polling interval for checking assistant updates
+    timeoutMs: 180000 # Timeout for assistant operations
+    #   #   # Should only be one or the other, either `supportedIds` or `excludedIds`
+    supportedIds:
+      [
+        'asst_MbxQpSNgSc0QG4MFRhfPTU6Z',
+        'asst_nMVHhlYGOylY81IAJuI17a4j',
+        'asst_Qz7DWMoUtp9cKAR7HRQ3fTYZ',
+        'asst_W4338pmKtKG5opAjNEK7iAFA',
+        'asst_PSrtphPk13nA0f2YjeH5PEth',
+        'asst_CIZHPxU8AG3FEJzgsG4en5BB',
+        'asst_FXINoLvYPXEaPotzXKvfMKdb',
+      ]
     # excludedIds: ["asst_KUAWXPcoPX56VvNnytlc0XsH"]
-#   #   # Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
-#   #   # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`
-#   #   # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
-    retrievalModels: ["gpt-4-o"]
-#   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-    capabilities: [ "tools", "code_interpreter"]
+    #   #   # Only show assistants that the user created or that were created externally (e.g. in Assistants playground).
+    #   #   # privateAssistants: false # Does not work with `supportedIds` or `excludedIds`
+    #   #   # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
+    retrievalModels: ['gpt-4-o']
+    #   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    capabilities: ['tools', 'code_interpreter']
 #   # agents:
 #   #   # (optional) Default recursion depth for agents, defaults to 25
 #   #   recursionLimit: 50
@@ -343,71 +351,71 @@ endpoints:
 modelSpecs:
   enforce: true
   list:
-    - name: "gardening-assistant"
-      label: "Gardening Assistant"
+    - name: 'gardening-assistant'
+      label: 'Gardening Assistant'
       preset:
-        endpoint: "assistants"
-        assistant_id: "asst_MbxQpSNgSc0QG4MFRhfPTU6Z"
-        model: "gpt-4o"
-    - name: "music-assistant"
-      label: "Music Assistant"
+        endpoint: 'assistants'
+        assistant_id: 'asst_MbxQpSNgSc0QG4MFRhfPTU6Z'
+        model: 'gpt-4o'
+    - name: 'music-assistant'
+      label: 'Music Assistant'
       preset:
-        endpoint: "assistants"
-        assistant_id: "asst_nMVHhlYGOylY81IAJuI17a4j"
-        model: "gpt-4o"
-    - name: "art-assistant"
-      label: "Art Assistant"
+        endpoint: 'assistants'
+        assistant_id: 'asst_nMVHhlYGOylY81IAJuI17a4j'
+        model: 'gpt-4o'
+    - name: 'art-assistant'
+      label: 'Art Assistant'
       preset:
-        endpoint: "assistants"
-        assistant_id: "asst_Qz7DWMoUtp9cKAR7HRQ3fTYZ"
-        model: "gpt-4o"
-    - name: "yoga-assistant"
-      label: "Yoga Assistant"
+        endpoint: 'assistants'
+        assistant_id: 'asst_Qz7DWMoUtp9cKAR7HRQ3fTYZ'
+        model: 'gpt-4o'
+    - name: 'yoga-assistant'
+      label: 'Yoga Assistant'
       preset:
-        endpoint: "assistants"
-        assistant_id: "asst_W4338pmKtKG5opAjNEK7iAFA"
-        model: "gpt-4o"
-    - name: "creative-writing-assistant"
-      label: "Creative Writing Assistant"
+        endpoint: 'assistants'
+        assistant_id: 'asst_W4338pmKtKG5opAjNEK7iAFA'
+        model: 'gpt-4o'
+    - name: 'creative-writing-assistant'
+      label: 'Creative Writing Assistant'
       preset:
-        endpoint: "assistants"
-        assistant_id: "asst_PSrtphPk13nA0f2YjeH5PEth"
-        model: "gpt-4o"
-    - name: "data-gathering-assistant"
-      label: "Data Assistant"
+        endpoint: 'assistants'
+        assistant_id: 'asst_PSrtphPk13nA0f2YjeH5PEth'
+        model: 'gpt-4o'
+    - name: 'data-gathering-assistant'
+      label: 'Data Assistant'
       default: true
       preset:
-        endpoint: "assistants"
-        assistant_id: "asst_CIZHPxU8AG3FEJzgsG4en5BB"
-        model: "gpt-4o"
-    - name: "application-help"
-      label: "Application Help"
+        endpoint: 'assistants'
+        assistant_id: 'asst_CIZHPxU8AG3FEJzgsG4en5BB'
+        model: 'gpt-4o'
+    - name: 'application-help'
+      label: 'Application Help'
       default: true
       iconURL: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-5 -5 38 38' fill='none' stroke='%2372b147' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='lucide lucide-message-circle-question-mark-icon lucide-message-circle-question-mark'><path d='M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719'/><path d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'/><path d='M12 17h.01'/></svg>"
       preset:
-        endpoint: "assistants"
-        assistant_id: "asst_FXINoLvYPXEaPotzXKvfMKdb"
-        model: "gpt-4o"
-    - name: "help-others"
-      label: "Help Others"
+        endpoint: 'assistants'
+        assistant_id: 'asst_FXINoLvYPXEaPotzXKvfMKdb'
+        model: 'gpt-4o'
+    - name: 'help-others'
+      label: 'Help Others'
       iconURL: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c28770' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M18 21a8 8 0 0 0-16 0'/><circle cx='10' cy='8' r='5'/><path d='M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3'/></svg>"
       default: true
       preset:
-        endpoint: "anthropic"
-        model: "claude-sonnet-4-6"
-        modelLabel: "Help Others Assistant"
-        promptPrefix: "file://api/app/clients/prompts/assistant/"
-    - name: "help-myself"
-      label: "Help Myself"
+        endpoint: 'anthropic'
+        model: 'claude-sonnet-4-6'
+        modelLabel: 'Help Others Assistant'
+        promptPrefix: 'file://api/app/clients/prompts/assistant/help_others'
+    - name: 'help-myself'
+      label: 'Help Myself'
       iconURL: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ebb951' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2'/><circle cx='12' cy='8' r='5'/></svg>"
       default: true
       preset:
-        endpoint: "anthropic"
-        model: "claude-sonnet-4-6"
-        modelLabel: "Help Myself Assistant"
-        promptPrefix: "file://api/app/clients/prompts/assistant/"
-    - name: "gpt4o-chat"
-      label: "GPT-4o (no memory)"
+        endpoint: 'anthropic'
+        model: 'claude-sonnet-4-6'
+        modelLabel: 'Help Myself Assistant'
+        promptPrefix: 'file://api/app/clients/prompts/assistant/help_myself'
+    - name: 'gpt4o-chat'
+      label: 'GPT-4o (no memory)'
       preset:
-        endpoint: "openAI"
-        model: "gpt-4o"
+        endpoint: 'openAI'
+        model: 'gpt-4o'
