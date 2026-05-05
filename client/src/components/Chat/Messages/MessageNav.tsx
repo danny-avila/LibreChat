@@ -468,25 +468,44 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     }
     const observed = observedRef.current;
     const visibleSet = visibleSetRef.current;
-    const newIds = new Set<string>();
+
+    const elementByNewId = new Map<HTMLElement, string>();
     for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
-      newIds.add(entry.id);
-      if (!observed.has(entry.id)) {
-        const el = document.getElementById(entry.id);
-        if (el) {
-          observer.observe(el);
-          observed.set(entry.id, el);
-        }
+      const id = entries[i].id;
+      const el = document.getElementById(id);
+      if (el) {
+        elementByNewId.set(el, id);
       }
     }
 
-    for (const [id, el] of observed) {
-      if (!newIds.has(id)) {
+    let renamed = false;
+    for (const [oldId, el] of [...observed]) {
+      const newId = elementByNewId.get(el);
+      if (newId === undefined) {
         observer.unobserve(el);
-        observed.delete(id);
-        visibleSet.delete(id);
+        observed.delete(oldId);
+        visibleSet.delete(oldId);
+        continue;
       }
+      if (newId !== oldId) {
+        observed.delete(oldId);
+        observed.set(newId, el);
+        if (visibleSet.delete(oldId)) {
+          visibleSet.add(newId);
+        }
+        renamed = true;
+      }
+    }
+
+    for (const [el, id] of elementByNewId) {
+      if (!observed.has(id)) {
+        observer.observe(el);
+        observed.set(id, el);
+      }
+    }
+
+    if (renamed) {
+      setActiveIds(new Set(visibleSet));
     }
   }, [entries]);
 
