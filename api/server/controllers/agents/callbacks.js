@@ -427,8 +427,20 @@ function writeAttachmentUpdate(res, streamId, attachment) {
  * file metadata record. Centralizes the field projection so phase-1
  * (pending), phase-2 (ready/failed), and pre-existing legacy callers
  * all emit the same shape.
+ *
+ * `runtimeMessageId` overrides whatever messageId the record carries
+ * — required for phase-2 emits because `processCodeOutput` intentionally
+ * preserves the original DB messageId across cross-turn filename reuse
+ * (so `getCodeGeneratedFiles` can still trace the file back to the
+ * assistant message that originally produced it). Routing the SSE
+ * update by the persisted id would land the patch on a stale message
+ * slot — turn-N's pending placeholder would stay stuck pending while
+ * turn-1's already-resolved attachment got re-merged. The phase-1
+ * emit path mirrors this by reading `result.file.messageId`, which
+ * `processCodeOutput` runtime-overlays via `Object.assign`. (Codex P1
+ * review on PR #12957.)
  */
-function attachmentFromFileMetadata(fileMetadata, toolCallId) {
+function attachmentFromFileMetadata(fileMetadata, toolCallId, runtimeMessageId) {
   return {
     file_id: fileMetadata.file_id,
     filename: fileMetadata.filename,
@@ -437,7 +449,7 @@ function attachmentFromFileMetadata(fileMetadata, toolCallId) {
     width: fileMetadata.width,
     height: fileMetadata.height,
     conversationId: fileMetadata.conversationId,
-    messageId: fileMetadata.messageId,
+    messageId: runtimeMessageId ?? fileMetadata.messageId,
     toolCallId: toolCallId ?? fileMetadata.toolCallId,
     /* Inline text / sanitized HTML preview from the extractor — drives
      * the file artifact panel's rich preview for DOCX/XLSX/CSV/PPTX.
@@ -669,7 +681,16 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
                 writeAttachmentUpdate(
                   res,
                   streamId,
-                  attachmentFromFileMetadata(updated, toolCallId),
+                  /* Pass `metadata.run_id` as the runtime messageId
+                   * override — see attachmentFromFileMetadata's JSDoc.
+                   * `updated` carries the DB-persisted messageId which,
+                   * on cross-turn filename reuse (e.g. agent emits
+                   * `output.csv` again on turn N), is the original
+                   * turn's id rather than the current one. Without this
+                   * override the SSE update routes to the wrong
+                   * message slot and the current turn's pending chip
+                   * stays stuck. */
+                  attachmentFromFileMetadata(updated, toolCallId, metadata.run_id),
                 );
               })
               .catch((error) => {

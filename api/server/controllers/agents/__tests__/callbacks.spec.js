@@ -326,4 +326,221 @@ describe('createToolEndCallback', () => {
       expect(res.write).not.toHaveBeenCalled();
     });
   });
+
+  describe('code execution two-phase preview emit', () => {
+    /* The two-phase code-execution flow emits the attachment twice over
+     * SSE: phase-1 with `status: 'pending'` and the current run's
+     * messageId, phase-2 with the resolved record. The phase-2 emit
+     * must use the CURRENT run's messageId (not the persisted DB one)
+     * because `processCodeOutput` intentionally preserves the original
+     * `messageId` on cross-turn filename reuse — `getCodeGeneratedFiles`
+     * needs that for prior-turn priming.
+     *
+     * Codex P1 review on PR #12957: shipping `updated.messageId`
+     * straight from the DB record routed phase-2 patches to the wrong
+     * message slot, leaving the current turn's pending chip stuck. */
+
+    const { processCodeOutput } = require('~/server/services/Files/Code/process');
+
+    function makeCodeExecutionEvent({ runId, threadId, toolCallId, fileId, name }) {
+      return {
+        output: {
+          name: 'execute_code',
+          tool_call_id: toolCallId,
+          artifact: {
+            session_id: 'sess-1',
+            files: [{ id: fileId, name, session_id: 'sess-1' }],
+          },
+        },
+        metadata: { run_id: runId, thread_id: threadId },
+      };
+    }
+
+    /** Parse the SSE frame `res.write` produces back to a payload object. */
+    function parseSseAttachment(call) {
+      const frame = call[0];
+      const dataLine = frame.split('\n').find((l) => l.startsWith('data: '));
+      return JSON.parse(dataLine.slice('data: '.length));
+    }
+
+    it('phase-2 emit uses the current run messageId, not the persisted DB messageId (cross-turn filename reuse)', async () => {
+      /* Simulate turn-2 reusing `output.csv` from turn-1. The DB record
+       * surfaced by `updateFile` carries the original `turn-1-msg`
+       * messageId; the runtime emit must rewrite to `turn-2-msg`. */
+      res.headersSent = true;
+      const finalize = jest.fn().mockResolvedValue({
+        file_id: 'fid-shared',
+        filename: 'output.csv',
+        filepath: '/uploads/output.csv',
+        type: 'text/csv',
+        conversationId: 'thread789',
+        messageId: 'turn-1-original-msg', // persisted DB id (older turn)
+        status: 'ready',
+        text: '<table></table>',
+        textFormat: 'html',
+      });
+      processCodeOutput.mockResolvedValue({
+        file: {
+          file_id: 'fid-shared',
+          filename: 'output.csv',
+          filepath: '/uploads/output.csv',
+          type: 'text/csv',
+          conversationId: 'thread789',
+          messageId: 'turn-2-current-run', // runtime overlay (current turn)
+          toolCallId: 'tool-2',
+          status: 'pending',
+          text: null,
+          textFormat: null,
+        },
+        finalize,
+      });
+
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'turn-2-current-run',
+        threadId: 'thread789',
+        toolCallId: 'tool-2',
+        fileId: 'fid-shared',
+        name: 'output.csv',
+      });
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+      // Wait one more tick so the fire-and-forget finalize() chain settles.
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // Two SSE writes: phase-1 (pending) and phase-2 (ready).
+      expect(res.write).toHaveBeenCalledTimes(2);
+      const phase1 = parseSseAttachment(res.write.mock.calls[0]);
+      const phase2 = parseSseAttachment(res.write.mock.calls[1]);
+
+      // Phase-1 already used the runtime messageId (sourced from result.file).
+      expect(phase1.messageId).toBe('turn-2-current-run');
+      expect(phase1.status).toBe('pending');
+
+      /* Phase-2 MUST also route to the current run's messageId so the
+       * frontend's `useAttachmentHandler` upserts under the same
+       * messageAttachmentsMap slot as phase-1. Routing to
+       * `turn-1-original-msg` would land the patch on a stale message
+       * and leave turn-2's pending chip stuck. */
+      expect(phase2.messageId).toBe('turn-2-current-run');
+      expect(phase2.file_id).toBe('fid-shared');
+      expect(phase2.status).toBe('ready');
+      expect(phase2.text).toBe('<table></table>');
+      expect(phase2.toolCallId).toBe('tool-2');
+    });
+
+    it('phase-2 emit is skipped when finalize resolves to null (no DB update happened)', async () => {
+      res.headersSent = true;
+      processCodeOutput.mockResolvedValue({
+        file: {
+          file_id: 'fid-1',
+          filename: 'data.xlsx',
+          filepath: '/uploads/data.xlsx',
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          messageId: 'run-1',
+          toolCallId: 'tool-1',
+          status: 'pending',
+        },
+        finalize: jest.fn().mockResolvedValue(null),
+      });
+
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-1',
+        threadId: 'thread-1',
+        toolCallId: 'tool-1',
+        fileId: 'fid-1',
+        name: 'data.xlsx',
+      });
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // Only phase-1 fired; phase-2 noop'd because finalize returned null.
+      expect(res.write).toHaveBeenCalledTimes(1);
+    });
+
+    it('phase-2 emit is skipped when the response stream has already closed', async () => {
+      res.headersSent = true;
+      /* Hand-rolled deferred so we can hold finalize() open until
+       * AFTER setting `res.writableEnded = true`. Otherwise the mock
+       * resolves synchronously, the .then() runs in the same microtask
+       * queue as the artifactPromises await, and writableEnded is set
+       * too late. */
+      let resolveFinalize;
+      const finalizeDeferred = new Promise((resolve) => {
+        resolveFinalize = resolve;
+      });
+      processCodeOutput.mockResolvedValue({
+        file: {
+          file_id: 'fid-1',
+          filename: 'data.xlsx',
+          filepath: '/uploads/data.xlsx',
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          messageId: 'run-1',
+          toolCallId: 'tool-1',
+          status: 'pending',
+        },
+        finalize: jest.fn().mockReturnValue(finalizeDeferred),
+      });
+
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-1',
+        threadId: 'thread-1',
+        toolCallId: 'tool-1',
+        fileId: 'fid-1',
+        name: 'data.xlsx',
+      });
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+      // Simulate the response closing AFTER phase-1 fires but BEFORE
+      // phase-2 lands. The frontend's polling path will catch the
+      // resolved record on its next tick.
+      res.writableEnded = true;
+      // Now resolve finalize and let the .then() chain run.
+      resolveFinalize({
+        file_id: 'fid-1',
+        filename: 'data.xlsx',
+        messageId: 'run-1',
+        status: 'ready',
+        text: '<x/>',
+        textFormat: 'html',
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // Phase-1 wrote; phase-2 noop'd because writableEnded.
+      expect(res.write).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not call finalize for a non-office file (no preview expected)', async () => {
+      res.headersSent = true;
+      processCodeOutput.mockResolvedValue({
+        file: {
+          file_id: 'fid-txt',
+          filename: 'note.txt',
+          filepath: '/uploads/note.txt',
+          type: 'text/plain',
+          messageId: 'run-1',
+          toolCallId: 'tool-1',
+          // No status — non-office files skip phase-2 entirely.
+        },
+        // No finalize key — caller should not call anything.
+      });
+
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-1',
+        threadId: 'thread-1',
+        toolCallId: 'tool-1',
+        fileId: 'fid-txt',
+        name: 'note.txt',
+      });
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(res.write).toHaveBeenCalledTimes(1);
+    });
+  });
 });
