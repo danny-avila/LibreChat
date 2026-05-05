@@ -1,5 +1,5 @@
 const express = require('express');
-const { isEnabled, getBalanceConfig } = require('@librechat/api');
+const { isEnabled, getBalanceConfig, resolveBuildInfo } = require('@librechat/api');
 const { defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
@@ -19,6 +19,13 @@ const publicSharedLinksEnabled =
 
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
+
+/**
+ * Resolve build metadata eagerly at module load so the first `/api/config`
+ * request does not pay the cost of `execFileSync('git', ...)` on the hot path.
+ * The resolver caches its result after the first call.
+ */
+resolveBuildInfo();
 
 function isBirthday() {
   const today = new Date();
@@ -100,6 +107,22 @@ function buildSharedPayload() {
   return payload;
 }
 
+function buildBuildInfoPayload(interfaceConfig) {
+  if (interfaceConfig?.buildInfo === false) {
+    return undefined;
+  }
+  const info = resolveBuildInfo();
+  if (!info.commit && !info.branch && !info.buildDate) {
+    return undefined;
+  }
+  return {
+    commit: info.commit,
+    commitShort: info.commitShort,
+    branch: info.branch,
+    buildDate: info.buildDate,
+  };
+}
+
 function buildWebSearchConfig(appConfig) {
   const ws = appConfig?.webSearch;
   if (!ws) {
@@ -132,7 +155,8 @@ router.get('/', async function (req, res) {
       };
 
       const interfaceConfig = baseConfig?.interfaceConfig;
-      if (interfaceConfig?.privacyPolicy || interfaceConfig?.termsOfService) {
+      const buildInfoDisabled = interfaceConfig?.buildInfo === false;
+      if (interfaceConfig?.privacyPolicy || interfaceConfig?.termsOfService || buildInfoDisabled) {
         payload.interface = {};
         if (interfaceConfig.privacyPolicy) {
           payload.interface.privacyPolicy = interfaceConfig.privacyPolicy;
@@ -140,6 +164,14 @@ router.get('/', async function (req, res) {
         if (interfaceConfig.termsOfService) {
           payload.interface.termsOfService = interfaceConfig.termsOfService;
         }
+        if (buildInfoDisabled) {
+          payload.interface.buildInfo = false;
+        }
+      }
+
+      const unauthBuildInfo = buildBuildInfoPayload(interfaceConfig);
+      if (unauthBuildInfo) {
+        payload.buildInfo = unauthBuildInfo;
       }
 
       return res.status(200).send(payload);
@@ -175,6 +207,11 @@ router.get('/', async function (req, res) {
     const webSearch = buildWebSearchConfig(appConfig);
     if (webSearch) {
       payload.webSearch = webSearch;
+    }
+
+    const buildInfo = buildBuildInfoPayload(appConfig?.interfaceConfig);
+    if (buildInfo) {
+      payload.buildInfo = buildInfo;
     }
 
     if (!payload.allowAccountDeletion) {

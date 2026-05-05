@@ -20,6 +20,17 @@ jest.mock('@librechat/data-schemas', () => ({
   getTenantId: (...args) => mockGetTenantId(...args),
 }));
 
+const mockResolveBuildInfo = jest.fn(() => ({
+  commit: null,
+  commitShort: null,
+  branch: null,
+  buildDate: null,
+}));
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  resolveBuildInfo: (...args) => mockResolveBuildInfo(...args),
+}));
+
 const request = require('supertest');
 const express = require('express');
 const configRoute = require('../config');
@@ -57,6 +68,12 @@ const mockUser = {
 
 afterEach(() => {
   jest.resetAllMocks();
+  mockResolveBuildInfo.mockReturnValue({
+    commit: null,
+    commitShort: null,
+    branch: null,
+    buildDate: null,
+  });
   delete process.env.APP_TITLE;
   delete process.env.CHECK_BALANCE;
   delete process.env.START_BALANCE;
@@ -354,6 +371,114 @@ describe('GET /api/config', () => {
 
       expect(response.statusCode).toBe(500);
       expect(response.body).toHaveProperty('error');
+    });
+  });
+
+  describe('buildInfo payload', () => {
+    const populatedBuildInfo = {
+      commit: 'abcdef1234567890abcdef1234567890abcdef12',
+      commitShort: 'abcdef1',
+      branch: 'dev',
+      buildDate: '2026-04-20T12:00:00Z',
+    };
+
+    it('includes buildInfo in authenticated response when interface flag is not explicitly disabled', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockResolveBuildInfo.mockReturnValue(populatedBuildInfo);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.buildInfo).toEqual(populatedBuildInfo);
+    });
+
+    it('omits buildInfo when interface.buildInfo is false', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { ...baseAppConfig.interfaceConfig, buildInfo: false },
+      });
+      mockResolveBuildInfo.mockReturnValue(populatedBuildInfo);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('buildInfo');
+    });
+
+    it('omits buildInfo when all resolver fields are null', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockResolveBuildInfo.mockReturnValue({
+        commit: null,
+        commitShort: null,
+        branch: null,
+        buildDate: null,
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('buildInfo');
+    });
+
+    it('includes buildInfo in unauthenticated response when flag is not disabled', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockResolveBuildInfo.mockReturnValue(populatedBuildInfo);
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.buildInfo).toEqual(populatedBuildInfo);
+    });
+
+    it('omits buildInfo in unauthenticated response when interface.buildInfo is false', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { ...baseAppConfig.interfaceConfig, buildInfo: false },
+      });
+      mockResolveBuildInfo.mockReturnValue(populatedBuildInfo);
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('buildInfo');
+    });
+
+    it('propagates interface.buildInfo=false in unauthenticated response so clients can hide About tab', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { ...baseAppConfig.interfaceConfig, buildInfo: false },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.interface).toBeDefined();
+      expect(response.body.interface.buildInfo).toBe(false);
+    });
+
+    it('does not add interface.buildInfo=true to unauthenticated response (default stays implicit)', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { privacyPolicy: { externalUrl: 'https://x' }, buildInfo: true },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.interface).toBeDefined();
+      expect(response.body.interface).not.toHaveProperty('buildInfo');
+    });
+
+    it('includes interface block with only buildInfo=false when nothing else is set', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { buildInfo: false },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.interface).toEqual({ buildInfo: false });
     });
   });
 });

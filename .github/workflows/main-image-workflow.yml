@@ -25,6 +25,12 @@ jobs:
           git fetch --tags
           echo "LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)" >> $GITHUB_ENV
 
+      - name: Compute build metadata
+        run: |
+          echo "BUILD_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
+          echo "BUILD_BRANCH=${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+
       # Set up QEMU
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -67,3 +73,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:latest
           platforms: linux/amd64,linux/arm64
           target: ${{ matrix.target }}
+          build-args: |
+            BUILD_COMMIT=${{ env.BUILD_COMMIT }}
+            BUILD_BRANCH=${{ env.BUILD_BRANCH }}
+            BUILD_DATE=${{ env.BUILD_DATE }}

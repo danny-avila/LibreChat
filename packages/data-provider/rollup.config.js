@@ -1,6 +1,7 @@
 import typescript from 'rollup-plugin-typescript2';
 import resolve from '@rollup/plugin-node-resolve';
 import pkg from './package.json';
+import rootPkg from '../../package.json';
 import peerDepsExternal from 'rollup-plugin-peer-deps-external';
 import commonjs from '@rollup/plugin-commonjs';
 import replace from '@rollup/plugin-replace';
@@ -9,8 +10,17 @@ import terser from '@rollup/plugin-terser';
 const plugins = [
   peerDepsExternal(),
   resolve(),
+  // NOTE: `__LIBRECHAT_VERSION__` is only ever used inside a string literal
+  // (e.g. `VERSION = '__LIBRECHAT_VERSION__'` in `src/config.ts`), so substring
+  // replacement produces valid JS without needing `JSON.stringify`. Do not
+  // repurpose this token as a bare identifier without switching to a quoted
+  // replacement value.
   replace({
-    __IS_DEV__: process.env.NODE_ENV === 'development',
+    preventAssignment: true,
+    values: {
+      __IS_DEV__: process.env.NODE_ENV === 'development',
+      __LIBRECHAT_VERSION__: rootPkg.version,
+    },
   }),
   commonjs(),
   typescript({
