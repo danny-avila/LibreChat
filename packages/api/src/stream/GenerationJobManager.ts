@@ -936,6 +936,26 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Emit an ephemeral event directly to live subscribers, bypassing the
+   * earlyEventBuffer, Redis persistence, and trackUserMessage side-effects.
+   *
+   * Use for fire-and-forget events like MCP tool-call progress that must not
+   * be replayed to reconnecting clients. Silently drops when no subscriber
+   * is connected or the job has been aborted.
+   */
+  async emitTransientEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    const runtime = this.runtimeState.get(streamId);
+    if (!runtime || runtime.abortController.signal.aborted) {
+      return;
+    }
+    if (!runtime.hasSubscriber) {
+      return;
+    }
+    // Emit directly to transport, bypassing appendChunk and earlyEventBuffer
+    await this.eventTransport.emitChunk(streamId, event);
+  }
+
+  /**
    * Extract and save run step from event data.
    * The data is already the run step object from the event payload.
    */

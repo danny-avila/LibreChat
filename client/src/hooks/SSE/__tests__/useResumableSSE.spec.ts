@@ -75,6 +75,15 @@ jest.mock('~/data-provider', () => ({
 const mockErrorHandler = jest.fn();
 const mockSetIsSubmitting = jest.fn();
 const mockClearStepMaps = jest.fn();
+const mockHandleProgressEvent = jest.fn();
+const mockCleanupProgress = jest.fn();
+
+jest.mock('~/hooks/SSE/useProgressTracking', () => ({
+  useProgressTracking: () => ({
+    handleProgressEvent: mockHandleProgressEvent,
+    cleanupProgress: mockCleanupProgress,
+  }),
+}));
 
 jest.mock('~/hooks/SSE/useEventHandlers', () =>
   jest.fn(() => ({
@@ -327,5 +336,83 @@ describe('useResumableSSE - 404 error path', () => {
 
     expect(mockErrorHandler).toHaveBeenCalledTimes(1);
     unmount();
+  });
+});
+
+describe('useResumableSSE - progress event integration', () => {
+  beforeEach(() => {
+    mockSSEInstances.length = 0;
+    localStorage.clear();
+    mockHandleProgressEvent.mockClear();
+    mockCleanupProgress.mockClear();
+  });
+
+  const renderAndInit = async (conversationId = CONV_ID) => {
+    const submission = buildSubmission({ conversation: { conversationId } });
+    const chatHelpers = buildChatHelpers();
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    return { sse: getLastSSE(), unmount, chatHelpers };
+  };
+
+  it('registers a "progress" event listener on the SSE connection', async () => {
+    const { unmount } = await renderAndInit();
+    const sse = getLastSSE();
+
+    const registeredEvents = sse.addEventListener.mock.calls.map(([event]: [string]) => event);
+    expect(registeredEvents).toContain('progress');
+    unmount();
+  });
+
+  it('routes incoming progress events to handleProgressEvent', async () => {
+    const { unmount } = await renderAndInit();
+    const sse = getLastSSE();
+
+    const progressData = JSON.stringify({
+      progress: 3,
+      total: 10,
+      message: 'Working...',
+      toolCallId: 'call-abc',
+    });
+
+    await act(async () => {
+      sse._emit('progress', { data: progressData });
+    });
+
+    expect(mockHandleProgressEvent).toHaveBeenCalledTimes(1);
+    expect(mockHandleProgressEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ data: progressData }),
+    );
+    unmount();
+  });
+
+  it('calls cleanupProgress on unmount', async () => {
+    const { unmount } = await renderAndInit();
+
+    unmount();
+
+    expect(mockCleanupProgress).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call cleanupProgress before unmount', async () => {
+    const { unmount } = await renderAndInit();
+
+    expect(mockCleanupProgress).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('calls cleanupProgress on unmount even after a 404 error', async () => {
+    const { sse, unmount } = await renderAndInit();
+
+    await act(async () => {
+      sse._emit('error', { responseCode: 404 });
+    });
+
+    unmount();
+    expect(mockCleanupProgress).toHaveBeenCalled();
   });
 });

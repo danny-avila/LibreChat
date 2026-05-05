@@ -25,6 +25,7 @@ import {
 import type { ActiveJobsResponse } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
+import { useProgressTracking } from './useProgressTracking';
 import { clearAllDrafts } from '~/utils';
 import store from '~/store';
 
@@ -132,6 +133,7 @@ export default function useResumableSSE(
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
+  const { handleProgressEvent, cleanupProgress } = useProgressTracking();
 
   /**
    * Subscribe to stream via SSE library (supports custom headers)
@@ -334,6 +336,8 @@ export default function useResumableSSE(
           console.error('[ResumableSSE] Error processing message:', error);
         }
       });
+
+      sse.addEventListener('progress', handleProgressEvent);
 
       /**
        * Error event handler - handles BOTH:
@@ -554,6 +558,7 @@ export default function useResumableSSE(
       balanceQuery,
       removeActiveJob,
       queryClient,
+      handleProgressEvent,
     ],
   );
 
@@ -705,6 +710,8 @@ export default function useResumableSSE(
       // Reset UI state on cleanup - useResumeOnLoad will restore if needed
       setIsSubmitting(false);
       setShowStopButton(false);
+      // Clear progress map and pending cleanup timers on unmount
+      cleanupProgress();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);

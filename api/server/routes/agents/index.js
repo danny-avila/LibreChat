@@ -109,11 +109,24 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     }
   };
 
+  const onChunk = (event) => {
+    if (!res.writableEnded) {
+      if (event.event === 'progress') {
+        res.write(`event: progress\ndata: ${JSON.stringify(event.data)}\n\n`);
+      } else {
+        res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
+      }
+      if (typeof res.flush === 'function') {
+        res.flush();
+      }
+    }
+  };
+
   let result;
 
   if (isResume) {
     const { subscription, resumeState, pendingEvents } =
-      await GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError);
+      await GenerationJobManager.subscribeWithResume(streamId, onChunk, onDone, onError);
 
     if (!res.writableEnded) {
       if (resumeState) {
@@ -139,7 +152,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
     result = subscription;
   } else {
-    result = await GenerationJobManager.subscribe(streamId, writeEvent, onDone, onError);
+    result = await GenerationJobManager.subscribe(streamId, onChunk, onDone, onError);
   }
 
   if (!result) {

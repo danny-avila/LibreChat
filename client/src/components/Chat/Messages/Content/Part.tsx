@@ -245,6 +245,7 @@ const Part = memo(function Part({
           attachments={attachments}
           auth={toolCall.auth}
           isLast={isLast}
+          toolCallId={toolCall.id}
         />
       );
     } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {

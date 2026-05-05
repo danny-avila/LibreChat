@@ -72,6 +72,23 @@ export type MCPToolCallResponse =
       isError?: boolean;
     };
 
+export type ProgressToken = string | number;
+
+export interface ProgressNotification {
+  progressToken: ProgressToken;
+  progress: number;
+  total?: number;
+  message?: string;
+}
+
+export interface ProgressState {
+  token: ProgressToken;
+  progress: number;
+  total?: number;
+  message?: string;
+  timestamp: number;
+}
+
 export type Provider =
   | 'google'
   | 'anthropic'
@@ -142,6 +159,10 @@ export type FormattedContentResult = [string, Artifacts | undefined];
 
 export type ImageFormatter = (item: ImageContent) => FormattedContent;
 
+/**
+ * Tool response for MCP tools - must be a proper two-tuple for LangChain's content_and_artifact format.
+ * Progress notifications are handled separately via SSE events, not attached to the response.
+ */
 export type FormattedToolResponse = FormattedContentResult;
 
 /**
