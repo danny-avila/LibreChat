@@ -79,7 +79,7 @@ router.get('/', async function (req, res) {
         !!process.env.APPLE_CLIENT_ID &&
         !!process.env.APPLE_TEAM_ID &&
         !!process.env.APPLE_KEY_ID &&
-        !!process.env.APPLE_PRIVATE_KEY_PATH,
+        (!!process.env.APPLE_PRIVATE_KEY_PATH || !!process.env.APPLE_PRIVATE_KEY),
       openidLoginEnabled: isOpenIdEnabled,
       openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
       openidImageUrl: process.env.OPENID_IMAGE_URL,

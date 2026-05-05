@@ -63,7 +63,10 @@ const configureSocialLogins = async (app) => {
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     passport.use(discordLogin());
   }
-  if (process.env.APPLE_CLIENT_ID && process.env.APPLE_PRIVATE_KEY_PATH) {
+  if (
+    process.env.APPLE_CLIENT_ID &&
+    (process.env.APPLE_PRIVATE_KEY_PATH || process.env.APPLE_PRIVATE_KEY)
+  ) {
     passport.use(appleLogin());
   }
   if (
