@@ -144,6 +144,30 @@ async function consumeFreeMessage({
   }
 
   const entitlementPath = getEntitlementPath(entitlementId);
+
+  // Step 1: ensure a profile row exists for this user. Done as a separate
+  // idempotent upsert so the conditional increment below can run without
+  // upsert and never risks a duplicate-key insert on retry. (A combined
+  // upsert+conditional-filter findOneAndUpdate triggers E11000 when the
+  // user is at the limit, since the $or no longer matches and Mongo tries
+  // to insert a second row against the unique userId/appUserId index.)
+  await collection.updateOne(
+    { userId },
+    {
+      $setOnInsert: {
+        userId,
+        appUserId,
+        entitlementId,
+        isPro: false,
+      },
+    },
+    { upsert: true },
+  );
+
+  // Step 2: conditional increment. Filter matches only when the user is
+  // pro, on a new period, below the limit, or has no quota subdoc yet —
+  // i.e. when this request is allowed. If nothing matches, the user is
+  // over the limit and Mongo returns null (we explicitly disable upsert).
   const filter = {
     userId,
     $or: [
@@ -158,7 +182,6 @@ async function consumeFreeMessage({
   const updatePipeline = [
     {
       $set: {
-        userId,
         appUserId,
         entitlementId: {
           $ifNull: ['$entitlementId', entitlementId],
@@ -196,7 +219,7 @@ async function consumeFreeMessage({
   ];
 
   const result = await collection.findOneAndUpdate(filter, updatePipeline, {
-    upsert: true,
+    upsert: false,
     returnDocument: 'after',
   });
   const profile = result?.value ?? result;

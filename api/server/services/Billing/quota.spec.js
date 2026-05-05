@@ -1,10 +1,14 @@
 const mongoose = require('mongoose');
 
-jest.mock('@librechat/data-schemas', () => ({
-  logger: {
-    error: jest.fn(),
-  },
-}), { virtual: true });
+jest.mock(
+  '@librechat/data-schemas',
+  () => ({
+    logger: {
+      error: jest.fn(),
+    },
+  }),
+  { virtual: true },
+);
 
 jest.mock('~/db/models', () => ({
   SubscriptionProfile: {
@@ -30,7 +34,28 @@ describe('Billing quota service', () => {
 
     collection = {
       findOne: jest.fn(async ({ userId }) => profiles.get(userId.toString()) ?? null),
-      findOneAndUpdate: jest.fn(async (filter, updatePipeline) => {
+      // Mirrors real Mongo: $setOnInsert applies only on insert. With
+      // upsert: true and a unique userId index, a second insert against an
+      // existing key throws E11000 — but the production code only inserts
+      // when the doc is missing, so this mock just no-ops on update.
+      updateOne: jest.fn(async (filter, update, options = {}) => {
+        const key = filter.userId.toString();
+        if (profiles.has(key)) {
+          return { upsertedCount: 0, modifiedCount: 0, matchedCount: 1 };
+        }
+        if (options.upsert && update.$setOnInsert) {
+          profiles.set(key, { ...update.$setOnInsert });
+          return { upsertedCount: 1, modifiedCount: 0, matchedCount: 0 };
+        }
+        return { upsertedCount: 0, modifiedCount: 0, matchedCount: 0 };
+      }),
+      // Real Mongo with upsert: false returns null when the filter doesn't
+      // match, which is how the production code distinguishes "over quota"
+      // from "allowed". (Previously the production code passed upsert: true
+      // here, which masked the over-quota case as an E11000 error and
+      // fail-opened — see the "fail-closes when at the limit" regression
+      // test below.)
+      findOneAndUpdate: jest.fn(async (filter, updatePipeline, options = {}) => {
         const userId = filter.userId;
         const key = userId.toString();
         const current = profiles.get(key) ?? null;
@@ -47,7 +72,7 @@ describe('Billing quota service', () => {
           (current?.quota?.usedMessages ?? 0) < limit;
 
         if (!allowed) {
-          return null;
+          return options.upsert ? { value: null } : null;
         }
 
         let nextUsedMessages = 1;
@@ -124,6 +149,33 @@ describe('Billing quota service', () => {
     expect(fourth.allowed).toBe(false);
     expect(fourth.reason).toBe('quota_exceeded');
     expect(fourth.state.remainingMessages).toBe(0);
+  });
+
+  test('keeps blocking subsequent requests once over the limit', async () => {
+    // Regression: an earlier implementation issued findOneAndUpdate with
+    // upsert: true for the consume step. Once the user was at the limit
+    // the conditional filter no longer matched, Mongo tried to insert a
+    // duplicate against the unique userId index and threw E11000, which
+    // the outer try/catch swallowed as `reason: 'error', allowed: true` —
+    // a fail-open. Verify the 4th, 5th and 6th calls are all denied and
+    // the stored quota stays pinned at the limit (no extra increments).
+    process.env.REVENUECAT_SECRET_API_KEY = 'secret';
+    const userId = new mongoose.Types.ObjectId().toString();
+    const req = { user: { id: userId }, body: { text: 'hello world' } };
+
+    await evaluateSubscriptionQuota(req);
+    await evaluateSubscriptionQuota(req);
+    await evaluateSubscriptionQuota(req);
+
+    for (let i = 0; i < 3; i += 1) {
+      const result = await evaluateSubscriptionQuota(req);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toBe('quota_exceeded');
+      expect(result.state.usedMessages).toBe(3);
+      expect(result.state.remainingMessages).toBe(0);
+    }
+
+    expect(profiles.get(userId).quota.usedMessages).toBe(3);
   });
 
   test('resets free usage when the stored period is stale', async () => {
