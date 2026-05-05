@@ -16,6 +16,9 @@ import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
 
+const getToolCallId = (part: TMessageContentParts): string =>
+  (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+
 type PartWithContextProps = {
   part: TMessageContentParts;
   idx: number;
@@ -186,7 +189,6 @@ const ContentParts = memo(function ContentParts({
 
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
-      const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
       return (
         <PartWithContext
           key={`provider-${messageId}-${idx}`}
@@ -200,7 +202,7 @@ const ContentParts = memo(function ContentParts({
           isCreatedByUser={isCreatedByUser}
           nextType={content?.[idx + 1]?.type}
           isSubmitting={effectiveIsSubmitting}
-          partAttachments={attachmentMap[toolCallId]}
+          partAttachments={attachmentMap[getToolCallId(part)]}
         />
       );
     },
@@ -218,7 +220,6 @@ const ContentParts = memo(function ContentParts({
 
   const renderGroupedPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
-      const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
       return (
         <PartWithContext
           key={`provider-${messageId}-${idx}`}
@@ -232,7 +233,7 @@ const ContentParts = memo(function ContentParts({
           isCreatedByUser={isCreatedByUser}
           nextType={content?.[idx + 1]?.type}
           isSubmitting={effectiveIsSubmitting}
-          partAttachments={attachmentMap[toolCallId]}
+          partAttachments={attachmentMap[getToolCallId(part)]}
           hideAttachments
         />
       );
@@ -268,11 +269,9 @@ const ContentParts = memo(function ContentParts({
         if (group.type === 'single') {
           return group;
         }
-        const groupAttachments = group.parts.flatMap(({ part }) => {
-          const toolCallId =
-            (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-          return attachmentMap[toolCallId] ?? [];
-        });
+        const groupAttachments = group.parts.flatMap(
+          ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
+        );
         return { ...group, groupAttachments };
       }),
     [sequentialParts, attachmentMap],

@@ -48,6 +48,7 @@ jest.mock('../ProgressText', () => ({
 jest.mock('lucide-react', () => ({
   ChevronDown: () => <span>{'chevron'}</span>,
   TriangleAlert: () => <span>{'alert'}</span>,
+  Users: () => <span>{'users'}</span>,
 }));
 
 jest.mock('@librechat/client', () => ({

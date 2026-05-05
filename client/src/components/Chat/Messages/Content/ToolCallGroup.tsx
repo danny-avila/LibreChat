@@ -9,11 +9,11 @@ import type {
   FunctionToolCall,
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
-import { StackedToolIcons } from './ToolOutput';
 import { useLocalize, useExpandCollapse } from '~/hooks';
+import { cn, getToolDisplayLabel } from '~/utils';
+import { StackedToolIcons } from './ToolOutput';
 import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
-import { cn, getToolDisplayLabel } from '~/utils';
 import store from '~/store';
 
 interface ToolMeta {
