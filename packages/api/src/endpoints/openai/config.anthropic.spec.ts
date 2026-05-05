@@ -44,9 +44,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://host.docker.internal:4000/v1',
-          defaultHeaders: {
-            'anthropic-beta': 'context-1m-2025-08-07',
-          },
+          defaultHeaders: {},
         },
         tools: [],
       });

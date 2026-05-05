@@ -492,6 +492,39 @@ class BaseClient {
         }
         delete userMessage.image_urls;
       }
+      /**
+       * Persist the user's manual skill picks onto the user message so the
+       * frontend `SkillPills` component can render them in history
+       * after reload. UI-only metadata — the runtime skill resolution
+       * pipeline reads the top-level `req.body.manualSkills` separately.
+       * Filter is defense-in-depth on top of Mongoose schema validation:
+       * keeps the DB row free of empty/non-string entries even if a
+       * crafted payload slips past schema checks upstream.
+       */
+      const rawManualSkills = this.options.req?.body?.manualSkills;
+      if (Array.isArray(rawManualSkills) && rawManualSkills.length > 0) {
+        const skills = rawManualSkills.filter((s) => typeof s === 'string' && s.length > 0);
+        if (skills.length > 0) {
+          userMessage.manualSkills = skills;
+        }
+      }
+      /**
+       * Persist the names of skills auto-primed this turn via `always-apply`
+       * frontmatter so `SkillPills` can render pinned-variant badges
+       * on the user bubble that survive reload and history render. Frozen
+       * at turn time (not reconstructed from `Skill.alwaysApply` at render
+       * time) because the flag is mutable — historical turns must keep
+       * their audit trail even if an admin flips `alwaysApply` off later.
+       */
+      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      if (Array.isArray(alwaysApplySkillPrimes) && alwaysApplySkillPrimes.length > 0) {
+        const names = alwaysApplySkillPrimes
+          .map((p) => p?.name)
+          .filter((n) => typeof n === 'string' && n.length > 0);
+        if (names.length > 0) {
+          userMessage.alwaysAppliedSkills = names;
+        }
+      }
       userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user).catch(
         (err) => {
           logger.error('[BaseClient] Failed to save user message:', err);
@@ -780,11 +813,28 @@ class BaseClient {
       endpointType: options.endpointType,
       ...endpointOptions,
     };
+    const conversationCreatedAt = options?.req?.conversationCreatedAt;
+    const createdAtOnInsert =
+      conversationCreatedAt != null ? new Date(conversationCreatedAt) : undefined;
+    const validCreatedAtOnInsert =
+      createdAtOnInsert && !Number.isNaN(createdAtOnInsert.getTime())
+        ? createdAtOnInsert
+        : undefined;
 
-    const existingConvo =
-      this.fetchedConvo === true
-        ? null
-        : await db.getConvo(options?.req?.user?.id, message.conversationId);
+    const req = options?.req;
+    const skippedExistingConvoLookup = this.fetchedConvo === true;
+    const hasResolvedConversation =
+      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
+    let existingConvo = null;
+    if (!skippedExistingConvoLookup && hasResolvedConversation) {
+      existingConvo = req.resolvedConversation;
+    } else if (!skippedExistingConvoLookup) {
+      existingConvo = await db.getConvo(req?.user?.id, message.conversationId);
+    }
+    if (hasResolvedConversation) {
+      delete req.resolvedConversation;
+    }
+    const shouldSetCreatedAtOnInsert = !skippedExistingConvoLookup && existingConvo == null;
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);
@@ -814,6 +864,7 @@ class BaseClient {
     const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
+      createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
     });
 
     return { message: savedMessage, conversation };

@@ -5,7 +5,6 @@ import {
   ThinkingDisplay,
   AnthropicEffort,
   anthropicSettings,
-  supportsContext1m,
   resolveThinkingDisplay,
   supportsAdaptiveThinking,
 } from 'librechat-data-provider';
@@ -55,10 +54,6 @@ function getClaudeHeaders(
   } else if (/claude-3[-.]7/.test(model)) {
     return {
       'anthropic-beta': 'token-efficient-tools-2025-02-19,output-128k-2025-02-19',
-    };
-  } else if (supportsContext1m(model)) {
-    return {
-      'anthropic-beta': 'context-1m-2025-08-07',
     };
   }
 

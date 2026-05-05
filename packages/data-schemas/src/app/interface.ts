@@ -24,7 +24,7 @@ export async function loadDefaultInterface({
 
   const memoryConfig = config?.memory;
   const memoryEnabled = isMemoryEnabled(memoryConfig);
-  /** Only disable memories if memory config is present but disabled/invalid */
+  /** Only disable memories if memory config is present and explicitly disabled */
   const shouldDisableMemories = memoryConfig && !memoryEnabled;
 
   const loadedInterface: AppConfig['interfaceConfig'] = removeNullishValues({
@@ -53,6 +53,7 @@ export async function loadDefaultInterface({
     peoplePicker: interfaceConfig?.peoplePicker,
     marketplace: interfaceConfig?.marketplace,
     remoteAgents: interfaceConfig?.remoteAgents,
+    skills: interfaceConfig?.skills,
   });
 
   return loadedInterface;

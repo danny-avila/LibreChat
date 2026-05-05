@@ -2,11 +2,11 @@ const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
 const {
-  EnvVar,
-  Constants,
   GraphEvents,
   GraphNodeKeys,
   ToolEndHandler,
+  CODE_EXECUTION_TOOLS,
+  createContentAggregator,
 } = require('@librechat/agents');
 const {
   sendEvent,
@@ -16,7 +16,6 @@ const {
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput } = require('~/server/services/Files/Code/process');
-const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
 class ModelEndHandler {
@@ -76,6 +75,9 @@ class ModelEndHandler {
       if (modelName) {
         usage.model = modelName;
       }
+      if (agentContext.provider) {
+        usage.provider = agentContext.provider;
+      }
 
       const taggedUsage = markSummarizationUsage(usage, metadata);
 
@@ -117,6 +119,48 @@ async function emitEvent(res, streamId, eventData) {
 }
 
 /**
+ * Maps a {@link SubagentUpdateEvent} phase to the corresponding
+ * {@link GraphEvents} name that the SDK's `createContentAggregator`
+ * knows how to consume. Phases that don't carry content (`start`, `stop`,
+ * `error`) or whose payload doesn't match a handled event (`run_step`
+ * with an `ON_TOOL_EXECUTE`-shaped batch request rather than a RunStep)
+ * return `null` so the caller skips them.
+ * @param {SubagentUpdateEvent} event
+ * @returns {string | null}
+ */
+function subagentPhaseToGraphEvent(event) {
+  switch (event?.phase) {
+    case 'run_step':
+      /** `ON_RUN_STEP` and `ON_TOOL_EXECUTE` both forward with phase
+       *  `run_step`; only the former matches the aggregator's RunStep
+       *  schema. Detect by presence of `stepDetails`. */
+      return event.data?.stepDetails ? GraphEvents.ON_RUN_STEP : null;
+    case 'run_step_delta':
+      return GraphEvents.ON_RUN_STEP_DELTA;
+    case 'run_step_completed':
+      return GraphEvents.ON_RUN_STEP_COMPLETED;
+    case 'message_delta':
+      return GraphEvents.ON_MESSAGE_DELTA;
+    case 'reasoning_delta':
+      return GraphEvents.ON_REASONING_DELTA;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Folds a single {@link SubagentUpdateEvent} into the given content
+ * aggregator. Silent no-op for phases outside the aggregator's domain.
+ * @param {{ aggregateContent: Function }} aggregator
+ * @param {SubagentUpdateEvent} event
+ */
+function feedSubagentAggregator(aggregator, event) {
+  const graphEvent = subagentPhaseToGraphEvent(event);
+  if (!graphEvent) return;
+  aggregator.aggregateContent({ event: graphEvent, data: event.data });
+}
+
+/**
  * @typedef {Object} ToolExecuteOptions
  * @property {(toolNames: string[]) => Promise<{loadedTools: StructuredTool[]}>} loadTools - Function to load tools by name
  * @property {Object} configurable - Configurable context for tool invocation
@@ -142,6 +186,7 @@ function getDefaultHandlers({
   streamId = null,
   toolExecuteOptions = null,
   summarizationOptions = null,
+  subagentAggregatorsByToolCallId = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -253,6 +298,55 @@ function getDefaultHandlers({
   if (toolExecuteOptions) {
     handlers[GraphEvents.ON_TOOL_EXECUTE] = createToolExecuteHandler(toolExecuteOptions);
   }
+
+  handlers[GraphEvents.ON_SUBAGENT_UPDATE] = {
+    /**
+     * Forwards subagent progress envelopes to the client stream, and
+     * (when a caller-owned aggregator map is provided) also folds each
+     * event into a per-tool-call `createContentAggregator`. The
+     * resulting `contentParts` are attached to the parent's `subagent`
+     * tool_call at message-save time so the child's reasoning / tool
+     * calls / final text survive a page refresh — in-memory Recoil
+     * atoms alone wouldn't persist that.
+     *
+     * Aggregation runs regardless of stream visibility (persistence +
+     * dialog depend on it), but the SSE forward respects
+     * `hide_sequential_outputs` the same way `ON_RUN_STEP`,
+     * `ON_MESSAGE_DELTA`, etc. do — so intermediate agents in a
+     * sequential chain don't leak their subagent activity when the
+     * chain is configured to suppress intermediates.
+     */
+    handle: async (event, data, metadata) => {
+      const isLastAgent = checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node);
+      const visible = isLastAgent || !metadata?.hide_sequential_outputs;
+      /**
+       * Gate BOTH aggregation (persistence) AND streaming on the same
+       * visibility rule. If we aggregated for a hidden intermediate
+       * agent, `finalizeSubagentContent` would still attach its
+       * child's reasoning / tool output to the saved message — so a
+       * page refresh would reveal activity that was intentionally
+       * suppressed live. Treat hide_sequential_outputs as a
+       * consistent "don't record" rule for subagent traces.
+       */
+      if (!visible) return;
+      if (subagentAggregatorsByToolCallId && data?.parentToolCallId) {
+        const key = data.parentToolCallId;
+        let aggregator = subagentAggregatorsByToolCallId.get(key);
+        if (!aggregator) {
+          aggregator = createContentAggregator();
+          subagentAggregatorsByToolCallId.set(key, aggregator);
+        }
+        try {
+          feedSubagentAggregator(aggregator, data);
+        } catch (err) {
+          logger.warn(
+            `[ON_SUBAGENT_UPDATE] Failed to aggregate phase "${data?.phase}" for tool_call ${key}: ${err?.message ?? err}`,
+          );
+        }
+      }
+      await emitEvent(res, streamId, { event, data });
+    },
+  };
 
   if (summarizationOptions?.enabled !== false) {
     handlers[GraphEvents.ON_SUMMARIZE_START] = {
@@ -443,9 +537,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       return;
     }
 
-    const isCodeTool =
-      output.name === Tools.execute_code || output.name === Constants.PROGRAMMATIC_TOOL_CALLING;
-    if (!isCodeTool) {
+    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
       return;
     }
 
@@ -454,22 +546,42 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
     }
 
     for (const file of output.artifact.files) {
+      /* `inherited` files are unchanged passthroughs of inputs the caller
+       * already owns (skill files, prior session inputs, inherited
+       * .dirkeep markers). Skip post-processing: re-downloading with the
+       * user's session key 403s when the file is entity-scoped, and the
+       * input is already persisted at its origin. They remain available
+       * to subsequent calls via primeInvokedSkills / session inheritance. */
+      if (file.inherited) {
+        continue;
+      }
       const { id, name } = file;
       artifactPromises.push(
         (async () => {
-          const result = await loadAuthValues({
-            userId: req.user.id,
-            authFields: [EnvVar.CODE_API_KEY],
-          });
           const fileMetadata = await processCodeOutput({
             req,
             id,
             name,
-            apiKey: result[EnvVar.CODE_API_KEY],
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
-            session_id: output.artifact.session_id,
+            /**
+             * Use the FILE's session_id (storage session), not the
+             * top-level artifact session_id (exec session). The codeapi
+             * worker reports two distinct ids on a tool result:
+             *   - `artifact.session_id` is the EXEC session — the
+             *     sandbox VM that ran the bash command. Files don't
+             *     live there; it's torn down post-execution.
+             *   - `file.session_id` is the STORAGE session — the
+             *     file-server bucket prefix where artifacts actually
+             *     live and are served from.
+             * `processCodeOutput` builds `/download/{session_id}/{id}`,
+             * so passing the exec id resolves to a path the file-server
+             * doesn't know about and 404s. Fall back to artifact-level
+             * for older worker payloads that may not populate per-file
+             * ids.
+             */
+            session_id: file.session_id ?? output.artifact.session_id,
           });
           if (!streamId && !res.headersSent) {
             return fileMetadata;
@@ -651,9 +763,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       return;
     }
 
-    const isCodeTool =
-      output.name === Tools.execute_code || output.name === Constants.PROGRAMMATIC_TOOL_CALLING;
-    if (!isCodeTool) {
+    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
       return;
     }
 
@@ -662,22 +772,42 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
     }
 
     for (const file of output.artifact.files) {
+      /* `inherited` files are unchanged passthroughs of inputs the caller
+       * already owns (skill files, prior session inputs, inherited
+       * .dirkeep markers). Skip post-processing: re-downloading with the
+       * user's session key 403s when the file is entity-scoped, and the
+       * input is already persisted at its origin. They remain available
+       * to subsequent calls via primeInvokedSkills / session inheritance. */
+      if (file.inherited) {
+        continue;
+      }
       const { id, name } = file;
       artifactPromises.push(
         (async () => {
-          const result = await loadAuthValues({
-            userId: req.user.id,
-            authFields: [EnvVar.CODE_API_KEY],
-          });
           const fileMetadata = await processCodeOutput({
             req,
             id,
             name,
-            apiKey: result[EnvVar.CODE_API_KEY],
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
-            session_id: output.artifact.session_id,
+            /**
+             * Use the FILE's session_id (storage session), not the
+             * top-level artifact session_id (exec session). The codeapi
+             * worker reports two distinct ids on a tool result:
+             *   - `artifact.session_id` is the EXEC session — the
+             *     sandbox VM that ran the bash command. Files don't
+             *     live there; it's torn down post-execution.
+             *   - `file.session_id` is the STORAGE session — the
+             *     file-server bucket prefix where artifacts actually
+             *     live and are served from.
+             * `processCodeOutput` builds `/download/{session_id}/{id}`,
+             * so passing the exec id resolves to a path the file-server
+             * doesn't know about and 404s. Fall back to artifact-level
+             * for older worker payloads that may not populate per-file
+             * ids.
+             */
+            session_id: file.session_id ?? output.artifact.session_id,
           });
 
           if (!fileMetadata) {
