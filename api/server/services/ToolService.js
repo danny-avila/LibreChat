@@ -1269,12 +1269,19 @@ async function loadToolsForExecution({
    * read `config.configurable.user?.id || user_id === undefined` and
    * `MCPManager.getConnection` throws "No connection found for server X"
    * (it can't fall through to the user-connection path without a userId).
+   *
+   * Only set the keys when `req.user.id` is present. Because
+   * `toolConfigurable` wins the merge, writing `user_id: undefined`
+   * unconditionally would clobber the outer config's `'api-user'`
+   * fallback (set by Responses/OpenAI controllers when `req.user` is
+   * absent). Omitting the keys lets the merge preserve whatever the
+   * outer configurable already had.
    */
-  const configurable = {
-    userMCPAuthMap,
-    user: createSafeUser(req.user),
-    user_id: req.user?.id,
-  };
+  const configurable = { userMCPAuthMap };
+  if (req.user?.id) {
+    configurable.user = createSafeUser(req.user);
+    configurable.user_id = req.user.id;
+  }
 
   if (actionsEnabled === undefined) {
     const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent?.id);

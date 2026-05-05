@@ -372,6 +372,11 @@ describe('ToolService - Action Capability Gating', () => {
      * `{ ...configurable, ...toolConfigurable }`, so the configurable
      * returned here MUST carry the user identity for MCP connection
      * lookup to succeed in subagent tool calls.
+     *
+     * Conversely, when `req.user` is absent (API-key path) we must NOT
+     * write `user`/`user_id` keys, otherwise the merge would clobber the
+     * outer config's `'api-user'` fallback set by Responses/OpenAI
+     * controllers.
      */
     it('returns configurable with user and user_id from req.user', async () => {
       const req = createMockReq([]);
@@ -391,7 +396,7 @@ describe('ToolService - Action Capability Gating', () => {
       );
     });
 
-    it('returns empty user object when req.user is undefined', async () => {
+    it('omits user keys when req.user is undefined so outer config fallback is preserved', async () => {
       const req = createMockReq([]);
       req.config = {};
       req.user = undefined;
@@ -403,8 +408,40 @@ describe('ToolService - Action Capability Gating', () => {
         toolNames: [],
       });
 
-      expect(result.configurable.user_id).toBeUndefined();
-      expect(result.configurable.user).toEqual({});
+      expect('user_id' in result.configurable).toBe(false);
+      expect('user' in result.configurable).toBe(false);
+    });
+
+    it('omits user keys when req.user is null so outer config fallback is preserved', async () => {
+      const req = createMockReq([]);
+      req.config = {};
+      req.user = null;
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_123' },
+        toolNames: [],
+      });
+
+      expect('user_id' in result.configurable).toBe(false);
+      expect('user' in result.configurable).toBe(false);
+    });
+
+    it('omits user keys when req.user is present but has no id', async () => {
+      const req = createMockReq([]);
+      req.config = {};
+      req.user = { email: 'a@b.c' };
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_123' },
+        toolNames: [],
+      });
+
+      expect('user_id' in result.configurable).toBe(false);
+      expect('user' in result.configurable).toBe(false);
     });
   });
 
