@@ -207,6 +207,9 @@ resource app 'Microsoft.App/containerApps@2025-02-02-preview' = {
             { name: 'CUSTOM_FOOTER',                value: 'Kaleidoscope 2025' }
             { name: 'HELP_AND_FAQ_URL',             value: 'https://app.kaleidoscopeai.net/?stay=yes' }
             { name: 'DOMAIN_CLIENT',                value: domainClient }
+            { name: 'ENABLE_CUSTOM_SKILLS',         value: 'false' }
+            { name: 'ENABLE_SLIM_PROMPT',           value: 'true' }
+            { name: 'ENABLE_DOCUMENT_BLOCKS',       value: 'true' }
           ]
         }
       ]

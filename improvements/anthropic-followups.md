@@ -203,7 +203,67 @@ The Help Others / Help Myself tiles and the various "mode-setting" buttons (in `
 
 ---
 
-## 4. Known limitations (write down so they don't get rediscovered)
+## 4. Prompt and skill content sync (drift prevention)
+
+There are two physically separate sources of "big prompt" content, and they're not synced. Without a plan, edits to one silently fail to reach Claude.
+
+### The drift problem
+
+| Source | Loaded by | Reaches Claude in… |
+|---|---|---|
+| `api/app/clients/prompts/assistant/01-general-instructions.txt` | `featureFlags.getSlimSystemPrompt()` reads it fresh per-request from disk | All three modes (Hybrid, Skills, Legacy) |
+| `api/app/clients/prompts/assistant/02-classroom-management.txt`, `03-assignment-generation.txt` | `loadCustomConfig.resolvePromptFiles()` concatenates all `.txt` in the dir alphabetically into `promptPrefix` | Legacy only — slim-prompt swap discards them in Hybrid/Skills (`AnthropicClient.js`: `effectiveSystemMessage = slimPrompt ?? this.systemMessage`) |
+| `api/app/clients/skills/kaleidoscope-*/{SKILL.md,*.md}` | Zipped + uploaded by `upload-skills.js` to Anthropic's workspace | Skills mode only, and only after a successful re-upload to that environment's workspace |
+
+So:
+- Edits to `01-…txt` → propagate on deploy. No extra step.
+- Edits to `02-…txt` / `03-…txt` → land in git, have **zero runtime effect** in the active demo modes. Educator who edits these will see no change.
+- Edits to `kaleidoscope-*` skill files → no effect until someone runs `node api/app/clients/skills/upload-skills.js` against the target Anthropic workspace.
+
+Note: renaming `02-/03-` to a different extension (e.g. `.legacy.txt`) does **not** exclude them from the loader — the filter is `f.endsWith('.txt')`, so any `*.txt` still gets concatenated. Keep filenames as-is and solve via process, not naming.
+
+### Plan: auto-upload skills on deploy
+
+Most robust option. Make the deploy pipeline detect changes under `api/app/clients/skills/**` and re-run the upload before traffic shifts.
+
+Sketch:
+
+1. CI step (after tests, before deploy): diff `api/app/clients/skills/kaleidoscope-*/**` between the deploying commit and the previous deployed commit (or the live `registry.json` content baked into the running image — see below).
+2. If anything changed, run `ANTHROPIC_API_KEY=$ENV_KEY node api/app/clients/skills/upload-skills.js` against the target environment's API key. The script versions automatically and updates `registry.json` in place.
+3. Commit the resulting `registry.json` into the deploy artifact (image, archive, whatever the pipeline ships) — **not** into git, since it's environment-specific.
+4. The running app reads `registry.json` from disk via `featureFlags.loadRegistry()`, so it just needs to be present in the deployed file tree.
+
+Edge cases the pipeline needs to handle:
+- **First deploy to a new environment** — no prior `registry.json` exists; script creates from scratch. Already supported.
+- **Workspace sharing** — if dev/test/prod share one Anthropic workspace, all three see the same skill IDs. Uploading from one env effectively updates all of them. Decide upfront whether to allow that or require strict per-env separation (different Anthropic workspaces = different API keys).
+- **Upload failure** — if Anthropic's `/v1/skills` endpoint is down mid-deploy, the deploy should fail closed (not ship a stale skill set). `upload-skills.js` exits non-zero on failure; the CI step should propagate that.
+- **Race condition with concurrent deploys** — Anthropic versions skills automatically, so two concurrent uploads each create a new version and both register `version: 'latest'`. Probably fine, but worth verifying once.
+
+### Registry.json handling
+
+`registry.json` is gitignored (`api/app/clients/skills/.gitignore:3`) and per-environment. That's the right call — committing it would create cross-env confusion when skill IDs differ. But it means:
+
+- Fresh checkout in a new environment has no registry → `getCustomSkills()` returns `[]` → Skills mode silently falls back to only the built-in `docx`/`pdf` skills (no Kaleidoscope content). Easy to miss in QA.
+- Backups should include the deployed `registry.json` per env. Losing it doesn't break anything (re-running the upload regenerates it) but losing it *and* not re-running means silently degraded Skills responses.
+- If the deploy pipeline doesn't auto-upload (i.e. before plan above ships), document the manual step in the runbook.
+
+### Runbook entries to add
+
+Until auto-upload is in place, document these for whoever is deploying:
+
+1. After every deploy that touches `api/app/clients/skills/**`, run on the target host: `ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY node api/app/clients/skills/upload-skills.js`. Verify the resulting `registry.json` has the expected slugs.
+2. After deploying to a fresh environment, always run the upload script once even if no skill files changed — the new env has no `registry.json` yet.
+3. If switching `ENABLE_CUSTOM_SKILLS` from `false` to `true` and skills haven't been uploaded yet, expect Skills mode responses to lack Kaleidoscope content. Symptom: generic-feeling outputs. Fix: run the upload script.
+4. Editing `02-classroom-management.txt` or `03-assignment-generation.txt` only matters in Legacy mode. For changes to reach Skills/Hybrid, edit the corresponding `kaleidoscope-*` skill files instead, then re-upload.
+
+### Owner / when
+
+- **Auto-upload pipeline work** — ~half day of CI work + verification. Should land before the demo is handed off to a team that will iterate on skill content.
+- **Runbook entries** — can be written today; should live wherever this team's deploy docs are.
+
+---
+
+## 5. Known limitations (write down so they don't get rediscovered)
 
 - **Hybrid mode markdown converter is limited** to `# heading`, `- bullet`, `**bold**`, plain text, blank lines. No tables, images, charts, special formatting.
 - **No PDF support in hybrid mode.** Only `.docx`.
@@ -218,7 +278,7 @@ The Help Others / Help Myself tiles and the various "mode-setting" buttons (in `
 
 ---
 
-## 5. Quick reference: configuration
+## 6. Quick reference: configuration
 
 ### Switching modes
 
