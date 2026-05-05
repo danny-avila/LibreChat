@@ -26,7 +26,12 @@ const initializeOAuthReconnectManager = require('./services/initializeOAuthRecon
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
-const { getRoleByName, updateAccessPermissions, seedDatabase } = require('~/models');
+const {
+  getRoleByName,
+  updateAccessPermissions,
+  seedDatabase,
+  sweepOrphanedPreviews,
+} = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
@@ -219,6 +224,13 @@ if (cluster.isMaster) {
 
     /** Seed database (idempotent) */
     await seedDatabase();
+
+    /* Recover any code-execution file records left at `status: 'pending'`
+     * by a prior process restart mid-extraction. Mirror of the path in
+     * `server/index.js`; see comment there for context. */
+    sweepOrphanedPreviews().catch((err) => {
+      logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
+    });
 
     /** Initialize app configuration */
     const appConfig = await getAppConfig();

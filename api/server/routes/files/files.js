@@ -295,6 +295,60 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
   }
 });
 
+/**
+ * Poll the lifecycle status of a code-execution file's inline preview.
+ *
+ * Two-phase code-execution flow: phase-1 persists the file blob and
+ * emits the attachment record at `status: 'pending'`; phase-2 runs
+ * HTML extraction in the background and transitions the record to
+ * `'ready'` (with `text` + `textFormat`) or `'failed'` (with
+ * `previewError`). The frontend's `useFilePreview` React Query hook
+ * polls this endpoint at ~2.5s intervals while `status === 'pending'`
+ * and `isSubmitting === true`, then auto-stops on terminal status.
+ *
+ * Returns the smallest viable shape:
+ *   - `status` always present (defaults to `'ready'` for legacy records
+ *     that never had the field — clients treat absent as ready).
+ *   - `text` and `textFormat` only when status is 'ready' AND text
+ *     is non-null (preserves the security contract from PR #12934 —
+ *     office bucket files MUST NOT receive plain-text fallbacks).
+ *   - `previewError` only when status is 'failed'.
+ *
+ * Reuses the `fileAccess` middleware so ACL is identical to download.
+ *
+ * @route GET /files/:file_id/preview
+ */
+router.get('/:file_id/preview', fileAccess, async (req, res) => {
+  try {
+    const { file_id } = req.params;
+    /* `fileAccess` returns the file via `getFiles` which excludes `text`
+     * by default. Re-fetch via `findFileById` here so the response can
+     * include the extracted preview when ready. By-id lookup is indexed,
+     * so the second hit is cheap. */
+    const file = await db.findFileById(file_id);
+    if (!file) {
+      return res.status(404).json({ error: 'Not Found', message: 'File not found' });
+    }
+    /* Default to 'ready' for back-compat: legacy records pre-date the
+     * field, and non-office files never get a status set in phase-1. */
+    const status = file.status ?? 'ready';
+    const payload = { file_id, status };
+    if (status === 'ready' && file.text != null) {
+      payload.text = file.text;
+      payload.textFormat = file.textFormat ?? null;
+    }
+    if (status === 'failed' && file.previewError) {
+      payload.previewError = file.previewError;
+    }
+    return res.status(200).json(payload);
+  } catch (error) {
+    logger.error('[/files/:file_id/preview] Error fetching preview status:', error);
+    return res
+      .status(500)
+      .json({ error: 'Internal Server Error', message: 'Failed to fetch preview status' });
+  }
+});
+
 router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   try {
     const { userId, file_id } = req.params;

@@ -25,7 +25,12 @@ const {
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
-const { getRoleByName, updateAccessPermissions, seedDatabase } = require('~/models');
+const {
+  getRoleByName,
+  updateAccessPermissions,
+  seedDatabase,
+  sweepOrphanedPreviews,
+} = require('~/models');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
@@ -69,6 +74,16 @@ const startServer = async () => {
   }
 
   await runAsSystem(seedDatabase);
+  /* Recover any code-execution file records left at `status: 'pending'`
+   * by a prior process restart mid-extraction. The two-phase preview
+   * flow runs phase-2 in-process; if the backend died before it
+   * finished, those records would otherwise stay pending forever and
+   * the frontend would poll indefinitely. Cheap — `status` is indexed
+   * and the candidate set is bounded by what was in flight at shutdown.
+   * Fire-and-forget so a transient error here doesn't block boot. */
+  sweepOrphanedPreviews().catch((err) => {
+    logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
+  });
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
   await runAsSystem(async () => {
