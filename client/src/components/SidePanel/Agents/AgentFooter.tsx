@@ -1,3 +1,6 @@
+/* eslint-disable i18next/no-literal-string */
+/* ^ We're not worried about i18n for this app ^ */
+
 import { Globe } from 'lucide-react';
 import { Spinner } from '@librechat/client';
 import { useWatch, useFormContext } from 'react-hook-form';
@@ -8,8 +11,14 @@ import {
   PermissionBits,
   PermissionTypes,
 } from 'librechat-data-provider';
-import type { AgentForm, AgentPanelProps } from '~/common';
-import { useLocalize, useAuthContext, useHasAccess, useResourcePermissions } from '~/hooks';
+import { AgentForm, AgentPanelProps, isEphemeralAgent } from '~/common';
+import {
+  useLocalize,
+  useAuthContext,
+  useHasAccess,
+  useResourcePermissions,
+  useSelectAgent,
+} from '~/hooks';
 import { GenericGrantAccessDialog } from '~/components/Sharing';
 import { useUpdateAgentMutation } from '~/data-provider';
 import AdvancedButton from './Advanced/AdvancedButton';
@@ -18,6 +27,8 @@ import DuplicateAgent from './DuplicateAgent';
 import AdminSettings from './AdminSettings';
 import DeleteButton from './DeleteButton';
 import { Panel } from '~/common';
+import NewJerseyPanelButton from '~/nj/components/NewJerseyPanelButton';
+import { useCallback } from 'react';
 
 export default function AgentFooter({
   activePanel,
@@ -56,6 +67,13 @@ export default function AgentFooter({
   const { hasPermission: hasRemoteAgentPermission, isLoading: remotePermissionsLoading } =
     useResourcePermissions(ResourceType.REMOTE_AGENT, agent?._id || '');
 
+  const { onSelect: onSelectAgent } = useSelectAgent();
+  const handleSelectAgent = useCallback(() => {
+    if (agent_id) {
+      onSelectAgent(agent_id);
+    }
+  }, [agent_id, onSelectAgent]);
+
   const canShareThisAgent = hasPermission(PermissionBits.SHARE);
   const canEditThisAgent = hasPermission(PermissionBits.EDIT);
   const canDeleteThisAgent = hasPermission(PermissionBits.DELETE);
@@ -74,6 +92,67 @@ export default function AgentFooter({
   };
 
   const showButtons = activePanel === Panel.builder;
+
+  /**
+   * NJ: There are enough customizations that we simply return our own component lib
+   *
+   * Make sure to check that the LibreChat implementation hasn't drifted too far functionality-wise!
+   */
+  return (
+    <div>
+      {/* Advanced settings */}
+      {showButtons && (
+        <div data-testid="advanced-button">
+          <NewJerseyPanelButton label="Advanced settings" setActivePanel={setActivePanel} />
+          <hr />
+        </div>
+      )}
+
+      {/* Version history */}
+      {showButtons && agent_id && (
+        <div data-testid="version-button">
+          <NewJerseyPanelButton label="Version history" setActivePanel={setActivePanel} />
+          <hr />
+        </div>
+      )}
+
+      {/* Admin settings */}
+      {user?.role === SystemRoles.ADMIN && showButtons && (
+        <div className="mt-4 px-4">
+          <AdminSettings />
+        </div>
+      )}
+
+      {showButtons && <hr className="my-4" />}
+
+      {/* Create / save */}
+      <div className="mb-4 px-4">
+        <button
+          type="submit"
+          className="btn btn-primary w-full justify-center"
+          disabled={isSaving}
+          aria-busy={isSaving}
+        >
+          {renderSaveButton()}
+        </button>
+      </div>
+
+      {/* Run agent */}
+      {!isEphemeralAgent(agent_id) && (
+        <div className="px-4">
+          <button
+            className="btn btn-neutral w-full justify-center"
+            onClick={(e) => {
+              e.preventDefault();
+              handleSelectAgent();
+            }}
+          >
+            Run agent
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="mb-1 flex w-full flex-col gap-2">

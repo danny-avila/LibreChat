@@ -78,6 +78,7 @@ jest.mock('~/hooks', () => ({
   useAuthContext: () => mockUseAuthContext(),
   useHasAccess: () => mockUseHasAccess(),
   useResourcePermissions: () => mockUseResourcePermissions(),
+  useSelectAgent: () => jest.fn(),
 }));
 
 const createBaseMutation = <T = Agent, P = any>(
@@ -268,10 +269,10 @@ describe('AgentFooter', () => {
       expect(screen.getByText('Save')).toBeInTheDocument();
       expect(screen.getByTestId('advanced-button')).toBeInTheDocument();
       expect(screen.getByTestId('version-button')).toBeInTheDocument();
-      expect(screen.getByTestId('delete-button')).toBeInTheDocument();
+      expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument(); // NJ: Removed
       expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
-      expect(screen.getByTestId('grant-access-dialog-agent')).toBeInTheDocument();
-      expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
+      expect(screen.queryByTestId('grant-access-dialog-agent')).not.toBeInTheDocument(); // NJ: Removed
+      expect(screen.queryByTestId('duplicate-button')).not.toBeInTheDocument(); // NJ: Removed
       expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
     });
 
@@ -342,7 +343,7 @@ describe('AgentFooter', () => {
       mockUseAuthContext.mockReturnValue(createAuthContext(mockUsers.admin));
       const { unmount } = render(<AgentFooter {...defaultProps} />);
       expect(screen.getByTestId('admin-settings')).toBeInTheDocument();
-      expect(screen.getByTestId('grant-access-dialog-agent')).toBeInTheDocument();
+      expect(screen.queryByTestId('grant-access-dialog-agent')).not.toBeInTheDocument(); // NJ: Removed
 
       // Clean up the first render
       unmount();
@@ -444,7 +445,7 @@ describe('AgentFooter', () => {
         permissionBits: 2,
       });
       render(<AgentFooter {...defaultProps} />);
-      expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
+      expect(screen.queryByTestId('duplicate-button')).not.toBeInTheDocument(); // NJ: Removed
     });
 
     test('hides duplicate button for non-owner with only VIEW permission', () => {
@@ -496,7 +497,7 @@ describe('AgentFooter', () => {
         permissionBits: 0,
       });
       render(<AgentFooter {...defaultProps} />);
-      expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
+      expect(screen.queryByTestId('duplicate-button')).not.toBeInTheDocument(); // NJ: Removed
     });
   });
 
