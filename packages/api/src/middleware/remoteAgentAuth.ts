@@ -462,7 +462,15 @@ export function createRemoteAgentAuth({
   updateUser,
   getAppConfig,
 }: RemoteAgentAuthDeps): RequestHandler {
-  const handler: RequestHandler = async (req, res, next) => {
+  /**
+   * Annotated as `express.Request` (and helpers below take the same type)
+   * so the local `Request.user` augmentation in `src/types/express.d.ts`
+   * applies inside the closure. The closure is then cast to
+   * `RequestHandler` at the return — `RequestHandler`'s internal
+   * `Request` resolves through `express-serve-static-core` and lacks the
+   * augmentation, so a direct return would mismatch on `user`.
+   */
+  const handler = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const initialConfigOptions = getConfigOptions(req);
       const config = await getAppConfig(initialConfigOptions);
@@ -559,5 +567,5 @@ export function createRemoteAgentAuth({
       return;
     }
   };
-  return handler;
+  return handler as RequestHandler;
 }
