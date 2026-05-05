@@ -243,7 +243,8 @@ export function buildCompleteConfig(
 /**
  * Builds the headers map and secretHeaderKeys array from form data.
  * @param headers - Array of header entries from the form
- * @param _isEditMode - Whether the form is in edit mode (no longer used, kept for API compatibility)
+ * @param _isEditMode - Whether the form is in edit mode. In edit mode, secret headers with
+ *   blank values are included as '' to signal the backend to preserve the existing encrypted value.
  * @returns Object with headers map and secretHeaderKeys array, or empty object if no valid headers
  */
 export function buildHeaders(
@@ -264,11 +265,14 @@ export function buildHeaders(
     if (!trimmedKey) {
       continue;
     }
-    // Skip headers with blank values entirely.
-    // In edit mode, blank secret headers are omitted from the payload (not sent as ''),
-    // allowing the backend to preserve existing encrypted values.
-    // Non-secret headers with blank values are always skipped (no point sending empty header).
+    // In edit mode, secret headers with blank values are sent as '' to signal the backend
+    // to preserve the existing encrypted value (the backend checks for explicit '' to retain).
+    // Non-secret headers with blank values are always skipped (no point sending an empty header).
     if (!trimmedValue) {
+      if (isSecret && _isEditMode) {
+        headersMap[trimmedKey] = '';
+        secretHeaderKeysList.push(trimmedKey);
+      }
       continue;
     }
     headersMap[trimmedKey] = trimmedValue;

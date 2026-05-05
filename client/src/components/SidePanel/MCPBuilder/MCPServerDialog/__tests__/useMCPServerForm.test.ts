@@ -436,10 +436,18 @@ describe('buildHeaders', () => {
     expect(result.secretHeaderKeys).toEqual(['Authorization']);
   });
 
-  it('omits secret headers with blank values (avoids overwriting server-side encrypted values)', () => {
-    // Blank secret headers should be omitted from the payload entirely,
-    // allowing the backend to preserve existing encrypted values.
+  it('sends secret headers with blank values as "" in edit mode (signals backend to preserve encrypted value)', () => {
+    // In edit mode, blank secret headers must be sent as '' so the backend
+    // preservation path (retainedHeaders[secretKey] === '') can retain the encrypted value.
     const result = buildHeaders([{ key: 'X-Secret', value: '', isSecret: true }], true);
+    expect(result.headers).toEqual({ 'X-Secret': '' });
+    expect(result.secretHeaderKeys).toEqual(['X-Secret']);
+  });
+
+  it('omits secret headers with blank values outside of edit mode', () => {
+    // Outside edit mode there is no existing encrypted value to preserve, so blank secret
+    // headers are dropped (same as non-secret blank headers).
+    const result = buildHeaders([{ key: 'X-Secret', value: '', isSecret: true }], false);
     expect(result).toEqual({});
   });
 
