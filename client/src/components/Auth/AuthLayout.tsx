@@ -38,13 +38,11 @@ function AuthLayout({
   });
   const [langcode, setLangcode] = useRecoilState(store.lang);
 
-
   const languageOptions: LanguageOption[] = [
     { value: 'auto', label: 'Auto' },
     { value: 'en-US', label: 'English' },
     { value: 'pa', label: 'ਪੰਜਾਬੀ' },
   ];
-
 
   const handleLangChange = useCallback(
     (value: string) => {
@@ -100,17 +98,17 @@ function AuthLayout({
 
   return (
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
-
-
       <Transition appear show={isLangOpen}>
         <Dialog
           as="div"
           className="relative z-50"
           onClose={() => {
-            handleLangChange("auto");
+            handleLangChange('auto');
             setIsLangOpen(false);
           }}
-        > {/* Backdrop */}
+        >
+          {' '}
+          {/* Backdrop */}
           <TransitionChild
             enter="ease-out duration-200"
             enterFrom="opacity-0"
@@ -121,7 +119,6 @@ function AuthLayout({
           >
             <div className="fixed inset-0 bg-black/40 dark:bg-black/70" />
           </TransitionChild>
-
           {/* Panel */}
           <TransitionChild
             enter="ease-out duration-200"
@@ -132,16 +129,7 @@ function AuthLayout({
             leaveTo="opacity-0 scale-95"
           >
             <div className="fixed inset-0 flex items-center justify-center p-4">
-              <DialogPanel
-                className="
-            w-full max-w-sm
-            rounded-2xl
-            bg-white dark:bg-gray-900
-            p-6
-            shadow-2xl
-            ring-1 ring-black/5 dark:ring-white/10
-          "
-              >
+              <DialogPanel className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-black/5 dark:bg-gray-900 dark:ring-white/10">
                 <DialogTitle className="mb-5 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                     Select Language
@@ -149,12 +137,7 @@ function AuthLayout({
 
                   <button
                     onClick={() => setIsLangOpen(false)}
-                    className="
-                rounded-md p-1
-                text-gray-500 hover:text-gray-900
-                dark:text-gray-400 dark:hover:text-gray-100
-                transition
-              "
+                    className="rounded-md p-1 text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
                     aria-label="Close"
                   >
                     ✕
@@ -178,7 +161,6 @@ function AuthLayout({
           </TransitionChild>
         </Dialog>
       </Transition>
-
 
       <Banner />
       <BlinkAnimation active={isFetching}>

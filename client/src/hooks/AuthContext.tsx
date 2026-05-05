@@ -102,7 +102,7 @@ const AuthContextProvider = ({
         user: undefined,
         redirect: data.redirect ?? '/login',
       });
-      localStorage.getItem('lang_selected')
+      localStorage.getItem('lang_selected');
     },
     onError: (error) => {
       doSetError((error as Error).message);
@@ -112,7 +112,7 @@ const AuthContextProvider = ({
         user: undefined,
         redirect: '/login',
       });
-      localStorage.getItem('lang_selected')
+      localStorage.getItem('lang_selected');
     },
   });
   const refreshToken = useRefreshTokenMutation();

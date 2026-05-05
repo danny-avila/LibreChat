@@ -30,7 +30,7 @@ export default function useSubmitMessage() {
       ask(
         {
           text: data.text,
-          position
+          position,
         },
         {
           addedConvo: addedConvo ?? undefined,

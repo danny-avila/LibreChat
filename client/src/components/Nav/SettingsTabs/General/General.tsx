@@ -89,7 +89,7 @@ export const LangSelector = ({
 }) => {
   const localize = useLocalize();
 
-  const languageOptions:LanguageOption[] = [
+  const languageOptions: LanguageOption[] = [
     { value: 'auto', label: localize('com_nav_lang_auto') },
     { value: 'en-US', label: localize('com_nav_lang_english') },
     { value: 'zh-Hans', label: localize('com_nav_lang_chinese') },
