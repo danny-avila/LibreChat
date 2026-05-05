@@ -331,6 +331,35 @@ describe('MessageNav', () => {
       expect(active).toHaveAttribute('data-msg-id', 'b');
     });
 
+    it('sets aria-current only on the topmost visible indicator', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+      const io = MockIntersectionObserver.last();
+      expect(io).toBeDefined();
+
+      act(() => {
+        io!.trigger([
+          { target: document.getElementById('c')!, isIntersecting: true },
+          { target: document.getElementById('b')!, isIntersecting: true },
+          { target: document.getElementById('a')!, isIntersecting: true },
+        ]);
+        jest.advanceTimersByTime(32);
+      });
+
+      const current = container.querySelectorAll('[aria-current="true"]');
+      expect(current).toHaveLength(1);
+      expect(current[0]).toHaveAttribute('data-msg-id', 'a');
+
+      for (const id of ['a', 'b', 'c']) {
+        const indicator = container.querySelector(`[data-msg-id="${id}"] span`);
+        expect(indicator?.className).toContain('h-[5px]');
+      }
+    });
+
     it('chevron buttons expose a disabled state when there is nothing to navigate to', () => {
       const messages = [
         buildMessage({ messageId: 'a', text: 'one', isCreatedByUser: true }),
@@ -410,6 +439,103 @@ describe('MessageNav', () => {
       }).not.toThrow();
 
       rafSpy.mockRestore();
+    });
+
+    it('scrolls the indicator column fully down when the final message is visible', () => {
+      const messages = Array.from({ length: 15 }, (_, i) =>
+        buildMessage({
+          messageId: `m-${i}`,
+          text: `message ${i}`,
+          isCreatedByUser: i % 2 === 0,
+        }),
+      );
+      const { container, scrollable } = renderNav(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      let scrollHeightReads = 0;
+
+      Object.defineProperty(column, 'clientHeight', { value: 30, configurable: true });
+      Object.defineProperty(column, 'scrollHeight', {
+        get: () => {
+          scrollHeightReads++;
+          return scrollHeightReads === 1 ? 170 : 180;
+        },
+        configurable: true,
+      });
+      Object.defineProperty(column, 'scrollTop', { value: 0, writable: true, configurable: true });
+      Object.defineProperty(scrollable, 'scrollHeight', { value: 3600, configurable: true });
+      Object.defineProperty(scrollable, 'scrollTop', {
+        value: 2500,
+        writable: true,
+        configurable: true,
+      });
+
+      act(() => {
+        fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(32);
+      });
+
+      expect(column.scrollTop).toBe(150);
+    });
+
+    it('scrolls the indicator column fully down when the chat reaches bottom with stale offsets', () => {
+      const messages = Array.from({ length: 15 }, (_, i) =>
+        buildMessage({
+          messageId: `bottom-${i}`,
+          text: `message ${i}`,
+          isCreatedByUser: i % 2 === 0,
+        }),
+      );
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+
+      const scrollable = document.createElement('div');
+      scrollable.className = 'scrollbar-gutter-stable';
+      Object.defineProperty(scrollable, 'clientHeight', { value: 600, configurable: true });
+      Object.defineProperty(scrollable, 'scrollHeight', { value: 3000, configurable: true });
+      Object.defineProperty(scrollable, 'scrollTop', {
+        value: 0,
+        writable: true,
+        configurable: true,
+      });
+
+      const content = document.createElement('div');
+      scrollable.appendChild(content);
+      for (let i = 0; i < messages.length; i++) {
+        const div = document.createElement('div');
+        div.id = messages[i].messageId;
+        div.className = 'message-render';
+        div.textContent = messages[i].text ?? '';
+        Object.defineProperty(div, 'offsetTop', {
+          value: i === messages.length - 1 ? 5000 : 100 + i * 100,
+          configurable: true,
+        });
+        Object.defineProperty(div, 'offsetHeight', { value: 80, configurable: true });
+        content.appendChild(div);
+      }
+      document.body.appendChild(scrollable);
+
+      const { container } = render(
+        <MessageNav scrollableRef={{ current: scrollable } as RefObject<HTMLDivElement>} />,
+      );
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      Object.defineProperty(column, 'clientHeight', { value: 30, configurable: true });
+      Object.defineProperty(column, 'scrollHeight', { value: 180, configurable: true });
+      Object.defineProperty(column, 'scrollTop', { value: 0, writable: true, configurable: true });
+      Object.defineProperty(scrollable, 'scrollTop', {
+        value: 2400,
+        writable: true,
+        configurable: true,
+      });
+
+      act(() => {
+        fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(32);
+      });
+
+      expect(column.scrollTop).toBe(150);
     });
 
     it('keeps per-instance scroll tokens isolated across mounted MessageNav instances', () => {

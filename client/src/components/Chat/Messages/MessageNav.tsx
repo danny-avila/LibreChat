@@ -72,6 +72,7 @@ function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>
 
 const JUMP_EPS = 4;
 const SCROLL_DURATION = 400;
+const BOTTOM_SNAP_RETRIES = 2;
 
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
@@ -93,11 +94,13 @@ const indicatorButtonClasses = cn(
 const MessageIndicator = memo(function MessageIndicator({
   entry,
   isActive,
+  isCurrent,
   label,
   onSelect,
 }: {
   entry: MessageEntry;
   isActive: boolean;
+  isCurrent: boolean;
   label: string;
   onSelect: (id: string) => void;
 }) {
@@ -109,7 +112,7 @@ const MessageIndicator = memo(function MessageIndicator({
           onClick={() => onSelect(entry.id)}
           className={cn(indicatorButtonClasses, entry.isUser ? 'w-4' : 'w-6')}
           aria-label={label}
-          aria-current={isActive ? 'true' : undefined}
+          aria-current={isCurrent ? 'true' : undefined}
           data-msg-id={entry.id}
         >
           <span
@@ -159,7 +162,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   }, [messages]);
 
   const [entries, setEntries] = useState<MessageEntry[]>([]);
-  const [activeIds, setActiveIds] = useState<Set<string>>(new Set());
+  const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
+  const [currentId, setCurrentId] = useState<string | null>(null);
   const [canGoUp, setCanGoUp] = useState(false);
   const [canGoDown, setCanGoDown] = useState(false);
 
@@ -171,6 +175,20 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const messagesByIdRef = useRef(messagesById);
   const scrollTokenRef = useRef(0);
   const scrollMarginRef = useRef(0);
+
+  const getCurrentVisibleId = useCallback((): string | null => {
+    let nextId: string | null = null;
+    let nextTop = Number.POSITIVE_INFINITY;
+    for (const id of visibleSetRef.current) {
+      const el = observedRef.current.get(id);
+      if (!el || el.offsetTop >= nextTop) {
+        continue;
+      }
+      nextId = id;
+      nextTop = el.offsetTop;
+    }
+    return nextId;
+  }, []);
 
   useEffect(() => {
     messagesByIdRef.current = messagesById;
@@ -321,6 +339,40 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
     let needsRecompute = false;
     let frameId: number | null = null;
+    let bottomFrameId: number | null = null;
+    let bottomSnapToken = 0;
+
+    const scrollColumnToBottom = () => {
+      const col = columnRef.current;
+      if (!col) {
+        return;
+      }
+      col.scrollTop = Math.max(0, col.scrollHeight - col.clientHeight);
+    };
+
+    const cancelColumnBottomScroll = () => {
+      bottomSnapToken++;
+      if (bottomFrameId != null) {
+        cancelAnimationFrame(bottomFrameId);
+        bottomFrameId = null;
+      }
+    };
+
+    const scheduleColumnBottomScroll = () => {
+      const token = ++bottomSnapToken;
+      const run = (remaining: number) => {
+        if (token !== bottomSnapToken) {
+          return;
+        }
+        scrollColumnToBottom();
+        if (remaining <= 0) {
+          bottomFrameId = null;
+          return;
+        }
+        bottomFrameId = requestAnimationFrame(() => run(remaining - 1));
+      };
+      run(BOTTOM_SNAP_RETRIES);
+    };
 
     const tick = () => {
       frameId = null;
@@ -348,6 +400,11 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!col) {
         return;
       }
+      const containerMaxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+      if (containerMaxScrollTop > 0 && scrollTop >= containerMaxScrollTop - JUMP_EPS) {
+        scheduleColumnBottomScroll();
+        return;
+      }
       const viewBottom = scrollTop + container.clientHeight;
       let first = -1;
       let last = -1;
@@ -366,6 +423,11 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (first === -1) {
         return;
       }
+      if (last === entries.length - 1) {
+        scheduleColumnBottomScroll();
+        return;
+      }
+      cancelColumnBottomScroll();
       const firstInd = col.children[first] as HTMLElement | undefined;
       const lastInd = col.children[last] as HTMLElement | undefined;
       if (!firstInd || !lastInd) {
@@ -373,7 +435,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
       const mid = (firstInd.offsetTop + lastInd.offsetTop + lastInd.offsetHeight) / 2;
       const target = mid - col.clientHeight / 2;
-      col.scrollTop = Math.max(0, Math.min(target, col.scrollHeight - col.clientHeight));
+      const columnMaxScrollTop = Math.max(0, col.scrollHeight - col.clientHeight);
+      col.scrollTop = Math.max(0, Math.min(target, columnMaxScrollTop));
     };
 
     const scheduleTick = () => {
@@ -399,6 +462,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (frameId != null) {
         cancelAnimationFrame(frameId);
       }
+      cancelColumnBottomScroll();
       resizeObserver.disconnect();
     };
   }, [entries, scrollableRef]);
@@ -415,7 +479,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
     const flush = () => {
       pendingFrame = null;
-      setActiveIds((prev) => {
+      const nextCurrentId = getCurrentVisibleId();
+      setCurrentId((prev) => (prev === nextCurrentId ? prev : nextCurrentId));
+      setVisibleIds((prev) => {
         if (prev.size === visibleSet.size) {
           let same = true;
           for (const id of visibleSet) {
@@ -459,7 +525,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         cancelAnimationFrame(pendingFrame);
       }
     };
-  }, [scrollableRef]);
+  }, [getCurrentVisibleId, scrollableRef]);
 
   useEffect(() => {
     const observer = observerRef.current;
@@ -478,13 +544,15 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
     }
 
-    let renamed = false;
+    let visibilityChanged = false;
     for (const [oldId, el] of [...observed]) {
       const newId = elementByNewId.get(el);
       if (newId === undefined) {
         observer.unobserve(el);
         observed.delete(oldId);
-        visibleSet.delete(oldId);
+        if (visibleSet.delete(oldId)) {
+          visibilityChanged = true;
+        }
         continue;
       }
       if (newId !== oldId) {
@@ -492,8 +560,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         observed.set(newId, el);
         if (visibleSet.delete(oldId)) {
           visibleSet.add(newId);
+          visibilityChanged = true;
         }
-        renamed = true;
       }
     }
 
@@ -504,10 +572,11 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
     }
 
-    if (renamed) {
-      setActiveIds(new Set(visibleSet));
+    if (visibilityChanged) {
+      setCurrentId(getCurrentVisibleId());
+      setVisibleIds(new Set(visibleSet));
     }
-  }, [entries]);
+  }, [entries, getCurrentVisibleId]);
 
   const jumpToPrevious = useCallback(() => {
     const container = scrollableRef.current;
@@ -588,7 +657,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
           <MessageIndicator
             key={entry.id}
             entry={entry}
-            isActive={activeIds.has(entry.id)}
+            isActive={visibleIds.has(entry.id)}
+            isCurrent={currentId === entry.id}
             onSelect={scrollToStart}
             label={localize(
               entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
