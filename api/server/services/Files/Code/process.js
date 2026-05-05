@@ -3,8 +3,10 @@ const { v4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
 const {
+  withTimeout,
   getBasePath,
   logAxiosError,
+  hasOfficeHtmlPath,
   sanitizeArtifactPath,
   flattenArtifactPath,
   createAxiosInstance,
@@ -69,8 +71,108 @@ const createDownloadFallback = ({
 };
 
 /**
- * Process code execution output files - downloads and saves both images and non-image files.
- * All files are saved to local storage with fileIdentifier metadata for code env re-upload.
+ * Hard ceiling on phase-2 (background HTML extraction + DB update). The
+ * inner office-render path already has its own 12s timeout and a
+ * concurrency-limited queue; this is the outer guard that catches
+ * pathological cases where queue wait + render + DB write would
+ * otherwise hang the file in `status: 'pending'` indefinitely.
+ *
+ * If the timeout fires the record is updated to `status: 'failed'`
+ * with `previewError: 'timeout'` and the UI shows download-only.
+ */
+const PHASE_TWO_TIMEOUT_MS = 60_000;
+
+/**
+ * Run the background phase-2 work for a code-execution file: extract
+ * the HTML preview (or plain text for non-office buckets that still
+ * benefit from caching), then atomically transition the DB record to
+ * `status: 'ready'` (with `text`/`textFormat`) or `status: 'failed'`
+ * (with `previewError`).
+ *
+ * Decoupled from `processCodeOutput` so the agent's final response is
+ * not blocked on potentially slow office rendering. The caller fires
+ * this without awaiting; promises continue running after the HTTP
+ * response closes (Node doesn't kill them) and the frontend learns of
+ * completion via `attachment.update` SSE (if the stream is still open)
+ * or via React Query polling otherwise. Process restart is the only
+ * thing that can lose progress — covered by the boot-time orphan sweep.
+ *
+ * @param {object} params
+ * @param {Buffer} params.buffer - The file contents (held in closure;
+ *   bounded by `MAX_TEXT_EXTRACT_BYTES = 1MB` from the extractor).
+ * @param {string} params.leafName - Basename for classification.
+ * @param {string} params.mimeType - Detected/inferred MIME.
+ * @param {string} params.category - Classifier output.
+ * @param {string} params.file_id - The DB record key for the update.
+ * @returns {Promise<MongoFile | null>} The post-update record on
+ *   success; `null` if the DB update itself failed (extraction failure
+ *   is reflected as `status: 'failed'`, not a thrown error).
+ */
+const finalizePreview = async ({ buffer, leafName, mimeType, category, file_id }) => {
+  let text = null;
+  let previewError;
+  try {
+    text = await withTimeout(
+      extractCodeArtifactText(buffer, leafName, mimeType, category),
+      PHASE_TWO_TIMEOUT_MS,
+      `Phase-2 extraction exceeded ${PHASE_TWO_TIMEOUT_MS}ms`,
+    );
+  } catch (_error) {
+    /* `extractCodeArtifactText` swallows its own errors and returns null,
+     * so the only way to reach here is a `withTimeout` rejection — i.e.
+     * the queue + render combined exceeded the outer 60s ceiling. */
+    previewError = 'timeout';
+    logger.warn(
+      `[finalizePreview] ${file_id}: extraction timed out after ${PHASE_TWO_TIMEOUT_MS}ms`,
+    );
+  }
+  /* Office-bucket files are HTML-or-null per the PR #12934 SEC fix:
+   * a null result must NOT fall back to plain text, and must surface
+   * to the UI as a failed preview so the artifact card downgrades to
+   * download-only. Non-office files with a null result have nothing
+   * extractable (binary, oversized) — mark ready with text=null so
+   * subsequent reads stop polling. */
+  const isOfficeBucket = hasOfficeHtmlPath(leafName, mimeType);
+  const textFormat = getExtractedTextFormat(leafName, mimeType, text);
+  const failed = isOfficeBucket && text == null;
+  const status = failed ? 'failed' : 'ready';
+  if (failed && !previewError) {
+    previewError = 'parser-error';
+  }
+  try {
+    return await updateFile({
+      file_id,
+      text,
+      textFormat,
+      status,
+      previewError: failed ? previewError : null,
+    });
+  } catch (error) {
+    logger.error(
+      `[finalizePreview] ${file_id}: failed to persist phase-2 result: ${error?.message ?? error}`,
+    );
+    return null;
+  }
+};
+
+/**
+ * Process code execution output files — downloads and saves both images
+ * and non-image files. All files are saved to local storage with
+ * `fileIdentifier` metadata for code env re-upload.
+ *
+ * Returns a two-part shape so callers can ship the attachment to the
+ * client immediately and run preview extraction in the background:
+ *   - `file`: phase-1 metadata (file is persisted, downloadable, and
+ *     has `status: 'pending'` if a preview is still being rendered).
+ *   - `finalize` (optional): a thunk returning the phase-2 result
+ *     promise. Present only when an inline HTML preview is expected
+ *     (office buckets — DOCX/XLSX/XLS/ODS/CSV/PPTX). Caller decides
+ *     whether to await or fire-and-forget.
+ *
+ * Existing fallback paths (size limit, missing storage strategy, error
+ * catch) return `{ file }` with no `finalize` — there's nothing to
+ * extract.
+ *
  * @param {ServerRequest} params.req - The Express request object.
  * @param {string} params.id - The file ID from the code environment.
  * @param {string} params.name - The filename.
@@ -78,7 +180,7 @@ const createDownloadFallback = ({
  * @param {string} params.session_id - The code execution session ID.
  * @param {string} params.conversationId - The current conversation ID.
  * @param {string} params.messageId - The current message ID.
- * @returns {Promise<MongoFile & { messageId: string, toolCallId: string } | undefined>} The file metadata or undefined if an error occurs.
+ * @returns {Promise<{ file: MongoFile & { messageId: string, toolCallId: string }, finalize?: () => Promise<MongoFile | null> }>}
  */
 const processCodeOutput = async ({
   req,
@@ -123,15 +225,17 @@ const processCodeOutput = async ({
       logger.warn(
         `[processCodeOutput] File "${name}" (${(buffer.length / megabyte).toFixed(2)} MB) exceeds size limit of ${(fileSizeLimit / megabyte).toFixed(2)} MB, falling back to download URL`,
       );
-      return createDownloadFallback({
-        id,
-        name,
-        messageId,
-        toolCallId,
-        session_id,
-        conversationId,
-        expiresAt: currentDate.getTime() + 86400000,
-      });
+      return {
+        file: createDownloadFallback({
+          id,
+          name,
+          messageId,
+          toolCallId,
+          session_id,
+          conversationId,
+          expiresAt: currentDate.getTime() + 86400000,
+        }),
+      };
     }
 
     const fileIdentifier = `${session_id}/${id}`;
@@ -206,7 +310,7 @@ const processCodeOutput = async ({
         metadata: { fileIdentifier },
       };
       await createFile(file, true);
-      return Object.assign(file, { messageId, toolCallId });
+      return { file: Object.assign(file, { messageId, toolCallId }) };
     }
 
     const { saveBuffer } = getStrategyFunctions(appConfig.fileStrategy);
@@ -214,15 +318,17 @@ const processCodeOutput = async ({
       logger.warn(
         `[processCodeOutput] saveBuffer not available for strategy ${appConfig.fileStrategy}, falling back to download URL`,
       );
-      return createDownloadFallback({
-        id,
-        name,
-        messageId,
-        toolCallId,
-        session_id,
-        conversationId,
-        expiresAt: currentDate.getTime() + 86400000,
-      });
+      return {
+        file: createDownloadFallback({
+          id,
+          name,
+          messageId,
+          toolCallId,
+          session_id,
+          conversationId,
+          expiresAt: currentDate.getTime() + 86400000,
+        }),
+      };
     }
 
     const detectedType = await determineFileType(buffer, true);
@@ -271,18 +377,17 @@ const processCodeOutput = async ({
      * what it would have gotten with the old flat-name flow. */
     const leafName = path.basename(safeName);
     const category = classifyCodeArtifact(leafName, mimeType);
-    const text = await extractCodeArtifactText(buffer, leafName, mimeType, category);
-    /* `textFormat` accompanies `text` so the client can gate
-     * office-HTML-bucket routing on a trusted signal — clients MUST
-     * NOT inject `text` into the iframe as HTML unless `textFormat ===
-     * 'html'`. RAG-uploaded `.docx` etc. arrive with plain text from
-     * mammoth.extractRawText and would otherwise be hijacked by the
-     * extension-based office routing into the HTML-injection path
-     * (Codex P1 review on PR #12934). null on extract failure — the
-     * client treats absence as 'text' for safety. */
-    const textFormat = getExtractedTextFormat(leafName, mimeType, text);
 
-    const file = {
+    /* Two-phase split: office-bucket files (DOCX/XLSX/XLS/ODS/CSV/PPTX)
+     * route through `bufferToOfficeHtml` which is CPU-heavy. Persist
+     * the record now with `status: 'pending'` and `text: null` so the
+     * agent's response isn't blocked, then return a `finalize` thunk
+     * the caller can run in the background. Non-office files have
+     * cheap or no extraction — run it inline so the caller gets a
+     * fully-resolved record without juggling a finalize step. */
+    const expectsPreview = hasOfficeHtmlPath(leafName, mimeType);
+
+    const baseFile = {
       file_id,
       filepath,
       messageId: persistedMessageId,
@@ -298,16 +403,51 @@ const processCodeOutput = async ({
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
       createdAt: isUpdate ? claimed.createdAt : formattedDate,
-      // Always set `text` explicitly (string or null) so that an update which
-      // produces a binary or oversized artifact clears any previously cached
-      // text — `createFile` uses findOneAndUpdate with $set semantics, which
-      // would otherwise leave a stale value behind.
+    };
+
+    if (expectsPreview) {
+      /* Phase-1: persist with `status: 'pending'` and explicit
+       * `text: null` / `textFormat: null` so an update that previously
+       * had cached text gets cleared. Phase-2 transitions to 'ready'
+       * (with text/textFormat) or 'failed' (with previewError). */
+      const file = {
+        ...baseFile,
+        text: null,
+        textFormat: null,
+        status: 'pending',
+        previewError: null,
+      };
+      await createFile(file, true);
+      return {
+        file: Object.assign(file, { messageId, toolCallId }),
+        finalize: () => finalizePreview({ buffer, leafName, mimeType, category, file_id }),
+      };
+    }
+
+    /* Non-office path: extraction is cheap (utf8 decode, parseDocument
+     * for PDF/ODT, or null for binaries). Run inline and return a
+     * fully-resolved record — no `finalize` needed. */
+    const text = await extractCodeArtifactText(buffer, leafName, mimeType, category);
+    /* `textFormat` accompanies `text` so the client can gate
+     * office-HTML-bucket routing on a trusted signal — clients MUST
+     * NOT inject `text` into the iframe as HTML unless `textFormat ===
+     * 'html'`. RAG-uploaded `.docx` etc. arrive with plain text from
+     * mammoth.extractRawText and would otherwise be hijacked by the
+     * extension-based office routing into the HTML-injection path
+     * (Codex P1 review on PR #12934). null on extract failure — the
+     * client treats absence as 'text' for safety. */
+    const textFormat = getExtractedTextFormat(leafName, mimeType, text);
+    const file = {
+      ...baseFile,
+      // Always set explicitly so an update which produces a binary or
+      // oversized artifact clears any previously cached text — createFile
+      // uses findOneAndUpdate with $set semantics.
       text: text ?? null,
       textFormat: textFormat ?? null,
     };
 
     await createFile(file, true);
-    return Object.assign(file, { messageId, toolCallId });
+    return { file: Object.assign(file, { messageId, toolCallId }) };
   } catch (error) {
     if (error?.message === 'Path traversal detected in filename') {
       logger.warn(
@@ -320,15 +460,17 @@ const processCodeOutput = async ({
     });
 
     // Fallback for download errors - return download URL so user can still manually download
-    return createDownloadFallback({
-      id,
-      name,
-      messageId,
-      toolCallId,
-      session_id,
-      conversationId,
-      expiresAt: currentDate.getTime() + 86400000,
-    });
+    return {
+      file: createDownloadFallback({
+        id,
+        name,
+        messageId,
+        toolCallId,
+        session_id,
+        conversationId,
+        expiresAt: currentDate.getTime() + 86400000,
+      }),
+    };
   }
 };
 
@@ -465,7 +607,23 @@ const primeFiles = async (options) => {
         }
 
         const entity_id = overrideEntityId ?? queryParams.entity_id;
-        toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}`;
+
+        /* Surface the two-phase preview lifecycle so the LLM knows when
+         * a prior-turn artifact's rich preview didn't materialize. The
+         * file blob is always available (phase-1 persists it before
+         * returning), so the model can still tell the user "you can
+         * download it" even when the preview never resolved. Absent
+         * status means legacy or non-office — render normally. */
+        let previewSuffix = '';
+        if (file.status === 'pending') {
+          previewSuffix = ' (preview not yet generated)';
+        } else if (file.status === 'failed') {
+          previewSuffix = file.previewError
+            ? ` (preview unavailable: ${file.previewError})`
+            : ' (preview unavailable)';
+        }
+
+        toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}${previewSuffix}`;
         files.push({
           id: overrideId ?? id,
           session_id: overrideSessionId ?? session_id,

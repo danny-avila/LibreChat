@@ -39,8 +39,12 @@ const officeHtmlLimit = createConcurrencyLimiter(OFFICE_HTML_CONCURRENCY);
  * (e.g. a tool emitting `data` with `text/csv`, which would otherwise
  * classify as `utf8-text`, skip the office gate, and ship raw CSV text
  * to the client's SPREADSHEET bucket that expects full HTML).
+ *
+ * Exported so the two-phase `processCodeOutput` flow can decide whether
+ * to mark a phase-1 file record as `status: 'pending'` (preview expected
+ * later) or skip the status field entirely (no preview ever expected).
  */
-const hasOfficeHtmlPath = (name: string, mimeType: string): boolean =>
+export const hasOfficeHtmlPath = (name: string, mimeType: string): boolean =>
   officeHtmlBucket(name, mimeType) !== null;
 
 /**

@@ -192,7 +192,7 @@ const callTool = async (req, res) => {
       const { id, name } = file;
       artifactPromises.push(
         (async () => {
-          const fileMetadata = await processCodeOutput({
+          const result = await processCodeOutput({
             req,
             id,
             name,
@@ -201,11 +201,21 @@ const callTool = async (req, res) => {
             conversationId,
             session_id: artifact.session_id,
           });
-
+          const fileMetadata = result?.file ?? null;
+          const finalize = result?.finalize;
           if (!fileMetadata) {
             return null;
           }
-
+          /* This endpoint is non-streaming and its contract is "give
+           * me the artifacts" — return the phase-1 record immediately
+           * (with `status: 'pending'` for office buckets) and run phase-2
+           * extraction in the background. The client polls
+           * `/api/files/:file_id/preview` for the resolved record. */
+          if (typeof finalize === 'function') {
+            finalize().catch((error) => {
+              logger.error('Error in phase-2 preview extraction:', error);
+            });
+          }
           return fileMetadata;
         })().catch((error) => {
           logger.error('Error processing code output:', error);

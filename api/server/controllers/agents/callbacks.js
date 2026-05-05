@@ -398,6 +398,65 @@ function writeAttachment(res, streamId, attachment) {
 }
 
 /**
+ * Emit a phase-2 update for an attachment that was previously sent with
+ * `status: 'pending'`. Fire-and-forget: if the response stream has
+ * already closed (the agent finished generating before phase-2 resolved)
+ * the frontend's React Query polling on `/api/files/:file_id/preview`
+ * picks up the resolved record on its next tick. Skipping the write in
+ * that case avoids `ERR_STREAM_WRITE_AFTER_END`.
+ *
+ * Reuses the `attachment` SSE event name with a discriminated payload:
+ * the frontend's `useAttachmentHandler` upserts by `file_id`, so a
+ * second event with the same id and `status: 'ready' | 'failed'`
+ * overwrites the pending placeholder in place. No new event type, no
+ * new client listener.
+ *
+ * @param {ServerResponse} res
+ * @param {string | null} streamId
+ * @param {Object} attachment - Updated attachment payload (must carry `file_id`).
+ */
+function writeAttachmentUpdate(res, streamId, attachment) {
+  if (!streamId && (!res || res.writableEnded || !res.headersSent)) {
+    return;
+  }
+  writeAttachment(res, streamId, attachment);
+}
+
+/**
+ * Build the wire-format attachment payload from a phase-1 or phase-2
+ * file metadata record. Centralizes the field projection so phase-1
+ * (pending), phase-2 (ready/failed), and pre-existing legacy callers
+ * all emit the same shape.
+ */
+function attachmentFromFileMetadata(fileMetadata, toolCallId) {
+  return {
+    file_id: fileMetadata.file_id,
+    filename: fileMetadata.filename,
+    filepath: fileMetadata.filepath,
+    type: fileMetadata.type,
+    width: fileMetadata.width,
+    height: fileMetadata.height,
+    conversationId: fileMetadata.conversationId,
+    messageId: fileMetadata.messageId,
+    toolCallId: toolCallId ?? fileMetadata.toolCallId,
+    /* Inline text / sanitized HTML preview from the extractor — drives
+     * the file artifact panel's rich preview for DOCX/XLSX/CSV/PPTX.
+     * Pass null explicitly (rather than undefined) so the wire format
+     * is stable for the empty-text gate on the client. */
+    text: fileMetadata.text ?? null,
+    /* Trust signal so the client routes office types to the HTML
+     * bucket only when the backend produced sanitized full-document
+     * HTML (Codex P1 review on PR #12934). */
+    textFormat: fileMetadata.textFormat ?? null,
+    /* Two-phase preview lifecycle: phase-1 emits 'pending', phase-2
+     * patches to 'ready' or 'failed'. Absent for files that don't
+     * expect a preview (images, plain text). */
+    status: fileMetadata.status,
+    previewError: fileMetadata.previewError,
+  };
+}
+
+/**
  *
  * @param {Object} params
  * @param {ServerRequest} params.req
@@ -556,14 +615,15 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
         continue;
       }
       const { id, name } = file;
+      const toolCallId = output.tool_call_id;
       artifactPromises.push(
         (async () => {
-          const fileMetadata = await processCodeOutput({
+          const result = await processCodeOutput({
             req,
             id,
             name,
             messageId: metadata.run_id,
-            toolCallId: output.tool_call_id,
+            toolCallId,
             conversationId: metadata.thread_id,
             /**
              * Use the FILE's session_id (storage session), not the
@@ -583,15 +643,39 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
              */
             session_id: file.session_id ?? output.artifact.session_id,
           });
-          if (!streamId && !res.headersSent) {
-            return fileMetadata;
-          }
-
+          const fileMetadata = result?.file ?? null;
+          const finalize = result?.finalize;
           if (!fileMetadata) {
             return null;
           }
-
-          writeAttachment(res, streamId, fileMetadata);
+          /* Phase-1 emit: ship the attachment to the client immediately
+           * (carries `status: 'pending'` for office buckets so the UI
+           * shows "preparing preview…"). The agent's response stops
+           * blocking on extraction here. */
+          if (streamId || res.headersSent) {
+            writeAttachment(res, streamId, fileMetadata);
+          }
+          /* Phase-2 fire-and-forget: extraction continues running even
+           * after the HTTP response closes. If the stream is still open
+           * when phase-2 lands, push an `attachment` update event so
+           * the UI patches in place; otherwise React Query polling on
+           * `/api/files/:file_id/preview` picks it up. */
+          if (typeof finalize === 'function') {
+            finalize()
+              .then((updated) => {
+                if (!updated) {
+                  return;
+                }
+                writeAttachmentUpdate(
+                  res,
+                  streamId,
+                  attachmentFromFileMetadata(updated, toolCallId),
+                );
+              })
+              .catch((error) => {
+                logger.error('Error in phase-2 preview extraction:', error);
+              });
+          }
           return fileMetadata;
         })().catch((error) => {
           logger.error('Error processing code output:', error);
@@ -782,14 +866,15 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
         continue;
       }
       const { id, name } = file;
+      const toolCallId = output.tool_call_id;
       artifactPromises.push(
         (async () => {
-          const fileMetadata = await processCodeOutput({
+          const result = await processCodeOutput({
             req,
             id,
             name,
             messageId: metadata.run_id,
-            toolCallId: output.tool_call_id,
+            toolCallId,
             conversationId: metadata.thread_id,
             /**
              * Use the FILE's session_id (storage session), not the
@@ -809,36 +894,47 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
              */
             session_id: file.session_id ?? output.artifact.session_id,
           });
-
+          const fileMetadata = result?.file ?? null;
+          const finalize = result?.finalize;
           if (!fileMetadata) {
             return null;
           }
 
-          // For Responses API, emit attachment during streaming
+          /* Phase-1 emit (Open Responses extension format). The agent's
+           * response no longer blocks on extraction. */
           if (res.headersSent && !res.writableEnded) {
-            const attachment = {
-              file_id: fileMetadata.file_id,
-              filename: fileMetadata.filename,
-              type: fileMetadata.type,
-              url: fileMetadata.filepath,
-              width: fileMetadata.width,
-              height: fileMetadata.height,
-              tool_call_id: output.tool_call_id,
-              /* Inline text / sanitized HTML preview from
-               * `extractCodeArtifactText` — drives the file artifact panel's
-               * rich preview for DOCX/XLSX/CSV/PPTX. Pass null explicitly
-               * (rather than undefined) so the wire format is stable for the
-               * empty-text gate on the client. */
-              text: fileMetadata.text ?? null,
-              /* Trust signal so the client can route .docx/.csv/.xlsx/
-               * .pptx attachments to the office HTML buckets only when
-               * the backend produced sanitized full-document HTML.
-               * RAG-uploaded plain text from mammoth.extractRawText
-               * arrives without this flag and must NOT be injected as
-               * HTML — Codex P1 review on PR #12934. */
-              textFormat: fileMetadata.textFormat ?? null,
-            };
-            writeResponsesAttachment(res, tracker, attachment, metadata);
+            writeResponsesAttachment(
+              res,
+              tracker,
+              buildResponsesAttachment(fileMetadata, toolCallId),
+              metadata,
+            );
+          }
+
+          /* Phase-2: extract HTML preview in the background and emit
+           * a follow-up `librechat:attachment` with the same `file_id`
+           * so the client merges the resolved record over the pending
+           * placeholder. Fire-and-forget — survives response close;
+           * polling covers the post-close gap. */
+          if (typeof finalize === 'function') {
+            finalize()
+              .then((updated) => {
+                if (!updated) {
+                  return;
+                }
+                if (!res || res.writableEnded || !res.headersSent) {
+                  return;
+                }
+                writeResponsesAttachment(
+                  res,
+                  tracker,
+                  buildResponsesAttachment(updated, toolCallId),
+                  metadata,
+                );
+              })
+              .catch((error) => {
+                logger.error('Error in phase-2 preview extraction:', error);
+              });
           }
 
           return fileMetadata;
@@ -848,6 +944,28 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
         }),
       );
     }
+  };
+}
+
+/**
+ * Project a file metadata record into the Open Responses attachment
+ * shape. Mirrors the legacy inline projection but adds `status` and
+ * `previewError` so phase-2 updates carry the lifecycle signal the
+ * client uses to upsert by `file_id`.
+ */
+function buildResponsesAttachment(fileMetadata, toolCallId) {
+  return {
+    file_id: fileMetadata.file_id,
+    filename: fileMetadata.filename,
+    type: fileMetadata.type,
+    url: fileMetadata.filepath,
+    width: fileMetadata.width,
+    height: fileMetadata.height,
+    tool_call_id: toolCallId,
+    text: fileMetadata.text ?? null,
+    textFormat: fileMetadata.textFormat ?? null,
+    status: fileMetadata.status,
+    previewError: fileMetadata.previewError,
   };
 }
 
