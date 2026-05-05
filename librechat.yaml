@@ -198,6 +198,7 @@ interface:
 endpoints:
   anthropic:
     apiKey: '${ANTHROPIC_API_KEY}'
+    titleModel: 'claude-haiku-4-5'
   assistants:
     disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
     pollIntervalMs: 3000  # Polling interval for checking assistant updates
@@ -394,6 +395,7 @@ modelSpecs:
       preset:
         endpoint: "anthropic"
         model: "claude-sonnet-4-6"
+        modelLabel: "Help Others Assistant"
         promptPrefix: "file://api/app/clients/prompts/assistant/"
     - name: "help-myself"
       label: "Help Myself"
@@ -402,6 +404,7 @@ modelSpecs:
       preset:
         endpoint: "anthropic"
         model: "claude-sonnet-4-6"
+        modelLabel: "Help Myself Assistant"
         promptPrefix: "file://api/app/clients/prompts/assistant/"
     - name: "gpt4o-chat"
       label: "GPT-4o (no memory)"

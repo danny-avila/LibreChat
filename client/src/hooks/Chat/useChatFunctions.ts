@@ -131,10 +131,13 @@ export default function useChatFunctions({
     let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
 
     if (conversation?.promptPrefix) {
-      conversation.promptPrefix = replaceSpecialVars({
-        text: conversation.promptPrefix,
-        user,
-      });
+      conversation = {
+        ...conversation,
+        promptPrefix: replaceSpecialVars({
+          text: conversation.promptPrefix,
+          user,
+        }),
+      };
     }
 
     // construct the query message

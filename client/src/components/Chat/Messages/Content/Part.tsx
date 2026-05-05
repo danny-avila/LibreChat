@@ -71,11 +71,7 @@ const Part = memo(
         </Container>
       );
     } else if (part.type === ContentTypes.THINK) {
-      const reasoning = typeof part.think === 'string' ? part.think : part.think.value;
-      if (typeof reasoning !== 'string') {
-        return null;
-      }
-      return <Reasoning reasoning={reasoning} />;
+      return null;
     } else if (part.type === ContentTypes.TOOL_CALL) {
       const toolCall = part[ContentTypes.TOOL_CALL];
 

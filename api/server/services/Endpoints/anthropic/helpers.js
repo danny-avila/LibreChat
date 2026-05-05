@@ -29,9 +29,13 @@ function checkPromptCacheSupport(modelName) {
  * Gets the appropriate headers for Claude models with cache control
  * @param {string} model The model name
  * @param {boolean} supportsCacheControl Whether the model supports cache control
+ * @param {boolean} [useSkills=false] Whether the request will register the
+ *   code_execution tool. Skills/code-exec/files-api beta headers are only safe
+ *   to include when the tool is also in the request body — otherwise Anthropic
+ *   returns 400 "Skills beta requires the code_execution tool ...".
  * @returns {AnthropicClientOptions['extendedOptions']['defaultHeaders']|undefined} The headers object or undefined if not applicable
  */
-function getClaudeHeaders(model, supportsCacheControl) {
+function getClaudeHeaders(model, supportsCacheControl, useSkills = false) {
   if (!supportsCacheControl) {
     return undefined;
   }
@@ -50,8 +54,11 @@ function getClaudeHeaders(model, supportsCacheControl) {
     /claude-[4-9]-(?:sonnet|opus|haiku)?/.test(model) ||
     /claude-4(?:-(?:sonnet|opus|haiku))?/.test(model)
   ) {
+    const skillsBetas = useSkills
+      ? ',code-execution-2025-08-25,skills-2025-10-02,files-api-2025-04-14'
+      : '';
     return {
-      'anthropic-beta': 'prompt-caching-2024-07-31',
+      'anthropic-beta': `prompt-caching-2024-07-31${skillsBetas}`,
     };
   } else {
     return {

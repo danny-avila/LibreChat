@@ -19,6 +19,7 @@ import type { InfiniteData } from '@tanstack/react-query';
 import type { TGenTitleMutation } from '~/data-provider';
 import type { SetterOrUpdater, Resetter } from 'recoil';
 import type { ConversationCursorData } from '~/utils';
+import { addFileToCache } from '~/utils';
 import {
   logger,
   scrollToEnd,
@@ -441,6 +442,21 @@ export default function useEventHandlers({
       setShowStopButton(false);
       setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
 
+      /* If the assistant message returned new file attachments (e.g., from
+       * Anthropic Skills / code execution), the My Files query cache won't
+       * know about them — useGetFiles is configured to never auto-refetch.
+       * Push each new file directly into the cache so any open My Files
+       * sidebar / modal re-renders immediately, without waiting for the
+       * user to interact with the panel. */
+      const newAttachments = (responseMessage as TMessage | undefined)?.attachments;
+      if (Array.isArray(newAttachments) && newAttachments.length > 0) {
+        for (const attachment of newAttachments) {
+          if (attachment && (attachment as { file_id?: string }).file_id) {
+            addFileToCache(queryClient, attachment as unknown as Parameters<typeof addFileToCache>[1]);
+          }
+        }
+      }
+
       const currentMessages = getMessages();
       /* Early return if messages are empty; i.e., the user navigated away */
       if (!currentMessages || currentMessages.length === 0) {
@@ -491,7 +507,7 @@ export default function useEventHandlers({
         requestMessage.parentMessageId === Constants.NO_PARENT
       ) {
         setTimeout(() => {
-          // genTitle.mutate({ conversationId: conversation.conversationId as string });
+          genTitle.mutate({ conversationId: conversation.conversationId as string });
         }, 2500);
       }
 

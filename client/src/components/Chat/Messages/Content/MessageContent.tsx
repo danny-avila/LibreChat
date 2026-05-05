@@ -129,9 +129,24 @@ const MessageContent = ({
 
   const { thinkingContent, regularContent } = useMemo(() => {
     const thinkingMatch = text.match(/:::thinking([\s\S]*?):::/);
+    /* Strip [DOCUMENT]...[/DOCUMENT] blocks defensively. Server-side
+     * stream filtering already removes them in real-time, but this catches
+     * any blocks that slipped through (partial / malformed / older messages
+     * saved before the filter shipped). The actual file is rendered
+     * separately as a message attachment. */
+    const docStripped = text.replace(
+      /\[DOCUMENT\][\s\S]*?\[\/DOCUMENT\]/gi,
+      '',
+    );
+    /* Also strip any unterminated open marker — happens when a stream is
+     * interrupted mid-block. Without this the user sees raw "[DOCUMENT]"
+     * trailing in the message. */
+    const cleaned = docStripped.replace(/\[DOCUMENT\][\s\S]*$/i, '').trim();
     return {
       thinkingContent: thinkingMatch ? thinkingMatch[1].trim() : '',
-      regularContent: thinkingMatch ? text.replace(/:::thinking[\s\S]*?:::/, '').trim() : text,
+      regularContent: thinkingMatch
+        ? cleaned.replace(/:::thinking[\s\S]*?:::/, '').trim()
+        : cleaned,
     };
   }, [text]);
 
@@ -157,9 +172,6 @@ const MessageContent = ({
 
   return (
     <>
-      {thinkingContent.length > 0 && (
-        <Thinking key={`thinking-${messageId}`}>{thinkingContent}</Thinking>
-      )}
       <DisplayMessage
         key={`display-${messageId}`}
         showCursor={showRegularCursor}

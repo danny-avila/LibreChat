@@ -27,9 +27,11 @@ const edit = require('./edit');
 const keys = require('./keys');
 const user = require('./user');
 const ask = require('./ask');
+const anthropic = require('./anthropic');
 
 module.exports = {
   ask,
+  anthropic,
   edit,
   auth,
   keys,
