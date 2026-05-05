@@ -575,3 +575,39 @@ describe('createToolEndCallback', () => {
     });
   });
 });
+
+describe('isStreamWritable', () => {
+  /* Direct parametric coverage of the predicate that gates SSE writes
+   * in both the chat-completions and Open Responses callbacks. The
+   * existing deferred-preview tests cover this indirectly via the
+   * `writeAttachmentUpdate` writableEnded path; these tests pin down
+   * each individual branch so a future modification (e.g. adding a
+   * new condition) can't silently regress.
+   * (Comprehensive review NIT on PR #12957.) */
+  const { isStreamWritable } = require('../callbacks');
+
+  it('returns true when streamId is truthy regardless of res state', () => {
+    /* Resumable mode writes go to the job emitter; res state is
+     * irrelevant. Even a closed res with no headers should not block. */
+    expect(isStreamWritable(null, 'stream-1')).toBe(true);
+    expect(isStreamWritable({ headersSent: false, writableEnded: true }, 'stream-1')).toBe(true);
+    expect(isStreamWritable(undefined, 'stream-1')).toBe(true);
+  });
+
+  it('returns false when streamId is falsy and res is null/undefined', () => {
+    expect(isStreamWritable(null, null)).toBe(false);
+    expect(isStreamWritable(undefined, null)).toBe(false);
+  });
+
+  it('returns false when headers have not been sent yet', () => {
+    expect(isStreamWritable({ headersSent: false, writableEnded: false }, null)).toBe(false);
+  });
+
+  it('returns false when the stream has already ended', () => {
+    expect(isStreamWritable({ headersSent: true, writableEnded: true }, null)).toBe(false);
+  });
+
+  it('returns true on the happy path: headers sent, not ended, no streamId', () => {
+    expect(isStreamWritable({ headersSent: true, writableEnded: false }, null)).toBe(true);
+  });
+});

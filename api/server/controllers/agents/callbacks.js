@@ -641,8 +641,16 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
           /* Initial emit: ship the attachment to the client immediately
            * (carries `status: 'pending'` for office buckets so the UI
            * shows "preparing preview…"). The agent's response stops
-           * blocking on extraction here. */
-          if (streamId || res.headersSent) {
+           * blocking on extraction here.
+           *
+           * Use the shared `isStreamWritable` predicate rather than the
+           * narrower `streamId || res.headersSent` check that lived
+           * here before — a client disconnect mid-stream
+           * (`res.writableEnded`) would otherwise hit `res.write` and
+           * raise `ERR_STREAM_WRITE_AFTER_END` (caught by the outer
+           * IIFE catch but logged as noise). Same gate the Responses
+           * path uses below. */
+          if (isStreamWritable(res, streamId)) {
             writeAttachment(res, streamId, fileMetadata);
           }
           /* Deferred preview rendering: extraction continues running
@@ -1017,6 +1025,7 @@ module.exports = {
   agentLogHandlerObj,
   getDefaultHandlers,
   createToolEndCallback,
+  isStreamWritable,
   markSummarizationUsage,
   buildSummarizationHandlers,
   createResponsesToolEndCallback,
