@@ -1,0 +1,18 @@
+{
+  "skills": {
+    "kaleidoscope-assignment-generation": {
+      "skill_id": "skill_01HCxvL2SV9ZXc5DJmANckEx",
+      "display_title": "kaleidoscope-assignment-generation",
+      "latest_version": "1777936872210279",
+      "last_uploaded_at": "2026-05-04T23:21:13.363Z",
+      "file_count": 9
+    },
+    "kaleidoscope-classroom-management": {
+      "skill_id": "skill_01KknwFN7LCJiHD43yaxJGYd",
+      "display_title": "kaleidoscope-classroom-management",
+      "latest_version": "1777936873592094",
+      "last_uploaded_at": "2026-05-04T23:21:14.707Z",
+      "file_count": 4
+    }
+  }
+}
