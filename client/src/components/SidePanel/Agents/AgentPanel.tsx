@@ -1,3 +1,6 @@
+/* eslint-disable i18next/no-literal-string */
+/* ^ We're not worried about i18n for this app ^ */
+
 import React, { useMemo, useCallback, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button, useToastContext } from '@librechat/client';
@@ -485,7 +488,14 @@ export default function AgentPanel() {
       >
         <div className="flex-1">
           <div className="flex w-full flex-wrap gap-2">
-            <div className="w-full">
+            {/* NJ custom agent builder header */}
+            <div className="mx-4 mb-1 w-full">
+              <h2 className="text-xl font-bold">Agent Builder</h2>
+              <hr className="my-4 border-border-medium" />
+              <span className="text-sm font-semibold">Select an agent to edit</span>
+            </div>
+
+            <div className="mx-4 w-full">
               <AgentSelect
                 createMutation={create}
                 agentQuery={agentQuery}
@@ -494,7 +504,7 @@ export default function AgentPanel() {
               />
             </div>
             {agent_id && (
-              <div className="flex w-full gap-2">
+              <div className="mx-4 mt-2 flex w-full gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -509,6 +519,7 @@ export default function AgentPanel() {
                   <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
                   {localize('com_ui_create_new_agent')}
                 </Button>
+                {/* NJ: We purposefully disable the "select" button because we put it in the footer
                 <Button
                   variant="submit"
                   disabled={isEphemeralAgent(agent_id) || agentQuery.isInitialLoading}
@@ -520,8 +531,11 @@ export default function AgentPanel() {
                 >
                   {localize('com_ui_select')}
                 </Button>
+                */}
               </div>
             )}
+
+            <hr className="mt-3 w-full border-border-heavy" />
           </div>
           {agentQuery.isInitialLoading && <AgentPanelSkeleton />}
           {!canEditAgent && !agentQuery.isInitialLoading && (
