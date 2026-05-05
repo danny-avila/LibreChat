@@ -258,31 +258,42 @@ function runConversion(binary: string, inputPath: string, tempDir: string): Prom
  * `<iframe>` so the host browser's PDF viewer (PDF.js in Firefox, Chrome's
  * built-in viewer, Safari's Preview-driven viewer) can render it directly.
  *
- * Why an inner iframe rather than `<embed>` or `<object>`:
- *   - `<embed>` and `<object>` rendering is least consistent across modern
- *     browsers (Chrome's pdfium plugin requires CSP `object-src data:`,
- *     and some headless contexts disable it).
- *   - `<iframe src="data:application/pdf;base64,...">` is the most
- *     reliable cross-browser path. Chromium's PDF viewer treats it as a
- *     top-level navigation and serves the built-in viewer.
+ * Why blob: URL (vs data: URL):
+ *   Chrome blocks `data:application/pdf` navigations inside sandboxed
+ *   iframes (anti-phishing measure since Chrome 76 — surfaces as a
+ *   "This page has been blocked by Chrome" interstitial). The Sandpack
+ *   iframe IS sandboxed, so the inner iframe's data: navigation hits
+ *   that block. Constructing a `blob:` URL at runtime via
+ *   `URL.createObjectURL(new Blob([bytes], {type: 'application/pdf'}))`
+ *   produces a same-origin URL that Chrome treats as legitimate
+ *   navigation — works inside sandboxed contexts where data: doesn't.
+ *   Manual e2e on PR #12934.
  *
- * The inner iframe is fully sandboxed — no script, same-origin, etc. —
- * and uses `#view=FitH` to size to the panel's width on first paint.
+ * Why an inner iframe rather than `<embed>` or `<object>`:
+ *   `<embed>` and `<object>` rendering is least consistent across modern
+ *   browsers (Chrome's pdfium plugin requires CSP `object-src` and
+ *   some headless contexts disable it). `<iframe src="blob:...">` is
+ *   the most reliable cross-browser path; Chromium/Firefox/Safari all
+ *   serve their built-in PDF viewer for it.
+ *
+ * The inner iframe uses `#view=FitH` to size to the panel's width
+ * on first paint.
  */
 export function buildPdfEmbedDocument(pdfBase64: string): string {
   /* CSP scoping:
    *   - `default-src 'none'`: lock everything down.
-   *   - `frame-src data:`: allow the inner `<iframe src="data:application/pdf;...">`.
-   *   - `object-src 'self' data:`: belt-and-suspenders for browsers that
-   *     route PDFs through `<object>` via the iframe sandbox quirk.
-   *   - `script-src 'unsafe-inline'`: only our tiny load-detector script.
+   *   - `frame-src blob:`: allow the inner `<iframe src="blob:...">`
+   *     navigation that the bootstrap creates from the PDF bytes.
+   *     `data:` is intentionally NOT in `frame-src` because Chrome
+   *     blocks it in sandboxed contexts anyway.
+   *   - `script-src 'unsafe-inline'`: only our tiny bootstrap script.
    *   - `style-src 'unsafe-inline'`: page chrome (no external sheets).
    *   - `connect-src 'none'`: rendered iframe makes no network calls.
    */
   const csp = [
     "default-src 'none'",
-    'frame-src data:',
-    "object-src 'self' data:",
+    'frame-src blob:',
+    "object-src 'self' blob:",
     "script-src 'unsafe-inline'",
     "style-src 'unsafe-inline'",
     "img-src 'self' data: blob:",
@@ -307,26 +318,47 @@ html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: 
 </style>
 </head>
 <body>
-<iframe id="lc-pdf" src="data:application/pdf;base64,${pdfBase64}#view=FitH" title="PDF preview"></iframe>
+<iframe id="lc-pdf" title="PDF preview"></iframe>
 <div id="lc-fallback">PDF preview unavailable in this browser. Please download the file to view it.</div>
+<script id="lc-pdf-data" type="application/octet-stream;base64">${pdfBase64}</script>
 <script>
 (function () {
-  /* Some browsers / kiosk profiles disable the built-in PDF viewer; the
-   * iframe loads but stays blank. We can't reliably detect the inner
-   * viewer's success across browsers, so we use a 4-second heuristic:
-   * if the iframe never reports a load event by then, swap to the
-   * fallback message. False negatives (slow networks, cold viewers)
-   * are acceptable — the user can still download the file. */
   var pdfFrame = document.getElementById('lc-pdf');
   var fallback = document.getElementById('lc-fallback');
-  var loaded = false;
-  if (pdfFrame) {
-    pdfFrame.addEventListener('load', function () { loaded = true; });
+  if (!pdfFrame || !fallback) { return; }
+
+  function showFallback(reason) {
+    pdfFrame.style.display = 'none';
+    fallback.classList.add('visible');
+    if (reason && typeof console !== 'undefined' && console.error) {
+      console.error('[libreoffice-pdf] fallback fired:', reason);
+    }
   }
+
+  /* Decode the embedded base64 and create a blob: URL. Chrome blocks
+   * data:application/pdf in sandboxed iframes (parent Sandpack iframe
+   * is sandboxed); blob: URLs are treated as same-origin and bypass
+   * that restriction. Manual e2e on PR #12934 — "This page has been
+   * blocked by Chrome" interstitial was the symptom. */
+  var loaded = false;
+  try {
+    var b64 = document.getElementById('lc-pdf-data').textContent.trim();
+    var bytes = Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
+    var blob = new Blob([bytes], { type: 'application/pdf' });
+    var url = URL.createObjectURL(blob);
+    pdfFrame.addEventListener('load', function () { loaded = true; });
+    pdfFrame.src = url + '#view=FitH';
+  } catch (err) {
+    showFallback((err && err.message) || 'blob-creation-failed');
+    return;
+  }
+
+  /* 4-second heuristic: if the iframe never reports a load event by
+   * then, the host browser PDF viewer is probably disabled (kiosk
+   * profile, Brave Shields, etc.). Swap to the fallback message. */
   setTimeout(function () {
-    if (!loaded && fallback) {
-      if (pdfFrame) { pdfFrame.style.display = 'none'; }
-      fallback.classList.add('visible');
+    if (!loaded) {
+      showFallback('pdf-viewer-load-timeout');
     }
   }, 4000);
 })();

@@ -80,22 +80,40 @@ describe('libreoffice (env gating + wrapper)', () => {
      * wrappers. */
     const FAKE_PDF_B64 = 'JVBERi0xLjQK'; // "%PDF-1.4\n" base64
 
-    it('emits a complete sandboxed HTML document', () => {
+    it('emits a complete sandboxed HTML document with PDF bytes embedded as a data block', () => {
       const html = buildPdfEmbedDocument(FAKE_PDF_B64);
       expect(html).toMatch(/^<!DOCTYPE html>/);
       expect(html).toContain('<title>Preview</title>');
       expect(html).toContain('id="lc-pdf"');
-      expect(html).toContain(`data:application/pdf;base64,${FAKE_PDF_B64}`);
+      /* PDF bytes live in a `<script type="application/octet-stream;base64">`
+       * data block — the bootstrap reads it and constructs a blob: URL
+       * at runtime. We deliberately do NOT use `<iframe src="data:
+       * application/pdf;...">` because Chrome blocks data: navigations
+       * inside sandboxed iframes (manual e2e on PR #12934 — surfaced
+       * as the "This page has been blocked by Chrome" interstitial).
+       * blob: URLs are same-origin and bypass that restriction. */
+      expect(html).toContain('id="lc-pdf-data"');
+      expect(html).toContain(FAKE_PDF_B64);
+      expect(html).not.toMatch(/src="data:application\/pdf/);
+      /* The bootstrap code that converts the base64 to a blob URL. */
+      expect(html).toContain('URL.createObjectURL');
+      expect(html).toContain('new Blob');
+      expect(html).toContain("type: 'application/pdf'");
     });
 
-    it('CSP locks the iframe down: no script CDN, no outbound connect, no eval', () => {
+    it('CSP allows blob: in frame-src (NOT data:) and locks the iframe down otherwise', () => {
       const html = buildPdfEmbedDocument(FAKE_PDF_B64);
       const cspMatch = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/);
       expect(cspMatch).not.toBeNull();
       const csp = cspMatch![1];
       expect(csp).toMatch(/default-src 'none'/);
-      /* The whole point: data: URIs in nested iframes (browser PDF viewer). */
-      expect(csp).toMatch(/frame-src data:/);
+      /* blob: in frame-src, NOT data: — Chrome blocks data:application/pdf
+       * navigations inside sandboxed iframes (anti-phishing measure
+       * since Chrome 76). The bootstrap creates blob: URLs at runtime
+       * which Chrome treats as same-origin and allows. Manual e2e on
+       * PR #12934. */
+      expect(csp).toMatch(/frame-src[^;]*\bblob:/);
+      expect(csp).not.toMatch(/frame-src[^;]*\bdata:/);
       /* No outbound HTTP from the rendered iframe — a malicious PDF
        * can't beacon home from inside the viewer. */
       expect(csp).toMatch(/connect-src 'none'/);
@@ -113,6 +131,8 @@ describe('libreoffice (env gating + wrapper)', () => {
       expect(html).toContain('PDF preview unavailable in this browser');
       /* The 4-second heuristic timer that swaps to the fallback. */
       expect(html).toContain('4000');
+      /* Reasons logged to console.error for power-user debugging. */
+      expect(html).toContain("console.error('[libreoffice-pdf] fallback fired:'");
     });
 
     it('uses #view=FitH so the PDF fills the panel width on first paint', () => {
@@ -120,16 +140,18 @@ describe('libreoffice (env gating + wrapper)', () => {
       expect(html).toContain('#view=FitH');
     });
 
-    it('embeds large base64 payloads without breaking out of the data URI', () => {
-      /* A `</script>` substring in the base64 wouldn't terminate the
-       * iframe `src=` attribute, but a stray `"` would. base64 alphabet
-       * is `A-Za-z0-9+/=` — none of those are dangerous. Sanity-check
-       * with a synthetically large payload. */
+    it('embeds large base64 payloads inside the data block without escaping issues', () => {
+      /* The base64 alphabet (A-Za-z0-9+/=) contains no characters that
+       * could break out of `<script type="application/octet-stream;
+       * base64">...</script>` — base64 cannot contain `<`, `>`, `&`, or
+       * quote characters. Sanity-check that the data round-trips. */
       const big = 'A'.repeat(100_000);
       const html = buildPdfEmbedDocument(big);
-      const src = html.match(/src="data:application\/pdf;base64,([^"]+)/);
-      expect(src).not.toBeNull();
-      expect(src![1].length).toBe(big.length + '#view=FitH'.length);
+      const dataBlock = html.match(
+        /<script id="lc-pdf-data" type="application\/octet-stream;base64">([^<]+)<\/script>/,
+      );
+      expect(dataBlock).not.toBeNull();
+      expect(dataBlock![1]).toBe(big);
     });
   });
 
@@ -274,7 +296,11 @@ describe('libreoffice integration (skipped unless LibreOffice is on $PATH)', () 
       const out = await tryLibreOfficePreview(buf, 'docx', 512 * 1024);
       expect(out).not.toBeNull();
       expect(out!).toMatch(/^<!DOCTYPE html>/);
-      expect(out!).toContain('data:application/pdf;base64,');
+      /* PDF bytes are embedded as a base64 data block (not as a data:
+       * URL — Chrome blocks data:application/pdf in sandboxed iframes;
+       * the bootstrap converts to a blob: URL at runtime). */
+      expect(out!).toContain('id="lc-pdf-data"');
+      expect(out!).toContain('URL.createObjectURL');
       expect(Buffer.byteLength(out!, 'utf-8')).toBeLessThanOrEqual(512 * 1024);
     },
     35_000,
