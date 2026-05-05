@@ -161,6 +161,7 @@ const Part = memo(function Part({
           args={typeof toolCall.args === 'string' ? toolCall.args : ''}
           output={toolCall.output ?? ''}
           attachments={attachments}
+          hideAttachments={hideAttachments}
         />
       );
     } else if (isToolCall && toolCall.name === 'skill') {
