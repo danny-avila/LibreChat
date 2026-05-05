@@ -779,6 +779,39 @@ describe('Office HTML producers', () => {
       expect(officeHtmlBucket(name, mime)).toBe(expected);
     });
 
+    /* Regression for Codex P2 (server/client routing parity). The
+     * client's `detectArtifactTypeFromFile` routes by extension first
+     * for ANY known extension (not just office) — `.txt` →
+     * PLAIN_TEXT regardless of MIME. If the server fell back to MIME
+     * for these files and produced office HTML, the client would
+     * still route to PLAIN_TEXT, escape the HTML through the markdown
+     * viewer, and the user would see raw `<html>...` markup. The
+     * server now refuses to fall back to MIME when extension is
+     * non-empty — symmetric "extension wins" precedence with the
+     * client.
+     *
+     * Trade-off: a true DOCX renamed to `myfile.bin` + DOCX MIME no
+     * longer routes through office HTML on the server. Acceptable —
+     * extension/MIME mismatch is user error, and the security gate
+     * on the client would have produced a PLAIN_TEXT fall-through
+     * anyway (no preview either way). */
+    it.each([
+      // Known non-office extension + office MIME — must NOT route to office
+      ['notes.txt', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      ['notes.md', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      ['data.json', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+      ['code.py', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+      ['page.html', 'text/csv'],
+      ['styles.css', 'text/csv'],
+      // Unknown extension + office MIME — also returns null (server is
+      // conservative; client's security gate will downgrade these to
+      // PLAIN_TEXT anyway since `textFormat` would not be 'html')
+      ['blob.bin', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      ['data.dat', 'text/csv'],
+    ])('non-empty non-office extension wins over office MIME: (%s, %s) → null', (name, mime) => {
+      expect(officeHtmlBucket(name, mime)).toBeNull();
+    });
+
     /* Regression for Codex P2 review on PR #12934. Real Content-Type
      * headers carry parameters like `; charset=utf-8` and `; boundary`;
      * the predicate must strip them before matching, otherwise the

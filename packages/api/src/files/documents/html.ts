@@ -1554,9 +1554,27 @@ const OFFICE_EXTENSIONS: Record<string, OfficeHtmlBucket> = {
  * mislabeled `text/csv` (a known footgun when tool sandboxes ship
  * generic MIMEs) would be routed to `csvToHtml` and try to parse a
  * binary PPTX as CSV — yielding garbage at best, a parse exception at
- * worst. MIME-only routing is the fallback for extensionless filenames
- * (or extensions outside our known set) where the upstream supplied a
- * useful Content-Type header.
+ * worst.
+ *
+ * **MIME fallback fires ONLY when the extension is empty.** This
+ * mirrors the client's `detectArtifactTypeFromFile` precedence: the
+ * client routes any file with a known non-office extension (`.txt`,
+ * `.md`, `.json`, etc.) to its non-office bucket REGARDLESS of MIME.
+ * If the server produced office HTML for `.txt + DOCX MIME`, the
+ * client would route by extension to PLAIN_TEXT, escape the HTML
+ * through the markdown viewer, and the user would see raw `<html>...`
+ * markup instead of the rendered preview. Codex P2 review on PR
+ * #12934 — symmetric server/client extension precedence is the only
+ * way to avoid this kind of mismatch without a shared routing table.
+ *
+ * Trade-off: a true DOCX renamed to `myfile.bin` + DOCX MIME no longer
+ * routes through office HTML on the server (it falls to the existing
+ * extract path → `textFormat: 'text'` → client renders raw bytes via
+ * PLAIN_TEXT). Acceptable: extension-vs-MIME mismatch is user error,
+ * and the previous behavior would have surfaced as a security-gate
+ * fall-through to PLAIN_TEXT on the client anyway (no preview either
+ * way; the new behavior just avoids producing HTML the client can't
+ * use).
  */
 export function officeHtmlBucket(name: string, mimeType: string): OfficeHtmlBucket | null {
   const ext = extensionOf(name);
@@ -1564,12 +1582,15 @@ export function officeHtmlBucket(name: string, mimeType: string): OfficeHtmlBuck
   if (byExtension) {
     return byExtension;
   }
-  /* MIME-only fallback. Strip parameters first — Content-Type headers
-   * routinely carry `; charset=utf-8` or `; boundary=...` decorations
-   * that would otherwise fail exact-match comparisons. Order within the
-   * fallback doesn't matter: there are no overlapping MIME patterns
-   * across buckets, and the extension table already took precedence
-   * above for any conflicting input. */
+  if (ext !== '') {
+    /* Non-empty non-office extension wins — see contract above. */
+    return null;
+  }
+  /* MIME fallback for genuinely extensionless files (tool-emitted
+   * blobs with generic names, etc.). Strip parameters first —
+   * Content-Type headers routinely carry `; charset=utf-8` or
+   * `; boundary=...` decorations that would otherwise fail exact-
+   * match comparisons. */
   const normalized = baseMime(mimeType);
   if (normalized === DOCX_MIME) {
     return 'docx';
