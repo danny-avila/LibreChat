@@ -597,3 +597,82 @@ describe('getExtractedTextFormat', () => {
     expect(getExtractedTextFormat('', '', 'whatever')).toBe('text');
   });
 });
+
+describe('extractCodeArtifactText office-html concurrency', () => {
+  beforeEach(() => {
+    mockOfficeHtml.mockReset();
+    parseDocumentCalls.length = 0;
+  });
+
+  /* The limiter inside extract.ts caps simultaneous office-HTML renders so
+   * a tool result with many office artifacts can't fan out N parallel
+   * mammoth/SheetJS invocations and starve the still-running agent loop.
+   * The cap is a module-private constant; this test asserts the observable
+   * contract without coupling to the literal value. */
+  it('caps concurrent office-HTML renders so a burst of 10 files does not all run at once', async () => {
+    let active = 0;
+    let peak = 0;
+
+    mockOfficeHtml.mockImplementation(async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      return '<!DOCTYPE html><html><body>ok</body></html>';
+    });
+
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        extractCodeArtifactText(
+          Buffer.from('PK'),
+          `report-${i}.docx`,
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'document',
+        ),
+      ),
+    );
+
+    expect(results).toHaveLength(10);
+    results.forEach((text) => {
+      expect(text).toContain('<!DOCTYPE html>');
+    });
+    /* Hard upper bound from the module's OFFICE_HTML_CONCURRENCY=2.
+     * We assert <= a small constant rather than the exact value to avoid
+     * coupling, but it MUST be well below the request count. */
+    expect(peak).toBeGreaterThan(0);
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(peak).toBeLessThan(10);
+  });
+
+  it('continues processing the queue when an earlier render rejects', async () => {
+    /* A failing render must release its slot — otherwise a single bad
+     * file in a burst would permanently shrink the limiter and stall
+     * subsequent extractions. */
+    let call = 0;
+    mockOfficeHtml.mockImplementation(async () => {
+      call++;
+      if (call === 1) {
+        throw new Error('mammoth blew up');
+      }
+      return '<!DOCTYPE html><html><body>ok</body></html>';
+    });
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        extractCodeArtifactText(
+          Buffer.from('PK'),
+          `report-${i}.docx`,
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'document',
+        ),
+      ),
+    );
+
+    /* First call's failure surfaces as null per the HTML-or-null contract;
+     * the remaining four must still produce HTML. */
+    const nullCount = results.filter((t) => t === null).length;
+    const htmlCount = results.filter((t) => t != null && t.includes('<!DOCTYPE html>')).length;
+    expect(nullCount).toBe(1);
+    expect(htmlCount).toBe(4);
+  });
+});
