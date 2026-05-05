@@ -363,6 +363,88 @@ describe('ToolService - Action Capability Gating', () => {
     });
   });
 
+  describe('loadToolsForExecution — configurable user injection', () => {
+    /**
+     * Subagents invoked via `@librechat/agents`' SubagentExecutor receive
+     * a fresh `configurable` of `{ thread_id }` only — the parent's
+     * `user`/`user_id` are dropped on the way into the child workflow.
+     * The handler in `packages/api/src/agents/handlers.ts` merges
+     * `{ ...configurable, ...toolConfigurable }`, so the configurable
+     * returned here MUST carry the user identity for MCP connection
+     * lookup to succeed in subagent tool calls.
+     *
+     * Conversely, when `req.user` is absent (API-key path) we must NOT
+     * write `user`/`user_id` keys, otherwise the merge would clobber the
+     * outer config's `'api-user'` fallback set by Responses/OpenAI
+     * controllers.
+     */
+    it('returns configurable with user and user_id from req.user', async () => {
+      const req = createMockReq([]);
+      req.config = {};
+      req.user = { id: 'user_abc', email: 'a@b.c', role: 'USER' };
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_123' },
+        toolNames: [],
+      });
+
+      expect(result.configurable.user_id).toBe('user_abc');
+      expect(result.configurable.user).toEqual(
+        expect.objectContaining({ id: 'user_abc', email: 'a@b.c', role: 'USER' }),
+      );
+    });
+
+    it('omits user keys when req.user is undefined so outer config fallback is preserved', async () => {
+      const req = createMockReq([]);
+      req.config = {};
+      req.user = undefined;
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_123' },
+        toolNames: [],
+      });
+
+      expect('user_id' in result.configurable).toBe(false);
+      expect('user' in result.configurable).toBe(false);
+    });
+
+    it('omits user keys when req.user is null so outer config fallback is preserved', async () => {
+      const req = createMockReq([]);
+      req.config = {};
+      req.user = null;
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_123' },
+        toolNames: [],
+      });
+
+      expect('user_id' in result.configurable).toBe(false);
+      expect('user' in result.configurable).toBe(false);
+    });
+
+    it('omits user keys when req.user is present but has no id', async () => {
+      const req = createMockReq([]);
+      req.config = {};
+      req.user = { email: 'a@b.c' };
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_123' },
+        toolNames: [],
+      });
+
+      expect('user_id' in result.configurable).toBe(false);
+      expect('user' in result.configurable).toBe(false);
+    });
+  });
+
   describe('checkCapability logic', () => {
     const createCheckCapability = (enabledCapabilities, logger = { warn: jest.fn() }) => {
       return (capability) => {

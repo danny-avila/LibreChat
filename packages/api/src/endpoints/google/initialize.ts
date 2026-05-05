@@ -32,7 +32,7 @@ export async function initializeGoogle({
   let userKey = null;
   if (expiresAt && isUserProvided) {
     checkUserKeyExpiry(expiresAt, EModelEndpoint.google);
-    userKey = await db.getUserKey({ userId: req.user?.id, name: EModelEndpoint.google });
+    userKey = await db.getUserKey({ userId: req.user?.id ?? '', name: EModelEndpoint.google });
   }
 
   let serviceKey: Record<string, unknown> = {};
