@@ -99,18 +99,6 @@ function Login() {
           setError={setError}
         />
       )}
-      {startupConfig?.registrationEnabled === true && (
-        <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
-          {' '}
-          {localize('com_auth_no_account')}{' '}
-          <a
-            href="/register"
-            className="inline-flex p-1 text-sm font-medium text-brand-blue-600 transition-colors hover:text-brand-blue-700 dark:text-brand-blue-400 dark:hover:text-brand-blue-300"
-          >
-            {localize('com_auth_sign_up')}
-          </a>
-        </p>
-      )}
     </>
   );
 }

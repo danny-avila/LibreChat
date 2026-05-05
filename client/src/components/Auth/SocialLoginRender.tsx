@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string */
 import {
   GoogleIcon,
   FacebookIcon,
@@ -16,8 +17,10 @@ import { TStartupConfig } from 'librechat-data-provider';
 
 function SocialLoginRender({
   startupConfig,
+  mode: _mode,
 }: {
   startupConfig: TStartupConfig | null | undefined;
+  mode?: 'signin' | 'signup';
 }) {
   const localize = useLocalize();
 
@@ -121,16 +124,16 @@ function SocialLoginRender({
     startupConfig.socialLoginEnabled && (
       <>
         {startupConfig.emailLoginEnabled && (
-          <>
-            <div className="relative mt-6 flex w-full items-center justify-center border border-t border-gray-300 uppercase dark:border-gray-600">
-              <div className="absolute bg-white px-3 text-xs text-black dark:bg-gray-900 dark:text-white">
-                Or
-              </div>
-            </div>
-            <div className="mt-8" />
-          </>
+          <div className="my-5 flex items-center gap-3">
+            <span className="h-px flex-1 bg-[rgba(11,47,91,0.10)] dark:bg-white/[0.10]" />
+            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-cc-slate-400 dark:text-dm-text-faint">
+              {}
+              or
+            </span>
+            <span className="h-px flex-1 bg-[rgba(11,47,91,0.10)] dark:bg-white/[0.10]" />
+          </div>
         )}
-        <div className="mt-2">
+        <div className="flex flex-col gap-2.5">
           {startupConfig.socialLogins?.map((provider) => providerComponents[provider] || null)}
         </div>
       </>

@@ -73,41 +73,50 @@ const Registration: React.FC = () => {
     },
   });
 
-  const renderInput = (id: string, label: TranslationKeys, type: string, validation: object) => {
+  const renderInput = (
+    id: string,
+    label: TranslationKeys,
+    type: string,
+    validation: object,
+    placeholder = '',
+  ) => {
     const isEmail = id === 'email';
+    const isPassword = type === 'password';
     return (
-    <div className="mb-4">
-      <div className="relative">
-        <input
-          id={id}
-          type={type}
-          autoCapitalize={isEmail ? 'none' : undefined}
-          autoCorrect={isEmail ? 'off' : undefined}
-          spellCheck={isEmail ? false : undefined}
-          autoComplete={id}
-          aria-label={localize(label)}
-          {...register(
-            id as 'name' | 'email' | 'username' | 'password' | 'confirm_password',
-            validation,
-          )}
-          aria-invalid={!!errors[id]}
-          className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-brand-blue-500 focus:outline-none"
-          placeholder=" "
-          data-testid={id}
-        />
+      <div>
         <label
           htmlFor={id}
-          className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-brand-blue-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
+          className="block rounded-[12px] border border-[rgba(11,47,91,0.16)] bg-white px-3.5 pb-2.5 pt-2 transition-colors focus-within:border-ink-800 dark:border-white/[0.14] dark:bg-dm-surface dark:focus-within:border-signal-amber"
         >
-          {localize(label)}
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-cc-slate-500 dark:text-dm-text-mute">
+            {localize(label)}
+          </span>
+          <input
+            id={id}
+            type={type}
+            autoCapitalize={isEmail ? 'none' : undefined}
+            autoCorrect={isEmail ? 'off' : undefined}
+            spellCheck={isEmail ? false : undefined}
+            autoComplete={id}
+            aria-label={localize(label)}
+            {...register(
+              id as 'name' | 'email' | 'username' | 'password' | 'confirm_password',
+              validation,
+            )}
+            aria-invalid={!!errors[id]}
+            placeholder={placeholder}
+            data-testid={id}
+            className={`webkit-dark-styles mt-0.5 w-full border-0 bg-transparent p-0 text-[16px] text-ink-900 placeholder:text-cc-slate-400 focus:outline-none focus:ring-0 dark:text-dm-text dark:placeholder:text-dm-text-faint ${
+              isPassword ? 'font-mono tracking-[0.2em]' : ''
+            }`}
+          />
         </label>
+        {errors[id] && (
+          <span role="alert" className="mt-1 text-sm text-red-500">
+            {String(errors[id]?.message) ?? ''}
+          </span>
+        )}
       </div>
-      {errors[id] && (
-        <span role="alert" className="mt-1 text-sm text-red-500">
-          {String(errors[id]?.message) ?? ''}
-        </span>
-      )}
-    </div>
     );
   };
 
@@ -135,64 +144,61 @@ const Registration: React.FC = () => {
       {!startupConfigError && !isFetching && (
         <>
           <form
-            className="mt-6"
             aria-label="Registration form"
             method="POST"
             onSubmit={handleSubmit((data: TRegisterUser) =>
               registerUser.mutate({ ...data, token: token ?? undefined }),
             )}
           >
-            {renderInput('name', 'com_auth_full_name', 'text', {
-              required: localize('com_auth_name_required'),
-              minLength: {
-                value: 3,
-                message: localize('com_auth_name_min_length'),
-              },
-              maxLength: {
-                value: 80,
-                message: localize('com_auth_name_max_length'),
-              },
-            })}
-            {renderInput('username', 'com_auth_username', 'text', {
-              minLength: {
-                value: 2,
-                message: localize('com_auth_username_min_length'),
-              },
-              maxLength: {
-                value: 80,
-                message: localize('com_auth_username_max_length'),
-              },
-            })}
-            {renderInput('email', 'com_auth_email', 'email', {
-              required: localize('com_auth_email_required'),
-              minLength: {
-                value: 1,
-                message: localize('com_auth_email_min_length'),
-              },
-              maxLength: {
-                value: 120,
-                message: localize('com_auth_email_max_length'),
-              },
-              pattern: {
-                value: /\S+@\S+\.\S+/,
-                message: localize('com_auth_email_pattern'),
-              },
-            })}
-            {renderInput('password', 'com_auth_password', 'password', {
-              required: localize('com_auth_password_required'),
-              minLength: {
-                value: startupConfig?.minPasswordLength || 8,
-                message: localize('com_auth_password_min_length'),
-              },
-              maxLength: {
-                value: 128,
-                message: localize('com_auth_password_max_length'),
-              },
-            })}
-            {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
-              validate: (value: string) =>
-                value === password || localize('com_auth_password_not_match'),
-            })}
+            <div className="flex flex-col gap-2.5">
+              {renderInput('name', 'com_auth_full_name', 'text', {
+                required: localize('com_auth_name_required'),
+                minLength: {
+                  value: 3,
+                  message: localize('com_auth_name_min_length'),
+                },
+                maxLength: {
+                  value: 80,
+                  message: localize('com_auth_name_max_length'),
+                },
+              })}
+              {renderInput(
+                'email',
+                'com_auth_email',
+                'email',
+                {
+                  required: localize('com_auth_email_required'),
+                  minLength: {
+                    value: 1,
+                    message: localize('com_auth_email_min_length'),
+                  },
+                  maxLength: {
+                    value: 120,
+                    message: localize('com_auth_email_max_length'),
+                  },
+                  pattern: {
+                    value: /\S+@\S+\.\S+/,
+                    message: localize('com_auth_email_pattern'),
+                  },
+                },
+                'you@company.com',
+              )}
+              {renderInput('password', 'com_auth_password', 'password', {
+                required: localize('com_auth_password_required'),
+                minLength: {
+                  value: startupConfig?.minPasswordLength || 8,
+                  message: localize('com_auth_password_min_length'),
+                },
+                maxLength: {
+                  value: 128,
+                  message: localize('com_auth_password_max_length'),
+                },
+              })}
+              {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
+                validate: (value: string) =>
+                  value === password || localize('com_auth_password_not_match'),
+              })}
+            </div>
 
             {startupConfig?.turnstile?.siteKey && (
               <div className="my-4 flex justify-center">
@@ -209,7 +215,7 @@ const Registration: React.FC = () => {
               </div>
             )}
 
-            <div className="mt-6">
+            <div className="mt-5">
               <Button
                 disabled={
                   Object.keys(errors).length > 0 ||
@@ -218,24 +224,12 @@ const Registration: React.FC = () => {
                 }
                 type="submit"
                 aria-label="Submit registration"
-                variant="submit"
-                className="h-12 w-full rounded-2xl"
+                className="flex h-[52px] w-full items-center justify-center rounded-[14px] border-0 bg-ink-800 text-[15px] font-bold text-white shadow-[0_4px_12px_-2px_rgba(11,47,91,0.45)] transition-colors hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-signal-amber dark:text-ink-900 dark:shadow-[0_4px_12px_-2px_rgba(242,182,68,0.45)] dark:hover:bg-[#F5C566]"
               >
                 {isSubmitting ? <Spinner /> : localize('com_auth_continue')}
               </Button>
             </div>
           </form>
-
-          <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
-            {localize('com_auth_already_have_account')}{' '}
-            <a
-              href="/login"
-              aria-label="Login"
-              className="inline-flex p-1 text-sm font-medium text-brand-blue-600 transition-colors hover:text-brand-blue-700 dark:text-brand-blue-400 dark:hover:text-brand-blue-300"
-            >
-              {localize('com_auth_login')}
-            </a>
-          </p>
         </>
       )}
     </>
