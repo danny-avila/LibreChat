@@ -150,13 +150,6 @@ mcpServers:
     timeout: 60000
     initTimeout: 120000
 
-  ajrasakha-other-markets:
-    type: streamable-http
-    url: http://100.100.108.44:9017/mcp
-    timeout: 60000
-    initTimeout: 120000
-
-
 speech:
   stt:
     openai:
@@ -344,9 +337,7 @@ modelSpecs:
           4.5. Fetch market-related data using MCP tools with strict priority order.
               First query Ajrasakha-Agmarknet and return data if available.
               If no data is found, then query Ajrasakha-eNAM and return results if available.
-              If both sources do not return data, then proceed to query ajrasakha-other-markets tool.
               Always return data from the highest-priority source where results are found, without querying lower-priority sources unnecessarily.
-
           - If a farmer provides ANY soil test value — Nitrogen (N), Phosphorus (P), Potassium (K), or Organic Carbon (OC) — actively ask for any remaining missing soil values before proceeding.
           - Also collect: State, District, and Crop. Check conversation history first; if missing, ask the farmer.
           - ONLY when ALL 7 mandatory data points (N, P, K, OC, State, District, Crop) are available, call soilhealth tools in this strict order:
@@ -734,7 +725,6 @@ modelSpecs:
          - ajrasakha-imd
          - faq-videos
          - ajrasakha-location
-         - ajrasakha-other-markets
          - ajrasakha-govt-schemes
          - ajrasakha-soilhealth
 
