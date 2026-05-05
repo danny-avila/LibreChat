@@ -41,7 +41,7 @@ jest.mock('@aws-sdk/client-cloudfront', () => ({
 jest.mock('@librechat/data-schemas', () => ({ logger: mockLogger }));
 
 jest.mock('~/storage/s3/s3Config', () => ({
-  s3Config: { S3_URL_EXPIRY_SECONDS: 900, DEFAULT_BASE_PATH: 'images', AWS_REGION: 'us-east-1' },
+  s3Config: { S3_URL_EXPIRY_SECONDS: 900, AWS_REGION: 'us-east-1' },
 }));
 
 function makeConfig(overrides: Partial<CloudFrontFullConfig> = {}): CloudFrontFullConfig {
