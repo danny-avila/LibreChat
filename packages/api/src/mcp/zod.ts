@@ -327,11 +327,14 @@ const COMBINATOR_KEYS = ['oneOf', 'anyOf', 'allOf'] as const;
 /**
  * Sanitizes an MCP tool inputSchema for strict LLM API compatibility.
  *
- * Anthropic and OpenAI reject schemas with `oneOf`/`anyOf`/`allOf`/`not`/`enum` at the
- * top level. When any of these combinators are present at the root, this function merges
- * all sub-schema properties into a single `type: "object"` schema, dropping constraints
- * that cannot be expressed without combinators. Top-level `description` and `required`
- * are preserved. The result is then passed through `normalizeJsonSchema` for full cleanup.
+ * Anthropic and OpenAI reject schemas with `oneOf`/`anyOf`/`allOf`/`not` at the
+ * top level. When any of these combinators are present at the root, this function:
+ *   1. Resolves all `$ref` references so combinator branches are fully expanded
+ *   2. Merges `properties` and `required` from all sub-schemas into a single
+ *      `type: "object"` schema
+ *
+ * Top-level `description` is preserved. The result passes through `normalizeJsonSchema`
+ * for full cleanup. Schemas without top-level combinators pass through unchanged.
  *
  * Google Gemini is more permissive and does not require this transformation.
  */
@@ -341,22 +344,32 @@ export function sanitizeToolSchema(schema: JsonSchemaType | undefined): JsonSche
     return fallback;
   }
 
-  const s = schema as Record<string, unknown>;
-  const hasCombinator = COMBINATOR_KEYS.some((k) => Array.isArray(s[k]));
-  const hasTopLevelNot = s['not'] != null;
+  const resolved = resolveJsonSchemaRefs(schema as Record<string, unknown>) as Record<
+    string,
+    unknown
+  >;
+  const hasCombinator = COMBINATOR_KEYS.some((k) => Array.isArray(resolved[k]));
+  const hasTopLevelNot = resolved['not'] != null;
 
   if (!hasCombinator && !hasTopLevelNot) {
-    return normalizeJsonSchema(s) as JsonSchemaType;
+    return normalizeJsonSchema(resolved) as JsonSchemaType;
   }
 
   const mergedProperties: Record<string, unknown> = {};
+  const mergedRequired = new Set<string>(
+    Array.isArray(resolved.required) ? (resolved.required as string[]) : [],
+  );
 
-  if (s.properties && typeof s.properties === 'object' && !Array.isArray(s.properties)) {
-    Object.assign(mergedProperties, s.properties);
+  if (
+    resolved.properties &&
+    typeof resolved.properties === 'object' &&
+    !Array.isArray(resolved.properties)
+  ) {
+    Object.assign(mergedProperties, resolved.properties);
   }
 
   for (const key of COMBINATOR_KEYS) {
-    const subSchemas = s[key];
+    const subSchemas = resolved[key];
     if (!Array.isArray(subSchemas)) {
       continue;
     }
@@ -368,6 +381,11 @@ export function sanitizeToolSchema(schema: JsonSchemaType | undefined): JsonSche
       if (subRecord.properties && typeof subRecord.properties === 'object') {
         Object.assign(mergedProperties, subRecord.properties);
       }
+      if (Array.isArray(subRecord.required)) {
+        for (const field of subRecord.required as string[]) {
+          mergedRequired.add(field);
+        }
+      }
     }
   }
 
@@ -375,11 +393,11 @@ export function sanitizeToolSchema(schema: JsonSchemaType | undefined): JsonSche
   if (Object.keys(mergedProperties).length > 0) {
     result.properties = mergedProperties;
   }
-  if (s.description != null) {
-    result.description = s.description;
+  if (mergedRequired.size > 0) {
+    result.required = [...mergedRequired];
   }
-  if (Array.isArray(s.required) && s.required.length > 0) {
-    result.required = s.required;
+  if (resolved.description != null) {
+    result.description = resolved.description;
   }
 
   return normalizeJsonSchema(result) as JsonSchemaType;
