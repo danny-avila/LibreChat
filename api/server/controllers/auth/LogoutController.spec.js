@@ -4,9 +4,13 @@ const mockLogoutUser = jest.fn();
 const mockLogger = { warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
 const mockIsEnabled = jest.fn();
 const mockGetOpenIdConfig = jest.fn();
+const mockClearCloudFrontCookies = jest.fn();
 
 jest.mock('cookie');
-jest.mock('@librechat/api', () => ({ isEnabled: (...args) => mockIsEnabled(...args) }));
+jest.mock('@librechat/api', () => ({
+  isEnabled: (...args) => mockIsEnabled(...args),
+  clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
+}));
 jest.mock('@librechat/data-schemas', () => ({ logger: mockLogger }));
 jest.mock('~/server/services/AuthService', () => ({
   logoutUser: (...args) => mockLogoutUser(...args),
@@ -254,6 +258,15 @@ describe('LogoutController', () => {
       expect(res.clearCookie).toHaveBeenCalledWith('openid_id_token');
       expect(res.clearCookie).toHaveBeenCalledWith('openid_user_id');
       expect(res.clearCookie).toHaveBeenCalledWith('token_provider');
+    });
+
+    it('calls clearCloudFrontCookies on successful logout', async () => {
+      const req = buildReq();
+      const res = buildRes();
+
+      await logoutController(req, res);
+
+      expect(mockClearCloudFrontCookies).toHaveBeenCalledWith(res);
     });
   });
 

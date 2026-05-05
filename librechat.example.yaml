@@ -18,12 +18,28 @@ cache: true
 #   image: "firebase"   # Storage for uploaded images in chats
 #   document: "local"   # Storage for document uploads (PDFs, text files, etc.)
 
-# Available strategies: "local", "s3", "firebase"
+# Available strategies: "local", "s3", "firebase", "azure_blob", "cloudfront"
 # If not specified, defaults to "local" for all file types
 # You can mix and match strategies based on your needs:
 # - Use S3 for avatars for fast global access
 # - Use Firebase for images with automatic optimization
 # - Use local storage for documents for privacy/compliance
+# - Use CloudFront for CDN-accelerated delivery (requires S3 + cloudfront config below)
+
+# CloudFront CDN Configuration (optional)
+# Use when fileStrategy: "cloudfront" or fileStrategies includes cloudfront
+# Requires: AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_BUCKET_NAME
+# For signed cookies/URLs: CLOUDFRONT_KEY_PAIR_ID, CLOUDFRONT_PRIVATE_KEY
+# cloudfront:
+#   domain: "https://cdn.example.com"       # CloudFront domain (CNAME recommended for cookies)
+#   distributionId: "E1234ABCD"             # Required if invalidateOnDelete is true
+#   invalidateOnDelete: false               # Create cache invalidation on file delete
+#   imageSigning: "none"                    # "none" (public) | "cookies" (signed cookies)
+#   # When imageSigning: "cookies", API + CloudFront must share a parent domain:
+#   #   API: api.example.com, CloudFront CNAME: cdn.example.com, cookieDomain: ".example.com"
+#   cookieDomain: ".example.com"            # Required for "cookies" - shared parent domain
+#   cookieExpiry: 1800                      # Cookie lifetime in seconds (max: 604800 / 7 days, default: 1800 / 30 min)
+#   urlExpiry: 3600                         # Reserved for future signed-URL mode (not yet implemented)
 
 # Custom interface configuration
 interface:
@@ -116,7 +132,7 @@ interface:
     # - create: Allow users to create and manage new MCP servers
     # - share: Allow users to share MCP servers with other users
     # - public: Allow users to share MCP servers publicly (with everyone)
-     
+
     # Creation / edit MCP server config Dialog config example
     # trustCheckbox:
     #   label:
