@@ -16,6 +16,7 @@ const ENV_FILES_BUCKET_ARN = 'arn:aws:s3:::nj-librechat-env-files';
 export interface KitchenSinkStackProps extends cdk.StackProps {
   listenerArn: string;
   certificateArn: string;
+  mongoSecretArn: string;
   ragApiJwtSecretArn: string;
 }
 
@@ -32,6 +33,13 @@ export class KitchenSinkStack extends cdk.Stack {
     const execRole = this.createExecRole(fileBucket);
     const envBucket = s3.Bucket.fromBucketArn(this, 'EnvFilesBucket', ENV_FILES_BUCKET_ARN);
 
+    const mongoSecret = secrets.Secret.fromSecretCompleteArn(
+      this,
+      'MongoSecret',
+      props.mongoSecretArn,
+    );
+    mongoSecret.grantRead(execRole);
+
     const lbSecurityGroupId = cdk.Fn.importValue('EcsStack:LoadBalancerSecurityGroupId');
     const lbSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(
       this,
@@ -47,7 +55,7 @@ export class KitchenSinkStack extends cdk.Stack {
       },
     );
 
-    const mongoService = this.createMongoService(vpc, cluster, execRole);
+    const mongoService = this.createMongoService(vpc, cluster, execRole, mongoSecret);
     const vectorDbService = this.createVectorDbService(vpc, cluster, execRole);
     const meiliService = this.createMeiliSearchService(vpc, cluster, execRole, envBucket);
     const ollamaService = this.createOllamaService(vpc, cluster, execRole);
@@ -60,6 +68,7 @@ export class KitchenSinkStack extends cdk.Stack {
       props.certificateArn,
       envBucket,
       fileBucket,
+      mongoSecret,
     );
     const adminPanelService = this.createAdminPanelService(vpc, cluster, execRole, listener);
 
@@ -173,6 +182,7 @@ export class KitchenSinkStack extends cdk.Stack {
     vpc: ec2.IVpc,
     cluster: ecs.Cluster,
     execRole: iam.Role,
+    mongoSecret: secrets.ISecret,
   ): ecs.FargateService {
     const mongoFs = new efs.FileSystem(this, 'MongoFs', {
       vpc,
@@ -195,8 +205,11 @@ export class KitchenSinkStack extends cdk.Stack {
         `${this.account}.dkr.ecr.${this.region}.amazonaws.com/newjersey/mongo:8.0.17`,
       ),
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'lc-mongodb' }),
-      command: ['mongod', '--noauth'],
       portMappings: [{ containerPort: 27017 }],
+      secrets: {
+        MONGO_INITDB_ROOT_USERNAME: ecs.Secret.fromSecretsManager(mongoSecret, 'username'),
+        MONGO_INITDB_ROOT_PASSWORD: ecs.Secret.fromSecretsManager(mongoSecret, 'password'),
+      },
     });
     container.addMountPoints({
       sourceVolume: 'mongoData',
@@ -435,6 +448,7 @@ export class KitchenSinkStack extends cdk.Stack {
     certificateArn: string,
     envBucket: s3.IBucket,
     fileBucket: s3.Bucket,
+    mongoSecret: secrets.ISecret,
   ): ecs.FargateService {
     const taskDef = new ecs.FargateTaskDefinition(this, 'KitchenSinkTaskDef', {
       cpu: 512,
@@ -452,7 +466,6 @@ export class KitchenSinkStack extends cdk.Stack {
         NODE_ENV: 'production',
         PORT: '3080',
         HOST: '0.0.0.0',
-        MONGO_URI: 'mongodb://mongodb.kitchensink:27017/LibreChat',
         MEILI_HOST: 'http://meilisearch.kitchensink:7700',
         RAG_API_URL: 'http://rag-api.kitchensink:8000',
         EMBEDDINGS_PROVIDER: 'bedrock',
@@ -462,6 +475,9 @@ export class KitchenSinkStack extends cdk.Stack {
         AWS_REGION: this.region,
       },
       environmentFiles: [ecs.EnvironmentFile.fromBucket(envBucket, ENV_FILE_KEY)],
+      secrets: {
+        MONGO_URI: ecs.Secret.fromSecretsManager(mongoSecret, 'uri'),
+      },
       portMappings: [{ containerPort: 3080 }],
       command: ['npm', 'run', 'backend'],
     });

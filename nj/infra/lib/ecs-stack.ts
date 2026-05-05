@@ -29,6 +29,7 @@ export interface EcsServicesProps extends cdk.StackProps {
   rdsSecurityGroup?: ec2.ISecurityGroup;
   rdsSecret?: secrets.ISecret;
   ragApiJwtSecretArn: string;
+  mongoSecretArn?: string;
 }
 
 export class EcsStack extends cdk.Stack {
@@ -53,7 +54,13 @@ export class EcsStack extends cdk.Stack {
     this.s3Bucket = this.CreateFileS3Bucket();
     const commonExecRole = this.CreateCommonExecRole(isProd);
 
-    const librechatService = this.CreateLibrechatService(props, cluster, commonExecRole, isProd);
+    let mongoSecret: secrets.ISecret | undefined;
+    if (!isProd && props.mongoSecretArn) {
+      mongoSecret = secrets.Secret.fromSecretCompleteArn(this, 'MongoSecret', props.mongoSecretArn);
+      mongoSecret.grantRead(commonExecRole);
+    }
+
+    const librechatService = this.CreateLibrechatService(props, cluster, commonExecRole, isProd, mongoSecret);
     this.listener = librechatService.listener;
     this.loadBalancer = librechatService.loadBalancer;
     this.service = librechatService;
@@ -61,7 +68,7 @@ export class EcsStack extends cdk.Stack {
     const ragApiService = this.CreateRagApiService(props, commonExecRole, cluster, librechatService);
 
     if (!isProd) {
-      this.CreateDatabaseSidecars(props, commonExecRole, vpc, cluster, librechatService);
+      this.CreateDatabaseSidecars(props, commonExecRole, vpc, cluster, librechatService, mongoSecret);
     }
   }
 
@@ -165,6 +172,7 @@ export class EcsStack extends cdk.Stack {
     cluster: ecs.Cluster,
     commonExecRole: iam.Role,
     isProd: boolean,
+    mongoSecret?: secrets.ISecret,
   ) {
     const docdbSecret = secrets.Secret.fromSecretNameV2(
       this,
@@ -204,7 +212,7 @@ export class EcsStack extends cdk.Stack {
       REDIS_URI: redisUri,
       REDIS_USE_ALTERNATIVE_DNS_LOOKUP: 'true',
 
-      ...(!isProd ? { MONGO_URI: 'mongodb://mongodb.internal:27017/LibreChat' } : {}),
+      ...(!isProd && !mongoSecret ? { MONGO_URI: 'mongodb://mongodb.internal:27017/LibreChat' } : {}),
       ...(!isProd && props.rdsEndpoint && props.rdsPort
         ? {
             POSTGRES_HOST: props.rdsEndpoint,
@@ -215,6 +223,7 @@ export class EcsStack extends cdk.Stack {
 
     const envSecrets: Record<string, ecs.Secret> = {
       ...(isProd ? { MONGO_URI: ecs.Secret.fromSecretsManager(docdbSecret, 'uri') } : {}),
+      ...(!isProd && mongoSecret ? { MONGO_URI: ecs.Secret.fromSecretsManager(mongoSecret, 'uri') } : {}),
       ...(!isProd && props.rdsSecret
         ? {
             POSTGRES_USER: ecs.Secret.fromSecretsManager(props.rdsSecret, 'username'),
@@ -298,6 +307,7 @@ export class EcsStack extends cdk.Stack {
     vpc: ec2.IVpc,
     cluster: ecs.Cluster,
     librechatService: ecsPatterns.ApplicationLoadBalancedFargateService,
+    mongoSecret?: secrets.ISecret,
   ) {
     const mongoFs = new efs.FileSystem(this, 'MongoFs', {
       vpc,
@@ -322,8 +332,13 @@ export class EcsStack extends cdk.Stack {
     const mongoContainer = mongoTaskDef.addContainer('mongodb', {
       image: ecs.ContainerImage.fromRegistry(props.mongoImage),
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'mongodb' }),
-      command: ['mongod', '--noauth'],
       portMappings: [{ containerPort: 27017 }],
+      ...(mongoSecret && {
+        secrets: {
+          MONGO_INITDB_ROOT_USERNAME: ecs.Secret.fromSecretsManager(mongoSecret, 'username'),
+          MONGO_INITDB_ROOT_PASSWORD: ecs.Secret.fromSecretsManager(mongoSecret, 'password'),
+        },
+      }),
     });
     mongoContainer.addMountPoints({
       sourceVolume: 'mongoData',

@@ -109,6 +109,7 @@ const ecsStack = new EcsStack(app, 'EcsStack', {
   rdsSecurityGroup: databaseStack.rdsSecurityGroup,
   rdsSecret: databaseStack.rdsSecret,
   ragApiJwtSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:ai-assistant/rag-api/jwt-secret-${ragApiJwtSecretSuffix[AWS_ENV]}`,
+  mongoSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:ai-assistant/dev/mongodb-Ajw7aQ`
 });
 
 const cognitoStack = new CognitoStack(app, 'CognitoStack', {
@@ -150,6 +151,7 @@ if (process.env.DEPLOY_KITCHENSINK === 'true') {
     env: env,
     listenerArn: ecsStack.listener.listenerArn,
     certificateArn: `arn:aws:acm:${env.region}:${env.account}:certificate/${process.env.LIBRECHAT_ACM_CERTIFICATE_ID}`,
+    mongoSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:ai-assistant/kitchensink/mongodb-B2athN`,
     ragApiJwtSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:ai-assistant/rag-api/jwt-secret-${ragApiJwtSecretSuffix[AWS_ENV]}`,
   });
 
