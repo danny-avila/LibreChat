@@ -6,6 +6,7 @@ import {
   buildPdfEmbedDocument,
   convertOfficeToPdf,
   isLibreOfficeEnabled,
+  isLibreOfficeEnabledFor,
   LibreOfficeConversionError,
   LibreOfficeUnavailableError,
   LIBREOFFICE_TIMEOUT_MS,
@@ -49,26 +50,75 @@ describe('libreoffice (env gating + wrapper)', () => {
     }
   });
 
-  describe('isLibreOfficeEnabled', () => {
+  describe('isLibreOfficeEnabled (any-format check)', () => {
     it.each([['true'], ['1'], ['yes'], ['TRUE'], ['Yes'], ['  true  ']])(
-      'returns true for %j (matches OFFICE_PREVIEW_DISABLE_CDN parser semantics)',
+      'returns true for %j (truthy = all formats enabled)',
       (value) => {
         process.env.OFFICE_PREVIEW_LIBREOFFICE = value;
         expect(isLibreOfficeEnabled()).toBe(true);
       },
     );
 
-    it.each([['false'], ['0'], ['no'], [''], ['anything-else']])(
-      'returns false for %j',
-      (value) => {
-        process.env.OFFICE_PREVIEW_LIBREOFFICE = value;
-        expect(isLibreOfficeEnabled()).toBe(false);
-      },
-    );
+    it.each([['false'], ['0'], ['no'], ['']])('returns false for %j', (value) => {
+      process.env.OFFICE_PREVIEW_LIBREOFFICE = value;
+      expect(isLibreOfficeEnabled()).toBe(false);
+    });
 
     it('returns false when the env var is unset', () => {
       delete process.env.OFFICE_PREVIEW_LIBREOFFICE;
       expect(isLibreOfficeEnabled()).toBe(false);
+    });
+
+    it('returns true for a comma-separated format list (any format counts)', () => {
+      process.env.OFFICE_PREVIEW_LIBREOFFICE = 'pptx';
+      expect(isLibreOfficeEnabled()).toBe(true);
+      process.env.OFFICE_PREVIEW_LIBREOFFICE = 'pptx,docx';
+      expect(isLibreOfficeEnabled()).toBe(true);
+    });
+  });
+
+  describe('isLibreOfficeEnabledFor (per-format opt-in)', () => {
+    /* Per-format gating lets operators trade off cold-start latency
+     * against fidelity per format. DOCX renders ~instantly via
+     * docx-preview, but PPTX needs LibreOffice for any reasonable
+     * fidelity (pptx-preview chokes on pptxgenjs decks). Operators
+     * should be able to enable LibreOffice for PPTX only. */
+    it.each([
+      ['true', 'pptx', true],
+      ['true', 'docx', true],
+      ['true', 'xlsx', true],
+      ['1', 'pptx', true],
+      ['yes', 'docx', true],
+      ['false', 'pptx', false],
+      ['', 'pptx', false],
+      ['pptx', 'pptx', true],
+      ['pptx', 'docx', false],
+      ['docx', 'pptx', false],
+      ['docx', 'docx', true],
+      ['pptx,docx', 'pptx', true],
+      ['pptx,docx', 'docx', true],
+      ['pptx,docx', 'xlsx', false],
+      ['  pptx  ,  docx  ', 'pptx', true], // whitespace-tolerant
+      ['PPTX', 'pptx', true], // case-insensitive
+      ['pptx, ,docx', 'docx', true], // empty list entries dropped
+      ['pptx, ,docx', 'pptx', true],
+      ['pptx, ,docx', 'xlsx', false],
+    ])('env=%j format=%j → %s', (envValue, format, expected) => {
+      process.env.OFFICE_PREVIEW_LIBREOFFICE = envValue;
+      expect(isLibreOfficeEnabledFor(format)).toBe(expected);
+    });
+
+    it('returns false for any format when the env var is unset', () => {
+      delete process.env.OFFICE_PREVIEW_LIBREOFFICE;
+      expect(isLibreOfficeEnabledFor('pptx')).toBe(false);
+      expect(isLibreOfficeEnabledFor('docx')).toBe(false);
+      expect(isLibreOfficeEnabledFor('xlsx')).toBe(false);
+    });
+
+    it('matches format names case-insensitively', () => {
+      process.env.OFFICE_PREVIEW_LIBREOFFICE = 'pptx';
+      expect(isLibreOfficeEnabledFor('PPTX')).toBe(true);
+      expect(isLibreOfficeEnabledFor('Pptx')).toBe(true);
     });
   });
 

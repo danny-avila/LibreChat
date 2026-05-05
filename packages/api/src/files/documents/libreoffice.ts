@@ -15,10 +15,23 @@ import { join } from 'path';
  * The trade-off is the LibreOffice binary on the server (~250-350 MB disk,
  * ~2-3 s cold-start per first conversion in a process).
  *
- * Off by default. Operators opt in by setting `OFFICE_PREVIEW_LIBREOFFICE=true`
- * AND ensuring `soffice` (or `libreoffice`) is on `$PATH`. When either
- * condition is missing we fall through to the existing CDN/mammoth/slide-list
- * pipeline so a misconfiguration doesn't break previews.
+ * Off by default. Operators opt in via the `OFFICE_PREVIEW_LIBREOFFICE`
+ * env var AND ensuring `soffice` (or `libreoffice`) is on `$PATH`. The
+ * env value is interpreted three ways:
+ *   - Truthy (`true`, `1`, `yes`): all formats use LibreOffice
+ *   - Falsy (`false`, `0`, `no`, empty, unset): no formats — fall through
+ *   - Comma-separated list (`pptx`, `pptx,docx`): only those formats
+ *
+ * The list form lets operators trade off cold-start latency against
+ * fidelity per format. Practically: `pptx` is the most common opt-in —
+ * pptx-preview chokes on pptxgenjs decks and the slide-list fallback
+ * loses all formatting; LibreOffice handles them well. DOCX renders
+ * ~instantly via docx-preview so paying the ~2-3 s LibreOffice cold-
+ * start there is rarely worth it.
+ *
+ * When the gate is closed for a given format we fall through to the
+ * existing CDN/mammoth/slide-list pipeline so a misconfiguration
+ * doesn't break previews.
  *
  * Hardening:
  *   - Subprocess runs in an isolated temp directory (no shared profile, no
@@ -44,20 +57,68 @@ import { join } from 'path';
  *     in our iframe topology.
  */
 
-/** Truthy parser shared with `OFFICE_PREVIEW_DISABLE_CDN` semantics. */
-function envFlagEnabled(value: string | undefined): boolean {
+/**
+ * Parse `OFFICE_PREVIEW_LIBREOFFICE` into the set of formats opted in.
+ * Three forms:
+ *   - Truthy (`true`/`1`/`yes`): all formats
+ *   - Falsy (`false`/`0`/`no`/empty/unset): no formats
+ *   - Comma-separated list (`pptx`/`pptx,docx`): just those formats
+ *
+ * Returning `'all'` (vs. a Set containing every format) keeps the gate
+ * future-proof — adding a new format to the LibreOffice route doesnt
+ * require operators to re-enumerate their env value.
+ */
+type LibreOfficeFormatEnablement = 'all' | ReadonlySet<string> | null;
+
+function parseLibreOfficeEnablement(value: string | undefined): LibreOfficeFormatEnablement {
   if (value == null) {
-    return false;
+    return null;
   }
-  return /^(1|true|yes)$/i.test(value.trim());
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return null;
+  }
+  if (/^(1|true|yes)$/i.test(trimmed)) {
+    return 'all';
+  }
+  if (/^(0|false|no)$/i.test(trimmed)) {
+    return null;
+  }
+  /* Comma-separated format list. Lowercased + trimmed; empty entries
+   * dropped so trailing commas / `pptx, ,docx` don't enable spurious
+   * formats. */
+  const formats = trimmed
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return formats.length > 0 ? new Set(formats) : null;
 }
 
 /**
- * Whether the LibreOffice path is enabled for this process. Read at call
- * time (not module load) so tests can flip the env without rebuilding.
+ * Whether the LibreOffice path is enabled for this specific format.
+ * Read at call time (not module load) so tests can flip the env
+ * without rebuilding.
+ *
+ * @param format extension token (`docx`, `pptx`, `xlsx`, `odt`, ...)
+ */
+export function isLibreOfficeEnabledFor(format: string): boolean {
+  const enabled = parseLibreOfficeEnablement(process.env.OFFICE_PREVIEW_LIBREOFFICE);
+  if (enabled === null) {
+    return false;
+  }
+  if (enabled === 'all') {
+    return true;
+  }
+  return enabled.has(format.toLowerCase());
+}
+
+/**
+ * Whether ANY format is enabled — kept for diagnostic / probe code that
+ * wants to short-circuit binary checks when the feature is fully off.
+ * Most production callers should use `isLibreOfficeEnabledFor(format)`.
  */
 export function isLibreOfficeEnabled(): boolean {
-  return envFlagEnabled(process.env.OFFICE_PREVIEW_LIBREOFFICE);
+  return parseLibreOfficeEnablement(process.env.OFFICE_PREVIEW_LIBREOFFICE) !== null;
 }
 
 interface BinaryProbe {
@@ -473,7 +534,7 @@ export async function tryLibreOfficePreview(
   extensionHint: string,
   outputCap: number,
 ): Promise<string | null> {
-  if (!isLibreOfficeEnabled()) {
+  if (!isLibreOfficeEnabledFor(extensionHint)) {
     return null;
   }
   try {
