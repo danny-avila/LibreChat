@@ -39,14 +39,16 @@ export interface PrimeSkillFilesParams {
   getSessionInfo?: (fileIdentifier: string) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
-  /** Persists codeEnvIdentifier on skill files after upload */
+  /** Persists codeEnvIdentifier on skill files after upload. Returns the
+   *  bulkWrite result so callers can surface partial-write warnings — a
+   *  silent miss here turns every subsequent prime into a fresh upload. */
   updateSkillFileCodeEnvIds?: (
     updates: Array<{
       skillId: Types.ObjectId | string;
       relativePath: string;
       codeEnvIdentifier: string;
     }>,
-  ) => Promise<void>;
+  ) => Promise<{ matchedCount: number; modifiedCount: number } | void>;
 }
 
 export interface PrimeSkillFilesResult {
@@ -217,7 +219,14 @@ export async function primeSkillFiles(
       return null;
     }
 
-    // Persist codeEnvIdentifiers on skill files (fire-and-forget)
+    /**
+     * Persist codeEnvIdentifiers on skill files. Awaited (no longer
+     * fire-and-forget): a missed write turns every subsequent prime into
+     * a fresh upload, so the ~10–50ms bulkWrite latency is a worthwhile
+     * tradeoff for cache reliability. Failures are logged at warn but
+     * don't fail the prime — the file refs returned to the caller are
+     * still valid for the current call.
+     */
     if (updateSkillFileCodeEnvIds) {
       const updates = result.files
         .filter((f) => !f.filename.endsWith('/SKILL.md'))
@@ -227,12 +236,19 @@ export async function primeSkillFiles(
           codeEnvIdentifier: `${result.session_id}/${f.fileId}?entity_id=${entityId}`,
         }));
       if (updates.length > 0) {
-        updateSkillFileCodeEnvIds(updates).catch((err: unknown) => {
+        try {
+          const writeResult = await updateSkillFileCodeEnvIds(updates);
+          if (writeResult && writeResult.modifiedCount < updates.length) {
+            logger.warn(
+              `[primeSkillFiles] Persisted ${writeResult.modifiedCount}/${updates.length} codeEnvIdentifiers for skill "${skill.name}" (matched ${writeResult.matchedCount}). Subsequent primes will re-upload unmatched files.`,
+            );
+          }
+        } catch (err: unknown) {
           logger.warn(
             '[primeSkillFiles] Failed to persist codeEnvIdentifiers:',
             err instanceof Error ? err.message : err,
           );
-        });
+        }
       }
     }
 

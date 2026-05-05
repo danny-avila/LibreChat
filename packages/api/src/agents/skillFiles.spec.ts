@@ -171,6 +171,76 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     ]);
   });
 
+  it('awaits codeEnvIdentifier persistence and exposes partial-write counts', async () => {
+    /* Regression for cross-user skill caching: a fire-and-forget persist
+     * (the prior shape) could race with the next prime, and a write
+     * silently filtered by tenant scoping (the actual prod cause) would
+     * never persist at all. Both make every prime re-upload — N×M egress
+     * at scale instead of M. The persist call must (a) be awaited so
+     * partial writes are observable, and (b) return matched/modified
+     * counts so the caller can warn when a tenant filter or schema-plugin
+     * dropped the write. */
+    const fileRecords = [
+      {
+        relativePath: 'references/style.md',
+        filename: 'style.md',
+        filepath: '/storage/brand-guidelines/references/style.md',
+        source: 's3',
+        bytes: 256,
+      },
+    ];
+    const listSkillFiles = jest.fn().mockResolvedValue(fileRecords);
+    const getStrategyFunctions = jest.fn().mockReturnValue({
+      getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from(''))),
+    });
+    const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
+      session_id: 'session-42',
+      files: [{ fileId: 'file-1', filename: 'brand-guidelines/references/style.md' }],
+    });
+
+    /* Defer resolution so we can assert the prime hasn't returned yet
+     * — proves the call site is awaiting, not fire-and-forget. */
+    let resolvePersist!: (v: { matchedCount: number; modifiedCount: number }) => void;
+    const persistGate = new Promise<{ matchedCount: number; modifiedCount: number }>((r) => {
+      resolvePersist = r;
+    });
+    const updateSkillFileCodeEnvIds = jest.fn().mockReturnValue(persistGate);
+
+    const deps = makeDeps({
+      codeEnvAvailable: true,
+      listSkillFiles,
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+      updateSkillFileCodeEnvIds,
+    });
+
+    let resolved = false;
+    const primePromise = primeInvokedSkills(deps).then((r) => {
+      resolved = true;
+      return r;
+    });
+
+    /* Drain the microtask queue. The prime should still be pending
+     * because persistGate hasn't resolved. */
+    await new Promise((r) => setImmediate(r));
+    expect(resolved).toBe(false);
+
+    /* Resolve as a successful write to confirm the prime completes
+     * after the persist returns. */
+    resolvePersist({ matchedCount: 1, modifiedCount: 1 });
+    await primePromise;
+
+    expect(updateSkillFileCodeEnvIds).toHaveBeenCalledTimes(1);
+    const [updates] = updateSkillFileCodeEnvIds.mock.calls[0];
+    expect(updates).toEqual([
+      {
+        skillId: SKILL_ID,
+        relativePath: 'references/style.md',
+        codeEnvIdentifier: `session-42/file-1?entity_id=${SKILL_ID.toString()}`,
+      },
+    ]);
+  });
+
   it('parses entity_id off codeEnvIdentifier in the cached-skills hot path', async () => {
     /* When all skill files are still active in codeapi, primeInvokedSkills
      * skips the batch upload entirely and reconstructs file refs from each
