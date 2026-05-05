@@ -4,15 +4,16 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 /**
- * LibreOffice-backed office preview pipeline (POC).
+ * LibreOffice-backed office preview pipeline.
  *
- * Convert a DOCX / PPTX (eventually XLSX, ODT, PDF) buffer to PDF via
- * `soffice --headless --convert-to pdf`, then embed the PDF as a base64
- * `data:application/pdf` URI inside a sandboxed iframe so the host browser's
- * native PDF viewer renders it. Result: high-fidelity rendering for any
- * format LibreOffice opens, no client-side renderer dependency, no CDN
- * dependency. The trade-off is the LibreOffice binary on the server (~500 MB
- * disk, ~2-3 s cold-start per conversion).
+ * Convert a DOCX / PPTX (eventually XLSX, ODT) buffer to PDF via
+ * `soffice --headless --convert-to pdf`, base64-encode it into a sandboxed
+ * HTML document, and let pdf.js render each page to `<canvas>` inside the
+ * Sandpack iframe. Result: high-fidelity rendering for any format
+ * LibreOffice opens (which is "everything"), works inside Sandpack's
+ * sandboxed iframe (where the browser's native PDF viewer is blocked).
+ * The trade-off is the LibreOffice binary on the server (~250-350 MB disk,
+ * ~2-3 s cold-start per first conversion in a process).
  *
  * Off by default. Operators opt in by setting `OFFICE_PREVIEW_LIBREOFFICE=true`
  * AND ensuring `soffice` (or `libreoffice`) is on `$PATH`. When either
@@ -36,10 +37,11 @@ import { join } from 'path';
  *   - A LibreOffice service / pool. Each call spawns a fresh subprocess.
  *     If load grows we'd want to keep a long-lived `soffice` process and
  *     drive it via UNO, but that's a v2 concern.
- *   - A PDF viewer. We rely on the host browser's built-in PDF viewer
- *     (Chrome / Edge / Safari / Firefox all ship one). When that's missing
- *     or disabled, the iframe falls back to a "Preview unavailable" state
- *     and the user can still download the file.
+ *   - A native PDF viewer integration. We tried that first — Chrome blocks
+ *     `<iframe src="data:application/pdf">` AND `<iframe src="blob:...">`
+ *     navigation in sandboxed iframes (the built-in viewer requires a
+ *     top-level browsing context). pdf.js is the only thing that works
+ *     in our iframe topology.
  */
 
 /** Truthy parser shared with `OFFICE_PREVIEW_DISABLE_CDN` semantics. */

@@ -1482,13 +1482,10 @@ async function pptxToSlideListHtmlInternal(buffer: Buffer): Promise<string> {
 export const _internal = {
   wordDocToHtmlViaCdn,
   wordDocToHtmlViaMammoth,
-  renderMammothBody,
   MAX_DOCX_CDN_BINARY_BYTES,
   OFFICE_HTML_OUTPUT_CAP,
-  DOCX_PREVIEW_CDN,
   pptxToHtmlViaCdn,
   MAX_PPTX_CDN_BINARY_BYTES,
-  PPTX_PREVIEW_CDN,
 };
 
 /* =============================================================================
