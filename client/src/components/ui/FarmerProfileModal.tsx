@@ -65,48 +65,60 @@ const FarmerProfileModal = ({
     formState: { errors, isValid },
   } = useForm<FarmerProfileForm>({ mode: 'onChange' });
 
- const selectedState = watch('state');
-const selectedDistrict = watch('district');
-const selectedBlock = watch('blockName');
-const selectedCrops = watch('cropsCultivated');
+  const { isLocating, locationError, getLocation } = useGeolocation({
+    onSuccess: (latitude, longitude) => {
+      setValue('location.latitude', latitude, { shouldValidate: true });
+      setValue('location.longitude', longitude, { shouldValidate: true });
+    },
+  });
 
-const handleStateChange = (val: string) => {
-  setValue('state', val, { shouldValidate: true });
-  setValue('district', '', { shouldValidate: false });
-  setValue('customDistrict', '', { shouldValidate: false });
-  setValue('blockName', '', { shouldValidate: false });
-  setValue('villageName', '', { shouldValidate: false });
-};
+  const selectedState = watch('state');
+  const selectedDistrict = watch('district');
+  const selectedBlock = watch('blockName');
+  const selectedCrops = watch('cropsCultivated');
 
-const handleDistrictChange = (val: string) => {
-  setValue('district', val, { shouldValidate: true });
-  if (val !== 'Other') {
+  const handleStateChange = (val: string) => {
+    setValue('state', val, { shouldValidate: true });
+    setValue('district', '', { shouldValidate: false });
     setValue('customDistrict', '', { shouldValidate: false });
-  }
-  setValue('blockName', '', { shouldValidate: false });
-  setValue('villageName', '', { shouldValidate: false });
-};
+    setValue('blockName', '', { shouldValidate: false });
+    setValue('villageName', '', { shouldValidate: false });
+  };
 
-const handleBlockChange = (val: string) => {
-  setValue('blockName', val, { shouldValidate: true });
-  setValue('villageName', '', { shouldValidate: false });
-};
+  const handleDistrictChange = (val: string) => {
+    setValue('district', val, { shouldValidate: true });
+    if (val !== 'Other') {
+      setValue('customDistrict', '', { shouldValidate: false });
+    }
+    setValue('blockName', '', { shouldValidate: false });
+    setValue('villageName', '', { shouldValidate: false });
+  };
 
-const districtOptions = selectedState
-  ? [...(DISTRICTS[selectedState] ?? []), 'Other']
-  : ['Other'];
+  const handleBlockChange = (val: string) => {
+    setValue('blockName', val, { shouldValidate: true });
+    setValue('villageName', '', { shouldValidate: false });
+  };
 
-const blockOptions = selectedDistrict && selectedDistrict !== 'Other'
-  ? [...(BLOCKS[selectedDistrict] ?? BLOCKS['Other']), 'Other']
-  : [...BLOCKS['Other'], 'Other'];
+  const districtOptions = selectedState
+    ? [...(DISTRICTS[selectedState] ?? []), 'Other']
+    : ['Other'];
 
-const villageOptions = selectedBlock && selectedBlock !== 'Other'
-  ? [...(VILLAGES[selectedBlock] ?? []), 'Other']
-  : ['Other'];
+  const blockOptions =
+    selectedDistrict && selectedDistrict !== 'Other'
+      ? [...(BLOCKS[selectedDistrict] ?? []), 'Other']
+      : ['Other'];
 
-const selectedCropsList = selectedCrops
-  ? selectedCrops.split(',').map((c: string) => c.trim()).filter(Boolean)
-  : [];
+  const villageOptions =
+    selectedBlock && selectedBlock !== 'Other'
+      ? [...(VILLAGES[selectedBlock] ?? []), 'Other']
+      : ['Other'];
+
+  const selectedCropsList = selectedCrops
+    ? selectedCrops
+        .split(',')
+        .map((c: string) => c.trim())
+        .filter(Boolean)
+    : [];
 
   const saveMutation = useSaveFarmerProfileMutation({
     onSuccess: () => {
@@ -129,12 +141,9 @@ const selectedCropsList = selectedCrops
   };
 
   const onSubmit = (data: FarmerProfileForm) => {
-    const resolvedDistrict =
-      data.district === 'Other' ? data.customDistrict : data.district;
-    const resolvedBlock =
-      data.blockName === 'Other' ? data.customBlock : data.blockName;
-    const resolvedVillage =
-      data.villageName === 'Other' ? data.customVillage : data.villageName;
+    const resolvedDistrict = data.district === 'Other' ? data.customDistrict : data.district;
+    const resolvedBlock = data.blockName === 'Other' ? data.customBlock : data.blockName;
+    const resolvedVillage = data.villageName === 'Other' ? data.customVillage : data.villageName;
 
     const profile: IFarmerProfile = {
       ...data,
@@ -151,12 +160,13 @@ const selectedCropsList = selectedCrops
       awarenessOfKCC: data.awarenessOfKCC === 'yes',
       usesAgriApps: data.usesAgriApps === 'yes',
       platform: detectDevice(),
-      location: data.location?.latitude && data.location?.longitude 
-        ? {
-            latitude: Number(data.location.latitude),
-            longitude: Number(data.location.longitude),
-          }
-        : undefined,
+      location:
+        data.location?.latitude && data.location?.longitude
+          ? {
+              latitude: Number(data.location.latitude),
+              longitude: Number(data.location.longitude),
+            }
+          : undefined,
     };
     saveMutation.mutate(profile);
   };
@@ -377,9 +387,7 @@ const selectedCropsList = selectedCrops
                       required: 'Please enter your block name',
                     })}
                   />
-                  {errors.customBlock && (
-                    <p className={errorClass}>{errors.customBlock.message}</p>
-                  )}
+                  {errors.customBlock && <p className={errorClass}>{errors.customBlock.message}</p>}
                 </div>
               )}
 
@@ -493,10 +501,10 @@ const selectedCropsList = selectedCrops
                             : [...selectedCropsList, crop];
                           setValue('cropsCultivated', updated.join(', '), { shouldValidate: true });
                         }}
-                        className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+                        className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                           isSelected
-                            ? 'bg-green-600 text-white border-green-600'
-                            : 'bg-surface-primary text-text-primary border-border-heavy hover:bg-surface-active'
+                            ? 'border-green-600 bg-green-600 text-white'
+                            : 'border-border-heavy bg-surface-primary text-text-primary hover:bg-surface-active'
                         }`}
                       >
                         {crop}
@@ -504,7 +512,10 @@ const selectedCropsList = selectedCrops
                     );
                   })}
                 </div>
-                <input type="hidden" {...register('cropsCultivated', { required: 'Please select at least one crop' })} />
+                <input
+                  type="hidden"
+                  {...register('cropsCultivated', { required: 'Please select at least one crop' })}
+                />
                 {errors.cropsCultivated && (
                   <p className={errorClass}>{errors.cropsCultivated.message}</p>
                 )}
@@ -522,7 +533,9 @@ const selectedCropsList = selectedCrops
                         options={selectedCropsList}
                         value={field.value ?? ''}
                         onChange={field.onChange}
-                        placeholder={selectedCropsList.length ? 'Select primary crop' : 'Select crops first'}
+                        placeholder={
+                          selectedCropsList.length ? 'Select primary crop' : 'Select crops first'
+                        }
                         disabled={!selectedCropsList.length}
                       />
                     )}
@@ -541,7 +554,9 @@ const selectedCropsList = selectedCrops
                         options={selectedCropsList}
                         value={field.value ?? ''}
                         onChange={field.onChange}
-                        placeholder={selectedCropsList.length ? 'Select secondary crop' : 'Select crops first'}
+                        placeholder={
+                          selectedCropsList.length ? 'Select secondary crop' : 'Select crops first'
+                        }
                         disabled={!selectedCropsList.length}
                       />
                     )}
