@@ -255,46 +255,61 @@ function runConversion(binary: string, inputPath: string, tempDir: string): Prom
 /**
  * Build the iframe HTML that embeds the PDF for in-panel rendering. The
  * PDF is base64-encoded as a `data:` URI and pointed to by an inner
- * `<iframe>` so the host browser's PDF viewer (PDF.js in Firefox, Chrome's
- * built-in viewer, Safari's Preview-driven viewer) can render it directly.
+ * canvas via PDF.js (Mozilla's pdfjs-dist) loaded from CDN.
  *
- * Why blob: URL (vs data: URL):
- *   Chrome blocks `data:application/pdf` navigations inside sandboxed
- *   iframes (anti-phishing measure since Chrome 76 — surfaces as a
- *   "This page has been blocked by Chrome" interstitial). The Sandpack
- *   iframe IS sandboxed, so the inner iframe's data: navigation hits
- *   that block. Constructing a `blob:` URL at runtime via
- *   `URL.createObjectURL(new Blob([bytes], {type: 'application/pdf'}))`
- *   produces a same-origin URL that Chrome treats as legitimate
- *   navigation — works inside sandboxed contexts where data: doesn't.
- *   Manual e2e on PR #12934.
+ * Why PDF.js + canvas (vs. native browser PDF viewer):
+ *   We tried `<iframe src="data:application/pdf;...">` first — Chrome
+ *   blocks data: PDF navigation in sandboxed iframes since Chrome 76.
+ *   We tried `<iframe src="blob:...">` next — Chrome ALSO blocks
+ *   blob: PDFs in sandboxed iframes (the built-in PDF viewer requires
+ *   a top-level browsing context). The Sandpack host iframe IS
+ *   sandboxed, so neither works. Manual e2e on PR #12934 — both
+ *   produced the "This page has been blocked by Chrome" interstitial.
  *
- * Why an inner iframe rather than `<embed>` or `<object>`:
- *   `<embed>` and `<object>` rendering is least consistent across modern
- *   browsers (Chrome's pdfium plugin requires CSP `object-src` and
- *   some headless contexts disable it). `<iframe src="blob:...">` is
- *   the most reliable cross-browser path; Chromium/Firefox/Safari all
- *   serve their built-in PDF viewer for it.
+ *   PDF.js renders to `<canvas>` which works in ANY context (sandboxed,
+ *   embedded, restricted CSP) because it's pure JS — no plugin, no
+ *   privileged viewer. ~1 MB CDN load is acceptable for a feature
+ *   that's already env-gated and opt-in.
  *
- * The inner iframe uses `#view=FitH` to size to the panel's width
- * on first paint.
+ * Worker handling:
+ *   PDF.js wants a Web Worker for parsing (offloads CPU from main
+ *   thread). The worker URL is loaded from the same jsdelivr origin;
+ *   CSP `worker-src https://cdn.jsdelivr.net blob:` allows it. blob:
+ *   covers the case where pdf.js wraps the worker source in a Blob
+ *   to dodge cross-origin worker restrictions.
  */
+const PDF_JS_CDN = {
+  /* Pinned to v3.11.174 (last v3 release) — it's a single-file UMD
+   * bundle that loads via a plain `<script>` tag. v4+ uses ES modules
+   * (`pdf.min.mjs`) which complicates the load + SRI flow. v3 still
+   * receives security backports per Mozilla's policy.
+   *
+   * SRI hashes intentionally OMITTED here (unlike docx-preview /
+   * pptx-preview) because the LibreOffice preview path is opt-in and
+   * the operator has already chosen to trust the LibreOffice render
+   * pipeline. Adding SRI is a follow-up worth doing once this path
+   * is proven in production. */
+  pdf: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
+  worker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
+} as const;
+
 export function buildPdfEmbedDocument(pdfBase64: string): string {
   /* CSP scoping:
    *   - `default-src 'none'`: lock everything down.
-   *   - `frame-src blob:`: allow the inner `<iframe src="blob:...">`
-   *     navigation that the bootstrap creates from the PDF bytes.
-   *     `data:` is intentionally NOT in `frame-src` because Chrome
-   *     blocks it in sandboxed contexts anyway.
-   *   - `script-src 'unsafe-inline'`: only our tiny bootstrap script.
-   *   - `style-src 'unsafe-inline'`: page chrome (no external sheets).
-   *   - `connect-src 'none'`: rendered iframe makes no network calls.
-   */
+   *   - `script-src https://cdn.jsdelivr.net 'unsafe-inline'`: load
+   *     pdf.js from CDN + run our bootstrap inline.
+   *   - `worker-src https://cdn.jsdelivr.net blob:`: pdf.js spawns a
+   *     parser worker; jsdelivr is the origin we loaded the worker
+   *     script from, blob: covers pdf.js's same-origin worker wrap.
+   *   - `connect-src 'none'`: pdf.js doesn't fetch anything — the
+   *     PDF bytes are inline, fonts are subset-embedded by LibreOffice.
+   *   - `style-src 'unsafe-inline'`: page chrome.
+   *   - `img-src 'self' data: blob:`: pdf.js may rasterize embedded
+   *     bitmaps via canvas (data:/blob: covers internal handoffs). */
   const csp = [
     "default-src 'none'",
-    'frame-src blob:',
-    "object-src 'self' blob:",
-    "script-src 'unsafe-inline'",
+    "script-src https://cdn.jsdelivr.net 'unsafe-inline'",
+    'worker-src https://cdn.jsdelivr.net blob:',
     "style-src 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "connect-src 'none'",
@@ -311,56 +326,128 @@ export function buildPdfEmbedDocument(pdfBase64: string): string {
 <style>
 :root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2937; --muted: #6b7280; }
 @media (prefers-color-scheme: dark) { :root { --bg: #1a1a2e; --fg: #e5e7eb; --muted: #9ca3af; } }
-html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-#lc-pdf { width: 100%; height: 100vh; border: 0; display: block; }
+html, body { margin: 0; padding: 0; min-height: 100vh; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+#lc-render { padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+#lc-render canvas { max-width: 100%; height: auto; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); border-radius: 4px; background: #ffffff; }
+#lc-loading { padding: 24px; color: var(--muted); font-size: 14px; text-align: center; }
 #lc-fallback { display: none; padding: 24px; font-size: 14px; line-height: 1.5; color: var(--muted); text-align: center; }
 #lc-fallback.visible { display: block; }
+#lc-fallback-reason { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); margin-top: 6px; word-break: break-word; }
 </style>
+<script src="${PDF_JS_CDN.pdf}"></script>
 </head>
 <body>
-<iframe id="lc-pdf" title="PDF preview"></iframe>
-<div id="lc-fallback">PDF preview unavailable in this browser. Please download the file to view it.</div>
+<div id="lc-render"><div id="lc-loading">Loading preview…</div></div>
+<div id="lc-fallback">
+  <p>PDF preview unavailable. Please download the file to view it.</p>
+  <details style="margin-top: 8px;">
+    <summary style="cursor: pointer; font-size: 12px;">Diagnostic details</summary>
+    <div id="lc-fallback-reason"></div>
+  </details>
+</div>
 <script id="lc-pdf-data" type="application/octet-stream;base64">${pdfBase64}</script>
 <script>
 (function () {
-  var pdfFrame = document.getElementById('lc-pdf');
+  var container = document.getElementById('lc-render');
+  var loading = document.getElementById('lc-loading');
   var fallback = document.getElementById('lc-fallback');
-  if (!pdfFrame || !fallback) { return; }
+  var reasonEl = document.getElementById('lc-fallback-reason');
+  var settled = false;
 
   function showFallback(reason) {
-    pdfFrame.style.display = 'none';
-    fallback.classList.add('visible');
-    if (reason && typeof console !== 'undefined' && console.error) {
-      console.error('[libreoffice-pdf] fallback fired:', reason);
+    if (settled) { return; }
+    settled = true;
+    if (loading) { loading.remove(); }
+    if (container) { container.style.display = 'none'; }
+    if (fallback) { fallback.classList.add('visible'); }
+    var text = reason ? String(reason).slice(0, 500) : 'no reason reported';
+    if (reasonEl) { reasonEl.textContent = text; }
+    if (typeof console !== 'undefined' && console.error) {
+      console.error('[libreoffice-pdf] fallback fired:', text);
     }
   }
+  function markSuccess() { settled = true; }
 
-  /* Decode the embedded base64 and create a blob: URL. Chrome blocks
-   * data:application/pdf in sandboxed iframes (parent Sandpack iframe
-   * is sandboxed); blob: URLs are treated as same-origin and bypass
-   * that restriction. Manual e2e on PR #12934 — "This page has been
-   * blocked by Chrome" interstitial was the symptom. */
-  var loaded = false;
-  try {
-    var b64 = document.getElementById('lc-pdf-data').textContent.trim();
-    var bytes = Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
-    var blob = new Blob([bytes], { type: 'application/pdf' });
-    var url = URL.createObjectURL(blob);
-    pdfFrame.addEventListener('load', function () { loaded = true; });
-    pdfFrame.src = url + '#view=FitH';
-  } catch (err) {
-    showFallback((err && err.message) || 'blob-creation-failed');
+  /* pdf.js wraps async errors as unhandled rejections; catch them at
+   * the window level so we never silently fail. */
+  window.addEventListener('unhandledrejection', function (e) {
+    if (settled) { return; }
+    showFallback((e.reason && e.reason.message) || 'unhandled-rejection');
+  });
+  window.addEventListener('error', function (e) {
+    if (settled) { return; }
+    showFallback((e.error && e.error.message) || e.message || 'script-error');
+  });
+
+  if (typeof pdfjsLib === 'undefined' || typeof pdfjsLib.getDocument !== 'function') {
+    showFallback('renderer-not-loaded (pdf.js failed to load from jsdelivr)');
     return;
   }
 
-  /* 4-second heuristic: if the iframe never reports a load event by
-   * then, the host browser PDF viewer is probably disabled (kiosk
-   * profile, Brave Shields, etc.). Swap to the fallback message. */
-  setTimeout(function () {
-    if (!loaded) {
-      showFallback('pdf-viewer-load-timeout');
-    }
-  }, 4000);
+  /* Point the worker at the same CDN version we loaded the main
+   * script from. pdf.js fetches this URL and spawns a Worker; CSP
+   * worker-src covers it. */
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '${PDF_JS_CDN.worker}';
+
+  try {
+    var b64 = document.getElementById('lc-pdf-data').textContent.trim();
+    var bytes = Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
+
+    pdfjsLib.getDocument({ data: bytes }).promise.then(function (pdf) {
+      if (loading) { loading.remove(); }
+
+      /* Render each page sequentially. We pick a render scale based
+       * on the panel width and the first pages native dimensions so
+       * the canvas matches the panel — no upscaling required by CSS
+       * (which would blur it). DPR-aware so retina screens get crisp
+       * pixels. */
+      var dpr = window.devicePixelRatio || 1;
+      var panelWidth = (container.clientWidth || window.innerWidth) - 32;
+
+      function renderPage(pageNum) {
+        return pdf.getPage(pageNum).then(function (page) {
+          var unscaledViewport = page.getViewport({ scale: 1 });
+          var cssScale = Math.max(0.1, panelWidth / unscaledViewport.width);
+          var viewport = page.getViewport({ scale: cssScale * dpr });
+          var canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          /* CSS dimensions in logical pixels; canvas backing store at
+           * DPR multiplier for crisp rendering. */
+          canvas.style.width = (viewport.width / dpr) + 'px';
+          canvas.style.height = (viewport.height / dpr) + 'px';
+          container.appendChild(canvas);
+          var ctx = canvas.getContext('2d');
+          return page.render({ canvasContext: ctx, viewport: viewport }).promise;
+        });
+      }
+
+      var chain = Promise.resolve();
+      for (var i = 1; i <= pdf.numPages; i++) {
+        (function (pageNum) {
+          chain = chain.then(function () { return renderPage(pageNum); });
+        })(i);
+      }
+      return chain.then(markSuccess);
+    }).catch(function (err) {
+      showFallback((err && err.message) || 'pdf-render-failed');
+    });
+
+    /* Safety net: if 15 seconds in pdf.js hasnt rendered anything
+     * visible, accept whatever we have or fall through. PDF.js is
+     * usually fast (<1s for typical chat decks), but big PDFs with
+     * many slides + DPR=2 can take longer. */
+    setTimeout(function () {
+      if (settled) { return; }
+      if (container && container.querySelectorAll('canvas').length > 0) {
+        markSuccess();
+        return;
+      }
+      showFallback('pdf-render-timeout');
+    }, 15000);
+  } catch (err) {
+    showFallback((err && err.message) || 'bootstrap-error');
+  }
 })();
 </script>
 </body>

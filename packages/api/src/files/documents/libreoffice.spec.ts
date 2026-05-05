@@ -80,71 +80,81 @@ describe('libreoffice (env gating + wrapper)', () => {
      * wrappers. */
     const FAKE_PDF_B64 = 'JVBERi0xLjQK'; // "%PDF-1.4\n" base64
 
-    it('emits a complete sandboxed HTML document with PDF bytes embedded as a data block', () => {
+    it('emits a complete sandboxed HTML document that renders via pdf.js to canvas', () => {
       const html = buildPdfEmbedDocument(FAKE_PDF_B64);
       expect(html).toMatch(/^<!DOCTYPE html>/);
       expect(html).toContain('<title>Preview</title>');
-      expect(html).toContain('id="lc-pdf"');
-      /* PDF bytes live in a `<script type="application/octet-stream;base64">`
-       * data block — the bootstrap reads it and constructs a blob: URL
-       * at runtime. We deliberately do NOT use `<iframe src="data:
-       * application/pdf;...">` because Chrome blocks data: navigations
-       * inside sandboxed iframes (manual e2e on PR #12934 — surfaced
-       * as the "This page has been blocked by Chrome" interstitial).
-       * blob: URLs are same-origin and bypass that restriction. */
+      /* PDF bytes embedded as a base64 data block — pdf.js decodes
+       * them at runtime and renders to canvas. We do NOT use any
+       * `<iframe src="data:application/pdf;...">` or `src="blob:...">`
+       * pattern because Chrome blocks BOTH data: AND blob: PDF
+       * navigations in sandboxed iframes (the built-in PDF viewer
+       * requires a top-level browsing context). The Sandpack host
+       * iframe is sandboxed, so neither approach renders. PDF.js
+       * draws to canvas which works in any context. Manual e2e on
+       * PR #12934. */
       expect(html).toContain('id="lc-pdf-data"');
       expect(html).toContain(FAKE_PDF_B64);
+      expect(html).toContain('id="lc-render"');
+      /* Negative assertions: we MUST NOT have any nested iframe
+       * navigation to a PDF URL. A future "let's just embed the PDF
+       * natively" rewrite can't silently re-introduce the Chrome
+       * block. */
       expect(html).not.toMatch(/src="data:application\/pdf/);
-      /* The bootstrap code that converts the base64 to a blob URL. */
-      expect(html).toContain('URL.createObjectURL');
-      expect(html).toContain('new Blob');
-      expect(html).toContain("type: 'application/pdf'");
+      expect(html).not.toMatch(/src="blob:[^"]*application\/pdf/);
+      expect(html).not.toMatch(/<iframe[^>]+id="lc-pdf"/);
+      /* PDF.js loaded from CDN. */
+      expect(html).toContain('cdn.jsdelivr.net/npm/pdfjs-dist@');
+      expect(html).toContain('pdfjsLib.getDocument');
+      expect(html).toContain('GlobalWorkerOptions.workerSrc');
+      expect(html).toContain('page.render');
     });
 
-    it('CSP allows blob: in frame-src (NOT data:) and locks the iframe down otherwise', () => {
+    it('CSP allows pdf.js script + worker from jsdelivr; locks down everything else', () => {
       const html = buildPdfEmbedDocument(FAKE_PDF_B64);
       const cspMatch = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/);
       expect(cspMatch).not.toBeNull();
       const csp = cspMatch![1];
       expect(csp).toMatch(/default-src 'none'/);
-      /* blob: in frame-src, NOT data: — Chrome blocks data:application/pdf
-       * navigations inside sandboxed iframes (anti-phishing measure
-       * since Chrome 76). The bootstrap creates blob: URLs at runtime
-       * which Chrome treats as same-origin and allows. Manual e2e on
-       * PR #12934. */
-      expect(csp).toMatch(/frame-src[^;]*\bblob:/);
-      expect(csp).not.toMatch(/frame-src[^;]*\bdata:/);
-      /* No outbound HTTP from the rendered iframe — a malicious PDF
-       * can't beacon home from inside the viewer. */
+      /* pdf.js needs its main script + worker. Both come from the
+       * same jsdelivr host. */
+      expect(csp).toMatch(/script-src https:\/\/cdn\.jsdelivr\.net 'unsafe-inline'/);
+      expect(csp).toMatch(/worker-src[^;]*https:\/\/cdn\.jsdelivr\.net/);
+      expect(csp).toMatch(/worker-src[^;]*\bblob:/);
+      /* Negative assertions for the previous-iteration approaches:
+       * no `frame-src` (no nested iframes anymore), no PDF data: or
+       * blob: navigation paths. */
+      expect(csp).not.toMatch(/frame-src/);
+      /* No outbound HTTP from the rendered iframe — pdf.js doesn't
+       * fetch anything (PDF bytes are inline, fonts subset-embedded
+       * by LibreOffice). */
       expect(csp).toMatch(/connect-src 'none'/);
-      /* No external scripts (unlike docx-preview / pptx-preview the
-       * native browser PDF viewer doesn't need a CDN library). */
-      expect(csp).not.toMatch(/cdn\.jsdelivr\.net/);
       expect(csp).not.toMatch(/unsafe-eval/);
       expect(csp).toMatch(/base-uri 'none'/);
       expect(csp).toMatch(/form-action 'none'/);
     });
 
-    it('exposes a fallback message that surfaces when the browser PDF viewer is disabled', () => {
+    it('exposes a fallback message + diagnostic disclosure when pdf.js fails', () => {
       const html = buildPdfEmbedDocument(FAKE_PDF_B64);
       expect(html).toContain('id="lc-fallback"');
-      expect(html).toContain('PDF preview unavailable in this browser');
-      /* The 4-second heuristic timer that swaps to the fallback. */
-      expect(html).toContain('4000');
+      expect(html).toContain('PDF preview unavailable');
+      expect(html).toContain('id="lc-fallback-reason"');
+      expect(html).toContain('Diagnostic details');
+      /* Multiple failure paths feed showFallback: pdf.js not loaded,
+       * unhandled rejection from the parser, sync error from the
+       * bootstrap, render timeout. */
+      expect(html).toContain("typeof pdfjsLib === 'undefined'");
+      expect(html).toContain("addEventListener('unhandledrejection'");
+      expect(html).toContain('pdf-render-timeout');
+      expect(html).toContain('15000');
       /* Reasons logged to console.error for power-user debugging. */
       expect(html).toContain("console.error('[libreoffice-pdf] fallback fired:'");
-    });
-
-    it('uses #view=FitH so the PDF fills the panel width on first paint', () => {
-      const html = buildPdfEmbedDocument(FAKE_PDF_B64);
-      expect(html).toContain('#view=FitH');
     });
 
     it('embeds large base64 payloads inside the data block without escaping issues', () => {
       /* The base64 alphabet (A-Za-z0-9+/=) contains no characters that
        * could break out of `<script type="application/octet-stream;
-       * base64">...</script>` — base64 cannot contain `<`, `>`, `&`, or
-       * quote characters. Sanity-check that the data round-trips. */
+       * base64">...</script>`. Sanity-check the data round-trip. */
       const big = 'A'.repeat(100_000);
       const html = buildPdfEmbedDocument(big);
       const dataBlock = html.match(
@@ -296,11 +306,12 @@ describe('libreoffice integration (skipped unless LibreOffice is on $PATH)', () 
       const out = await tryLibreOfficePreview(buf, 'docx', 512 * 1024);
       expect(out).not.toBeNull();
       expect(out!).toMatch(/^<!DOCTYPE html>/);
-      /* PDF bytes are embedded as a base64 data block (not as a data:
-       * URL — Chrome blocks data:application/pdf in sandboxed iframes;
-       * the bootstrap converts to a blob: URL at runtime). */
+      /* PDF bytes embedded as a base64 data block; pdf.js renders to
+       * canvas (Chrome blocks both data: and blob: PDF navigations
+       * in sandboxed iframes — the canvas path is the only thing
+       * that works in our context). */
       expect(out!).toContain('id="lc-pdf-data"');
-      expect(out!).toContain('URL.createObjectURL');
+      expect(out!).toContain('pdfjsLib.getDocument');
       expect(Buffer.byteLength(out!, 'utf-8')).toBeLessThanOrEqual(512 * 1024);
     },
     35_000,
