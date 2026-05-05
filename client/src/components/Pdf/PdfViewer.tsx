@@ -114,7 +114,7 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
 
       <div
         ref={canvasRef}
-        className="relative flex flex-1 flex-col items-center overflow-auto px-3 py-4"
+        className="relative flex min-h-0 flex-1 flex-col items-center overflow-auto px-3 py-4"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="overflow-hidden rounded-[14px] border border-[rgba(11,47,91,0.06)] bg-white shadow-[0_1px_0_rgba(11,47,91,0.04),0_12px_28px_-16px_rgba(11,47,91,0.18)] dark:border-white/[0.04] dark:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.5)]">
