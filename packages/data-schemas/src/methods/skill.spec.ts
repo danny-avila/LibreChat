@@ -1365,6 +1365,62 @@ describe('SkillFile methods', () => {
       }),
     ).rejects.toMatchObject({ code: 'SKILL_FILE_VALIDATION_FAILED' });
   });
+
+  describe('updateSkillFileCodeEnvIds (skill-bundle cache pointer)', () => {
+    /**
+     * The returned `{matchedCount, modifiedCount}` shape is the diagnostic
+     * contract `primeSkillFiles` relies on — a silently-dropped write
+     * turns every subsequent prime into a fresh codeapi upload (N×M
+     * egress per chat load). Pinning the contract here so the caller
+     * can warn-log on partial writes instead of failing closed.
+     */
+    it('persists codeEnvIdentifier and reports matched/modified counts', async () => {
+      const { skill } = await methods.createSkill(makeSkillInput());
+      await methods.upsertSkillFile({
+        skillId: skill._id,
+        relativePath: 'scripts/a.sh',
+        file_id: 'f1',
+        filename: 'a.sh',
+        filepath: '/a',
+        source: 'local',
+        mimeType: 'text/plain',
+        bytes: 1,
+        author: owner._id,
+      });
+
+      const result = await methods.updateSkillFileCodeEnvIds([
+        {
+          skillId: skill._id,
+          relativePath: 'scripts/a.sh',
+          codeEnvIdentifier: `session-1/file-1?entity_id=${skill._id.toString()}`,
+        },
+      ]);
+
+      expect(result.matchedCount).toBe(1);
+      expect(result.modifiedCount).toBe(1);
+
+      const files = await methods.listSkillFiles(skill._id);
+      expect(files[0].codeEnvIdentifier).toBe(`session-1/file-1?entity_id=${skill._id.toString()}`);
+    });
+
+    it('reports modifiedCount=0 when no SkillFile rows match the (skillId, relativePath) filter', async () => {
+      const { skill } = await methods.createSkill(makeSkillInput());
+      const result = await methods.updateSkillFileCodeEnvIds([
+        {
+          skillId: skill._id,
+          relativePath: 'does/not/exist.sh',
+          codeEnvIdentifier: 'sid/fid?entity_id=x',
+        },
+      ]);
+      expect(result.modifiedCount).toBe(0);
+      expect(result.matchedCount).toBe(0);
+    });
+
+    it('returns zero counts when called with an empty update list', async () => {
+      const result = await methods.updateSkillFileCodeEnvIds([]);
+      expect(result).toEqual({ matchedCount: 0, modifiedCount: 0 });
+    });
+  });
 });
 
 describe('deleteUserSkills', () => {

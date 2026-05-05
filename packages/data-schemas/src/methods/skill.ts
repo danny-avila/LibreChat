@@ -1491,8 +1491,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       relativePath: string;
       codeEnvIdentifier: string;
     }>,
-  ): Promise<void> {
-    if (updates.length === 0) return;
+  ): Promise<{ matchedCount: number; modifiedCount: number }> {
+    if (updates.length === 0) return { matchedCount: 0, modifiedCount: 0 };
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     const ops = updates.map((u) => ({
       updateOne: {
@@ -1500,7 +1500,21 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
         update: { $set: { codeEnvIdentifier: u.codeEnvIdentifier } },
       },
     }));
-    await tenantSafeBulkWrite(SkillFile, ops);
+
+    /**
+     * The returned `{matchedCount, modifiedCount}` lets callers warn on
+     * partial writes — a silent miss here turns every subsequent prime
+     * into a fresh upload (massive egress at scale). If the wrapper's
+     * tenant injection ends up dropping rows, the warn log makes it
+     * visible instead of failing closed.
+     */
+    const result = await tenantSafeBulkWrite(SkillFile, ops);
+    if (result.modifiedCount < updates.length) {
+      logger.warn(
+        `[updateSkillFileCodeEnvIds] Persisted ${result.modifiedCount}/${updates.length} codeEnvIdentifiers (matched ${result.matchedCount}). Subsequent primes for unmatched files will re-upload.`,
+      );
+    }
+    return { matchedCount: result.matchedCount, modifiedCount: result.modifiedCount };
   }
 
   return {

@@ -127,4 +127,155 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     expect(result).toEqual({});
     expect(deps.getSkillByName).not.toHaveBeenCalled();
   });
+
+  it('forwards entity_id on every file in initialSessions after fresh upload', async () => {
+    /* Regression: codeapi now resolves sessionKey per-file using `entity_id`.
+     * Skill files must carry `entity_id=<skillId>` through priming so that
+     * a subsequent execute mixing skill files and a user attachment can be
+     * authorized — both files in the same call resolve to their own scope
+     * instead of collapsing onto a single request-level entity. */
+    const listSkillFiles = jest.fn().mockResolvedValue([
+      {
+        relativePath: 'references/style.md',
+        filename: 'style.md',
+        filepath: '/storage/brand-guidelines/references/style.md',
+        source: 's3',
+        bytes: 256,
+      },
+    ]);
+    const getStrategyFunctions = jest.fn().mockReturnValue({
+      getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from(''))),
+    });
+    const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
+      session_id: 'session-42',
+      files: [{ fileId: 'file-1', filename: 'brand-guidelines/references/style.md' }],
+    });
+
+    const deps = makeDeps({
+      codeEnvAvailable: true,
+      listSkillFiles,
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+    });
+
+    const result = await primeInvokedSkills(deps);
+
+    const codeSession = result.initialSessions?.get('execute_code');
+    expect(codeSession?.files).toEqual([
+      {
+        id: 'file-1',
+        name: 'brand-guidelines/references/style.md',
+        session_id: 'session-42',
+        entity_id: SKILL_ID.toString(),
+      },
+    ]);
+  });
+
+  it('awaits updateSkillFileCodeEnvIds before resolving to avoid concurrent-prime cache misses', async () => {
+    /* Concurrency regression: when many users hit the same skill at
+     * once, fire-and-forget keeps the cache in miss-steady-state for
+     * the burst — User N's prime reads SkillFile docs before User N-1's
+     * persist commits, sees no `codeEnvIdentifier`, re-uploads, and
+     * fires its own forget that User N+1 also races. Awaiting the
+     * persist before the prime resolves ensures the next concurrent
+     * caller observes the cache pointer instead of racing a write. */
+    const fileRecords = [
+      {
+        relativePath: 'references/style.md',
+        filename: 'style.md',
+        filepath: '/storage/brand-guidelines/references/style.md',
+        source: 's3',
+        bytes: 256,
+      },
+    ];
+    const listSkillFiles = jest.fn().mockResolvedValue(fileRecords);
+    const getStrategyFunctions = jest.fn().mockReturnValue({
+      getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from(''))),
+    });
+    const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
+      session_id: 'session-42',
+      files: [{ fileId: 'file-1', filename: 'brand-guidelines/references/style.md' }],
+    });
+
+    /* Defer resolution so we can assert the prime hasn't returned yet
+     * — proves the call site is awaiting, not fire-and-forget. */
+    let resolvePersist!: (v: { matchedCount: number; modifiedCount: number }) => void;
+    const persistGate = new Promise<{ matchedCount: number; modifiedCount: number }>((r) => {
+      resolvePersist = r;
+    });
+    const updateSkillFileCodeEnvIds = jest.fn().mockReturnValue(persistGate);
+
+    const deps = makeDeps({
+      codeEnvAvailable: true,
+      listSkillFiles,
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+      updateSkillFileCodeEnvIds,
+    });
+
+    let resolved = false;
+    const primePromise = primeInvokedSkills(deps).then((r) => {
+      resolved = true;
+      return r;
+    });
+
+    /* Drain the microtask queue. The prime should still be pending
+     * because persistGate hasn't resolved. */
+    await new Promise((r) => setImmediate(r));
+    expect(resolved).toBe(false);
+
+    /* Resolve as a successful write to confirm the prime completes
+     * after the persist returns. */
+    resolvePersist({ matchedCount: 1, modifiedCount: 1 });
+    await primePromise;
+
+    expect(updateSkillFileCodeEnvIds).toHaveBeenCalledTimes(1);
+    const [updates] = updateSkillFileCodeEnvIds.mock.calls[0];
+    expect(updates).toEqual([
+      {
+        skillId: SKILL_ID,
+        relativePath: 'references/style.md',
+        codeEnvIdentifier: `session-42/file-1?entity_id=${SKILL_ID.toString()}`,
+      },
+    ]);
+  });
+
+  it('parses entity_id off codeEnvIdentifier in the cached-skills hot path', async () => {
+    /* When all skill files are still active in codeapi, primeInvokedSkills
+     * skips the batch upload entirely and reconstructs file refs from each
+     * skill file's persisted `codeEnvIdentifier`. The query string carries
+     * `?entity_id=<skillId>`, which must survive into `_injected_files` so
+     * downstream authorization still uses the skill's scope. */
+    const listSkillFiles = jest.fn().mockResolvedValue([
+      {
+        relativePath: 'references/style.md',
+        filename: 'style.md',
+        filepath: '/storage/brand-guidelines/references/style.md',
+        source: 's3',
+        bytes: 256,
+        codeEnvIdentifier: `session-cached/file-cached?entity_id=${SKILL_ID.toString()}`,
+      },
+    ]);
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeDeps({
+      codeEnvAvailable: true,
+      listSkillFiles,
+      batchUploadCodeEnvFiles,
+      getSessionInfo: jest.fn().mockResolvedValue('2026-05-05T00:00:00Z'),
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    const result = await primeInvokedSkills(deps);
+
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+    const codeSession = result.initialSessions?.get('execute_code');
+    expect(codeSession?.files).toEqual([
+      {
+        id: 'file-cached',
+        name: 'brand-guidelines/references/style.md',
+        session_id: 'session-cached',
+        entity_id: SKILL_ID.toString(),
+      },
+    ]);
+  });
 });
