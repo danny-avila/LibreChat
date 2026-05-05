@@ -6,7 +6,7 @@ import { render, screen } from '@testing-library/react';
 import ToolCallGroup from '../ToolCallGroup';
 
 jest.mock('~/hooks', () => ({
-  useLocalize: () => (key: string, values?: any) => {
+  useLocalize: () => (key: string, values?: Record<string | number, string>) => {
     if (key === 'com_ui_used_n_tools') {
       return `Used ${values?.[0]} tools`;
     }
@@ -39,17 +39,13 @@ jest.mock('lucide-react', () => ({
 }));
 
 jest.mock('~/utils', () => ({
-  cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
+  cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
   getToolDisplayLabel: (name: string) => name,
 }));
 
 jest.mock('../Parts', () => ({
-  AttachmentGroup: ({ attachments, variant }: any) => (
-    <div
-      data-testid="attachment-group"
-      data-variant={variant ?? 'all'}
-      data-count={attachments?.length ?? 0}
-    />
+  AttachmentGroup: ({ attachments }: { attachments?: TAttachment[] }) => (
+    <div data-testid="attachment-group" data-count={attachments?.length ?? 0} />
   ),
 }));
 
@@ -115,7 +111,6 @@ describe('ToolCallGroup image hoisting', () => {
 
     const group = screen.getByTestId('attachment-group');
     expect(group).toBeInTheDocument();
-    expect(group.getAttribute('data-variant')).toBe('all');
     expect(group.getAttribute('data-count')).toBe('2');
   });
 

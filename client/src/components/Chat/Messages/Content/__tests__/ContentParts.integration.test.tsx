@@ -6,7 +6,7 @@ import { render, screen } from '@testing-library/react';
 import ContentParts from '../ContentParts';
 
 jest.mock('~/hooks', () => ({
-  useLocalize: () => (key: string, values?: any) => {
+  useLocalize: () => (key: string, values?: Record<string | number, string>) => {
     if (key === 'com_ui_used_n_tools') {
       return `Used ${values?.[0]} tools`;
     }
@@ -38,7 +38,7 @@ jest.mock('../ToolCallInfo', () => ({
 
 jest.mock('../ProgressText', () => ({
   __esModule: true,
-  default: ({ onClick, finishedText }: any) => (
+  default: ({ onClick, finishedText }: { onClick?: () => void; finishedText?: string }) => (
     <div data-testid="progress-text" onClick={onClick}>
       {finishedText}
     </div>
@@ -51,11 +51,11 @@ jest.mock('lucide-react', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
-  Button: ({ children }: any) => <button>{children}</button>,
+  Button: ({ children }: { children?: React.ReactNode }) => <button>{children}</button>,
 }));
 
 jest.mock('../Parts', () => ({
-  AttachmentGroup: ({ attachments }: any) => (
+  AttachmentGroup: ({ attachments }: { attachments?: TAttachment[] }) => (
     <div data-testid="attachment-group" data-count={attachments?.length ?? 0} />
   ),
   ExecuteCode: () => <div data-testid="execute-code" />,
@@ -64,7 +64,7 @@ jest.mock('../Parts', () => ({
   EmptyText: () => <div data-testid="empty-text" />,
   Reasoning: () => <div data-testid="reasoning" />,
   Summary: () => <div data-testid="summary" />,
-  Text: ({ text }: any) => <div data-testid="text">{text}</div>,
+  Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
   EditTextPart: () => <div data-testid="edit-text" />,
 }));
 
@@ -100,31 +100,30 @@ jest.mock('../Image', () => ({
 
 jest.mock('../Container', () => ({
   __esModule: true,
-  default: ({ children }: any) => <div>{children}</div>,
+  default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
 
 jest.mock('~/utils', () => {
   const actual = jest.requireActual('~/utils');
   return {
     ...actual,
-    cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
+    cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
     logger: { error: jest.fn() },
   };
 });
+
+const MCP_DELIMITER = '_mcp_';
 
 const makeMcpToolCall = (id: string, hasOutput = true): TMessageContentParts =>
   ({
     type: ContentTypes.TOOL_CALL,
     [ContentTypes.TOOL_CALL]: {
       id,
-      name: `getTinyImage${Constants_mcp_delimiter}Everything`,
+      name: `getTinyImage${MCP_DELIMITER}Everything`,
       args: '{}',
       output: hasOutput ? 'image_returned' : '',
     },
   }) as unknown as TMessageContentParts;
-
-// Real Constants.mcp_delimiter is "_mcp_" — match that
-const Constants_mcp_delimiter = '_mcp_';
 
 const imageAttachment = (toolCallId: string, name = 'tiny.png'): TAttachment =>
   ({

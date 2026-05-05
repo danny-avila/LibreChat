@@ -184,29 +184,26 @@ const ContentParts = memo(function ContentParts({
       <PendingSkillCall key={`pending-skill-${name}`} skillName={name} loaded={hasRealContent} />
     ));
 
-  const makeRenderPart = useCallback(
-    (hideAttachments: boolean) =>
-      (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
-        const toolCallId =
-          (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-        return (
-          <PartWithContext
-            key={`provider-${messageId}-${idx}`}
-            idx={idx}
-            part={part}
-            isLast={isLast}
-            messageId={messageId}
-            isLastPart={isLastPart}
-            conversationId={conversationId}
-            isLatestMessage={isLatestMessage}
-            isCreatedByUser={isCreatedByUser}
-            nextType={content?.[idx + 1]?.type}
-            isSubmitting={effectiveIsSubmitting}
-            partAttachments={attachmentMap[toolCallId]}
-            hideAttachments={hideAttachments}
-          />
-        );
-      },
+  const renderPart = useCallback(
+    (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
+      const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+      return (
+        <PartWithContext
+          key={`provider-${messageId}-${idx}`}
+          idx={idx}
+          part={part}
+          isLast={isLast}
+          messageId={messageId}
+          isLastPart={isLastPart}
+          conversationId={conversationId}
+          isLatestMessage={isLatestMessage}
+          isCreatedByUser={isCreatedByUser}
+          nextType={content?.[idx + 1]?.type}
+          isSubmitting={effectiveIsSubmitting}
+          partAttachments={attachmentMap[toolCallId]}
+        />
+      );
+    },
     [
       attachmentMap,
       content,
@@ -219,8 +216,38 @@ const ContentParts = memo(function ContentParts({
     ],
   );
 
-  const renderPart = useMemo(() => makeRenderPart(false), [makeRenderPart]);
-  const renderGroupedPart = useMemo(() => makeRenderPart(true), [makeRenderPart]);
+  const renderGroupedPart = useCallback(
+    (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
+      const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+      return (
+        <PartWithContext
+          key={`provider-${messageId}-${idx}`}
+          idx={idx}
+          part={part}
+          isLast={isLast}
+          messageId={messageId}
+          isLastPart={isLastPart}
+          conversationId={conversationId}
+          isLatestMessage={isLatestMessage}
+          isCreatedByUser={isCreatedByUser}
+          nextType={content?.[idx + 1]?.type}
+          isSubmitting={effectiveIsSubmitting}
+          partAttachments={attachmentMap[toolCallId]}
+          hideAttachments
+        />
+      );
+    },
+    [
+      attachmentMap,
+      content,
+      conversationId,
+      effectiveIsSubmitting,
+      isCreatedByUser,
+      isLast,
+      isLatestMessage,
+      messageId,
+    ],
+  );
 
   const sequentialParts = useMemo<PartWithIndex[]>(() => {
     if (!content) {
