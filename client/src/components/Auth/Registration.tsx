@@ -36,6 +36,13 @@ const Registration: React.FC = () => {
 
   // only require captcha if we have a siteKey
   const requireCaptcha = Boolean(startupConfig?.turnstile?.siteKey);
+  const authInputClassName =
+    'webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none';
+  const authSecretInputClassName = `${authInputClassName} h-auto pr-12`;
+  const authLabelClassName =
+    'absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4';
+  const authSecretButtonClassName =
+    'size-9 rounded-xl text-text-secondary-alt hover:bg-transparent hover:text-text-primary';
 
   const registerUser = useRegisterUserMutation({
     onMutate: () => {
@@ -70,10 +77,6 @@ const Registration: React.FC = () => {
       id as 'name' | 'email' | 'username' | 'password' | 'confirm_password',
       validation,
     );
-    const inputClassName =
-      'webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none';
-    const labelClassName =
-      'absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4';
 
     return (
       <div className="mb-4">
@@ -85,11 +88,13 @@ const Registration: React.FC = () => {
               aria-label={fieldLabel}
               {...field}
               aria-invalid={!!errors[id]}
-              className={inputClassName}
+              className={authSecretInputClassName}
               placeholder=" "
               data-testid={id}
               label={fieldLabel}
-              labelClassName={labelClassName}
+              labelClassName={authLabelClassName}
+              controlsClassName="right-2"
+              buttonClassName={authSecretButtonClassName}
             />
           ) : (
             <>
@@ -100,11 +105,11 @@ const Registration: React.FC = () => {
                 aria-label={fieldLabel}
                 {...field}
                 aria-invalid={!!errors[id]}
-                className={inputClassName}
+                className={authInputClassName}
                 placeholder=" "
                 data-testid={id}
               />
-              <label htmlFor={id} className={labelClassName}>
+              <label htmlFor={id} className={authLabelClassName}>
                 {fieldLabel}
               </label>
             </>

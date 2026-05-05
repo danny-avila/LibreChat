@@ -13,6 +13,9 @@ export interface SecretInputProps
   copyFeedbackDuration?: number;
   label?: React.ReactNode;
   labelClassName?: string;
+  containerClassName?: string;
+  controlsClassName?: string;
+  buttonClassName?: string;
 }
 
 const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
@@ -23,6 +26,9 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
       className,
       showCopy = false,
       labelClassName,
+      containerClassName,
+      controlsClassName,
+      buttonClassName,
       onCopy,
       copyFeedbackDuration = 2000,
       disabled,
@@ -62,7 +68,7 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
     }, [value, isCopied, disabled, onCopy, copyFeedbackDuration]);
 
     return (
-      <div className="relative flex items-center">
+      <div className={cn('relative flex items-center', containerClassName)}>
         <input
           id={id}
           type={isVisible ? 'text' : 'password'}
@@ -83,7 +89,7 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
             {label}
           </label>
         )}
-        <div className="absolute right-1 flex items-center gap-0.5">
+        <div className={cn('absolute right-1 flex items-center gap-0.5', controlsClassName)}>
           {showCopy && (
             <button
               type="button"
@@ -94,6 +100,7 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
                 disabled || !value
                   ? 'cursor-not-allowed opacity-50'
                   : 'hover:bg-surface-hover hover:text-text-primary',
+                buttonClassName,
               )}
               aria-label={isCopied ? 'Copied' : 'Copy to clipboard'}
             >
@@ -109,6 +116,7 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
               disabled
                 ? 'cursor-not-allowed opacity-50'
                 : 'hover:bg-surface-hover hover:text-text-primary',
+              buttonClassName,
             )}
             aria-label={isVisible ? 'Hide secret' : 'Show secret'}
           >
