@@ -17,10 +17,19 @@ import {
   SetConvoProvider,
   FileMapContext,
 } from '~/Providers';
-import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
+import {
+  useUserTermsQuery,
+  useGetStartupConfig,
+  useHealthCheck,
+  useUpdateFarmerPlatformMutation,
+} from '~/data-provider';
 import { Nav, MobileNav, NAV_WIDTH } from '~/components/Nav';
-import { TermsAndConditionsModal, ImportantNoticeModal, FarmerProfileModal, FarmerLocationModal } from '~/components/ui';
-import { useHealthCheck } from '~/data-provider';
+import {
+  TermsAndConditionsModal,
+  ImportantNoticeModal,
+  FarmerProfileModal,
+  FarmerLocationModal,
+} from '~/components/ui';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -46,6 +55,7 @@ export default function Root() {
   const { data: termsData } = useUserTermsQuery({
     enabled: isAuthenticated && config?.interface?.termsOfService?.modalAcceptance === true,
   });
+  const updateFarmerPlatform = useUpdateFarmerPlatformMutation();
 
   useSearchEnabled(isAuthenticated);
   useWebPush();
@@ -65,6 +75,16 @@ export default function Root() {
     if (!termsData.farmerProfileCompleted) {
       setShowFarmerProfile(true);
       return;
+    }
+    if (!termsData.farmerProfileHasPlatform) {
+      const ua = navigator.userAgent;
+      let platform = 'Unknown';
+      if (/android/i.test(ua)) platform = 'Android';
+      else if (/iphone|ipad|ipod/i.test(ua)) platform = 'iOS';
+      else if (/windows/i.test(ua)) platform = 'Windows';
+      else if (/macintosh|mac os x/i.test(ua)) platform = 'MacOS';
+      else if (/linux/i.test(ua)) platform = 'Linux';
+      updateFarmerPlatform.mutate(platform);
     }
     if (!termsData.farmerLocationCompleted) {
       setShowFarmerLocation(true);
@@ -104,7 +124,6 @@ export default function Root() {
 
   const handleDeclineFarmerProfile = () => {
     setShowFarmerProfile(false);
-   // logout('/login');
   };
 
   if (!isAuthenticated) {

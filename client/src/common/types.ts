@@ -141,10 +141,10 @@ export interface NavProps {
 
 export interface DataColumnMeta {
   meta:
-  | {
-    size: number | string;
-  }
-  | undefined;
+    | {
+        size: number | string;
+      }
+    | undefined;
 }
 
 export enum Panel {
@@ -342,7 +342,7 @@ export type TAskProps = {
   conversationId?: string | null;
   messageId?: string | null;
   clientTimestamp?: string;
-  position?: { latitude: number; longitude: number }
+  position?: { latitude: number; longitude: number };
 };
 
 export type TOptions = {
@@ -636,7 +636,6 @@ declare global {
     google_tag_manager?: unknown;
   }
 }
-
 
 export type LanguageCode =
   | 'auto'

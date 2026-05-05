@@ -934,6 +934,10 @@ export function saveFarmerProfile(profile: m.IFarmerProfile): Promise<{ message:
   return request.post(endpoints.farmerProfile(), profile);
 }
 
+export function updateFarmerPlatform(platform: string): Promise<{ message: string }> {
+  return request.patch(endpoints.farmerProfilePlatform(), { platform });
+}
+
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }

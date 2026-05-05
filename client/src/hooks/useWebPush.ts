@@ -43,7 +43,7 @@ export default function useWebPush() {
 
         // Fetch the VAPID key
         const keyRes = await fetch('/api/push/key', {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (!keyRes.ok) return;
         const { key } = await keyRes.json();
@@ -51,37 +51,18 @@ export default function useWebPush() {
 
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey
+          applicationServerKey,
         });
 
-        console.log('[PUSH-DEBUG] Current Subscription Endpoint (last 15 chars):', subscription.endpoint.slice(-15));
-        console.log('[PUSH-DEBUG] Full Subscription object:', JSON.stringify(subscription));
-
-        // Send to backend 
+        // Send to backend
         await fetch('/api/push/subscribe', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify(subscription)
+          body: JSON.stringify(subscription),
         });
-
-        console.log('Web push subscribed successfully');
-
-        // Fetch server-side debug info to verify configuration
-        try {
-          const debugRes = await fetch('/api/push/debug');
-          const lastPushRes = await fetch('/api/webhooks/debug-last');
-          if (debugRes.ok && lastPushRes.ok) {
-            const debugInfo = await debugRes.json();
-            const lastPushInfo = await lastPushRes.json();
-            console.log('[SERVER-DEBUG] VAPID Config:', debugInfo);
-            console.log('[SERVER-DEBUG] Last Push Result:', lastPushInfo);
-          }
-        } catch (e) {
-          console.warn('[SERVER-DEBUG] Failed to fetch server debug info', e);
-        }
       } catch (err) {
         console.error('Failed to setup push notifications:', err);
       }
@@ -92,10 +73,8 @@ export default function useWebPush() {
     // Listen for navigation messages from the service worker.
     // This is a fallback for when SW's navigate() fails (e.g. first notification
     // before the SW fully controls the page).
-    // added comment
     function handleSWMessage(event: MessageEvent) {
       if (event.data && event.data.type === 'NOTIFICATION_CLICK_NAVIGATE') {
-        console.log('[PUSH-DEBUG] Received postMessage navigation to:', event.data.url);
         window.location.href = event.data.url;
       }
     }

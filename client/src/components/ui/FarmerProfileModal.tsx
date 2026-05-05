@@ -1,5 +1,6 @@
 import { useForm, Controller } from 'react-hook-form';
-import { useState, useRef, useEffect } from 'react';
+import useGeolocation from '~/hooks/useGeolocation';
+import { SearchableSelect } from '~/components/ui';
 import {
   OGDialog,
   OGDialogContent,
@@ -11,113 +12,6 @@ import {
 import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
 import { STATES, DISTRICTS, BLOCKS, VILLAGES, CROPS, INDIAN_LANGUAGES } from '~/utils/metaData';
-
-// ── Searchable Select ────────────────────────────────────────────────────────
-
-interface SearchableSelectProps {
-  options: string[];
-  value: string;
-  onChange: (val: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-}
-
-const SearchableSelect = ({
-  options,
-  value,
-  onChange,
-  placeholder = 'Select...',
-  disabled = false,
-}: SearchableSelectProps) => {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const filtered = options.filter((o) =>
-    o.toLowerCase().includes(search.toLowerCase()),
-  );
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        setSearch('');
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  const handleOpen = () => {
-    if (disabled) return;
-    setOpen(true);
-    setTimeout(() => inputRef.current?.focus(), 0);
-  };
-
-  const handleSelect = (opt: string) => {
-    onChange(opt);
-    setOpen(false);
-    setSearch('');
-  };
-
-  return (
-    <div ref={ref} className="relative mt-1">
-      {/* Trigger */}
-      <button
-        type="button"
-        onClick={handleOpen}
-        disabled={disabled}
-        className={`flex w-full items-center justify-between rounded-md border border-border-heavy bg-surface-secondary px-3 py-2 text-sm text-left focus:outline-none focus:ring-1 focus:ring-green-500 disabled:cursor-not-allowed disabled:opacity-50 ${
-          value ? 'text-text-primary' : 'text-text-secondary'
-        }`}
-      >
-        <span className="truncate">{value || placeholder}</span>
-        <svg
-          className={`ml-2 h-4 w-4 shrink-0 text-text-secondary transition-transform ${open ? 'rotate-180' : ''}`}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {/* Dropdown */}
-      {open && (
-        <div className="absolute z-[300] mt-1 w-full rounded-md border border-border-heavy bg-surface-primary shadow-lg">
-          {/* Search input */}
-          <div className="p-2 border-b border-border-heavy">
-            <input
-              ref={inputRef}
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search..."
-              className="w-full rounded border border-border-heavy bg-surface-secondary px-2 py-1.5 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-green-500"
-            />
-          </div>
-          {/* Options */}
-          <ul className="max-h-52 overflow-y-auto py-1">
-            {filtered.length === 0 ? (
-              <li className="px-3 py-2 text-sm text-text-secondary">No results found</li>
-            ) : (
-              filtered.map((opt) => (
-                <li
-                  key={opt}
-                  onMouseDown={() => handleSelect(opt)}
-                  className={`cursor-pointer px-3 py-2 text-sm hover:bg-surface-active ${
-                    value === opt ? 'bg-green-50 text-green-700 font-medium dark:bg-green-900/20 dark:text-green-400' : 'text-text-primary'
-                  }`}
-                >
-                  {opt}
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-};
 
 // ── Form Types ───────────────────────────────────────────────────────────────
 
@@ -161,9 +55,6 @@ const FarmerProfileModal = ({
   onComplete: () => void;
   onDecline: () => void;
 }) => {
-  const [isLocating, setIsLocating] = useState(false);
-  const [locationError, setLocationError] = useState('');
-
   const {
     register,
     handleSubmit,
@@ -218,12 +109,23 @@ const selectedCropsList = selectedCrops
   : [];
 
   const saveMutation = useSaveFarmerProfileMutation({
-    onSuccess: () => { onComplete(); },
+    onSuccess: () => {
+      onComplete();
+    },
   });
 
   const handleOpenChange = (isOpen: boolean) => {
-    /*if (open && !isOpen) { onDecline(); return; }*/
     onOpenChange(isOpen);
+  };
+
+  const detectDevice = (): string => {
+    const ua = navigator.userAgent;
+    if (/android/i.test(ua)) return 'Android';
+    if (/iphone|ipad|ipod/i.test(ua)) return 'iOS';
+    if (/windows/i.test(ua)) return 'Windows';
+    if (/macintosh|mac os x/i.test(ua)) return 'MacOS';
+    if (/linux/i.test(ua)) return 'Linux';
+    return 'Unknown';
   };
 
   const onSubmit = (data: FarmerProfileForm) => {
@@ -243,9 +145,12 @@ const selectedCropsList = selectedCrops
       yearsOfExperience: Number(data.yearsOfExperience),
       numberOfSmartphones: Number(data.numberOfSmartphones),
       cropsCultivated: data.cropsCultivated
-        .split(',').map((c) => c.trim()).filter(Boolean),
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean),
       awarenessOfKCC: data.awarenessOfKCC === 'yes',
       usesAgriApps: data.usesAgriApps === 'yes',
+      platform: detectDevice(),
       location: data.location?.latitude && data.location?.longitude 
         ? {
             latitude: Number(data.location.latitude),
@@ -269,8 +174,8 @@ const selectedCropsList = selectedCrops
       <OGDialogContent
         showCloseButton={false}
         onInteractOutside={(e) => e.preventDefault()}
-       onEscapeKeyDown={(e) => e.preventDefault()}
-        className="w-11/12 max-w-2xl sm:w-3/4 md:w-2/3 lg:w-1/2 max-h-[90vh] flex flex-col overflow-y-hidden"
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="flex max-h-[90vh] w-11/12 max-w-2xl flex-col overflow-y-hidden sm:w-3/4 md:w-2/3 lg:w-1/2"
       >
         <OGDialogHeader>
           <OGDialogTitle className="text-lg font-bold text-text-primary">
@@ -278,17 +183,16 @@ const selectedCropsList = selectedCrops
           </OGDialogTitle>
         </OGDialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
           <input type="hidden" {...register('location.latitude')} />
           <input type="hidden" {...register('location.longitude')} />
-          
+
           {/* ── Notice — pinned above the scrollable area ── */}
           <p className="shrink-0 px-1 pb-3 text-sm font-medium text-red-500">
             * Please fill in all the details below to complete your registration.
           </p>
 
           <div className="flex-1 overflow-y-auto px-1 py-2">
-
             {/* ── Section 1: Demographic Details ── */}
             <div className={sectionClass}>
               <h3 className={sectionTitleClass}>Demographic Details</h3>
@@ -372,26 +276,7 @@ const selectedCropsList = selectedCrops
                 <div className="mt-2 flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsLocating(true);
-                      setLocationError('');
-                      if (!navigator.geolocation) {
-                        setLocationError('Geolocation is not supported by your browser');
-                        setIsLocating(false);
-                        return;
-                      }
-                      navigator.geolocation.getCurrentPosition(
-                        (position) => {
-                          setValue('location.latitude', position.coords.latitude, { shouldValidate: true });
-                          setValue('location.longitude', position.coords.longitude, { shouldValidate: true });
-                          setIsLocating(false);
-                        },
-                        (error) => {
-                          setLocationError('Unable to retrieve your location');
-                          setIsLocating(false);
-                        }
-                      );
-                    }}
+                    onClick={getLocation}
                     disabled={isLocating}
                     className="inline-flex items-center justify-center rounded-lg border border-border-heavy bg-surface-secondary px-4 py-2 text-sm font-medium text-text-primary hover:bg-surface-active disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -399,12 +284,10 @@ const selectedCropsList = selectedCrops
                   </button>
                   {watch('location.latitude') && watch('location.longitude') && (
                     <span className="text-sm font-medium text-green-600 dark:text-green-500">
-                      ✓ Location Captured Succesfully
+                      ✓ Location Captured Successfully
                     </span>
                   )}
-                  {locationError && (
-                    <span className="text-sm text-red-500">{locationError}</span>
-                  )}
+                  {locationError && <span className="text-sm text-red-500">{locationError}</span>}
                 </div>
               </div>
 
@@ -644,9 +527,7 @@ const selectedCropsList = selectedCrops
                       />
                     )}
                   />
-                  {errors.primaryCrop && (
-                    <p className={errorClass}>{errors.primaryCrop.message}</p>
-                  )}
+                  {errors.primaryCrop && <p className={errorClass}>{errors.primaryCrop.message}</p>}
                 </div>
 
                 <div className={fieldClass}>
@@ -680,7 +561,10 @@ const selectedCropsList = selectedCrops
                 <Label>Awareness of Kisan Call Centre (KCC)</Label>
                 <div className="mt-2 flex gap-6">
                   {['yes', 'no'].map((val) => (
-                    <label key={val} className="flex items-center gap-2 cursor-pointer text-sm text-text-primary">
+                    <label
+                      key={val}
+                      className="flex cursor-pointer items-center gap-2 text-sm text-text-primary"
+                    >
                       <input
                         type="radio"
                         value={val}
@@ -700,7 +584,10 @@ const selectedCropsList = selectedCrops
                 <Label>Usage of Any Agricultural Mobile Applications</Label>
                 <div className="mt-2 flex gap-6">
                   {['yes', 'no'].map((val) => (
-                    <label key={val} className="flex items-center gap-2 cursor-pointer text-sm text-text-primary">
+                    <label
+                      key={val}
+                      className="flex cursor-pointer items-center gap-2 text-sm text-text-primary"
+                    >
                       <input
                         type="radio"
                         value={val}
@@ -711,9 +598,7 @@ const selectedCropsList = selectedCrops
                     </label>
                   ))}
                 </div>
-                {errors.usesAgriApps && (
-                  <p className={errorClass}>{errors.usesAgriApps.message}</p>
-                )}
+                {errors.usesAgriApps && <p className={errorClass}>{errors.usesAgriApps.message}</p>}
               </div>
             </div>
 

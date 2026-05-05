@@ -1077,24 +1077,42 @@ export const useAcceptSecondTermsMutation = (
   });
 };
 
+export const useUpdateFarmerPlatformMutation = (): UseMutationResult<
+  { message: string },
+  unknown,
+  string,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((platform: string) => dataService.updateFarmerPlatform(platform), {
+    onSuccess: () => {
+      queryClient.setQueryData<t.TUserTermsResponse>(
+        [QueryKeys.userTerms],
+        (prev) =>
+          ({
+            ...prev,
+            farmerProfileHasPlatform: true,
+          }) as t.TUserTermsResponse,
+      );
+    },
+  });
+};
+
 export const useSaveFarmerProfileMutation = (
   options?: t.SaveFarmerProfileMutationOptions,
 ): UseMutationResult<{ message: string }, unknown, t.IFarmerProfile, unknown> => {
   const queryClient = useQueryClient();
   return useMutation((profile: t.IFarmerProfile) => dataService.saveFarmerProfile(profile), {
     onSuccess: (data, variables, context) => {
-      queryClient.setQueryData<t.TUserTermsResponse>(
-        [QueryKeys.userTerms],
-        (prev) => {
-          if (!prev) return prev;
-          const hasLocation = !!(variables.location?.latitude && variables.location?.longitude);
-          return {
-            ...prev,
-            farmerProfileCompleted: true,
-            ...(hasLocation ? { farmerLocationCompleted: true } : {}),
-          } as t.TUserTermsResponse;
-        },
-      );
+      queryClient.setQueryData<t.TUserTermsResponse>([QueryKeys.userTerms], (prev) => {
+        if (!prev) return prev;
+        const hasLocation = !!(variables.location?.latitude && variables.location?.longitude);
+        return {
+          ...prev,
+          farmerProfileCompleted: true,
+          ...(hasLocation ? { farmerLocationCompleted: true } : {}),
+        } as t.TUserTermsResponse;
+      });
       options?.onSuccess?.(data, variables, context);
     },
     onError: options?.onError,
