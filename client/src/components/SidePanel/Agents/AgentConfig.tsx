@@ -34,9 +34,10 @@ import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
 import uswdsIcons from '@uswds/uswds/img/sprite.svg';
-import { useRecoilValue } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import store from '~/store';
 import { X } from 'lucide-react';
+import { showAgentComplexBanner } from '~/nj/store/agents';
 
 const sectionLabelClass = 'text-sm font-semibold';
 const labelClass = 'mb-2 text-token-text-primary block text-sm font-semibold';
@@ -53,7 +54,7 @@ export default function AgentConfig() {
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
   const [showMCPToolDialog, setShowMCPToolDialog] = useState(false);
-  const [showComplexBanner, setShowComplexBanner] = useState(true);
+  const [showComplexBanner, setShowComplexBanner] = useRecoilState(showAgentComplexBanner);
   const {
     actions,
     setAction,
@@ -330,19 +331,21 @@ export default function AgentConfig() {
       <hr className="mb-4 border-border-heavy" />
 
       {/* File context */}
-      <div className="mx-3 pb-3">
-        <h3 className={sectionLabelClass}>{localize('com_agents_file_context_label')}</h3>
-        <p className="mt-1 text-sm text-text-secondary">
-          Upload reference materials, examples, templates, or any other relevant docs.
-        </p>
-      </div>
-
-      <hr className="mb-4 border-border-heavy" />
-
       {contextEnabled && (
-        <div className="mx-3">
+        <div className="mx-3 mb-3">
           <FileContext agent_id={agent_id} files={context_files} />
         </div>
+      )}
+
+      {/* File search */}
+      {fileSearchEnabled && (
+        <>
+          <hr className="mb-4 border-border-heavy" />
+
+          <div className="mx-3">
+            <FileSearch agent_id={agent_id} files={knowledge_files} />
+          </div>
+        </>
       )}
     </div>
   );

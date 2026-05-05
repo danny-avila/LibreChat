@@ -1,7 +1,18 @@
+/* eslint-disable i18next/no-literal-string */
+/* ^ We're not worried about i18n for this app ^ */
+
 import React, { useState, useId } from 'react';
 import { PlusCircle } from 'lucide-react';
 import * as Menu from '@ariakit/react/menu';
-import { DropdownPopup } from '@librechat/client';
+import {
+  CircleHelpIcon,
+  DropdownPopup,
+  ESide,
+  HoverCard,
+  HoverCardContent,
+  HoverCardPortal,
+  HoverCardTrigger,
+} from '@librechat/client';
 import { specialVariables } from 'librechat-data-provider';
 import { Controller, useFormContext } from 'react-hook-form';
 import type { TSpecialVarLabel } from 'librechat-data-provider';
@@ -44,12 +55,38 @@ export default function Instructions() {
   return (
     <div className="mb-4">
       <div className="mb-2 flex items-center">
+        {/* NJ: Customize how we explain the Instructions feature
         <label
           className="text-token-text-primary flex-grow text-sm font-medium"
           htmlFor="instructions"
         >
           {localize('com_ui_instructions')}
         </label>
+        */}
+        <HoverCard openDelay={50}>
+          <HoverCardTrigger asChild>
+            <span className="flex items-center gap-2">
+              <label
+                className="text-token-text-primary block text-sm font-semibold"
+                htmlFor="instructions"
+              >
+                Give your agent a task
+              </label>
+              <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
+            </span>
+          </HoverCardTrigger>
+          <HoverCardPortal>
+            <HoverCardContent side={ESide.Top} className="w-80">
+              <div className="space-y-2">
+                <p className="text-sm text-text-secondary">
+                  Try starting with a role (“You are a…”), then describe the task, any constraints,
+                  how you&apos;d like responses structured, and how the agent should use any
+                  uploaded files.
+                </p>
+              </div>
+            </HoverCardContent>
+          </HoverCardPortal>
+        </HoverCard>
         <div className="ml-auto" title="Add variables to instructions">
           <DropdownPopup
             portal={true}
