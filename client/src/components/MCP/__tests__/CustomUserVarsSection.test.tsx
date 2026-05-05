@@ -27,7 +27,7 @@ describe('CustomUserVarsSection', () => {
 
     const input = screen.getByLabelText(/My API Key/);
     expect(input).toHaveAttribute('autocomplete', 'new-password');
-    expect(input).toHaveAttribute('type', 'new-password');
+    expect(input).toHaveAttribute('type', 'password');
     expect(input).toHaveAttribute('data-lpignore', 'true');
     expect(input).toHaveAttribute('data-1p-ignore', 'true');
   });

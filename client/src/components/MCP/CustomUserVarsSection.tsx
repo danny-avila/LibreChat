@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { useForm, Controller } from 'react-hook-form';
-import { Input, Label, Button } from '@librechat/client';
+import { Label, Button, SecretInput } from '@librechat/client';
+import type { Control, FieldErrors } from 'react-hook-form';
 import { useMCPAuthValuesQuery } from '~/data-provider/Tools/queries';
 import { useLocalize } from '~/hooks';
 
@@ -21,8 +22,8 @@ interface AuthFieldProps {
   name: string;
   config: CustomUserVarConfig;
   hasValue: boolean;
-  control: any;
-  errors: any;
+  control: Control<Record<string, string>>;
+  errors: FieldErrors<Record<string, string>>;
   autoFocus?: boolean;
 }
 
@@ -83,11 +84,10 @@ function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthF
         control={control}
         defaultValue=""
         render={({ field }) => (
-          <Input
+          <SecretInput
             id={name}
             // Prevent autofill: browser DOM mutations bypass React's synthetic
             // onChange, silently emptying react-hook-form state on submit.
-            type="new-password"
             autoComplete="new-password"
             data-lpignore="true"
             data-1p-ignore="true"

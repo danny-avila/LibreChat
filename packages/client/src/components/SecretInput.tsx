@@ -11,11 +11,24 @@ export interface SecretInputProps
   onCopy?: () => void;
   /** Duration in ms to show checkmark after copy (default: 2000) */
   copyFeedbackDuration?: number;
+  label?: React.ReactNode;
+  labelClassName?: string;
 }
 
 const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
   (
-    { className, showCopy = false, onCopy, copyFeedbackDuration = 2000, disabled, value, ...props },
+    {
+      id,
+      label,
+      className,
+      showCopy = false,
+      labelClassName,
+      onCopy,
+      copyFeedbackDuration = 2000,
+      disabled,
+      value,
+      ...props
+    },
     ref,
   ) => {
     const [isVisible, setIsVisible] = useState(false);
@@ -51,9 +64,10 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
     return (
       <div className="relative flex items-center">
         <input
+          id={id}
           type={isVisible ? 'text' : 'password'}
           className={cn(
-            'flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+            'flex h-10 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
             showCopy ? 'pr-20' : 'pr-10',
             className ?? '',
           )}
@@ -64,6 +78,11 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
           spellCheck={false}
           {...props}
         />
+        {label != null && (
+          <label htmlFor={id} className={cn(labelClassName ?? '')}>
+            {label}
+          </label>
+        )}
         <div className="absolute right-1 flex items-center gap-0.5">
           {showCopy && (
             <button
@@ -91,7 +110,7 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
                 ? 'cursor-not-allowed opacity-50'
                 : 'hover:bg-surface-hover hover:text-text-primary',
             )}
-            aria-label={isVisible ? 'Hide password' : 'Show password'}
+            aria-label={isVisible ? 'Hide secret' : 'Show secret'}
           >
             {isVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
