@@ -1,4 +1,5 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { ToolArtifactType } from '~/utils/artifacts';
@@ -18,10 +19,49 @@ import Image from '~/components/Chat/Messages/Content/Image';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
 import ToolArtifactCard from './ToolArtifactCard';
 import { useAttachmentLink } from './LogLink';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useAttachmentPreviewSync } from '~/hooks';
 import { cn } from '~/utils';
 
 const COLLAPSED_MAX_HEIGHT = 320;
+
+/**
+ * Small inline indicator rendered next to a code-execution file chip
+ * while its inline preview is in flight or has failed. Three states:
+ *
+ *  - `'pending'`: tiny spinner + "preparing preview…". Driven by the
+ *    polling `useAttachmentPreviewSync` hook (gated on `isSubmitting`)
+ *    and by the SSE `attachment` update event when the response stream
+ *    is still open.
+ *  - `'failed'`: alert icon + "preview unavailable" with the
+ *    backend's machine-readable `previewError` as a tooltip
+ *    (`'timeout'`, `'parser-error'`, `'orphaned'`, …). The download
+ *    chip itself remains fully functional.
+ *  - `'ready'` (or undefined): nothing rendered — the chip looks
+ *    exactly as it did before this PR.
+ */
+const PreviewStatusIndicator = memo(
+  ({ status, previewError }: { status: 'pending' | 'failed'; previewError?: string }) => {
+    const localize = useLocalize();
+    if (status === 'pending') {
+      return (
+        <div className="mt-1 flex items-center gap-1.5 text-xs text-text-secondary">
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+          <span>{localize('com_ui_preview_preparing')}</span>
+        </div>
+      );
+    }
+    return (
+      <div
+        className="mt-1 flex items-center gap-1.5 text-xs text-text-secondary"
+        title={previewError ?? localize('com_ui_preview_failed')}
+      >
+        <AlertCircle className="h-3 w-3" aria-hidden="true" />
+        <span>{localize('com_ui_preview_failed')}</span>
+      </div>
+    );
+  },
+);
+PreviewStatusIndicator.displayName = 'PreviewStatusIndicator';
 
 const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const [isVisible, setIsVisible] = useState(false);
@@ -34,6 +74,14 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
     source: file.source,
   });
   const extension = attachment.filename?.split('.').pop();
+  /* Bridge the two-phase preview lifecycle: poll the backend for the
+   * resolved record while pending+isSubmitting, and surface a small
+   * UI indicator. The hook is a no-op for terminal states (legacy
+   * records, ready, failed already-known) so calling it
+   * unconditionally is cheap. */
+  const { status: previewStatus, previewError } = useAttachmentPreviewSync(
+    attachment as TAttachment,
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 50);
@@ -64,6 +112,9 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
         containerClassName="max-w-fit"
         buttonClassName="bg-surface-secondary hover:cursor-pointer hover:bg-surface-hover active:bg-surface-secondary focus:bg-surface-hover hover:border-border-heavy active:border-border-heavy"
       />
+      {(previewStatus === 'pending' || previewStatus === 'failed') && (
+        <PreviewStatusIndicator status={previewStatus} previewError={previewError} />
+      )}
     </div>
   );
 });

@@ -52,6 +52,26 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
     setAttachmentsMap((prevMap) => {
       const messageAttachments =
         (prevMap as Record<string, TAttachment[] | undefined>)[messageId] || [];
+      /* Upsert by `file_id` rather than always appending. The two-phase
+       * code-execution flow emits the same attachment twice: once at
+       * phase-1 with `status: 'pending'` and `text: null`, then again
+       * at phase-2 with `status: 'ready'` (and text/textFormat) or
+       * `'failed'` (with previewError). The second event must merge
+       * over the first in place — appending would render the artifact
+       * card twice, once stuck pending and once resolved. Attachments
+       * without a `file_id` (lightweight types like web_search /
+       * file_search citations) keep the legacy append behavior. */
+      const fileId = (data as Partial<TFile>).file_id;
+      if (fileId) {
+        const existingIndex = messageAttachments.findIndex(
+          (a) => (a as Partial<TFile>).file_id === fileId,
+        );
+        if (existingIndex > -1) {
+          const merged = [...messageAttachments];
+          merged[existingIndex] = { ...messageAttachments[existingIndex], ...data };
+          return { ...prevMap, [messageId]: merged };
+        }
+      }
       return {
         ...prevMap,
         [messageId]: [...messageAttachments, data],

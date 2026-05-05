@@ -105,3 +105,41 @@ export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => 
     },
   );
 };
+
+/**
+ * Poll the lifecycle of an inline file preview while phase-2 HTML
+ * extraction runs in the background.
+ *
+ * Caller wires `enabled` to `(attachment.status === 'pending') && isSubmitting`
+ * so the query is dormant for terminal-status records and stops the
+ * moment the assistant finishes generating. Once enabled, React Query's
+ * `refetchInterval` runs at 2.5s while the server keeps returning
+ * `'pending'`, then auto-stops on the first `'ready'`/`'failed'`
+ * response (returning `false` from the function form disables the
+ * interval). Idle by default.
+ *
+ * Cache key: `[QueryKeys.filePreview, file_id]`. Sibling components
+ * watching the same `file_id` get a single shared poller.
+ */
+export const useFilePreview = (
+  file_id: string | undefined,
+  config?: UseQueryOptions<t.TFilePreview, unknown, t.TFilePreview>,
+): QueryObserverResult<t.TFilePreview, unknown> => {
+  return useQuery<t.TFilePreview, unknown, t.TFilePreview>(
+    [QueryKeys.filePreview, file_id],
+    () => dataService.getFilePreview(file_id ?? ''),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      /* Function form: poll only while the server says 'pending'.
+       * Returning `false` disables the interval, so a single 'ready'
+       * or 'failed' response naturally terminates polling without the
+       * caller having to also flip `enabled`. */
+      refetchInterval: (data) => (data?.status === 'pending' ? 2500 : false),
+      ...config,
+      enabled: !!file_id && (config?.enabled ?? true),
+    },
+  );
+};
