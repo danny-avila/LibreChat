@@ -492,7 +492,6 @@ modelSpecs:
          - ajrasakha-imd
          - faq-videos
          - ajrasakha-location
-         - ajrasakha-other-markets
          - ajrasakha-govt-schemes
          - ajrasakha-soilhealth
 
@@ -599,7 +598,6 @@ modelSpecs:
           4.5. **Fetch market-related data using MCP tools with strict priority order.**
               First query Ajrasakha-Agmarknet and return data if available.
               If no data is found, then query Ajrasakha-eNAM and return results if available.
-              If both sources do not return data, then proceed to query ajrasakha-other-markets tool.
               Always return data from the highest-priority source where results are found, without querying lower-priority sources unnecessarily.
 
           5. **After answering any query:**
@@ -748,7 +746,6 @@ modelSpecs:
          - ajrasakha-imd
          - faq-videos
          - ajrasakha-location
-         - ajrasakha-other-markets
          - ajrasakha-govt-schemes
          - ajrasakha-soilhealth  
 
@@ -772,7 +769,6 @@ modelSpecs:
          - ajrasakha-imd
          - faq-videos
          - ajrasakha-location
-         - ajrasakha-other-markets
          - ajrasakha-govt-schemes
          - ajrasakha-soilhealth
       default: true
@@ -798,7 +794,6 @@ modelSpecs:
          - ajrasakha-imd
          - faq-videos
          - ajrasakha-location
-         - ajrasakha-other-markets
          - ajrasakha-govt-schemes
          - ajrasakha-soilhealth
 
