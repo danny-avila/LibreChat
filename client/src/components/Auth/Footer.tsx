@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string */
 import { useLocalize } from '~/hooks';
 import { TStartupConfig } from 'librechat-data-provider';
 
@@ -12,7 +13,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
 
   const privacyPolicyRender = privacyPolicy?.externalUrl && (
     <a
-      className="text-sm text-brand-blue-500"
+      className="text-sm text-ink-800 transition-colors hover:underline dark:text-dm-text-mute dark:hover:text-dm-text"
       href={privacyPolicy.externalUrl}
       target={privacyPolicy.openNewTab ? '_blank' : undefined}
       rel="noreferrer"
@@ -23,7 +24,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
 
   const termsOfServiceRender = termsOfService?.externalUrl && (
     <a
-      className="text-sm text-brand-blue-500"
+      className="text-sm text-ink-800 transition-colors hover:underline dark:text-dm-text-mute dark:hover:text-dm-text"
       href={termsOfService.externalUrl}
       target={termsOfService.openNewTab ? '_blank' : undefined}
       rel="noreferrer"
@@ -34,7 +35,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
 
   const codeCanRender = (
     <a
-      className="text-sm text-brand-blue-500"
+      className="text-sm text-ink-800 transition-colors hover:underline dark:text-dm-text-mute dark:hover:text-dm-text"
       href="https://codecan.ai"
       target="_blank"
       rel="noreferrer"
@@ -54,13 +55,15 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
             <div key={`footer-element-${index}`} className="flex items-center gap-2">
               {contentRender}
               {!isLastElement && (
-                <div className="h-4 border-r-[1px] border-gray-300 dark:border-gray-600" />
+                <div className="h-4 border-r-[1px] border-[rgba(11,47,91,0.16)] dark:border-white/[0.14]" />
               )}
             </div>
           );
         })}
       </div>
-      <p className="max-w-2xl text-center text-xs text-gray-500 dark:text-gray-400">{disclaimer}</p>
+      <p className="max-w-2xl text-center text-xs text-cc-slate-500 dark:text-dm-text-mute">
+        {disclaimer}
+      </p>
     </div>
   );
 }
