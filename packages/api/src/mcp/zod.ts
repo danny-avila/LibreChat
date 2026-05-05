@@ -322,6 +322,69 @@ export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T
   return result as T;
 }
 
+const COMBINATOR_KEYS = ['oneOf', 'anyOf', 'allOf'] as const;
+
+/**
+ * Sanitizes an MCP tool inputSchema for strict LLM API compatibility.
+ *
+ * Anthropic and OpenAI reject schemas with `oneOf`/`anyOf`/`allOf`/`not`/`enum` at the
+ * top level. When any of these combinators are present at the root, this function merges
+ * all sub-schema properties into a single `type: "object"` schema, dropping constraints
+ * that cannot be expressed without combinators. Top-level `description` and `required`
+ * are preserved. The result is then passed through `normalizeJsonSchema` for full cleanup.
+ *
+ * Google Gemini is more permissive and does not require this transformation.
+ */
+export function sanitizeToolSchema(schema: JsonSchemaType | undefined): JsonSchemaType {
+  const fallback: JsonSchemaType = { type: 'object', properties: {} };
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    return fallback;
+  }
+
+  const s = schema as Record<string, unknown>;
+  const hasCombinator = COMBINATOR_KEYS.some((k) => Array.isArray(s[k]));
+  const hasTopLevelNot = s['not'] != null;
+
+  if (!hasCombinator && !hasTopLevelNot) {
+    return normalizeJsonSchema(s) as JsonSchemaType;
+  }
+
+  const mergedProperties: Record<string, unknown> = {};
+
+  if (s.properties && typeof s.properties === 'object' && !Array.isArray(s.properties)) {
+    Object.assign(mergedProperties, s.properties);
+  }
+
+  for (const key of COMBINATOR_KEYS) {
+    const subSchemas = s[key];
+    if (!Array.isArray(subSchemas)) {
+      continue;
+    }
+    for (const sub of subSchemas) {
+      if (!sub || typeof sub !== 'object' || Array.isArray(sub)) {
+        continue;
+      }
+      const subRecord = sub as Record<string, unknown>;
+      if (subRecord.properties && typeof subRecord.properties === 'object') {
+        Object.assign(mergedProperties, subRecord.properties);
+      }
+    }
+  }
+
+  const result: Record<string, unknown> = { type: 'object' };
+  if (Object.keys(mergedProperties).length > 0) {
+    result.properties = mergedProperties;
+  }
+  if (s.description != null) {
+    result.description = s.description;
+  }
+  if (Array.isArray(s.required) && s.required.length > 0) {
+    result.required = s.required;
+  }
+
+  return normalizeJsonSchema(result) as JsonSchemaType;
+}
+
 /**
  * Converts a JSON Schema to a Zod schema.
  *
