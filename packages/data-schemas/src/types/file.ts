@@ -8,6 +8,17 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   temp_file_id?: string;
   bytes: number;
   text?: string;
+  /**
+   * Format of the `text` field — `'html'` when the backend produced
+   * a sanitized full-document HTML preview (e.g. office types via
+   * `bufferToOfficeHtml`), `'text'` for plain-text extracts (e.g.
+   * RAG mammoth/pdf-parse output), `undefined` for legacy records
+   * that pre-date the field. Clients MUST treat `undefined` as
+   * `'text'` and refuse to inject the value into HTML contexts —
+   * otherwise plain document text containing `<script>` tags would
+   * become executable markup. See Codex P1 review on PR #12934.
+   */
+  textFormat?: 'html' | 'text';
   filename: string;
   filepath: string;
   object: 'file';

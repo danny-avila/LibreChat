@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Code, Play, RefreshCw, X } from 'lucide-react';
@@ -11,6 +11,8 @@ import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
 import ArtifactTabs from './ArtifactTabs';
+import { isPreviewOnlyArtifact } from '~/utils/artifacts';
+import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -37,18 +39,21 @@ export default function Artifacts() {
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
 
-  const tabOptions = [
-    {
-      value: 'code',
-      label: localize('com_ui_code'),
-      icon: <Code className="size-4" />,
-    },
-    {
-      value: 'preview',
-      label: localize('com_ui_preview'),
-      icon: <Play className="size-4" />,
-    },
-  ];
+  const allTabOptions = useMemo(
+    () => [
+      {
+        value: 'code',
+        label: localize('com_ui_code'),
+        icon: <Code className="size-4" />,
+      },
+      {
+        value: 'preview',
+        label: localize('com_ui_preview'),
+        icon: <Play className="size-4" />,
+      },
+    ],
+    [localize],
+  );
 
   useEffect(() => {
     setIsMounted(true);
@@ -87,6 +92,33 @@ export default function Artifacts() {
     orderedArtifactIds,
     setCurrentArtifactId,
   } = useArtifacts();
+
+  /* Office artifacts (DOCX/SPREADSHEET/PRESENTATION) have no source view —
+   * the underlying file is binary and the "code" tab would display the
+   * generated HTML blob, which isn't useful. Filter the tab options and
+   * snap the active tab when the user lands on an office artifact while
+   * the code tab is selected. */
+  const isPreviewOnly = isPreviewOnlyArtifact(currentArtifact?.type);
+  const tabOptions = useMemo(() => {
+    if (!isPreviewOnly) {
+      return allTabOptions;
+    }
+    /* When only the preview tab is shown, the generic "Preview" label is
+     * a no-op pill — surface the document filename there instead. The
+     * Play icon stays as a visual cue for "rendered preview". `displayFilename`
+     * handles the sandbox dotfile suffix the upload pipeline applies. */
+    const filename = displayFilename(currentArtifact?.title);
+    const previewTab = allTabOptions.find((opt) => opt.value === 'preview');
+    if (!previewTab) {
+      return allTabOptions;
+    }
+    return [filename ? { ...previewTab, label: filename } : previewTab];
+  }, [allTabOptions, isPreviewOnly, currentArtifact?.title]);
+  useEffect(() => {
+    if (isPreviewOnly && activeTab === 'code') {
+      setActiveTab('preview');
+    }
+  }, [isPreviewOnly, activeTab, setActiveTab]);
 
   const handleCopyArtifact = useCallback(() => {
     const content = currentArtifact?.content ?? '';

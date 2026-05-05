@@ -2,9 +2,11 @@ import {
   buildSandpackOptions,
   detectArtifactTypeFromFile,
   fileToArtifact,
+  isPreviewOnlyArtifact,
   languageForFilename,
   TOOL_ARTIFACT_TYPES,
 } from '../artifacts';
+import type { ToolArtifactType } from '../artifacts';
 
 const TAILWIND_CDN = 'https://cdn.tailwindcss.com/3.4.17#tailwind.js';
 
@@ -55,32 +57,192 @@ describe('detectArtifactTypeFromFile', () => {
     ['flow.mmd', TOOL_ARTIFACT_TYPES.MERMAID],
     ['flow.mermaid', TOOL_ARTIFACT_TYPES.MERMAID],
     ['readme.txt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
-    ['report.docx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
     ['notes.odt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
-    ['slides.pptx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
+    ['report.docx', TOOL_ARTIFACT_TYPES.DOCX],
+    ['data.csv', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['workbook.xlsx', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['legacy.xls', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['sheet.ods', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['slides.pptx', TOOL_ARTIFACT_TYPES.PRESENTATION],
   ])('classifies %s by extension', (filename, expected) => {
-    expect(detectArtifactTypeFromFile({ filename, type: '', text: 'content' })).toBe(expected);
+    /* Office types require `textFormat: 'html'` to route to their HTML
+     * preview buckets — the security gate added for Codex P1 review on
+     * PR #12934. Plain-text/markdown/code/etc. don't take that path so
+     * they pass through unchanged. */
+    const isOfficeBucket = (
+      [
+        TOOL_ARTIFACT_TYPES.DOCX,
+        TOOL_ARTIFACT_TYPES.SPREADSHEET,
+        TOOL_ARTIFACT_TYPES.PRESENTATION,
+      ] as ToolArtifactType[]
+    ).includes(expected);
+    const textFormat = isOfficeBucket ? ('html' as const) : undefined;
+    expect(detectArtifactTypeFromFile({ filename, type: '', text: 'content', textFormat })).toBe(
+      expected,
+    );
   });
 
   it.each([
-    ['index.html', TOOL_ARTIFACT_TYPES.HTML],
-    ['App.tsx', TOOL_ARTIFACT_TYPES.REACT],
-    ['flow.mmd', TOOL_ARTIFACT_TYPES.MERMAID],
-  ])('returns null when %s has no text (%s viewer needs real content)', (filename) => {
-    expect(detectArtifactTypeFromFile({ filename, type: '', text: '' })).toBeNull();
-    expect(detectArtifactTypeFromFile({ filename, type: '', text: undefined })).toBeNull();
-  });
+    ['index.html', TOOL_ARTIFACT_TYPES.HTML, undefined],
+    ['App.tsx', TOOL_ARTIFACT_TYPES.REACT, undefined],
+    ['flow.mmd', TOOL_ARTIFACT_TYPES.MERMAID, undefined],
+    /* Office preview buckets need server-rendered HTML in `text` to render
+     * — the empty-text gate keeps the artifact off the panel until the
+     * backend's `bufferToOfficeHtml` finishes. The `textFormat: 'html'`
+     * trust flag is required for the routing to even land on the office
+     * bucket; without it, the security gate downgrades to PLAIN_TEXT
+     * (Codex P1 review). The strict empty-text gate then returns null. */
+    ['report.docx', TOOL_ARTIFACT_TYPES.DOCX, 'html' as const],
+    ['data.csv', TOOL_ARTIFACT_TYPES.SPREADSHEET, 'html' as const],
+    ['workbook.xlsx', TOOL_ARTIFACT_TYPES.SPREADSHEET, 'html' as const],
+    ['slides.pptx', TOOL_ARTIFACT_TYPES.PRESENTATION, 'html' as const],
+  ])(
+    'returns null when %s has no text (renderer needs real content)',
+    (filename, _expected, textFormat) => {
+      expect(detectArtifactTypeFromFile({ filename, type: '', text: '', textFormat })).toBeNull();
+      expect(
+        detectArtifactTypeFromFile({ filename, type: '', text: undefined, textFormat }),
+      ).toBeNull();
+    },
+  );
 
   it.each([
     ['readme.txt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
-    ['slides.pptx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
-    ['report.docx', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
     ['notes.md', TOOL_ARTIFACT_TYPES.MARKDOWN],
+    ['notes.odt', TOOL_ARTIFACT_TYPES.PLAIN_TEXT],
   ])(
-    'still routes %s through the panel without text (deferred-extraction case)',
+    'still routes %s through the panel without text (deferred-extraction case for plain-text/markdown)',
     (filename, expected) => {
       expect(detectArtifactTypeFromFile({ filename, type: '', text: '' })).toBe(expected);
       expect(detectArtifactTypeFromFile({ filename, type: '', text: undefined })).toBe(expected);
+    },
+  );
+
+  it.each([
+    [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      TOOL_ARTIFACT_TYPES.DOCX,
+    ],
+    [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      TOOL_ARTIFACT_TYPES.SPREADSHEET,
+    ],
+    ['application/vnd.ms-excel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/vnd.oasis.opendocument.spreadsheet', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['text/csv', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/csv', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    /* Legacy CSV MIME variant — backend's `CSV_MIME_PATTERN` accepts
+     * it, so the client must too or extensionless CSVs with this MIME
+     * would be skipped despite the backend producing valid HTML.
+     * Regression for Codex P3 review on PR #12934. */
+    ['text/comma-separated-values', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    /* Legacy XLS MIME aliases — backend's `excelMimeTypes` regex
+     * accepts the full set used by older browsers/servers; the client
+     * mirrors via the same regex so an extensionless XLS with any of
+     * these legacy MIMEs gets routed to the spreadsheet bucket and
+     * the artifact actually shows up on the panel. Regression for
+     * Codex P1 review on PR #12934. */
+    ['application/x-ms-excel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/x-msexcel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/msexcel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/x-excel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/x-dos_ms_excel', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/xls', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    ['application/x-xls', TOOL_ARTIFACT_TYPES.SPREADSHEET],
+    [
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      TOOL_ARTIFACT_TYPES.PRESENTATION,
+    ],
+  ])('routes office MIME %s to its preview bucket when extension is missing', (mime, expected) => {
+    /* `textFormat: 'html'` is required so the security gate (Codex P1 on
+     * PR #12934) lets routing proceed to the office HTML bucket — without
+     * it, the gate would downgrade to PLAIN_TEXT to keep RAG-extracted
+     * plain-text from being injected as HTML. */
+    expect(
+      detectArtifactTypeFromFile({
+        filename: 'noext',
+        type: mime,
+        text: '<html>x</html>',
+        textFormat: 'html',
+      }),
+    ).toBe(expected);
+  });
+
+  /* Codex P1 SECURITY: office HTML routing requires the backend's explicit
+   * `textFormat: 'html'` trust flag. Without it (e.g. RAG-uploaded `.docx`
+   * with mammoth.extractRawText plain text in `attachment.text`, or any
+   * legacy attachment from before this flag existed), routing falls back
+   * to PLAIN_TEXT so the markdown viewer escapes content rather than
+   * letting useArtifactProps inject the text as `index.html`. */
+  it('downgrades office types to PLAIN_TEXT when textFormat is missing (legacy attachments)', () => {
+    expect(
+      detectArtifactTypeFromFile({
+        filename: 'report.docx',
+        type: '',
+        text: 'Plain text mammoth extracted from a docx — must NOT render as HTML.',
+      }),
+    ).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+    expect(
+      detectArtifactTypeFromFile({
+        filename: 'data.csv',
+        type: 'text/csv',
+        text: 'col1,col2\n1,2',
+      }),
+    ).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+    expect(
+      detectArtifactTypeFromFile({
+        filename: 'slides.pptx',
+        type: '',
+        text: 'Slide 1: Intro\nSlide 2: Outro',
+      }),
+    ).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+  });
+
+  it('downgrades office types to PLAIN_TEXT when textFormat is "text" (explicit non-HTML)', () => {
+    /* The backend marks RAG/text-extraction output as `textFormat: 'text'`
+     * to make the trust contract explicit. Either no flag or 'text' both
+     * route to PLAIN_TEXT — only 'html' unlocks the office HTML bucket. */
+    expect(
+      detectArtifactTypeFromFile({
+        filename: 'report.docx',
+        type: '',
+        text: '<script>alert(1)</script>',
+        textFormat: 'text',
+      }),
+    ).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+  });
+
+  it('downgrades office types to PLAIN_TEXT when textFormat is null (DB legacy)', () => {
+    /* Mongoose returns `null` for fields the document was saved without
+     * — covers attachments persisted before the textFormat field existed. */
+    expect(
+      detectArtifactTypeFromFile({
+        filename: 'workbook.xlsx',
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        text: '<table><tr><td>1</td></tr></table>',
+        textFormat: null,
+      }),
+    ).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+  });
+
+  /* Regression: an office attachment with no `text` AND no `textFormat`
+   * must NOT downgrade to PLAIN_TEXT (which has the lenient empty-text
+   * gate and would render as a half-empty panel card). The historical
+   * contract for office types with missing extraction is "fall through
+   * to the legacy download UI"; the security gate's empty-text exception
+   * preserves that. CI regression on PR #12934 — `LogContent.test.tsx`
+   * "falls back to the legacy download branch for an office file with
+   * no extracted text" was the canary. */
+  it.each([
+    ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['data.csv', 'text/csv'],
+    ['workbook.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['slides.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ])(
+    '%s with no text and no textFormat returns null (preserves legacy download path)',
+    (filename, type) => {
+      expect(detectArtifactTypeFromFile({ filename, type, text: '' })).toBeNull();
+      expect(detectArtifactTypeFromFile({ filename, type, text: undefined })).toBeNull();
     },
   );
 
@@ -114,11 +276,13 @@ describe('detectArtifactTypeFromFile', () => {
   });
 
   it('returns null for unsupported types', () => {
-    expect(
-      detectArtifactTypeFromFile({ filename: 'output.csv', type: 'text/csv', text: 'a,b' }),
-    ).toBeNull();
+    /* PDFs have no rich preview path on the client (the artifact panel
+     * doesn't host a PDF viewer); they fall back to the download UI. */
     expect(
       detectArtifactTypeFromFile({ filename: 'doc.pdf', type: 'application/pdf', text: 'x' }),
+    ).toBeNull();
+    expect(
+      detectArtifactTypeFromFile({ filename: 'photo.jpg', type: 'image/jpeg', text: 'binary' }),
     ).toBeNull();
   });
 
@@ -177,12 +341,11 @@ describe('detectArtifactTypeFromFile', () => {
       );
     });
 
-    it('does NOT route data formats to CODE (CSV / JSON / YAML / TOML / XML)', () => {
+    it('does NOT route data formats to CODE (JSON / YAML / TOML / XML)', () => {
       /* These get dedicated viewers in follow-ups; for now they fall
-       * through to inline rendering (return null). */
-      expect(
-        detectArtifactTypeFromFile({ filename: 'data.csv', type: 'text/csv', text: 'a,b' }),
-      ).toBeNull();
+       * through to inline rendering (return null). CSV is the exception:
+       * it routes to the SPREADSHEET preview bucket — covered separately
+       * in the "classifies %s by extension" suite above. */
       expect(
         detectArtifactTypeFromFile({ filename: 'data.json', type: 'application/json', text: '{}' }),
       ).toBeNull();
@@ -397,7 +560,10 @@ describe('fileToArtifact', () => {
   });
 
   it('returns null for unsupported types so callers can fall through', () => {
-    expect(fileToArtifact({ ...baseFile, filename: 'data.csv', type: 'text/csv' })).toBeNull();
+    expect(fileToArtifact({ ...baseFile, filename: 'photo.jpg', type: 'image/jpeg' })).toBeNull();
+    expect(
+      fileToArtifact({ ...baseFile, filename: 'doc.pdf', type: 'application/pdf' }),
+    ).toBeNull();
   });
 
   /* End-to-end test for the CODE bucket. The classification path is
@@ -502,13 +668,18 @@ describe('fileToArtifact', () => {
   });
 
   it('uses the caller-provided placeholder when a deferred-extraction file has no text', () => {
-    // Backend extractor returns null for pptx (deferred). Client sees
-    // `text === null` and substitutes the localized placeholder.
+    /* Plain-text and markdown remain on the lenient empty-text gate so the
+     * artifact card can render a "preparing preview…" placeholder while
+     * extraction is in flight. (Office preview buckets — DOCX, SPREADSHEET,
+     * PRESENTATION — use the strict gate instead: their renderers need
+     * server-rendered HTML, so the artifact stays unregistered until the
+     * `text` field arrives. See the strict-gate test in the
+     * `detectArtifactTypeFromFile` suite.) */
     const artifact = fileToArtifact(
       {
         ...baseFile,
-        filename: 'slides.pptx',
-        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        filename: 'notes.txt',
+        type: 'text/plain',
         text: null as unknown as string,
       },
       { placeholder: '_Coming soon_' },
@@ -521,11 +692,113 @@ describe('fileToArtifact', () => {
   it('falls back to empty content when no placeholder is supplied and text is missing', () => {
     const artifact = fileToArtifact({
       ...baseFile,
-      filename: 'slides.pptx',
-      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      filename: 'notes.txt',
+      type: 'text/plain',
       text: undefined,
     });
+    expect(artifact).not.toBeNull();
     expect(artifact!.content).toBe('');
+  });
+
+  it('returns null for office preview buckets without text (strict gate)', () => {
+    /* `textFormat: 'html'` is required for routing to land on the office
+     * bucket in the first place; without it the security gate downgrades
+     * to PLAIN_TEXT (which has the lenient empty-text gate). The strict
+     * empty-text gate then fires and the artifact stays unregistered. */
+    expect(
+      fileToArtifact({
+        ...baseFile,
+        filename: 'slides.pptx',
+        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        text: undefined,
+        textFormat: 'html',
+      }),
+    ).toBeNull();
+    expect(
+      fileToArtifact({
+        ...baseFile,
+        filename: 'report.docx',
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        text: '',
+        textFormat: 'html',
+      }),
+    ).toBeNull();
+    expect(
+      fileToArtifact({
+        ...baseFile,
+        filename: 'data.csv',
+        type: 'text/csv',
+        text: undefined,
+        textFormat: 'html',
+      }),
+    ).toBeNull();
+  });
+
+  it('builds a SPREADSHEET artifact for csv/xlsx with backend-rendered HTML in text', () => {
+    const csv = fileToArtifact({
+      ...baseFile,
+      filename: 'data.csv',
+      type: 'text/csv',
+      text: '<!DOCTYPE html><table><tr><td>1</td></tr></table>',
+      textFormat: 'html',
+    });
+    expect(csv).not.toBeNull();
+    expect(csv!.type).toBe(TOOL_ARTIFACT_TYPES.SPREADSHEET);
+    expect(csv!.title).toBe('data.csv');
+    expect(csv!.content).toContain('<table>');
+
+    const xlsx = fileToArtifact({
+      ...baseFile,
+      filename: 'workbook.xlsx',
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      text: '<!DOCTYPE html><body>sheet</body>',
+      textFormat: 'html',
+    });
+    expect(xlsx).not.toBeNull();
+    expect(xlsx!.type).toBe(TOOL_ARTIFACT_TYPES.SPREADSHEET);
+  });
+
+  it('builds a DOCX artifact for .docx with backend-rendered HTML in text', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'report.docx',
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      text: '<!DOCTYPE html><body><p>hello</p></body>',
+      textFormat: 'html',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.DOCX);
+  });
+
+  it('builds a PRESENTATION artifact for .pptx with backend-rendered HTML in text', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'deck.pptx',
+      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      text: '<!DOCTYPE html><body><ol><li>Slide 1</li></ol></body>',
+      textFormat: 'html',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PRESENTATION);
+  });
+
+  /* Codex P1 SECURITY companion: legacy/RAG path where `textFormat` is
+   * missing — the security gate downgrades to PLAIN_TEXT, which has the
+   * lenient empty-text gate. The text round-trips into the markdown
+   * viewer as escaped content rather than being injected as HTML. */
+  it('downgrades to a PLAIN_TEXT artifact when an office file has text but no textFormat flag', () => {
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'report.docx',
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      /* This is what mammoth.extractRawText returns for a RAG upload —
+       * not sanitized HTML, just the document's flowed text. The
+       * security gate ensures it's never injected as HTML. */
+      text: 'Document body text from extractRawText. <script>alert(1)</script>',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+    expect(artifact!.content).toContain('<script>');
   });
 
   it('preserves an empty string as legitimate content (does not fall through to placeholder)', () => {
@@ -584,4 +857,34 @@ describe('fileToArtifact', () => {
     const artifact = fileToArtifact({ ...baseFile, file_id: undefined as unknown as string });
     expect(artifact!.id).toBe('tool-artifact-index.html');
   });
+});
+
+describe('isPreviewOnlyArtifact', () => {
+  /* The Artifacts panel hides the "code" tab and snaps `activeTab` to
+   * 'preview' when the current artifact is preview-only — i.e. the
+   * underlying file is binary and the generated HTML blob isn't a
+   * useful "code" view. Regression for review finding #6 on PR #12934.
+   * Without this test, removing a type from the predicate (or adding a
+   * non-office type) would silently leave users seeing the raw HTML
+   * blob in the code tab. */
+  it.each([
+    [TOOL_ARTIFACT_TYPES.DOCX, true],
+    [TOOL_ARTIFACT_TYPES.SPREADSHEET, true],
+    [TOOL_ARTIFACT_TYPES.PRESENTATION, true],
+    [TOOL_ARTIFACT_TYPES.HTML, false],
+    [TOOL_ARTIFACT_TYPES.REACT, false],
+    [TOOL_ARTIFACT_TYPES.MARKDOWN, false],
+    [TOOL_ARTIFACT_TYPES.MERMAID, false],
+    [TOOL_ARTIFACT_TYPES.CODE, false],
+    [TOOL_ARTIFACT_TYPES.PLAIN_TEXT, false],
+  ])('type %s returns %s', (type, expected) => {
+    expect(isPreviewOnlyArtifact(type)).toBe(expected);
+  });
+
+  it.each([[null], [undefined], [''], ['application/pdf'], ['text/plain'], ['some/random-type']])(
+    'returns false for non-artifact type %s',
+    (type) => {
+      expect(isPreviewOnlyArtifact(type)).toBe(false);
+    },
+  );
 });

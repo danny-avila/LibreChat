@@ -183,14 +183,39 @@ describe('Attachment routing for tool artifacts', () => {
     expect(screen.queryByText('com_ui_artifact_click')).not.toBeInTheDocument();
   });
 
-  it('falls through to the inline <pre> for unsupported text types (CSV)', () => {
-    const csv = baseAttachment({
-      filename: 'data.csv',
-      text: 'a,b,c\n1,2,3',
+  it('falls through to the inline <pre> for unsupported text types (JSON)', () => {
+    /* CSV used to fall through here, but now routes to the SPREADSHEET
+     * preview bucket. JSON is still inline-only (no dedicated viewer
+     * yet); use it as the canonical "unrouted text" example. */
+    const json = baseAttachment({
+      filename: 'data.json',
+      type: 'application/json',
+      text: '{"a":1,"b":2}',
     } as Partial<TAttachment>);
-    const { container } = renderWith(<Attachment attachment={csv} />);
+    const { container } = renderWith(<Attachment attachment={json} />);
     expect(container.querySelector('pre')).not.toBeNull();
     expect(screen.queryByTestId('mermaid-render')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['data.csv', 'text/csv'],
+    ['workbook.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['deck.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ])('routes %s through the office preview panel (panel artifact)', (filename, type) => {
+    const att = baseAttachment({
+      file_id: `office-${filename}`,
+      filename,
+      type,
+      text: '<!DOCTYPE html><body><table><tr><td>x</td></tr></table></body>',
+    } as Partial<TAttachment>);
+    renderWith(<Attachment attachment={att} />);
+    expect(screen.getByText(filename)).toBeInTheDocument();
+    /* Auto-pressed open button (streaming + non-CODE bucket) — same UX as
+     * the HTML panel artifact above. */
+    expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
+    const downloadPattern = new RegExp(`com_ui_download.*${filename.replace('.', '\\.')}`, 'i');
+    expect(screen.getByRole('button', { name: downloadPattern })).toBeInTheDocument();
   });
 });
 
@@ -645,8 +670,9 @@ describe('AttachmentGroup routing', () => {
       } as Partial<TAttachment>),
       baseAttachment({
         file_id: 'c',
-        filename: 'data.csv',
-        text: 'a,b,c\n1,2,3',
+        filename: 'data.json',
+        type: 'application/json',
+        text: '{"a":1}',
       } as Partial<TAttachment>),
       baseAttachment({
         file_id: 'd',
@@ -661,7 +687,7 @@ describe('AttachmentGroup routing', () => {
     expect(screen.getByText('index.html')).toBeInTheDocument();
     // Mermaid render
     expect(screen.getByTestId('mermaid-render')).toBeInTheDocument();
-    // Inline text fallback for CSV
+    // Inline text fallback for JSON (CSV now goes to SPREADSHEET)
     expect(container.querySelector('pre')).not.toBeNull();
     // FileContainer for the plain zip (and potentially others)
     expect(screen.getAllByTestId('file-container').length).toBeGreaterThan(0);

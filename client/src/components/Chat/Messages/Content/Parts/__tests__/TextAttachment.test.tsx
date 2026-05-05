@@ -56,10 +56,15 @@ jest.mock('~/utils', () => ({
 const textAttachment = (overrides: Partial<TAttachment> = {}): TAttachment =>
   ({
     file_id: 'file-1',
-    filename: 'output.csv',
-    filepath: '/files/output.csv',
-    type: 'text/csv',
-    text: 'a,b,c\n1,2,3',
+    /* JSON stays on the inline `<pre>` rendering path. CSV used to live
+     * here too but now routes through the SPREADSHEET artifact panel
+     * (Recoil-bound), so a CSV fixture would force every test in this
+     * file to add a `RecoilRoot` wrapper. JSON has the same shape (text-
+     * bearing, downloadable, expandable) without the panel coupling. */
+    filename: 'output.json',
+    filepath: '/files/output.json',
+    type: 'application/json',
+    text: '{"a":1,"b":2,"c":3}',
     ...overrides,
   }) as TAttachment;
 
@@ -102,7 +107,7 @@ describe('TextAttachment (via Attachment default export)', () => {
     const { container } = render(<Attachment attachment={textAttachment()} />);
     const pre = container.querySelector('pre');
     expect(pre).not.toBeNull();
-    expect(pre!.textContent).toBe('a,b,c\n1,2,3');
+    expect(pre!.textContent).toBe('{"a":1,"b":2,"c":3}');
   });
 
   it('renders a download chip when filepath is present', () => {
@@ -163,10 +168,11 @@ describe('AttachmentGroup', () => {
   });
 
   it('routes text-bearing attachments through the text rendering path', () => {
-    // `.csv` is text-bearing but not artifact-eligible (CSV gets a
-    // dedicated viewer in a follow-up), so it falls through to the
-    // inline <pre> renderer rather than the side panel card.
-    const attachments = [textAttachment({ file_id: 'a', filename: 'a.csv' })] as TAttachment[];
+    /* `.json` is text-bearing but not artifact-eligible (JSON has no
+     * dedicated viewer yet), so it falls through to the inline <pre>
+     * renderer rather than the side panel card. CSV used to live here
+     * too but now routes through the SPREADSHEET artifact panel. */
+    const attachments = [textAttachment({ file_id: 'a', filename: 'a.json' })] as TAttachment[];
     const { container } = render(<AttachmentGroup attachments={attachments} />);
     expect(container.querySelector('pre')).not.toBeNull();
   });

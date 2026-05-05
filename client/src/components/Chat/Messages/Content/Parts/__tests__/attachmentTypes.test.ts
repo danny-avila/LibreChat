@@ -133,9 +133,13 @@ describe('artifactTypeForAttachment', () => {
   });
 
   it('returns null for unsupported extensions', () => {
+    /* CSV / DOCX / XLSX / PPTX now route through the office preview
+     * buckets (rich HTML preview); use a binary type with no preview
+     * pipeline instead. */
     const attachment = baseAttachment({
-      filename: 'data.csv',
-      text: 'a,b,c',
+      filename: 'photo.jpg',
+      type: 'image/jpeg',
+      text: undefined,
     } as Partial<TAttachment>);
     expect(artifactTypeForAttachment(attachment)).toBeNull();
   });

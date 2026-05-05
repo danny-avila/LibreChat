@@ -105,6 +105,7 @@
     "passport-local": "^1.0.0",
     "pdfjs-dist": "^5.4.624",
     "rate-limit-redis": "^4.2.0",
+    "sanitize-html": "^2.13.0",
     "sharp": "^0.33.5",
     "traverse": "^0.6.7",
     "ua-parser-js": "^1.0.36",
@@ -116,6 +117,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/sanitize-html": "^2.13.0",
     "jest": "^30.2.0",
     "mongodb-memory-server": "^11.0.1",
     "nodemon": "^3.0.3",
