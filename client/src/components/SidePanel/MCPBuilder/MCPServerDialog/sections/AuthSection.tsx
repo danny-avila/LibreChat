@@ -160,9 +160,11 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
                   </>
                 )}
               </Label>
-              <Input
+              <SecretInput
                 id="oauth_client_id"
-                autoComplete="off"
+                autoComplete="new-password"
+                data-lpignore="true"
+                data-1p-ignore="true"
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
                 aria-invalid={errors.auth?.oauth_client_id ? 'true' : 'false'}
                 aria-describedby={

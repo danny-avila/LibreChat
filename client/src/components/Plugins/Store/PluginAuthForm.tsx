@@ -1,6 +1,6 @@
 import { Save } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { HoverCard, HoverCardTrigger } from '@librechat/client';
+import { HoverCard, HoverCardTrigger, SecretInput } from '@librechat/client';
 import { TPlugin, TPluginAuthConfig, TPluginAction } from 'librechat-data-provider';
 import PluginTooltip from './PluginTooltip';
 import { useLocalize } from '~/hooks';
@@ -50,9 +50,10 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                 </label>
                 <HoverCard openDelay={300}>
                   <HoverCardTrigger className="grid w-full items-center gap-2">
-                    <input
-                      type="text"
-                      autoComplete="off"
+                    <SecretInput
+                      autoComplete="new-password"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
                       id={authField}
                       aria-invalid={!!errors[authField]}
                       aria-describedby={`${authField}-error`}

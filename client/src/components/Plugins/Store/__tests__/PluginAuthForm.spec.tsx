@@ -23,8 +23,8 @@ describe('PluginAuthForm', () => {
     //@ts-ignore - dont need all props of plugin
     render(<PluginAuthForm plugin={plugin} onSubmit={onSubmit} />);
 
-    expect(screen.getByLabelText('Key')).toBeInTheDocument();
-    expect(screen.getByLabelText('Secret')).toBeInTheDocument();
+    expect(screen.getByLabelText('Key')).toHaveAttribute('type', 'password');
+    expect(screen.getByLabelText('Secret')).toHaveAttribute('type', 'password');
   });
 
   it('calls the onSubmit function with the form data when submitted', async () => {
