@@ -131,7 +131,15 @@ export const useFilePreview = (
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
-      refetchOnMount: false,
+      /* Note: `refetchOnMount` left at the React Query default (`true`)
+       * so a freshly-mounted observer with stale cached data refetches.
+       * Cross-turn filename reuse keeps the same `file_id`; the cache
+       * may hold a prior turn's `'ready'` payload. `useAttachmentHandler`
+       * removes the entry on every new attachment for safety, but this
+       * default is the second line of defense — without it, an observer
+       * that mounts before the handler runs would read the stale cache
+       * and `refetchInterval` would never start polling. (Codex P1
+       * round-3 review on PR #12957.) */
       retry: false,
       /* Function form: poll only while the server says 'pending'.
        * Returning `false` disables the interval, so a single 'ready'

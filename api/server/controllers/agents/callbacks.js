@@ -398,6 +398,29 @@ function writeAttachment(res, streamId, attachment) {
 }
 
 /**
+ * Predicate: is it safe to push an SSE write to the caller right now?
+ *
+ * In `streamId` (resumable) mode, writes go to the job emitter and the
+ * `res` state is irrelevant — always writable.
+ *
+ * In standard mode, the caller's `res` must have headers sent (the
+ * stream has been opened) and not yet be `writableEnded` (the response
+ * hasn't closed). Writing to a closed stream raises
+ * `ERR_STREAM_WRITE_AFTER_END`.
+ *
+ * Used by deferred preview emits in both `createToolEndCallback`
+ * (chat-completions) and `createResponsesToolEndCallback` (Open
+ * Responses) so the gate logic stays in one place. (Comprehensive
+ * review #3 on PR #12957.)
+ */
+function isStreamWritable(res, streamId) {
+  if (streamId) {
+    return true;
+  }
+  return !!res && res.headersSent && !res.writableEnded;
+}
+
+/**
  * Emit an update for an attachment that was previously sent with
  * `status: 'pending'`. Fire-and-forget: if the response stream has
  * already closed (the agent finished generating before the deferred
@@ -417,7 +440,7 @@ function writeAttachment(res, streamId, attachment) {
  * @param {Object} attachment - Updated attachment payload (must carry `file_id`).
  */
 function writeAttachmentUpdate(res, streamId, attachment) {
-  if (!streamId && (!res || res.writableEnded || !res.headersSent)) {
+  if (!isStreamWritable(res, streamId)) {
     return;
   }
   writeAttachment(res, streamId, attachment);
@@ -876,7 +899,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
 
           /* Initial emit (Open Responses extension format). The agent's
            * response no longer blocks on extraction. */
-          if (res.headersSent && !res.writableEnded) {
+          if (isStreamWritable(res, null)) {
             writeResponsesAttachment(
               res,
               tracker,
@@ -895,7 +918,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
             fileId: fileMetadata.file_id,
             previewRevision: result?.previewRevision,
             onResolved: (updated) => {
-              if (!res || res.writableEnded || !res.headersSent) {
+              if (!isStreamWritable(res, null)) {
                 return;
               }
               writeResponsesAttachment(

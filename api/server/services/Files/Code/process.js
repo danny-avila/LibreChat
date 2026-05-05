@@ -112,9 +112,16 @@ const PREVIEW_FINALIZE_TIMEOUT_MS = 60_000;
  * @param {string} params.mimeType - Detected/inferred MIME.
  * @param {string} params.category - Classifier output.
  * @param {string} params.file_id - The DB record key for the update.
+ * @param {string} [params.previewRevision] - Generation marker stamped
+ *   by the immediate persist step. The DB commit is conditional on
+ *   this — if a newer emit (cross-turn filename reuse) has rotated
+ *   the revision before this render finishes, `updateFile` returns
+ *   null and the stale render is silently discarded rather than
+ *   overwriting the newer record.
  * @returns {Promise<MongoFile | null>} The post-update record on
  *   success; `null` if the DB update itself failed (extraction failure
- *   is reflected as `status: 'failed'`, not a thrown error).
+ *   is reflected as `status: 'failed'`, not a thrown error) or if the
+ *   `previewRevision` guard rejected the write.
  */
 const finalizePreview = async ({
   buffer,

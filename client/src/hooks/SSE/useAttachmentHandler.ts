@@ -15,6 +15,7 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
 
   return ({ data }: { data: TAttachment; submission: EventSubmission }) => {
     const { messageId } = data;
+    const fileId = (data as Partial<TFile>).file_id;
 
     const fileData = data as TFile;
     if (
@@ -53,13 +54,17 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
      * If a prior turn left `[QueryKeys.filePreview, file_id]` cached at
      * `status: 'ready'`, a new pending attachment would mount against
      * that stale cache and `useFilePreview`'s `refetchInterval` (which
-     * only polls on `pending`) would never start. Invalidate the
-     * preview query whenever a new attachment arrives — the resolved
-     * fields the SSE event carries are themselves authoritative for the
-     * upsert below, and the next `useFilePreview` mount will refetch
-     * fresh state. (Codex P1 review on PR #12957.) */
-    if (queryClient && (data as Partial<TFile>).file_id) {
-      queryClient.invalidateQueries([QueryKeys.filePreview, (data as Partial<TFile>).file_id]);
+     * only polls on `pending`) would never start. Drop the cache entry
+     * entirely so a fresh mount has nothing to read and must fetch.
+     *
+     * `removeQueries` (vs the earlier `invalidateQueries`) is the
+     * stronger fix: invalidate only marks data stale, but
+     * `refetchOnMount: false` was masking that — the new observer
+     * read the stale 'ready' value and `refetchInterval` shut polling
+     * off before it ever started. (Codex P1 round-3 review on
+     * PR #12957.) */
+    if (queryClient && fileId) {
+      queryClient.removeQueries([QueryKeys.filePreview, fileId]);
     }
 
     setAttachmentsMap((prevMap) => {
@@ -74,7 +79,6 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
        * stuck pending and once resolved. Attachments without a
        * `file_id` (lightweight types like web_search / file_search
        * citations) keep the legacy append behavior. */
-      const fileId = (data as Partial<TFile>).file_id;
       if (fileId) {
         const existingIndex = messageAttachments.findIndex(
           (a) => (a as Partial<TFile>).file_id === fileId,

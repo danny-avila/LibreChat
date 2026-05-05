@@ -49,11 +49,11 @@ function makeAttachment(overrides: Partial<TAttachment>): TAttachment {
  * callers read it after their `act()` to assert.
  *
  * Also exposes the underlying `queryClient` so tests can spy on
- * `invalidateQueries` for the deferred-preview cache-staleness fix
- * (Codex P1 review on PR #12957). */
+ * `removeQueries` for the deferred-preview cache-staleness fix
+ * (Codex P1 review on PR #12957; round 3 swapped invalidate→remove). */
 function setup() {
   const queryClient = new QueryClient();
-  const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+  const removeSpy = jest.spyOn(queryClient, 'removeQueries');
   const ref: { current: Record<string, TAttachment[] | undefined> } = { current: {} };
   const { result } = renderHook(
     () => {
@@ -69,7 +69,7 @@ function setup() {
     get list(): TAttachment[] {
       return ref.current[messageId] ?? [];
     },
-    invalidateSpy,
+    removeSpy,
   };
 }
 
@@ -154,35 +154,42 @@ describe('useAttachmentHandler upsert-by-file_id', () => {
     });
   });
 
-  describe('filePreview cache invalidation (cross-turn filename reuse)', () => {
+  describe('filePreview cache eviction (cross-turn filename reuse)', () => {
     /* Cross-turn filename reuse keeps the same `file_id`. If a prior
      * turn left `[QueryKeys.filePreview, file_id]` cached at
      * `status: 'ready'`, a new pending attachment would mount against
      * stale cache and `useFilePreview`'s polling (gated on `pending`)
-     * would never start. The handler invalidates the preview query
-     * whenever a new attachment with a `file_id` arrives. (Codex P1
-     * review on PR #12957.) */
+     * would never start.
+     *
+     * The handler uses `removeQueries` (not `invalidateQueries`) for
+     * this — invalidate alone only marks data stale, and the hook's
+     * default `refetchOnMount` semantics combined with the
+     * polling-gate-on-pending shape meant the new observer would still
+     * read the stale 'ready' cache and never trigger a fetch. Removing
+     * the entry forces a fresh server hit on next mount. (Codex P1
+     * round-3 review on PR #12957.) */
 
-    it('invalidates [QueryKeys.filePreview, file_id] when an attachment with a file_id arrives', () => {
+    it('removes [QueryKeys.filePreview, file_id] when an attachment with a file_id arrives', () => {
       const ctx = setup();
       ctx.handle(makeAttachment({ status: 'pending' }));
-      expect(ctx.invalidateSpy).toHaveBeenCalledWith(['filePreview', 'fid-1']);
+      expect(ctx.removeSpy).toHaveBeenCalledWith(['filePreview', 'fid-1']);
     });
 
-    it('invalidates the same query key for the deferred preview update event too', () => {
-      /* Both the initial emit and the preview update should invalidate
-       * — the second event is itself the authoritative new state, but
-       * invalidating again is harmless and keeps the gate uniform. */
+    it('removes the same query key for the deferred preview update event too', () => {
+      /* Both the initial emit and the preview update should evict —
+       * the second event is itself the authoritative new state, but
+       * the upsert below races with the React Query cache and we want
+       * the next mount to start clean. */
       const ctx = setup();
       ctx.handle(makeAttachment({ status: 'pending' }));
       ctx.handle(makeAttachment({ status: 'ready', text: '<table></table>', textFormat: 'html' }));
-      const previewInvalidations = ctx.invalidateSpy.mock.calls.filter(
+      const previewEvictions = ctx.removeSpy.mock.calls.filter(
         (c) => Array.isArray(c[0]) && c[0][0] === 'filePreview' && c[0][1] === 'fid-1',
       );
-      expect(previewInvalidations.length).toBe(2);
+      expect(previewEvictions.length).toBe(2);
     });
 
-    it('does not invalidate when the attachment carries no file_id', () => {
+    it('does not evict when the attachment carries no file_id', () => {
       const ctx = setup();
       const noFileId = {
         messageId,
@@ -190,10 +197,41 @@ describe('useAttachmentHandler upsert-by-file_id', () => {
         type: Tools.web_search,
       } as unknown as TAttachment;
       ctx.handle(noFileId);
-      const previewInvalidations = ctx.invalidateSpy.mock.calls.filter(
+      const previewEvictions = ctx.removeSpy.mock.calls.filter(
         (c) => Array.isArray(c[0]) && c[0][0] === 'filePreview',
       );
-      expect(previewInvalidations).toHaveLength(0);
+      expect(previewEvictions).toHaveLength(0);
+    });
+
+    it('does NOT use invalidateQueries (would leave stale cache readable per round-3 review)', () => {
+      /* Lock in the choice of `removeQueries` over `invalidateQueries`.
+       * Invalidate marks data stale but does not remove it; an
+       * observer reading a stale cache still gets the value back and
+       * the polling `refetchInterval` evaluates against stale 'ready'
+       * → returns false → polling never starts. removeQueries forces
+       * a refetch on next mount. */
+      const queryClient = new QueryClient();
+      const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+      const removeSpy = jest.spyOn(queryClient, 'removeQueries');
+      const ref: { current: Record<string, TAttachment[] | undefined> } = { current: {} };
+      const { result } = renderHook(
+        () => {
+          const handler = useAttachmentHandler(queryClient);
+          const map = useRecoilValue(store.messageAttachmentsMap);
+          ref.current = map;
+          return handler;
+        },
+        { wrapper },
+      );
+      act(() => result.current({ data: makeAttachment({ status: 'pending' }), submission }));
+      const usedRemove = removeSpy.mock.calls.some(
+        (c) => Array.isArray(c[0]) && c[0][0] === 'filePreview',
+      );
+      const usedInvalidate = invalidateSpy.mock.calls.some(
+        (c) => Array.isArray(c[0]) && c[0][0] === 'filePreview',
+      );
+      expect(usedRemove).toBe(true);
+      expect(usedInvalidate).toBe(false);
     });
   });
 });
