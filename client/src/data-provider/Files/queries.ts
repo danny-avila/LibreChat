@@ -106,15 +106,45 @@ export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => 
   );
 };
 
-/** Stop on terminal success or after 5 consecutive errors. */
+/* Stop on terminal success or after 5 consecutive errors. The cap is
+ * tracked in a module-level Map keyed by file_id because React Query
+ * v4 resets `state.fetchFailureCount` to 0 on every fetch dispatch
+ * (the `'fetch'` action in the reducer), so it can't be used to count
+ * errors *across* polls. */
 export const PREVIEW_MAX_CONSECUTIVE_ERRORS = 5;
+const consecutivePreviewErrors = new Map<string, number>();
+
+export const fetchFilePreview = async (fileId: string): Promise<t.TFilePreview> => {
+  try {
+    const data = await dataService.getFilePreview(fileId);
+    consecutivePreviewErrors.delete(fileId);
+    return data;
+  } catch (err) {
+    consecutivePreviewErrors.set(fileId, (consecutivePreviewErrors.get(fileId) ?? 0) + 1);
+    throw err;
+  }
+};
+
 export const previewRefetchInterval = (
   data: t.TFilePreview | undefined,
-  query: { state: { fetchFailureCount: number } },
+  query: { queryKey: readonly unknown[] },
 ): number | false => {
-  if (data?.status === 'ready' || data?.status === 'failed') return false;
-  if (query.state.fetchFailureCount >= PREVIEW_MAX_CONSECUTIVE_ERRORS) return false;
+  const fileId = String(query.queryKey[1] ?? '');
+  if (data?.status === 'ready' || data?.status === 'failed') {
+    consecutivePreviewErrors.delete(fileId);
+    return false;
+  }
+  if ((consecutivePreviewErrors.get(fileId) ?? 0) >= PREVIEW_MAX_CONSECUTIVE_ERRORS) {
+    consecutivePreviewErrors.delete(fileId);
+    return false;
+  }
   return 2500;
+};
+
+/** Test-only: clear the consecutive-error counter. */
+export const _resetPreviewErrorCounter = (fileId?: string): void => {
+  if (fileId) consecutivePreviewErrors.delete(fileId);
+  else consecutivePreviewErrors.clear();
 };
 
 /**
@@ -135,7 +165,7 @@ export const useFilePreview = (
 ): QueryObserverResult<t.TFilePreview, unknown> => {
   return useQuery<t.TFilePreview, unknown, t.TFilePreview>(
     [QueryKeys.filePreview, file_id],
-    () => dataService.getFilePreview(file_id ?? ''),
+    () => fetchFilePreview(file_id ?? ''),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
