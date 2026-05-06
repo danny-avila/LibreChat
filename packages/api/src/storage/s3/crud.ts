@@ -22,6 +22,7 @@ import type {
   UrlBuilder,
   S3FileRef,
 } from '~/storage/types';
+import { buildContentDisposition } from '~/utils/files';
 import { initializeS3 } from '~/cdn/s3';
 import { deleteRagFile } from '~/files';
 import { s3Config } from './s3Config';
@@ -54,7 +55,7 @@ export async function getS3URL({
 
   if (customFilename) {
     const safeFilename = customFilename.replace(/["\r\n]/g, '');
-    params.ResponseContentDisposition = `attachment; filename="${safeFilename}"`;
+    params.ResponseContentDisposition = buildContentDisposition(safeFilename);
   }
   if (contentType) {
     params.ResponseContentType = contentType;

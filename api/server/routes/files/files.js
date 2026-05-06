@@ -3,6 +3,7 @@ const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   refreshS3FileUrls,
+  buildContentDisposition,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
 } = require('@librechat/api');
@@ -398,7 +399,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
     const setHeaders = () => {
       const cleanedFilename = cleanFileName(file.filename);
-      res.setHeader('Content-Disposition', `attachment; filename="${cleanedFilename}"`);
+      res.setHeader('Content-Disposition', buildContentDisposition(cleanedFilename));
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('X-File-Metadata', JSON.stringify(file));
     };

@@ -3,6 +3,8 @@ import crypto from 'node:crypto';
 import { createReadStream } from 'fs';
 import { readFile, stat } from 'fs/promises';
 
+const UNSAFE_FILENAME_CHARS = /[^\p{L}\p{N}.\-_]/gu;
+
 const USER_FACING_UPLOAD_ERRORS = [
   'Invalid file format',
   'exceeds token limit',
@@ -36,23 +38,14 @@ export function resolveUploadErrorMessage(
   return defaultMessage;
 }
 
-/**
- * Sanitize a filename by removing any directory components, replacing non-alphanumeric characters
- * @param inputName
- */
 export function sanitizeFilename(inputName: string): string {
-  // Remove any directory components
-  let name = path.basename(inputName);
+  let name = path.basename(inputName).normalize('NFC');
+  name = name.replace(UNSAFE_FILENAME_CHARS, '_');
 
-  // Replace any non-alphanumeric characters except for '.' and '-'
-  name = name.replace(/[^a-zA-Z0-9.-]/g, '_');
-
-  // Ensure the name doesn't start with a dot (hidden file in Unix-like systems)
   if (name.startsWith('.') || name === '') {
     name = '_' + name;
   }
 
-  // Limit the length of the filename
   const MAX_LENGTH = 255;
   if (name.length > MAX_LENGTH) {
     const ext = path.extname(name);
@@ -213,6 +206,7 @@ function embedDisambiguatorInLeaf(segment: string, hashSource: string): string {
  */
 export function sanitizeArtifactPath(inputName: string): string {
   if (!inputName) return '_';
+  inputName = inputName.normalize('NFC');
   if (path.isAbsolute(inputName)) return sanitizeFilename(inputName);
   const normalized = path.posix.normalize(inputName);
   if (
@@ -226,7 +220,7 @@ export function sanitizeArtifactPath(inputName: string): string {
   }
   const segments = normalized
     .split('/')
-    .map((seg) => seg.replace(/[^a-zA-Z0-9.-]/g, '_'))
+    .map((seg) => seg.replace(UNSAFE_FILENAME_CHARS, '_'))
     .filter((seg) => seg.length > 0 && seg !== '.');
   if (segments.length === 0) return '_';
   const leafIdx = segments.length - 1;
@@ -339,6 +333,20 @@ export function flattenArtifactPath(safePath: string, maxLength?: number): strin
 /**
  * Options for reading files
  */
+export function buildContentDisposition(
+  filename: string,
+  disposition: 'attachment' | 'inline' = 'attachment',
+): string {
+  const asciiName = filename.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+  const needsUtf8 = asciiName !== filename;
+  const base = `${disposition}; filename="${asciiName}"`;
+  if (!needsUtf8) {
+    return base;
+  }
+  const encoded = encodeURIComponent(filename).replace(/'/g, '%27');
+  return `${base}; filename*=UTF-8''${encoded}`;
+}
+
 export interface ReadFileOptions {
   encoding?: BufferEncoding;
   /** Size threshold in bytes. Files larger than this will be streamed. Default: 10MB */

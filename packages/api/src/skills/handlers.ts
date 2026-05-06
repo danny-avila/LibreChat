@@ -32,6 +32,7 @@ import type {
   TSkillFileContentResponse,
 } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types/http';
+import { buildContentDisposition } from '~/utils/files';
 import { isBinaryBuffer } from './binary';
 
 /** Thin error shape the skill methods throw on validation failure. */
@@ -645,7 +646,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader(
           'Content-Disposition',
-          `${isImageMime ? 'inline' : 'attachment'}; filename="${safeName}"`,
+          buildContentDisposition(safeName, isImageMime ? 'inline' : 'attachment'),
         );
         const stream = await strategy.getDownloadStream(req, file.filepath);
         stream.on('error', (err: Error) => {

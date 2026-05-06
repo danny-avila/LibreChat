@@ -127,6 +127,22 @@ describe('Multer Configuration', () => {
         storage.getFilename(mockReq, unsafeFile, cb);
       });
 
+      it('should preserve Unicode characters in filenames', (done) => {
+        const unicodeFile = {
+          ...mockFile,
+          originalname: encodeURIComponent('日本語レポート.jpg'),
+        };
+
+        const cb = jest.fn((err, filename) => {
+          expect(err).toBeNull();
+          expect(filename).toContain('日本語レポート');
+          expect(filename).toContain('.jpg');
+          done();
+        });
+
+        storage.getFilename(mockReq, unicodeFile, cb);
+      });
+
       it('should handle very long filenames with actual crypto', (done) => {
         const longFile = {
           ...mockFile,

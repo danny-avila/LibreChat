@@ -2,6 +2,7 @@ import {
   sanitizeFilename,
   sanitizeArtifactPath,
   flattenArtifactPath,
+  buildContentDisposition,
   resolveUploadErrorMessage,
 } from './files';
 
@@ -63,6 +64,42 @@ describe('sanitizeFilename', () => {
 
   test('handles input with only special characters', () => {
     expect(sanitizeFilename('@#$%^&*')).toBe('_______');
+  });
+
+  test('preserves CJK characters', () => {
+    expect(sanitizeFilename('测试文件.pdf')).toBe('测试文件.pdf');
+  });
+
+  test('preserves Cyrillic characters', () => {
+    expect(sanitizeFilename('файл.txt')).toBe('файл.txt');
+  });
+
+  test('preserves accented Latin characters', () => {
+    expect(sanitizeFilename('résumé.pdf')).toBe('résumé.pdf');
+  });
+
+  test('preserves Arabic characters', () => {
+    expect(sanitizeFilename('ملف.txt')).toBe('ملف.txt');
+  });
+
+  test('preserves Japanese characters', () => {
+    expect(sanitizeFilename('テスト.txt')).toBe('テスト.txt');
+  });
+
+  test('preserves Korean characters', () => {
+    expect(sanitizeFilename('테스트.txt')).toBe('테스트.txt');
+  });
+
+  test('preserves underscores', () => {
+    expect(sanitizeFilename('my_file_name.txt')).toBe('my_file_name.txt');
+  });
+
+  test('NFC-normalizes decomposed characters', () => {
+    expect(sanitizeFilename('résumé.pdf')).toBe('résumé.pdf');
+  });
+
+  test('strips shell-dangerous characters from Unicode filenames', () => {
+    expect(sanitizeFilename('测试;rm -rf.txt')).toBe('测试_rm_-rf.txt');
   });
 });
 
@@ -320,6 +357,16 @@ describe('sanitizeArtifactPath', () => {
     });
   });
 
+  test('preserves Unicode characters in nested path segments', () => {
+    expect(sanitizeArtifactPath('测试/文件.txt')).toBe('测试/文件.txt');
+  });
+
+  test('NFC-normalizes Unicode path input', () => {
+    const raw = 'données/résultat.csv';
+    const result = sanitizeArtifactPath(raw);
+    expect(result).toContain('é');
+  });
+
   test('preserves the dotfile underscore prefix when the leaf also needs truncation', () => {
     /* A long hidden-file leaf (`._very_long_name`) goes through the
      * underscore-prefix branch first; truncation must run AFTER that
@@ -484,6 +531,49 @@ describe('resolveUploadErrorMessage', () => {
     expect(resolveUploadErrorMessage({ message: 'file_ids limit' }, 'Upload failed')).toBe(
       'Upload failed: file_ids limit',
     );
+  });
+});
+
+describe('buildContentDisposition', () => {
+  test('returns simple header for ASCII-only names', () => {
+    expect(buildContentDisposition('report.pdf')).toBe('attachment; filename="report.pdf"');
+  });
+
+  test('defaults to attachment disposition', () => {
+    expect(buildContentDisposition('file.txt')).toContain('attachment;');
+  });
+
+  test('supports inline disposition', () => {
+    expect(buildContentDisposition('image.png', 'inline')).toContain('inline;');
+  });
+
+  test('adds filename* parameter for non-ASCII names', () => {
+    const result = buildContentDisposition('测试.pdf');
+    expect(result).toContain('filename="');
+    expect(result).toContain("filename*=UTF-8''");
+    expect(result).toContain(encodeURIComponent('测试'));
+  });
+
+  test('ASCII fallback replaces non-ASCII characters', () => {
+    const result = buildContentDisposition('测试.pdf');
+    const asciiMatch = result.match(/filename="([^"]*)"/);
+    expect(asciiMatch).toBeTruthy();
+    expect(/^[\x20-\x7E]+$/.test(asciiMatch![1])).toBe(true);
+  });
+
+  test('skips filename* for pure ASCII names', () => {
+    expect(buildContentDisposition('simple.txt')).not.toContain('filename*=');
+  });
+
+  test('handles Cyrillic filenames', () => {
+    const result = buildContentDisposition('файл.txt');
+    expect(result).toContain("filename*=UTF-8''");
+  });
+
+  test('handles mixed ASCII and Unicode', () => {
+    const result = buildContentDisposition('report_2024_测试.pdf');
+    expect(result).toContain("filename*=UTF-8''");
+    expect(result).toContain('filename="report_2024___.pdf"');
   });
 });
 
