@@ -62,6 +62,7 @@ jest.mock('~/server/services/Files', () => ({
 
 jest.mock('~/server/utils/files', () => ({
   cleanFileName: (name) => name,
+  getContentDisposition: (name) => `attachment; filename="${name}"`,
 }));
 
 jest.mock('~/cache', () => ({

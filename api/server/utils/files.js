@@ -87,4 +87,9 @@ const getContentDisposition = (fileName, disposition = 'attachment') => {
   return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`;
 };
 
-module.exports = { determineFileType, getBufferMetadata, cleanFileName, getContentDisposition };
+module.exports = {
+  determineFileType,
+  getBufferMetadata,
+  cleanFileName,
+  getContentDisposition,
+};
