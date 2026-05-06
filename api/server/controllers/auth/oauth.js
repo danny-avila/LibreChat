@@ -73,7 +73,7 @@ function createOAuthHandler(redirectUri = domains.client) {
           tenantId: req.user.tenantId,
         });
       } else {
-        await setAuthTokens(req.user._id, res);
+        await setAuthTokens(req.user._id, res, null, req);
       }
       res.redirect(redirectUri);
     } catch (err) {

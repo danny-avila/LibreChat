@@ -14,6 +14,7 @@ const REQUIRED_CF_COOKIES = [
   'CloudFront-Key-Pair-Id',
 ] as const;
 
+export const CLOUDFRONT_SCOPE_COOKIE = 'LibreChat-CloudFront-Scope';
 const unsafePolicySegmentPattern = /[?*[\]\s]/;
 
 export interface CloudFrontCookieScope {
@@ -62,6 +63,53 @@ function getPolicyScopes(
   ];
 }
 
+function getScopeCookiePaths(scope: CloudFrontCookieScope): string[] {
+  if (!scope.userId) {
+    return [];
+  }
+
+  const safeUserId = assertPolicyPathSegment('userId', scope.userId);
+  if (scope.tenantId) {
+    const safeTenantId = assertPolicyPathSegment('tenantId', scope.tenantId);
+    return [`/t/${safeTenantId}/images/${safeUserId}`, `/t/${safeTenantId}/avatars`];
+  }
+
+  return [`/images/${safeUserId}`, '/avatars'];
+}
+
+function encodeCloudFrontCookieScope(scope: CloudFrontCookieScope): string {
+  const payload = {
+    userId: scope.userId ?? null,
+    tenantId: scope.tenantId ?? null,
+  };
+  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+}
+
+export function parseCloudFrontCookieScope(
+  value: string | null | undefined,
+): CloudFrontCookieScope | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as {
+      userId?: unknown;
+      tenantId?: unknown;
+    };
+    const scope: CloudFrontCookieScope = {};
+    if (typeof parsed.userId === 'string') {
+      scope.userId = assertPolicyPathSegment('userId', parsed.userId);
+    }
+    if (typeof parsed.tenantId === 'string') {
+      scope.tenantId = assertPolicyPathSegment('tenantId', parsed.tenantId);
+    }
+    return scope.userId ? scope : null;
+  } catch {
+    return null;
+  }
+}
+
 function clearCookiePaths(
   res: Response,
   baseOptions: CookieOptions,
@@ -93,20 +141,17 @@ export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieSco
     };
     const paths = new Set(['/images', '/avatars', '/']);
     if (scope.userId) {
-      const safeUserId = assertPolicyPathSegment('userId', scope.userId);
-      paths.add(`/images/${safeUserId}`);
-    }
-    if (scope.tenantId) {
-      const safeTenantId = assertPolicyPathSegment('tenantId', scope.tenantId);
-      paths.add(`/t/${safeTenantId}`);
-      paths.add(`/t/${safeTenantId}/avatars`);
-      if (scope.userId) {
-        const safeUserId = assertPolicyPathSegment('userId', scope.userId);
-        paths.add(`/t/${safeTenantId}/images/${safeUserId}`);
+      for (const path of getScopeCookiePaths(scope)) {
+        paths.add(path);
+      }
+      if (scope.tenantId) {
+        const safeTenantId = assertPolicyPathSegment('tenantId', scope.tenantId);
+        paths.add(`/t/${safeTenantId}`);
       }
     }
 
     clearCookiePaths(res, baseOptions, paths);
+    res.clearCookie(CLOUDFRONT_SCOPE_COOKIE, { ...baseOptions, path: '/' });
   } catch (error) {
     logger.warn('[clearCloudFrontCookies] Failed to clear cookies:', error);
   }
@@ -116,7 +161,11 @@ export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieSco
  * Sets CloudFront signed cookies on the response for CDN access.
  * Returns true if cookies were set, false if CloudFront cookies are not enabled.
  */
-export function setCloudFrontCookies(res: Response, scope: CloudFrontCookieScope = {}): boolean {
+export function setCloudFrontCookies(
+  res: Response,
+  scope: CloudFrontCookieScope = {},
+  previousScope: CloudFrontCookieScope | null = null,
+): boolean {
   const config = getCloudFrontConfig();
   if (
     config?.imageSigning === 'cookies' &&
@@ -180,7 +229,13 @@ export function setCloudFrontCookies(res: Response, scope: CloudFrontCookieScope
       sameSite: 'none' as const,
       domain: config.cookieDomain,
     };
-    clearCookiePaths(res, sharedCookieOptions, ['/images']);
+    const stalePaths = new Set(['/images']);
+    if (previousScope?.userId) {
+      for (const path of getScopeCookiePaths(previousScope)) {
+        stalePaths.add(path);
+      }
+    }
+    clearCookiePaths(res, sharedCookieOptions, stalePaths);
     const baseCookieOptions = { ...sharedCookieOptions, expires: expiresAt };
 
     for (const { cookies } of signedCookieSets) {
@@ -198,6 +253,10 @@ export function setCloudFrontCookies(res: Response, scope: CloudFrontCookieScope
         res.cookie(key, cookies[key], cookieOptions);
       }
     }
+    res.cookie(CLOUDFRONT_SCOPE_COOKIE, encodeCloudFrontCookieScope(scope), {
+      ...baseCookieOptions,
+      path: '/',
+    });
 
     return true;
   } catch (error) {

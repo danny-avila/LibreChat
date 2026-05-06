@@ -62,7 +62,32 @@ function signUrl(url: string): string {
   }
 
   const expiry = config.urlExpiry ?? s3Config.S3_URL_EXPIRY_SECONDS;
-  const dateLessThan = new Date(Date.now() + expiry * 1000).toISOString();
+  const expiresAtMs = Date.now() + expiry * 1000;
+  const expiresAtEpoch = Math.floor(expiresAtMs / 1000);
+  const dateLessThan = new Date(expiresAtMs).toISOString();
+
+  const parsedUrl = new URL(url);
+  if (parsedUrl.search) {
+    const policy = JSON.stringify({
+      Statement: [
+        {
+          Resource: `${parsedUrl.origin}${parsedUrl.pathname}?*`,
+          Condition: {
+            DateLessThan: {
+              'AWS:EpochTime': expiresAtEpoch,
+            },
+          },
+        },
+      ],
+    });
+
+    return getSignedUrl({
+      url,
+      keyPairId: config.keyPairId,
+      privateKey: config.privateKey,
+      policy,
+    });
+  }
 
   return getSignedUrl({
     url,

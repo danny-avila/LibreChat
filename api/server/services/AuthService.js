@@ -12,6 +12,8 @@ const {
   isEnabled,
   checkEmailConfig,
   setCloudFrontCookies,
+  parseCloudFrontCookieScope,
+  CLOUDFRONT_SCOPE_COOKIE,
   isEmailDomainAllowed,
   shouldUseSecureCookie,
   resolveAppConfigForUser,
@@ -408,7 +410,10 @@ const resetPassword = async (userId, token, password) => {
  * @param {ISession | null} [session=null]
  * @returns
  */
-const setAuthTokens = async (userId, res, _session = null) => {
+const getPreviousCloudFrontScope = (req) =>
+  parseCloudFrontCookieScope(req?.cookies?.[CLOUDFRONT_SCOPE_COOKIE]);
+
+const setAuthTokens = async (userId, res, _session = null, req = null) => {
   try {
     let session = _session;
     let refreshToken;
@@ -442,10 +447,14 @@ const setAuthTokens = async (userId, res, _session = null) => {
       sameSite: 'strict',
     });
 
-    setCloudFrontCookies(res, {
-      userId: user?._id?.toString?.() ?? userId,
-      tenantId: user?.tenantId?.toString?.(),
-    });
+    setCloudFrontCookies(
+      res,
+      {
+        userId: user?._id?.toString?.() ?? userId,
+        tenantId: user?.tenantId?.toString?.(),
+      },
+      getPreviousCloudFrontScope(req),
+    );
 
     return token;
   } catch (error) {
@@ -595,10 +604,14 @@ const setOpenIDAuthTokens = (
       });
     }
 
-    setCloudFrontCookies(res, {
-      userId,
-      tenantId: tenantId ?? req.user?.tenantId,
-    });
+    setCloudFrontCookies(
+      res,
+      {
+        userId,
+        tenantId: tenantId ?? req.user?.tenantId,
+      },
+      getPreviousCloudFrontScope(req),
+    );
 
     return appAuthToken;
   } catch (error) {

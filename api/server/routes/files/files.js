@@ -497,7 +497,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
       stream.pipe(res);
     } else {
-      if (getDownloadURL) {
+      if (getDownloadURL && req.query.direct === 'true') {
         try {
           const downloadURL = await getDirectDownloadURL({ req, file });
           if (downloadURL) {

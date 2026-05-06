@@ -116,7 +116,7 @@ describe('File Routes - Delete with Agent Access', () => {
         id: otherUserId?.toString() || 'default-user',
         role: SystemRoles.USER,
       };
-      req.app = { locals: {} };
+      req.app.locals = {};
       next();
     });
 
@@ -548,7 +548,32 @@ describe('File Routes - Delete with Agent Access', () => {
   });
 
   describe('GET /files/download/:userId/:file_id', () => {
-    it('redirects to a direct signed download URL when available', async () => {
+    it('streams proxied downloads by default when a direct URL is available', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
+      const getDownloadStream = jest.fn().mockResolvedValue(Readable.from(['file content']));
+      getStrategyFunctions.mockReturnValue({ getDownloadURL, getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
+        bytes: 200,
+        type: 'application/pdf',
+        source: FileSources.cloudfront,
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.toString()).toBe('file content');
+      expect(response.headers.location).toBeUndefined();
+      expect(getDownloadURL).not.toHaveBeenCalled();
+      expect(getDownloadStream).toHaveBeenCalledWith(expect.any(Object), 'uploads/user/file.pdf');
+    });
+
+    it('redirects to a direct signed download URL when explicitly requested', async () => {
       const userFileId = uuidv4();
       const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
       const getDownloadStream = jest.fn();
@@ -564,7 +589,9 @@ describe('File Routes - Delete with Agent Access', () => {
         source: FileSources.cloudfront,
       });
 
-      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+      const response = await request(app).get(
+        `/files/download/${otherUserId}/${userFileId}?direct=true`,
+      );
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe('https://cdn.example.com/file.pdf?signed');

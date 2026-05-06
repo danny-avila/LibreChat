@@ -536,6 +536,19 @@ describe('CloudFront CRUD', () => {
           url: expect.stringContaining('response-content-type=application%2Fpdf'),
         }),
       );
+      const signingInput = mockGetSignedUrl.mock.calls[0][0] as { policy: string };
+      const policy = JSON.parse(signingInput.policy) as {
+        Statement: Array<{
+          Resource: string;
+          Condition: { DateLessThan: { 'AWS:EpochTime': number } };
+        }>;
+      };
+      expect(policy.Statement[0].Resource).toBe(
+        'https://d123.cloudfront.net/uploads/user1/report.pdf?*',
+      );
+      expect(policy.Statement[0].Condition.DateLessThan['AWS:EpochTime']).toEqual(
+        expect.any(Number),
+      );
     });
 
     it('throws when signing keys are missing', async () => {
