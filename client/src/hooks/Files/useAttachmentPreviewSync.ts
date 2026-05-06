@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useEffect, useRef } from 'react';
+import { useRecoilCallback, useSetRecoilState } from 'recoil';
 import type { TAttachment, TFile, TFilePreview } from 'librechat-data-provider';
 import { useFilePreview } from '~/data-provider';
 import store from '~/store';
@@ -60,6 +60,16 @@ export default function useAttachmentPreviewSync(
   attachment: TAttachment | undefined,
 ): UseAttachmentPreviewSyncResult {
   const setAttachmentsMap = useSetRecoilState(store.messageAttachmentsMap);
+  /* `useRecoilCallback` reads/writes without subscribing this hook to
+   * the per-file_id flag — we only ever set it on the pending→ready
+   * edge, so subscribing would cause needless re-renders. */
+  const flagJustResolved = useRecoilCallback(
+    ({ set }) =>
+      (id: string) => {
+        set(store.previewJustResolved(id), true);
+      },
+    [],
+  );
 
   const file = (attachment ?? undefined) as Partial<TFile> | undefined;
   const fileId = file?.file_id;
@@ -76,6 +86,21 @@ export default function useAttachmentPreviewSync(
   const polled = previewQuery.data as TFilePreview | undefined;
   const effectiveStatus: 'pending' | 'ready' | 'failed' = polled?.status ?? baseStatus;
   const previewError = polled?.previewError ?? file?.previewError;
+
+  /* Track the previous effective status so we can fire the
+   * pending→ready edge exactly once per session. The ref is initialised
+   * lazily on first render: a card that mounts with `baseStatus`
+   * already at `'ready'` (history load — pre-resolved file) will never
+   * see a transition, which is exactly what we want — the user is
+   * scrolling through history, not awaiting a fresh result. */
+  const prevStatusRef = useRef<'pending' | 'ready' | 'failed' | null>(null);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = effectiveStatus;
+    if (prev === 'pending' && effectiveStatus === 'ready' && fileId) {
+      flagJustResolved(fileId);
+    }
+  }, [effectiveStatus, fileId, flagJustResolved]);
 
   /* On a terminal poll response (ready or failed), upsert into the
    * shared attachments map. Mirrors the SSE handler's by-file_id

@@ -15,9 +15,10 @@
  * concern, not this hook's.
  */
 
+import { useEffect } from 'react';
 import { renderHook } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
-import { useEffect, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { TAttachment, TFilePreview } from 'librechat-data-provider';
 import store from '~/store';
 
@@ -122,6 +123,58 @@ function setup({
     },
     get enabled() {
       return lastEnabled;
+    },
+  };
+}
+
+/**
+ * Render the hook with controllable preview output (so a test can
+ * trigger the pending→ready edge by re-rendering with a new value)
+ * AND expose a snapshot read of the per-file_id `previewJustResolved`
+ * flag so the test can assert the hook flipped it on the edge.
+ */
+function setupWithTransitions(initialPreview?: TFilePreview) {
+  let currentPreview = initialPreview;
+  mockUseFilePreview.mockReset();
+  mockUseFilePreview.mockImplementation(() => ({
+    data: currentPreview,
+    isFetching: false,
+  }));
+
+  const flagRef: { current: boolean | undefined } = { current: undefined };
+  const FlagProbe = ({ id }: { id: string }) => {
+    /* Subscribing read — re-renders the probe whenever the flag flips,
+     * so `flagRef.current` is updated after the consumer hook commits
+     * the transition. (A non-subscribing snapshot read inside an
+     * effect would capture the value as of the previous commit, which
+     * misses the flag set fired in *this* render's effect tick.) */
+    const flag = useRecoilValue(store.previewJustResolved(id));
+    useEffect(() => {
+      flagRef.current = flag;
+    }, [flag]);
+    return null;
+  };
+
+  const { rerender } = renderHook(
+    ({ attachment }: { attachment: TAttachment }) => useAttachmentPreviewSync(attachment),
+    {
+      initialProps: { attachment: makeAttachment({ status: 'pending' }) },
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <RecoilRoot>
+          <FlagProbe id={fileId} />
+          {children}
+        </RecoilRoot>
+      ),
+    },
+  );
+
+  return {
+    setPreview: (preview: TFilePreview | undefined) => {
+      currentPreview = preview;
+      rerender({ attachment: makeAttachment({ status: 'pending' }) });
+    },
+    get justResolved() {
+      return flagRef.current;
     },
   };
 }
@@ -298,5 +351,53 @@ describe('useAttachmentPreviewSync', () => {
     const inserted = list[0] as TAttachment & { previewError?: string };
     expect(inserted.status).toBe('failed');
     expect(inserted.previewError).toBe('render-timeout');
+  });
+
+  describe('previewJustResolved signal (auto-open trigger)', () => {
+    /* The signal is the bridge to ToolArtifactCard's auto-open path:
+     * the card mounts after the routing re-runs (post-transition), so
+     * it can't observe the transition itself. Setting a one-shot flag
+     * keyed by file_id lets the card consume the signal on its very
+     * first effect tick. We assert on the flag directly here; the
+     * consume+open behavior lives in `ToolArtifactCard`'s coverage. */
+    it('flips the per-file_id flag on the pending→ready transition', () => {
+      const ctx = setupWithTransitions({ file_id: fileId, status: 'pending' });
+      expect(ctx.justResolved).toBe(false);
+      ctx.setPreview({
+        file_id: fileId,
+        status: 'ready',
+        text: '<table>x</table>',
+        textFormat: 'html',
+      });
+      expect(ctx.justResolved).toBe(true);
+    });
+
+    it('does NOT flip the flag when the polled status is "failed"', () => {
+      /* Failed previews stay as a download-only chip — nothing to
+       * auto-open. The signal must stay false so the eventual
+       * routing decision (PreviewPlaceholderCard with the alert
+       * subtitle) doesn't get hijacked into opening an empty panel. */
+      const ctx = setupWithTransitions({ file_id: fileId, status: 'pending' });
+      ctx.setPreview({
+        file_id: fileId,
+        status: 'failed',
+        previewError: 'render-timeout',
+      });
+      expect(ctx.justResolved).toBe(false);
+    });
+
+    it('does NOT flip the flag when the first observed status is already "ready" (history load)', () => {
+      /* A page-load mount where the file resolved long ago must not
+       * trigger auto-open — the user is scrolling through history,
+       * not awaiting a result. Without this guard, every loaded
+       * conversation would yank the panel open on first paint. */
+      const ctx = setupWithTransitions({
+        file_id: fileId,
+        status: 'ready',
+        text: '<table>x</table>',
+        textFormat: 'html',
+      });
+      expect(ctx.justResolved).toBe(false);
+    });
   });
 });

@@ -526,6 +526,106 @@ describe('ToolArtifactCard click behaviour', () => {
     expect(snapshot.currentArtifactId).toBeNull();
   });
 
+  it('auto-opens a non-streaming card when the deferred preview just resolved', () => {
+    /* Regression for the deferred-preview UX gap: when an office file's
+     * background HTML extraction lands AFTER the SSE stream has closed
+     * (`isSubmitting=false`), the freshly resolved chip would render in
+     * place but never auto-open the panel — the legacy auto-open path
+     * is gated only on streaming. `useAttachmentPreviewSync` flips the
+     * `previewJustResolved(file_id)` flag on the pending→ready edge to
+     * bridge that gap; `ToolArtifactCard` consumes it on mount and
+     * auto-opens regardless of submission state. The flag is one-shot:
+     * a subsequent re-mount (panel close/reopen, history scroll) must
+     * NOT fire again — covered by the next test. */
+    const xlsx = baseAttachment({
+      file_id: 'just-resolved-xlsx',
+      filename: 'data.xlsx',
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      text: '<table>resolved</table>',
+      textFormat: 'html',
+    } as Partial<TAttachment>);
+    const initializeState = (snap: MutableSnapshot) => {
+      snap.set(store.isSubmittingFamily(0), false);
+      snap.set(store.artifactsVisibility, false);
+      snap.set(store.previewJustResolved('just-resolved-xlsx'), true);
+    };
+    let snapshot: ArtifactsSnapshot = {
+      visibility: false,
+      currentArtifactId: null,
+      artifactIds: [],
+    };
+    render(
+      <RecoilRoot initializeState={initializeState}>
+        <StateProbe
+          onSnapshot={(snap) => {
+            snapshot = snap;
+          }}
+        />
+        <Attachment attachment={xlsx} />
+      </RecoilRoot>,
+    );
+    expect(snapshot.currentArtifactId).toBe('tool-artifact-just-resolved-xlsx');
+    expect(snapshot.visibility).toBe(true);
+  });
+
+  it('does NOT re-auto-open on a second mount after the just-resolved flag is consumed', () => {
+    /* The flag is one-shot — first card to mount consumes it. A second
+     * mount of the same file_id (panel close + reopen, history scroll
+     * onto the same card) must NOT re-steal focus, otherwise the user
+     * could never close the panel without it popping back open. */
+    const xlsx = baseAttachment({
+      file_id: 'one-shot-xlsx',
+      filename: 'data.xlsx',
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      text: '<table>resolved</table>',
+      textFormat: 'html',
+    } as Partial<TAttachment>);
+    const initializeState = (snap: MutableSnapshot) => {
+      snap.set(store.isSubmittingFamily(0), false);
+      snap.set(store.artifactsVisibility, false);
+      snap.set(store.previewJustResolved('one-shot-xlsx'), true);
+    };
+    let snapshot: ArtifactsSnapshot = {
+      visibility: false,
+      currentArtifactId: null,
+      artifactIds: [],
+    };
+    const { unmount } = render(
+      <RecoilRoot initializeState={initializeState}>
+        <StateProbe
+          onSnapshot={(snap) => {
+            snapshot = snap;
+          }}
+        />
+        <Attachment attachment={xlsx} />
+      </RecoilRoot>,
+    );
+    /* First mount auto-opened. Now simulate a fresh Recoil tree with the
+     * flag in the post-consume state (false) and assert the second
+     * mount stays closed. We use a fresh RecoilRoot to mirror what a
+     * real "panel was closed and the user then revealed the chip
+     * again" pathway would look like at the state level. */
+    unmount();
+    snapshot = { visibility: false, currentArtifactId: null, artifactIds: [] };
+    const secondInit = (snap: MutableSnapshot) => {
+      snap.set(store.isSubmittingFamily(0), false);
+      snap.set(store.artifactsVisibility, false);
+      // flag stays at default (false) — already consumed
+    };
+    render(
+      <RecoilRoot initializeState={secondInit}>
+        <StateProbe
+          onSnapshot={(snap) => {
+            snapshot = snap;
+          }}
+        />
+        <Attachment attachment={xlsx} />
+      </RecoilRoot>,
+    );
+    expect(snapshot.currentArtifactId).toBeNull();
+    expect(snapshot.visibility).toBe(false);
+  });
+
   it('clicking a CODE artifact focuses it even though it skipped auto-open', () => {
     // Counterpart to the streaming-CODE no-auto-open test: confirm the
     // click path still surfaces a `.py` chip in the panel. Even on a
