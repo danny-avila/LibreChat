@@ -205,14 +205,25 @@ const finalizePreview = async ({
  * stream to write to (caller passes a no-op).
  *
  * The catch path is the safety net for unexpected programming errors
- * inside `finalizePreview`. The function is designed to never throw
- * (extraction and DB failures are translated to `status: 'failed'`
+ * inside `finalizePreview` ONLY. The function is designed to never
+ * throw (extraction and DB failures are translated to `status: 'failed'`
  * inside it), but a ref error or future regression would otherwise
  * leave the DB record stuck at `'pending'` until the boot-time orphan
  * sweep — potentially hours away on a stable server. We attempt a
  * best-effort `updateFile` to mark the record `'failed'` with
  * `previewError: 'unexpected'` so the UI stops polling and the
  * next-turn LLM context surfaces the failure.
+ *
+ * `onResolved` errors are deliberately isolated in their own try/catch.
+ * Without that isolation, a transient transport-side failure (SSE write
+ * race after the stream closed, an emitter listener throwing) would
+ * propagate into the finalize catch and downgrade an *already-resolved*
+ * record to `failed` with `previewError: 'unexpected'` — surfacing
+ * "preview unavailable" in the UI even though extraction succeeded
+ * and the file is on disk. The emit failure is logged but the DB
+ * record stays at whatever `finalizePreview` wrote (typically
+ * `'ready'`), so the polling layer / next page load still sees the
+ * resolved preview.
  *
  * @param {object} params
  * @param {(() => Promise<object | null>) | undefined} params.finalize - The
@@ -237,7 +248,22 @@ const runPreviewFinalize = ({ finalize, fileId, previewRevision, onResolved }) =
       if (!updated || !onResolved) {
         return;
       }
-      onResolved(updated);
+      /* Isolated try/catch — a throw inside `onResolved` (transport-side
+       * SSE write race, emitter listener error) MUST NOT propagate to
+       * the outer `.catch`, which would downgrade an already-resolved
+       * record to `failed` with `previewError: 'unexpected'`.
+       * Extraction succeeded at this point and `finalizePreview` has
+       * already persisted the terminal status; the polling layer / next
+       * page load will surface the resolved preview even if this turn's
+       * SSE emit didn't land. */
+      try {
+        onResolved(updated);
+      } catch (emitError) {
+        logger.error(
+          `[runPreviewFinalize] onResolved threw for ${fileId}; record stays at the finalized status:`,
+          emitError,
+        );
+      }
     })
     .catch((error) => {
       logger.error('Error rendering deferred preview:', error);

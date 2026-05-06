@@ -1084,6 +1084,45 @@ describe('Code Process', () => {
       await new Promise((resolve) => setImmediate(resolve));
       expect(updateFile).not.toHaveBeenCalled();
     });
+
+    it('does NOT downgrade the file to failed when finalize succeeds but onResolved throws', async () => {
+      /* Regression for the codex P2 finding: the original chain put the
+       * `.catch` after `.then(onResolved)`, so a throw inside
+       * `onResolved` (transport-side: SSE write race after stream
+       * close, an emitter listener throwing) propagated into the
+       * finalize catch and persisted `status: 'failed'` /
+       * `previewError: 'unexpected'` — even though extraction
+       * succeeded and the file was already on disk and marked ready.
+       * That surfaced "preview unavailable" in the UI for a perfectly
+       * valid file, and degraded next-turn LLM context. The fix wraps
+       * `onResolved` in its own try/catch so emit errors stay isolated
+       * from finalize errors. */
+      const onResolved = jest.fn(() => {
+        throw new Error('SSE write after stream closed');
+      });
+      const finalize = jest.fn().mockResolvedValue({
+        file_id: 'fid-emit-throw',
+        status: 'ready',
+        text: '<table>x</table>',
+      });
+      runPreviewFinalize({
+        finalize,
+        fileId: 'fid-emit-throw',
+        previewRevision: 'rev-A',
+        onResolved,
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(onResolved).toHaveBeenCalledTimes(1);
+      /* The defensive "mark failed" path MUST NOT fire — the file is
+       * resolved and on disk; only the SSE emit failed. */
+      expect(updateFile).not.toHaveBeenCalled();
+      /* Emit error is logged so the failure is observable in the
+       * server log without affecting UX. */
+      expect(
+        logger.error.mock.calls.some((c) => /onResolved threw for fid-emit-throw/.test(c[0])),
+      ).toBe(true);
+    });
   });
 
   describe('readSandboxFile', () => {
