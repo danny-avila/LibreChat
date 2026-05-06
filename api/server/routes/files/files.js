@@ -399,7 +399,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
     const setHeaders = () => {
       res.setHeader('Content-Disposition', getContentDisposition(file.filename));
       res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('X-File-Metadata', JSON.stringify(file));
+      res.setHeader('X-File-Metadata', encodeURIComponent(JSON.stringify(file)));
     };
 
     if (checkOpenAIStorage(file.source)) {

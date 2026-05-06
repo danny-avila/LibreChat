@@ -66,7 +66,9 @@ export const useFileDownload = (userId?: string, file_id?: string): QueryObserve
       const blob = response.data;
       const downloadURL = window.URL.createObjectURL(blob);
       try {
-        const metadata: t.TFile | undefined = JSON.parse(response.headers['x-file-metadata']);
+        const metadata: t.TFile | undefined = JSON.parse(
+          decodeURIComponent(response.headers['x-file-metadata']),
+        );
         if (!metadata) {
           console.warn('No metadata found for file download', response.headers);
           return downloadURL;
