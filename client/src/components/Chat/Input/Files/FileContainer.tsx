@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { getFileType, cn } from '~/utils';
@@ -8,6 +9,7 @@ const FileContainer = ({
   file,
   overrideType,
   displayName,
+  subtitle,
   buttonClassName,
   containerClassName,
   onDelete,
@@ -21,6 +23,15 @@ const FileContainer = ({
    * persisted user files leave this undefined and render the raw filename.
    */
   displayName?: string;
+  /**
+   * Optional override for the subtitle line (defaults to the file
+   * type's localized title — e.g. "PowerPoint Presentation"). Used by
+   * the deferred-preview flow to surface "Preparing preview…" /
+   * "Preview unavailable" inline within the chip rather than as a
+   * loose-feeling annotation below it. Pass a ReactNode so callers
+   * can include icons (spinner, alert) alongside the text.
+   */
+  subtitle?: ReactNode;
   buttonClassName?: string;
   containerClassName?: string;
   onDelete?: () => void;
@@ -49,9 +60,13 @@ const FileContainer = ({
               <div className="truncate font-medium" title={visibleName}>
                 {visibleName}
               </div>
-              <div className="truncate text-text-secondary" title={fileType.title}>
-                {fileType.title}
-              </div>
+              {subtitle != null ? (
+                subtitle
+              ) : (
+                <div className="truncate text-text-secondary" title={fileType.title}>
+                  {fileType.title}
+                </div>
+              )}
             </div>
           </div>
         </div>

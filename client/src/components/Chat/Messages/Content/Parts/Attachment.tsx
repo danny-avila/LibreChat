@@ -25,43 +25,42 @@ import { cn } from '~/utils';
 const COLLAPSED_MAX_HEIGHT = 320;
 
 /**
- * Small inline indicator rendered next to a code-execution file chip
- * while its inline preview is in flight or has failed. Three states:
+ * Inline subtitle for a code-execution file chip with a pending or
+ * failed preview render. Renders into the chip's existing subtitle
+ * slot (replacing the file-type label), so the chip footprint stays
+ * identical to its `'ready'` form — just the second row swaps from
+ * "PowerPoint Presentation" (or whatever the type label is) to a
+ * spinner + "Preparing preview…" or an alert + "Preview unavailable".
  *
- *  - `'pending'`: tiny spinner + "preparing preview…". Driven by the
- *    polling `useAttachmentPreviewSync` hook (gated on `isSubmitting`)
- *    and by the SSE `attachment` update event when the response stream
- *    is still open.
- *  - `'failed'`: alert icon + "preview unavailable" with the
- *    backend's machine-readable `previewError` as a tooltip
- *    (`'timeout'`, `'parser-error'`, `'orphaned'`, …). The download
- *    chip itself remains fully functional.
- *  - `'ready'` (or undefined): nothing rendered — the chip looks
- *    exactly as it did before this PR.
+ * Driven by the polling `useAttachmentPreviewSync` hook for the
+ * post-stream-close gap and by the `attachment` SSE update event
+ * while the response stream is still open. For `'ready'` (or
+ * undefined / legacy) status the chip falls back to its default
+ * subtitle and this component isn't rendered.
  */
-const PreviewStatusIndicator = memo(
+const PreviewStatusSubtitle = memo(
   ({ status, previewError }: { status: 'pending' | 'failed'; previewError?: string }) => {
     const localize = useLocalize();
     if (status === 'pending') {
       return (
-        <div className="mt-1 flex items-center gap-1.5 text-xs text-text-secondary">
-          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-          <span>{localize('com_ui_preview_preparing')}</span>
+        <div className="flex items-center gap-1.5 truncate text-text-secondary">
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
+          <span className="truncate">{localize('com_ui_preview_preparing')}</span>
         </div>
       );
     }
     return (
       <div
-        className="mt-1 flex items-center gap-1.5 text-xs text-text-secondary"
+        className="flex items-center gap-1.5 truncate text-text-secondary"
         title={previewError ?? localize('com_ui_preview_failed')}
       >
-        <AlertCircle className="h-3 w-3" aria-hidden="true" />
-        <span>{localize('com_ui_preview_failed')}</span>
+        <AlertCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
+        <span className="truncate">{localize('com_ui_preview_failed')}</span>
       </div>
     );
   },
 );
-PreviewStatusIndicator.displayName = 'PreviewStatusIndicator';
+PreviewStatusSubtitle.displayName = 'PreviewStatusSubtitle';
 
 const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const [isVisible, setIsVisible] = useState(false);
@@ -75,13 +74,17 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
   });
   const extension = attachment.filename?.split('.').pop();
   /* Bridge the deferred-preview lifecycle: poll the backend for the
-   * resolved record while pending+isSubmitting, and surface a small
-   * UI indicator. The hook is a no-op for terminal states (legacy
-   * records, ready, failed already-known) so calling it
-   * unconditionally is cheap. */
+   * resolved record while the file is still pending, and surface the
+   * status inline as the chip's subtitle. The hook is a no-op for
+   * terminal states (legacy records, ready, failed already-known) so
+   * calling it unconditionally is cheap. */
   const { status: previewStatus, previewError } = useAttachmentPreviewSync(
     attachment as TAttachment,
   );
+  const subtitle =
+    previewStatus === 'pending' || previewStatus === 'failed' ? (
+      <PreviewStatusSubtitle status={previewStatus} previewError={previewError} />
+    ) : undefined;
 
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 50);
@@ -109,12 +112,10 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
         onClick={handleDownload}
         overrideType={extension}
         displayName={displayFilename(attachment.filename)}
+        subtitle={subtitle}
         containerClassName="max-w-fit"
         buttonClassName="bg-surface-secondary hover:cursor-pointer hover:bg-surface-hover active:bg-surface-secondary focus:bg-surface-hover hover:border-border-heavy active:border-border-heavy"
       />
-      {(previewStatus === 'pending' || previewStatus === 'failed') && (
-        <PreviewStatusIndicator status={previewStatus} previewError={previewError} />
-      )}
     </div>
   );
 });

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useSetRecoilState } from 'recoil';
 import type { TAttachment, TFile, TFilePreview } from 'librechat-data-provider';
 import { useFilePreview } from '~/data-provider';
 import store from '~/store';
@@ -39,24 +39,34 @@ interface UseAttachmentPreviewSyncResult {
  *
  * Polling is gated on:
  *   - `attachment.file_id` present (no id → nothing to poll for)
- *   - Effective status is `'pending'` (terminal states need no work)
- *   - Some conversation in the app is submitting (per the user's
- *     explicit gate: "only query when the preview is still live and
- *     `isSubmitting` is still true"). When the LLM finishes, polling
- *     stops; the user can refresh on demand from the next interaction.
+ *   - Effective status is `'pending'` (terminal states need no work).
+ *     `useFilePreview`'s `refetchInterval` returns `false` the moment
+ *     the server reports `ready`/`failed`, so polling auto-terminates
+ *     within one tick of resolution. Bounded ceiling: the server-side
+ *     render timeout is 60s, so a stuck pending record gets ~24 polls
+ *     max before the lazy sweep in the preview endpoint forces it to
+ *     `'failed'`.
+ *
+ * NOTE: an earlier version of this hook also gated on `isAnySubmitting`
+ * (the LLM still generating). That gate was removed because the
+ * deferred render can complete *after* the SSE stream closes — when it
+ * does, the SSE update is silently dropped, and polling is the only
+ * recovery path. With the gate in place, the chip would stay stuck on
+ * "Preparing preview…" forever (until manual refresh) for any render
+ * that landed even seconds after submission ended. The polling itself
+ * doesn't block UX; the user can keep messaging regardless.
  */
 export default function useAttachmentPreviewSync(
   attachment: TAttachment | undefined,
 ): UseAttachmentPreviewSyncResult {
   const setAttachmentsMap = useSetRecoilState(store.messageAttachmentsMap);
-  const isAnySubmitting = useRecoilValue(store.anySubmittingSelector);
 
   const file = (attachment ?? undefined) as Partial<TFile> | undefined;
   const fileId = file?.file_id;
   const baseStatus: 'pending' | 'ready' | 'failed' = file?.status ?? 'ready';
   const messageId = (attachment as Partial<TAttachment> | undefined)?.messageId;
 
-  const enabled = !!fileId && baseStatus === 'pending' && isAnySubmitting;
+  const enabled = !!fileId && baseStatus === 'pending';
 
   const previewQuery = useFilePreview(fileId, { enabled });
 

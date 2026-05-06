@@ -118,7 +118,7 @@ function setup({
 }
 
 describe('useAttachmentPreviewSync', () => {
-  it('enables polling only when status=pending AND a conversation is submitting', () => {
+  it('enables polling whenever status=pending (no longer gated on isSubmitting)', () => {
     const ctx = setup({
       attachment: makeAttachment({ status: 'pending' }),
       isSubmitting: true,
@@ -142,14 +142,20 @@ describe('useAttachmentPreviewSync', () => {
     expect(ctx.enabled).toBe(false);
   });
 
-  it('does NOT enable polling when no conversation is submitting (LLM finished)', () => {
+  it('STILL enables polling for pending records even after the LLM has finished generating', () => {
+    /* Regression for the stuck-spinner bug: the deferred render can
+     * complete a few seconds AFTER the SSE stream closes. With the
+     * earlier `isAnySubmitting` gate, polling stopped the moment the
+     * model finished and the resolved-but-not-yet-emitted state would
+     * never reach the UI. Polling now runs on `status === 'pending'`
+     * alone; `useFilePreview`'s `refetchInterval` auto-stops on the
+     * first terminal response, and the server-side render ceiling +
+     * lazy sweep cap the worst case. */
     const ctx = setup({
       attachment: makeAttachment({ status: 'pending' }),
       isSubmitting: false,
     });
-    /* User's explicit gate: once the LLM is done, polling stops. The
-     * frontend can refetch on demand from the next interaction. */
-    expect(ctx.enabled).toBe(false);
+    expect(ctx.enabled).toBe(true);
   });
 
   it('does NOT enable polling when the attachment has no file_id', () => {
