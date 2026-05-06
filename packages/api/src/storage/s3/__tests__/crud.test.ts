@@ -5,8 +5,11 @@ import { sdkStreamMixin } from '@smithy/util-stream';
 import { FileSources } from 'librechat-data-provider';
 import {
   S3Client,
+  UploadPartCommand,
   PutObjectCommand,
   GetObjectCommand,
+  CreateMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
@@ -63,6 +66,9 @@ describe('S3 CRUD', () => {
   beforeEach(() => {
     s3Mock.reset();
     s3Mock.on(PutObjectCommand).resolves({});
+    s3Mock.on(CreateMultipartUploadCommand).resolves({ UploadId: 'upload-123' });
+    s3Mock.on(UploadPartCommand).resolves({ ETag: '"part-etag"' });
+    s3Mock.on(CompleteMultipartUploadCommand).resolves({});
     s3Mock.on(DeleteObjectCommand).resolves({});
 
     const stream = new Readable();
@@ -369,7 +375,6 @@ describe('S3 CRUD', () => {
 
     it('streams response bodies into S3 when fetch provides a stream', async () => {
       const streamedBody = Buffer.from('streamed');
-      const received: Buffer[] = [];
       const arrayBuffer = jest.fn();
       (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
         ok: true,
@@ -388,13 +393,6 @@ describe('S3 CRUD', () => {
         }),
         arrayBuffer,
       });
-      s3Mock.on(PutObjectCommand).callsFake(async (input) => {
-        const body = input.Body as NodeJS.ReadableStream;
-        for await (const chunk of body) {
-          received.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        }
-        return {};
-      });
 
       const { saveURLToS3WithMetadata } = await import('../crud');
       const result = await saveURLToS3WithMetadata({
@@ -409,12 +407,55 @@ describe('S3 CRUD', () => {
         type: 'image/png',
       });
       const putInput = s3Mock.commandCalls(PutObjectCommand)[0].args[0].input;
-      expect(putInput.Body).not.toBeInstanceOf(Buffer);
+      expect(putInput.Body).toBeInstanceOf(Buffer);
       expect(putInput.ContentLength).toBeUndefined();
-      expect(Buffer.concat(received).toString()).toBe('streamed');
+      expect((putInput.Body as Buffer).toString()).toBe('streamed');
     });
 
-    it('omits ContentLength for streamed uploads even when the remote header provides one', async () => {
+    it('uses multipart upload for streamed responses larger than one part', async () => {
+      const firstPart = Buffer.alloc(5 * 1024 * 1024, 'a');
+      const finalPart = Buffer.from('tail');
+      const uploadedParts: Buffer[] = [];
+      (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: (name: string) =>
+            ({
+              'content-length': String(firstPart.length + finalPart.length),
+              'content-type': 'image/png',
+            })[name.toLowerCase()] ?? null,
+        },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(firstPart);
+            controller.enqueue(finalPart);
+            controller.close();
+          },
+        }),
+        arrayBuffer: jest.fn(),
+      });
+      s3Mock.on(UploadPartCommand).callsFake(async (input) => {
+        uploadedParts.push(input.Body as Buffer);
+        return { ETag: `"part-${input.PartNumber}"` };
+      });
+
+      const { saveURLToS3WithMetadata } = await import('../crud');
+      const result = await saveURLToS3WithMetadata({
+        userId: 'user123',
+        URL: 'https://example.com/image.jpg',
+        fileName: 'downloaded.jpg',
+      });
+
+      expect(result.bytes).toBe(firstPart.length + finalPart.length);
+      expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(0);
+      expect(s3Mock.commandCalls(CreateMultipartUploadCommand)).toHaveLength(1);
+      expect(s3Mock.commandCalls(UploadPartCommand)).toHaveLength(2);
+      expect(s3Mock.commandCalls(CompleteMultipartUploadCommand)).toHaveLength(1);
+      expect(uploadedParts[0]).toEqual(firstPart);
+      expect(uploadedParts[1]).toEqual(finalPart);
+    });
+
+    it('does not trust remote ContentLength for streamed uploads', async () => {
       (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
         ok: true,
         headers: {
@@ -432,13 +473,6 @@ describe('S3 CRUD', () => {
         }),
         arrayBuffer: jest.fn(),
       });
-      s3Mock.on(PutObjectCommand).callsFake(async (input) => {
-        const body = input.Body as NodeJS.ReadableStream;
-        for await (const _chunk of body) {
-          // Drain the upload stream; the AWS SDK does this in production.
-        }
-        return {};
-      });
 
       const { saveURLToS3WithMetadata } = await import('../crud');
       const result = await saveURLToS3WithMetadata({
@@ -448,7 +482,9 @@ describe('S3 CRUD', () => {
       });
 
       expect(result.bytes).toBe(Buffer.byteLength('decoded'));
-      expect(s3Mock.commandCalls(PutObjectCommand)[0].args[0].input.ContentLength).toBeUndefined();
+      const putInput = s3Mock.commandCalls(PutObjectCommand)[0].args[0].input;
+      expect(putInput.ContentLength).toBeUndefined();
+      expect(putInput.Body).toEqual(Buffer.from('decoded'));
     });
 
     it('throws error on non-ok response', async () => {

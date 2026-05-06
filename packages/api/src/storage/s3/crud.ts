@@ -1,15 +1,23 @@
 import fs from 'fs';
-import { Readable, Transform } from 'stream';
+import { Readable } from 'stream';
 import {
+  UploadPartCommand,
   PutObjectCommand,
   GetObjectCommand,
+  CreateMultipartUploadCommand,
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import type { GetObjectCommandInput, PutObjectCommandInput } from '@aws-sdk/client-s3';
+import type {
+  CompletedPart,
+  GetObjectCommandInput,
+  PutObjectCommandInput,
+} from '@aws-sdk/client-s3';
 import type { TFile } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 import type {
@@ -37,6 +45,8 @@ const {
   S3_REFRESH_EXPIRY_MS: s3RefreshExpiryMs,
   DEFAULT_BASE_PATH: defaultBasePath,
 } = s3Config;
+
+const MULTIPART_UPLOAD_PART_SIZE = 5 * 1024 * 1024;
 
 export interface S3KeyParts {
   basePath: string;
@@ -174,16 +184,42 @@ export async function saveBufferToS3({
   }
 }
 
-function createByteCountingStream(): { stream: Transform; getBytes: () => number } {
-  let bytes = 0;
-  const stream = new Transform({
-    transform(chunk: Buffer | string, _encoding, callback) {
-      bytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
-      callback(null, chunk);
-    },
-  });
-  return { stream, getBytes: () => bytes };
+interface PendingUploadBuffers {
+  buffers: Buffer[];
+  bytes: number;
 }
+
+const toUploadBuffer = (chunk: Buffer | string | Uint8Array): Buffer => {
+  if (Buffer.isBuffer(chunk)) {
+    return chunk;
+  }
+  return Buffer.from(chunk);
+};
+
+const takePendingBytes = (pending: PendingUploadBuffers, size: number): Buffer => {
+  const output = Buffer.allocUnsafe(size);
+  let offset = 0;
+
+  while (offset < size) {
+    const buffer = pending.buffers[0];
+    const bytesNeeded = size - offset;
+
+    if (buffer.length <= bytesNeeded) {
+      buffer.copy(output, offset);
+      offset += buffer.length;
+      pending.bytes -= buffer.length;
+      pending.buffers.shift();
+      continue;
+    }
+
+    buffer.copy(output, offset, 0, bytesNeeded);
+    pending.buffers[0] = buffer.subarray(bytesNeeded);
+    pending.bytes -= bytesNeeded;
+    offset += bytesNeeded;
+  }
+
+  return output;
+};
 
 async function saveReadableToS3({
   userId,
@@ -195,9 +231,13 @@ async function saveReadableToS3({
 }: Omit<SaveBufferParams, 'buffer'> & {
   body: Readable;
   urlBuilder?: UrlBuilder;
-}): Promise<string> {
+}): Promise<{ filepath: string; bytes: number }> {
   const key = getS3Key(basePath, userId, fileName, tenantId);
-  const params: PutObjectCommandInput = { Bucket: bucketName, Key: key, Body: body };
+  const pending: PendingUploadBuffers = { buffers: [], bytes: 0 };
+  const completedParts: CompletedPart[] = [];
+  let totalBytes = 0;
+  let partNumber = 1;
+  let uploadId: string | undefined;
 
   try {
     const s3 = initializeS3();
@@ -205,10 +245,77 @@ async function saveReadableToS3({
       throw new Error('[saveReadableToS3] S3 not initialized');
     }
 
-    await s3.send(new PutObjectCommand(params));
+    const createMultipartUpload = async (): Promise<string> => {
+      if (uploadId) {
+        return uploadId;
+      }
+      const response = await s3.send(
+        new CreateMultipartUploadCommand({ Bucket: bucketName, Key: key }),
+      );
+      if (!response.UploadId) {
+        throw new Error('[saveReadableToS3] S3 did not return an upload ID');
+      }
+      uploadId = response.UploadId;
+      return uploadId;
+    };
+
+    const uploadPart = async (partBody: Buffer): Promise<void> => {
+      const currentUploadId = await createMultipartUpload();
+      const response = await s3.send(
+        new UploadPartCommand({
+          Bucket: bucketName,
+          Key: key,
+          UploadId: currentUploadId,
+          PartNumber: partNumber,
+          Body: partBody,
+        }),
+      );
+      completedParts.push({ ETag: response.ETag, PartNumber: partNumber });
+      partNumber += 1;
+    };
+
+    for await (const chunk of body as AsyncIterable<Buffer | string | Uint8Array>) {
+      const buffer = toUploadBuffer(chunk);
+      pending.buffers.push(buffer);
+      pending.bytes += buffer.length;
+      totalBytes += buffer.length;
+
+      while (pending.bytes >= MULTIPART_UPLOAD_PART_SIZE) {
+        await uploadPart(takePendingBytes(pending, MULTIPART_UPLOAD_PART_SIZE));
+      }
+    }
+
+    if (!uploadId) {
+      const bodyBuffer =
+        pending.bytes > 0 ? takePendingBytes(pending, pending.bytes) : Buffer.alloc(0);
+      const params: PutObjectCommandInput = { Bucket: bucketName, Key: key, Body: bodyBuffer };
+      await s3.send(new PutObjectCommand(params));
+    } else {
+      if (pending.bytes > 0) {
+        await uploadPart(takePendingBytes(pending, pending.bytes));
+      }
+      await s3.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: bucketName,
+          Key: key,
+          UploadId: uploadId,
+          MultipartUpload: { Parts: completedParts },
+        }),
+      );
+    }
+
     const getUrl = urlBuilder ?? getS3URL;
-    return await getUrl({ userId, fileName, basePath, tenantId });
+    return { filepath: await getUrl({ userId, fileName, basePath, tenantId }), bytes: totalBytes };
   } catch (error) {
+    if (uploadId) {
+      try {
+        await initializeS3()?.send(
+          new AbortMultipartUploadCommand({ Bucket: bucketName, Key: key, UploadId: uploadId }),
+        );
+      } catch (abortError) {
+        logger.warn('[saveReadableToS3] Error aborting multipart upload:', abortError);
+      }
+    }
     logger.error('[saveReadableToS3] Error uploading stream to S3:', (error as Error).message);
     throw error;
   }
@@ -232,18 +339,17 @@ export async function saveURLToS3WithMetadata({
       const source = Readable.fromWeb(
         response.body as unknown as Parameters<typeof Readable.fromWeb>[0],
       );
-      const counter = createByteCountingStream();
-      const filepath = await saveReadableToS3({
+      const result = await saveReadableToS3({
         userId,
-        body: source.pipe(counter.stream),
+        body: source,
         fileName,
         basePath,
         tenantId,
         urlBuilder,
       });
       return {
-        filepath,
-        bytes: counter.getBytes(),
+        filepath: result.filepath,
+        bytes: result.bytes,
         type: contentType,
         dimensions: {},
       };
