@@ -225,11 +225,7 @@ if (cluster.isMaster) {
     /** Seed database (idempotent) */
     await seedDatabase();
 
-    /* Bulk recovery for code-execution files left at `status: 'pending'`
-     * by a prior process restart. Mirror of the path in
-     * `server/index.js`; see comment there for context. Wrapped in
-     * `runAsSystem` because `File` is tenant-isolated and an unscoped
-     * query throws under `TENANT_ISOLATION_STRICT=true`. */
+    /* Mirrors `server/index.js`; `runAsSystem` for tenant-isolated File. */
     runAsSystem(sweepOrphanedPreviews).catch((err) => {
       logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
     });

@@ -74,24 +74,10 @@ const startServer = async () => {
   }
 
   await runAsSystem(seedDatabase);
-  /* Bulk recovery: code-execution files left at `status: 'pending'`
-   * by a prior process restart mid-render are marked `failed` so the
-   * frontend stops polling. The deferred preview render runs in-process,
-   * so a backend crash before it finished would otherwise leave those
-   * records pending forever. Cheap — `status` is indexed and the
-   * candidate set is bounded by what was in flight at shutdown.
-   * Fire-and-forget so a transient error here doesn't block boot.
-   *
-   * Wrapped in `runAsSystem` because `File` is tenant-isolated; under
-   * `TENANT_ISOLATION_STRICT=true` an unscoped query would throw
-   * (`[TenantIsolation] Query attempted without tenant context in
-   * strict mode`) and the recovery would silently fail every boot,
-   * leaving stale `pending` records stuck until a user happens to
-   * poll the preview endpoint.
-   *
-   * Quick-restart edge case (records younger than the sweep cutoff)
-   * is covered by a lazy sweep inside the preview endpoint itself —
-   * see `PREVIEW_LAZY_SWEEP_CUTOFF_MS` in `routes/files/files.js`. */
+  /* Recover stuck `status: 'pending'` records from a crash mid-render.
+   * `runAsSystem` is required — `File` is tenant-isolated and strict
+   * mode rejects unscoped queries. Lazy sweep in the preview endpoint
+   * covers anything younger than the boot cutoff. */
   runAsSystem(sweepOrphanedPreviews).catch((err) => {
     logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
   });
