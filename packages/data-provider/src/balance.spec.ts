@@ -39,4 +39,11 @@ describe('getRefillEligibilityDate', () => {
       new Date('2026-03-03T12:00:00.000Z'),
     );
   });
+
+  it('returns a Date fallback for unknown runtime interval units', () => {
+    const lastRefill = new Date('2026-05-05T16:00:00.000Z');
+    const unknownUnit = 'years' as unknown as RefillIntervalUnit;
+
+    expect(getRefillEligibilityDate(lastRefill, 1, unknownUnit)).toEqual(lastRefill);
+  });
 });

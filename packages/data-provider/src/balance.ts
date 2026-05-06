@@ -9,6 +9,10 @@ export const REFILL_INTERVAL_UNITS = [
 
 export type RefillIntervalUnit = (typeof REFILL_INTERVAL_UNITS)[number];
 
+function ensureExhaustive(value: never): void {
+  void value;
+}
+
 export function getRefillEligibilityDate(
   lastRefill: Date,
   value: number,
@@ -35,8 +39,8 @@ export function getRefillEligibilityDate(
       result.setMonth(result.getMonth() + value);
       return result;
     default: {
-      const exhaustiveCheck: never = unit;
-      return exhaustiveCheck;
+      ensureExhaustive(unit);
+      return result;
     }
   }
 }
