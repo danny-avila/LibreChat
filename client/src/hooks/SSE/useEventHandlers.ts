@@ -365,6 +365,13 @@ export default function useEventHandlers({
         parentMessageId: userMessage.messageId,
         messageId: userMessage.messageId + '_',
       };
+      // Flip isSubmitting on the user-message echo, not on the first text
+      // delta. messageHandler also sets it, but for endpoints that do work
+      // before any text streams (e.g. codeCanDirect's Ontario file_search
+      // preflight) the gap can be several seconds — long enough for the
+      // assistant card to render with no indicator because result-streaming
+      // is gated on isSubmitting downstream.
+      setIsSubmitting(true);
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);
       } else {
@@ -434,6 +441,7 @@ export default function useEventHandlers({
       isAddedRequest,
       announcePolite,
       setConversation,
+      setIsSubmitting,
       resetLatestMessage,
       applyAgentTemplate,
     ],
