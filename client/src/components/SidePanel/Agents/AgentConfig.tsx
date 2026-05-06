@@ -2,7 +2,7 @@
 /* ^ We're not worried about i18n for this app ^ */
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { useToastContext } from '@librechat/client';
+import { Switch, useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import {
   EModelEndpoint,
