@@ -304,11 +304,11 @@ export function sanitizeArtifactPath(inputName: string): string {
    * input → same safe form (idempotent for re-uploads); different raw
    * inputs that would have collided → different safe forms.
    *
-   * Clean inputs (where the regex/normalize pass was a no-op) skip
+   * Clean inputs (where the regex/normalize pass was a raw-string no-op) skip
    * the disambiguator — no collision is possible because they're
    * already distinct strings, and we don't want to clutter human-
    * readable filenames with a hash when nothing was at risk. */
-  if (preCapJoined !== inputName.normalize('NFC')) {
+  if (preCapJoined !== inputName) {
     capped[leafIdx] = embedDisambiguatorInLeaf(capped[leafIdx], inputName);
     joined = capped.join('/');
   }

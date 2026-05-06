@@ -326,6 +326,16 @@ describe('sanitizeArtifactPath', () => {
       expect(a).toBe(`_.hidden-${expectedHexSuffix('.hidden')}`);
     });
 
+    test('normalization-only collisions get distinct safe forms', () => {
+      const composed = 'reports/Café.csv';
+      const decomposed = 'reports/Cafe\u0301.csv';
+      const normalizedDecomposed = `reports/Café-${expectedHexSuffix(decomposed)}.csv`;
+
+      expect(sanitizeArtifactPath(composed)).toBe(composed);
+      expect(sanitizeArtifactPath(decomposed)).toBe(normalizedDecomposed);
+      expect(normalizedDecomposed).not.toBe(composed);
+    });
+
     test('idempotent: same raw input always produces the same safe form', () => {
       /* Disambiguator is deterministic (SHA-256 prefix of raw input),
        * so re-uploading the same long-or-mutated name lands at the
