@@ -24,6 +24,39 @@ export function assertPathSegment(
   return segment;
 }
 
+export function assertS3FileName(
+  label: string,
+  value: string | null | undefined,
+  errorPrefix = 'S3 key',
+): string {
+  const fileName = value?.toString?.() ?? '';
+
+  if (!fileName) {
+    throw new Error(`[${errorPrefix}] ${label} must not be empty`);
+  }
+  if (fileName.includes('\\')) {
+    throw new Error(`[${errorPrefix}] ${label} must not contain backslashes: "${fileName}"`);
+  }
+  for (let i = 0; i < fileName.length; i++) {
+    const code = fileName.charCodeAt(i);
+    if (code <= 31 || code === 127) {
+      throw new Error(`[${errorPrefix}] ${label} contains unsafe path characters: "${fileName}"`);
+    }
+  }
+
+  const components = fileName.split('/');
+  for (const component of components) {
+    if (!component) {
+      throw new Error(`[${errorPrefix}] ${label} must not contain empty path components`);
+    }
+    if (component === '.' || component === '..') {
+      throw new Error(`[${errorPrefix}] ${label} must not contain path traversal: "${fileName}"`);
+    }
+  }
+
+  return fileName;
+}
+
 export function sanitizeContentDispositionFilename(filename: string): string {
   let sanitized = '';
   for (const character of filename) {
@@ -39,5 +72,5 @@ export function sanitizeContentDispositionFilename(filename: string): string {
     }
     sanitized += character;
   }
-  return sanitized;
+  return sanitized || 'download';
 }

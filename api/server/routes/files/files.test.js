@@ -708,5 +708,36 @@ describe('File Routes - Delete with Agent Access', () => {
       );
       expect(getDownloadStream).toHaveBeenCalledWith(expect.any(Object), 'uploads/user/file.txt');
     });
+
+    it('returns 501 when direct URL generation fails and no stream fallback exists', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockRejectedValue(new Error('missing signing keys'));
+      getStrategyFunctions.mockReturnValue({ getDownloadURL });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.txt',
+        filepath: 'uploads/user/file.txt',
+        bytes: 200,
+        type: 'text/plain',
+        source: FileSources.cloudfront,
+      });
+
+      const response = await request(app).get(
+        `/files/download/${otherUserId}/${userFileId}?direct=true`,
+      );
+
+      expect(response.status).toBe(501);
+      expect(response.text).toBe('Not Implemented');
+      expect(response.headers.location).toBeUndefined();
+      expect(getDownloadURL).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file: expect.objectContaining({ file_id: userFileId }),
+          customFilename: 'file.txt',
+          contentType: 'text/plain',
+        }),
+      );
+    });
   });
 });

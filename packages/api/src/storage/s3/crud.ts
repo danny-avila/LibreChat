@@ -32,7 +32,11 @@ import type {
   UrlBuilder,
   S3FileRef,
 } from '~/storage/types';
-import { assertPathSegment, sanitizeContentDispositionFilename } from '~/storage/validation';
+import {
+  assertS3FileName,
+  assertPathSegment,
+  sanitizeContentDispositionFilename,
+} from '~/storage/validation';
 import { initializeS3 } from '~/cdn/s3';
 import { deleteRagFile } from '~/files';
 import { s3Config } from './s3Config';
@@ -71,12 +75,13 @@ export const getS3Key = (
 ): string => {
   const safeBasePath = assertPathSegment('basePath', basePath, 'getS3Key');
   const safeUserId = assertPathSegment('userId', userId, 'getS3Key');
+  const safeFileName = assertS3FileName('fileName', fileName, 'getS3Key');
 
   if (tenantId) {
     const safeTenantId = assertPathSegment('tenantId', tenantId, 'getS3Key');
-    return `t/${safeTenantId}/${safeBasePath}/${safeUserId}/${fileName}`;
+    return `t/${safeTenantId}/${safeBasePath}/${safeUserId}/${safeFileName}`;
   }
-  return `${safeBasePath}/${safeUserId}/${fileName}`;
+  return `${safeBasePath}/${safeUserId}/${safeFileName}`;
 };
 
 export const parseS3Key = (key: string): S3KeyParts | null => {

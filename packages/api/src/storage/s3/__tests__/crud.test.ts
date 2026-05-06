@@ -119,6 +119,19 @@ describe('S3 CRUD', () => {
         '[getS3Key] userId must not contain slashes: "user/123"',
       );
     });
+
+    it('throws if fileName contains traversal or unsafe path characters', async () => {
+      const { getS3Key } = await import('../crud');
+      expect(() => getS3Key('images', 'user123', '../file.png')).toThrow(
+        '[getS3Key] fileName must not contain path traversal: "../file.png"',
+      );
+      expect(() => getS3Key('images', 'user123', 'folder//file.png')).toThrow(
+        '[getS3Key] fileName must not contain empty path components',
+      );
+      expect(() => getS3Key('images', 'user123', 'file\u0000.png')).toThrow(
+        '[getS3Key] fileName contains unsafe path characters',
+      );
+    });
   });
 
   describe('parseS3Key', () => {

@@ -1,4 +1,8 @@
-import { assertPathSegment, sanitizeContentDispositionFilename } from '../validation';
+import {
+  assertS3FileName,
+  assertPathSegment,
+  sanitizeContentDispositionFilename,
+} from '../validation';
 
 describe('assertPathSegment', () => {
   it('returns safe single path segments', () => {
@@ -25,6 +29,29 @@ describe('assertPathSegment', () => {
   });
 });
 
+describe('assertS3FileName', () => {
+  it('allows nested S3 file names', () => {
+    expect(assertS3FileName('fileName', 'reports/2026/output.csv', 'test')).toBe(
+      'reports/2026/output.csv',
+    );
+  });
+
+  it('rejects traversal, empty components, backslashes, and control characters', () => {
+    expect(() => assertS3FileName('fileName', '../secret.txt', 'test')).toThrow(
+      'must not contain path traversal',
+    );
+    expect(() => assertS3FileName('fileName', 'reports//output.csv', 'test')).toThrow(
+      'must not contain empty path components',
+    );
+    expect(() => assertS3FileName('fileName', 'reports\\output.csv', 'test')).toThrow(
+      'must not contain backslashes',
+    );
+    expect(() => assertS3FileName('fileName', 'report\u0000.csv', 'test')).toThrow(
+      'contains unsafe path characters',
+    );
+  });
+});
+
 describe('sanitizeContentDispositionFilename', () => {
   it('strips quoted-string and header separator characters', () => {
     expect(sanitizeContentDispositionFilename('report";\\\r\nbad.pdf')).toBe('reportbad.pdf');
@@ -34,5 +61,9 @@ describe('sanitizeContentDispositionFilename', () => {
     expect(sanitizeContentDispositionFilename('report\u0000\t\u001fbad\u007f.pdf')).toBe(
       'reportbad.pdf',
     );
+  });
+
+  it('returns a safe fallback when all filename characters are stripped', () => {
+    expect(sanitizeContentDispositionFilename('";\\\r\n')).toBe('download');
   });
 });
