@@ -26,6 +26,8 @@ import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
 import { cn, removeFocusRings } from '~/utils';
 import TextareaHeader from './TextareaHeader';
+import PendingManualSkillsChips from './PendingManualSkillsChips';
+import SkillsCommand from './SkillsCommand';
 import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
 import CollapseChat from './CollapseChat';
@@ -254,6 +256,12 @@ const ChatForm = memo(function ChatForm({
             textAreaRef={textAreaRef}
           />
           <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
+          <SkillsCommand
+            index={index}
+            textAreaRef={textAreaRef}
+            conversationId={conversationId}
+            agentId={conversation?.agent_id}
+          />
           <div
             onClick={handleContainerClick}
             className={cn(
@@ -265,6 +273,7 @@ const ChatForm = memo(function ChatForm({
             )}
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
+            <PendingManualSkillsChips conversationId={conversationId} />
             {/* WIP */}
             <EditBadges
               isEditingChatBadges={isEditingBadges}

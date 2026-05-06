@@ -11,6 +11,7 @@ const {
   math,
   isEnabled,
   checkEmailConfig,
+  setCloudFrontCookies,
   isEmailDomainAllowed,
   shouldUseSecureCookie,
   resolveAppConfigForUser,
@@ -440,6 +441,9 @@ const setAuthTokens = async (userId, res, _session = null) => {
       secure: shouldUseSecureCookie(),
       sameSite: 'strict',
     });
+
+    setCloudFrontCookies(res);
+
     return token;
   } catch (error) {
     logger.error('[setAuthTokens] Error in setting authentication tokens:', error);
@@ -557,6 +561,9 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         sameSite: 'strict',
       });
     }
+
+    setCloudFrontCookies(res);
+
     return appAuthToken;
   } catch (error) {
     logger.error('[setOpenIDAuthTokens] Error in setting authentication tokens:', error);

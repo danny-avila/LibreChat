@@ -229,11 +229,24 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Updates a file identified by file_id with new data and removes the TTL.
+   *
+   * `extraFilter` extends the by-id query with additional conditions
+   * (e.g. `{ previewRevision: '<expected uuid>' }`). When provided, the
+   * update is conditional — it commits only if the document still
+   * matches the extra filter, returning `null` otherwise. Used by the
+   * deferred-preview render to guard against an older render of the
+   * same `file_id` overwriting a newer turn's record on cross-turn
+   * filename reuse.
+   *
    * @param data - The data to update, must contain file_id
-   * @returns A promise that resolves to the updated file document
+   * @param extraFilter - Optional extra equality filter merged into the query.
+   * @returns A promise that resolves to the updated file document, or
+   *   null if the conditional filter excluded it (or the file was
+   *   deleted).
    */
   async function updateFile(
     data: Partial<IMongoFile> & { file_id: string },
+    extraFilter?: FilterQuery<IMongoFile>,
   ): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const { file_id, ...update } = data;
@@ -241,7 +254,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
       $set: update,
       $unset: { expiresAt: '' },
     };
-    return File.findOneAndUpdate({ file_id }, updateOperation, {
+    const query: FilterQuery<IMongoFile> = extraFilter ? { file_id, ...extraFilter } : { file_id };
+    return File.findOneAndUpdate(query, updateOperation, {
       new: true,
     }).lean();
   }
@@ -368,6 +382,38 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     return results.filter((result): result is IMongoFile => result != null);
   }
 
+  /**
+   * Mark stale `status: 'pending'` file records as `'failed'` with
+   * `previewError: 'orphaned'`. Recovers from the one case the
+   * in-process deferred-preview render can't handle on its own: a
+   * backend restart mid-render loses the in-memory promise, leaving
+   * the record stuck pending forever.
+   *
+   * Cheap to run on boot — the `status` field is indexed and the typical
+   * cutoff (5 min) bounds the candidate set to whatever was in flight at
+   * the prior shutdown. The 60s render timeout means anything older
+   * than a few minutes that's still pending is definitively orphaned.
+   *
+   * @param maxAgeMs - Cutoff in milliseconds; records whose `updatedAt`
+   *   is older than `now - maxAgeMs` are marked failed. Defaults to 5
+   *   minutes (well above the 60s render ceiling).
+   * @returns Number of records updated.
+   */
+  async function sweepOrphanedPreviews(maxAgeMs: number = 5 * 60 * 1000): Promise<number> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const cutoff = new Date(Date.now() - maxAgeMs);
+    const result = await File.updateMany(
+      { status: 'pending', updatedAt: { $lt: cutoff } },
+      { $set: { status: 'failed', previewError: 'orphaned' } },
+    );
+    if (result.modifiedCount > 0) {
+      logger.info(
+        `[sweepOrphanedPreviews] Marked ${result.modifiedCount} stale 'pending' files as 'failed' (cutoff: ${cutoff.toISOString()})`,
+      );
+    }
+    return result.modifiedCount ?? 0;
+  }
+
   return {
     findFileById,
     getFiles,
@@ -383,6 +429,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     deleteFileByFilter,
     batchUpdateFiles,
     updateFilesUsage,
+    sweepOrphanedPreviews,
   };
 }
 

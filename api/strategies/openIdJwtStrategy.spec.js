@@ -23,6 +23,8 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => false),
   findOpenIDUser: jest.fn(),
+  getOpenIdEmail: jest.requireActual('@librechat/api').getOpenIdEmail,
+  getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
   math: jest.fn((val, fallback) => fallback),
 }));
 jest.mock('~/models', () => ({
@@ -47,7 +49,10 @@ const { findUser, updateUser } = require('~/models');
 
 // Helper: build a mock openIdConfig
 const mockOpenIdConfig = {
-  serverMetadata: () => ({ jwks_uri: 'https://example.com/.well-known/jwks.json' }),
+  serverMetadata: () => ({
+    issuer: 'https://issuer.example.com',
+    jwks_uri: 'https://example.com/.well-known/jwks.json',
+  }),
 };
 
 // Helper: invoke the captured verify callback
@@ -225,6 +230,7 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
       _id: 'user-id-1',
       provider: 'openid',
       openidId: payload.sub,
+      openidIssuer: 'https://issuer.example.com',
       email: payload.email,
       role: SystemRoles.USER,
     };
@@ -240,7 +246,9 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
 
     expect(findUser).toHaveBeenCalledWith(
       expect.objectContaining({
-        $or: expect.arrayContaining([{ openidId: payload.sub }]),
+        $or: expect.arrayContaining([
+          { openidId: payload.sub, openidIssuer: 'https://issuer.example.com' },
+        ]),
       }),
     );
   });
@@ -254,7 +262,9 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
 
     expect(findUser).toHaveBeenCalledTimes(2);
     expect(findUser.mock.calls[0][0]).toMatchObject({
-      $or: expect.arrayContaining([{ openidId: payload.sub }]),
+      $or: expect.arrayContaining([
+        { openidId: payload.sub, openidIssuer: 'https://issuer.example.com' },
+      ]),
     });
     expect(findUser.mock.calls[1][0]).toEqual({ email: 'test@corp.example.com' });
     expect(user).toBe(false);
@@ -367,7 +377,11 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     expect(user).toBeTruthy();
     expect(updateUser).toHaveBeenCalledWith(
       'legacy-db-id',
-      expect.objectContaining({ provider: 'openid', openidId: payloadNoEmail.sub }),
+      expect.objectContaining({
+        provider: 'openid',
+        openidId: payloadNoEmail.sub,
+        openidIssuer: 'https://issuer.example.com',
+      }),
     );
   });
 });

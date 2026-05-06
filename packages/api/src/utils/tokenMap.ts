@@ -1,4 +1,4 @@
-import type { BaseMessage } from '@langchain/core/messages';
+import type { BaseMessage } from '@librechat/agents/langchain/messages';
 
 /** Signature for a function that counts tokens in a LangChain message. */
 export type TokenCounter = (message: BaseMessage) => number;

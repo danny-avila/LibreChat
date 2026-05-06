@@ -4,6 +4,14 @@ import { CursorPaginationParams } from '~/common';
 
 export interface IUser extends Document {
   _id: Types.ObjectId;
+  /**
+   * Mongoose's `Document.id` virtual is typed `id?: any`. At runtime it's
+   * always `_id.toString()` for a hydrated doc, so narrow to a required
+   * string. This also lets `IUser` satisfy Express.User augmentations
+   * (the OIDC remote-agent middleware assigns `req.user = IUser` where
+   * the project's local `Express.User` requires `id: string`).
+   */
+  id: string;
   name?: string;
   username?: string;
   email: string;
@@ -21,6 +29,7 @@ export interface IUser extends Document {
   discordId?: string;
   appleId?: string;
   plugins?: string[];
+  openidIssuer?: string;
   twoFactorEnabled?: boolean;
   totpSecret?: string;
   backupCodes?: Array<{
@@ -43,6 +52,8 @@ export interface IUser extends Document {
     memories?: boolean;
   };
   favorites?: TUserFavorite[];
+  /** Per-skill active/inactive overrides. Key = skillId, value = active state. */
+  skillStates?: Record<string, boolean>;
   createdAt?: Date;
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
@@ -85,6 +96,7 @@ export interface UpdateUserRequest {
   personalization?: {
     memories?: boolean;
   };
+  skillStates?: Record<string, boolean>;
 }
 
 export interface UserDeleteResult {
