@@ -396,13 +396,12 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   const fileAttachments: TAttachment[] = [];
   const imageAttachments: TAttachment[] = [];
   const textAttachments: TAttachment[] = [];
-  const panelArtifacts: Array<{ attachment: TAttachment; type: ToolArtifactType }> = [];
+  /* Pending-preview chips share this row with their future selves —
+   * `type` is null while pending so the renderer falls back to
+   * FileAttachment (PreviewPlaceholderCard); on resolution it switches
+   * to PanelArtifact in place. */
+  const panelRow: Array<{ attachment: TAttachment; type: ToolArtifactType | null }> = [];
   const mermaidArtifacts: TAttachment[] = [];
-  /* Pending-preview files render in their own row above the resolved
-   * buckets so the loading state reads as "this is still happening"
-   * rather than mixing with completed attachments. Once status flips
-   * to ready/failed they re-bucket into panel/file alongside siblings. */
-  const pendingAttachments: TAttachment[] = [];
 
   attachments.forEach((attachment) => {
     if (attachment.type === Tools.web_search) {
@@ -416,7 +415,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
       return;
     }
     if ((attachment as Partial<TFile>).status === 'pending') {
-      pendingAttachments.push(attachment);
+      panelRow.push({ attachment, type: null });
       return;
     }
     const artType = artifactTypeForAttachment(attachment);
@@ -425,7 +424,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
       return;
     }
     if (artType != null) {
-      panelArtifacts.push({ attachment, type: artType });
+      panelRow.push({ attachment, type: artType });
       return;
     }
     if (isTextAttachment(attachment)) {
@@ -440,24 +439,18 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   // engines (V8 ≥ 7.0) so equal-weight entries keep their input order.
   fileAttachments.sort(bySalience);
   textAttachments.sort(bySalience);
-  panelArtifacts.sort(byEntrySalience);
+  /* Sort only the typed (resolved) entries; pending placeholders bubble
+   * to the end of the row so resolved siblings catch the eye first. */
+  const resolvedPanel = panelRow.filter(
+    (e): e is { attachment: TAttachment; type: ToolArtifactType } => e.type != null,
+  );
+  const pendingPanel = panelRow.filter((e) => e.type == null);
+  resolvedPanel.sort(byEntrySalience);
   mermaidArtifacts.sort(bySalience);
   imageAttachments.sort(bySalience);
 
   return (
     <>
-      {pendingAttachments.length > 0 && (
-        <div className="my-2 flex flex-wrap items-center gap-2">
-          {pendingAttachments.map((attachment, index) =>
-            attachment.filepath ? (
-              <FileAttachment
-                attachment={attachment}
-                key={renderAttachmentKey('pending', attachment, index)}
-              />
-            ) : null,
-          )}
-        </div>
-      )}
       {fileAttachments.length > 0 && (
         <div className="my-2 flex flex-wrap items-center gap-2.5">
           {fileAttachments.map((attachment, index) =>
@@ -470,15 +463,23 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
           )}
         </div>
       )}
-      {panelArtifacts.length > 0 && (
+      {(resolvedPanel.length > 0 || pendingPanel.length > 0) && (
         <div className="my-2 flex flex-wrap items-center gap-2">
-          {panelArtifacts.map(({ attachment, type }, index) => (
+          {resolvedPanel.map(({ attachment, type }, index) => (
             <PanelArtifact
               attachment={attachment}
               type={type}
               key={renderAttachmentKey('artifact', attachment, index)}
             />
           ))}
+          {pendingPanel.map(({ attachment }, index) =>
+            attachment.filepath ? (
+              <FileAttachment
+                attachment={attachment}
+                key={renderAttachmentKey('pending', attachment, index)}
+              />
+            ) : null,
+          )}
         </div>
       )}
       {mermaidArtifacts.length > 0 && (

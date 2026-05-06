@@ -761,13 +761,16 @@ describe('AttachmentGroup routing', () => {
     expect(chip?.textContent).toBe('.config.zip');
   });
 
-  it('renders pending-preview attachments in their own row, separate from resolved files', () => {
-    /* Pending-preview deferred-render files take a dedicated row above
-     * the resolved buckets so the loading state reads as a distinct
-     * "this is still happening" group rather than mixing with completed
-     * downloads. Once status flips to ready, the chip re-buckets into
-     * panelArtifacts (its own row) — neither row mixes with the other. */
+  it('renders pending-preview chips in the panel-artifact row alongside resolved siblings', () => {
+    /* A pending preview is a future panel artifact — render it in the
+     * same row so when it resolves the chip stays put instead of
+     * jumping between rows. Plain files keep their own row. */
     const attachments = [
+      baseAttachment({
+        file_id: 'resolved',
+        filename: 'index.html',
+        text: '<h1>hi</h1>',
+      } as Partial<TAttachment>),
       baseAttachment({
         file_id: 'pending-1',
         filename: 'data.xlsx',
@@ -783,12 +786,12 @@ describe('AttachmentGroup routing', () => {
 
     const { container } = renderWith(<AttachmentGroup attachments={attachments} />);
 
-    /* Two separate row containers — pending row + file row. They're
-     * sibling div.flex.flex-wrap children of the AttachmentGroup
-     * fragment. */
+    /* Two rows: file row (plain.zip) + panel row (resolved + pending). */
     const rows = container.querySelectorAll('div.flex.flex-wrap');
     expect(rows.length).toBe(2);
-    /* Both attachments rendered (one per row). */
+    /* Resolved artifact card title visible. */
+    expect(screen.getByText('index.html')).toBeInTheDocument();
+    /* Pending placeholder is a FileContainer rendering. */
     expect(screen.getAllByTestId('file-container').length).toBeGreaterThanOrEqual(1);
   });
 
