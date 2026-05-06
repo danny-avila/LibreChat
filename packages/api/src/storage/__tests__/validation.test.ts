@@ -15,9 +15,7 @@ describe('assertPathSegment', () => {
     expect(() => assertPathSegment('userId', '..', 'test')).toThrow(
       'must not contain path traversal',
     );
-    expect(() => assertPathSegment('userId', 'tenant..legacy', 'test')).toThrow(
-      'must not contain path traversal',
-    );
+    expect(assertPathSegment('tenantId', 'tenant..legacy', 'test')).toBe('tenant..legacy');
     expect(() => assertPathSegment('userId', 'user\u0000id', 'test')).toThrow(
       'contains unsafe path characters',
     );
@@ -30,5 +28,11 @@ describe('assertPathSegment', () => {
 describe('sanitizeContentDispositionFilename', () => {
   it('strips quoted-string and header separator characters', () => {
     expect(sanitizeContentDispositionFilename('report";\\\r\nbad.pdf')).toBe('reportbad.pdf');
+  });
+
+  it('strips all ASCII control characters from header filenames', () => {
+    expect(sanitizeContentDispositionFilename('report\u0000\t\u001fbad\u007f.pdf')).toBe(
+      'reportbad.pdf',
+    );
   });
 });

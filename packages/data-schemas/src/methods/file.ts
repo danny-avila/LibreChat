@@ -182,15 +182,21 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     conversationId: string;
     file_id: string;
     user: string;
+    tenantId?: string | null;
   }): Promise<IMongoFile> {
     const File = mongoose.models.File as Model<IMongoFile>;
+    const tenantFilter = data.tenantId ? { tenantId: data.tenantId } : { tenantId: null };
+    const insertData = data.tenantId
+      ? { file_id: data.file_id, user: data.user, tenantId: data.tenantId }
+      : { file_id: data.file_id, user: data.user };
     const result = await File.findOneAndUpdate(
       {
         filename: data.filename,
         conversationId: data.conversationId,
         context: FileContext.execute_code,
+        ...tenantFilter,
       },
-      { $setOnInsert: { file_id: data.file_id, user: data.user } },
+      { $setOnInsert: insertData },
       { upsert: true, new: true },
     ).lean();
     if (!result) {

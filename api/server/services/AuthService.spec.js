@@ -433,6 +433,23 @@ describe('CloudFront cookie integration', () => {
       );
     });
 
+    it('treats an object without token option keys as empty options', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(validTokenset, req, res, {});
+
+      expect(result).toBe('the-id-token');
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: undefined,
+          tenantId: undefined,
+        },
+        null,
+      );
+    });
+
     it('succeeds even when setCloudFrontCookies returns false', () => {
       setCloudFrontCookies.mockReturnValue(false);
 

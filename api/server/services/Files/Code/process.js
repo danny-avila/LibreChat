@@ -396,6 +396,7 @@ const processCodeOutput = async ({
       conversationId,
       file_id: newFileId,
       user: req.user.id,
+      tenantId: req.user.tenantId,
     });
     const file_id = claimed.file_id;
     const isUpdate = file_id !== newFileId;
@@ -429,6 +430,7 @@ const processCodeOutput = async ({
         filename: safeName,
         conversationId,
         user: req.user.id,
+        tenantId: req.user.tenantId,
         type: `image/${appConfig.imageOutputType}`,
         createdAt: isUpdate ? claimed.createdAt : formattedDate,
         updatedAt: formattedDate,
@@ -524,6 +526,7 @@ const processCodeOutput = async ({
       type: mimeType,
       conversationId,
       user: req.user.id,
+      tenantId: req.user.tenantId,
       bytes: buffer.length,
       updatedAt: formattedDate,
       metadata: { fileIdentifier },

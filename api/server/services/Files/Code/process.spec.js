@@ -245,6 +245,29 @@ describe('Code Process', () => {
         expect(result.filename).toBe('chart.png');
       });
 
+      it('persists tenantId on image code output records when present', async () => {
+        const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
+        const imageBuffer = Buffer.alloc(500);
+        mockAxios.mockResolvedValue({ data: imageBuffer });
+        convertImage.mockResolvedValue({
+          filepath: '/t/tenantA/images/user-123/mock-uuid-1234.webp',
+        });
+
+        await processCodeOutput({
+          ...baseParams,
+          req: tenantReq,
+          name: 'chart.png',
+        });
+
+        expect(mockClaimCodeFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+        );
+        expect(createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+          true,
+        );
+      });
+
       it('should update existing image file with cache-busted filepath', async () => {
         const imageParams = { ...baseParams, name: 'chart.png' };
         mockClaimCodeFile.mockResolvedValue({
@@ -294,6 +317,33 @@ describe('Code Process', () => {
         expect(result.type).toBe('text/plain');
         expect(result.filepath).toBe('/uploads/saved-file.txt');
         expect(result.bytes).toBe(100);
+      });
+
+      it('passes and persists tenantId for non-image code output records', async () => {
+        const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+
+        const mockSaveBuffer = jest
+          .fn()
+          .mockResolvedValue('/t/tenantA/uploads/user-123/mock-file-path.txt');
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        await processCodeOutput({
+          ...baseParams,
+          req: tenantReq,
+        });
+
+        expect(mockClaimCodeFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+        );
+        expect(mockSaveBuffer).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+        );
+        expect(createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+          true,
+        );
       });
 
       it('preserves nested directory paths in the DB record while flattening the storage key', async () => {

@@ -164,7 +164,7 @@ router.delete('/', async (req, res) => {
       }
     }
 
-    if (nonOwnedFiles.length === 0) {
+    if (dbFiles.length > 0 && nonOwnedFiles.length === 0) {
       await processDeleteRequest({ req, files: ownedFiles });
       logger.debug(
         `[/files] Files deleted successfully: ${ownedFiles
@@ -214,9 +214,28 @@ router.delete('/', async (req, res) => {
       });
 
       const toolResourceFiles = agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
-      const agentFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
+      const agentFiles = files
+        .filter((f) => toolResourceFiles.includes(f.file_id))
+        .map((file) => ({ tool_resource: req.body.tool_resource, file_id: file.file_id }));
+      const accessMap = await hasAccessToFilesViaAgent({
+        userId: req.user.id,
+        role: req.user.role,
+        fileIds: agentFiles.map((file) => file.file_id),
+        agentId: req.body.agent_id,
+        isDelete: true,
+      });
+      const unauthorizedFiles = agentFiles.filter((file) => !accessMap.get(file.file_id));
+      if (unauthorizedFiles.length > 0) {
+        return res.status(403).json({
+          message: 'You can only delete files you have access to',
+          unauthorizedFiles: unauthorizedFiles.map((file) => file.file_id),
+        });
+      }
 
-      await processDeleteRequest({ req, files: agentFiles });
+      await db.removeAgentResourceFiles({
+        agent_id: req.body.agent_id,
+        files: agentFiles,
+      });
       res.status(200).json({ message: 'File associations removed successfully from agent' });
       return;
     }
@@ -378,21 +397,25 @@ router.get('/:file_id/preview', fileAccess, async (req, res) => {
 /**
  * Returns a strategy-managed signed URL for an already-authorized file record.
  */
-const getDirectDownloadURL = async ({ req, file }) => {
+const getDirectDownloadURL = async ({
+  req,
+  file,
+  customFilename = cleanFileName(file.filename),
+}) => {
   const { getDownloadURL } = getStrategyFunctions(file.source);
   if (!getDownloadURL) {
     return null;
   }
 
-  const cleanedFilename = cleanFileName(file.filename);
   return getDownloadURL({
     req,
     file,
-    customFilename: cleanedFilename,
+    customFilename,
     contentType: file.type || 'application/octet-stream',
   });
 };
 
+// Security allowlist: excludes internal ids, owner/tenant identifiers, storage keys, and extracted text.
 const DOWNLOAD_METADATA_FIELDS = [
   'conversationId',
   'message',
@@ -442,9 +465,10 @@ router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
       return res.status(400).send('The model used when creating this file is not available');
     }
 
+    const filename = cleanFileName(file.filename);
     const downloadURL = checkOpenAIStorage(file.source)
       ? null
-      : await getDirectDownloadURL({ req, file });
+      : await getDirectDownloadURL({ req, file, customFilename: filename });
 
     if (!downloadURL) {
       logger.debug(
@@ -456,7 +480,7 @@ router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({
       url: downloadURL,
-      filename: cleanFileName(file.filename),
+      filename,
       type: file.type || 'application/octet-stream',
       metadata: getDownloadFileMetadata(file),
     });

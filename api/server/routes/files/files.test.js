@@ -433,6 +433,69 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(response.body.unauthorizedFiles).toContain(fileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
+
+    it('unlinks missing agent resource files without invoking storage deletion', async () => {
+      const missingFileId = uuidv4();
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUserId,
+        tool_resources: {
+          file_search: {
+            file_ids: [missingFileId],
+          },
+        },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [{ file_id: missingFileId, filepath: '/uploads/missing.txt' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('File associations removed successfully from agent');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
+    });
+
+    it('prevents unlinking missing agent resource files without agent edit access', async () => {
+      const missingFileId = uuidv4();
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [missingFileId],
+          },
+        },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [{ file_id: missingFileId, filepath: '/uploads/missing.txt' }],
+        });
+
+      expect(response.status).toBe(403);
+      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.unauthorizedFiles).toContain(missingFileId);
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([missingFileId]);
+    });
   });
 
   describe('GET /files/download-url/:userId/:file_id', () => {

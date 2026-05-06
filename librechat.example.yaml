@@ -37,12 +37,15 @@ cache: true
 #   imageSigning: "none"                    # "none" (public) | "cookies" (signed cookies)
 #   # When imageSigning: "cookies", API + CloudFront must share a parent domain.
 #   # Cookies are path-scoped to private image prefixes and avatar prefixes.
+#   # If adding tenantId to a private pre-release CloudFront deployment, re-key
+#   # legacy /images and /avatars objects under /t/{tenantId}/ before enabling.
 #   #   API: api.example.com, CloudFront CNAME: cdn.example.com, cookieDomain: ".example.com"
 #   cookieDomain: ".example.com"            # Required for "cookies" - shared parent domain
 #   cookieExpiry: 1800                      # Cookie lifetime in seconds (max: 604800 / 7 days, default: 1800 / 30 min)
 #   urlExpiry: 3600                         # Signed CloudFront download URL lifetime in seconds
-#   # Direct-download filename/content-type overrides require CloudFront to forward
-#   # response-content-disposition and response-content-type query strings to S3.
+#   # Direct-download filename/content-type overrides require the CloudFront cache/origin
+#   # request policy to forward and cache on response-content-disposition and
+#   # response-content-type query strings to S3.
 #   # Recommended for download paths: attach a CloudFront response headers policy
 #   # with X-Content-Type-Options: nosniff and CSP default-src 'none'.
 

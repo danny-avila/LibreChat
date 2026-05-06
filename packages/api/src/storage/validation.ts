@@ -11,7 +11,7 @@ export function assertPathSegment(
   if (segment.includes('/') || segment.includes('\\')) {
     throw new Error(`[${errorPrefix}] ${label} must not contain slashes: "${segment}"`);
   }
-  if (segment === '.' || segment === '..' || segment.includes('..')) {
+  if (segment === '.' || segment === '..') {
     throw new Error(`[${errorPrefix}] ${label} must not contain path traversal: "${segment}"`);
   }
   for (let i = 0; i < segment.length; i++) {
@@ -25,5 +25,19 @@ export function assertPathSegment(
 }
 
 export function sanitizeContentDispositionFilename(filename: string): string {
-  return filename.replace(/["\\;\r\n]/g, '');
+  let sanitized = '';
+  for (const character of filename) {
+    const code = character.charCodeAt(0);
+    if (
+      character === '"' ||
+      character === '\\' ||
+      character === ';' ||
+      code <= 31 ||
+      code === 127
+    ) {
+      continue;
+    }
+    sanitized += character;
+  }
+  return sanitized;
 }

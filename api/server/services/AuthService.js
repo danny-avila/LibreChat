@@ -470,14 +470,15 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
 };
 
 const resolveOpenIDAuthTokenOptions = (optionsOrUserId, existingRefreshToken, tenantId) => {
-  if (
-    optionsOrUserId != null &&
-    typeof optionsOrUserId === 'object' &&
-    ('userId' in optionsOrUserId ||
+  if (optionsOrUserId != null && typeof optionsOrUserId === 'object') {
+    if (
+      'userId' in optionsOrUserId ||
       'existingRefreshToken' in optionsOrUserId ||
-      'tenantId' in optionsOrUserId)
-  ) {
-    return optionsOrUserId;
+      'tenantId' in optionsOrUserId
+    ) {
+      return optionsOrUserId;
+    }
+    return {};
   }
 
   return { userId: optionsOrUserId, existingRefreshToken, tenantId };
@@ -523,10 +524,6 @@ const setOpenIDAuthTokens = (
       DEFAULT_REFRESH_TOKEN_EXPIRY,
     );
     const expirationDate = new Date(Date.now() + expiryInMilliseconds);
-    if (tokenset == null) {
-      logger.error('[setOpenIDAuthTokens] No tokenset found in request');
-      return;
-    }
     if (!tokenset.access_token) {
       logger.error('[setOpenIDAuthTokens] No access token found in tokenset');
       return;
