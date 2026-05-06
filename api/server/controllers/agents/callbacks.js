@@ -2,11 +2,11 @@ const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
 const {
-  EnvVar,
-  Constants,
   GraphEvents,
   GraphNodeKeys,
   ToolEndHandler,
+  CODE_EXECUTION_TOOLS,
+  createContentAggregator,
 } = require('@librechat/agents');
 const {
   sendEvent,
@@ -15,8 +15,7 @@ const {
   createToolExecuteHandler,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
-const { processCodeOutput } = require('~/server/services/Files/Code/process');
-const { loadAuthValues } = require('~/server/services/Tools/credentials');
+const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
 class ModelEndHandler {
@@ -76,6 +75,9 @@ class ModelEndHandler {
       if (modelName) {
         usage.model = modelName;
       }
+      if (agentContext.provider) {
+        usage.provider = agentContext.provider;
+      }
 
       const taggedUsage = markSummarizationUsage(usage, metadata);
 
@@ -117,6 +119,48 @@ async function emitEvent(res, streamId, eventData) {
 }
 
 /**
+ * Maps a {@link SubagentUpdateEvent} phase to the corresponding
+ * {@link GraphEvents} name that the SDK's `createContentAggregator`
+ * knows how to consume. Phases that don't carry content (`start`, `stop`,
+ * `error`) or whose payload doesn't match a handled event (`run_step`
+ * with an `ON_TOOL_EXECUTE`-shaped batch request rather than a RunStep)
+ * return `null` so the caller skips them.
+ * @param {SubagentUpdateEvent} event
+ * @returns {string | null}
+ */
+function subagentPhaseToGraphEvent(event) {
+  switch (event?.phase) {
+    case 'run_step':
+      /** `ON_RUN_STEP` and `ON_TOOL_EXECUTE` both forward with phase
+       *  `run_step`; only the former matches the aggregator's RunStep
+       *  schema. Detect by presence of `stepDetails`. */
+      return event.data?.stepDetails ? GraphEvents.ON_RUN_STEP : null;
+    case 'run_step_delta':
+      return GraphEvents.ON_RUN_STEP_DELTA;
+    case 'run_step_completed':
+      return GraphEvents.ON_RUN_STEP_COMPLETED;
+    case 'message_delta':
+      return GraphEvents.ON_MESSAGE_DELTA;
+    case 'reasoning_delta':
+      return GraphEvents.ON_REASONING_DELTA;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Folds a single {@link SubagentUpdateEvent} into the given content
+ * aggregator. Silent no-op for phases outside the aggregator's domain.
+ * @param {{ aggregateContent: Function }} aggregator
+ * @param {SubagentUpdateEvent} event
+ */
+function feedSubagentAggregator(aggregator, event) {
+  const graphEvent = subagentPhaseToGraphEvent(event);
+  if (!graphEvent) return;
+  aggregator.aggregateContent({ event: graphEvent, data: event.data });
+}
+
+/**
  * @typedef {Object} ToolExecuteOptions
  * @property {(toolNames: string[]) => Promise<{loadedTools: StructuredTool[]}>} loadTools - Function to load tools by name
  * @property {Object} configurable - Configurable context for tool invocation
@@ -142,6 +186,7 @@ function getDefaultHandlers({
   streamId = null,
   toolExecuteOptions = null,
   summarizationOptions = null,
+  subagentAggregatorsByToolCallId = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -254,6 +299,55 @@ function getDefaultHandlers({
     handlers[GraphEvents.ON_TOOL_EXECUTE] = createToolExecuteHandler(toolExecuteOptions);
   }
 
+  handlers[GraphEvents.ON_SUBAGENT_UPDATE] = {
+    /**
+     * Forwards subagent progress envelopes to the client stream, and
+     * (when a caller-owned aggregator map is provided) also folds each
+     * event into a per-tool-call `createContentAggregator`. The
+     * resulting `contentParts` are attached to the parent's `subagent`
+     * tool_call at message-save time so the child's reasoning / tool
+     * calls / final text survive a page refresh — in-memory Recoil
+     * atoms alone wouldn't persist that.
+     *
+     * Aggregation runs regardless of stream visibility (persistence +
+     * dialog depend on it), but the SSE forward respects
+     * `hide_sequential_outputs` the same way `ON_RUN_STEP`,
+     * `ON_MESSAGE_DELTA`, etc. do — so intermediate agents in a
+     * sequential chain don't leak their subagent activity when the
+     * chain is configured to suppress intermediates.
+     */
+    handle: async (event, data, metadata) => {
+      const isLastAgent = checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node);
+      const visible = isLastAgent || !metadata?.hide_sequential_outputs;
+      /**
+       * Gate BOTH aggregation (persistence) AND streaming on the same
+       * visibility rule. If we aggregated for a hidden intermediate
+       * agent, `finalizeSubagentContent` would still attach its
+       * child's reasoning / tool output to the saved message — so a
+       * page refresh would reveal activity that was intentionally
+       * suppressed live. Treat hide_sequential_outputs as a
+       * consistent "don't record" rule for subagent traces.
+       */
+      if (!visible) return;
+      if (subagentAggregatorsByToolCallId && data?.parentToolCallId) {
+        const key = data.parentToolCallId;
+        let aggregator = subagentAggregatorsByToolCallId.get(key);
+        if (!aggregator) {
+          aggregator = createContentAggregator();
+          subagentAggregatorsByToolCallId.set(key, aggregator);
+        }
+        try {
+          feedSubagentAggregator(aggregator, data);
+        } catch (err) {
+          logger.warn(
+            `[ON_SUBAGENT_UPDATE] Failed to aggregate phase "${data?.phase}" for tool_call ${key}: ${err?.message ?? err}`,
+          );
+        }
+      }
+      await emitEvent(res, streamId, { event, data });
+    },
+  };
+
   if (summarizationOptions?.enabled !== false) {
     handlers[GraphEvents.ON_SUMMARIZE_START] = {
       handle: async (_event, data) => {
@@ -301,6 +395,55 @@ function writeAttachment(res, streamId, attachment) {
   } else {
     res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
   }
+}
+
+/**
+ * Predicate: is it safe to push an SSE write to the caller right now?
+ *
+ * In `streamId` (resumable) mode, writes go to the job emitter and the
+ * `res` state is irrelevant — always writable.
+ *
+ * In standard mode, the caller's `res` must have headers sent (the
+ * stream has been opened) and not yet be `writableEnded` (the response
+ * hasn't closed). Writing to a closed stream raises
+ * `ERR_STREAM_WRITE_AFTER_END`.
+ *
+ * Used by deferred preview emits in both `createToolEndCallback`
+ * (chat-completions) and `createResponsesToolEndCallback` (Open
+ * Responses) so the gate logic stays in one place. (Comprehensive
+ * review #3 on PR #12957.)
+ */
+function isStreamWritable(res, streamId) {
+  if (streamId) {
+    return true;
+  }
+  return !!res && res.headersSent && !res.writableEnded;
+}
+
+/**
+ * Emit an update for an attachment that was previously sent with
+ * `status: 'pending'`. Fire-and-forget: if the response stream has
+ * already closed (the agent finished generating before the deferred
+ * preview resolved) the frontend's React Query polling on
+ * `/api/files/:file_id/preview` picks up the resolved record on its
+ * next tick. Skipping the write in that case avoids
+ * `ERR_STREAM_WRITE_AFTER_END`.
+ *
+ * Reuses the `attachment` SSE event name with a discriminated payload:
+ * the frontend's `useAttachmentHandler` upserts by `file_id`, so a
+ * second event with the same id and `status: 'ready' | 'failed'`
+ * overwrites the pending placeholder in place. No new event type, no
+ * new client listener.
+ *
+ * @param {ServerResponse} res
+ * @param {string | null} streamId
+ * @param {Object} attachment - Updated attachment payload (must carry `file_id`).
+ */
+function writeAttachmentUpdate(res, streamId, attachment) {
+  if (!isStreamWritable(res, streamId)) {
+    return;
+  }
+  writeAttachment(res, streamId, attachment);
 }
 
 /**
@@ -443,9 +586,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       return;
     }
 
-    const isCodeTool =
-      output.name === Tools.execute_code || output.name === Constants.PROGRAMMATIC_TOOL_CALLING;
-    if (!isCodeTool) {
+    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
       return;
     }
 
@@ -454,32 +595,92 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
     }
 
     for (const file of output.artifact.files) {
+      /* `inherited` files are unchanged passthroughs of inputs the caller
+       * already owns (skill files, prior session inputs, inherited
+       * .dirkeep markers). Skip post-processing: re-downloading with the
+       * user's session key 403s when the file is entity-scoped, and the
+       * input is already persisted at its origin. They remain available
+       * to subsequent calls via primeInvokedSkills / session inheritance. */
+      if (file.inherited) {
+        continue;
+      }
       const { id, name } = file;
+      const toolCallId = output.tool_call_id;
       artifactPromises.push(
         (async () => {
-          const result = await loadAuthValues({
-            userId: req.user.id,
-            authFields: [EnvVar.CODE_API_KEY],
-          });
-          const fileMetadata = await processCodeOutput({
+          const result = await processCodeOutput({
             req,
             id,
             name,
-            apiKey: result[EnvVar.CODE_API_KEY],
             messageId: metadata.run_id,
-            toolCallId: output.tool_call_id,
+            toolCallId,
             conversationId: metadata.thread_id,
-            session_id: output.artifact.session_id,
+            /**
+             * Use the FILE's session_id (storage session), not the
+             * top-level artifact session_id (exec session). The codeapi
+             * worker reports two distinct ids on a tool result:
+             *   - `artifact.session_id` is the EXEC session — the
+             *     sandbox VM that ran the bash command. Files don't
+             *     live there; it's torn down post-execution.
+             *   - `file.session_id` is the STORAGE session — the
+             *     file-server bucket prefix where artifacts actually
+             *     live and are served from.
+             * `processCodeOutput` builds `/download/{session_id}/{id}`,
+             * so passing the exec id resolves to a path the file-server
+             * doesn't know about and 404s. Fall back to artifact-level
+             * for older worker payloads that may not populate per-file
+             * ids.
+             */
+            session_id: file.session_id ?? output.artifact.session_id,
           });
-          if (!streamId && !res.headersSent) {
-            return fileMetadata;
-          }
-
+          const fileMetadata = result?.file ?? null;
+          const finalize = result?.finalize;
           if (!fileMetadata) {
             return null;
           }
-
-          writeAttachment(res, streamId, fileMetadata);
+          /* Initial emit: ship the attachment to the client immediately
+           * (carries `status: 'pending'` for office buckets so the UI
+           * shows "preparing preview…"). The agent's response stops
+           * blocking on extraction here.
+           *
+           * Use the shared `isStreamWritable` predicate rather than the
+           * narrower `streamId || res.headersSent` check that lived
+           * here before — a client disconnect mid-stream
+           * (`res.writableEnded`) would otherwise hit `res.write` and
+           * raise `ERR_STREAM_WRITE_AFTER_END` (caught by the outer
+           * IIFE catch but logged as noise). Same gate the Responses
+           * path uses below. */
+          if (isStreamWritable(res, streamId)) {
+            writeAttachment(res, streamId, fileMetadata);
+          }
+          /* Deferred preview rendering: extraction continues running
+           * even after the HTTP response closes. If the stream is still
+           * open when the preview resolves, push an `attachment`
+           * update event so the UI patches in place; otherwise React
+           * Query polling on `/api/files/:file_id/preview` picks it up.
+           *
+           * Spread the full updated record (mirroring the initial emit
+           * shape) and overlay `messageId`/`toolCallId` from the
+           * current run. The DB record preserves the original
+           * `messageId` across cross-turn filename reuse so
+           * `getCodeGeneratedFiles` can trace the file back to its
+           * original assistant message; routing the update SSE by the
+           * persisted id would land the patch on a stale message
+           * slot — turn-N's pending placeholder would stay stuck while
+           * turn-1's already-resolved attachment got re-merged.
+           * (Codex P1 review on PR #12957.) */
+          runPreviewFinalize({
+            finalize,
+            fileId: fileMetadata.file_id,
+            previewRevision: result?.previewRevision,
+            onResolved: (updated) => {
+              writeAttachmentUpdate(res, streamId, {
+                ...updated,
+                messageId: metadata.run_id,
+                toolCallId,
+              });
+            },
+          });
           return fileMetadata;
         })().catch((error) => {
           logger.error('Error processing code output:', error);
@@ -651,9 +852,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       return;
     }
 
-    const isCodeTool =
-      output.name === Tools.execute_code || output.name === Constants.PROGRAMMATIC_TOOL_CALLING;
-    if (!isCodeTool) {
+    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
       return;
     }
 
@@ -662,41 +861,82 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
     }
 
     for (const file of output.artifact.files) {
+      /* `inherited` files are unchanged passthroughs of inputs the caller
+       * already owns (skill files, prior session inputs, inherited
+       * .dirkeep markers). Skip post-processing: re-downloading with the
+       * user's session key 403s when the file is entity-scoped, and the
+       * input is already persisted at its origin. They remain available
+       * to subsequent calls via primeInvokedSkills / session inheritance. */
+      if (file.inherited) {
+        continue;
+      }
       const { id, name } = file;
+      const toolCallId = output.tool_call_id;
       artifactPromises.push(
         (async () => {
-          const result = await loadAuthValues({
-            userId: req.user.id,
-            authFields: [EnvVar.CODE_API_KEY],
-          });
-          const fileMetadata = await processCodeOutput({
+          const result = await processCodeOutput({
             req,
             id,
             name,
-            apiKey: result[EnvVar.CODE_API_KEY],
             messageId: metadata.run_id,
-            toolCallId: output.tool_call_id,
+            toolCallId,
             conversationId: metadata.thread_id,
-            session_id: output.artifact.session_id,
+            /**
+             * Use the FILE's session_id (storage session), not the
+             * top-level artifact session_id (exec session). The codeapi
+             * worker reports two distinct ids on a tool result:
+             *   - `artifact.session_id` is the EXEC session — the
+             *     sandbox VM that ran the bash command. Files don't
+             *     live there; it's torn down post-execution.
+             *   - `file.session_id` is the STORAGE session — the
+             *     file-server bucket prefix where artifacts actually
+             *     live and are served from.
+             * `processCodeOutput` builds `/download/{session_id}/{id}`,
+             * so passing the exec id resolves to a path the file-server
+             * doesn't know about and 404s. Fall back to artifact-level
+             * for older worker payloads that may not populate per-file
+             * ids.
+             */
+            session_id: file.session_id ?? output.artifact.session_id,
           });
-
+          const fileMetadata = result?.file ?? null;
+          const finalize = result?.finalize;
           if (!fileMetadata) {
             return null;
           }
 
-          // For Responses API, emit attachment during streaming
-          if (res.headersSent && !res.writableEnded) {
-            const attachment = {
-              file_id: fileMetadata.file_id,
-              filename: fileMetadata.filename,
-              type: fileMetadata.type,
-              url: fileMetadata.filepath,
-              width: fileMetadata.width,
-              height: fileMetadata.height,
-              tool_call_id: output.tool_call_id,
-            };
-            writeResponsesAttachment(res, tracker, attachment, metadata);
+          /* Initial emit (Open Responses extension format). The agent's
+           * response no longer blocks on extraction. */
+          if (isStreamWritable(res, null)) {
+            writeResponsesAttachment(
+              res,
+              tracker,
+              buildResponsesAttachment(fileMetadata, toolCallId),
+              metadata,
+            );
           }
+
+          /* Deferred preview rendering: extract HTML in the background
+           * and emit a follow-up `librechat:attachment` with the same
+           * `file_id` so the client merges the resolved record over the
+           * pending placeholder. Fire-and-forget — survives response
+           * close; polling covers the post-close gap. */
+          runPreviewFinalize({
+            finalize,
+            fileId: fileMetadata.file_id,
+            previewRevision: result?.previewRevision,
+            onResolved: (updated) => {
+              if (!isStreamWritable(res, null)) {
+                return;
+              }
+              writeResponsesAttachment(
+                res,
+                tracker,
+                buildResponsesAttachment(updated, toolCallId),
+                metadata,
+              );
+            },
+          });
 
           return fileMetadata;
         })().catch((error) => {
@@ -705,6 +945,28 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
         }),
       );
     }
+  };
+}
+
+/**
+ * Project a file metadata record into the Open Responses attachment
+ * shape. Mirrors the legacy inline projection but adds `status` and
+ * `previewError` so deferred preview updates carry the lifecycle
+ * signal the client uses to upsert by `file_id`.
+ */
+function buildResponsesAttachment(fileMetadata, toolCallId) {
+  return {
+    file_id: fileMetadata.file_id,
+    filename: fileMetadata.filename,
+    type: fileMetadata.type,
+    url: fileMetadata.filepath,
+    width: fileMetadata.width,
+    height: fileMetadata.height,
+    tool_call_id: toolCallId,
+    text: fileMetadata.text ?? null,
+    textFormat: fileMetadata.textFormat ?? null,
+    status: fileMetadata.status,
+    previewError: fileMetadata.previewError,
   };
 }
 
@@ -763,6 +1025,7 @@ module.exports = {
   agentLogHandlerObj,
   getDefaultHandlers,
   createToolEndCallback,
+  isStreamWritable,
   markSummarizationUsage,
   buildSummarizationHandlers,
   createResponsesToolEndCallback,

@@ -77,5 +77,9 @@ export const loadEndpoints = (
     loadedEndpoints.all = endpoints.all;
   }
 
+  if (endpoints?.allowedAddresses) {
+    loadedEndpoints.allowedAddresses = endpoints.allowedAddresses;
+  }
+
   return loadedEndpoints;
 };

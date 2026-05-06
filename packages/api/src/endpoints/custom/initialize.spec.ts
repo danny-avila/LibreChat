@@ -179,6 +179,7 @@ describe('initializeCustom – SSRF guard wiring', () => {
     expect(mockValidateEndpointURL).toHaveBeenCalledWith(
       'https://user-api.example.com/v1',
       'test-custom',
+      undefined,
     );
   });
 

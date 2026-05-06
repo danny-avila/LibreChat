@@ -1,5 +1,6 @@
 export * from './agents';
 export * from './audio';
+export * from './code';
 export * from './context';
 export * from './documents/crud';
 export * from './encode';
