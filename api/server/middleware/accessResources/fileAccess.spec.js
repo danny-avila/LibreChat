@@ -167,8 +167,7 @@ describe('fileAccess middleware', () => {
       });
     });
 
-    test('should allow access when user is author of agent with file', async () => {
-      // Create agent owned by testUser with the file
+    test('should deny access when user authored an agent with another user file id', async () => {
       await createAgent({
         id: `agent_${Date.now()}`,
         name: 'Test Agent',
@@ -185,9 +184,8 @@ describe('fileAccess middleware', () => {
       req.params.file_id = 'shared_file_via_agent';
       await fileAccess(req, res, next);
 
-      expect(next).toHaveBeenCalled();
-      expect(req.fileAccess).toBeDefined();
-      expect(req.fileAccess.file).toBeDefined();
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
     });
 
     test('should allow access when user has VIEW permission on agent with file', async () => {
@@ -224,17 +222,27 @@ describe('fileAccess middleware', () => {
     });
 
     test('should check file in ocr tool_resources', async () => {
-      await createAgent({
+      const agent = await createAgent({
         id: `agent_ocr_${Date.now()}`,
         name: 'OCR Agent',
         provider: 'openai',
         model: 'gpt-4',
-        author: testUser._id,
+        author: otherUser._id,
         tool_resources: {
           ocr: {
             file_ids: ['shared_file_via_agent'],
           },
         },
+      });
+
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: testUser._id,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        permBits: 1,
+        grantedBy: otherUser._id,
       });
 
       req.params.file_id = 'shared_file_via_agent';
@@ -288,7 +296,7 @@ describe('fileAccess middleware', () => {
     test('should check ALL agents with file, not just first one', async () => {
       // Create a file owned by someone else
       await createFile({
-        user: otherUser._id.toString(),
+        user: thirdUser._id.toString(),
         file_id: 'multi_agent_file',
         filepath: '/test/multi.txt',
         filename: 'multi.txt',
@@ -321,7 +329,7 @@ describe('fileAccess middleware', () => {
         grantedBy: otherUser._id,
       });
 
-      // Create second agent (owned by thirdUser, but testUser has VIEW access)
+      // Create second agent (owned by the file owner, and testUser has VIEW access)
       const agent2 = await createAgent({
         id: 'agent_with_access',
         name: 'Accessible Agent',
@@ -350,9 +358,8 @@ describe('fileAccess middleware', () => {
       await fileAccess(req, res, next);
 
       /**
-       * Should succeed because testUser has access to agent2,
-       * even though they don't have access to agent1.
-       * The fix ensures all agents are checked, not just the first one.
+       * Should succeed because testUser has access to the file owner's agent,
+       * even though a non-owner agent without access is found first.
        */
       expect(next).toHaveBeenCalled();
       expect(req.fileAccess).toBeDefined();
@@ -385,12 +392,12 @@ describe('fileAccess middleware', () => {
       });
 
       // Agent 2: same file in execute_code (testUser has access)
-      await createAgent({
+      const agent2 = await createAgent({
         id: 'agent_execute_code',
         name: 'Execute Code Agent',
         provider: 'openai',
         model: 'gpt-4',
-        author: thirdUser._id,
+        author: otherUser._id,
         tool_resources: {
           execute_code: {
             file_ids: ['multi_tool_file'],
@@ -398,13 +405,23 @@ describe('fileAccess middleware', () => {
         },
       });
 
-      // Agent 3: same file in ocr (testUser also has access)
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: testUser._id,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent2._id,
+        permBits: 1,
+        grantedBy: otherUser._id,
+      });
+
+      // Agent 3: same file in ocr (bad reference from a non-owner agent)
       await createAgent({
         id: 'agent_ocr',
         name: 'OCR Agent',
         provider: 'openai',
         model: 'gpt-4',
-        author: testUser._id, // testUser owns this one
+        author: testUser._id,
         tool_resources: {
           ocr: {
             file_ids: ['multi_tool_file'],
@@ -416,7 +433,7 @@ describe('fileAccess middleware', () => {
       await fileAccess(req, res, next);
 
       /**
-       * Should succeed because testUser owns agent3,
+       * Should succeed through the file owner's execute_code agent,
        * even if other agents with the file are found first.
        */
       expect(next).toHaveBeenCalled();

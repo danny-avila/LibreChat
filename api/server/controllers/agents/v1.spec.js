@@ -278,6 +278,49 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.tool_resources.invalid_resource).toBeUndefined();
     });
 
+    test('should strip file_ids not owned by the creator from tool_resources', async () => {
+      const File = mongoose.models.File;
+      await File.deleteMany({});
+
+      const ownedFileId = `file_${uuidv4()}`;
+      const otherFileId = `file_${uuidv4()}`;
+      await File.create({
+        file_id: ownedFileId,
+        user: mockReq.user.id,
+        filename: `${ownedFileId}.txt`,
+        filepath: `/tmp/${ownedFileId}`,
+        object: 'file',
+        type: 'text/plain',
+        bytes: 1,
+        source: FileSources.local,
+      });
+      await File.create({
+        file_id: otherFileId,
+        user: new mongoose.Types.ObjectId(),
+        filename: `${otherFileId}.txt`,
+        filepath: `/tmp/${otherFileId}`,
+        object: 'file',
+        type: 'text/plain',
+        bytes: 1,
+        source: FileSources.local,
+      });
+
+      mockReq.body = {
+        provider: 'openai',
+        model: 'gpt-4',
+        name: 'Agent with Files',
+        tool_resources: {
+          file_search: { file_ids: [ownedFileId, otherFileId] },
+        },
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const createdAgent = mockRes.json.mock.calls[0][0];
+      expect(createdAgent.tool_resources.file_search.file_ids).toEqual([ownedFileId]);
+    });
+
     test('should handle support_contact with empty strings', async () => {
       const dataWithEmptyContact = {
         provider: 'openai',
@@ -808,7 +851,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         expect(agentInDb.tool_resources.file_search.file_ids).toEqual([orphan]);
       });
 
-      test('swallows errors from the file-existence check and still completes the save', async () => {
+      test('prunes incoming file_ids when the file ownership check fails', async () => {
         const db = require('~/models');
         const originalGetFiles = db.getFiles;
         db.getFiles = jest.fn().mockRejectedValue(new Error('transient DB error'));
@@ -828,12 +871,30 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           expect(mockRes.json).toHaveBeenCalled();
           const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
           expect(agentInDb.name).toBe('Save Succeeds');
-          // Cleanup skipped on error, so the id remains — the delete-time path
-          // or the next successful save will reconcile it.
-          expect(agentInDb.tool_resources.file_search.file_ids).toEqual([orphan]);
+          expect(agentInDb.tool_resources.file_search.file_ids).toEqual([]);
         } finally {
           db.getFiles = originalGetFiles;
         }
+      });
+
+      test('strips file_ids owned by another user from incoming tool_resources', async () => {
+        const keeper = `file_${uuidv4()}`;
+        const otherUsersFile = `file_${uuidv4()}`;
+        await createFileDoc(keeper, existingAgentAuthorId);
+        await createFileDoc(otherUsersFile, new mongoose.Types.ObjectId());
+
+        mockReq.user.id = existingAgentAuthorId.toString();
+        mockReq.params.id = existingAgentId;
+        mockReq.body = {
+          tool_resources: {
+            file_search: { file_ids: [keeper, otherUsersFile] },
+          },
+        };
+
+        await updateAgentHandler(mockReq, mockRes);
+
+        const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+        expect(agentInDb.tool_resources.file_search.file_ids).toEqual([keeper]);
       });
     });
   });

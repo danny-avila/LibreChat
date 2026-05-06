@@ -220,6 +220,39 @@ const filterAuthorizedTools = async ({
   return filteredTools;
 };
 
+const pruneToolResourceFileIdsForOwner = async ({ tool_resources, ownerId, logPrefix }) => {
+  const referencedFileIds = collectToolResourceFileIds(tool_resources);
+  if (referencedFileIds.length === 0) {
+    return;
+  }
+  if (!ownerId) {
+    stripFileIdsFromToolResources(tool_resources, referencedFileIds);
+    return;
+  }
+
+  try {
+    const ownerFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
+      file_id: 1,
+      user: 1,
+    });
+    const allowedIds = new Set(
+      (ownerFiles ?? [])
+        .filter((file) => file.user && file.user.toString() === ownerId.toString())
+        .map((file) => file.file_id),
+    );
+    const disallowedIds = referencedFileIds.filter((id) => !allowedIds.has(id));
+    if (disallowedIds.length > 0) {
+      logger.warn(`${logPrefix} Pruning ${disallowedIds.length} invalid file reference(s)`);
+      stripFileIdsFromToolResources(tool_resources, disallowedIds);
+    }
+  } catch (fileCheckError) {
+    logger.warn(`${logPrefix} File ownership check failed, pruning incoming file references`, {
+      error: fileCheckError?.message,
+    });
+    stripFileIdsFromToolResources(tool_resources, referencedFileIds);
+  }
+};
+
 /**
  * Creates an Agent.
  * @route POST /Agents
@@ -238,6 +271,14 @@ const createAgentHandler = async (req, res) => {
     }
 
     const { id: userId, role: userRole } = req.user;
+
+    if (agentData.tool_resources) {
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: agentData.tool_resources,
+        ownerId: userId,
+        logPrefix: '[/Agents]',
+      });
+    }
 
     if (agentData.edges?.length) {
       const unauthorized = await validateEdgeAgentAccess(agentData.edges, userId, userRole);
@@ -509,36 +550,12 @@ const updateAgentHandler = async (req, res) => {
       updateData.tools = ocrConversion.tools;
     }
 
-    /*
-     * Strip orphaned file_id stubs from the incoming payload (see issue #12776).
-     * Scoped to updates that actually touch tool_resources: if the save does not
-     * modify that field, the delete-time cleanup in processDeleteRequest and the
-     * one-off migration already cover pre-existing corruption, so there's no
-     * reason to pay an extra DB round-trip here. Wrapped in try/catch so a
-     * transient failure in this integrity check never turns a good save into 500.
-     */
     if (updateData.tool_resources) {
-      try {
-        const referencedFileIds = collectToolResourceFileIds(updateData.tool_resources);
-        if (referencedFileIds.length > 0) {
-          const existingFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
-            file_id: 1,
-          });
-          const existingIds = new Set((existingFiles ?? []).map((f) => f.file_id));
-          const orphans = referencedFileIds.filter((id) => !existingIds.has(id));
-          if (orphans.length > 0) {
-            logger.warn(
-              `[/Agents/:id] Pruning ${orphans.length} orphaned file reference(s) from agent ${id}`,
-            );
-            stripFileIdsFromToolResources(updateData.tool_resources, orphans);
-          }
-        }
-      } catch (orphanCheckError) {
-        logger.warn(
-          '[/Agents/:id] Orphan file check failed, skipping cleanup for this request',
-          orphanCheckError,
-        );
-      }
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: updateData.tool_resources,
+        ownerId: existingAgent.author,
+        logPrefix: `[/Agents/:id] Agent ${id}`,
+      });
     }
 
     if (updateData.tools) {

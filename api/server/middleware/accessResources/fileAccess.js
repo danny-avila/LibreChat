@@ -5,9 +5,9 @@ const { getAgents, getFiles } = require('~/models');
 
 /**
  * Checks if user has access to a file through agent permissions
- * Files inherit permissions from agents - if you can view the agent, you can access its files
+ * Files inherit permissions from agents authored by the file owner
  */
-const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
+const checkAgentBasedFileAccess = async ({ userId, role, fileId, fileOwner }) => {
   try {
     /** Agents that have this file in their tool_resources */
     const agentsWithFile = await getAgents({
@@ -23,10 +23,14 @@ const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
       return false;
     }
 
-    // Check if user has access to any of these agents
+    // Check if user has access to any file-owner agent
     for (const agent of agentsWithFile) {
+      if (!agent.author || !fileOwner || agent.author.toString() !== fileOwner.toString()) {
+        continue;
+      }
+
       // Check if user is the agent author
-      if (agent.author && agent.author.toString() === userId) {
+      if (agent.author.toString() === userId) {
         logger.debug(`[fileAccess] User is author of agent ${agent.id}`);
         return true;
       }
@@ -62,7 +66,7 @@ const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
 
 /**
  * Middleware to check if user can access a file
- * Checks: 1) File ownership, 2) Agent-based access (file inherits agent permissions)
+ * Checks: 1) File ownership, 2) Agent-based access through a file-owner agent
  */
 const fileAccess = async (req, res, next) => {
   try {
@@ -97,7 +101,12 @@ const fileAccess = async (req, res, next) => {
     }
 
     /** Agent-based access (file inherits agent permissions) */
-    const hasAgentAccess = await checkAgentBasedFileAccess({ userId, role: userRole, fileId });
+    const hasAgentAccess = await checkAgentBasedFileAccess({
+      userId,
+      role: userRole,
+      fileId,
+      fileOwner: file.user,
+    });
     if (hasAgentAccess) {
       req.fileAccess = { file };
       return next();
