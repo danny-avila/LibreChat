@@ -17,13 +17,14 @@ const {
   getOpenIdIssuer,
   getBalanceConfig,
   isEmailDomainAllowed,
+  getAvatarFileStrategy,
+  getAvatarSaveParams,
   resolveAppConfigForUser,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
-const { getAvatarFileStrategy, getAvatarSaveParams } = require('./avatar');
 
 /**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
@@ -663,7 +664,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       userinfo.sub,
     );
     if (imageBuffer) {
-      const fileStrategy = getAvatarFileStrategy(appConfig);
+      const fileStrategy = getAvatarFileStrategy(appConfig, process.env.CDN_PROVIDER);
       const { saveBuffer } = getStrategyFunctions(fileStrategy);
       const imagePath = await saveBuffer(
         getAvatarSaveParams(fileStrategy, {

@@ -3,7 +3,7 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const { Readable } = require('stream');
 const { v4: uuidv4 } = require('uuid');
-const { createMethods } = require('@librechat/data-schemas');
+const { createMethods, tenantStorage } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   SystemRoles,
@@ -449,6 +449,7 @@ describe('File Routes - Delete with Agent Access', () => {
         bytes: 200,
         type: 'application/pdf',
         source: FileSources.s3,
+        text: 'private extracted text',
       });
 
       const response = await request(app).get(`/files/download-url/${otherUserId}/${userFileId}`);
@@ -461,6 +462,17 @@ describe('File Routes - Delete with Agent Access', () => {
       });
       expect(response.headers['cache-control']).toBe('no-store');
       expect(response.headers.pragma).toBe('no-cache');
+      expect(response.body.metadata).toMatchObject({
+        file_id: userFileId,
+        filename: 'file.pdf',
+        source: FileSources.s3,
+      });
+      expect(response.body.metadata).not.toHaveProperty('_id');
+      expect(response.body.metadata).not.toHaveProperty('__v');
+      expect(response.body.metadata).not.toHaveProperty('user');
+      expect(response.body.metadata).not.toHaveProperty('tenantId');
+      expect(response.body.metadata).not.toHaveProperty('filepath');
+      expect(response.body.metadata).not.toHaveProperty('text');
       expect(getDownloadURL).toHaveBeenCalledWith(
         expect.objectContaining({
           file: expect.objectContaining({ file_id: userFileId }),
@@ -487,6 +499,51 @@ describe('File Routes - Delete with Agent Access', () => {
       const response = await request(app).get(`/files/download-url/${otherUserId}/${userFileId}`);
 
       expect(response.status).toBe(501);
+    });
+
+    it('denies tenant-scoped files before issuing a signed URL', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
+      getStrategyFunctions.mockReturnValue({ getDownloadURL });
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        createFile({
+          user: otherUserId,
+          file_id: userFileId,
+          filename: 'file.pdf',
+          filepath: 'uploads/user/file.pdf',
+          bytes: 200,
+          type: 'application/pdf',
+          source: FileSources.s3,
+          tenantId: 'tenant-a',
+        }),
+      );
+
+      const response = await request(app).get(`/files/download-url/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(403);
+      expect(getDownloadURL).not.toHaveBeenCalled();
+    });
+
+    it('returns 500 when direct URL generation fails', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockRejectedValue(new Error('signing failed'));
+      getStrategyFunctions.mockReturnValue({ getDownloadURL });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
+        bytes: 200,
+        type: 'application/pdf',
+        source: FileSources.s3,
+      });
+
+      const response = await request(app).get(`/files/download-url/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error generating file download URL');
     });
   });
 

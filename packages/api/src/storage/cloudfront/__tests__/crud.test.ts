@@ -517,11 +517,15 @@ describe('CloudFront CRUD', () => {
       const { getCloudFrontDownloadURL } = await import('~/storage/cloudfront/crud');
       const result = await getCloudFrontDownloadURL({
         file: { filepath: 'https://d123.cloudfront.net/uploads/user1/report.pdf' } as TFile,
-        customFilename: 'report.pdf',
+        customFilename: 'report";\\bad.pdf',
         contentType: 'application/pdf',
       });
 
       expect(result).toBe('signed-url');
+      const signedInputUrl = new URL((mockGetSignedUrl.mock.calls[0][0] as { url: string }).url);
+      expect(signedInputUrl.searchParams.get('response-content-disposition')).toBe(
+        'attachment; filename="reportbad.pdf"',
+      );
       expect(mockGetSignedUrl).toHaveBeenCalledWith(
         expect.objectContaining({
           url: expect.stringContaining('response-content-disposition=attachment'),

@@ -84,9 +84,6 @@ export const useFileDownload = (
       if ((options.direct ?? true) && isDirectDownloadSource(options.source)) {
         try {
           const directDownload = await dataService.getFileDownloadURL(userId, file_id);
-          if (directDownload.metadata) {
-            addFileToCache(queryClient, directDownload.metadata);
-          }
           if (directDownload.url) {
             return directDownload.url;
           }

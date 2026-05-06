@@ -11,7 +11,7 @@ import type {
   ImageUploadResult,
   ProcessAvatarParams,
 } from '~/storage/types';
-import { DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
+import { AVATAR_BASE_PATH, DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
 
 export interface ImageServiceDeps {
   resizeImageBuffer: (
@@ -138,7 +138,7 @@ export class ImageService {
     userId,
     manual,
     agentId,
-    basePath = 'avatars',
+    basePath = AVATAR_BASE_PATH,
     tenantId = null,
   }: ProcessAvatarParams): Promise<string> {
     try {

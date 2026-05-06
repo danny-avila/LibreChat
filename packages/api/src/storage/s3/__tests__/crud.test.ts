@@ -344,6 +344,29 @@ describe('S3 CRUD', () => {
       });
     });
 
+    it('uses the downloaded buffer size instead of a stale content-length header', async () => {
+      (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: (name: string) =>
+            ({
+              'content-length': '999',
+              'content-type': 'image/jpeg',
+            })[name.toLowerCase()] ?? null,
+        },
+        arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(8)),
+      });
+
+      const { saveURLToS3WithMetadata } = await import('../crud');
+      const result = await saveURLToS3WithMetadata({
+        userId: 'user123',
+        URL: 'https://example.com/image.jpg',
+        fileName: 'downloaded.jpg',
+      });
+
+      expect(result.bytes).toBe(8);
+    });
+
     it('throws error on non-ok response', async () => {
       (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
         ok: false,
@@ -385,6 +408,7 @@ describe('S3 CRUD', () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
         file_id: 'file123',
+        user: 'user123',
       } as TFile;
 
       s3Mock.on(HeadObjectCommand).resolvesOnce({});
@@ -401,6 +425,7 @@ describe('S3 CRUD', () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/nonexistent.jpg',
         file_id: 'file123',
+        user: 'user123',
       } as TFile;
 
       s3Mock.on(HeadObjectCommand).rejects({ name: 'NotFound' });
@@ -417,6 +442,7 @@ describe('S3 CRUD', () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/different-user/file.jpg',
         file_id: 'file123',
+        user: 'user123',
       } as TFile;
 
       const { deleteFileFromS3 } = await import('../crud');
@@ -428,6 +454,7 @@ describe('S3 CRUD', () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/t/tenantB/images/user123/file.jpg',
         file_id: 'file123',
+        user: 'user123',
         tenantId: 'tenantA',
       } as TFile;
 
@@ -440,6 +467,7 @@ describe('S3 CRUD', () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
         file_id: 'file123',
+        user: 'user123',
       } as TFile;
 
       s3Mock.on(HeadObjectCommand).resolvesOnce({});
@@ -449,6 +477,27 @@ describe('S3 CRUD', () => {
       const { deleteFileFromS3 } = await import('../crud');
       await expect(deleteFileFromS3(mockReq, mockFile)).resolves.toBeUndefined();
       expect(deleteRagFile).not.toHaveBeenCalled();
+    });
+
+    it('rejects tenant-prefixed keys when the file record lacks tenantId', async () => {
+      const mockFile = {
+        filepath: 'https://bucket.s3.amazonaws.com/t/tenantA/images/user123/file.jpg',
+        file_id: 'file123',
+        user: 'user123',
+      } as TFile;
+
+      const { deleteFileFromS3 } = await import('../crud');
+      await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow('Tenant ID mismatch');
+    });
+
+    it('rejects file records without an owner', async () => {
+      const mockFile = {
+        filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
+        file_id: 'file123',
+      } as TFile;
+
+      const { deleteFileFromS3 } = await import('../crud');
+      await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow('File record has no owner');
     });
   });
 
@@ -567,7 +616,7 @@ describe('S3 CRUD', () => {
       const result = await getS3DownloadURL({
         req: {} as ServerRequest,
         file: mockFile,
-        customFilename: 'download.pdf',
+        customFilename: 'download";\\bad.pdf',
         contentType: 'application/pdf',
       });
 
@@ -577,7 +626,7 @@ describe('S3 CRUD', () => {
         expect.objectContaining({
           input: expect.objectContaining({
             Key: 't/tenantA/uploads/user123/file.pdf',
-            ResponseContentDisposition: 'attachment; filename="download.pdf"',
+            ResponseContentDisposition: 'attachment; filename="downloadbad.pdf"',
             ResponseContentType: 'application/pdf',
           }),
         }),

@@ -273,8 +273,7 @@ const processFileURL = async ({
     const filepath =
       typeof savedFile === 'string'
         ? savedFile
-        : (savedFile.filepath ??
-          (await getFileURL({ fileName: `${userId}/${fileName}`, basePath })));
+        : (savedFile.filepath ?? (await getFileURL({ userId, fileName, basePath, tenantId })));
     if (!filepath) {
       throw new Error(`Strategy "${fileStrategy}" did not return a file URL for "${fileName}"`);
     }
@@ -339,6 +338,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
       type: `image/${appConfig.imageOutputType}`,
       width,
       height,
+      tenantId: req.user.tenantId,
     },
     true,
   );
@@ -395,6 +395,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
       type,
       width,
       height,
+      tenantId: req.user.tenantId,
     },
     true,
   );
@@ -484,6 +485,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
       source,
       height,
       width,
+      tenantId: req.user.tenantId,
     },
     true,
   );
@@ -574,6 +576,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         filename: file.originalname,
         model: messageAttachment ? undefined : req.body.model,
         context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+        tenantId: req.user.tenantId,
       });
 
       if (!messageAttachment && tool_resource) {
@@ -750,6 +753,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     source,
     height,
     width,
+    tenantId: req.user.tenantId,
   });
 
   const result = await db.createFile(fileInfo, true);
@@ -795,6 +799,7 @@ const processOpenAIFile = async ({
     source,
     model: openai.req.body.model,
     filename: originalName ?? file_id,
+    tenantId: openai.req?.user?.tenantId,
   };
 
   if (saveFile) {
@@ -838,6 +843,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     context: FileContext.assistants_output,
     file_id,
     filename,
+    tenantId: req.user.tenantId,
   };
   db.createFile(file, true);
   return file;
@@ -996,6 +1002,7 @@ async function saveBase64Image(
       bytes: image.bytes,
       width: image.width,
       height: image.height,
+      tenantId: req.user.tenantId,
     },
     true,
   );

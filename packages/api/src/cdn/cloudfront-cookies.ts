@@ -3,6 +3,7 @@ import { getSignedCookies } from '@aws-sdk/cloudfront-signer';
 
 import type { Response } from 'express';
 
+import { assertPathSegment } from '~/storage/validation';
 import { getCloudFrontConfig } from './cloudfront';
 
 const DEFAULT_COOKIE_EXPIRY = 1800;
@@ -20,22 +21,19 @@ export interface CloudFrontCookieScope {
   tenantId?: string | null;
 }
 
-function assertPathSegment(value: string, label: string): void {
-  if (value.includes('/') || value.includes('\\')) {
-    throw new Error(`[CloudFront cookies] ${label} must not contain slashes.`);
-  }
-  if (value === '.' || value === '..' || value.includes('..')) {
-    throw new Error(`[CloudFront cookies] ${label} must not contain path traversal.`);
-  }
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code <= 31 || code === 127) {
-      throw new Error(`[CloudFront cookies] ${label} contains unsafe policy characters.`);
-    }
-  }
-  if (unsafePolicySegmentPattern.test(value)) {
+type CookieOptions = {
+  domain: string;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite: 'none';
+};
+
+function assertPolicyPathSegment(label: string, value: string | null | undefined): string {
+  const segment = assertPathSegment(label, value, 'CloudFront cookies');
+  if (unsafePolicySegmentPattern.test(segment)) {
     throw new Error(`[CloudFront cookies] ${label} contains unsafe policy characters.`);
   }
+  return segment;
 }
 
 function getPolicyScopes(
@@ -46,22 +44,35 @@ function getPolicyScopes(
     throw new Error('[CloudFront cookies] userId is required for private image access.');
   }
 
-  assertPathSegment(userId, 'userId');
+  const safeUserId = assertPolicyPathSegment('userId', userId);
   if (tenantId) {
-    assertPathSegment(tenantId, 'tenantId');
+    const safeTenantId = assertPolicyPathSegment('tenantId', tenantId);
     return [
       {
-        resource: `${domain}/t/${tenantId}/images/${userId}/*`,
-        path: `/t/${tenantId}/images/${userId}`,
+        resource: `${domain}/t/${safeTenantId}/images/${safeUserId}/*`,
+        path: `/t/${safeTenantId}/images/${safeUserId}`,
       },
-      { resource: `${domain}/t/${tenantId}/avatars/*`, path: `/t/${tenantId}/avatars` },
+      { resource: `${domain}/t/${safeTenantId}/avatars/*`, path: `/t/${safeTenantId}/avatars` },
     ];
   }
 
   return [
-    { resource: `${domain}/images/${userId}/*`, path: `/images/${userId}` },
+    { resource: `${domain}/images/${safeUserId}/*`, path: `/images/${safeUserId}` },
     { resource: `${domain}/avatars/*`, path: '/avatars' },
   ];
+}
+
+function clearCookiePaths(
+  res: Response,
+  baseOptions: CookieOptions,
+  paths: Iterable<string>,
+): void {
+  for (const path of paths) {
+    const options = { ...baseOptions, path };
+    for (const key of REQUIRED_CF_COOKIES) {
+      res.clearCookie(key, options);
+    }
+  }
 }
 
 /**
@@ -82,22 +93,20 @@ export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieSco
     };
     const paths = new Set(['/images', '/avatars', '/']);
     if (scope.userId) {
-      paths.add(`/images/${scope.userId}`);
+      const safeUserId = assertPolicyPathSegment('userId', scope.userId);
+      paths.add(`/images/${safeUserId}`);
     }
     if (scope.tenantId) {
-      paths.add(`/t/${scope.tenantId}`);
-      paths.add(`/t/${scope.tenantId}/avatars`);
+      const safeTenantId = assertPolicyPathSegment('tenantId', scope.tenantId);
+      paths.add(`/t/${safeTenantId}`);
+      paths.add(`/t/${safeTenantId}/avatars`);
       if (scope.userId) {
-        paths.add(`/t/${scope.tenantId}/images/${scope.userId}`);
+        const safeUserId = assertPolicyPathSegment('userId', scope.userId);
+        paths.add(`/t/${safeTenantId}/images/${safeUserId}`);
       }
     }
 
-    for (const path of paths) {
-      const options = { ...baseOptions, path };
-      res.clearCookie('CloudFront-Policy', options);
-      res.clearCookie('CloudFront-Signature', options);
-      res.clearCookie('CloudFront-Key-Pair-Id', options);
-    }
+    clearCookiePaths(res, baseOptions, paths);
   } catch (error) {
     logger.warn('[clearCloudFrontCookies] Failed to clear cookies:', error);
   }
@@ -109,6 +118,16 @@ export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieSco
  */
 export function setCloudFrontCookies(res: Response, scope: CloudFrontCookieScope = {}): boolean {
   const config = getCloudFrontConfig();
+  if (
+    config?.imageSigning === 'cookies' &&
+    config.privateKey &&
+    config.keyPairId &&
+    config.cookieDomain &&
+    !scope.userId
+  ) {
+    logger.warn('[setCloudFrontCookies] CloudFront configured but userId missing from scope');
+    return false;
+  }
   if (
     !config ||
     config.imageSigning !== 'cookies' ||
@@ -155,13 +174,14 @@ export function setCloudFrontCookies(res: Response, scope: CloudFrontCookieScope
       };
     });
 
-    const baseCookieOptions = {
-      expires: expiresAt,
+    const sharedCookieOptions = {
       httpOnly: true,
       secure: true,
       sameSite: 'none' as const,
       domain: config.cookieDomain,
     };
+    clearCookiePaths(res, sharedCookieOptions, ['/images']);
+    const baseCookieOptions = { ...sharedCookieOptions, expires: expiresAt };
 
     for (const { cookies } of signedCookieSets) {
       for (const key of REQUIRED_CF_COOKIES) {

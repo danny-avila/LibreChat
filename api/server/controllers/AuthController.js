@@ -120,14 +120,11 @@ const refreshController = async (req, res) => {
         );
       }
 
-      const token = setOpenIDAuthTokens(
-        tokenset,
-        req,
-        res,
-        user._id.toString(),
-        refreshToken,
-        user.tenantId,
-      );
+      const token = setOpenIDAuthTokens(tokenset, req, res, {
+        userId: user._id.toString(),
+        existingRefreshToken: refreshToken,
+        tenantId: user.tenantId,
+      });
 
       const { password: _pw, __v: _v, totpSecret: _ts, backupCodes: _bc, ...safeUser } = user;
       return res.status(200).send({ token, user: safeUser });

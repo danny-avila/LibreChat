@@ -90,7 +90,7 @@ const ODP_MIME = 'application/vnd.oasis.opendocument.presentation';
 const ODG_MIME = 'application/vnd.oasis.opendocument.graphics';
 
 const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null } = {}) => ({
-  user: { id: 'user-123' },
+  user: { id: 'user-123', tenantId: 'tenant-a' },
   file: {
     path: '/tmp/upload.bin',
     originalname: 'upload.bin',
@@ -406,6 +406,41 @@ describe('processFileURL', () => {
         tenantId: 'tenant-a',
         width: 32,
         height: 64,
+      }),
+      true,
+    );
+  });
+
+  it('falls back to getFileURL with user and tenant context when metadata lacks filepath', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      bytes: 256,
+      type: 'image/png',
+    });
+    const getFileURL = jest
+      .fn()
+      .mockResolvedValue('https://cdn.example.com/t/tenant-a/images/user-123/image.png');
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+    });
+
+    expect(getFileURL).toHaveBeenCalledWith({
+      userId: 'user-123',
+      fileName: 'image.png',
+      basePath: 'images',
+      tenantId: 'tenant-a',
+    });
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+        tenantId: 'tenant-a',
       }),
       true,
     );

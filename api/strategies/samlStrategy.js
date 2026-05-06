@@ -8,13 +8,14 @@ const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
 const {
   getBalanceConfig,
   isEmailDomainAllowed,
+  getAvatarFileStrategy,
+  getAvatarSaveParams,
   resolveAppConfigForUser,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const paths = require('~/config/paths');
-const { getAvatarFileStrategy, getAvatarSaveParams } = require('./avatar');
 
 let crypto;
 try {
@@ -272,7 +273,7 @@ function createSamlCallback(existingUsersOnly = false) {
             fileName = profile.nameID + '.png';
           }
 
-          const fileStrategy = getAvatarFileStrategy(appConfig);
+          const fileStrategy = getAvatarFileStrategy(appConfig, process.env.CDN_PROVIDER);
           const { saveBuffer } = getStrategyFunctions(fileStrategy);
           const imagePath = await saveBuffer(
             getAvatarSaveParams(fileStrategy, {

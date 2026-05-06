@@ -26,6 +26,7 @@ import type {
 } from '~/storage/types';
 import { initializeS3 } from '~/cdn/s3';
 import { deleteRagFile } from '~/files';
+import { assertPathSegment, sanitizeContentDispositionFilename } from '~/storage/validation';
 import { s3Config } from './s3Config';
 
 const {
@@ -44,31 +45,9 @@ export interface S3KeyParts {
   tenantId?: string;
 }
 
-const assertS3PathSegment = (label: string, value: string | null | undefined): string => {
-  const segment = value?.toString?.() ?? '';
-
-  if (!segment) {
-    throw new Error(`[getS3Key] ${label} must not be empty`);
-  }
-  if (segment.includes('/') || segment.includes('\\')) {
-    throw new Error(`[getS3Key] ${label} must not contain slashes: "${segment}"`);
-  }
-  if (segment === '.' || segment === '..' || segment.includes('..')) {
-    throw new Error(`[getS3Key] ${label} must not contain path traversal: "${segment}"`);
-  }
-  for (let i = 0; i < segment.length; i++) {
-    const code = segment.charCodeAt(i);
-    if (code <= 31 || code === 127) {
-      throw new Error(`[getS3Key] ${label} contains unsafe path characters: "${segment}"`);
-    }
-  }
-
-  return segment;
-};
-
 const parseS3PathSegment = (value: string | undefined): string | null => {
   try {
-    return assertS3PathSegment('S3 key segment', value);
+    return assertPathSegment('S3 key segment', value, 'getS3Key');
   } catch {
     return null;
   }
@@ -80,11 +59,11 @@ export const getS3Key = (
   fileName: string,
   tenantId?: string | null,
 ): string => {
-  const safeBasePath = assertS3PathSegment('basePath', basePath);
-  const safeUserId = assertS3PathSegment('userId', userId);
+  const safeBasePath = assertPathSegment('basePath', basePath, 'getS3Key');
+  const safeUserId = assertPathSegment('userId', userId, 'getS3Key');
 
   if (tenantId) {
-    const safeTenantId = assertS3PathSegment('tenantId', tenantId);
+    const safeTenantId = assertPathSegment('tenantId', tenantId, 'getS3Key');
     return `t/${safeTenantId}/${safeBasePath}/${safeUserId}/${fileName}`;
   }
   return `${safeBasePath}/${safeUserId}/${fileName}`;
@@ -137,7 +116,7 @@ async function getS3URLForKey({
   const params: GetObjectCommandInput = { Bucket: bucketName, Key: key };
 
   if (customFilename) {
-    const safeFilename = customFilename.replace(/["\r\n]/g, '');
+    const safeFilename = sanitizeContentDispositionFilename(customFilename);
     params.ResponseContentDisposition = `attachment; filename="${safeFilename}"`;
   }
   if (contentType) {
@@ -218,12 +197,9 @@ export async function saveURLToS3WithMetadata({
       tenantId,
       urlBuilder,
     });
-    const contentLength = response.headers.get('content-length');
-    const bytes = contentLength ? Number(contentLength) : buffer.byteLength;
-
     return {
       filepath,
-      bytes: Number.isFinite(bytes) && bytes >= 0 ? bytes : buffer.byteLength,
+      bytes: buffer.byteLength,
       type: response.headers.get('content-type') ?? '',
       dimensions: {},
     };
@@ -325,16 +301,21 @@ export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise
   const userId = req.user.id;
   const key = extractKeyFromS3Url(file.filepath);
   const parsedKey = parseS3Key(key);
-  const ownerId = file.user?.toString?.() ?? userId;
-  const requestTenantId = req.user.tenantId;
-  const fileTenantId = file.tenantId?.toString?.() ?? requestTenantId;
+  const ownerId = file.user?.toString?.();
+  const fileTenantId = file.tenantId?.toString?.() ?? null;
+
+  if (!ownerId) {
+    const message = `[deleteFileFromS3] File record has no owner: ${key}`;
+    logger.error(message);
+    throw new Error(message);
+  }
 
   if (!parsedKey || parsedKey.userId !== ownerId) {
     const message = `[deleteFileFromS3] File owner mismatch: ${ownerId} vs ${key}`;
     logger.error(message);
     throw new Error(message);
   }
-  if (parsedKey.tenantId && fileTenantId && parsedKey.tenantId !== fileTenantId) {
+  if ((parsedKey.tenantId ?? null) !== fileTenantId) {
     const message = `[deleteFileFromS3] Tenant ID mismatch: ${fileTenantId} vs ${key}`;
     logger.error(message);
     throw new Error(message);

@@ -17,6 +17,7 @@ import type {
 import { getCloudFrontConfig } from '~/cdn/cloudfront';
 import { s3Config } from '~/storage/s3/s3Config';
 import { DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
+import { sanitizeContentDispositionFilename } from '~/storage/validation';
 import {
   getS3Key,
   saveBufferToS3,
@@ -79,7 +80,7 @@ function appendDownloadOverrides(
   const downloadUrl = new URL(url);
 
   if (customFilename) {
-    const safeFilename = customFilename.replace(/["\r\n]/g, '');
+    const safeFilename = sanitizeContentDispositionFilename(customFilename);
     downloadUrl.searchParams.set(
       'response-content-disposition',
       `attachment; filename="${safeFilename}"`,

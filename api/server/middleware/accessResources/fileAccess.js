@@ -60,6 +60,14 @@ const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
   }
 };
 
+const getTenantId = (value) => value?.toString?.() ?? null;
+
+const denyFileAccess = (res) =>
+  res.status(403).json({
+    error: 'Forbidden',
+    message: 'Insufficient permissions to access this file',
+  });
+
 /**
  * Middleware to check if user can access a file
  * Checks: 1) File ownership, 2) Agent-based access (file inherits agent permissions)
@@ -91,6 +99,13 @@ const fileAccess = async (req, res, next) => {
       });
     }
 
+    const fileTenantId = getTenantId(file.tenantId);
+    const userTenantId = getTenantId(req.user?.tenantId);
+    if (fileTenantId && fileTenantId !== userTenantId) {
+      logger.warn(`[fileAccess] User ${userId} denied cross-tenant access to file ${fileId}`);
+      return denyFileAccess(res);
+    }
+
     if (file.user && file.user.toString() === userId) {
       req.fileAccess = { file };
       return next();
@@ -104,10 +119,7 @@ const fileAccess = async (req, res, next) => {
     }
 
     logger.warn(`[fileAccess] User ${userId} denied access to file ${fileId}`);
-    return res.status(403).json({
-      error: 'Forbidden',
-      message: 'Insufficient permissions to access this file',
-    });
+    return denyFileAccess(res);
   } catch (error) {
     logger.error('[fileAccess] Error checking file access:', error);
     return res.status(500).json({

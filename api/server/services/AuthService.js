@@ -454,6 +454,20 @@ const setAuthTokens = async (userId, res, _session = null) => {
   }
 };
 
+const resolveOpenIDAuthTokenOptions = (optionsOrUserId, existingRefreshToken, tenantId) => {
+  if (
+    optionsOrUserId &&
+    typeof optionsOrUserId === 'object' &&
+    ('userId' in optionsOrUserId ||
+      'existingRefreshToken' in optionsOrUserId ||
+      'tenantId' in optionsOrUserId)
+  ) {
+    return optionsOrUserId;
+  }
+
+  return { userId: optionsOrUserId, existingRefreshToken, tenantId };
+};
+
 /**
  * @function setOpenIDAuthTokens
  * Set OpenID Authentication Tokens
@@ -464,13 +478,27 @@ const setAuthTokens = async (userId, res, _session = null) => {
  * - The tokenset object containing access and refresh tokens
  * @param {Object} req - request object (for session access)
  * @param {Object} res - response object
- * @param {string} [userId] - Optional MongoDB user ID for image path validation
- * @param {string} [existingRefreshToken] - Optional existing refresh token to preserve
- * @param {string} [tenantId] - Optional tenant identifier for CloudFront cookie scoping
+ * @param {Object} [options] - Optional token/cookie context
+ * @param {string} [options.userId] - Optional MongoDB user ID for image path validation
+ * @param {string} [options.existingRefreshToken] - Optional existing refresh token to preserve
+ * @param {string} [options.tenantId] - Optional tenant identifier for CloudFront cookie scoping
  * @returns {String} - id_token (preferred) or access_token as the app auth token
  */
-const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken, tenantId) => {
+const setOpenIDAuthTokens = (
+  tokenset,
+  req,
+  res,
+  optionsOrUserId = {},
+  existingRefreshTokenArg,
+  tenantIdArg,
+) => {
   try {
+    const { userId, existingRefreshToken, tenantId } = resolveOpenIDAuthTokenOptions(
+      optionsOrUserId,
+      existingRefreshTokenArg,
+      tenantIdArg,
+    );
+
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
       return;

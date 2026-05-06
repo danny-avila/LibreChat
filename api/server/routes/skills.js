@@ -219,7 +219,7 @@ async function uploadFileHandler(req, res) {
       try {
         const { deleteFile } = getStrategyFunctions(storage.source);
         if (deleteFile) {
-          await deleteFile(req, { filepath });
+          await deleteFile(req, { filepath, user: req.user.id, tenantId: req.user.tenantId });
         }
       } catch (cleanupErr) {
         logger.error('[uploadFile] Failed to clean up orphaned blob:', cleanupErr);
@@ -231,9 +231,11 @@ async function uploadFileHandler(req, res) {
     if (existingFile && existingFile.filepath !== filepath) {
       const { deleteFile: delOld } = getStrategyFunctions(existingFile.source);
       if (delOld) {
-        delOld(req, { filepath: existingFile.filepath }).catch((e) =>
-          logger.error('[uploadFile] Old blob cleanup failed:', e),
-        );
+        delOld(req, {
+          filepath: existingFile.filepath,
+          user: existingFile.author ?? req.user.id,
+          tenantId: existingFile.tenantId ?? req.user.tenantId,
+        }).catch((e) => logger.error('[uploadFile] Old blob cleanup failed:', e));
       }
     }
 

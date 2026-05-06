@@ -375,6 +375,9 @@ router.get('/:file_id/preview', fileAccess, async (req, res) => {
   }
 });
 
+/**
+ * Returns a strategy-managed signed URL for an already-authorized file record.
+ */
 const getDirectDownloadURL = async ({ req, file }) => {
   const { getDownloadURL } = getStrategyFunctions(file.source);
   if (!getDownloadURL) {
@@ -388,6 +391,20 @@ const getDirectDownloadURL = async ({ req, file }) => {
     customFilename: cleanedFilename,
     contentType: file.type || 'application/octet-stream',
   });
+};
+
+const getDownloadFileMetadata = (file) => {
+  const rawFile = typeof file.toObject === 'function' ? file.toObject() : file;
+  const {
+    _id: _internalId,
+    __v: _internalVersion,
+    user: _ownerId,
+    tenantId: _tenantId,
+    filepath: _storedPath,
+    text: _extractedText,
+    ...metadata
+  } = rawFile;
+  return metadata;
 };
 
 router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
@@ -420,7 +437,7 @@ router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
       url: downloadURL,
       filename: cleanFileName(file.filename),
       type: file.type || 'application/octet-stream',
-      metadata: file,
+      metadata: getDownloadFileMetadata(file),
     });
   } catch (error) {
     logger.error('[DOWNLOAD URL ROUTE] Error generating file download URL:', error);

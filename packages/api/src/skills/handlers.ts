@@ -288,19 +288,6 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
     isValidObjectIdString,
   } = deps;
 
-  async function getPublicSkillIdSet(): Promise<Set<string>> {
-    try {
-      const publicIds = await findPubliclyAccessibleResources({
-        resourceType: ResourceType.SKILL,
-        requiredPermissions: PermissionBits.VIEW,
-      });
-      return new Set(publicIds.map((id) => id.toString()));
-    } catch (error) {
-      logger.error('[skills] Failed to fetch public skill IDs', error);
-      return new Set();
-    }
-  }
-
   /** O(1) public check for a single skill (avoids fetching all public IDs). */
   async function isSkillPublic(skillId: string | Types.ObjectId): Promise<boolean> {
     try {
@@ -557,10 +544,17 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       // Fire-and-forget blob cleanup for each file
       for (const file of files) {
         const { deleteFile: deleteBlob } = getStrategyFunctions(file.source) as {
-          deleteFile?: (r: ServerRequest, f: { filepath: string }) => Promise<void>;
+          deleteFile?: (
+            r: ServerRequest,
+            f: { filepath: string; user?: string; tenantId?: string | null },
+          ) => Promise<void>;
         };
         if (deleteBlob) {
-          deleteBlob(req, { filepath: file.filepath }).catch((e) =>
+          deleteBlob(req, {
+            filepath: file.filepath,
+            user: file.author?.toString?.(),
+            tenantId: file.tenantId?.toString?.(),
+          }).catch((e) =>
             logger.error(`[deleteSkill] Blob cleanup failed for ${file.relativePath}:`, e),
           );
         }
@@ -760,12 +754,17 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
 
       // Clean up the stored blob — fire-and-forget so the response isn't delayed
       const { deleteFile: deleteBlob } = getStrategyFunctions(file.source) as {
-        deleteFile?: (req: ServerRequest, file: { filepath: string }) => Promise<void>;
+        deleteFile?: (
+          req: ServerRequest,
+          file: { filepath: string; user?: string; tenantId?: string | null },
+        ) => Promise<void>;
       };
       if (deleteBlob) {
-        deleteBlob(req, { filepath: file.filepath }).catch((e) =>
-          logger.error('[deleteFile] Storage cleanup failed:', e),
-        );
+        deleteBlob(req, {
+          filepath: file.filepath,
+          user: file.author?.toString?.(),
+          tenantId: file.tenantId?.toString?.(),
+        }).catch((e) => logger.error('[deleteFile] Storage cleanup failed:', e));
       }
 
       const response: TDeleteSkillFileResponse = {

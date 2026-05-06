@@ -27,15 +27,21 @@ const defaultScope = { userId: 'user123' };
 describe('setCloudFrontCookies', () => {
   let mockRes: Partial<Response>;
   let cookieArgs: Array<[string, string, object]>;
+  let clearedCookies: Array<[string, object]>;
 
   beforeEach(() => {
     jest.clearAllMocks();
     cookieArgs = [];
+    clearedCookies = [];
     mockRes = {
       cookie: jest.fn((name: string, value: string, options: object) => {
         cookieArgs.push([name, value, options]);
         return mockRes as Response;
       }) as unknown as Response['cookie'],
+      clearCookie: jest.fn((name: string, options: object) => {
+        clearedCookies.push([name, options]);
+        return mockRes as Response;
+      }) as unknown as Response['clearCookie'],
     };
   });
 
@@ -138,6 +144,7 @@ describe('setCloudFrontCookies', () => {
 
     expect(result).toBe(true);
     expect(mockRes.cookie).toHaveBeenCalledTimes(6);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(3);
 
     const cookieNames = cookieArgs.map(([name]) => name);
     expect(cookieNames).toContain('CloudFront-Policy');
@@ -172,6 +179,58 @@ describe('setCloudFrontCookies', () => {
       path: '/images/user123',
     });
     expect(cookieArgs[3][2]).toMatchObject({ path: '/avatars' });
+  });
+
+  it('clears the legacy image-wide cookie path before setting scoped cookies', () => {
+    mockGetCloudFrontConfig.mockReturnValue({
+      domain: 'https://cdn.example.com',
+      imageSigning: 'cookies',
+      cookieExpiry: 1800,
+      cookieDomain: '.example.com',
+      privateKey: '-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----',
+      keyPairId: 'K123ABC',
+    });
+
+    mockGetSignedCookies.mockReturnValue({
+      'CloudFront-Policy': 'policy-value',
+      'CloudFront-Signature': 'signature-value',
+      'CloudFront-Key-Pair-Id': 'K123ABC',
+    });
+
+    setCloudFrontCookies(mockRes as Response, defaultScope);
+
+    expect(clearedCookies).toEqual([
+      [
+        'CloudFront-Policy',
+        {
+          httpOnly: true,
+          secure: true,
+          sameSite: 'none',
+          domain: '.example.com',
+          path: '/images',
+        },
+      ],
+      [
+        'CloudFront-Signature',
+        {
+          httpOnly: true,
+          secure: true,
+          sameSite: 'none',
+          domain: '.example.com',
+          path: '/images',
+        },
+      ],
+      [
+        'CloudFront-Key-Pair-Id',
+        {
+          httpOnly: true,
+          secure: true,
+          sameSite: 'none',
+          domain: '.example.com',
+          path: '/images',
+        },
+      ],
+    ]);
   });
 
   it('builds user-scoped custom policies for private images and avatars', () => {
@@ -322,6 +381,9 @@ describe('setCloudFrontCookies', () => {
     const result = setCloudFrontCookies(mockRes as Response);
 
     expect(result).toBe(false);
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      '[setCloudFrontCookies] CloudFront configured but userId missing from scope',
+    );
     expect(mockRes.cookie).not.toHaveBeenCalled();
   });
 

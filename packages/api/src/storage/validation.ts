@@ -1,0 +1,29 @@
+export function assertPathSegment(
+  label: string,
+  value: string | null | undefined,
+  errorPrefix = 'path segment',
+): string {
+  const segment = value?.toString?.() ?? '';
+
+  if (!segment) {
+    throw new Error(`[${errorPrefix}] ${label} must not be empty`);
+  }
+  if (segment.includes('/') || segment.includes('\\')) {
+    throw new Error(`[${errorPrefix}] ${label} must not contain slashes: "${segment}"`);
+  }
+  if (segment === '.' || segment === '..' || segment.includes('..')) {
+    throw new Error(`[${errorPrefix}] ${label} must not contain path traversal: "${segment}"`);
+  }
+  for (let i = 0; i < segment.length; i++) {
+    const code = segment.charCodeAt(i);
+    if (code <= 31 || code === 127) {
+      throw new Error(`[${errorPrefix}] ${label} contains unsafe path characters: "${segment}"`);
+    }
+  }
+
+  return segment;
+}
+
+export function sanitizeContentDispositionFilename(filename: string): string {
+  return filename.replace(/["\\;\r\n]/g, '');
+}

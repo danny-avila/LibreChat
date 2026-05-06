@@ -181,7 +181,7 @@ export type FileDownloadURLResponse = {
   url: string;
   filename: string;
   type: string;
-  metadata: TFile;
+  metadata: Partial<TFile>;
 };
 
 export type SpeechToTextResponse = {

@@ -30,6 +30,19 @@ jest.mock('@librechat/api', () => ({
     tokenCredits: 1000,
     startBalance: 1000,
   })),
+  getAvatarFileStrategy: jest.fn((config, fallbackStrategy) => {
+    const { FileSources } = jest.requireActual('librechat-data-provider');
+    if (config?.fileStrategies) {
+      return config.fileStrategies.avatar ?? config.fileStrategies.default ?? config.fileStrategy;
+    }
+    return config?.fileStrategy ?? fallbackStrategy ?? FileSources.local;
+  }),
+  getAvatarSaveParams: jest.fn((strategy, params) => {
+    const { FileSources } = jest.requireActual('librechat-data-provider');
+    return strategy === FileSources.s3 || strategy === FileSources.cloudfront
+      ? { ...params, basePath: 'avatars' }
+      : params;
+  }),
   resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
 }));
 jest.mock('~/server/services/Config/EndpointService', () => ({
