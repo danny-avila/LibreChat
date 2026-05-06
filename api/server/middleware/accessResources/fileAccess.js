@@ -14,6 +14,7 @@ const checkAgentBasedFileAccess = async ({ userId, role, fileId, fileOwner }) =>
       $or: [
         { 'tool_resources.execute_code.file_ids': fileId },
         { 'tool_resources.file_search.file_ids': fileId },
+        { 'tool_resources.image_edit.file_ids': fileId },
         { 'tool_resources.context.file_ids': fileId },
         { 'tool_resources.ocr.file_ids': fileId },
       ],
@@ -23,19 +24,19 @@ const checkAgentBasedFileAccess = async ({ userId, role, fileId, fileOwner }) =>
       return false;
     }
 
-    // Check if user has access to any file-owner agent
+    const fileOwnerId = fileOwner?.toString();
+    const userIdStr = userId.toString();
     for (const agent of agentsWithFile) {
-      if (!agent.author || !fileOwner || agent.author.toString() !== fileOwner.toString()) {
+      const agentAuthorId = agent.author?.toString();
+      if (!agentAuthorId || !fileOwnerId || agentAuthorId !== fileOwnerId) {
         continue;
       }
 
-      // Check if user is the agent author
-      if (agent.author.toString() === userId) {
+      if (agentAuthorId === userIdStr) {
         logger.debug(`[fileAccess] User is author of agent ${agent.id}`);
         return true;
       }
 
-      // Check ACL permissions for VIEW access on the agent
       try {
         const permissions = await getEffectivePermissions({
           userId,
@@ -53,7 +54,6 @@ const checkAgentBasedFileAccess = async ({ userId, role, fileId, fileOwner }) =>
           `[fileAccess] Permission check failed for agent ${agent.id}:`,
           permissionError.message,
         );
-        // Continue checking other agents
       }
     }
 

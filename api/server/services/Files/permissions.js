@@ -31,10 +31,6 @@ function getFilesById(files) {
   return filesById;
 }
 
-function isFileOwnedByAgentAuthor(file, agent) {
-  return Boolean(file?.user && agent?.author && file.user.toString() === agent.author.toString());
-}
-
 /**
  * Checks if a user has access to multiple files through a shared agent (batch operation).
  * Access is scoped to files attached to the agent and owned by the agent author.
@@ -44,6 +40,7 @@ function isFileOwnedByAgentAuthor(file, agent) {
  * @param {string[]} params.fileIds - Array of file IDs to check
  * @param {string} params.agentId - The agent ID that might grant access
  * @param {boolean} [params.isDelete] - Whether the operation is a delete operation
+ * @param {Array<{ file_id: string, user: string }>} [params.files] - Pre-fetched file documents
  * @returns {Promise<Map<string, boolean>>} Map of fileId to access status
  */
 const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId, isDelete, files }) => {
@@ -59,6 +56,7 @@ const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId, isDele
     }
 
     const attachedFileIds = getAttachedFileIds(agent);
+    const agentAuthorId = agent.author?.toString();
     const filesById =
       files != null
         ? getFilesById(files)
@@ -66,9 +64,9 @@ const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId, isDele
             await getFiles({ file_id: { $in: fileIds } }, null, { file_id: 1, user: 1 }),
           );
     const canInheritFromAgent = (fileId) =>
-      attachedFileIds.has(fileId) && isFileOwnedByAgentAuthor(filesById.get(fileId), agent);
+      attachedFileIds.has(fileId) && filesById.get(fileId)?.user?.toString() === agentAuthorId;
 
-    if (agent.author.toString() === userId.toString()) {
+    if (agentAuthorId === userId.toString()) {
       fileIds.forEach((fileId) => {
         if (canInheritFromAgent(fileId)) {
           accessMap.set(fileId, true);

@@ -189,6 +189,7 @@ router.delete('/', async (req, res) => {
         fileIds: nonOwnedFileIds,
         agentId: req.body.agent_id,
         isDelete: true,
+        files: nonOwnedFiles,
       });
 
       for (const file of nonOwnedFiles) {

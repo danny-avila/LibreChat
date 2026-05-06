@@ -252,6 +252,37 @@ describe('fileAccess middleware', () => {
       expect(req.fileAccess).toBeDefined();
     });
 
+    test('should check file in image_edit tool_resources', async () => {
+      const agent = await createAgent({
+        id: `agent_image_${Date.now()}`,
+        name: 'Image Edit Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUser._id,
+        tool_resources: {
+          image_edit: {
+            file_ids: ['shared_file_via_agent'],
+          },
+        },
+      });
+
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: testUser._id,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        permBits: 1,
+        grantedBy: otherUser._id,
+      });
+
+      req.params.file_id = 'shared_file_via_agent';
+      await fileAccess(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(req.fileAccess).toBeDefined();
+    });
+
     test('should deny access when user has no permission on agent with file', async () => {
       // Create agent owned by otherUser without granting permission to testUser
       const agent = await createAgent({
@@ -490,6 +521,36 @@ describe('fileAccess middleware', () => {
       });
 
       req.params.file_id = 'another_orphan_file';
+      await fileAccess(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
+
+    test('should deny agent-based access when file has no owner', async () => {
+      await mongoose.models.File.collection.insertOne({
+        file_id: 'ownerless_file',
+        filepath: '/test/ownerless.txt',
+        filename: 'ownerless.txt',
+        type: 'text/plain',
+        bytes: 100,
+        object: 'file',
+      });
+
+      await createAgent({
+        id: `agent_ownerless_${Date.now()}`,
+        name: 'Ownerless File Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: testUser._id,
+        tool_resources: {
+          file_search: {
+            file_ids: ['ownerless_file'],
+          },
+        },
+      });
+
+      req.params.file_id = 'ownerless_file';
       await fileAccess(req, res, next);
 
       expect(next).not.toHaveBeenCalled();

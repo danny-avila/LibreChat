@@ -220,15 +220,24 @@ const filterAuthorizedTools = async ({
   return filteredTools;
 };
 
+/**
+ * Removes file IDs from tool resources unless the referenced file is owned by
+ * the agent owner.
+ * @param {object} params
+ * @param {object} params.tool_resources
+ * @param {string | object} params.ownerId
+ * @param {string} params.logPrefix
+ * @returns {Promise<number>} Count of removed file references.
+ */
 const pruneToolResourceFileIdsForOwner = async ({ tool_resources, ownerId, logPrefix }) => {
   const referencedFileIds = collectToolResourceFileIds(tool_resources);
   if (referencedFileIds.length === 0) {
-    return;
+    return 0;
   }
   if (!ownerId) {
-    stripFileIdsFromToolResources(tool_resources, referencedFileIds);
-    return;
+    return stripFileIdsFromToolResources(tool_resources, referencedFileIds).removedCount;
   }
+  const ownerIdStr = ownerId.toString();
 
   try {
     const ownerFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
@@ -237,19 +246,20 @@ const pruneToolResourceFileIdsForOwner = async ({ tool_resources, ownerId, logPr
     });
     const allowedIds = new Set(
       (ownerFiles ?? [])
-        .filter((file) => file.user && file.user.toString() === ownerId.toString())
+        .filter((file) => file.user && file.user.toString() === ownerIdStr)
         .map((file) => file.file_id),
     );
     const disallowedIds = referencedFileIds.filter((id) => !allowedIds.has(id));
     if (disallowedIds.length > 0) {
       logger.warn(`${logPrefix} Pruning ${disallowedIds.length} invalid file reference(s)`);
-      stripFileIdsFromToolResources(tool_resources, disallowedIds);
+      return stripFileIdsFromToolResources(tool_resources, disallowedIds).removedCount;
     }
+    return 0;
   } catch (fileCheckError) {
     logger.warn(`${logPrefix} File ownership check failed, pruning incoming file references`, {
       error: fileCheckError?.message,
     });
-    stripFileIdsFromToolResources(tool_resources, referencedFileIds);
+    return stripFileIdsFromToolResources(tool_resources, referencedFileIds).removedCount;
   }
 };
 
@@ -739,6 +749,14 @@ const duplicateAgentHandler = async (req, res) => {
       });
     }
 
+    if (newAgentData.tool_resources) {
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: newAgentData.tool_resources,
+        ownerId: userId,
+        logPrefix: '[/Agents/:id/duplicate]',
+      });
+    }
+
     const newAgent = await db.createAgent(newAgentData);
 
     try {
@@ -1068,6 +1086,7 @@ const revertAgentVersionHandler = async (req, res) => {
     // Permissions are enforced via route middleware (ACL EDIT)
 
     let updatedAgent = await db.revertAgentVersion({ id }, version_index);
+    const revertUpdates = {};
 
     if (updatedAgent.tools?.length) {
       const [availableTools, configServers] = await Promise.all([
@@ -1082,12 +1101,23 @@ const revertAgentVersionHandler = async (req, res) => {
         configServers,
       });
       if (filteredTools.length !== updatedAgent.tools.length) {
-        updatedAgent = await db.updateAgent(
-          { id },
-          { tools: filteredTools },
-          { updatingUserId: req.user.id },
-        );
+        revertUpdates.tools = filteredTools;
       }
+    }
+
+    if (updatedAgent.tool_resources) {
+      const removedCount = await pruneToolResourceFileIdsForOwner({
+        tool_resources: updatedAgent.tool_resources,
+        ownerId: existingAgent.author,
+        logPrefix: '[/Agents/:id/revert]',
+      });
+      if (removedCount > 0) {
+        revertUpdates.tool_resources = updatedAgent.tool_resources;
+      }
+    }
+
+    if (Object.keys(revertUpdates).length > 0) {
+      updatedAgent = await db.updateAgent({ id }, revertUpdates, { updatingUserId: req.user.id });
     }
 
     if (updatedAgent.author) {
