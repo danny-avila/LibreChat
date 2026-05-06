@@ -6,7 +6,7 @@ import type { ServerRequest } from '~/types';
 const mockGetCloudFrontConfig = jest.fn<CloudFrontFullConfig | null, []>();
 const mockGetS3Key = jest.fn<string, [string, string, string, string?]>();
 const mockSaveBufferToS3 = jest.fn();
-const mockSaveURLToS3 = jest.fn();
+const mockSaveURLToS3WithMetadata = jest.fn();
 const mockUploadFileToS3 = jest.fn();
 const mockDeleteFileFromS3 = jest.fn();
 const mockGetS3FileStream = jest.fn();
@@ -22,7 +22,7 @@ jest.mock('~/cdn/cloudfront', () => ({
 jest.mock('~/storage/s3/crud', () => ({
   getS3Key: mockGetS3Key,
   saveBufferToS3: mockSaveBufferToS3,
-  saveURLToS3: mockSaveURLToS3,
+  saveURLToS3WithMetadata: mockSaveURLToS3WithMetadata,
   uploadFileToS3: mockUploadFileToS3,
   deleteFileFromS3: mockDeleteFileFromS3,
   getS3FileStream: mockGetS3FileStream,
@@ -272,14 +272,14 @@ describe('CloudFront CRUD', () => {
   });
 
   describe('saveURLToCloudFront', () => {
-    it('delegates to saveURLToS3 with a urlBuilder', async () => {
+    it('returns the saved filepath for public API compatibility', async () => {
       const savedFile = {
         filepath: 'https://d123.cloudfront.net/images/u/f.webp',
         bytes: 128,
         type: 'image/webp',
         dimensions: {},
       };
-      mockSaveURLToS3.mockResolvedValue(savedFile);
+      mockSaveURLToS3WithMetadata.mockResolvedValue(savedFile);
       const { saveURLToCloudFront } = await import('~/storage/cloudfront/crud');
       const result = await saveURLToCloudFront({
         userId: 'u',
@@ -287,7 +287,7 @@ describe('CloudFront CRUD', () => {
         fileName: 'f.webp',
       });
 
-      expect(mockSaveURLToS3).toHaveBeenCalledWith(
+      expect(mockSaveURLToS3WithMetadata).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 'u',
           URL: 'https://external.com/image.jpg',
@@ -295,6 +295,24 @@ describe('CloudFront CRUD', () => {
           urlBuilder: expect.any(Function),
         }),
       );
+      expect(result).toBe(savedFile.filepath);
+    });
+
+    it('returns metadata from the explicit metadata variant', async () => {
+      const savedFile = {
+        filepath: 'https://d123.cloudfront.net/images/u/f.webp',
+        bytes: 128,
+        type: 'image/webp',
+        dimensions: {},
+      };
+      mockSaveURLToS3WithMetadata.mockResolvedValue(savedFile);
+      const { saveURLToCloudFrontWithMetadata } = await import('~/storage/cloudfront/crud');
+      const result = await saveURLToCloudFrontWithMetadata({
+        userId: 'u',
+        URL: 'https://external.com/image.jpg',
+        fileName: 'f.webp',
+      });
+
       expect(result).toBe(savedFile);
     });
   });

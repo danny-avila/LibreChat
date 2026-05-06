@@ -27,13 +27,13 @@ function assertPathSegment(value: string, label: string): void {
   if (value === '.' || value === '..' || value.includes('..')) {
     throw new Error(`[CloudFront cookies] ${label} must not contain path traversal.`);
   }
-  if (
-    unsafePolicySegmentPattern.test(value) ||
-    Array.from(value).some((character) => {
-      const code = character.charCodeAt(0);
-      return code <= 31 || code === 127;
-    })
-  ) {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code <= 31 || code === 127) {
+      throw new Error(`[CloudFront cookies] ${label} contains unsafe policy characters.`);
+    }
+  }
+  if (unsafePolicySegmentPattern.test(value)) {
     throw new Error(`[CloudFront cookies] ${label} contains unsafe policy characters.`);
   }
 }

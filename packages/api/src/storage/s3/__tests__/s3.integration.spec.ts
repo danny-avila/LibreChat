@@ -188,10 +188,10 @@ describe('S3 Integration Tests', () => {
 
   describe('saveURLToS3', () => {
     it('fetches URL content and uploads to S3', async () => {
-      const { saveURLToS3 } = await import('~/storage/s3/crud');
+      const { saveURLToS3WithMetadata } = await import('~/storage/s3/crud');
       const fileName = `url-upload-${Date.now()}.json`;
 
-      const savedFile = await saveURLToS3({
+      const savedFile = await saveURLToS3WithMetadata({
         userId: TEST_USER_ID,
         URL: 'https://raw.githubusercontent.com/danny-avila/LibreChat/main/package.json',
         fileName,

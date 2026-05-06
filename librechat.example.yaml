@@ -41,6 +41,8 @@ cache: true
 #   cookieDomain: ".example.com"            # Required for "cookies" - shared parent domain
 #   cookieExpiry: 1800                      # Cookie lifetime in seconds (max: 604800 / 7 days, default: 1800 / 30 min)
 #   urlExpiry: 3600                         # Signed CloudFront download URL lifetime in seconds
+#   # Direct-download filename/content-type overrides require CloudFront to forward
+#   # response-content-disposition and response-content-type query strings to S3.
 
 # Custom interface configuration
 interface:

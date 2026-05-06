@@ -265,7 +265,6 @@ const processFileURL = async ({
       throw new Error(`Strategy "${fileStrategy}" did not save "${fileName}"`);
     }
 
-    const savedFilePath = typeof savedFile === 'string' ? savedFile : savedFile.filepath;
     const {
       bytes = 0,
       type = '',
@@ -274,7 +273,8 @@ const processFileURL = async ({
     const filepath =
       typeof savedFile === 'string'
         ? savedFile
-        : (savedFilePath ?? (await getFileURL({ fileName: `${userId}/${fileName}`, basePath })));
+        : (savedFile.filepath ??
+          (await getFileURL({ fileName: `${userId}/${fileName}`, basePath })));
     if (!filepath) {
       throw new Error(`Strategy "${fileStrategy}" did not return a file URL for "${fileName}"`);
     }

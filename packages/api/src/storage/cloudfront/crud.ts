@@ -20,7 +20,7 @@ import { DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
 import {
   getS3Key,
   saveBufferToS3,
-  saveURLToS3,
+  saveURLToS3WithMetadata,
   uploadFileToS3,
   deleteFileFromS3,
   getS3FileStream,
@@ -119,9 +119,20 @@ export async function saveBufferToCloudFront(
 /** Save file from URL to S3 and return CloudFront URL. */
 export async function saveURLToCloudFront(
   params: SaveURLParams & { sign?: boolean },
+): Promise<string> {
+  const { filepath } = await saveURLToCloudFrontWithMetadata(params);
+  return filepath;
+}
+
+/** Save file from URL to S3 and return CloudFront URL with fetched metadata. */
+export async function saveURLToCloudFrontWithMetadata(
+  params: SaveURLParams & { sign?: boolean },
 ): Promise<SaveURLResult> {
   const { sign = false, ...rest } = params;
-  return saveURLToS3({ ...rest, urlBuilder: (p) => getCloudFrontURL({ ...p, sign }) });
+  return saveURLToS3WithMetadata({
+    ...rest,
+    urlBuilder: (p) => getCloudFrontURL({ ...p, sign }),
+  });
 }
 
 /** Upload file to S3 and return CloudFront URL. */

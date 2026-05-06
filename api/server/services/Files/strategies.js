@@ -1,7 +1,7 @@
 const { FileSources } = require('librechat-data-provider');
 const {
   getS3URL,
-  saveURLToS3,
+  saveURLToS3WithMetadata,
   ImageService,
   parseDocument,
   uploadFileToS3,
@@ -11,7 +11,7 @@ const {
   deleteFileFromS3,
   getCloudFrontURL,
   uploadMistralOCR,
-  saveURLToCloudFront,
+  saveURLToCloudFrontWithMetadata,
   uploadAzureMistralOCR,
   uploadFileToCloudFront,
   saveBufferToCloudFront,
@@ -113,7 +113,7 @@ const localStrategy = () => ({
  * */
 const s3Strategy = () => ({
   handleFileUpload: uploadFileToS3,
-  saveURL: saveURLToS3,
+  saveURL: saveURLToS3WithMetadata,
   getFileURL: getS3URL,
   deleteFile: deleteFileFromS3,
   saveBuffer: saveBufferToS3,
@@ -130,7 +130,7 @@ const s3Strategy = () => ({
  */
 const cloudfrontStrategy = () => ({
   handleFileUpload: uploadFileToCloudFront,
-  saveURL: saveURLToCloudFront,
+  saveURL: saveURLToCloudFrontWithMetadata,
   getFileURL: getCloudFrontURL,
   deleteFile: deleteFileFromCloudFront,
   saveBuffer: saveBufferToCloudFront,

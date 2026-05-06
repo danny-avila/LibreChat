@@ -56,13 +56,11 @@ const assertS3PathSegment = (label: string, value: string | null | undefined): s
   if (segment === '.' || segment === '..' || segment.includes('..')) {
     throw new Error(`[getS3Key] ${label} must not contain path traversal: "${segment}"`);
   }
-  if (
-    Array.from(segment).some((character) => {
-      const code = character.charCodeAt(0);
-      return code <= 31 || code === 127;
-    })
-  ) {
-    throw new Error(`[getS3Key] ${label} contains unsafe path characters: "${segment}"`);
+  for (let i = 0; i < segment.length; i++) {
+    const code = segment.charCodeAt(i);
+    if (code <= 31 || code === 127) {
+      throw new Error(`[getS3Key] ${label} contains unsafe path characters: "${segment}"`);
+    }
   }
 
   return segment;
@@ -197,7 +195,7 @@ export async function saveBufferToS3({
   }
 }
 
-export async function saveURLToS3({
+export async function saveURLToS3WithMetadata({
   userId,
   URL,
   fileName,
@@ -233,6 +231,13 @@ export async function saveURLToS3({
     logger.error('[saveURLToS3] Error uploading file from URL to S3:', (error as Error).message);
     throw error;
   }
+}
+
+export async function saveURLToS3(
+  params: SaveURLParams & { urlBuilder?: UrlBuilder },
+): Promise<string> {
+  const { filepath } = await saveURLToS3WithMetadata(params);
+  return filepath;
 }
 
 export function extractKeyFromS3Url(fileUrlOrKey: string): string {

@@ -313,9 +313,22 @@ describe('S3 CRUD', () => {
       }) as unknown as typeof fetch;
     });
 
-    it('fetches file from URL and saves to S3', async () => {
+    it('fetches file from URL and returns the saved filepath', async () => {
       const { saveURLToS3 } = await import('../crud');
       const result = await saveURLToS3({
+        userId: 'user123',
+        URL: 'https://example.com/image.jpg',
+        fileName: 'downloaded.jpg',
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith('https://example.com/image.jpg');
+      expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(1);
+      expect(result).toBe('https://bucket.s3.amazonaws.com/test-key?signed=true');
+    });
+
+    it('fetches file from URL and returns metadata when requested', async () => {
+      const { saveURLToS3WithMetadata } = await import('../crud');
+      const result = await saveURLToS3WithMetadata({
         userId: 'user123',
         URL: 'https://example.com/image.jpg',
         fileName: 'downloaded.jpg',
