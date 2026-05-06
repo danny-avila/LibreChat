@@ -17,7 +17,7 @@
 
 import { renderHook } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import type { TAttachment, TFilePreview } from 'librechat-data-provider';
 import store from '~/store';
 
@@ -54,11 +54,18 @@ function setup({
   isSubmitting,
   preview,
   isFetching = false,
+  seedLiveMap = true,
 }: {
   attachment: TAttachment;
   isSubmitting: boolean;
   preview?: TFilePreview;
   isFetching?: boolean;
+  /* When false, simulates a loaded conversation: the message's
+   * attachments come from the DB but `messageAttachmentsMap[messageId]`
+   * is empty (no SSE handler ever fired for this messageId). The
+   * upsert must INSERT (not just update) the resolved record into the
+   * live map so the parent's `useAttachments` merge picks it up. */
+  seedLiveMap?: boolean;
 }) {
   mockUseFilePreview.mockReset();
   mockUseFilePreview.mockReturnValue({ data: preview, isFetching });
@@ -77,13 +84,15 @@ function setup({
      * selector reads `conversationKeysAtom` × `isSubmittingFamily(key)`
      * so we have to populate both for the selector to fire. */
     const setMap = useSetRecoilState(store.messageAttachmentsMap);
-    if (Object.keys(ref.current).length === 0) {
-      setMap({ [messageId]: [attachment] });
-    }
     const setKeys = useSetRecoilState(store.conversationKeysAtom);
-    setKeys([0]);
     const setSubmitting = useSetRecoilState(store.isSubmittingFamily(0));
-    setSubmitting(isSubmitting);
+    useEffect(() => {
+      if (seedLiveMap) {
+        setMap({ [messageId]: [attachment] });
+      }
+      setKeys([0]);
+      setSubmitting(isSubmitting);
+    }, [setMap, setKeys, setSubmitting]);
     const map = useRecoilValue(store.messageAttachmentsMap);
     ref.current = map;
     return null;
@@ -237,5 +246,57 @@ describe('useAttachmentPreviewSync', () => {
       isFetching: false,
     });
     expect(ctx.result.current.isPolling).toBe(false);
+  });
+
+  it('INSERTS a new live entry when messageAttachmentsMap has no record for this file_id (loaded-conversation path)', () => {
+    /* Regression for the "DB-frozen pending" bug: on a reloaded
+     * conversation, messages come back from the DB with the
+     * immediate-persist snapshot (`status: 'pending'`) and there is no
+     * SSE handler running for the historical messageId — so
+     * `messageAttachmentsMap[messageId]` is empty. The polling layer
+     * must INSERT a new entry (not just update an existing one) so the
+     * parent's `useAttachments` merge can overlay the resolved
+     * lifecycle fields onto the DB attachment by file_id. */
+    const ctx = setup({
+      attachment: makeAttachment({ status: 'pending' }),
+      isSubmitting: false,
+      seedLiveMap: false,
+      preview: {
+        file_id: fileId,
+        status: 'ready',
+        text: '<table>resolved-on-reload</table>',
+        textFormat: 'html',
+      },
+    });
+    const list = ctx.map[messageId] ?? [];
+    expect(list).toHaveLength(1);
+    const inserted = list[0] as TAttachment & { text?: string; textFormat?: string };
+    expect(inserted.file_id).toBe(fileId);
+    expect(inserted.status).toBe('ready');
+    expect(inserted.text).toBe('<table>resolved-on-reload</table>');
+    expect(inserted.textFormat).toBe('html');
+    /* The inserted entry must carry forward the original attachment's
+     * non-lifecycle fields (filename, type, messageId, toolCallId) so
+     * the renderer can still classify it correctly. */
+    expect(inserted.filename).toBe('data.xlsx');
+    expect(inserted.messageId).toBe(messageId);
+  });
+
+  it('INSERTS a failed entry on a loaded conversation when polling reports failed', () => {
+    const ctx = setup({
+      attachment: makeAttachment({ status: 'pending' }),
+      isSubmitting: false,
+      seedLiveMap: false,
+      preview: {
+        file_id: fileId,
+        status: 'failed',
+        previewError: 'render-timeout',
+      },
+    });
+    const list = ctx.map[messageId] ?? [];
+    expect(list).toHaveLength(1);
+    const inserted = list[0] as TAttachment & { previewError?: string };
+    expect(inserted.status).toBe('failed');
+    expect(inserted.previewError).toBe('render-timeout');
   });
 });

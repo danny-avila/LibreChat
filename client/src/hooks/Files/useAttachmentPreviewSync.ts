@@ -83,9 +83,23 @@ export default function useAttachmentPreviewSync(
    * patched in place so siblings sharing the same atom re-render
    * with the resolved data and `artifactTypeForAttachment` re-runs
    * its empty-text gate, transitioning the file chip into a panel
-   * artifact card. */
+   * artifact card.
+   *
+   * Two paths:
+   *   1. Live SSE flow (active turn): the SSE handler already wrote
+   *      the attachment into messageAttachmentsMap. `existingIndex`
+   *      finds it; we patch in place.
+   *   2. Loaded conversation (no SSE): the message's `attachments`
+   *      come from the DB (frozen at the immediate-persist state of
+   *      `status: 'pending'`); messageAttachmentsMap is empty for
+   *      this messageId. `existingIndex` is `-1`. We INSERT a new
+   *      entry that overlays the polled fields onto the original
+   *      `attachment` prop. `useAttachments` (the hook the renderer
+   *      reads through) merges live entries onto DB entries by
+   *      `file_id`, so the inserted entry takes precedence and the
+   *      parent re-routes to the proper PanelArtifact card. */
   useEffect(() => {
-    if (!polled || polled.status === 'pending' || !messageId || !fileId) {
+    if (!polled || polled.status === 'pending' || !messageId || !fileId || !attachment) {
       return;
     }
     setAttachmentsMap((prevMap) => {
@@ -94,21 +108,27 @@ export default function useAttachmentPreviewSync(
       const existingIndex = messageAttachments.findIndex(
         (a) => (a as Partial<TFile>).file_id === fileId,
       );
-      if (existingIndex < 0) {
-        return prevMap;
-      }
-      const existing = messageAttachments[existingIndex] as Partial<TFile> & TAttachment;
-      const merged = [...messageAttachments];
-      merged[existingIndex] = {
-        ...existing,
+      const resolvedFields = {
         status: polled.status,
-        text: polled.text ?? existing.text ?? null,
-        textFormat: polled.textFormat ?? existing.textFormat ?? null,
+        text: polled.text ?? null,
+        textFormat: polled.textFormat ?? null,
         previewError: polled.previewError,
-      } as TAttachment;
-      return { ...prevMap, [messageId]: merged };
+      };
+      if (existingIndex >= 0) {
+        const existing = messageAttachments[existingIndex] as Partial<TFile> & TAttachment;
+        const merged = [...messageAttachments];
+        merged[existingIndex] = {
+          ...existing,
+          ...resolvedFields,
+          text: polled.text ?? existing.text ?? null,
+          textFormat: polled.textFormat ?? existing.textFormat ?? null,
+        } as TAttachment;
+        return { ...prevMap, [messageId]: merged };
+      }
+      const inserted = { ...attachment, ...resolvedFields } as TAttachment;
+      return { ...prevMap, [messageId]: [...messageAttachments, inserted] };
     });
-  }, [polled, fileId, messageId, setAttachmentsMap]);
+  }, [polled, fileId, messageId, attachment, setAttachmentsMap]);
 
   return {
     status: effectiveStatus,
