@@ -369,13 +369,14 @@ describe('S3 CRUD', () => {
 
     it('streams response bodies into S3 when fetch provides a stream', async () => {
       const streamedBody = Buffer.from('streamed');
+      const received: Buffer[] = [];
       const arrayBuffer = jest.fn();
       (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
         ok: true,
         headers: {
           get: (name: string) =>
             ({
-              'content-length': '999',
+              'content-length': String(streamedBody.byteLength),
               'content-type': 'image/png',
             })[name.toLowerCase()] ?? null,
         },
@@ -389,8 +390,8 @@ describe('S3 CRUD', () => {
       });
       s3Mock.on(PutObjectCommand).callsFake(async (input) => {
         const body = input.Body as NodeJS.ReadableStream;
-        for await (const _chunk of body) {
-          // Drain the upload stream; the AWS SDK does this in production.
+        for await (const chunk of body) {
+          received.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         }
         return {};
       });
@@ -407,9 +408,48 @@ describe('S3 CRUD', () => {
         bytes: streamedBody.byteLength,
         type: 'image/png',
       });
-      expect(s3Mock.commandCalls(PutObjectCommand)[0].args[0].input.Body).not.toBeInstanceOf(
-        Buffer,
-      );
+      const putInput = s3Mock.commandCalls(PutObjectCommand)[0].args[0].input;
+      expect(putInput.Body).not.toBeInstanceOf(Buffer);
+      expect(putInput.ContentLength).toBe(streamedBody.byteLength);
+      expect(Buffer.concat(received).toString()).toBe('streamed');
+    });
+
+    it('omits ContentLength for compressed response streams', async () => {
+      (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: (name: string) =>
+            ({
+              'content-encoding': 'gzip',
+              'content-length': '4',
+              'content-type': 'image/png',
+            })[name.toLowerCase()] ?? null,
+        },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(Buffer.from('decoded'));
+            controller.close();
+          },
+        }),
+        arrayBuffer: jest.fn(),
+      });
+      s3Mock.on(PutObjectCommand).callsFake(async (input) => {
+        const body = input.Body as NodeJS.ReadableStream;
+        for await (const _chunk of body) {
+          // Drain the upload stream; the AWS SDK does this in production.
+        }
+        return {};
+      });
+
+      const { saveURLToS3WithMetadata } = await import('../crud');
+      const result = await saveURLToS3WithMetadata({
+        userId: 'user123',
+        URL: 'https://example.com/image.jpg',
+        fileName: 'downloaded.jpg',
+      });
+
+      expect(result.bytes).toBe(Buffer.byteLength('decoded'));
+      expect(s3Mock.commandCalls(PutObjectCommand)[0].args[0].input.ContentLength).toBeUndefined();
     });
 
     it('throws error on non-ok response', async () => {

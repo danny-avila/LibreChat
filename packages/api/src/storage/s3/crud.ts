@@ -9,7 +9,7 @@ import {
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import type { GetObjectCommandInput } from '@aws-sdk/client-s3';
+import type { GetObjectCommandInput, PutObjectCommandInput } from '@aws-sdk/client-s3';
 import type { TFile } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 import type {
@@ -185,19 +185,42 @@ function createByteCountingStream(): { stream: Transform; getBytes: () => number
   return { stream, getBytes: () => bytes };
 }
 
+function getSafeContentLength(headers: Headers): number | undefined {
+  const contentEncoding = headers.get('content-encoding');
+  if (contentEncoding && contentEncoding.toLowerCase() !== 'identity') {
+    return undefined;
+  }
+
+  const contentLength = headers.get('content-length');
+  if (!contentLength) {
+    return undefined;
+  }
+
+  const parsedLength = Number(contentLength);
+  if (!Number.isSafeInteger(parsedLength) || parsedLength < 0) {
+    return undefined;
+  }
+  return parsedLength;
+}
+
 async function saveReadableToS3({
   userId,
   body,
+  contentLength,
   fileName,
   basePath = defaultBasePath,
   tenantId = null,
   urlBuilder,
 }: Omit<SaveBufferParams, 'buffer'> & {
   body: Readable;
+  contentLength?: number;
   urlBuilder?: UrlBuilder;
 }): Promise<string> {
   const key = getS3Key(basePath, userId, fileName, tenantId);
-  const params = { Bucket: bucketName, Key: key, Body: body };
+  const params: PutObjectCommandInput = { Bucket: bucketName, Key: key, Body: body };
+  if (contentLength !== undefined) {
+    params.ContentLength = contentLength;
+  }
 
   try {
     const s3 = initializeS3();
@@ -236,6 +259,7 @@ export async function saveURLToS3WithMetadata({
       const filepath = await saveReadableToS3({
         userId,
         body: source.pipe(counter.stream),
+        contentLength: getSafeContentLength(response.headers),
         fileName,
         basePath,
         tenantId,
