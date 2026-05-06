@@ -238,6 +238,33 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
       });
     });
 
+    it('should merge custom Anthropic beta headers with generated beta headers', () => {
+      const apiKey = 'sk-custom-beta';
+      const endpoint = 'Anthropic (via LiteLLM)';
+      const options = {
+        modelOptions: {
+          model: 'claude-3.5-sonnet-20240620',
+        },
+        reverseProxyUrl: 'http://custom.proxy/v1',
+        headers: {
+          'anthropic-beta': 'files-api-2025-04-14',
+          'Custom-Header': 'custom-value',
+        },
+        customParams: {
+          defaultParamsEndpoint: 'anthropic',
+        },
+        endpoint: 'Anthropic (via LiteLLM)',
+        endpointType: 'custom',
+      };
+
+      const result = getOpenAIConfig(apiKey, options, endpoint);
+
+      expect(result.configOptions?.defaultHeaders).toEqual({
+        'anthropic-beta': `files-api-2025-04-14,max-tokens-3-5-sonnet-2024-07-15,${FINE_GRAINED_TOOL_STREAMING_BETA}`,
+        'Custom-Header': 'custom-value',
+      });
+    });
+
     it('should handle models that do not match Claude patterns', () => {
       const apiKey = 'sk-other';
       const endpoint = 'Anthropic (via LiteLLM)';
