@@ -24,9 +24,7 @@ module.exports = {
     openAIApiKey,
     azureOpenAIApiKey,
     userProvidedOpenAI,
-    [EModelEndpoint.anthropic]: generateConfig(
-      anthropicUsesVertex ? 'true' : anthropicApiKey,
-    ),
+    [EModelEndpoint.anthropic]: generateConfig(anthropicUsesVertex ? 'true' : anthropicApiKey),
     [EModelEndpoint.openAI]: generateConfig(openAIApiKey, OPENAI_REVERSE_PROXY),
     [EModelEndpoint.azureOpenAI]: generateConfig(azureOpenAIApiKey, AZURE_OPENAI_BASEURL),
     [EModelEndpoint.assistants]: generateConfig(

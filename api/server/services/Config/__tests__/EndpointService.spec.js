@@ -23,8 +23,7 @@ const mockDataProvider = {
     azureAssistants: 2,
   },
   isAgentsEndpoint: (endpoint) => endpoint === 'agents',
-  isAssistantsEndpoint: (endpoint) =>
-    endpoint === 'assistants' || endpoint === 'azureAssistants',
+  isAssistantsEndpoint: (endpoint) => endpoint === 'assistants' || endpoint === 'azureAssistants',
 };
 
 jest.mock(
