@@ -7,6 +7,8 @@ describe('assertPathSegment', () => {
 
   it('rejects empty, slash, traversal, and control-character segments', () => {
     expect(() => assertPathSegment('userId', '', 'test')).toThrow('must not be empty');
+    expect(() => assertPathSegment('userId', null, 'test')).toThrow('must not be empty');
+    expect(() => assertPathSegment('userId', undefined, 'test')).toThrow('must not be empty');
     expect(() => assertPathSegment('userId', 'user/123', 'test')).toThrow(
       'must not contain slashes',
     );

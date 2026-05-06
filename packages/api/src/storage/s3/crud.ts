@@ -349,6 +349,7 @@ export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise
     logger.error((error as Error).stack);
 
     if ((error as { name?: string }).name === 'NoSuchKey') {
+      await deleteRagFile({ userId: ownerId, file });
       return;
     }
     throw error;

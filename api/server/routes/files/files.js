@@ -399,6 +399,7 @@ const DOWNLOAD_METADATA_FIELDS = [
   'file_id',
   'temp_file_id',
   'bytes',
+  'model',
   'embedded',
   'filename',
   'object',

@@ -480,7 +480,7 @@ describe('S3 CRUD', () => {
       expect(logger.error).toHaveBeenCalled();
     });
 
-    it('handles NoSuchKey error without calling deleteRagFile', async () => {
+    it('handles NoSuchKey error and cleans up RAG', async () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
         file_id: 'file123',
@@ -493,7 +493,7 @@ describe('S3 CRUD', () => {
 
       const { deleteFileFromS3 } = await import('../crud');
       await expect(deleteFileFromS3(mockReq, mockFile)).resolves.toBeUndefined();
-      expect(deleteRagFile).not.toHaveBeenCalled();
+      expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user123', file: mockFile });
     });
 
     it('rejects tenant-prefixed keys when the file record lacks tenantId', async () => {
