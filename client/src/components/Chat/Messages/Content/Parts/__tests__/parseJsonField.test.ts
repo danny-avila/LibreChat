@@ -1,4 +1,4 @@
-import parseJsonField from '../parseJsonField';
+import parseJsonField, { areToolCallArgsComplete } from '../parseJsonField';
 
 describe('parseJsonField', () => {
   describe('object args', () => {
@@ -99,5 +99,27 @@ describe('parseJsonField', () => {
       const partial = '{"command":"tab\\there","incomplete":';
       expect(parseJsonField(partial, 'command')).toBe('tab\\there');
     });
+  });
+});
+
+describe('areToolCallArgsComplete', () => {
+  it.each([undefined, '', '   ', '{"command":"ls"', '{"command":"ls","timeout":'])(
+    'returns false for missing or partial args %s',
+    (args) => {
+      expect(areToolCallArgsComplete(args)).toBe(false);
+    },
+  );
+
+  it.each([
+    [{ command: 'ls -la' }],
+    ['{"command":"ls -la"}'],
+    ['{"command":"sleep 1","timeout":1000}'],
+  ])('returns true for complete object args %s', (args) => {
+    expect(areToolCallArgsComplete(args)).toBe(true);
+  });
+
+  it('returns false for complete non-object JSON', () => {
+    expect(areToolCallArgsComplete('"ls -la"')).toBe(false);
+    expect(areToolCallArgsComplete('[]')).toBe(false);
   });
 });

@@ -8,7 +8,7 @@ import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
 import { ERROR_PATTERNS } from './ExecuteCode';
 import { AttachmentGroup } from './Attachment';
-import parseJsonField from './parseJsonField';
+import parseJsonField, { areToolCallArgsComplete } from './parseJsonField';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -27,6 +27,7 @@ export default function BashCall({
 }) {
   const localize = useLocalize();
   const command = useMemo(() => parseJsonField(args, 'command'), [args]);
+  const isWritingCommand = !command || !areToolCallArgsComplete(args);
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
     useToolCallState(initialProgress, isSubmitting, output, !!command);
@@ -51,7 +52,11 @@ export default function BashCall({
         <ProgressText
           progress={progress}
           onClick={toggleCode}
-          inProgressText={localize('com_ui_running_command')}
+          inProgressText={
+            isWritingCommand
+              ? localize('com_ui_writing_command')
+              : localize('com_ui_running_command')
+          }
           finishedText={
             cancelled ? localize('com_ui_cancelled') : localize('com_ui_command_finished')
           }

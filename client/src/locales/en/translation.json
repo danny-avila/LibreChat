@@ -853,6 +853,7 @@
   "com_ui_command_finished": "Finished running",
   "com_ui_command_placeholder": "Optional: Enter a command for the prompt or name will be used",
   "com_ui_command_usage_placeholder": "Select a Prompt by command or name",
+  "com_ui_writing_command": "Writing command",
   "com_ui_complete": "Complete!",
   "com_ui_complete_setup": "Complete Setup",
   "com_ui_concise": "Concise",
