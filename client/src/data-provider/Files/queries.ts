@@ -106,15 +106,25 @@ export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => 
   );
 };
 
+/** Stop on terminal success or after 5 consecutive errors. */
+export const PREVIEW_MAX_CONSECUTIVE_ERRORS = 5;
+export const previewRefetchInterval = (
+  data: t.TFilePreview | undefined,
+  query: { state: { fetchFailureCount: number } },
+): number | false => {
+  if (data?.status === 'ready' || data?.status === 'failed') return false;
+  if (query.state.fetchFailureCount >= PREVIEW_MAX_CONSECUTIVE_ERRORS) return false;
+  return 2500;
+};
+
 /**
  * Poll the lifecycle of an inline file preview while background HTML
  * extraction runs.
  *
  * Caller wires `enabled` to `attachment.status === 'pending'` so the
  * query is dormant for terminal-status records. Once enabled, React
- * Query's `refetchInterval` runs at 2.5s while the server keeps
- * returning `'pending'`, then auto-stops on the first `'ready'` /
- * `'failed'` response. Idle by default.
+ * Query's `refetchInterval` runs at 2.5s; see `previewRefetchInterval`
+ * for the auto-stop rules. Idle by default.
  *
  * Cache key: `[QueryKeys.filePreview, file_id]`. Sibling components
  * watching the same `file_id` get a single shared poller.
@@ -139,11 +149,7 @@ export const useFilePreview = (
        * and `refetchInterval` would never start polling. (Codex P1
        * round-3 review on PR #12957.) */
       retry: false,
-      /* Function form: poll only while the server says 'pending'.
-       * Returning `false` disables the interval, so a single 'ready'
-       * or 'failed' response naturally terminates polling without the
-       * caller having to also flip `enabled`. */
-      refetchInterval: (data) => (data?.status === 'pending' ? 2500 : false),
+      refetchInterval: previewRefetchInterval,
       ...config,
       enabled: !!file_id && (config?.enabled ?? true),
     },
