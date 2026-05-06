@@ -232,7 +232,7 @@ export function setCloudFrontCookies(
       sameSite: 'none' as const,
       domain: config.cookieDomain,
     };
-    const stalePaths = new Set(['/images']);
+    const stalePaths = new Set(['/images', '/avatars']);
     if (previousScope?.userId) {
       for (const path of getScopeCookiePaths(previousScope)) {
         stalePaths.add(path);
