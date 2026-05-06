@@ -22,6 +22,10 @@ function expectedHexSuffix(input: string): string {
   return createHash('sha256').update(input).digest('hex').slice(0, 6);
 }
 
+function utf8ByteLength(input: string): number {
+  return Buffer.byteLength(input, 'utf8');
+}
+
 describe('sanitizeFilename', () => {
   test('removes directory components (1/2)', () => {
     expect(sanitizeFilename('/path/to/file.txt')).toBe('file.txt');
@@ -59,6 +63,13 @@ describe('sanitizeFilename', () => {
     const result = sanitizeFilename(longName);
     expect(result.length).toBe(255);
     expect(result).toMatch(/^a+-abc123\.txt$/);
+  });
+
+  test('truncates Unicode filenames by UTF-8 bytes, preserving the extension', () => {
+    const longName = '界'.repeat(100) + '.txt';
+    const result = sanitizeFilename(longName);
+    expect(utf8ByteLength(result)).toBeLessThanOrEqual(255);
+    expect(result.endsWith('-abc123.txt')).toBe(true);
   });
 
   test('handles filenames with no extension', () => {
@@ -161,6 +172,13 @@ describe('sanitizeArtifactPath', () => {
     expect(result).toMatch(new RegExp(`^a+-${expectedHexSuffix(longName)}\\.txt$`));
   });
 
+  test('caps Unicode leaf segments at 255 UTF-8 bytes with extension-preserving truncation', () => {
+    const longName = '界'.repeat(100) + '.txt';
+    const result = sanitizeArtifactPath(longName);
+    expect(utf8ByteLength(result)).toBeLessThanOrEqual(255);
+    expect(result.endsWith(`-${expectedHexSuffix(longName)}.txt`)).toBe(true);
+  });
+
   test('caps the leaf when nested under a directory, preserving the directory verbatim', () => {
     const longLeaf = 'b'.repeat(300) + '.csv';
     const result = sanitizeArtifactPath(`reports/${longLeaf}`);
@@ -179,6 +197,15 @@ describe('sanitizeArtifactPath', () => {
     const [dir, leaf] = result.split('/');
     expect(dir.length).toBe(255);
     expect(dir).toMatch(new RegExp(`^d+-${expectedHexSuffix(longDir)}$`));
+    expect(leaf).toBe('notes.txt');
+  });
+
+  test('caps Unicode non-leaf directory segments at 255 UTF-8 bytes', () => {
+    const longDir = '界'.repeat(100);
+    const result = sanitizeArtifactPath(`${longDir}/notes.txt`);
+    const [dir, leaf] = result.split('/');
+    expect(utf8ByteLength(dir)).toBeLessThanOrEqual(255);
+    expect(dir.endsWith(`-${expectedHexSuffix(longDir)}`)).toBe(true);
     expect(leaf).toBe('notes.txt');
   });
 
@@ -233,6 +260,14 @@ describe('sanitizeArtifactPath', () => {
     const segC = 'z'.repeat(255);
     const result = sanitizeArtifactPath(`${segA}/${segB}/${segC}/file.txt`);
     /* Joined would be ~768 chars + slashes; well past the 512 cap. */
+    expect(result).toBe('file.txt');
+  });
+
+  test('falls back to leaf-only when Unicode path bytes exceed the DB-index cap', () => {
+    const segA = '界'.repeat(80);
+    const segB = '分'.repeat(80);
+    const segC = '析'.repeat(80);
+    const result = sanitizeArtifactPath(`${segA}/${segB}/${segC}/file.txt`);
     expect(result).toBe('file.txt');
   });
 
@@ -385,6 +420,14 @@ describe('flattenArtifactPath', () => {
     expect(result.length).toBe(200);
     expect(result.endsWith('.txt')).toBe(true);
     expect(result).toMatch(new RegExp(`-${expectedHexSuffix(safePath)}\\.txt$`));
+  });
+
+  test('truncates Unicode flat forms by UTF-8 bytes', () => {
+    const safePath = `${'界'.repeat(80)}/結果.csv`;
+    const result = flattenArtifactPath(safePath, 100);
+    expect(utf8ByteLength(result)).toBeLessThanOrEqual(100);
+    expect(result.endsWith('.csv')).toBe(true);
+    expect(result).toMatch(new RegExp(`-${expectedHexSuffix(safePath)}\\.csv$`));
   });
 
   test('preserves the extension even when only the leaf overflows', () => {
