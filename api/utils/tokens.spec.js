@@ -234,6 +234,9 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct tokens for gpt-5.5 matches', () => {
+    expect(maxTokensMap[EModelEndpoint.openAI]['gpt-5.5']).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-5.5-pro'],
+    );
     expect(getModelMaxTokens('gpt-5.5')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-5.5']);
     expect(getModelMaxTokens('gpt-5.5-thinking')).toBe(
       maxTokensMap[EModelEndpoint.openAI]['gpt-5.5'],
