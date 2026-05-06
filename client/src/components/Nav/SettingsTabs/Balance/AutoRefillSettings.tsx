@@ -48,8 +48,10 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
       case 'months':
         key = value === 1 ? 'com_nav_balance_month' : 'com_nav_balance_months';
         break;
-      default:
-        key = 'com_nav_balance_seconds';
+      default: {
+        const exhaustiveCheck: never = unit;
+        key = exhaustiveCheck;
+      }
     }
     return localize(key);
   };

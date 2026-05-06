@@ -1,4 +1,13 @@
-export type RefillIntervalUnit = 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
+export const REFILL_INTERVAL_UNITS = [
+  'seconds',
+  'minutes',
+  'hours',
+  'days',
+  'weeks',
+  'months',
+] as const;
+
+export type RefillIntervalUnit = (typeof REFILL_INTERVAL_UNITS)[number];
 
 export function getRefillEligibilityDate(
   lastRefill: Date,

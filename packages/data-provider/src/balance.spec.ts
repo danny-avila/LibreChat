@@ -18,7 +18,7 @@ describe('getRefillEligibilityDate', () => {
     },
   );
 
-  it('returns the first eligibility date for a stale last refill', () => {
+  it('computes eligibility from an old lastRefill without considering current time', () => {
     const lastRefill = new Date('2026-05-03T16:00:00.000Z');
 
     expect(getRefillEligibilityDate(lastRefill, 1, 'days')).toEqual(
