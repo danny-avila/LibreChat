@@ -154,6 +154,48 @@ describe('useAttachmentHandler upsert-by-file_id', () => {
     });
   });
 
+  it('does NOT regress a resolved record when finalHandler replays the phase-1 snapshot', () => {
+    /* `useEventHandlers.finalHandler` iterates `responseMessage.attachments`
+     * at stream end — which is the immediate-persist snapshot
+     * (status:pending, text:null). If a deferred update has already
+     * moved this file_id to ready/failed, that replay must NOT
+     * downgrade it. Otherwise the chip flickers back to "pending" and
+     * polling restarts until the lazy sweep catches up. (Codex P1.) */
+    const ctx = setup();
+    ctx.handle(makeAttachment({ status: 'pending', text: null }));
+    ctx.handle({
+      file_id: 'fid-1',
+      messageId,
+      status: 'ready',
+      text: '<table>resolved</table>',
+      textFormat: 'html',
+    } as unknown as TAttachment);
+    /* Phase-1 replay arrives last (finalHandler at stream end). */
+    ctx.handle(makeAttachment({ status: 'pending', text: null }));
+    expect(ctx.list).toHaveLength(1);
+    expect(ctx.list[0]).toMatchObject({
+      status: 'ready',
+      text: '<table>resolved</table>',
+      textFormat: 'html',
+    });
+  });
+
+  it('does NOT regress a failed record when finalHandler replays the phase-1 snapshot', () => {
+    const ctx = setup();
+    ctx.handle(makeAttachment({ status: 'pending' }));
+    ctx.handle({
+      file_id: 'fid-1',
+      messageId,
+      status: 'failed',
+      previewError: 'parser-error',
+    } as unknown as TAttachment);
+    ctx.handle(makeAttachment({ status: 'pending' }));
+    expect(ctx.list[0]).toMatchObject({
+      status: 'failed',
+      previewError: 'parser-error',
+    });
+  });
+
   describe('filePreview cache eviction (cross-turn filename reuse)', () => {
     /* Cross-turn filename reuse keeps the same `file_id`. If a prior
      * turn left `[QueryKeys.filePreview, file_id]` cached at

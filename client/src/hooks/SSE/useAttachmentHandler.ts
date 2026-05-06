@@ -84,8 +84,25 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
           (a) => (a as Partial<TFile>).file_id === fileId,
         );
         if (existingIndex > -1) {
+          const existing = messageAttachments[existingIndex] as Partial<TFile>;
+          const incoming = data as Partial<TFile>;
+          const next = { ...existing, ...data } as TAttachment;
+          /* Don't let a phase-1 replay (finalHandler iterates
+           * `responseMessage.attachments`, which is the immediate-persist
+           * snapshot at status:pending) regress a record a deferred
+           * update has already moved to ready/failed. Pin the terminal
+           * lifecycle fields when the merge would downgrade. */
+          if (
+            (existing.status === 'ready' || existing.status === 'failed') &&
+            incoming.status === 'pending'
+          ) {
+            (next as Partial<TFile>).status = existing.status;
+            (next as Partial<TFile>).text = existing.text;
+            (next as Partial<TFile>).textFormat = existing.textFormat;
+            (next as Partial<TFile>).previewError = existing.previewError;
+          }
           const merged = [...messageAttachments];
-          merged[existingIndex] = { ...messageAttachments[existingIndex], ...data };
+          merged[existingIndex] = next;
           return { ...prevMap, [messageId]: merged };
         }
       }
