@@ -434,11 +434,24 @@ u7wlOSk+oFzDIO/UILIA
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
     const profile = { ...baseProfile };
 
     const { user } = await validate(profile);
+    const strategyResult =
+      getStrategyFunctions.mock.results[getStrategyFunctions.mock.results.length - 1];
+    const { saveBuffer } = strategyResult.value;
+    const [saveParams] = saveBuffer.mock.calls[0];
 
     expect(fetch).toHaveBeenCalled();
+    expect(saveParams).toEqual(
+      expect.objectContaining({
+        fileName: 'hashed-token.png',
+        userId: 'mock-user-id',
+        buffer: expect.any(Buffer),
+      }),
+    );
+    expect(saveParams).not.toHaveProperty('basePath');
     expect(user.avatar).toBe('/fake/path/to/avatar.png');
   });
 
