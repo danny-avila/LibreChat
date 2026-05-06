@@ -295,16 +295,11 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
   }
 });
 
-/* Lazy-sweep cutoff for the preview endpoint. If a polled record is
- * still `pending` AND its last update is older than this, an in-process
- * deferred preview render is no longer plausible (the outer 60s ceiling
- * has long since fired) — mark it `failed` with `previewError:
- * 'orphaned'` on the spot so the UI stops polling. Catches the
- * quick-restart case the boot-time sweep skips: a process crash at
- * t=0 followed by a restart at t=2min leaves records with `updatedAt
- * < 5min`, so the boot sweep (default 5min cutoff) doesn't touch
- * them. (Codex P2 review on PR #12957.) */
-const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 5 * 60 * 1000;
+/* Lazy-sweep cutoff: pending records older than this are marked failed
+ * on the next poll. 2min is well past the 60s render ceiling, so any
+ * `pending` past it is definitively orphaned. Tighter than the boot
+ * sweep (5min) since this runs per-request, not per-instance. */
+const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
 
 /**
  * Poll the lifecycle status of a code-execution file's inline preview.
@@ -313,8 +308,8 @@ const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 5 * 60 * 1000;
  * record at `status: 'pending'`; the background render transitions
  * it to `'ready'` (with `text` + `textFormat`) or `'failed'` (with
  * `previewError`). The frontend's `useFilePreview` React Query hook
- * polls this endpoint at ~2.5s intervals while `status === 'pending'`
- * and `isSubmitting === true`, then auto-stops on terminal status.
+ * polls this endpoint at ~2.5s intervals while `status === 'pending'`,
+ * then auto-stops on terminal status.
  *
  * Returns the smallest viable shape:
  *   - `status` always present (defaults to `'ready'` for legacy records

@@ -148,15 +148,11 @@ const finalizePreview = async ({
       `[finalizePreview] ${file_id}: extraction timed out after ${PREVIEW_FINALIZE_TIMEOUT_MS}ms`,
     );
   }
-  /* Office-bucket files are HTML-or-null per the PR #12934 SEC fix:
-   * a null result must NOT fall back to plain text, and must surface
-   * to the UI as a failed preview so the artifact card downgrades to
-   * download-only. Non-office files with a null result have nothing
-   * extractable (binary, oversized) — mark ready with text=null so
-   * subsequent reads stop polling. */
-  const isOfficeBucket = hasOfficeHtmlPath(leafName, mimeType);
+  /* HTML-or-null contract (PR #12934): null result on an office file
+   * must NOT fall back to plain text — surface as failed. Caller gates
+   * on `hasOfficeHtmlPath`, so reaching here always means office. */
   const textFormat = getExtractedTextFormat(leafName, mimeType, text);
-  const failed = isOfficeBucket && text == null;
+  const failed = text == null;
   const status = failed ? 'failed' : 'ready';
   if (failed && !previewError) {
     previewError = 'parser-error';

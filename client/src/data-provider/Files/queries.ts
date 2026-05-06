@@ -110,13 +110,11 @@ export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => 
  * Poll the lifecycle of an inline file preview while background HTML
  * extraction runs.
  *
- * Caller wires `enabled` to `(attachment.status === 'pending') && isSubmitting`
- * so the query is dormant for terminal-status records and stops the
- * moment the assistant finishes generating. Once enabled, React Query's
- * `refetchInterval` runs at 2.5s while the server keeps returning
- * `'pending'`, then auto-stops on the first `'ready'`/`'failed'`
- * response (returning `false` from the function form disables the
- * interval). Idle by default.
+ * Caller wires `enabled` to `attachment.status === 'pending'` so the
+ * query is dormant for terminal-status records. Once enabled, React
+ * Query's `refetchInterval` runs at 2.5s while the server keeps
+ * returning `'pending'`, then auto-stops on the first `'ready'` /
+ * `'failed'` response. Idle by default.
  *
  * Cache key: `[QueryKeys.filePreview, file_id]`. Sibling components
  * watching the same `file_id` get a single shared poller.

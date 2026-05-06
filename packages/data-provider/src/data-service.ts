@@ -411,8 +411,8 @@ export const getFiles = (): Promise<f.TFile[]> => {
  *     was extracted (preserves the HTML-or-null security contract).
  *   - `previewError` only when `status === 'failed'`.
  *
- * Called from `useFilePreview` with React Query's `refetchInterval`
- * gated on `status === 'pending'` and `isSubmitting`. See PR #12957.
+ * Called from `useFilePreview`; React Query's `refetchInterval`
+ * polls while `status === 'pending'` and stops on terminal status.
  */
 export const getFilePreview = (fileId: string): Promise<f.TFilePreview> => {
   return request.get(endpoints.filePreview(fileId));
