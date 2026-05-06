@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { Readable, Transform } from 'stream';
 import {
   PutObjectCommand,
   GetObjectCommand,
@@ -10,7 +11,6 @@ import { FileSources } from 'librechat-data-provider';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { GetObjectCommandInput } from '@aws-sdk/client-s3';
 import type { TFile } from 'librechat-data-provider';
-import type { Readable } from 'stream';
 import type { ServerRequest } from '~/types';
 import type {
   UploadFileParams,
@@ -174,6 +174,46 @@ export async function saveBufferToS3({
   }
 }
 
+function createByteCountingStream(): { stream: Transform; getBytes: () => number } {
+  let bytes = 0;
+  const stream = new Transform({
+    transform(chunk: Buffer | string, _encoding, callback) {
+      bytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
+      callback(null, chunk);
+    },
+  });
+  return { stream, getBytes: () => bytes };
+}
+
+async function saveReadableToS3({
+  userId,
+  body,
+  fileName,
+  basePath = defaultBasePath,
+  tenantId = null,
+  urlBuilder,
+}: Omit<SaveBufferParams, 'buffer'> & {
+  body: Readable;
+  urlBuilder?: UrlBuilder;
+}): Promise<string> {
+  const key = getS3Key(basePath, userId, fileName, tenantId);
+  const params = { Bucket: bucketName, Key: key, Body: body };
+
+  try {
+    const s3 = initializeS3();
+    if (!s3) {
+      throw new Error('[saveReadableToS3] S3 not initialized');
+    }
+
+    await s3.send(new PutObjectCommand(params));
+    const getUrl = urlBuilder ?? getS3URL;
+    return await getUrl({ userId, fileName, basePath, tenantId });
+  } catch (error) {
+    logger.error('[saveReadableToS3] Error uploading stream to S3:', (error as Error).message);
+    throw error;
+  }
+}
+
 export async function saveURLToS3WithMetadata({
   userId,
   URL,
@@ -187,8 +227,29 @@ export async function saveURLToS3WithMetadata({
     if (!response.ok) {
       throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
     }
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const contentType = response.headers.get('content-type') ?? '';
+    if (response.body) {
+      const source = Readable.fromWeb(
+        response.body as unknown as Parameters<typeof Readable.fromWeb>[0],
+      );
+      const counter = createByteCountingStream();
+      const filepath = await saveReadableToS3({
+        userId,
+        body: source.pipe(counter.stream),
+        fileName,
+        basePath,
+        tenantId,
+        urlBuilder,
+      });
+      return {
+        filepath,
+        bytes: counter.getBytes(),
+        type: contentType,
+        dimensions: {},
+      };
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
     const filepath = await saveBufferToS3({
       userId,
       buffer,
@@ -200,7 +261,7 @@ export async function saveURLToS3WithMetadata({
     return {
       filepath,
       bytes: buffer.byteLength,
-      type: response.headers.get('content-type') ?? '',
+      type: contentType,
       dimensions: {},
     };
   } catch (error) {
