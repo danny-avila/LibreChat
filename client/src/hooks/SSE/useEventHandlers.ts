@@ -59,6 +59,7 @@ export type EventHandlerParams = {
   newConversation?: ConvoGenerator;
   setShowStopButton: SetterOrUpdater<boolean>;
   resetLatestMessage?: Resetter;
+  setLatestMessage?: SetterOrUpdater<TMessage | null>;
 };
 
 const createErrorMessage = ({
@@ -171,6 +172,7 @@ export default function useEventHandlers({
   newConversation,
   setShowStopButton,
   resetLatestMessage,
+  setLatestMessage,
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
@@ -428,9 +430,16 @@ export default function useEventHandlers({
         );
       }
 
-      if (resetLatestMessage) {
-        logger.log('latest_message', 'createdHandler: resetting latest message');
-        resetLatestMessage();
+      if (setLatestMessage) {
+        // Don't reset to null here — that flips isLatestMessage to false for
+        // every message until useMessageProcess re-syncs on the first text
+        // event, and during that gap the result-streaming class drops and the
+        // pulsing dot disappears. For endpoints with a multi-second preflight
+        // (e.g. codeCanDirect's Ontario file_search) that gap is very visible.
+        // Setting to the freshly-built initialResponse keeps the placeholder
+        // marked as latest so the indicator persists through the wait.
+        logger.log('latest_message', 'createdHandler: setting latest message to placeholder');
+        setLatestMessage(initialResponse);
       }
       scrollToEnd(() => setAbortScroll(false));
     },
@@ -442,7 +451,7 @@ export default function useEventHandlers({
       announcePolite,
       setConversation,
       setIsSubmitting,
-      resetLatestMessage,
+      setLatestMessage,
       applyAgentTemplate,
     ],
   );

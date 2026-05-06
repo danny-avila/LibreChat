@@ -1,7 +1,10 @@
+/* eslint-disable i18next/no-literal-string */
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
+import { Button } from '@librechat/client';
 import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
+import { useSubscription } from '~/hooks/Subscription/SubscriptionContext';
 import { useLocalize } from '~/hooks';
 import CodeBlock from './CodeBlock';
 
@@ -73,11 +76,6 @@ const errorMessages = {
     return info;
   },
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
-  quota_exceeded: (json: { limit?: number }) => {
-    const limit = typeof json?.limit === 'number' && json.limit > 0 ? json.limit : 3;
-    return `You have used your ${limit} free message${limit === 1 ? '' : 's'} for this month. Upgrade to CodeCan AI Pro to continue.`;
-  },
-  subscription_required: 'A CodeCan AI Pro subscription is required to continue.',
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: (json: TGenericError, localize: LocalizeFunction) => {
@@ -126,6 +124,25 @@ const errorMessages = {
   },
 };
 
+const UpgradeErrorCard = ({ message }: { message: string }) => {
+  const { openUpgradeFlow } = useSubscription();
+  return (
+    <div className="flex flex-col gap-3">
+      <div>{message}</div>
+      <div>
+        <Button
+          type="button"
+          variant="submit"
+          aria-label="Upgrade to CodeCan AI Pro"
+          onClick={() => void openUpgradeFlow()}
+        >
+          Upgrade to CodeCan AI Pro
+        </Button>
+      </div>
+    </div>
+  );
+};
+
 const Error = ({ text }: { text: string }) => {
   const localize = useLocalize();
   const jsonString = extractJson(text);
@@ -138,6 +155,19 @@ const Error = ({ text }: { text: string }) => {
 
   const json = JSON.parse(jsonString);
   const errorKey = json.code || json.type;
+
+  if (errorKey === 'quota_exceeded') {
+    const limit = typeof json?.limit === 'number' && json.limit > 0 ? json.limit : 3;
+    const message = `You have used your ${limit} free message${
+      limit === 1 ? '' : 's'
+    } for this month. Upgrade to CodeCan AI Pro to continue.`;
+    return <UpgradeErrorCard message={message} />;
+  }
+
+  if (errorKey === 'subscription_required') {
+    return <UpgradeErrorCard message="A CodeCan AI Pro subscription is required to continue." />;
+  }
+
   const keyExists = errorKey && errorMessages[errorKey];
 
   if (keyExists && typeof errorMessages[errorKey] === 'function') {

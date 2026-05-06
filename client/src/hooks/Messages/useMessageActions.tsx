@@ -20,6 +20,7 @@ import {
 import useCopyToClipboard from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
+import { ASSISTANT_MODEL_LABEL } from '~/constants/branding';
 import store from '~/store';
 
 export type TMessageActions = Pick<
@@ -124,13 +125,23 @@ export default function useMessageActions(props: TMessageActions) {
   const messageLabel = useMemo(() => {
     if (message?.isCreatedByUser === true) {
       return UsernameDisplay ? (user?.name ?? '') || user?.username : localize('com_user_message');
-    } else if (agent) {
-      return agent.name ?? 'Assistant';
-    } else if (assistant) {
-      return assistant.name ?? 'Assistant';
-    } else {
-      return message?.sender;
     }
+
+    let candidate: string | undefined;
+    if (agent) {
+      candidate = agent.name ?? 'Assistant';
+    } else if (assistant) {
+      candidate = assistant.name ?? 'Assistant';
+    } else {
+      candidate = message?.sender;
+    }
+
+    const normalized = candidate?.trim().toLowerCase();
+    if (normalized === 'gpt-5' || normalized === 'chatgpt') {
+      return ASSISTANT_MODEL_LABEL;
+    }
+
+    return candidate;
   }, [message, agent, assistant, UsernameDisplay, user, localize]);
 
   const feedbackMutation = useUpdateFeedbackMutation(
