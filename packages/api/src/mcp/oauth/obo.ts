@@ -41,12 +41,7 @@ export async function resolveOboToken(
   }
 
   try {
-    const response = await oboTokenResolver(
-      user,
-      tokenInfo.accessToken,
-      oboConfig.scopes,
-      true,
-    );
+    const response = await oboTokenResolver(user, tokenInfo.accessToken, oboConfig.scopes, true);
 
     if (!response?.access_token) {
       logger.warn('[OBO] Token exchange did not return an access token');
