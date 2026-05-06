@@ -45,6 +45,17 @@ describe('getLLMConfig', () => {
     expect(result.llmConfig).toHaveProperty('anthropicApiUrl', 'http://reverse-proxy');
   });
 
+  it('should honor dropParams for clientOptions', () => {
+    const result = getLLMConfig('test-api-key', {
+      modelOptions: {},
+      reverseProxyUrl: 'http://reverse-proxy',
+      dropParams: ['clientOptions'],
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('clientOptions');
+    expect(result.llmConfig).toHaveProperty('anthropicApiUrl', 'http://reverse-proxy');
+  });
+
   it('should include topK and topP for non-Claude-3.7 models', () => {
     const result = getLLMConfig('test-api-key', {
       modelOptions: {

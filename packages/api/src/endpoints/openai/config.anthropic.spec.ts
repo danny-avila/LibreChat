@@ -1,4 +1,5 @@
 import { getOpenAIConfig } from './config';
+import { FINE_GRAINED_TOOL_STREAMING_BETA } from '../anthropic/helpers';
 
 describe('getOpenAIConfig - Anthropic Compatibility', () => {
   describe('Anthropic via LiteLLM', () => {
@@ -44,7 +45,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://host.docker.internal:4000/v1',
-          defaultHeaders: {},
+          defaultHeaders: {
+            'anthropic-beta': FINE_GRAINED_TOOL_STREAMING_BETA,
+          },
         },
         tools: [],
       });
@@ -92,7 +95,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'http://localhost:4000/v1',
           defaultHeaders: {
-            'anthropic-beta': 'token-efficient-tools-2025-02-19,output-128k-2025-02-19',
+            'anthropic-beta': `token-efficient-tools-2025-02-19,output-128k-2025-02-19,${FINE_GRAINED_TOOL_STREAMING_BETA}`,
           },
         },
         tools: [],
@@ -140,7 +143,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'http://localhost:4000/v1',
           defaultHeaders: {
-            'anthropic-beta': 'token-efficient-tools-2025-02-19,output-128k-2025-02-19',
+            'anthropic-beta': `token-efficient-tools-2025-02-19,output-128k-2025-02-19,${FINE_GRAINED_TOOL_STREAMING_BETA}`,
           },
         },
         tools: [],
@@ -182,7 +185,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'https://api.anthropic.proxy.com/v1',
           defaultHeaders: {
-            'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15',
+            'anthropic-beta': `max-tokens-3-5-sonnet-2024-07-15,${FINE_GRAINED_TOOL_STREAMING_BETA}`,
           },
         },
         tools: [],
@@ -226,6 +229,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'http://custom.proxy/v1',
           defaultHeaders: {
+            'anthropic-beta': FINE_GRAINED_TOOL_STREAMING_BETA,
             'Custom-Header': 'custom-value',
             Authorization: 'Bearer custom-token',
           },
@@ -268,6 +272,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://litellm:4000/v1',
+          defaultHeaders: {
+            'anthropic-beta': FINE_GRAINED_TOOL_STREAMING_BETA,
+          },
         },
         tools: [],
       });
@@ -312,6 +319,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://proxy.litellm/v1',
+          defaultHeaders: {
+            'anthropic-beta': FINE_GRAINED_TOOL_STREAMING_BETA,
+          },
         },
         tools: [],
       });
@@ -351,6 +361,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://litellm/v1',
+          defaultHeaders: {
+            'anthropic-beta': FINE_GRAINED_TOOL_STREAMING_BETA,
+          },
         },
         tools: [],
       });
@@ -390,6 +403,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://litellm/v1',
+          defaultHeaders: {
+            'anthropic-beta': FINE_GRAINED_TOOL_STREAMING_BETA,
+          },
         },
         tools: [
           {
@@ -437,6 +453,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://litellm/v1',
+          defaultHeaders: {
+            'anthropic-beta': FINE_GRAINED_TOOL_STREAMING_BETA,
+          },
         },
         tools: [],
       });
@@ -485,6 +504,9 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         },
         configOptions: {
           baseURL: 'http://litellm/v1',
+          defaultHeaders: {
+            'anthropic-beta': FINE_GRAINED_TOOL_STREAMING_BETA,
+          },
         },
         tools: [],
       });
@@ -536,7 +558,7 @@ describe('getOpenAIConfig - Anthropic Compatibility', () => {
         configOptions: {
           baseURL: 'http://litellm/v1',
           defaultHeaders: {
-            'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15',
+            'anthropic-beta': `max-tokens-3-5-sonnet-2024-07-15,${FINE_GRAINED_TOOL_STREAMING_BETA}`,
           },
         },
         tools: [],
