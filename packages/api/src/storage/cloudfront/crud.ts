@@ -1,7 +1,7 @@
 import crypto from 'crypto';
-import { logger } from '@librechat/data-schemas';
 import { getSignedUrl } from '@aws-sdk/cloudfront-signer';
 import { CloudFrontClient, CreateInvalidationCommand } from '@aws-sdk/client-cloudfront';
+import { logger } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
 import type { Readable } from 'stream';
 import type { ServerRequest } from '~/types';
@@ -10,15 +10,18 @@ import type {
   GetURLParams,
   SaveURLParams,
   UploadFileParams,
+  DownloadURLParams,
+  SaveURLResult,
   UploadResult,
 } from '~/storage/types';
 import { getCloudFrontConfig } from '~/cdn/cloudfront';
 import { s3Config } from '~/storage/s3/s3Config';
 import { DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
+import { sanitizeContentDispositionFilename } from '~/storage/validation';
 import {
   getS3Key,
   saveBufferToS3,
-  saveURLToS3,
+  saveURLToS3WithMetadata,
   uploadFileToS3,
   deleteFileFromS3,
   getS3FileStream,
@@ -52,21 +55,67 @@ function buildCloudFrontUrl(s3Key: string): string {
   return `${cleanDomain}/${cleanKey}`;
 }
 
-function signUrl(url: string): string {
+function signUrl(url: string | URL): string {
   const config = getCloudFrontConfig();
   if (!config?.privateKey || !config?.keyPairId) {
     throw new Error('[signUrl] Signing keys not configured.');
   }
 
   const expiry = config.urlExpiry ?? s3Config.S3_URL_EXPIRY_SECONDS;
-  const dateLessThan = new Date(Date.now() + expiry * 1000).toISOString();
+  const expiresAtMs = Date.now() + expiry * 1000;
+  const expiresAtEpoch = Math.floor(expiresAtMs / 1000);
+
+  const urlString = url.toString();
+  const parsedUrl = url instanceof URL ? url : new URL(urlString);
+  if (parsedUrl.search) {
+    const policy = JSON.stringify({
+      Statement: [
+        {
+          Resource: `${parsedUrl.origin}${parsedUrl.pathname}?*`,
+          Condition: {
+            DateLessThan: {
+              'AWS:EpochTime': expiresAtEpoch,
+            },
+          },
+        },
+      ],
+    });
+
+    return getSignedUrl({
+      url: urlString,
+      keyPairId: config.keyPairId,
+      privateKey: config.privateKey,
+      policy,
+    });
+  }
 
   return getSignedUrl({
-    url,
+    url: urlString,
     keyPairId: config.keyPairId,
     privateKey: config.privateKey,
-    dateLessThan,
+    dateLessThan: new Date(expiresAtMs).toISOString(),
   });
+}
+
+function appendDownloadOverrides(
+  url: string,
+  customFilename: string | null,
+  contentType: string | null,
+): URL {
+  const downloadUrl = new URL(url);
+
+  if (customFilename) {
+    const safeFilename = sanitizeContentDispositionFilename(customFilename);
+    downloadUrl.searchParams.set(
+      'response-content-disposition',
+      `attachment; filename="${safeFilename}"`,
+    );
+  }
+  if (contentType) {
+    downloadUrl.searchParams.set('response-content-type', contentType);
+  }
+
+  return downloadUrl;
 }
 
 /**
@@ -77,9 +126,10 @@ export async function getCloudFrontURL({
   userId,
   fileName,
   basePath = defaultBasePath,
+  tenantId = null,
   sign = false,
 }: CloudFrontURLParams): Promise<string> {
-  const key = getS3Key(basePath, userId, fileName);
+  const key = getS3Key(basePath, userId, fileName, tenantId);
   const url = buildCloudFrontUrl(key);
   return sign ? signUrl(url) : url;
 }
@@ -96,8 +146,19 @@ export async function saveBufferToCloudFront(
 export async function saveURLToCloudFront(
   params: SaveURLParams & { sign?: boolean },
 ): Promise<string> {
+  const { filepath } = await saveURLToCloudFrontWithMetadata(params);
+  return filepath;
+}
+
+/** Save file from URL to S3 and return CloudFront URL with fetched metadata. */
+export async function saveURLToCloudFrontWithMetadata(
+  params: SaveURLParams & { sign?: boolean },
+): Promise<SaveURLResult> {
   const { sign = false, ...rest } = params;
-  return saveURLToS3({ ...rest, urlBuilder: (p) => getCloudFrontURL({ ...p, sign }) });
+  return saveURLToS3WithMetadata({
+    ...rest,
+    urlBuilder: (p) => getCloudFrontURL({ ...p, sign }),
+  });
 }
 
 /** Upload file to S3 and return CloudFront URL. */
@@ -146,4 +207,18 @@ export async function getCloudFrontFileStream(
   filePath: string,
 ): Promise<Readable> {
   return getS3FileStream(req, filePath);
+}
+
+/** Get a signed CloudFront URL for an authorized file download. */
+export async function getCloudFrontDownloadURL({
+  file,
+  customFilename = null,
+  contentType = null,
+}: DownloadURLParams): Promise<string> {
+  const key = extractKeyFromS3Url(file.filepath);
+  if (!key) {
+    throw new Error('[getCloudFrontDownloadURL] Unable to extract S3 key from file path');
+  }
+  const url = appendDownloadOverrides(buildCloudFrontUrl(key), customFilename, contentType);
+  return signUrl(url);
 }

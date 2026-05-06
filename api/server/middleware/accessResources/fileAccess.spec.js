@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { tenantStorage } = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { fileAccess } = require('./fileAccess');
@@ -115,6 +116,50 @@ describe('fileAccess middleware', () => {
       });
     });
 
+    test('should deny access when tenant does not match even if user owns the file', async () => {
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        createFile({
+          user: testUser._id.toString(),
+          file_id: 'file_owned_by_user_other_tenant',
+          filepath: '/test/file.txt',
+          filename: 'file.txt',
+          type: 'text/plain',
+          size: 100,
+          tenantId: 'tenant-a',
+        }),
+      );
+
+      req.user.tenantId = 'tenant-b';
+      req.params.file_id = 'file_owned_by_user_other_tenant';
+      await fileAccess(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'Forbidden',
+        message: 'Insufficient permissions to access this file',
+      });
+    });
+
+    test('should allow tenant-scoped users to access owned legacy files without tenantId', async () => {
+      await createFile({
+        user: testUser._id.toString(),
+        file_id: 'legacy_file_owned_by_user',
+        filepath: '/test/legacy.txt',
+        filename: 'legacy.txt',
+        type: 'text/plain',
+        size: 100,
+      });
+
+      req.user.tenantId = 'tenant-b';
+      req.params.file_id = 'legacy_file_owned_by_user';
+      await fileAccess(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(req.fileAccess.file.file_id).toBe('legacy_file_owned_by_user');
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
     test('should return 404 when file does not exist', async () => {
       req.params.file_id = 'non_existent_file';
       await fileAccess(req, res, next);
@@ -221,6 +266,50 @@ describe('fileAccess middleware', () => {
 
       expect(next).toHaveBeenCalled();
       expect(req.fileAccess).toBeDefined();
+    });
+
+    test('should deny cross-tenant access even when user has VIEW permission on agent with file', async () => {
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        createFile({
+          user: otherUser._id.toString(),
+          file_id: 'cross_tenant_shared_file',
+          filepath: '/test/cross-tenant.txt',
+          filename: 'cross-tenant.txt',
+          type: 'text/plain',
+          size: 100,
+          tenantId: 'tenant-a',
+        }),
+      );
+
+      const agent = await createAgent({
+        id: `agent_cross_tenant_${Date.now()}`,
+        name: 'Cross Tenant Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUser._id,
+        tool_resources: {
+          execute_code: {
+            file_ids: ['cross_tenant_shared_file'],
+          },
+        },
+      });
+
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: testUser._id,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        permBits: 1,
+        grantedBy: otherUser._id,
+      });
+
+      req.user.tenantId = 'tenant-b';
+      req.params.file_id = 'cross_tenant_shared_file';
+      await fileAccess(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
     });
 
     test('should check file in ocr tool_resources', async () => {

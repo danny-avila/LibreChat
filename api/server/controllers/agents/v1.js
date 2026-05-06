@@ -960,6 +960,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       userId: req.user.id,
       manual: 'false',
       agentId: agent_id,
+      tenantId: req.user.tenantId,
     });
 
     const image = {
@@ -972,7 +973,11 @@ const uploadAgentAvatarHandler = async (req, res) => {
     if (_avatar && _avatar.source) {
       const { deleteFile } = getStrategyFunctions(_avatar.source);
       try {
-        await deleteFile(req, { filepath: _avatar.filepath });
+        await deleteFile(req, {
+          filepath: _avatar.filepath,
+          user: req.user.id,
+          tenantId: req.user.tenantId,
+        });
         await db.deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
       } catch (error) {
         logger.error('[/:agent_id/avatar] Error deleting old avatar', error);

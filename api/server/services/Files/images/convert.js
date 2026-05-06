@@ -58,6 +58,7 @@ async function convertImage(req, file, resolution = 'high', basename = '') {
       userId: req.user.id,
       buffer: outputBuffer,
       fileName: newFileName,
+      tenantId: req.user.tenantId,
     });
 
     const bytes = Buffer.byteLength(outputBuffer);

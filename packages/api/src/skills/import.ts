@@ -168,6 +168,7 @@ export interface ImportSkillDeps {
       fileName: string;
       basePath?: string;
       isImage?: boolean;
+      tenantId?: string;
     },
   ) => Promise<{ filepath: string; source: string }>;
   deleteFile?: (
@@ -524,6 +525,7 @@ async function handleZip(
         fileName: storageFileName,
         basePath: 'uploads',
         isImage: mimeType.startsWith('image/'),
+        tenantId,
       });
 
       // Upsert the SkillFile DB record (runs path validation internally).
@@ -545,7 +547,7 @@ async function handleZip(
       } catch (dbError) {
         if (deps.deleteFile) {
           await deps
-            .deleteFile(req, { filepath, source })
+            .deleteFile(req, { filepath, source, user: authorId, tenantId })
             .catch((e) =>
               logger.error(`[importSkill] Orphan cleanup failed for ${relativePath}:`, e),
             );

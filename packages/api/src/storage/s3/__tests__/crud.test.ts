@@ -5,8 +5,11 @@ import { sdkStreamMixin } from '@smithy/util-stream';
 import { FileSources } from 'librechat-data-provider';
 import {
   S3Client,
+  UploadPartCommand,
   PutObjectCommand,
   GetObjectCommand,
+  CreateMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
@@ -63,6 +66,9 @@ describe('S3 CRUD', () => {
   beforeEach(() => {
     s3Mock.reset();
     s3Mock.on(PutObjectCommand).resolves({});
+    s3Mock.on(CreateMultipartUploadCommand).resolves({ UploadId: 'upload-123' });
+    s3Mock.on(UploadPartCommand).resolves({ ETag: '"part-etag"' });
+    s3Mock.on(CompleteMultipartUploadCommand).resolves({});
     s3Mock.on(DeleteObjectCommand).resolves({});
 
     const stream = new Readable();
@@ -87,11 +93,77 @@ describe('S3 CRUD', () => {
       expect(key).toBe('files/user456/folder/subfolder/doc.pdf');
     });
 
+    it('constructs tenant-prefixed keys when tenantId is provided', async () => {
+      const { getS3Key } = await import('../crud');
+      const key = getS3Key('images', 'user123', 'file.png', 'tenantA');
+      expect(key).toBe('t/tenantA/images/user123/file.png');
+    });
+
     it('throws if basePath contains a slash', async () => {
       const { getS3Key } = await import('../crud');
       expect(() => getS3Key('a/b', 'user123', 'file.png')).toThrow(
         '[getS3Key] basePath must not contain slashes: "a/b"',
       );
+    });
+
+    it('throws if tenantId contains path traversal characters', async () => {
+      const { getS3Key } = await import('../crud');
+      expect(() => getS3Key('images', 'user123', 'file.png', '../tenantB')).toThrow(
+        '[getS3Key] tenantId must not contain slashes: "../tenantB"',
+      );
+    });
+
+    it('throws if userId contains path traversal characters', async () => {
+      const { getS3Key } = await import('../crud');
+      expect(() => getS3Key('images', 'user/123', 'file.png')).toThrow(
+        '[getS3Key] userId must not contain slashes: "user/123"',
+      );
+    });
+
+    it('throws if fileName contains traversal or unsafe path characters', async () => {
+      const { getS3Key } = await import('../crud');
+      expect(() => getS3Key('images', 'user123', '../file.png')).toThrow(
+        '[getS3Key] fileName must not contain path traversal: "../file.png"',
+      );
+      expect(() => getS3Key('images', 'user123', 'folder//file.png')).toThrow(
+        '[getS3Key] fileName must not contain empty path components',
+      );
+      expect(() => getS3Key('images', 'user123', 'file\u0000.png')).toThrow(
+        '[getS3Key] fileName contains unsafe path characters',
+      );
+    });
+  });
+
+  describe('parseS3Key', () => {
+    it('parses legacy keys', async () => {
+      const { parseS3Key } = await import('../crud');
+      expect(parseS3Key('images/user123/folder/file.png')).toEqual({
+        basePath: 'images',
+        userId: 'user123',
+        fileName: 'folder/file.png',
+      });
+    });
+
+    it('parses tenant-prefixed keys', async () => {
+      const { parseS3Key } = await import('../crud');
+      expect(parseS3Key('t/tenantA/images/user123/file.png')).toEqual({
+        tenantId: 'tenantA',
+        basePath: 'images',
+        userId: 'user123',
+        fileName: 'file.png',
+      });
+    });
+
+    it('returns null for incomplete keys', async () => {
+      const { parseS3Key } = await import('../crud');
+      expect(parseS3Key('images/user123')).toBeNull();
+      expect(parseS3Key('t/tenantA/images/user123')).toBeNull();
+    });
+
+    it('returns null for unsafe tenant or user segments', async () => {
+      const { parseS3Key } = await import('../crud');
+      expect(parseS3Key('t/../images/user123/file.png')).toBeNull();
+      expect(parseS3Key('images/../file.png')).toBeNull();
     });
   });
 
@@ -122,6 +194,28 @@ describe('S3 CRUD', () => {
         Bucket: 'test-bucket',
         Key: 'documents/user123/document.pdf',
         Body: Buffer.from('test content'),
+      });
+    });
+
+    it('uses tenant-prefixed key and URL params when tenantId is provided', async () => {
+      const urlBuilder = jest.fn().mockResolvedValue('https://cdn.example.com/t/tenantA/file.txt');
+      const { saveBufferToS3 } = await import('../crud');
+      await saveBufferToS3({
+        userId: 'user123',
+        buffer: Buffer.from('test content'),
+        fileName: 'document.pdf',
+        basePath: 'documents',
+        tenantId: 'tenantA',
+        urlBuilder,
+      });
+
+      const calls = s3Mock.commandCalls(PutObjectCommand);
+      expect(calls[0].args[0].input.Key).toBe('t/tenantA/documents/user123/document.pdf');
+      expect(urlBuilder).toHaveBeenCalledWith({
+        userId: 'user123',
+        fileName: 'document.pdf',
+        basePath: 'documents',
+        tenantId: 'tenantA',
       });
     });
 
@@ -227,11 +321,18 @@ describe('S3 CRUD', () => {
     beforeEach(() => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
+        headers: {
+          get: (name: string) =>
+            ({
+              'content-length': '8',
+              'content-type': 'image/jpeg',
+            })[name.toLowerCase()] ?? null,
+        },
         arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(8)),
       }) as unknown as typeof fetch;
     });
 
-    it('fetches file from URL and saves to S3', async () => {
+    it('fetches file from URL and returns the saved filepath', async () => {
       const { saveURLToS3 } = await import('../crud');
       const result = await saveURLToS3({
         userId: 'user123',
@@ -241,7 +342,162 @@ describe('S3 CRUD', () => {
 
       expect(global.fetch).toHaveBeenCalledWith('https://example.com/image.jpg');
       expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(1);
-      expect(result).toContain('signed=true');
+      expect(result).toBe('https://bucket.s3.amazonaws.com/test-key?signed=true');
+    });
+
+    it('fetches file from URL and returns metadata when requested', async () => {
+      const { saveURLToS3WithMetadata } = await import('../crud');
+      const result = await saveURLToS3WithMetadata({
+        userId: 'user123',
+        URL: 'https://example.com/image.jpg',
+        fileName: 'downloaded.jpg',
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith('https://example.com/image.jpg');
+      expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(1);
+      expect(result).toEqual({
+        filepath: 'https://bucket.s3.amazonaws.com/test-key?signed=true',
+        bytes: 8,
+        type: 'image/jpeg',
+        dimensions: {},
+      });
+    });
+
+    it('uses the downloaded buffer size instead of a stale content-length header', async () => {
+      (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: (name: string) =>
+            ({
+              'content-length': '999',
+              'content-type': 'image/jpeg',
+            })[name.toLowerCase()] ?? null,
+        },
+        arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(8)),
+      });
+
+      const { saveURLToS3WithMetadata } = await import('../crud');
+      const result = await saveURLToS3WithMetadata({
+        userId: 'user123',
+        URL: 'https://example.com/image.jpg',
+        fileName: 'downloaded.jpg',
+      });
+
+      expect(result.bytes).toBe(8);
+    });
+
+    it('streams response bodies into S3 when fetch provides a stream', async () => {
+      const streamedBody = Buffer.from('streamed');
+      const arrayBuffer = jest.fn();
+      (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: (name: string) =>
+            ({
+              'content-length': String(streamedBody.byteLength),
+              'content-type': 'image/png',
+            })[name.toLowerCase()] ?? null,
+        },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(streamedBody);
+            controller.close();
+          },
+        }),
+        arrayBuffer,
+      });
+
+      const { saveURLToS3WithMetadata } = await import('../crud');
+      const result = await saveURLToS3WithMetadata({
+        userId: 'user123',
+        URL: 'https://example.com/image.jpg',
+        fileName: 'downloaded.jpg',
+      });
+
+      expect(arrayBuffer).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        bytes: streamedBody.byteLength,
+        type: 'image/png',
+      });
+      const putInput = s3Mock.commandCalls(PutObjectCommand)[0].args[0].input;
+      expect(putInput.Body).toBeInstanceOf(Buffer);
+      expect(putInput.ContentLength).toBeUndefined();
+      expect((putInput.Body as Buffer).toString()).toBe('streamed');
+    });
+
+    it('uses multipart upload for streamed responses larger than one part', async () => {
+      const firstPart = Buffer.alloc(5 * 1024 * 1024, 'a');
+      const finalPart = Buffer.from('tail');
+      const uploadedParts: Buffer[] = [];
+      (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: (name: string) =>
+            ({
+              'content-length': String(firstPart.length + finalPart.length),
+              'content-type': 'image/png',
+            })[name.toLowerCase()] ?? null,
+        },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(firstPart);
+            controller.enqueue(finalPart);
+            controller.close();
+          },
+        }),
+        arrayBuffer: jest.fn(),
+      });
+      s3Mock.on(UploadPartCommand).callsFake(async (input) => {
+        uploadedParts.push(input.Body as Buffer);
+        return { ETag: `"part-${input.PartNumber}"` };
+      });
+
+      const { saveURLToS3WithMetadata } = await import('../crud');
+      const result = await saveURLToS3WithMetadata({
+        userId: 'user123',
+        URL: 'https://example.com/image.jpg',
+        fileName: 'downloaded.jpg',
+      });
+
+      expect(result.bytes).toBe(firstPart.length + finalPart.length);
+      expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(0);
+      expect(s3Mock.commandCalls(CreateMultipartUploadCommand)).toHaveLength(1);
+      expect(s3Mock.commandCalls(UploadPartCommand)).toHaveLength(2);
+      expect(s3Mock.commandCalls(CompleteMultipartUploadCommand)).toHaveLength(1);
+      expect(uploadedParts[0]).toEqual(firstPart);
+      expect(uploadedParts[1]).toEqual(finalPart);
+    });
+
+    it('does not trust remote ContentLength for streamed uploads', async () => {
+      (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: (name: string) =>
+            ({
+              'content-length': '4',
+              'content-type': 'image/png',
+            })[name.toLowerCase()] ?? null,
+        },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(Buffer.from('decoded'));
+            controller.close();
+          },
+        }),
+        arrayBuffer: jest.fn(),
+      });
+
+      const { saveURLToS3WithMetadata } = await import('../crud');
+      const result = await saveURLToS3WithMetadata({
+        userId: 'user123',
+        URL: 'https://example.com/image.jpg',
+        fileName: 'downloaded.jpg',
+      });
+
+      expect(result.bytes).toBe(Buffer.byteLength('decoded'));
+      const putInput = s3Mock.commandCalls(PutObjectCommand)[0].args[0].input;
+      expect(putInput.ContentLength).toBeUndefined();
+      expect(putInput.Body).toEqual(Buffer.from('decoded'));
     });
 
     it('throws error on non-ok response', async () => {
@@ -285,6 +541,7 @@ describe('S3 CRUD', () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
         file_id: 'file123',
+        user: 'user123',
       } as TFile;
 
       s3Mock.on(HeadObjectCommand).resolvesOnce({});
@@ -297,10 +554,28 @@ describe('S3 CRUD', () => {
       expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(1);
     });
 
+    it('uses the file owner for RAG cleanup when a different authorized user deletes', async () => {
+      const requesterReq = { user: { id: 'sharedUser' } } as ServerRequest;
+      const mockFile = {
+        filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
+        file_id: 'file123',
+        user: 'user123',
+      } as TFile;
+
+      s3Mock.on(HeadObjectCommand).resolvesOnce({});
+
+      const { deleteFileFromS3 } = await import('../crud');
+      await deleteFileFromS3(requesterReq, mockFile);
+
+      expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user123', file: mockFile });
+      expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(1);
+    });
+
     it('handles file not found gracefully and cleans up RAG', async () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/nonexistent.jpg',
         file_id: 'file123',
+        user: 'user123',
       } as TFile;
 
       s3Mock.on(HeadObjectCommand).rejects({ name: 'NotFound' });
@@ -317,17 +592,32 @@ describe('S3 CRUD', () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/different-user/file.jpg',
         file_id: 'file123',
+        user: 'user123',
       } as TFile;
 
       const { deleteFileFromS3 } = await import('../crud');
-      await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow('User ID mismatch');
+      await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow('File owner mismatch');
       expect(logger.error).toHaveBeenCalled();
     });
 
-    it('handles NoSuchKey error without calling deleteRagFile', async () => {
+    it('throws error if tenant ID does not match', async () => {
+      const mockFile = {
+        filepath: 'https://bucket.s3.amazonaws.com/t/tenantB/images/user123/file.jpg',
+        file_id: 'file123',
+        user: 'user123',
+        tenantId: 'tenantA',
+      } as TFile;
+
+      const { deleteFileFromS3 } = await import('../crud');
+      await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow('Tenant ID mismatch');
+      expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('handles NoSuchKey error and cleans up RAG', async () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
         file_id: 'file123',
+        user: 'user123',
       } as TFile;
 
       s3Mock.on(HeadObjectCommand).resolvesOnce({});
@@ -336,7 +626,28 @@ describe('S3 CRUD', () => {
 
       const { deleteFileFromS3 } = await import('../crud');
       await expect(deleteFileFromS3(mockReq, mockFile)).resolves.toBeUndefined();
-      expect(deleteRagFile).not.toHaveBeenCalled();
+      expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user123', file: mockFile });
+    });
+
+    it('rejects tenant-prefixed keys when the file record lacks tenantId', async () => {
+      const mockFile = {
+        filepath: 'https://bucket.s3.amazonaws.com/t/tenantA/images/user123/file.jpg',
+        file_id: 'file123',
+        user: 'user123',
+      } as TFile;
+
+      const { deleteFileFromS3 } = await import('../crud');
+      await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow('Tenant ID mismatch');
+    });
+
+    it('rejects file records without an owner', async () => {
+      const mockFile = {
+        filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
+        file_id: 'file123',
+      } as TFile;
+
+      const { deleteFileFromS3 } = await import('../crud');
+      await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow('File record has no owner');
     });
   });
 
@@ -367,6 +678,30 @@ describe('S3 CRUD', () => {
       expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload.jpg');
       expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(1);
       expect(fs.promises.unlink).not.toHaveBeenCalled();
+    });
+
+    it('uses tenantId from request when uploading a file', async () => {
+      const mockReqWithTenant = {
+        user: { id: 'user123', tenantId: 'tenantA' },
+      } as ServerRequest;
+      const mockFile = {
+        path: '/tmp/upload.jpg',
+        originalname: 'photo.jpg',
+      } as Express.Multer.File;
+
+      (fs.promises.stat as jest.Mock).mockResolvedValue({ size: 1024 });
+      (fs.createReadStream as jest.Mock).mockReturnValue(new Readable());
+
+      const { uploadFileToS3 } = await import('../crud');
+      await uploadFileToS3({
+        req: mockReqWithTenant,
+        file: mockFile,
+        file_id: 'file123',
+        basePath: 'images',
+      });
+
+      const calls = s3Mock.commandCalls(PutObjectCommand);
+      expect(calls[0].args[0].input.Key).toBe('t/tenantA/images/user123/file123__photo.jpg');
     });
 
     it('handles upload errors and cleans up temp file', async () => {
@@ -420,6 +755,36 @@ describe('S3 CRUD', () => {
     });
   });
 
+  describe('getS3DownloadURL', () => {
+    it('returns a signed URL for an existing file path', async () => {
+      const mockFile = {
+        filepath: 'https://bucket.s3.amazonaws.com/t/tenantA/uploads/user123/file.pdf',
+        filename: 'file.pdf',
+      } as TFile;
+
+      const { getS3DownloadURL } = await import('../crud');
+      const result = await getS3DownloadURL({
+        req: {} as ServerRequest,
+        file: mockFile,
+        customFilename: 'download";\\bad.pdf',
+        contentType: 'application/pdf',
+      });
+
+      expect(result).toContain('signed=true');
+      expect(getSignedUrl).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Key: 't/tenantA/uploads/user123/file.pdf',
+            ResponseContentDisposition: 'attachment; filename="downloadbad.pdf"',
+            ResponseContentType: 'application/pdf',
+          }),
+        }),
+        expect.anything(),
+      );
+    });
+  });
+
   describe('needsRefresh', () => {
     it('returns false for non-signed URLs', async () => {
       const { needsRefresh } = await import('../crud');
@@ -467,6 +832,23 @@ describe('S3 CRUD', () => {
       );
 
       expect(result).toContain('signed=true');
+    });
+
+    it('generates a new URL from a tenant-prefixed S3 URL', async () => {
+      const { getNewS3URL } = await import('../crud');
+      await getNewS3URL(
+        'https://bucket.s3.amazonaws.com/t/tenantA/images/user123/file.jpg?signature=old',
+      );
+
+      expect(getSignedUrl).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Key: 't/tenantA/images/user123/file.jpg',
+          }),
+        }),
+        expect.anything(),
+      );
     });
 
     it('returns undefined for invalid URLs', async () => {

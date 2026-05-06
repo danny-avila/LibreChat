@@ -245,18 +245,44 @@ const processDeleteRequest = async ({ req, files }) => {
  * @param {string} params.fileName - The name that will be used to save the file (including extension)
  * @param {string} params.basePath - The base path or directory where the file will be saved or retrieved from.
  * @param {FileContext} params.context - The context of the file (e.g., 'avatar', 'image_generation', etc.)
+ * @param {string} [params.tenantId] - Optional tenant identifier for tenant-prefixed storage paths.
  * @returns {Promise<MongoFile>} A promise that resolves to the DB representation (MongoFile)
  *  of the processed file. It throws an error if the file processing fails at any stage.
  */
-const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, context }) => {
+const processFileURL = async ({
+  fileStrategy,
+  userId,
+  URL,
+  fileName,
+  basePath,
+  context,
+  tenantId,
+}) => {
   const { saveURL, getFileURL } = getStrategyFunctions(fileStrategy);
   try {
+    const savedFile = await saveURL({ userId, URL, fileName, basePath, tenantId });
+    if (!savedFile) {
+      throw new Error(`Strategy "${fileStrategy}" did not save "${fileName}"`);
+    }
+
     const {
       bytes = 0,
       type = '',
       dimensions = {},
-    } = (await saveURL({ userId, URL, fileName, basePath })) || {};
-    const filepath = await getFileURL({ fileName: `${userId}/${fileName}`, basePath });
+    } = typeof savedFile === 'string' ? {} : savedFile;
+    const fallbackFileName =
+      fileStrategy === FileSources.local || fileStrategy === FileSources.firebase
+        ? `${userId}/${fileName}`
+        : fileName;
+    const filepath =
+      typeof savedFile === 'string'
+        ? savedFile
+        : (savedFile.filepath ??
+          (await getFileURL({ userId, fileName: fallbackFileName, basePath, tenantId })));
+    if (!filepath) {
+      throw new Error(`Strategy "${fileStrategy}" did not return a file URL for "${fileName}"`);
+    }
+
     return await db.createFile(
       {
         user: userId,
@@ -267,6 +293,7 @@ const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, c
         source: fileStrategy,
         type,
         context,
+        tenantId,
         width: dimensions.width,
         height: dimensions.height,
       },
@@ -316,6 +343,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
       type: `image/${appConfig.imageOutputType}`,
       width,
       height,
+      tenantId: req.user.tenantId,
     },
     true,
   );
@@ -354,7 +382,12 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     }`;
   }
   const fileName = `${file_id}-${filename}`;
-  const filepath = await saveBuffer({ userId: req.user.id, fileName, buffer });
+  const filepath = await saveBuffer({
+    userId: req.user.id,
+    fileName,
+    buffer,
+    tenantId: req.user.tenantId,
+  });
   return await db.createFile(
     {
       user: req.user.id,
@@ -367,6 +400,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
       type,
       width,
       height,
+      tenantId: req.user.tenantId,
     },
     true,
   );
@@ -456,6 +490,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
       source,
       height,
       width,
+      tenantId: req.user.tenantId,
     },
     true,
   );
@@ -546,6 +581,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         filename: file.originalname,
         model: messageAttachment ? undefined : req.body.model,
         context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+        tenantId: req.user.tenantId,
       });
 
       if (!messageAttachment && tool_resource) {
@@ -722,6 +758,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     source,
     height,
     width,
+    tenantId: req.user.tenantId,
   });
 
   const result = await db.createFile(fileInfo, true);
@@ -767,6 +804,7 @@ const processOpenAIFile = async ({
     source,
     model: openai.req.body.model,
     filename: originalName ?? file_id,
+    tenantId: openai.req?.user?.tenantId,
   };
 
   if (saveFile) {
@@ -810,6 +848,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     context: FileContext.assistants_output,
     file_id,
     filename,
+    tenantId: req.user.tenantId,
   };
   db.createFile(file, true);
   return file;
@@ -954,6 +993,7 @@ async function saveBase64Image(
     userId: req.user.id,
     fileName: filename,
     buffer: image.buffer,
+    tenantId: req.user.tenantId,
   });
   return await db.createFile(
     {
@@ -967,6 +1007,7 @@ async function saveBase64Image(
       bytes: image.bytes,
       width: image.width,
       height: image.height,
+      tenantId: req.user.tenantId,
     },
     true,
   );

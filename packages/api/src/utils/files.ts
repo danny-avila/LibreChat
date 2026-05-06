@@ -14,10 +14,14 @@ const UNSAFE_UNICODE_FILENAME_PATTERN = /[^\p{L}\p{M}\p{N}\p{Emoji}\u200d._-]/gu
 const FILENAME_SEGMENT_MAX_BYTES = 255;
 
 function sanitizeFilenameSegment(segment: string): string {
-  return segment
-    .normalize('NFC')
-    .replace(/[\u0000-\u007f]/g, (char) => (ASCII_FILENAME_SAFE_PATTERN.test(char) ? char : '_'))
-    .replace(UNSAFE_UNICODE_FILENAME_PATTERN, '_');
+  const asciiSanitized = Array.from(segment.normalize('NFC'), (char) => {
+    if (char.charCodeAt(0) > 0x7f) {
+      return char;
+    }
+    return ASCII_FILENAME_SAFE_PATTERN.test(char) ? char : '_';
+  }).join('');
+
+  return asciiSanitized.replace(UNSAFE_UNICODE_FILENAME_PATTERN, '_');
 }
 
 function utf8ByteLength(value: string): number {

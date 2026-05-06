@@ -8,9 +8,7 @@ export interface CodeEnvFileOptions {
 }
 
 const CODE_ENV_SAFE_ASCII_FILEPATH_CHAR_PATTERN = /^[a-zA-Z0-9._\-/]$/;
-const CODE_ENV_UNSAFE_UNICODE_FILEPATH_CHAR_PATTERN =
-  /[^\p{L}\p{M}\p{N}\p{Emoji}\u200d._\-/]/u;
-const CODE_ENV_FILENAME_CONTROL_CHARS_PATTERN = /[\x00-\x1f\x7f]/g;
+const CODE_ENV_UNSAFE_UNICODE_FILEPATH_CHAR_PATTERN = /[^\p{L}\p{M}\p{N}\p{Emoji}\u200d._\-/]/u;
 
 function hasUnsafeCodeEnvFilepathChar(filepath: string): boolean {
   for (const char of filepath) {
@@ -49,7 +47,10 @@ function getCodeEnvBasename(filepath: string): string {
 }
 
 function getSafeCodeEnvFilename(filename: string): string {
-  return filename.replace(CODE_ENV_FILENAME_CONTROL_CHARS_PATTERN, '_');
+  return Array.from(filename, (char) => {
+    const code = char.charCodeAt(0);
+    return code <= 0x1f || code === 0x7f ? '_' : char;
+  }).join('');
 }
 
 /**
