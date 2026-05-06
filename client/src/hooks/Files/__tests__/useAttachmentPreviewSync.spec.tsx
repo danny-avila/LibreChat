@@ -132,8 +132,17 @@ function setup({
  * trigger the pending→ready edge by re-rendering with a new value)
  * AND expose a snapshot read of the per-file_id `previewJustResolved`
  * flag so the test can assert the hook flipped it on the edge.
+ *
+ * `isSubmittingAtMount` seeds `isSubmittingFamily(0)` *before* the hook
+ * runs (via `initializeState`) so the hook's mount-time snapshot read
+ * captures the intended value. Setting it after mount via a child
+ * effect would race with the hook's first render and the gate would
+ * see the default (`false`), defeating the whole point of the test.
  */
-function setupWithTransitions(initialPreview?: TFilePreview) {
+function setupWithTransitions(
+  initialPreview?: TFilePreview,
+  { isSubmittingAtMount = true }: { isSubmittingAtMount?: boolean } = {},
+) {
   let currentPreview = initialPreview;
   mockUseFilePreview.mockReset();
   mockUseFilePreview.mockImplementation(() => ({
@@ -160,7 +169,11 @@ function setupWithTransitions(initialPreview?: TFilePreview) {
     {
       initialProps: { attachment: makeAttachment({ status: 'pending' }) },
       wrapper: ({ children }: { children: ReactNode }) => (
-        <RecoilRoot>
+        <RecoilRoot
+          initializeState={(snap) => {
+            snap.set(store.isSubmittingFamily(0), isSubmittingAtMount);
+          }}
+        >
           <FlagProbe id={fileId} />
           {children}
         </RecoilRoot>
@@ -395,6 +408,32 @@ describe('useAttachmentPreviewSync', () => {
         file_id: fileId,
         status: 'ready',
         text: '<table>x</table>',
+        textFormat: 'html',
+      });
+      expect(ctx.justResolved).toBe(false);
+    });
+
+    it('does NOT flip the flag on a navigation-time pending→ready (hook mounted with isSubmitting=false)', () => {
+      /* Regression for the "panel auto-opens on every revisit" bug:
+       * the immediate-persist snapshot saves the message's attachment
+       * at `status: 'pending'`, which never gets rewritten when the
+       * file record itself transitions to `'ready'`. When the user
+       * navigates back, the hook mounts with `isSubmitting=false`,
+       * polls once, and sees a pending→ready transition — but this
+       * is NOT a fresh resolution from the user's perspective, just
+       * polling catching up to long-resolved data. The
+       * `mountedDuringStreamRef` gate must drop this transition on
+       * the floor so the panel stays closed. The pre-PR commit
+       * history explicitly removed history-load auto-open; this
+       * preserves that contract. */
+      const ctx = setupWithTransitions(
+        { file_id: fileId, status: 'pending' },
+        { isSubmittingAtMount: false },
+      );
+      ctx.setPreview({
+        file_id: fileId,
+        status: 'ready',
+        text: '<table>resolved-on-revisit</table>',
         textFormat: 'html',
       });
       expect(ctx.justResolved).toBe(false);

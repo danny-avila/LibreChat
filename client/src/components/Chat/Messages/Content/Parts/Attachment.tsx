@@ -76,7 +76,13 @@ const PreviewPlaceholderCard = memo(
         >
           <div className="w-fit p-2">
             <div className="flex flex-row items-center gap-2">
-              <FilePreview file={attachment} fileType={fileType} className="relative" />
+              {/* Don't pass `file` here — it triggers `SourceIcon`'s
+                  Terminal overlay for code-exec files (matches the
+                  `metadata.fileIdentifier` marker), which is the
+                  download-chip look. The artifact card doesn't show
+                  that overlay; the placeholder shouldn't either, so
+                  the pending→resolved transition is visually seamless. */}
+              <FilePreview fileType={fileType} className="relative" />
               <div className="overflow-hidden text-left">
                 <div className="truncate font-medium" title={visibleFilename}>
                   {visibleFilename}

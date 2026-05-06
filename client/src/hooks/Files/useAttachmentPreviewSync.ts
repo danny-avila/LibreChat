@@ -70,6 +70,29 @@ export default function useAttachmentPreviewSync(
       },
     [],
   );
+  /* Capture `isAnySubmitting` at first render via a non-subscribing
+   * snapshot read. Mirrors `ToolArtifactCard`'s `mountedDuringStreamRef`
+   * pattern so this hook applies the same "is the user actively in a
+   * turn?" classification as the card itself. The ref is the gate that
+   * distinguishes a *fresh* deferred-preview resolution (auto-open
+   * eligible) from a *stale* DB-pending record resolving on a history
+   * load (auto-open must NOT fire — the user is scrolling old data,
+   * not awaiting a result). Without this gate, navigating back to a
+   * conversation whose immediate-persist snapshot left the message's
+   * attachments at `status: 'pending'` would re-trigger auto-open
+   * every time the polling layer caught up — which is exactly the
+   * pre-PR "panel pops open on every visit" UX the team explicitly
+   * removed. */
+  const readInitialIsSubmitting = useRecoilCallback(
+    ({ snapshot }) =>
+      () =>
+        snapshot.getLoadable(store.isSubmittingFamily(0)).valueMaybe() ?? false,
+    [],
+  );
+  const mountedDuringStreamRef = useRef<boolean | null>(null);
+  if (mountedDuringStreamRef.current === null) {
+    mountedDuringStreamRef.current = readInitialIsSubmitting();
+  }
 
   const file = (attachment ?? undefined) as Partial<TFile> | undefined;
   const fileId = file?.file_id;
@@ -88,16 +111,27 @@ export default function useAttachmentPreviewSync(
   const previewError = polled?.previewError ?? file?.previewError;
 
   /* Track the previous effective status so we can fire the
-   * pending→ready edge exactly once per session. The ref is initialised
-   * lazily on first render: a card that mounts with `baseStatus`
-   * already at `'ready'` (history load — pre-resolved file) will never
-   * see a transition, which is exactly what we want — the user is
-   * scrolling through history, not awaiting a fresh result. */
+   * pending→ready edge exactly once per session. Two gates have to
+   * pass for the auto-open flag to flip:
+   *   1. We actually observed the transition (prev → curr).
+   *   2. The hook mounted during an active stream — i.e. the file is
+   *      part of the user's current turn, not a history load. A
+   *      page-navigation mount (or refresh) of a stale-pending DB
+   *      record will see the same transition when polling catches
+   *      up, but we must NOT auto-open in that case — the user is
+   *      revisiting old work, not waiting on a fresh result.
+   * Refs are read inline so the effect doesn't have to list them as
+   * deps (mutating a ref doesn't subscribe). */
   const prevStatusRef = useRef<'pending' | 'ready' | 'failed' | null>(null);
   useEffect(() => {
     const prev = prevStatusRef.current;
     prevStatusRef.current = effectiveStatus;
-    if (prev === 'pending' && effectiveStatus === 'ready' && fileId) {
+    if (
+      prev === 'pending' &&
+      effectiveStatus === 'ready' &&
+      fileId &&
+      mountedDuringStreamRef.current === true
+    ) {
       flagJustResolved(fileId);
     }
   }, [effectiveStatus, fileId, flagJustResolved]);
