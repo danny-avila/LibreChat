@@ -13,14 +13,28 @@ const REQUIRED_CF_COOKIES = [
   'CloudFront-Key-Pair-Id',
 ] as const;
 
+const unsafePolicySegmentPattern = /[?*[\]\s]/;
+
 export interface CloudFrontCookieScope {
   userId?: string | null;
   tenantId?: string | null;
 }
 
 function assertPathSegment(value: string, label: string): void {
-  if (value.includes('/')) {
+  if (value.includes('/') || value.includes('\\')) {
     throw new Error(`[CloudFront cookies] ${label} must not contain slashes.`);
+  }
+  if (value === '.' || value === '..' || value.includes('..')) {
+    throw new Error(`[CloudFront cookies] ${label} must not contain path traversal.`);
+  }
+  if (
+    unsafePolicySegmentPattern.test(value) ||
+    Array.from(value).some((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 31 || code === 127;
+    })
+  ) {
+    throw new Error(`[CloudFront cookies] ${label} contains unsafe policy characters.`);
   }
 }
 

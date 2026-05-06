@@ -325,6 +325,27 @@ describe('setCloudFrontCookies', () => {
     expect(mockRes.cookie).not.toHaveBeenCalled();
   });
 
+  it('returns false when scope path segments contain policy wildcards or traversal', () => {
+    mockGetCloudFrontConfig.mockReturnValue({
+      domain: 'https://cdn.example.com',
+      imageSigning: 'cookies',
+      cookieExpiry: 1800,
+      cookieDomain: '.example.com',
+      privateKey: '-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----',
+      keyPairId: 'K123ABC',
+    });
+
+    expect(setCloudFrontCookies(mockRes as Response, { userId: 'user*' })).toBe(false);
+    expect(
+      setCloudFrontCookies(mockRes as Response, { userId: 'user123', tenantId: '../tenantA' }),
+    ).toBe(false);
+    expect(
+      setCloudFrontCookies(mockRes as Response, { userId: 'user123', tenantId: 'tenant A' }),
+    ).toBe(false);
+    expect(mockGetSignedCookies).not.toHaveBeenCalled();
+    expect(mockRes.cookie).not.toHaveBeenCalled();
+  });
+
   it('returns false and logs error on signing error', () => {
     mockGetCloudFrontConfig.mockReturnValue({
       domain: 'https://cdn.example.com',
