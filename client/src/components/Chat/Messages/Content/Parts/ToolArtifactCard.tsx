@@ -10,7 +10,7 @@ import {
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
-import { TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
+import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { displayFilename } from './attachmentTypes';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
@@ -141,7 +141,7 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       // visibility alone so the side panel doesn't auto-open on navigation.
       return;
     }
-    if (artifact.type === TOOL_ARTIFACT_TYPES.CODE) {
+    if (isCodeOnlyArtifact(artifact.type)) {
       // Source-code artifacts (`.py`, `.js`, `.cpp`, `Dockerfile`, …) are
       // click-to-open only. They're typically supporting scripts the
       // agent emits alongside a richer deliverable; auto-opening them

@@ -11,7 +11,7 @@ import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
 import ArtifactTabs from './ArtifactTabs';
-import { isPreviewOnlyArtifact } from '~/utils/artifacts';
+import { isCodeOnlyArtifact, isPreviewOnlyArtifact } from '~/utils/artifacts';
 import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -93,32 +93,35 @@ export default function Artifacts() {
     setCurrentArtifactId,
   } = useArtifacts();
 
-  /* Office artifacts (DOCX/SPREADSHEET/PRESENTATION) have no source view —
-   * the underlying file is binary and the "code" tab would display the
-   * generated HTML blob, which isn't useful. Filter the tab options and
-   * snap the active tab when the user lands on an office artifact while
-   * the code tab is selected. */
+  /* Office artifacts have no source view, and source-code artifacts have
+   * no useful rendered preview. Filter each down to the only meaningful
+   * tab and label that tab with the file name instead of generic
+   * "Code" / "Preview" choices. */
   const isPreviewOnly = isPreviewOnlyArtifact(currentArtifact?.type);
+  const isCodeOnly = isCodeOnlyArtifact(currentArtifact?.type);
+  let constrainedTab: 'preview' | 'code' | null = null;
+  if (isPreviewOnly) {
+    constrainedTab = 'preview';
+  } else if (isCodeOnly) {
+    constrainedTab = 'code';
+  }
+  const displayedTab = constrainedTab ?? activeTab;
   const tabOptions = useMemo(() => {
-    if (!isPreviewOnly) {
+    if (constrainedTab == null) {
       return allTabOptions;
     }
-    /* When only the preview tab is shown, the generic "Preview" label is
-     * a no-op pill — surface the document filename there instead. The
-     * Play icon stays as a visual cue for "rendered preview". `displayFilename`
-     * handles the sandbox dotfile suffix the upload pipeline applies. */
     const filename = displayFilename(currentArtifact?.title);
-    const previewTab = allTabOptions.find((opt) => opt.value === 'preview');
-    if (!previewTab) {
+    const tab = allTabOptions.find((opt) => opt.value === constrainedTab);
+    if (!tab) {
       return allTabOptions;
     }
-    return [filename ? { ...previewTab, label: filename } : previewTab];
-  }, [allTabOptions, isPreviewOnly, currentArtifact?.title]);
+    return [filename ? { ...tab, label: filename } : tab];
+  }, [allTabOptions, constrainedTab, currentArtifact?.title]);
   useEffect(() => {
-    if (isPreviewOnly && activeTab === 'code') {
-      setActiveTab('preview');
+    if (constrainedTab != null && activeTab !== constrainedTab) {
+      setActiveTab(constrainedTab);
     }
-  }, [isPreviewOnly, activeTab, setActiveTab]);
+  }, [constrainedTab, activeTab, setActiveTab]);
 
   const handleCopyArtifact = useCallback(() => {
     const content = currentArtifact?.content ?? '';
@@ -204,7 +207,7 @@ export default function Artifacts() {
       : 0;
 
   return (
-    <Tabs.Root value={activeTab} onValueChange={setActiveTab} asChild>
+    <Tabs.Root value={displayedTab} onValueChange={setActiveTab} asChild>
       <div className="flex h-full w-full flex-col">
         {/* Mobile backdrop with dynamic blur */}
         {isMobile && (
@@ -275,9 +278,9 @@ export default function Artifacts() {
               >
                 <Radio
                   options={tabOptions}
-                  value={activeTab}
+                  value={displayedTab}
                   onChange={setActiveTab}
-                  disabled={isMutating && activeTab !== 'code'}
+                  disabled={isMutating && displayedTab !== 'code'}
                   buttonClassName="h-9 px-3 gap-1.5"
                 />
               </div>
@@ -290,7 +293,7 @@ export default function Artifacts() {
                 isVisible && !isClosing ? 'translate-x-0 opacity-100' : 'translate-x-2 opacity-0',
               )}
             >
-              {activeTab === 'preview' && (
+              {displayedTab === 'preview' && (
                 <Button
                   size="icon"
                   variant="ghost"
@@ -310,7 +313,7 @@ export default function Artifacts() {
                   )}
                 </Button>
               )}
-              {activeTab !== 'preview' && isMutating && (
+              {displayedTab !== 'preview' && isMutating && (
                 <RefreshCw size={16} className="animate-spin text-text-secondary" />
               )}
               {orderedArtifactIds.length > 1 && (
@@ -372,9 +375,9 @@ export default function Artifacts() {
               <Radio
                 fullWidth
                 options={tabOptions}
-                value={activeTab}
+                value={displayedTab}
                 onChange={setActiveTab}
-                disabled={isMutating && activeTab !== 'code'}
+                disabled={isMutating && displayedTab !== 'code'}
               />
             </div>
           )}

@@ -2,6 +2,7 @@ import {
   buildSandpackOptions,
   detectArtifactTypeFromFile,
   fileToArtifact,
+  isCodeOnlyArtifact,
   isPreviewOnlyArtifact,
   languageForFilename,
   TOOL_ARTIFACT_TYPES,
@@ -885,6 +886,29 @@ describe('isPreviewOnlyArtifact', () => {
     'returns false for non-artifact type %s',
     (type) => {
       expect(isPreviewOnlyArtifact(type)).toBe(false);
+    },
+  );
+});
+
+describe('isCodeOnlyArtifact', () => {
+  it.each([
+    [TOOL_ARTIFACT_TYPES.CODE, true],
+    [TOOL_ARTIFACT_TYPES.HTML, false],
+    [TOOL_ARTIFACT_TYPES.REACT, false],
+    [TOOL_ARTIFACT_TYPES.MARKDOWN, false],
+    [TOOL_ARTIFACT_TYPES.MERMAID, false],
+    [TOOL_ARTIFACT_TYPES.PLAIN_TEXT, false],
+    [TOOL_ARTIFACT_TYPES.DOCX, false],
+    [TOOL_ARTIFACT_TYPES.SPREADSHEET, false],
+    [TOOL_ARTIFACT_TYPES.PRESENTATION, false],
+  ])('type %s returns %s', (type, expected) => {
+    expect(isCodeOnlyArtifact(type)).toBe(expected);
+  });
+
+  it.each([[null], [undefined], [''], ['application/pdf'], ['text/plain'], ['some/random-type']])(
+    'returns false for non-code-only type %s',
+    (type) => {
+      expect(isCodeOnlyArtifact(type)).toBe(false);
     },
   );
 });
