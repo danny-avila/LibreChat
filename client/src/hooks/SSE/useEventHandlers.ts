@@ -41,6 +41,7 @@ import { useApplyAgentTemplate } from '~/hooks/Agents';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
+import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import store from '~/store';
 
 type TSyncData = {
@@ -205,13 +206,15 @@ export default function useEventHandlers({
    *  bounded across multi-conversation sessions.
    *
    *  Rule: only reset when transitioning AWAY FROM an established
-   *  conversation (`previous != null`). Transitions FROM null or
-   *  undefined pass through:
+   *  conversation (`previous != null` and not the new-chat placeholder).
+   *  Transitions FROM null, undefined, or `Constants.NEW_CONVO` pass through:
    *    - initial mount on a new-chat route: nothing to clear.
-   *    - new-chat URL stamp mid-stream (null → newId): the in-flight
+   *    - new-chat URL stamp mid-stream (`new` → newId): the in-flight
    *      subagent ticker/content state for that freshly-stamped id
    *      would be wiped if we reset here — that id IS the current
-   *      run, not a stale one.
+   *      run, not a stale one. Cancelled subagent runs depend on this
+   *      live atom because the server may not have persisted
+   *      `subagent_content` before interruption.
    *  Cases that DO reset (previous non-null, value changed):
    *    - id1 → id2 (switching between established chats)
    *    - id → null (user clicked "new chat")
@@ -220,7 +223,7 @@ export default function useEventHandlers({
   useEffect(() => {
     const previous = lastConversationIdRef.current;
     lastConversationIdRef.current = paramId;
-    if (previous != null && previous !== paramId) {
+    if (shouldResetSubagentAtomsOnConversationChange(previous, paramId)) {
       resetSubagentAtoms();
     }
   }, [paramId, resetSubagentAtoms]);
