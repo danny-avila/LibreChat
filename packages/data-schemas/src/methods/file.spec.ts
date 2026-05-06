@@ -4,6 +4,8 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EToolResources, FileContext } from 'librechat-data-provider';
 import { createFileMethods } from './file';
 import { createModels } from '~/models';
+import { runAsSystem } from '~/config/tenantContext';
+import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
 
 let File: mongoose.Model<unknown>;
 let fileMethods: ReturnType<typeof createFileMethods>;
@@ -707,6 +709,49 @@ describe('File Methods', () => {
       await makeFile({ ageMs: 30 * 1000, status: 'pending' });
       const count = await fileMethods.sweepOrphanedPreviews();
       expect(count).toBe(0);
+    });
+
+    describe('strict tenant isolation (boot-time recovery)', () => {
+      /* The boot-time `sweepOrphanedPreviews` runs before any request,
+       * so there's no implicit tenant context. The `File` schema has
+       * `applyTenantIsolation`, so under `TENANT_ISOLATION_STRICT=true`
+       * an unscoped query throws — silently failing the recovery path
+       * forever. The codex finding (PR #12957) flagged this; the fix is
+       * to wrap the call in `runAsSystem`, which the boot path in
+       * `api/server/index.js` and `api/server/experimental.js` does.
+       * These tests pin both halves of that contract. */
+      afterEach(() => {
+        delete process.env.TENANT_ISOLATION_STRICT;
+        _resetStrictCache();
+      });
+
+      it('throws under strict mode without runAsSystem (regression: silent boot-time failure)', async () => {
+        // Seed a stale pending record under runAsSystem so the create itself doesn't trip the gate.
+        await runAsSystem(async () => {
+          await makeFile({ ageMs: 10 * 60 * 1000, status: 'pending' });
+        });
+        process.env.TENANT_ISOLATION_STRICT = 'true';
+        _resetStrictCache();
+        await expect(fileMethods.sweepOrphanedPreviews()).rejects.toThrow(
+          /Query attempted without tenant context in strict mode/,
+        );
+      });
+
+      it('succeeds under strict mode when wrapped in runAsSystem (boot-time recovery path)', async () => {
+        const stale = await runAsSystem(() =>
+          makeFile({ ageMs: 10 * 60 * 1000, status: 'pending' }),
+        );
+        process.env.TENANT_ISOLATION_STRICT = 'true';
+        _resetStrictCache();
+        const count = await runAsSystem(() => fileMethods.sweepOrphanedPreviews());
+        expect(count).toBe(1);
+        const after = (await runAsSystem(() => fileMethods.findFileById(stale))) as {
+          status?: string;
+          previewError?: string;
+        } | null;
+        expect(after?.status).toBe('failed');
+        expect(after?.previewError).toBe('orphaned');
+      });
     });
   });
 });

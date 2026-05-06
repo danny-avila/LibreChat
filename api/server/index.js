@@ -82,10 +82,17 @@ const startServer = async () => {
    * candidate set is bounded by what was in flight at shutdown.
    * Fire-and-forget so a transient error here doesn't block boot.
    *
+   * Wrapped in `runAsSystem` because `File` is tenant-isolated; under
+   * `TENANT_ISOLATION_STRICT=true` an unscoped query would throw
+   * (`[TenantIsolation] Query attempted without tenant context in
+   * strict mode`) and the recovery would silently fail every boot,
+   * leaving stale `pending` records stuck until a user happens to
+   * poll the preview endpoint.
+   *
    * Quick-restart edge case (records younger than the sweep cutoff)
    * is covered by a lazy sweep inside the preview endpoint itself —
    * see `PREVIEW_LAZY_SWEEP_CUTOFF_MS` in `routes/files/files.js`. */
-  sweepOrphanedPreviews().catch((err) => {
+  runAsSystem(sweepOrphanedPreviews).catch((err) => {
     logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
   });
   const appConfig = await getAppConfig({ baseOnly: true });

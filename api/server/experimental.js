@@ -10,7 +10,7 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
@@ -227,8 +227,10 @@ if (cluster.isMaster) {
 
     /* Bulk recovery for code-execution files left at `status: 'pending'`
      * by a prior process restart. Mirror of the path in
-     * `server/index.js`; see comment there for context. */
-    sweepOrphanedPreviews().catch((err) => {
+     * `server/index.js`; see comment there for context. Wrapped in
+     * `runAsSystem` because `File` is tenant-isolated and an unscoped
+     * query throws under `TENANT_ISOLATION_STRICT=true`. */
+    runAsSystem(sweepOrphanedPreviews).catch((err) => {
       logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
     });
 
