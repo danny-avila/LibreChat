@@ -13,6 +13,8 @@ import type {
   AnthropicCredentials,
 } from '~/types/anthropic';
 import {
+  FINE_GRAINED_TOOL_STREAMING_BETA,
+  appendAnthropicBetaHeader,
   supportsAdaptiveThinking,
   checkPromptCacheSupport,
   configureReasoning,
@@ -305,6 +307,14 @@ function getLLMConfig(
       };
     }
   }
+
+  if (!requestOptions.clientOptions) {
+    requestOptions.clientOptions = {};
+  }
+  requestOptions.clientOptions.defaultHeaders = appendAnthropicBetaHeader(
+    requestOptions.clientOptions.defaultHeaders as Record<string, string> | undefined,
+    FINE_GRAINED_TOOL_STREAMING_BETA,
+  );
 
   return {
     tools,
