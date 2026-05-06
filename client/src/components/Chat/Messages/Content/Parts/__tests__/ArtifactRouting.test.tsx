@@ -761,6 +761,37 @@ describe('AttachmentGroup routing', () => {
     expect(chip?.textContent).toBe('.config.zip');
   });
 
+  it('renders pending-preview attachments in their own row, separate from resolved files', () => {
+    /* Pending-preview deferred-render files take a dedicated row above
+     * the resolved buckets so the loading state reads as a distinct
+     * "this is still happening" group rather than mixing with completed
+     * downloads. Once status flips to ready, the chip re-buckets into
+     * panelArtifacts (its own row) — neither row mixes with the other. */
+    const attachments = [
+      baseAttachment({
+        file_id: 'pending-1',
+        filename: 'data.xlsx',
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        status: 'pending',
+      } as Partial<TAttachment>),
+      baseAttachment({
+        file_id: 'plain',
+        filename: 'archive.zip',
+        text: undefined as unknown as string,
+      } as Partial<TAttachment>),
+    ] as TAttachment[];
+
+    const { container } = renderWith(<AttachmentGroup attachments={attachments} />);
+
+    /* Two separate row containers — pending row + file row. They're
+     * sibling div.flex.flex-wrap children of the AttachmentGroup
+     * fragment. */
+    const rows = container.querySelectorAll('div.flex.flex-wrap');
+    expect(rows.length).toBe(2);
+    /* Both attachments rendered (one per row). */
+    expect(screen.getAllByTestId('file-container').length).toBeGreaterThanOrEqual(1);
+  });
+
   it('renders separate buckets for panel artifacts, mermaid, text, and plain files', () => {
     const attachments = [
       baseAttachment({

@@ -398,6 +398,11 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   const textAttachments: TAttachment[] = [];
   const panelArtifacts: Array<{ attachment: TAttachment; type: ToolArtifactType }> = [];
   const mermaidArtifacts: TAttachment[] = [];
+  /* Pending-preview files render in their own row above the resolved
+   * buckets so the loading state reads as "this is still happening"
+   * rather than mixing with completed attachments. Once status flips
+   * to ready/failed they re-bucket into panel/file alongside siblings. */
+  const pendingAttachments: TAttachment[] = [];
 
   attachments.forEach((attachment) => {
     if (attachment.type === Tools.web_search) {
@@ -408,6 +413,10 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
     }
     if (isImageAttachment(attachment)) {
       imageAttachments.push(attachment);
+      return;
+    }
+    if ((attachment as Partial<TFile>).status === 'pending') {
+      pendingAttachments.push(attachment);
       return;
     }
     const artType = artifactTypeForAttachment(attachment);
@@ -437,6 +446,18 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
 
   return (
     <>
+      {pendingAttachments.length > 0 && (
+        <div className="my-2 flex flex-wrap items-center gap-2">
+          {pendingAttachments.map((attachment, index) =>
+            attachment.filepath ? (
+              <FileAttachment
+                attachment={attachment}
+                key={renderAttachmentKey('pending', attachment, index)}
+              />
+            ) : null,
+          )}
+        </div>
+      )}
       {fileAttachments.length > 0 && (
         <div className="my-2 flex flex-wrap items-center gap-2.5">
           {fileAttachments.map((attachment, index) =>
