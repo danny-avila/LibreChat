@@ -12,9 +12,7 @@ describe('getNextRefillDate', () => {
   it('returns the eligibility date after the last refill without skipping elapsed intervals', () => {
     const lastRefill = new Date('2026-05-05T16:00:00.000Z');
 
-    expect(getNextRefillDate(lastRefill, 1, 'days')).toEqual(
-      new Date('2026-05-06T16:00:00.000Z'),
-    );
+    expect(getNextRefillDate(lastRefill, 1, 'days')).toEqual(new Date('2026-05-06T16:00:00.000Z'));
   });
 
   it('supports month-based refill intervals', () => {

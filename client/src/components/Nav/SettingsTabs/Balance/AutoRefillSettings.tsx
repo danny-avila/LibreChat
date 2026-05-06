@@ -27,10 +27,7 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
     ? getNextRefillDate(lastRefillDate, refillIntervalValue, refillIntervalUnit)
     : null;
 
-  const getLocalizedIntervalUnit = (
-    value: number,
-    unit: RefillIntervalUnit,
-  ): string => {
+  const getLocalizedIntervalUnit = (value: number, unit: RefillIntervalUnit): string => {
     let key: TranslationKeys;
     switch (unit) {
       case 'seconds':
