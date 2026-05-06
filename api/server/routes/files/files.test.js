@@ -527,13 +527,13 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(response.body.metadata).toMatchObject({
         file_id: userFileId,
         filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
         source: FileSources.s3,
       });
       expect(response.body.metadata).not.toHaveProperty('_id');
       expect(response.body.metadata).not.toHaveProperty('__v');
       expect(response.body.metadata).not.toHaveProperty('user');
       expect(response.body.metadata).not.toHaveProperty('tenantId');
-      expect(response.body.metadata).not.toHaveProperty('filepath');
       expect(response.body.metadata).not.toHaveProperty('text');
       expect(getDownloadURL).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -636,13 +636,13 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(metadata).toMatchObject({
         file_id: userFileId,
         filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
         source: FileSources.cloudfront,
       });
       expect(metadata).not.toHaveProperty('_id');
       expect(metadata).not.toHaveProperty('__v');
       expect(metadata).not.toHaveProperty('user');
       expect(metadata).not.toHaveProperty('tenantId');
-      expect(metadata).not.toHaveProperty('filepath');
       expect(metadata).not.toHaveProperty('text');
       expect(getDownloadURL).not.toHaveBeenCalled();
       expect(getDownloadStream).toHaveBeenCalledWith(expect.any(Object), 'uploads/user/file.pdf');

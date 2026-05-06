@@ -415,7 +415,8 @@ const getDirectDownloadURL = async ({
   });
 };
 
-// Security allowlist: excludes internal ids, owner/tenant identifiers, storage keys, and extracted text.
+// Security allowlist: excludes internal ids, owner/tenant identifiers, and extracted text.
+// `filepath` stays included because cached TFile records need it for previews/deletes.
 const DOWNLOAD_METADATA_FIELDS = [
   'conversationId',
   'message',
@@ -425,6 +426,7 @@ const DOWNLOAD_METADATA_FIELDS = [
   'model',
   'embedded',
   'filename',
+  'filepath',
   'object',
   'type',
   'usage',
