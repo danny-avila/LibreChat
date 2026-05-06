@@ -3,6 +3,8 @@ import * as s from './schemas';
 
 const DEFAULT_ENABLED_MAX_TOKENS = 8192;
 const DEFAULT_THINKING_BUDGET = 2000;
+export const BEDROCK_OUTPUT_128K_BETA = 'output-128k-2025-02-19';
+export const BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA = 'fine-grained-tool-streaming-2025-05-14';
 
 const bedrockReasoningConfigValues = new Set<string>(Object.values(s.BedrockReasoningConfig));
 
@@ -157,17 +159,45 @@ export function supportsContext1m(model: string): boolean {
 function getBedrockAnthropicBetaHeaders(model: string): string[] {
   const betaHeaders: string[] = [];
 
-  const isClaudeThinkingModel =
-    model.includes('anthropic.claude-3-7-sonnet') ||
+  const isClaude4PlusModel =
     /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/.test(
       model,
     );
+  const isClaudeThinkingModel = model.includes('anthropic.claude-3-7-sonnet') || isClaude4PlusModel;
 
   if (isClaudeThinkingModel) {
-    betaHeaders.push('output-128k-2025-02-19');
+    betaHeaders.push(BEDROCK_OUTPUT_128K_BETA);
+  }
+
+  if (isClaude4PlusModel) {
+    betaHeaders.push(BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA);
   }
 
   return betaHeaders;
+}
+
+function mergeBedrockAnthropicBetaHeaders(existing: unknown, generated: string[]): string[] {
+  const existingValues: unknown[] = Array.isArray(existing)
+    ? existing
+    : typeof existing === 'string'
+      ? [existing]
+      : [];
+
+  const betaHeaders = new Set<string>();
+
+  [...existingValues, ...generated].forEach((value) => {
+    if (typeof value !== 'string') {
+      return;
+    }
+
+    value
+      .split(',')
+      .map((header) => header.trim())
+      .filter(Boolean)
+      .forEach((header) => betaHeaders.add(header));
+  });
+
+  return Array.from(betaHeaders);
 }
 
 export const bedrockInputSchema = s.tConversationSchema
@@ -359,7 +389,13 @@ export const bedrockInputParser = s.tConversationSchema
       if ((typedData.model as string).includes('anthropic.')) {
         const betaHeaders = getBedrockAnthropicBetaHeaders(typedData.model as string);
         if (betaHeaders.length > 0) {
-          additionalFields.anthropic_beta = betaHeaders;
+          const existingBetaHeaders = (
+            typedData.additionalModelRequestFields as Record<string, unknown> | undefined
+          )?.anthropic_beta;
+          additionalFields.anthropic_beta = mergeBedrockAnthropicBetaHeaders(
+            existingBetaHeaders,
+            betaHeaders,
+          );
         }
       }
     } else {

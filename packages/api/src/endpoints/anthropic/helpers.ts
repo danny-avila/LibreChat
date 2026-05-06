@@ -10,6 +10,26 @@ import {
 } from 'librechat-data-provider';
 import { matchModelName } from '~/utils/tokens';
 
+const FINE_GRAINED_TOOL_STREAMING_BETA = 'fine-grained-tool-streaming-2025-05-14';
+
+function appendAnthropicBetaHeader(
+  headers: Record<string, string> | undefined,
+  beta: string,
+): Record<string, string> {
+  const nextHeaders = { ...(headers ?? {}) };
+  const betaValues = (nextHeaders['anthropic-beta'] ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (!betaValues.includes(beta)) {
+    betaValues.push(beta);
+  }
+
+  nextHeaders['anthropic-beta'] = betaValues.join(',');
+  return nextHeaders;
+}
+
 /**
  * @param {string} modelName
  * @returns {boolean}
@@ -158,4 +178,11 @@ function configureReasoning(
   return updatedOptions;
 }
 
-export { checkPromptCacheSupport, getClaudeHeaders, configureReasoning, supportsAdaptiveThinking };
+export {
+  FINE_GRAINED_TOOL_STREAMING_BETA,
+  appendAnthropicBetaHeader,
+  checkPromptCacheSupport,
+  getClaudeHeaders,
+  configureReasoning,
+  supportsAdaptiveThinking,
+};
