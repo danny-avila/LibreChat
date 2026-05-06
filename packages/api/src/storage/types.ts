@@ -26,6 +26,16 @@ export interface SaveURLParams {
   tenantId?: string | null;
 }
 
+export interface SaveURLResult {
+  filepath: string;
+  bytes?: number;
+  type?: string;
+  dimensions?: {
+    width?: number;
+    height?: number;
+  };
+}
+
 export interface UploadFileParams {
   req: ServerRequest;
   file: Express.Multer.File;
@@ -35,7 +45,7 @@ export interface UploadFileParams {
 }
 
 export interface DownloadURLParams {
-  req: ServerRequest;
+  req?: ServerRequest;
   file: TFile;
   customFilename?: string | null;
   contentType?: string | null;

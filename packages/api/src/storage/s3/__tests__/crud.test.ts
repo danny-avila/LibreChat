@@ -99,6 +99,20 @@ describe('S3 CRUD', () => {
         '[getS3Key] basePath must not contain slashes: "a/b"',
       );
     });
+
+    it('throws if tenantId contains path traversal characters', async () => {
+      const { getS3Key } = await import('../crud');
+      expect(() => getS3Key('images', 'user123', 'file.png', '../tenantB')).toThrow(
+        '[getS3Key] tenantId must not contain slashes: "../tenantB"',
+      );
+    });
+
+    it('throws if userId contains path traversal characters', async () => {
+      const { getS3Key } = await import('../crud');
+      expect(() => getS3Key('images', 'user/123', 'file.png')).toThrow(
+        '[getS3Key] userId must not contain slashes: "user/123"',
+      );
+    });
   });
 
   describe('parseS3Key', () => {
@@ -125,6 +139,12 @@ describe('S3 CRUD', () => {
       const { parseS3Key } = await import('../crud');
       expect(parseS3Key('images/user123')).toBeNull();
       expect(parseS3Key('t/tenantA/images/user123')).toBeNull();
+    });
+
+    it('returns null for unsafe tenant or user segments', async () => {
+      const { parseS3Key } = await import('../crud');
+      expect(parseS3Key('t/../images/user123/file.png')).toBeNull();
+      expect(parseS3Key('images/../file.png')).toBeNull();
     });
   });
 
@@ -282,6 +302,13 @@ describe('S3 CRUD', () => {
     beforeEach(() => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
+        headers: {
+          get: (name: string) =>
+            ({
+              'content-length': '8',
+              'content-type': 'image/jpeg',
+            })[name.toLowerCase()] ?? null,
+        },
         arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(8)),
       }) as unknown as typeof fetch;
     });
@@ -296,7 +323,12 @@ describe('S3 CRUD', () => {
 
       expect(global.fetch).toHaveBeenCalledWith('https://example.com/image.jpg');
       expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(1);
-      expect(result).toContain('signed=true');
+      expect(result).toEqual({
+        filepath: 'https://bucket.s3.amazonaws.com/test-key?signed=true',
+        bytes: 8,
+        type: 'image/jpeg',
+        dimensions: {},
+      });
     });
 
     it('throws error on non-ok response', async () => {

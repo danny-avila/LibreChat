@@ -11,6 +11,7 @@ import type {
   SaveURLParams,
   UploadFileParams,
   DownloadURLParams,
+  SaveURLResult,
   UploadResult,
 } from '~/storage/types';
 import { getCloudFrontConfig } from '~/cdn/cloudfront';
@@ -70,6 +71,27 @@ function signUrl(url: string): string {
   });
 }
 
+function appendDownloadOverrides(
+  url: string,
+  customFilename: string | null,
+  contentType: string | null,
+): string {
+  const downloadUrl = new URL(url);
+
+  if (customFilename) {
+    const safeFilename = customFilename.replace(/["\r\n]/g, '');
+    downloadUrl.searchParams.set(
+      'response-content-disposition',
+      `attachment; filename="${safeFilename}"`,
+    );
+  }
+  if (contentType) {
+    downloadUrl.searchParams.set('response-content-type', contentType);
+  }
+
+  return downloadUrl.toString();
+}
+
 /**
  * Get CloudFront URL for a file.
  * @param sign - If true, returns a signed URL. Caller (strategy) decides based on config.
@@ -97,7 +119,7 @@ export async function saveBufferToCloudFront(
 /** Save file from URL to S3 and return CloudFront URL. */
 export async function saveURLToCloudFront(
   params: SaveURLParams & { sign?: boolean },
-): Promise<string> {
+): Promise<SaveURLResult> {
   const { sign = false, ...rest } = params;
   return saveURLToS3({ ...rest, urlBuilder: (p) => getCloudFrontURL({ ...p, sign }) });
 }
@@ -151,10 +173,15 @@ export async function getCloudFrontFileStream(
 }
 
 /** Get a signed CloudFront URL for an authorized file download. */
-export async function getCloudFrontDownloadURL({ file }: DownloadURLParams): Promise<string> {
+export async function getCloudFrontDownloadURL({
+  file,
+  customFilename = null,
+  contentType = null,
+}: DownloadURLParams): Promise<string> {
   const key = extractKeyFromS3Url(file.filepath);
   if (!key) {
     throw new Error('[getCloudFrontDownloadURL] Unable to extract S3 key from file path');
   }
-  return signUrl(buildCloudFrontUrl(key));
+  const url = appendDownloadOverrides(buildCloudFrontUrl(key), customFilename, contentType);
+  return signUrl(url);
 }

@@ -48,7 +48,7 @@ class DALLE3 extends Tool {
     this.returnMetadata = fields.returnMetadata ?? false;
 
     this.userId = fields.userId;
-    this.req = fields.req;
+    this.tenantId = fields.req?.user?.tenantId;
     this.fileStrategy = fields.fileStrategy;
     /** @type {boolean} */
     this.isAgent = fields.isAgent;
@@ -229,7 +229,7 @@ Error Message: ${error.message}`);
         fileName: imageName,
         fileStrategy: this.fileStrategy,
         context: FileContext.image_generation,
-        tenantId: this.req?.user?.tenantId,
+        tenantId: this.tenantId,
       });
 
       if (this.returnMetadata) {

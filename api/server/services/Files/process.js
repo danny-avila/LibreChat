@@ -261,15 +261,24 @@ const processFileURL = async ({
   const { saveURL, getFileURL } = getStrategyFunctions(fileStrategy);
   try {
     const savedFile = await saveURL({ userId, URL, fileName, basePath, tenantId });
+    if (!savedFile) {
+      throw new Error(`Strategy "${fileStrategy}" did not save "${fileName}"`);
+    }
+
+    const savedFilePath = typeof savedFile === 'string' ? savedFile : savedFile.filepath;
     const {
       bytes = 0,
       type = '',
       dimensions = {},
-    } = typeof savedFile === 'string' ? {} : savedFile || {};
+    } = typeof savedFile === 'string' ? {} : savedFile;
     const filepath =
       typeof savedFile === 'string'
         ? savedFile
-        : await getFileURL({ fileName: `${userId}/${fileName}`, basePath });
+        : (savedFilePath ?? (await getFileURL({ fileName: `${userId}/${fileName}`, basePath })));
+    if (!filepath) {
+      throw new Error(`Strategy "${fileStrategy}" did not return a file URL for "${fileName}"`);
+    }
+
     return await db.createFile(
       {
         user: userId,
@@ -280,6 +289,7 @@ const processFileURL = async ({
         source: fileStrategy,
         type,
         context,
+        tenantId,
         width: dimensions.width,
         height: dimensions.height,
       },

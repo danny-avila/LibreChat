@@ -273,7 +273,13 @@ describe('CloudFront CRUD', () => {
 
   describe('saveURLToCloudFront', () => {
     it('delegates to saveURLToS3 with a urlBuilder', async () => {
-      mockSaveURLToS3.mockResolvedValue('https://d123.cloudfront.net/images/u/f.webp');
+      const savedFile = {
+        filepath: 'https://d123.cloudfront.net/images/u/f.webp',
+        bytes: 128,
+        type: 'image/webp',
+        dimensions: {},
+      };
+      mockSaveURLToS3.mockResolvedValue(savedFile);
       const { saveURLToCloudFront } = await import('~/storage/cloudfront/crud');
       const result = await saveURLToCloudFront({
         userId: 'u',
@@ -289,7 +295,7 @@ describe('CloudFront CRUD', () => {
           urlBuilder: expect.any(Function),
         }),
       );
-      expect(result).toBe('https://d123.cloudfront.net/images/u/f.webp');
+      expect(result).toBe(savedFile);
     });
   });
 
@@ -479,6 +485,33 @@ describe('CloudFront CRUD', () => {
           url: 'https://d123.cloudfront.net/t/tenantA/uploads/user1/doc.pdf',
           keyPairId: 'K123',
           privateKey: 'pk-secret',
+        }),
+      );
+    });
+
+    it('includes response header overrides before signing download URLs', async () => {
+      mockGetCloudFrontConfig.mockReturnValue(
+        makeConfig({ privateKey: 'pk-secret', keyPairId: 'K123' }),
+      );
+      mockExtractKeyFromS3Url.mockReturnValue('uploads/user1/report.pdf');
+      mockGetSignedUrl.mockReturnValue('signed-url');
+
+      const { getCloudFrontDownloadURL } = await import('~/storage/cloudfront/crud');
+      const result = await getCloudFrontDownloadURL({
+        file: { filepath: 'https://d123.cloudfront.net/uploads/user1/report.pdf' } as TFile,
+        customFilename: 'report.pdf',
+        contentType: 'application/pdf',
+      });
+
+      expect(result).toBe('signed-url');
+      expect(mockGetSignedUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: expect.stringContaining('response-content-disposition=attachment'),
+        }),
+      );
+      expect(mockGetSignedUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: expect.stringContaining('response-content-type=application%2Fpdf'),
         }),
       );
     });

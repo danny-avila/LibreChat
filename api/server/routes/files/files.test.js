@@ -459,6 +459,8 @@ describe('File Routes - Delete with Agent Access', () => {
         filename: 'file.pdf',
         type: 'application/pdf',
       });
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers.pragma).toBe('no-cache');
       expect(getDownloadURL).toHaveBeenCalledWith(
         expect.objectContaining({
           file: expect.objectContaining({ file_id: userFileId }),
@@ -509,6 +511,9 @@ describe('File Routes - Delete with Agent Access', () => {
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe('https://cdn.example.com/file.pdf?signed');
+      expect(response.headers['x-file-metadata']).toBeUndefined();
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers.pragma).toBe('no-cache');
       expect(getDownloadStream).not.toHaveBeenCalled();
     });
 

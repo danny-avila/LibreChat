@@ -444,7 +444,7 @@ const setAuthTokens = async (userId, res, _session = null) => {
 
     setCloudFrontCookies(res, {
       userId: user?._id?.toString?.() ?? userId,
-      tenantId: user?.tenantId?.toString?.() ?? user?.tenantId,
+      tenantId: user?.tenantId?.toString?.(),
     });
 
     return token;
@@ -465,6 +465,8 @@ const setAuthTokens = async (userId, res, _session = null) => {
  * @param {Object} req - request object (for session access)
  * @param {Object} res - response object
  * @param {string} [userId] - Optional MongoDB user ID for image path validation
+ * @param {string} [existingRefreshToken] - Optional existing refresh token to preserve
+ * @param {string} [tenantId] - Optional tenant identifier for CloudFront cookie scoping
  * @returns {String} - id_token (preferred) or access_token as the app auth token
  */
 const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken, tenantId) => {

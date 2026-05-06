@@ -414,6 +414,8 @@ router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
       return res.status(501).send('Not Implemented');
     }
 
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
     return res.status(200).json({
       url: downloadURL,
       filename: cleanFileName(file.filename),
@@ -482,8 +484,8 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
         try {
           const downloadURL = await getDirectDownloadURL({ req, file });
           if (downloadURL) {
-            res.setHeader('X-File-Metadata', JSON.stringify(file));
             res.setHeader('Cache-Control', 'no-store');
+            res.setHeader('Pragma', 'no-cache');
             return res.redirect(302, downloadURL);
           }
         } catch (error) {

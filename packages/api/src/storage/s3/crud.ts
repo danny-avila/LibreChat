@@ -16,6 +16,7 @@ import type {
   UploadFileParams,
   SaveBufferParams,
   DownloadURLParams,
+  SaveURLResult,
   BatchUpdateFn,
   SaveURLParams,
   GetURLParams,
@@ -43,19 +44,52 @@ export interface S3KeyParts {
   tenantId?: string;
 }
 
+const assertS3PathSegment = (label: string, value: string | null | undefined): string => {
+  const segment = value?.toString?.() ?? '';
+
+  if (!segment) {
+    throw new Error(`[getS3Key] ${label} must not be empty`);
+  }
+  if (segment.includes('/') || segment.includes('\\')) {
+    throw new Error(`[getS3Key] ${label} must not contain slashes: "${segment}"`);
+  }
+  if (segment === '.' || segment === '..' || segment.includes('..')) {
+    throw new Error(`[getS3Key] ${label} must not contain path traversal: "${segment}"`);
+  }
+  if (
+    Array.from(segment).some((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 31 || code === 127;
+    })
+  ) {
+    throw new Error(`[getS3Key] ${label} contains unsafe path characters: "${segment}"`);
+  }
+
+  return segment;
+};
+
+const parseS3PathSegment = (value: string | undefined): string | null => {
+  try {
+    return assertS3PathSegment('S3 key segment', value);
+  } catch {
+    return null;
+  }
+};
+
 export const getS3Key = (
   basePath: string,
   userId: string,
   fileName: string,
   tenantId?: string | null,
 ): string => {
-  if (basePath.includes('/')) {
-    throw new Error(`[getS3Key] basePath must not contain slashes: "${basePath}"`);
-  }
+  const safeBasePath = assertS3PathSegment('basePath', basePath);
+  const safeUserId = assertS3PathSegment('userId', userId);
+
   if (tenantId) {
-    return `t/${tenantId}/${basePath}/${userId}/${fileName}`;
+    const safeTenantId = assertS3PathSegment('tenantId', tenantId);
+    return `t/${safeTenantId}/${safeBasePath}/${safeUserId}/${fileName}`;
   }
-  return `${basePath}/${userId}/${fileName}`;
+  return `${safeBasePath}/${safeUserId}/${fileName}`;
 };
 
 export const parseS3Key = (key: string): S3KeyParts | null => {
@@ -67,14 +101,30 @@ export const parseS3Key = (key: string): S3KeyParts | null => {
       return null;
     }
     const [, tenantId, basePath, userId, ...fileNameParts] = keyParts;
-    return { tenantId, basePath, userId, fileName: fileNameParts.join('/') };
+    const safeTenantId = parseS3PathSegment(tenantId);
+    const safeBasePath = parseS3PathSegment(basePath);
+    const safeUserId = parseS3PathSegment(userId);
+    if (!safeTenantId || !safeBasePath || !safeUserId) {
+      return null;
+    }
+    return {
+      tenantId: safeTenantId,
+      basePath: safeBasePath,
+      userId: safeUserId,
+      fileName: fileNameParts.join('/'),
+    };
   }
 
   if (keyParts.length < 3) {
     return null;
   }
   const [basePath, userId, ...fileNameParts] = keyParts;
-  return { basePath, userId, fileName: fileNameParts.join('/') };
+  const safeBasePath = parseS3PathSegment(basePath);
+  const safeUserId = parseS3PathSegment(userId);
+  if (!safeBasePath || !safeUserId) {
+    return null;
+  }
+  return { basePath: safeBasePath, userId: safeUserId, fileName: fileNameParts.join('/') };
 };
 
 async function getS3URLForKey({
@@ -154,7 +204,7 @@ export async function saveURLToS3({
   basePath = defaultBasePath,
   tenantId = null,
   urlBuilder,
-}: SaveURLParams & { urlBuilder?: UrlBuilder }): Promise<string> {
+}: SaveURLParams & { urlBuilder?: UrlBuilder }): Promise<SaveURLResult> {
   try {
     const response = await fetch(URL);
     if (!response.ok) {
@@ -162,7 +212,23 @@ export async function saveURLToS3({
     }
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    return await saveBufferToS3({ userId, buffer, fileName, basePath, tenantId, urlBuilder });
+    const filepath = await saveBufferToS3({
+      userId,
+      buffer,
+      fileName,
+      basePath,
+      tenantId,
+      urlBuilder,
+    });
+    const contentLength = response.headers.get('content-length');
+    const bytes = contentLength ? Number(contentLength) : buffer.byteLength;
+
+    return {
+      filepath,
+      bytes: Number.isFinite(bytes) && bytes >= 0 ? bytes : buffer.byteLength,
+      type: response.headers.get('content-type') ?? '',
+      dimensions: {},
+    };
   } catch (error) {
     logger.error('[saveURLToS3] Error uploading file from URL to S3:', (error as Error).message);
     throw error;

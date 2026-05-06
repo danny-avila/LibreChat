@@ -68,11 +68,17 @@ jest.mock('~/server/services/Files/Audio/STTService', () => ({
   STTService: { getInstance: jest.fn() },
 }));
 
-const { EToolResources, FileSources, AgentCapabilities } = require('librechat-data-provider');
+const {
+  EToolResources,
+  FileSources,
+  FileContext,
+  AgentCapabilities,
+} = require('librechat-data-provider');
 const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { processAgentFileUpload } = require('./process');
+const db = require('~/models');
+const { processAgentFileUpload, processFileURL } = require('./process');
 
 const PDF_MIME = 'application/pdf';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -338,5 +344,70 @@ describe('processAgentFileUpload', () => {
         processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
       ).resolves.not.toThrow();
     });
+  });
+});
+
+describe('processFileURL', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('throws and skips DB persistence when saveURL returns null', async () => {
+    const saveURL = jest.fn().mockResolvedValue(null);
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await expect(
+      processFileURL({
+        fileStrategy: FileSources.local,
+        userId: 'user-123',
+        URL: 'https://example.com/image.png',
+        fileName: 'image.png',
+        basePath: 'images',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+      }),
+    ).rejects.toThrow('Strategy "local" did not save "image.png"');
+
+    expect(getFileURL).not.toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('persists tenantId and strategy-returned filepath metadata', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+      dimensions: { width: 32, height: 64 },
+    });
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+    });
+
+    expect(getFileURL).not.toHaveBeenCalled();
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: 'user-123',
+        filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+        bytes: 512,
+        filename: 'image.png',
+        source: FileSources.cloudfront,
+        type: 'image/png',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+        width: 32,
+        height: 64,
+      }),
+      true,
+    );
   });
 });
