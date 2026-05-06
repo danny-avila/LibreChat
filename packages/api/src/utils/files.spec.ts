@@ -35,6 +35,17 @@ describe('sanitizeFilename', () => {
     expect(sanitizeFilename('file name@#$.txt')).toBe('file_name___.txt');
   });
 
+  test('preserves Unicode filenames', () => {
+    expect(sanitizeFilename('日本語レポート.xlsx')).toBe('日本語レポート.xlsx');
+    expect(sanitizeFilename('résumé-данные-تقرير-보고서📊.csv')).toBe(
+      'résumé-данные-تقرير-보고서📊.csv',
+    );
+  });
+
+  test('normalizes decomposed Unicode marks before sanitizing', () => {
+    expect(sanitizeFilename('Cafe\u0301.txt')).toBe('Café.txt');
+  });
+
   test('preserves dots and hyphens', () => {
     expect(sanitizeFilename('file-name.with.dots.txt')).toBe('file-name.with.dots.txt');
   });
@@ -73,6 +84,10 @@ describe('sanitizeArtifactPath', () => {
 
   test('preserves multiple nested directory components', () => {
     expect(sanitizeArtifactPath('a/b/c/file.txt')).toBe('a/b/c/file.txt');
+  });
+
+  test('preserves Unicode path segments', () => {
+    expect(sanitizeArtifactPath('分析/結果📊.csv')).toBe('分析/結果📊.csv');
   });
 
   test('replaces non-alphanumeric characters per segment + adds raw-input disambiguator', () => {

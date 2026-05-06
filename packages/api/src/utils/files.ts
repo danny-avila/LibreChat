@@ -9,6 +9,18 @@ const USER_FACING_UPLOAD_ERRORS = [
   'Unable to extract text from',
 ] as const;
 
+const ASCII_FILENAME_SAFE_PATTERN = /^[a-zA-Z0-9._-]$/;
+const UNSAFE_UNICODE_FILENAME_PATTERN = /[^\p{L}\p{M}\p{N}\p{Emoji}\u200d._-]/gu;
+
+function sanitizeFilenameSegment(segment: string): string {
+  return segment
+    .normalize('NFC')
+    .replace(/[\u0000-\u007f]/g, (char) =>
+      ASCII_FILENAME_SAFE_PATTERN.test(char) ? char : '_',
+    )
+    .replace(UNSAFE_UNICODE_FILENAME_PATTERN, '_');
+}
+
 /**
  * Resolves a user-facing error message from a file upload error.
  * Returns the error's own message if it matches a known user-facing pattern,
@@ -37,15 +49,15 @@ export function resolveUploadErrorMessage(
 }
 
 /**
- * Sanitize a filename by removing any directory components, replacing non-alphanumeric characters
+ * Sanitize a filename by removing any directory components, replacing unsafe characters
  * @param inputName
  */
 export function sanitizeFilename(inputName: string): string {
   // Remove any directory components
   let name = path.basename(inputName);
 
-  // Replace any non-alphanumeric characters except for '.' and '-'
-  name = name.replace(/[^a-zA-Z0-9.-]/g, '_');
+  // Preserve Unicode word characters and emoji while replacing unsafe ASCII punctuation.
+  name = sanitizeFilenameSegment(name);
 
   // Ensure the name doesn't start with a dot (hidden file in Unix-like systems)
   if (name.startsWith('.') || name === '') {
@@ -226,7 +238,7 @@ export function sanitizeArtifactPath(inputName: string): string {
   }
   const segments = normalized
     .split('/')
-    .map((seg) => seg.replace(/[^a-zA-Z0-9.-]/g, '_'))
+    .map(sanitizeFilenameSegment)
     .filter((seg) => seg.length > 0 && seg !== '.');
   if (segments.length === 0) return '_';
   const leafIdx = segments.length - 1;
@@ -260,7 +272,7 @@ export function sanitizeArtifactPath(inputName: string): string {
    * the disambiguator — no collision is possible because they're
    * already distinct strings, and we don't want to clutter human-
    * readable filenames with a hash when nothing was at risk. */
-  if (preCapJoined !== inputName) {
+  if (preCapJoined !== inputName.normalize('NFC')) {
     capped[leafIdx] = embedDisambiguatorInLeaf(capped[leafIdx], inputName);
     joined = capped.join('/');
   }
