@@ -298,7 +298,6 @@ export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise
     throw new Error('[deleteFileFromS3] User not authenticated');
   }
 
-  const userId = req.user.id;
   const key = extractKeyFromS3Url(file.filepath);
   const parsedKey = parseS3Key(key);
   const ownerId = file.user?.toString?.();
@@ -336,14 +335,14 @@ export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise
     } catch (headErr) {
       if ((headErr as { name?: string }).name === 'NotFound') {
         logger.warn(`[deleteFileFromS3] File does not exist: ${key}`);
-        await deleteRagFile({ userId, file });
+        await deleteRagFile({ userId: ownerId, file });
         return;
       }
       throw headErr;
     }
 
     await s3.send(new DeleteObjectCommand(params));
-    await deleteRagFile({ userId, file });
+    await deleteRagFile({ userId: ownerId, file });
     logger.debug('[deleteFileFromS3] S3 File deletion completed');
   } catch (error) {
     logger.error(`[deleteFileFromS3] Error deleting file from S3: ${(error as Error).message}`);

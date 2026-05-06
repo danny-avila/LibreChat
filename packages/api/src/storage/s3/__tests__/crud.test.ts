@@ -421,6 +421,23 @@ describe('S3 CRUD', () => {
       expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(1);
     });
 
+    it('uses the file owner for RAG cleanup when a different authorized user deletes', async () => {
+      const requesterReq = { user: { id: 'sharedUser' } } as ServerRequest;
+      const mockFile = {
+        filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
+        file_id: 'file123',
+        user: 'user123',
+      } as TFile;
+
+      s3Mock.on(HeadObjectCommand).resolvesOnce({});
+
+      const { deleteFileFromS3 } = await import('../crud');
+      await deleteFileFromS3(requesterReq, mockFile);
+
+      expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user123', file: mockFile });
+      expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(1);
+    });
+
     it('handles file not found gracefully and cleans up RAG', async () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/nonexistent.jpg',
