@@ -23,6 +23,9 @@ export class DatabaseStack extends cdk.Stack {
   public readonly rdsPort?: string;
   public readonly rdsSecurityGroup?: ec2.ISecurityGroup;
   public readonly rdsSecret?: secrets.ISecret;
+  public readonly rdsInstanceIdentifier?: string;
+  public readonly docDbClusterIdentifier?: string;
+  public readonly elastiCacheName: string;
 
   constructor(scope: Construct, id: string, props: DatabaseStackProps) {
     super(scope, id, props);
@@ -37,23 +40,25 @@ export class DatabaseStack extends cdk.Stack {
 
     // DocumentDB only in prod
     if (isProd) {
-      this.CreateDocumentDBInstance(vpc);
+      this.docDbClusterIdentifier = this.CreateDocumentDBInstance(vpc);
     }
 
-    const rds = this.CreateRDSPostgres(vpc);
+    const rds = this.CreateRDSPostgres(vpc, isProd);
     this.rdsEndpoint = rds.endpoint;
     this.rdsPort = rds.port;
     this.rdsSecurityGroup = rds.securityGroup;
     this.rdsSecret = rds.secret;
+    this.rdsInstanceIdentifier = rds.instanceIdentifier;
 
     // Redis in both dev and prod
     const redis = this.CreateElastiCacheRedis(vpc);
     this.redisEndpoint = redis.endpoint;
     this.redisPort = redis.port;
     this.redisSecurityGroup = redis.securityGroup;
+    this.elastiCacheName = redis.cacheName;
   }
 
-  private CreateDocumentDBInstance(vpc: ec2.IVpc) {
+  private CreateDocumentDBInstance(vpc: ec2.IVpc): string {
     const docDBSecurityGroup = new ec2.SecurityGroup(this, 'DocDBSg', { vpc });
     docDBSecurityGroup.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(27017));
 
@@ -92,13 +97,16 @@ export class DatabaseStack extends cdk.Stack {
       value: docDBSecurityGroup.securityGroupId,
       exportName: `${this.stackName}:DocDbSecurityGroupId`,
     });
+
+    return cluster.clusterIdentifier;
   }
 
-  private CreateRDSPostgres(vpc: ec2.IVpc): {
+  private CreateRDSPostgres(vpc: ec2.IVpc, isProd: boolean): {
     endpoint: string;
     port: string;
     securityGroup: ec2.ISecurityGroup;
     secret: secrets.ISecret;
+    instanceIdentifier: string;
   } {
     const RDS_PORT = 5432;
     const rdsSecurityGroup = new ec2.SecurityGroup(this, 'RdsSg', { vpc });
@@ -106,7 +114,9 @@ export class DatabaseStack extends cdk.Stack {
 
     const dbInstance = new rds.DatabaseInstance(this, 'RagApiRDS', {
       engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }),
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
+      instanceType: isProd
+        ? ec2.InstanceType.of(ec2.InstanceClass.R6I, ec2.InstanceSize.LARGE)
+        : ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [rdsSecurityGroup],
@@ -143,6 +153,7 @@ export class DatabaseStack extends cdk.Stack {
       port: dbInstance.dbInstanceEndpointPort,
       securityGroup: rdsSecurityGroup,
       secret: dbInstance.secret,
+      instanceIdentifier: dbInstance.instanceIdentifier,
     };
   }
 
@@ -150,6 +161,7 @@ export class DatabaseStack extends cdk.Stack {
     endpoint: string;
     port: string;
     securityGroup: ec2.ISecurityGroup;
+    cacheName: string;
   } {
     const REDIS_PORT = 6379;
     const redisSecurityGroup = new ec2.SecurityGroup(this, 'RedisSg', { vpc });
@@ -195,6 +207,7 @@ export class DatabaseStack extends cdk.Stack {
       endpoint: cache.attrEndpointAddress,
       port: cache.attrEndpointPort,
       securityGroup: redisSecurityGroup,
+      cacheName: cache.serverlessCacheName,
     };
   }
 }

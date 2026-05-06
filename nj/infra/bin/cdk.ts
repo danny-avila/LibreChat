@@ -139,6 +139,10 @@ if (!isProd) {
 const monitoringStack = new MonitoringStack(app, 'MonitoringStack', {
   env: env,
   service: ecsStack.service,
+  isProd,
+  rdsInstanceIdentifier: databaseStack.rdsInstanceIdentifier,
+  docDbClusterIdentifier: databaseStack.docDbClusterIdentifier,
+  elastiCacheName: databaseStack.elastiCacheName,
 });
 
 applyTags(databaseStack);

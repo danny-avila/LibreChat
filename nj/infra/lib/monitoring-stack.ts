@@ -9,6 +9,10 @@ import { Construct } from 'constructs';
 
 export interface MonitoringStackProps extends cdk.StackProps {
   service: ecsPatterns.ApplicationLoadBalancedFargateService;
+  isProd: boolean;
+  rdsInstanceIdentifier?: string;
+  docDbClusterIdentifier?: string;
+  elastiCacheName: string;
 }
 
 export class MonitoringStack extends cdk.Stack {
@@ -21,7 +25,7 @@ export class MonitoringStack extends cdk.Stack {
     const targetGroup = service.targetGroup;
 
     const topic = this.createSNSTopic();
-    this.createAlarms(topic, loadBalancer, targetGroup);
+    this.createAlarms(topic, loadBalancer, targetGroup, props);
   }
 
   private createSNSTopic() {
@@ -35,6 +39,7 @@ export class MonitoringStack extends cdk.Stack {
     topic: sns.Topic,
     loadBalancer: elbv2.IApplicationLoadBalancer,
     targetGroup: elbv2.IApplicationTargetGroup,
+    props: MonitoringStackProps,
   ) {
     const unhealthyHostsAlarm = new cloudwatch.Alarm(this, 'TgUnhealthyHosts', {
       alarmName: `ai-assistant-tg-unhealthy-hosts`,
@@ -107,5 +112,229 @@ export class MonitoringStack extends cdk.Stack {
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
     });
     target5xxAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+
+    if (props.rdsInstanceIdentifier) {
+      this.createRdsAlarms(topic, props.rdsInstanceIdentifier);
+    }
+
+    if (props.isProd && props.docDbClusterIdentifier) {
+      this.createDocDbAlarms(topic, props.docDbClusterIdentifier);
+    }
+
+    this.createElastiCacheAlarms(topic, props.elastiCacheName);
+    this.createAlbLatencyAlarms(topic, loadBalancer);
+    this.createBedrockAlarms(topic);
+  }
+
+  private createRdsAlarms(topic: sns.Topic, instanceIdentifier: string) {
+    const rdsDimensions = { DBInstanceIdentifier: instanceIdentifier };
+
+    const rdsFreeStorageAlarm = new cloudwatch.Alarm(this, 'RdsFreeStorage', {
+      alarmName: 'ai-assistant-rds-free-storage',
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/RDS',
+        metricName: 'FreeStorageSpace',
+        period: Duration.minutes(5),
+        statistic: 'Minimum',
+        dimensionsMap: rdsDimensions,
+      }),
+      threshold: 10_737_418_240, // 10 GB in bytes
+      evaluationPeriods: 3,
+      datapointsToAlarm: 3,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_OR_EQUAL_TO_THRESHOLD,
+    });
+    rdsFreeStorageAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+
+    const rdsCpuAlarm = new cloudwatch.Alarm(this, 'RdsCpu', {
+      alarmName: 'ai-assistant-rds-cpu',
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/RDS',
+        metricName: 'CPUUtilization',
+        period: Duration.minutes(5),
+        statistic: 'Average',
+        dimensionsMap: rdsDimensions,
+      }),
+      threshold: 80,
+      evaluationPeriods: 5,
+      datapointsToAlarm: 4,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    });
+    rdsCpuAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+  }
+
+  private createBedrockAlarms(topic: sns.Topic) {
+    const bedrockThrottlesAlarm = new cloudwatch.Alarm(this, 'BedrockThrottles', {
+      alarmName: 'ai-assistant-bedrock-throttles',
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/Bedrock',
+        metricName: 'InvocationThrottles',
+        period: Duration.minutes(1),
+        statistic: 'Sum',
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    });
+    bedrockThrottlesAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+
+    const bedrockServerErrorsAlarm = new cloudwatch.Alarm(this, 'BedrockServerErrors', {
+      alarmName: 'ai-assistant-bedrock-server-errors',
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/Bedrock',
+        metricName: 'InvocationServerErrors',
+        period: Duration.minutes(1),
+        statistic: 'Sum',
+      }),
+      threshold: 1,
+      evaluationPeriods: 5,
+      datapointsToAlarm: 3,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    });
+    bedrockServerErrorsAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+
+    for (const [id, metricName, stat, alarmName] of [
+      ['BedrockInvocationLatency', 'InvocationLatency', 'p95', 'ai-assistant-bedrock-invocation-latency-p95'],
+      ['BedrockModelInvocations', 'ModelInvocations', 'Sum', 'ai-assistant-bedrock-model-invocations'],
+    ] as const) {
+      new cloudwatch.CfnAlarm(this, id, {
+        alarmName,
+        comparisonOperator: 'GreaterThanUpperThreshold',
+        evaluationPeriods: 5,
+        datapointsToAlarm: 3,
+        treatMissingData: 'notBreaching',
+        metrics: [
+          {
+            id: 'm1',
+            metricStat: {
+              metric: {
+                namespace: 'AWS/Bedrock',
+                metricName,
+              },
+              period: 60,
+              stat,
+            },
+          },
+          {
+            id: 'ad1',
+            expression: 'ANOMALY_DETECTION_BAND(m1, 2)',
+          },
+        ],
+        thresholdMetricId: 'ad1',
+        alarmActions: [topic.topicArn],
+      });
+    }
+  }
+
+  private createAlbLatencyAlarms(topic: sns.Topic, loadBalancer: elbv2.IApplicationLoadBalancer) {
+    for (const [id, stat, alarmName] of [
+      ['AlbLatencyP95', 'p95', 'ai-assistant-alb-latency-p95'],
+      ['AlbLatencyP50', 'p50', 'ai-assistant-alb-latency-p50'],
+    ] as const) {
+      new cloudwatch.CfnAlarm(this, id, {
+        alarmName,
+        comparisonOperator: 'GreaterThanUpperThreshold',
+        evaluationPeriods: 5,
+        datapointsToAlarm: 3,
+        treatMissingData: 'notBreaching',
+        metrics: [
+          {
+            id: 'm1',
+            metricStat: {
+              metric: {
+                namespace: 'AWS/ApplicationELB',
+                metricName: 'TargetResponseTime',
+                dimensions: [{ name: 'LoadBalancer', value: loadBalancer.loadBalancerArn }],
+              },
+              period: 60,
+              stat,
+            },
+          },
+          {
+            id: 'ad1',
+            expression: 'ANOMALY_DETECTION_BAND(m1, 2)',
+          },
+        ],
+        thresholdMetricId: 'ad1',
+        alarmActions: [topic.topicArn],
+      });
+    }
+  }
+
+  private createElastiCacheAlarms(topic: sns.Topic, cacheName: string) {
+    const currConnectionsAlarm = new cloudwatch.Alarm(this, 'ElastiCacheCurrConnections', {
+      alarmName: 'ai-assistant-elasticache-curr-connections',
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/ElastiCache',
+        metricName: 'CurrConnections',
+        period: Duration.minutes(5),
+        statistic: 'Maximum',
+        dimensionsMap: { CacheClusterId: cacheName },
+      }),
+      threshold: 500,
+      evaluationPeriods: 3,
+      datapointsToAlarm: 3,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    });
+    currConnectionsAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+  }
+
+  private createDocDbAlarms(topic: sns.Topic, clusterIdentifier: string) {
+    const docDbDimensions = { DBClusterIdentifier: clusterIdentifier };
+
+    const docDbCpuAlarm = new cloudwatch.Alarm(this, 'DocDbCpu', {
+      alarmName: 'ai-assistant-docdb-cpu',
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/DocDB',
+        metricName: 'CPUUtilization',
+        period: Duration.minutes(5),
+        statistic: 'Average',
+        dimensionsMap: docDbDimensions,
+      }),
+      threshold: 80,
+      evaluationPeriods: 5,
+      datapointsToAlarm: 4,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    });
+    docDbCpuAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+
+    for (const [id, metricName] of [
+      ['DocDbReadLatency', 'ReadLatency'],
+      ['DocDbWriteLatency', 'WriteLatency'],
+    ] as const) {
+      new cloudwatch.CfnAlarm(this, id, {
+        alarmName: `ai-assistant-docdb-${metricName.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase()}`,
+        comparisonOperator: 'GreaterThanUpperThreshold',
+        evaluationPeriods: 5,
+        datapointsToAlarm: 4,
+        treatMissingData: 'notBreaching',
+        metrics: [
+          {
+            id: 'm1',
+            metricStat: {
+              metric: {
+                namespace: 'AWS/DocDB',
+                metricName,
+                dimensions: [{ name: 'DBClusterIdentifier', value: clusterIdentifier }],
+              },
+              period: 300,
+              stat: 'Average',
+            },
+          },
+          {
+            id: 'ad1',
+            expression: 'ANOMALY_DETECTION_BAND(m1, 2)',
+          },
+        ],
+        thresholdMetricId: 'ad1',
+        alarmActions: [topic.topicArn],
+      });
+    }
   }
 }
