@@ -321,6 +321,14 @@ export function isPreviewOnlyArtifact(type: string | null | undefined): boolean 
 }
 
 /**
+ * Source-code files have no useful rendered preview in the artifacts panel.
+ * They should stay click-to-open and, once opened, expose only the code view.
+ */
+export function isCodeOnlyArtifact(type: string | null | undefined): boolean {
+  return type === TOOL_ARTIFACT_TYPES.CODE;
+}
+
+/**
  * Extension → fenced-code-block language hint for the CODE bucket. The
  * key is the lowercased file extension (no dot); the value is the
  * identifier `marked` reads off the fence (e.g. ```` ```python ```` ).
