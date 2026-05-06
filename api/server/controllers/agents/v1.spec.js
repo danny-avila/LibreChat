@@ -970,6 +970,9 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         },
       });
 
+      const db = require('~/models');
+      jest.spyOn(db, 'getActions').mockResolvedValueOnce([]);
+
       mockReq.user.id = cloneAuthorId.toString();
       mockReq.params.id = sourceAgent.id;
 
@@ -981,46 +984,43 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agent.tool_resources.context.file_ids).toEqual([cloneAuthorFileId]);
     });
 
-    test(
-      'revertAgentVersionHandler should prune restored file_ids not owned by the agent author',
-      async () => {
-        const agentAuthorId = new mongoose.Types.ObjectId();
-        const otherUserId = new mongoose.Types.ObjectId();
-        const ownedFileId = `file_${uuidv4()}`;
-        const otherFileId = `file_${uuidv4()}`;
+    test('revertAgentVersionHandler should prune restored file_ids not owned by the agent author', async () => {
+      const agentAuthorId = new mongoose.Types.ObjectId();
+      const otherUserId = new mongoose.Types.ObjectId();
+      const ownedFileId = `file_${uuidv4()}`;
+      const otherFileId = `file_${uuidv4()}`;
 
-        await createFileDoc(ownedFileId, agentAuthorId);
-        await createFileDoc(otherFileId, otherUserId);
-        const agent = await Agent.create({
-          id: `agent_${uuidv4()}`,
-          name: 'Current Agent',
-          provider: 'openai',
-          model: 'gpt-4',
-          author: agentAuthorId,
-          tool_resources: {},
-          versions: [
-            {
-              name: 'Historical Agent',
-              provider: 'openai',
-              model: 'gpt-4',
-              tool_resources: {
-                file_search: { file_ids: [ownedFileId, otherFileId] },
-              },
+      await createFileDoc(ownedFileId, agentAuthorId);
+      await createFileDoc(otherFileId, otherUserId);
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Current Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: agentAuthorId,
+        tool_resources: {},
+        versions: [
+          {
+            name: 'Historical Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            tool_resources: {
+              file_search: { file_ids: [ownedFileId, otherFileId] },
             },
-          ],
-        });
+          },
+        ],
+      });
 
-        mockReq.user.id = agentAuthorId.toString();
-        mockReq.params.id = agent.id;
-        mockReq.body = { version_index: 0 };
+      mockReq.user.id = agentAuthorId.toString();
+      mockReq.params.id = agent.id;
+      mockReq.body = { version_index: 0 };
 
-        await revertAgentVersionHandler(mockReq, mockRes);
+      await revertAgentVersionHandler(mockReq, mockRes);
 
-        expect(mockRes.json).toHaveBeenCalled();
-        const agentInDb = await Agent.findOne({ id: agent.id }).lean();
-        expect(agentInDb.tool_resources.file_search.file_ids).toEqual([ownedFileId]);
-      },
-    );
+      expect(mockRes.json).toHaveBeenCalled();
+      const agentInDb = await Agent.findOne({ id: agent.id }).lean();
+      expect(agentInDb.tool_resources.file_search.file_ids).toEqual([ownedFileId]);
+    });
   });
 
   describe('Mass Assignment Attack Scenarios', () => {
