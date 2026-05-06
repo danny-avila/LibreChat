@@ -16,6 +16,7 @@ export interface SecretInputProps
   containerClassName?: string;
   controlsClassName?: string;
   buttonClassName?: string;
+  controlsOnHover?: boolean;
 }
 
 const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
@@ -29,6 +30,7 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
       containerClassName,
       controlsClassName,
       buttonClassName,
+      controlsOnHover = false,
       onCopy,
       copyFeedbackDuration = 2000,
       disabled,
@@ -68,7 +70,7 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
     }, [value, isCopied, disabled, onCopy, copyFeedbackDuration]);
 
     return (
-      <div className={cn('relative flex items-center', containerClassName)}>
+      <div className={cn('group/secret-input relative flex items-center', containerClassName)}>
         <input
           id={id}
           type={isVisible ? 'text' : 'password'}
@@ -90,7 +92,12 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
           </label>
         )}
         <div
-          className={cn('absolute inset-y-0 right-2 flex items-center gap-0.5', controlsClassName)}
+          className={cn(
+            'absolute inset-y-0 right-2 flex items-center gap-0.5',
+            controlsOnHover &&
+              'pointer-events-none opacity-0 transition-opacity duration-150 group-focus-within/secret-input:pointer-events-auto group-focus-within/secret-input:opacity-100 group-hover/secret-input:pointer-events-auto group-hover/secret-input:opacity-100',
+            controlsClassName,
+          )}
         >
           {showCopy && (
             <button

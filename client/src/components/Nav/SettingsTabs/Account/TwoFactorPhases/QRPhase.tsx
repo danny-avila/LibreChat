@@ -40,6 +40,7 @@ export const QRPhase: React.FC<QRPhaseProps> = ({ secret, otpauthUrl, onNext }) 
             value={secret}
             readOnly
             showCopy
+            controlsOnHover
             aria-label={localize('com_ui_secret_key')}
             className="font-mono text-lg tracking-wider"
           />

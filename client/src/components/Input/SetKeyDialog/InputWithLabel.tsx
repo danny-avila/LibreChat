@@ -50,6 +50,7 @@ const InputWithLabel: FC<InputWithLabelProps> = forwardRef((props, ref) => {
           autoComplete="new-password"
           data-lpignore="true"
           data-1p-ignore="true"
+          controlsOnHover
           placeholder={`${localize('com_endpoint_config_value')} ${label}`}
           className={cn('flex h-10 max-h-10 w-full resize-none px-3 py-2', inputClassName)}
         />

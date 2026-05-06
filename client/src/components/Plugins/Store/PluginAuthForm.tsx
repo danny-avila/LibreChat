@@ -54,6 +54,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                       autoComplete="new-password"
                       data-lpignore="true"
                       data-1p-ignore="true"
+                      controlsOnHover
                       id={authField}
                       aria-invalid={!!errors[authField]}
                       aria-describedby={`${authField}-error`}

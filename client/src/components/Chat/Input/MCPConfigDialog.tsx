@@ -97,6 +97,7 @@ export default function MCPConfigDialog({
                       autoComplete="new-password"
                       data-lpignore="true"
                       data-1p-ignore="true"
+                      controlsOnHover
                       placeholder={localize('com_ui_mcp_enter_var', { 0: details.title })}
                       className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
                     />

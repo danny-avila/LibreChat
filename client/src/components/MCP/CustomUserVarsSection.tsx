@@ -91,6 +91,7 @@ function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthF
             autoComplete="new-password"
             data-lpignore="true"
             data-1p-ignore="true"
+            controlsOnHover
             /* autoFocus is generally disabled due to the fact that it can disorient users,
              * but in this case, the required field would logically be immediately navigated to anyways, and the component's
              * functionality emulates that of a new modal opening, where users would expect focus to be shifted to the new content */

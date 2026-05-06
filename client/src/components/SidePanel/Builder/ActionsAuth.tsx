@@ -193,6 +193,7 @@ const ApiKey = () => {
       <SecretInput
         placeholder="<HIDDEN>"
         autoComplete="new-password"
+        controlsOnHover
         className={inputClasses}
         {...register('api_key', { required: type === AuthTypeEnum.ServiceHttp })}
       />
@@ -311,6 +312,7 @@ const OAuth = () => {
       <SecretInput
         placeholder="<HIDDEN>"
         autoComplete="new-password"
+        controlsOnHover
         className={inputClasses}
         {...register('oauth_client_id', { required: false })}
       />
@@ -318,6 +320,7 @@ const OAuth = () => {
       <SecretInput
         placeholder="<HIDDEN>"
         autoComplete="new-password"
+        controlsOnHover
         className={inputClasses}
         {...register('oauth_client_secret', { required: false })}
       />

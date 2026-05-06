@@ -83,6 +83,7 @@ export default function InputSection({
                   autoComplete="one-time-code"
                   data-lpignore="true"
                   data-1p-ignore="true"
+                  controlsOnHover
                   className="mb-2"
                   {...register(name as keyof SearchApiKeyFormData)}
                 />

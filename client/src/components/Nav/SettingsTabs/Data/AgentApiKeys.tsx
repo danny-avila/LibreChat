@@ -109,6 +109,7 @@ function CreateKeyDialog({ onKeyCreated }: { onKeyCreated?: () => void }) {
                   value={newKey}
                   readOnly
                   showCopy
+                  controlsOnHover
                   onCopy={handleCopy}
                   aria-label={localize('com_ui_your_api_key')}
                   className="font-mono text-sm"
