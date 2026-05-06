@@ -410,17 +410,16 @@ describe('S3 CRUD', () => {
       });
       const putInput = s3Mock.commandCalls(PutObjectCommand)[0].args[0].input;
       expect(putInput.Body).not.toBeInstanceOf(Buffer);
-      expect(putInput.ContentLength).toBe(streamedBody.byteLength);
+      expect(putInput.ContentLength).toBeUndefined();
       expect(Buffer.concat(received).toString()).toBe('streamed');
     });
 
-    it('omits ContentLength for compressed response streams', async () => {
+    it('omits ContentLength for streamed uploads even when the remote header provides one', async () => {
       (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
         ok: true,
         headers: {
           get: (name: string) =>
             ({
-              'content-encoding': 'gzip',
               'content-length': '4',
               'content-type': 'image/png',
             })[name.toLowerCase()] ?? null,
