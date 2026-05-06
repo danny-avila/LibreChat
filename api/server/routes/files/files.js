@@ -29,7 +29,7 @@ const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
-const { cleanFileName } = require('~/server/utils/files');
+const { getContentDisposition } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
 const db = require('~/models');
@@ -397,8 +397,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
     }
 
     const setHeaders = () => {
-      const cleanedFilename = cleanFileName(file.filename);
-      res.setHeader('Content-Disposition', `attachment; filename="${cleanedFilename}"`);
+      res.setHeader('Content-Disposition', getContentDisposition(file.filename));
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('X-File-Metadata', JSON.stringify(file));
     };

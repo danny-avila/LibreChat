@@ -7,11 +7,30 @@ export interface CodeEnvFileOptions {
   filepath?: string;
 }
 
-const CODE_ENV_SAFE_FILEPATH_PATTERN = /^[a-zA-Z0-9._\-/]+$/;
+const CODE_ENV_SAFE_ASCII_FILEPATH_CHAR_PATTERN = /^[a-zA-Z0-9._\-/]$/;
+const CODE_ENV_UNSAFE_UNICODE_FILEPATH_CHAR_PATTERN =
+  /[^\p{L}\p{M}\p{N}\p{Emoji}\u200d._\-/]/u;
 const CODE_ENV_FILENAME_CONTROL_CHARS_PATTERN = /[\x00-\x1f\x7f]/g;
 
+function hasUnsafeCodeEnvFilepathChar(filepath: string): boolean {
+  for (const char of filepath) {
+    if (char.charCodeAt(0) <= 0x7f) {
+      if (!CODE_ENV_SAFE_ASCII_FILEPATH_CHAR_PATTERN.test(char)) {
+        return true;
+      }
+      continue;
+    }
+
+    if (CODE_ENV_UNSAFE_UNICODE_FILEPATH_CHAR_PATTERN.test(char)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function isSafeCodeEnvFilepath(filepath: string): boolean {
-  if (!filepath || filepath.startsWith('/') || !CODE_ENV_SAFE_FILEPATH_PATTERN.test(filepath)) {
+  if (!filepath || filepath.startsWith('/') || hasUnsafeCodeEnvFilepathChar(filepath)) {
     return false;
   }
 
