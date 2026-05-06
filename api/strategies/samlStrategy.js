@@ -14,6 +14,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const paths = require('~/config/paths');
+const { getAvatarFileStrategy, getAvatarSaveParams } = require('./avatar');
 
 let crypto;
 try {
@@ -271,15 +272,16 @@ function createSamlCallback(existingUsersOnly = false) {
             fileName = profile.nameID + '.png';
           }
 
-          const { saveBuffer } = getStrategyFunctions(
-            appConfig?.fileStrategy ?? process.env.CDN_PROVIDER,
+          const fileStrategy = getAvatarFileStrategy(appConfig);
+          const { saveBuffer } = getStrategyFunctions(fileStrategy);
+          const imagePath = await saveBuffer(
+            getAvatarSaveParams(fileStrategy, {
+              fileName,
+              userId: user._id.toString(),
+              buffer: imageBuffer,
+              tenantId: user.tenantId,
+            }),
           );
-          const imagePath = await saveBuffer({
-            fileName,
-            userId: user._id.toString(),
-            buffer: imageBuffer,
-            tenantId: user.tenantId,
-          });
           user.avatar = imagePath ?? '';
         }
       }

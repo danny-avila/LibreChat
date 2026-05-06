@@ -1,7 +1,7 @@
 const undici = require('undici');
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
-const { ErrorTypes } = require('librechat-data-provider');
+const { ErrorTypes, FileSources } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getOpenIdIssuer, resolveAppConfigForUser } = require('@librechat/api');
 const { getAppConfig } = require('~/server/services/Config');
@@ -1117,6 +1117,27 @@ describe('setupOpenId', () => {
     );
     expect(saveParams).not.toHaveProperty('basePath');
     // Our mock getStrategyFunctions.saveBuffer returns '/fake/path/to/avatar.png'
+    expect(user.avatar).toBe('/fake/path/to/avatar.png');
+  });
+
+  it('should save CloudFront IdP avatars under the shared avatar prefix', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+    getAppConfig.mockResolvedValueOnce({ fileStrategy: FileSources.cloudfront });
+
+    const { user } = await validate(tokenset);
+    const strategyResult =
+      getStrategyFunctions.mock.results[getStrategyFunctions.mock.results.length - 1];
+    const { saveBuffer } = strategyResult.value;
+    const [saveParams] = saveBuffer.mock.calls[0];
+
+    expect(getStrategyFunctions).toHaveBeenLastCalledWith(FileSources.cloudfront);
+    expect(saveParams).toEqual(
+      expect.objectContaining({
+        basePath: 'avatars',
+        fileName: 'hashed-token.png',
+        userId: 'newUserId',
+      }),
+    );
     expect(user.avatar).toBe('/fake/path/to/avatar.png');
   });
 

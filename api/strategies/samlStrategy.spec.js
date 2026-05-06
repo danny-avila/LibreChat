@@ -48,6 +48,7 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
+const { FileSources } = require('librechat-data-provider');
 const { findUser } = require('~/models');
 const { resolveAppConfigForUser } = require('@librechat/api');
 const { getAppConfig } = require('~/server/services/Config');
@@ -452,6 +453,28 @@ u7wlOSk+oFzDIO/UILIA
       }),
     );
     expect(saveParams).not.toHaveProperty('basePath');
+    expect(user.avatar).toBe('/fake/path/to/avatar.png');
+  });
+
+  it('should save CloudFront SAML avatars under the shared avatar prefix', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+    getAppConfig.mockResolvedValueOnce({ fileStrategies: { avatar: FileSources.cloudfront } });
+    const profile = { ...baseProfile };
+
+    const { user } = await validate(profile);
+    const strategyResult =
+      getStrategyFunctions.mock.results[getStrategyFunctions.mock.results.length - 1];
+    const { saveBuffer } = strategyResult.value;
+    const [saveParams] = saveBuffer.mock.calls[0];
+
+    expect(getStrategyFunctions).toHaveBeenLastCalledWith(FileSources.cloudfront);
+    expect(saveParams).toEqual(
+      expect.objectContaining({
+        basePath: 'avatars',
+        fileName: 'hashed-token.png',
+        userId: 'mock-user-id',
+      }),
+    );
     expect(user.avatar).toBe('/fake/path/to/avatar.png');
   });
 
