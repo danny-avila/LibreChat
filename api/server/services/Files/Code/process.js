@@ -583,6 +583,13 @@ const processCodeOutput = async ({
       // uses findOneAndUpdate with $set semantics.
       text: text ?? null,
       textFormat: textFormat ?? null,
+      // Clear deferred-preview lifecycle fields in case the prior emit
+      // at this (filename, conversationId) was an office file —
+      // otherwise stale `pending`/`failed` would persist and the client
+      // would render the wrong state for the now non-office artifact.
+      status: null,
+      previewError: null,
+      previewRevision: null,
     };
 
     await createFile(file, true);

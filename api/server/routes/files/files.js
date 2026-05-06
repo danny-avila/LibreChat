@@ -329,19 +329,15 @@ const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
 router.get('/:file_id/preview', fileAccess, async (req, res) => {
   try {
     const { file_id } = req.params;
-    /* `fileAccess` returns the file via `getFiles` which excludes `text`
-     * by default. Re-fetch via `findFileById` here so the response can
-     * include the extracted preview when ready. By-id lookup is indexed,
-     * so the second hit is cheap. */
-    let file = await db.findFileById(file_id);
-    if (!file) {
-      return res.status(404).json({ error: 'Not Found', message: 'File not found' });
-    }
-    /* Lazy sweep: if this record is stuck `pending` past the cutoff,
-     * mark it `failed` before responding so the client stops polling
-     * and the LLM context surfaces the failure on the next turn.
-     * Conditional on the same `updatedAt` we just observed — a
-     * concurrent legitimate update wins. */
+    /* `fileAccess` already fetched the record (sans `text`, the default
+     * projection drops it). Reuse for the lifecycle check; only re-fetch
+     * with `text` on a terminal ready response — the typical lifecycle
+     * is N pending polls + 1 ready, so this avoids ~N redundant text
+     * reads per file. */
+    let file = req.fileAccess.file;
+    /* Lazy sweep: if stuck `pending` past the cutoff, mark `failed`
+     * conditional on the observed `updatedAt` (concurrent legitimate
+     * updates win). */
     if (file.status === 'pending' && file.updatedAt instanceof Date) {
       const ageMs = Date.now() - file.updatedAt.getTime();
       if (ageMs > PREVIEW_LAZY_SWEEP_CUTOFF_MS) {
@@ -361,11 +357,13 @@ router.get('/:file_id/preview', fileAccess, async (req, res) => {
      * field, and non-office files never get a status set on persist. */
     const status = file.status ?? 'ready';
     const payload = { file_id, status };
-    if (status === 'ready' && file.text != null) {
-      payload.text = file.text;
-      payload.textFormat = file.textFormat ?? null;
-    }
-    if (status === 'failed' && file.previewError) {
+    if (status === 'ready') {
+      const withText = await db.findFileById(file_id);
+      if (withText?.text != null) {
+        payload.text = withText.text;
+        payload.textFormat = withText.textFormat ?? null;
+      }
+    } else if (status === 'failed' && file.previewError) {
       payload.previewError = file.previewError;
     }
     return res.status(200).json(payload);

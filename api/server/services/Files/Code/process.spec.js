@@ -476,6 +476,31 @@ describe('Code Process', () => {
         expect(mockClassifyCodeArtifact).not.toHaveBeenCalled();
         expect(mockExtractCodeArtifactText).not.toHaveBeenCalled();
       });
+
+      it('clears deferred-preview lifecycle fields so a prior office record at this file_id stops looking pending', async () => {
+        /* Codex P2: same (filename, conversationId) was previously an
+         * office artifact, leaving status/previewError/previewRevision
+         * populated. The non-office update must reset them or the
+         * client renders the wrong state for the now non-office file. */
+        mockClaimCodeFile.mockResolvedValueOnce({
+          file_id: 'reused-id',
+          filename: 'output.txt',
+          usage: 1,
+          createdAt: '2024-01-01T00:00:00.000Z',
+        });
+        mockAxios.mockResolvedValue({ data: Buffer.from('hello') });
+        determineFileType.mockResolvedValue({ mime: 'text/plain' });
+        mockClassifyCodeArtifact.mockReturnValueOnce('text');
+        mockHasOfficeHtmlPath.mockReturnValueOnce(false);
+        mockExtractCodeArtifactText.mockResolvedValueOnce('hello');
+
+        await processCodeOutput({ ...baseParams, name: 'output.txt' });
+
+        const createCall = createFile.mock.calls[0][0];
+        expect(createCall).toHaveProperty('status', null);
+        expect(createCall).toHaveProperty('previewError', null);
+        expect(createCall).toHaveProperty('previewRevision', null);
+      });
     });
 
     describe('file size limit enforcement', () => {

@@ -122,31 +122,28 @@ describe('GET /files/:file_id/preview', () => {
 
   it('returns status:pending without text/textFormat while the deferred render is in flight', async () => {
     mockGetFiles.mockResolvedValueOnce([
-      { file_id: 'fid-pending', user: OWNER_USER_ID, filename: 'data.xlsx' },
+      {
+        file_id: 'fid-pending',
+        user: OWNER_USER_ID,
+        filename: 'data.xlsx',
+        status: 'pending',
+      },
     ]);
-    mockFindFileById.mockResolvedValueOnce({
-      file_id: 'fid-pending',
-      status: 'pending',
-      text: null,
-      textFormat: null,
-    });
     const res = await request(buildApp()).get('/files/fid-pending/preview');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ file_id: 'fid-pending', status: 'pending' });
-    /* Critical: pending must NOT leak `text` even if a stale value
-     * exists on the record. The client gates routing on status. */
+    /* Pending must NOT leak `text` and must NOT trigger the text re-fetch. */
     expect(res.body).not.toHaveProperty('text');
-    expect(res.body).not.toHaveProperty('textFormat');
-    expect(res.body).not.toHaveProperty('previewError');
+    expect(mockFindFileById).not.toHaveBeenCalled();
   });
 
   it('returns status:ready with text + textFormat when the deferred render succeeded', async () => {
     mockGetFiles.mockResolvedValueOnce([
-      { file_id: 'fid-ready', user: OWNER_USER_ID, filename: 'data.xlsx' },
+      { file_id: 'fid-ready', user: OWNER_USER_ID, filename: 'data.xlsx', status: 'ready' },
     ]);
+    /* Text is fetched only on the terminal ready response. */
     mockFindFileById.mockResolvedValueOnce({
       file_id: 'fid-ready',
-      status: 'ready',
       text: '<table><tr><td>1</td></tr></table>',
       textFormat: 'html',
     });
@@ -162,15 +159,14 @@ describe('GET /files/:file_id/preview', () => {
 
   it('returns status:failed with previewError when the deferred render errored', async () => {
     mockGetFiles.mockResolvedValueOnce([
-      { file_id: 'fid-failed', user: OWNER_USER_ID, filename: 'data.xlsx' },
+      {
+        file_id: 'fid-failed',
+        user: OWNER_USER_ID,
+        filename: 'data.xlsx',
+        status: 'failed',
+        previewError: 'parser-error',
+      },
     ]);
-    mockFindFileById.mockResolvedValueOnce({
-      file_id: 'fid-failed',
-      status: 'failed',
-      text: null,
-      textFormat: null,
-      previewError: 'parser-error',
-    });
     const res = await request(buildApp()).get('/files/fid-failed/preview');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -178,20 +174,20 @@ describe('GET /files/:file_id/preview', () => {
       status: 'failed',
       previewError: 'parser-error',
     });
-    expect(res.body).not.toHaveProperty('text');
-    expect(res.body).not.toHaveProperty('textFormat');
+    expect(mockFindFileById).not.toHaveBeenCalled();
   });
 
   it('defaults to status:ready for legacy records with no status field (back-compat)', async () => {
-    /* Records pre-dating PR #12957 have no `status` field. The endpoint
-     * MUST treat that as 'ready' so legacy code-execution attachments
-     * don't suddenly poll forever. If text exists, surface it. */
     mockGetFiles.mockResolvedValueOnce([
-      { file_id: 'fid-legacy', user: OWNER_USER_ID, filename: 'old.csv' },
+      {
+        file_id: 'fid-legacy',
+        user: OWNER_USER_ID,
+        filename: 'old.csv',
+        // status intentionally absent
+      },
     ]);
     mockFindFileById.mockResolvedValueOnce({
       file_id: 'fid-legacy',
-      // status intentionally absent
       text: 'csv,header\n1,2',
       textFormat: 'text',
     });
@@ -206,9 +202,6 @@ describe('GET /files/:file_id/preview', () => {
   });
 
   it('returns status:ready with no text when the record is ready but text is null (binary/oversized)', async () => {
-    /* Non-office files (binary, oversized, etc.) complete the initial emit with
-     * `text: null` and no `status` field. The endpoint surfaces them
-     * as ready with no text — frontend renders download-only. */
     mockGetFiles.mockResolvedValueOnce([
       { file_id: 'fid-binary', user: OWNER_USER_ID, filename: 'image.bin' },
     ]);
@@ -222,21 +215,22 @@ describe('GET /files/:file_id/preview', () => {
     expect(res.body).toEqual({ file_id: 'fid-binary', status: 'ready' });
   });
 
-  it('returns 404 if findFileById returns null even after fileAccess passed (race with delete)', async () => {
-    /* fileAccess sees the file via getFiles, but findFileById returns
-     * null because a concurrent delete just removed it. Don't 500 —
-     * return 404 so the client stops polling. */
+  it('returns ready with no text when ready record was deleted between fileAccess and text fetch', async () => {
+    /* `fileAccess` saw the record but the concurrent delete removed it
+     * before the text fetch. Surface ready-without-text rather than
+     * 500 — the client routes to download-only and stops polling. */
     mockGetFiles.mockResolvedValueOnce([
-      { file_id: 'fid-race', user: OWNER_USER_ID, filename: 'data.xlsx' },
+      { file_id: 'fid-race', user: OWNER_USER_ID, filename: 'data.xlsx', status: 'ready' },
     ]);
     mockFindFileById.mockResolvedValueOnce(null);
     const res = await request(buildApp()).get('/files/fid-race/preview');
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ file_id: 'fid-race', status: 'ready' });
   });
 
-  it('returns 500 with a stable shape if findFileById throws unexpectedly', async () => {
+  it('returns 500 with a stable shape if the text fetch throws unexpectedly', async () => {
     mockGetFiles.mockResolvedValueOnce([
-      { file_id: 'fid-boom', user: OWNER_USER_ID, filename: 'data.xlsx' },
+      { file_id: 'fid-boom', user: OWNER_USER_ID, filename: 'data.xlsx', status: 'ready' },
     ]);
     mockFindFileById.mockRejectedValueOnce(new Error('mongo down'));
     const res = await request(buildApp()).get('/files/fid-boom/preview');
@@ -258,13 +252,14 @@ describe('GET /files/:file_id/preview', () => {
     it('marks a stale pending record as failed:orphaned and returns the swept state', async () => {
       const updatedAt = new Date(Date.now() - STALE_MS);
       mockGetFiles.mockResolvedValueOnce([
-        { file_id: 'fid-stale', user: OWNER_USER_ID, filename: 'data.xlsx' },
+        {
+          file_id: 'fid-stale',
+          user: OWNER_USER_ID,
+          filename: 'data.xlsx',
+          status: 'pending',
+          updatedAt,
+        },
       ]);
-      mockFindFileById.mockResolvedValueOnce({
-        file_id: 'fid-stale',
-        status: 'pending',
-        updatedAt,
-      });
       mockUpdateFile.mockResolvedValueOnce({
         file_id: 'fid-stale',
         status: 'failed',
@@ -275,8 +270,6 @@ describe('GET /files/:file_id/preview', () => {
 
       expect(mockUpdateFile).toHaveBeenCalledWith(
         { file_id: 'fid-stale', status: 'failed', previewError: 'orphaned' },
-        /* Conditional on the same `updatedAt` we observed — a
-         * concurrent legitimate update wins the race. */
         { status: 'pending', updatedAt },
       );
       expect(res.status).toBe(200);
@@ -289,13 +282,14 @@ describe('GET /files/:file_id/preview', () => {
 
     it('does NOT sweep a fresh pending record (within the cutoff window)', async () => {
       mockGetFiles.mockResolvedValueOnce([
-        { file_id: 'fid-fresh', user: OWNER_USER_ID, filename: 'data.xlsx' },
+        {
+          file_id: 'fid-fresh',
+          user: OWNER_USER_ID,
+          filename: 'data.xlsx',
+          status: 'pending',
+          updatedAt: new Date(Date.now() - FRESH_MS),
+        },
       ]);
-      mockFindFileById.mockResolvedValueOnce({
-        file_id: 'fid-fresh',
-        status: 'pending',
-        updatedAt: new Date(Date.now() - FRESH_MS),
-      });
 
       const res = await request(buildApp()).get('/files/fid-fresh/preview');
 
@@ -304,16 +298,49 @@ describe('GET /files/:file_id/preview', () => {
       expect(res.body).toEqual({ file_id: 'fid-fresh', status: 'pending' });
     });
 
+    it('sweeps a record past the 2min cutoff but below the 5min boot-sweep threshold', async () => {
+      /* Pins the cutoff change from 5min to 2min — without this, a
+       * future revert wouldn't fail the suite. */
+      const updatedAt = new Date(Date.now() - 3 * 60 * 1000);
+      mockGetFiles.mockResolvedValueOnce([
+        {
+          file_id: 'fid-mid',
+          user: OWNER_USER_ID,
+          filename: 'data.xlsx',
+          status: 'pending',
+          updatedAt,
+        },
+      ]);
+      mockUpdateFile.mockResolvedValueOnce({
+        file_id: 'fid-mid',
+        status: 'failed',
+        previewError: 'orphaned',
+      });
+
+      const res = await request(buildApp()).get('/files/fid-mid/preview');
+
+      expect(mockUpdateFile).toHaveBeenCalled();
+      expect(res.body).toEqual({
+        file_id: 'fid-mid',
+        status: 'failed',
+        previewError: 'orphaned',
+      });
+    });
+
     it('does NOT sweep a stale ready record (only pending qualifies)', async () => {
       mockGetFiles.mockResolvedValueOnce([
-        { file_id: 'fid-ready', user: OWNER_USER_ID, filename: 'data.xlsx' },
+        {
+          file_id: 'fid-ready',
+          user: OWNER_USER_ID,
+          filename: 'data.xlsx',
+          status: 'ready',
+          updatedAt: new Date(Date.now() - STALE_MS),
+        },
       ]);
       mockFindFileById.mockResolvedValueOnce({
         file_id: 'fid-ready',
-        status: 'ready',
         text: 'final',
         textFormat: 'html',
-        updatedAt: new Date(Date.now() - STALE_MS),
       });
 
       const res = await request(buildApp()).get('/files/fid-ready/preview');
@@ -323,19 +350,16 @@ describe('GET /files/:file_id/preview', () => {
     });
 
     it('falls through to the original pending payload if the conditional sweep loses the race', async () => {
-      /* If a legitimate concurrent update bumps `updatedAt` between our
-       * findFileById and updateFile, the conditional update returns
-       * null. We fall through to the original record's status — caller
-       * polls again and the next cycle picks up the real state. */
       const updatedAt = new Date(Date.now() - STALE_MS);
       mockGetFiles.mockResolvedValueOnce([
-        { file_id: 'fid-race', user: OWNER_USER_ID, filename: 'data.xlsx' },
+        {
+          file_id: 'fid-race',
+          user: OWNER_USER_ID,
+          filename: 'data.xlsx',
+          status: 'pending',
+          updatedAt,
+        },
       ]);
-      mockFindFileById.mockResolvedValueOnce({
-        file_id: 'fid-race',
-        status: 'pending',
-        updatedAt,
-      });
       mockUpdateFile.mockResolvedValueOnce(null);
 
       const res = await request(buildApp()).get('/files/fid-race/preview');
