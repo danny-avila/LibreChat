@@ -63,7 +63,10 @@ function getPolicyScopes(
   ];
 }
 
-function getScopeCookiePaths(scope: CloudFrontCookieScope): string[] {
+function getScopeCookiePaths(
+  scope: CloudFrontCookieScope,
+  { includeTenantRoot = false }: { includeTenantRoot?: boolean } = {},
+): string[] {
   if (!scope.userId) {
     return [];
   }
@@ -71,7 +74,11 @@ function getScopeCookiePaths(scope: CloudFrontCookieScope): string[] {
   const safeUserId = assertPolicyPathSegment('userId', scope.userId);
   if (scope.tenantId) {
     const safeTenantId = assertPolicyPathSegment('tenantId', scope.tenantId);
-    return [`/t/${safeTenantId}/images/${safeUserId}`, `/t/${safeTenantId}/avatars`];
+    const paths = [`/t/${safeTenantId}/images/${safeUserId}`, `/t/${safeTenantId}/avatars`];
+    if (includeTenantRoot) {
+      paths.push(`/t/${safeTenantId}`);
+    }
+    return paths;
   }
 
   return [`/images/${safeUserId}`, '/avatars'];
@@ -141,12 +148,8 @@ export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieSco
     };
     const paths = new Set(['/images', '/avatars', '/']);
     if (scope.userId) {
-      for (const path of getScopeCookiePaths(scope)) {
+      for (const path of getScopeCookiePaths(scope, { includeTenantRoot: true })) {
         paths.add(path);
-      }
-      if (scope.tenantId) {
-        const safeTenantId = assertPolicyPathSegment('tenantId', scope.tenantId);
-        paths.add(`/t/${safeTenantId}`);
       }
     }
 

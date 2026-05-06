@@ -31,7 +31,7 @@ import type {
   TSkillConflictResponse,
   TSkillFileContentResponse,
 } from 'librechat-data-provider';
-import type { ServerRequest } from '~/types/http';
+import type { ServerRequest, StrategyFunctions } from '~/types';
 import { isBinaryBuffer } from './binary';
 
 /** Thin error shape the skill methods throw on validation failure. */
@@ -107,10 +107,7 @@ export interface SkillsHandlersDeps {
   ) => Promise<void>;
 
   /** Storage strategy resolver — returns stream/URL helpers keyed by source. */
-  getStrategyFunctions: (source: string) => {
-    getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
-    [key: string]: unknown;
-  };
+  getStrategyFunctions: (source: string) => Partial<StrategyFunctions>;
 
   /** ObjectId validation helper from data-schemas. */
   isValidObjectIdString: (value: unknown) => boolean;
@@ -543,12 +540,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
 
       // Fire-and-forget blob cleanup for each file
       for (const file of files) {
-        const { deleteFile: deleteBlob } = getStrategyFunctions(file.source) as {
-          deleteFile?: (
-            r: ServerRequest,
-            f: { filepath: string; user?: string; tenantId?: string | null },
-          ) => Promise<void>;
-        };
+        const { deleteFile: deleteBlob } = getStrategyFunctions(file.source);
         if (deleteBlob) {
           deleteBlob(req, {
             filepath: file.filepath,
@@ -753,12 +745,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       }
 
       // Clean up the stored blob — fire-and-forget so the response isn't delayed
-      const { deleteFile: deleteBlob } = getStrategyFunctions(file.source) as {
-        deleteFile?: (
-          req: ServerRequest,
-          file: { filepath: string; user?: string; tenantId?: string | null },
-        ) => Promise<void>;
-      };
+      const { deleteFile: deleteBlob } = getStrategyFunctions(file.source);
       if (deleteBlob) {
         deleteBlob(req, {
           filepath: file.filepath,

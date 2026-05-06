@@ -174,4 +174,8 @@ export interface ProcessedFile {
 export interface StrategyFunctions {
   getDownloadStream: (req: ServerRequest, filepath: string) => Promise<Readable>;
   getDownloadURL?: (params: DownloadURLParams) => Promise<string>;
+  deleteFile?: (
+    req: ServerRequest,
+    file: { filepath: string; user?: string; tenantId?: string | null },
+  ) => Promise<void>;
 }

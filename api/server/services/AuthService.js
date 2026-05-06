@@ -465,7 +465,7 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
 
 const resolveOpenIDAuthTokenOptions = (optionsOrUserId, existingRefreshToken, tenantId) => {
   if (
-    optionsOrUserId &&
+    optionsOrUserId != null &&
     typeof optionsOrUserId === 'object' &&
     ('userId' in optionsOrUserId ||
       'existingRefreshToken' in optionsOrUserId ||

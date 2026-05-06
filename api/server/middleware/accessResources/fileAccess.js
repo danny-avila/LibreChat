@@ -101,6 +101,8 @@ const fileAccess = async (req, res, next) => {
 
     const fileTenantId = getTenantId(file.tenantId);
     const userTenantId = getTenantId(req.user?.tenantId);
+    // Tenant-scoped files are restricted to their tenant. Legacy files without
+    // tenantId remain governed by owner/agent ACLs for non-tenant migrations.
     if (fileTenantId && fileTenantId !== userTenantId) {
       logger.warn(`[fileAccess] User ${userId} denied cross-tenant access to file ${fileId}`);
       return denyFileAccess(res);

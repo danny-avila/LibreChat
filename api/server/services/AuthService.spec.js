@@ -364,7 +364,26 @@ describe('CloudFront cookie integration', () => {
       refresh_token: 'the-refresh-token',
     };
 
-    it('calls setCloudFrontCookies with response object and user scope', () => {
+    it('calls setCloudFrontCookies with response object and user scope from options', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+
+      setOpenIDAuthTokens(validTokenset, req, res, {
+        userId: 'user-123',
+        tenantId: 'tenantA',
+      });
+
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: 'user-123',
+          tenantId: 'tenantA',
+        },
+        null,
+      );
+    });
+
+    it('keeps backward compatibility with positional user and tenant params', () => {
       const req = mockRequest();
       const res = mockResponse();
 
@@ -375,6 +394,23 @@ describe('CloudFront cookie integration', () => {
         {
           userId: 'user-123',
           tenantId: 'tenantA',
+        },
+        null,
+      );
+    });
+
+    it('treats a null options argument as an empty legacy user id', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(validTokenset, req, res, null);
+
+      expect(result).toBe('the-id-token');
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: null,
+          tenantId: undefined,
         },
         null,
       );

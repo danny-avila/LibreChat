@@ -17,6 +17,10 @@ type AvatarConfig =
 
 const sharedAvatarBasePathStrategies = new Set<string>([FileSources.s3, FileSources.cloudfront]);
 
+/**
+ * Resolves the storage strategy used for avatars. `fallbackStrategy` is usually
+ * `process.env.CDN_PROVIDER`; undefined is valid and falls back to local storage.
+ */
 export function getAvatarFileStrategy(
   appConfig: AvatarConfig,
   fallbackStrategy?: string | null,
