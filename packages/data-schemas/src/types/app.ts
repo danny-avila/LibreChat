@@ -8,6 +8,7 @@ import type {
   EModelEndpoint,
   TVertexAIConfig,
   TAgentsEndpoint,
+  CloudFrontConfig,
   TCustomEndpoints,
   TAssistantEndpoint,
   TAnthropicEndpoint,
@@ -61,10 +62,12 @@ export interface AppConfig {
   summarization?: SummarizationConfig;
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
-  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
+  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob', 'cloudfront') */
   fileStrategy: FileStorage;
   /** File strategies configuration */
   fileStrategies?: TCustomConfig['fileStrategies'];
+  /** CloudFront CDN configuration */
+  cloudfront?: CloudFrontConfig;
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
   /** Actions configurations */
@@ -98,6 +101,8 @@ export interface AppConfig {
   /** Available tools */
   availableTools?: Record<string, FunctionTool>;
   endpoints?: {
+    /** Admin exemption list of hostnames/IPs that bypass the SSRF private-IP block */
+    allowedAddresses?: string[];
     /** OpenAI endpoint configuration */
     openAI?: Partial<TEndpoint>;
     /** Google endpoint configuration */

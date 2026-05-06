@@ -139,20 +139,15 @@
     "typescript-eslint": "^8.24.0"
   },
   "overrides": {
-    "@anthropic-ai/sdk": "0.73.0",
     "@xmldom/xmldom": "^0.8.13",
-    "@librechat/agents": {
-      "@langchain/anthropic": {
-        "@anthropic-ai/sdk": "0.73.0",
-        "fast-xml-parser": "5.6.0"
-      },
-      "@anthropic-ai/sdk": "0.73.0",
-      "fast-xml-parser": "5.6.0"
-    },
     "elliptic": "^6.6.1",
-    "fast-xml-parser": "5.6.0",
     "form-data": "^4.0.4",
+    "langsmith": "^0.6.0",
+    "postcss": "^8.5.13",
     "tslib": "^2.8.1",
+    "@anthropic-ai/sdk": "^0.92.0",
+    "fast-xml-parser": "5.7.2",
+    "serialize-javascript": "7.0.5",
     "mdast-util-gfm-autolink-literal": "2.0.0",
     "remark-gfm": {
       "mdast-util-gfm-autolink-literal": "2.0.0"
@@ -169,7 +164,6 @@
         "katex": "^0.16.21"
       }
     },
-    "langsmith": "0.4.12",
     "eslint": {
       "ajv": "6.14.0"
     },

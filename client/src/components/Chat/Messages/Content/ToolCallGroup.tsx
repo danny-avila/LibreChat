@@ -1,28 +1,14 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { ChevronDown } from 'lucide-react';
-import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
+import { ChevronDown, Users } from 'lucide-react';
+import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, Agents, FunctionToolCall } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
-import type { TranslationKeys } from '~/hooks';
-import { StackedToolIcons, getMCPServerName } from './ToolOutput';
+import { StackedToolIcons } from './ToolOutput';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { useMCPIconMap } from '~/hooks/MCP';
-import { cn } from '~/utils';
+import { cn, getToolDisplayLabel } from '~/utils';
 import store from '~/store';
-
-/** Maps tool names to translation keys — resolved via localize() at render time. */
-const FRIENDLY_NAME_KEYS: Record<string, TranslationKeys> = {
-  execute_code: 'com_ui_tool_name_code',
-  run_tools_with_code: 'com_ui_tool_name_code',
-  web_search: 'com_ui_tool_name_web_search',
-  image_gen_oai: 'com_ui_tool_name_image_gen',
-  image_edit_oai: 'com_ui_tool_name_image_edit',
-  gemini_image_gen: 'com_ui_tool_name_image_gen',
-  file_search: 'com_ui_tool_name_file_search',
-  code_interpreter: 'com_ui_tool_name_code_analysis',
-  retrieval: 'com_ui_tool_name_file_search',
-};
 
 interface ToolMeta {
   name: string;
@@ -41,8 +27,13 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
   const isStandard =
     'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
   if (isStandard) {
-    const tc = toolCall as Agents.ToolCall;
-    return { name: tc.name ?? '', hasOutput: !!tc.output };
+    const tc = toolCall as Agents.ToolCall & { progress?: number };
+    /** Subagents can finish with `progress === 1` and no final output
+     *  text (the parent saw "" / undefined back). Fall back to progress
+     *  so the group header flips from "Running N agents" to "Ran N
+     *  agents" on completion even when the child returned no text. */
+    const completed = !!tc.output || tc.progress === 1;
+    return { name: tc.name ?? '', hasOutput: completed };
   }
 
   if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
@@ -88,16 +79,29 @@ export default function ToolCallGroup({
   );
   const toolNames = useMemo(() => toolMetadata.map((m) => m?.name ?? ''), [toolMetadata]);
 
+  /** Subagent tool calls get their own label verb ("Running/Ran N agents")
+   *  since "Used N tools" reads oddly when the "tools" are actually child
+   *  agents. `subagentCount === count` ⇒ the group is 100% subagents. */
+  const subagentCount = useMemo(
+    () => toolNames.filter((n) => n === Constants.SUBAGENT).length,
+    [toolNames],
+  );
+  const allSubagents = subagentCount > 0 && subagentCount === count;
+  /** Past-tense label once the parent stream is no longer live OR every
+   *  child has a terminal signal (output / progress === 1). Without the
+   *  `!isSubmitting` branch, a cancelled or errored subagent that never
+   *  reached `progress === 1` would leave the header stuck on "Running
+   *  N agents" forever — each individual card already renders its own
+   *  terminal state ("Cancelled agent", "Agent errored"), so the group
+   *  summary needs to match that tense. */
+  const subagentsDone = allSubagents && (allCompleted || !isSubmitting);
+
   const toolNameSummary = useMemo(() => {
     const seen = new Set<string>();
     const labels: string[] = [];
     for (const rawName of toolNames) {
-      if (!rawName) {
-        continue;
-      }
-      const serverName = getMCPServerName(rawName);
-      const nameKey = FRIENDLY_NAME_KEYS[rawName];
-      const label = serverName || (nameKey ? localize(nameKey) : rawName);
+      if (!rawName) continue;
+      const label = getToolDisplayLabel(rawName, localize);
       if (!seen.has(label)) {
         seen.add(label);
         labels.push(label);
@@ -144,18 +148,47 @@ export default function ToolCallGroup({
         className="inline-flex w-full items-center gap-2 py-1 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
         onClick={handleToggle}
         aria-expanded={isExpanded}
-        aria-label={localize('com_ui_used_n_tools', { 0: String(count) })}
+        aria-label={
+          allSubagents
+            ? subagentsDone
+              ? localize('com_ui_ran_n_agents', { 0: String(count) })
+              : localize('com_ui_running_n_agents', { 0: String(count) })
+            : localize('com_ui_used_n_tools', { 0: String(count) })
+        }
       >
-        <StackedToolIcons
-          toolNames={toolNames}
-          mcpIconMap={mcpIconMap}
-          maxIcons={4}
-          isAnimating={!allCompleted && isSubmitting}
-        />
+        {allSubagents ? (
+          /** Subagent groups don't have per-tool icons — StackedToolIcons
+           *  falls back to a generic wrench that reads as "tools" rather
+           *  than "agents". A single Users glyph matches the individual
+           *  subagent card header and keeps the visual language consistent. */
+          <div
+            className={cn(
+              'flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary',
+              !allCompleted && isSubmitting && 'animate-pulse text-primary',
+            )}
+            aria-hidden="true"
+          >
+            <Users size={14} />
+          </div>
+        ) : (
+          <StackedToolIcons
+            toolNames={toolNames}
+            mcpIconMap={mcpIconMap}
+            maxIcons={4}
+            isAnimating={!allCompleted && isSubmitting}
+          />
+        )}
         <span className="tool-status-text font-medium">
-          {localize('com_ui_used_n_tools', { 0: String(count) })}
+          {allSubagents
+            ? subagentsDone
+              ? localize('com_ui_ran_n_agents', { 0: String(count) })
+              : localize('com_ui_running_n_agents', { 0: String(count) })
+            : localize('com_ui_used_n_tools', { 0: String(count) })}
         </span>
-        {toolNameSummary && (
+        {/** Hide the tool-name summary for pure-subagent groups — every
+         *   entry deduplicates to the same "subagent" token, which adds
+         *   noise without info. Mixed groups keep the summary. */}
+        {toolNameSummary && !allSubagents && (
           <span className="text-xs font-normal text-text-secondary">— {toolNameSummary}</span>
         )}
         <ChevronDown

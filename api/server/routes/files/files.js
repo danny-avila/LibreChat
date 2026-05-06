@@ -1,6 +1,5 @@
 const fs = require('fs').promises;
 const express = require('express');
-const { EnvVar } = require('@librechat/agents');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   refreshS3FileUrls,
@@ -29,7 +28,6 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission } = require('~/server/services/PermissionService');
-const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { cleanFileName } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
@@ -287,18 +285,93 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
       return res.status(501).send('Not Implemented');
     }
 
-    const result = await loadAuthValues({ userId: req.user.id, authFields: [EnvVar.CODE_API_KEY] });
-
     /** @type {AxiosResponse<ReadableStream> | undefined} */
-    const response = await getDownloadStream(
-      `${session_id}/${fileId}`,
-      result[EnvVar.CODE_API_KEY],
-    );
+    const response = await getDownloadStream(`${session_id}/${fileId}`);
     res.set(response.headers);
     response.data.pipe(res);
   } catch (error) {
     logger.error('Error downloading file:', error);
     res.status(500).send('Error downloading file');
+  }
+});
+
+/* Lazy-sweep cutoff: pending records older than this are marked failed
+ * on the next poll. 2min is well past the 60s render ceiling, so any
+ * `pending` past it is definitively orphaned. Tighter than the boot
+ * sweep (5min) since this runs per-request, not per-instance. */
+const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
+
+/**
+ * Poll the lifecycle status of a code-execution file's inline preview.
+ *
+ * Deferred-preview flow: the immediate persist step writes the file
+ * record at `status: 'pending'`; the background render transitions
+ * it to `'ready'` (with `text` + `textFormat`) or `'failed'` (with
+ * `previewError`). The frontend's `useFilePreview` React Query hook
+ * polls this endpoint at ~2.5s intervals while `status === 'pending'`,
+ * then auto-stops on terminal status.
+ *
+ * Returns the smallest viable shape:
+ *   - `status` always present (defaults to `'ready'` for legacy records
+ *     that never had the field — clients treat absent as ready).
+ *   - `text` and `textFormat` only when status is 'ready' AND text
+ *     is non-null (preserves the security contract from PR #12934 —
+ *     office bucket files MUST NOT receive plain-text fallbacks).
+ *   - `previewError` only when status is 'failed'.
+ *
+ * Lazy-sweeps stale `pending` records on the spot — see
+ * `PREVIEW_LAZY_SWEEP_CUTOFF_MS` for the rationale.
+ *
+ * Reuses the `fileAccess` middleware so ACL is identical to download.
+ *
+ * @route GET /files/:file_id/preview
+ */
+router.get('/:file_id/preview', fileAccess, async (req, res) => {
+  try {
+    const { file_id } = req.params;
+    /* `fileAccess` already fetched the record (sans `text`, the default
+     * projection drops it). Reuse for the lifecycle check; only re-fetch
+     * with `text` on a terminal ready response — the typical lifecycle
+     * is N pending polls + 1 ready, so this avoids ~N redundant text
+     * reads per file. */
+    let file = req.fileAccess.file;
+    /* Lazy sweep: if stuck `pending` past the cutoff, mark `failed`
+     * conditional on the observed `updatedAt` (concurrent legitimate
+     * updates win). */
+    if (file.status === 'pending' && file.updatedAt instanceof Date) {
+      const ageMs = Date.now() - file.updatedAt.getTime();
+      if (ageMs > PREVIEW_LAZY_SWEEP_CUTOFF_MS) {
+        const swept = await db.updateFile(
+          { file_id, status: 'failed', previewError: 'orphaned' },
+          { status: 'pending', updatedAt: file.updatedAt },
+        );
+        if (swept) {
+          file = swept;
+          logger.info(
+            `[/files/:file_id/preview] Lazy-swept orphaned pending record ${file_id} (age ${Math.round(ageMs / 1000)}s)`,
+          );
+        }
+      }
+    }
+    /* Default to 'ready' for back-compat: legacy records pre-date the
+     * field, and non-office files never get a status set on persist. */
+    const status = file.status ?? 'ready';
+    const payload = { file_id, status };
+    if (status === 'ready') {
+      const withText = await db.findFileById(file_id);
+      if (withText?.text != null) {
+        payload.text = withText.text;
+        payload.textFormat = withText.textFormat ?? null;
+      }
+    } else if (status === 'failed' && file.previewError) {
+      payload.previewError = file.previewError;
+    }
+    return res.status(200).json(payload);
+  } catch (error) {
+    logger.error('[/files/:file_id/preview] Error fetching preview status:', error);
+    return res
+      .status(500)
+      .json({ error: 'Internal Server Error', message: 'Failed to fetch preview status' });
   }
 });
 

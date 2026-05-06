@@ -109,6 +109,7 @@ export class MCPManager extends UserConnectionManager {
     const registry = MCPServersRegistry.getInstance();
     const useSSRFProtection = registry.shouldEnableSSRFProtection();
     const allowedDomains = registry.getAllowedDomains();
+    const allowedAddresses = registry.getAllowedAddresses();
     const dbSourced = isUserSourced(serverConfig);
     const basic: t.BasicConnectionOptions = {
       dbSourced,
@@ -116,6 +117,7 @@ export class MCPManager extends UserConnectionManager {
       serverConfig,
       useSSRFProtection,
       allowedDomains,
+      allowedAddresses,
     };
 
     if (!useOAuth) {

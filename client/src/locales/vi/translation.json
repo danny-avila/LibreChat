@@ -124,7 +124,6 @@
   "com_auth_welcome_back": "Chào mừng trở lại",
   "com_click_to_download": "(nhấp vào đây để tải xuống)",
   "com_download_expired": "(tải xuống đã hết hạn)",
-  "com_download_expires": "(nhấp vào đây để tải xuống - hết hạn {{0}})",
   "com_endpoint": "Điểm kết thúc",
   "com_endpoint_agent": "Đặc trưng",
   "com_endpoint_anthropic_maxoutputtokens": "Số mã thông báo tối đa có thể được tạo ra trong phản hồi. Chỉ định một giá trị thấp hơn cho các phản hồi ngắn hơn và một giá trị cao hơn cho các phản hồi dài hơn.",
