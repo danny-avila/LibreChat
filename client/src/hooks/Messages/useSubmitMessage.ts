@@ -3,11 +3,13 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { replaceSpecialVars } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useUpdateFarmerPlatformMutation } from '~/data-provider';
 import store from '~/store';
 
 export default function useSubmitMessage() {
   const { user } = useAuthContext();
   const methods = useChatFormContext();
+  const updateFarmerPlatform = useUpdateFarmerPlatformMutation();
   const { conversation: addedConvo } = useAddedChatContext();
   const { ask, index, getMessages, setMessages, latestMessage } = useChatContext();
 
@@ -27,6 +29,14 @@ export default function useSubmitMessage() {
         setMessages([...(rootMessages || []), latestMessage]);
       }
 
+      const ua = navigator.userAgent;
+      let platform = 'Unknown';
+      if (/android/i.test(ua)) platform = 'Android';
+      else if (/iphone|ipad|ipod/i.test(ua)) platform = 'iOS';
+      else if (/windows/i.test(ua)) platform = 'Windows';
+      else if (/macintosh|mac os x/i.test(ua)) platform = 'MacOS';
+      else if (/linux/i.test(ua)) platform = 'Linux';
+      updateFarmerPlatform.mutate(platform);
       ask(
         {
           text: data.text,
@@ -38,7 +48,7 @@ export default function useSubmitMessage() {
       );
       methods.reset();
     },
-    [ask, methods, addedConvo, setMessages, getMessages, latestMessage],
+    [ask, methods, addedConvo, setMessages, getMessages, latestMessage, updateFarmerPlatform],
   );
 
   const submitPrompt = useCallback(
