@@ -1,7 +1,7 @@
 import crypto from 'crypto';
-import { logger } from '@librechat/data-schemas';
 import { getSignedUrl } from '@aws-sdk/cloudfront-signer';
 import { CloudFrontClient, CreateInvalidationCommand } from '@aws-sdk/client-cloudfront';
+import { logger } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
 import type { Readable } from 'stream';
 import type { ServerRequest } from '~/types';
@@ -55,7 +55,7 @@ function buildCloudFrontUrl(s3Key: string): string {
   return `${cleanDomain}/${cleanKey}`;
 }
 
-function signUrl(url: string): string {
+function signUrl(url: string | URL): string {
   const config = getCloudFrontConfig();
   if (!config?.privateKey || !config?.keyPairId) {
     throw new Error('[signUrl] Signing keys not configured.');
@@ -64,9 +64,9 @@ function signUrl(url: string): string {
   const expiry = config.urlExpiry ?? s3Config.S3_URL_EXPIRY_SECONDS;
   const expiresAtMs = Date.now() + expiry * 1000;
   const expiresAtEpoch = Math.floor(expiresAtMs / 1000);
-  const dateLessThan = new Date(expiresAtMs).toISOString();
 
-  const parsedUrl = new URL(url);
+  const urlString = url.toString();
+  const parsedUrl = url instanceof URL ? url : new URL(urlString);
   if (parsedUrl.search) {
     const policy = JSON.stringify({
       Statement: [
@@ -82,7 +82,7 @@ function signUrl(url: string): string {
     });
 
     return getSignedUrl({
-      url,
+      url: urlString,
       keyPairId: config.keyPairId,
       privateKey: config.privateKey,
       policy,
@@ -90,10 +90,10 @@ function signUrl(url: string): string {
   }
 
   return getSignedUrl({
-    url,
+    url: urlString,
     keyPairId: config.keyPairId,
     privateKey: config.privateKey,
-    dateLessThan,
+    dateLessThan: new Date(expiresAtMs).toISOString(),
   });
 }
 
@@ -101,7 +101,7 @@ function appendDownloadOverrides(
   url: string,
   customFilename: string | null,
   contentType: string | null,
-): string {
+): URL {
   const downloadUrl = new URL(url);
 
   if (customFilename) {
@@ -115,7 +115,7 @@ function appendDownloadOverrides(
     downloadUrl.searchParams.set('response-content-type', contentType);
   }
 
-  return downloadUrl.toString();
+  return downloadUrl;
 }
 
 /**

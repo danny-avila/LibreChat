@@ -1,5 +1,5 @@
-import { logger } from '@librechat/data-schemas';
 import { getSignedCookies } from '@aws-sdk/cloudfront-signer';
+import { logger } from '@librechat/data-schemas';
 
 import type { Response } from 'express';
 
@@ -238,8 +238,6 @@ export function setCloudFrontCookies(
         stalePaths.add(path);
       }
     }
-    clearCookiePaths(res, sharedCookieOptions, stalePaths);
-    const baseCookieOptions = { ...sharedCookieOptions, expires: expiresAt };
 
     for (const { cookies } of signedCookieSets) {
       for (const key of REQUIRED_CF_COOKIES) {
@@ -249,6 +247,9 @@ export function setCloudFrontCookies(
         }
       }
     }
+
+    clearCookiePaths(res, sharedCookieOptions, stalePaths);
+    const baseCookieOptions = { ...sharedCookieOptions, expires: expiresAt };
 
     for (const { cookies, path } of signedCookieSets) {
       const cookieOptions = { ...baseCookieOptions, path };

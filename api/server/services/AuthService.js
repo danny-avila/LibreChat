@@ -404,15 +404,21 @@ const resetPassword = async (userId, token, password) => {
 };
 
 /**
- * Set Auth Tokens
- * @param {String | ObjectId} userId
- * @param {ServerResponse} res
- * @param {ISession | null} [session=null]
- * @returns
+ * Reads the previously issued CloudFront cookie scope used for stale cookie cleanup.
+ * @param {ServerRequest | null} [req=null]
+ * @returns {import('@librechat/api').CloudFrontCookieScope | null}
  */
 const getPreviousCloudFrontScope = (req) =>
   parseCloudFrontCookieScope(req?.cookies?.[CLOUDFRONT_SCOPE_COOKIE]);
 
+/**
+ * Set Auth Tokens
+ * @param {String | ObjectId} userId
+ * @param {ServerResponse} res
+ * @param {ISession | null} [_session=null]
+ * @param {ServerRequest | null} [req=null]
+ * @returns
+ */
 const setAuthTokens = async (userId, res, _session = null, req = null) => {
   try {
     let session = _session;
@@ -497,7 +503,7 @@ const setOpenIDAuthTokens = (
   tokenset,
   req,
   res,
-  optionsOrUserId = {},
+  optionsOrUserId = null,
   existingRefreshTokenArg,
   tenantIdArg,
 ) => {

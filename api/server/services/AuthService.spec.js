@@ -416,6 +416,23 @@ describe('CloudFront cookie integration', () => {
       );
     });
 
+    it('treats omitted options as an empty legacy user id', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(validTokenset, req, res);
+
+      expect(result).toBe('the-id-token');
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: null,
+          tenantId: undefined,
+        },
+        null,
+      );
+    });
+
     it('succeeds even when setCloudFrontCookies returns false', () => {
       setCloudFrontCookies.mockReturnValue(false);
 

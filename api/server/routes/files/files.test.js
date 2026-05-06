@@ -461,7 +461,6 @@ describe('File Routes - Delete with Agent Access', () => {
         type: 'application/pdf',
       });
       expect(response.headers['cache-control']).toBe('no-store');
-      expect(response.headers.pragma).toBe('no-cache');
       expect(response.body.metadata).toMatchObject({
         file_id: userFileId,
         filename: 'file.pdf',
@@ -562,6 +561,7 @@ describe('File Routes - Delete with Agent Access', () => {
         bytes: 200,
         type: 'application/pdf',
         source: FileSources.cloudfront,
+        text: 'private extracted text',
       });
 
       const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
@@ -569,6 +569,18 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(response.status).toBe(200);
       expect(response.body.toString()).toBe('file content');
       expect(response.headers.location).toBeUndefined();
+      const metadata = JSON.parse(response.headers['x-file-metadata']);
+      expect(metadata).toMatchObject({
+        file_id: userFileId,
+        filename: 'file.pdf',
+        source: FileSources.cloudfront,
+      });
+      expect(metadata).not.toHaveProperty('_id');
+      expect(metadata).not.toHaveProperty('__v');
+      expect(metadata).not.toHaveProperty('user');
+      expect(metadata).not.toHaveProperty('tenantId');
+      expect(metadata).not.toHaveProperty('filepath');
+      expect(metadata).not.toHaveProperty('text');
       expect(getDownloadURL).not.toHaveBeenCalled();
       expect(getDownloadStream).toHaveBeenCalledWith(expect.any(Object), 'uploads/user/file.pdf');
     });
@@ -597,7 +609,6 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(response.headers.location).toBe('https://cdn.example.com/file.pdf?signed');
       expect(response.headers['x-file-metadata']).toBeUndefined();
       expect(response.headers['cache-control']).toBe('no-store');
-      expect(response.headers.pragma).toBe('no-cache');
       expect(getDownloadStream).not.toHaveBeenCalled();
     });
 
@@ -617,10 +628,21 @@ describe('File Routes - Delete with Agent Access', () => {
         source: FileSources.s3,
       });
 
-      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+      const response = await request(app).get(
+        `/files/download/${otherUserId}/${userFileId}?direct=true`,
+      );
 
       expect(response.status).toBe(200);
       expect(response.body.toString()).toBe('file content');
+      expect(response.headers.location).toBeUndefined();
+      expect(response.headers['cache-control']).toBeUndefined();
+      expect(getDownloadURL).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file: expect.objectContaining({ file_id: userFileId }),
+          customFilename: 'file.txt',
+          contentType: 'text/plain',
+        }),
+      );
       expect(getDownloadStream).toHaveBeenCalledWith(expect.any(Object), 'uploads/user/file.txt');
     });
   });

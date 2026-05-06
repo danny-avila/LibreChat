@@ -141,6 +141,25 @@ describe('fileAccess middleware', () => {
       });
     });
 
+    test('should allow tenant-scoped users to access owned legacy files without tenantId', async () => {
+      await createFile({
+        user: testUser._id.toString(),
+        file_id: 'legacy_file_owned_by_user',
+        filepath: '/test/legacy.txt',
+        filename: 'legacy.txt',
+        type: 'text/plain',
+        size: 100,
+      });
+
+      req.user.tenantId = 'tenant-b';
+      req.params.file_id = 'legacy_file_owned_by_user';
+      await fileAccess(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(req.fileAccess.file.file_id).toBe('legacy_file_owned_by_user');
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
     test('should return 404 when file does not exist', async () => {
       req.params.file_id = 'non_existent_file';
       await fileAccess(req, res, next);

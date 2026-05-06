@@ -171,6 +171,7 @@ export interface ProcessedFile {
   };
 }
 
+/** Subset of storage strategy functions needed by download and delete access flows. */
 export interface StrategyFunctions {
   getDownloadStream: (req: ServerRequest, filepath: string) => Promise<Readable>;
   getDownloadURL?: (params: DownloadURLParams) => Promise<string>;

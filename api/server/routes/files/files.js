@@ -393,18 +393,39 @@ const getDirectDownloadURL = async ({ req, file }) => {
   });
 };
 
+const DOWNLOAD_METADATA_FIELDS = [
+  'conversationId',
+  'message',
+  'file_id',
+  'temp_file_id',
+  'bytes',
+  'embedded',
+  'filename',
+  'object',
+  'type',
+  'usage',
+  'context',
+  'source',
+  'filterSource',
+  'width',
+  'height',
+  'expiresAt',
+  'preview',
+  'textFormat',
+  'status',
+  'previewError',
+  'createdAt',
+  'updatedAt',
+];
+
 const getDownloadFileMetadata = (file) => {
   const rawFile = typeof file.toObject === 'function' ? file.toObject() : file;
-  const {
-    _id: _internalId,
-    __v: _internalVersion,
-    user: _ownerId,
-    tenantId: _tenantId,
-    filepath: _storedPath,
-    text: _extractedText,
-    ...metadata
-  } = rawFile;
-  return metadata;
+  return DOWNLOAD_METADATA_FIELDS.reduce((metadata, field) => {
+    if (rawFile[field] !== undefined) {
+      metadata[field] = rawFile[field];
+    }
+    return metadata;
+  }, {});
 };
 
 router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
@@ -432,7 +453,6 @@ router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
     }
 
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Pragma', 'no-cache');
     return res.status(200).json({
       url: downloadURL,
       filename: cleanFileName(file.filename),
@@ -470,7 +490,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       const cleanedFilename = cleanFileName(file.filename);
       res.setHeader('Content-Disposition', `attachment; filename="${cleanedFilename}"`);
       res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('X-File-Metadata', JSON.stringify(file));
+      res.setHeader('X-File-Metadata', JSON.stringify(getDownloadFileMetadata(file)));
     };
 
     if (checkOpenAIStorage(file.source)) {
@@ -502,7 +522,6 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
           const downloadURL = await getDirectDownloadURL({ req, file });
           if (downloadURL) {
             res.setHeader('Cache-Control', 'no-store');
-            res.setHeader('Pragma', 'no-cache');
             return res.redirect(302, downloadURL);
           }
         } catch (error) {

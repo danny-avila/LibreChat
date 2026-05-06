@@ -43,6 +43,8 @@ cache: true
 #   urlExpiry: 3600                         # Signed CloudFront download URL lifetime in seconds
 #   # Direct-download filename/content-type overrides require CloudFront to forward
 #   # response-content-disposition and response-content-type query strings to S3.
+#   # Recommended for download paths: attach a CloudFront response headers policy
+#   # with X-Content-Type-Options: nosniff and CSP default-src 'none'.
 
 # Custom interface configuration
 interface:

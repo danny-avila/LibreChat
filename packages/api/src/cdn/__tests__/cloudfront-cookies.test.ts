@@ -16,7 +16,11 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 import type { Response } from 'express';
-import { setCloudFrontCookies, clearCloudFrontCookies } from '../cloudfront-cookies';
+import {
+  setCloudFrontCookies,
+  clearCloudFrontCookies,
+  parseCloudFrontCookieScope,
+} from '../cloudfront-cookies';
 
 const { logger: mockLogger } = jest.requireMock('@librechat/data-schemas') as {
   logger: { warn: jest.Mock; error: jest.Mock; info: jest.Mock; debug: jest.Mock };
@@ -403,6 +407,7 @@ describe('setCloudFrontCookies', () => {
 
     expect(result).toBe(false);
     expect(mockRes.cookie).not.toHaveBeenCalled();
+    expect(mockRes.clearCookie).not.toHaveBeenCalled();
     expect(mockLogger.error).toHaveBeenCalledWith(
       expect.stringContaining('Missing expected cookie from AWS SDK'),
     );
@@ -424,6 +429,7 @@ describe('setCloudFrontCookies', () => {
 
     expect(result).toBe(false);
     expect(mockRes.cookie).not.toHaveBeenCalled();
+    expect(mockRes.clearCookie).not.toHaveBeenCalled();
   });
 
   it('returns false when userId is missing from scope', () => {
@@ -489,6 +495,36 @@ describe('setCloudFrontCookies', () => {
       '[setCloudFrontCookies] Failed to generate signed cookies:',
       signingError,
     );
+  });
+});
+
+describe('parseCloudFrontCookieScope', () => {
+  const encodeScope = (scope: object) =>
+    Buffer.from(JSON.stringify(scope), 'utf8').toString('base64url');
+
+  it('round-trips a valid user and tenant scope', () => {
+    const value = encodeScope({ userId: 'user123', tenantId: 'tenantA' });
+
+    expect(parseCloudFrontCookieScope(value)).toEqual({
+      userId: 'user123',
+      tenantId: 'tenantA',
+    });
+  });
+
+  it('returns null for empty, malformed, or userless values', () => {
+    expect(parseCloudFrontCookieScope(null)).toBeNull();
+    expect(parseCloudFrontCookieScope(undefined)).toBeNull();
+    expect(parseCloudFrontCookieScope('')).toBeNull();
+    expect(parseCloudFrontCookieScope('not-json')).toBeNull();
+    expect(parseCloudFrontCookieScope(encodeScope({ tenantId: 'tenantA' }))).toBeNull();
+  });
+
+  it('rejects traversal and wildcard path segments', () => {
+    expect(parseCloudFrontCookieScope(encodeScope({ userId: '../user' }))).toBeNull();
+    expect(parseCloudFrontCookieScope(encodeScope({ userId: 'user*' }))).toBeNull();
+    expect(
+      parseCloudFrontCookieScope(encodeScope({ userId: 'user123', tenantId: 'tenant A' })),
+    ).toBeNull();
   });
 });
 
