@@ -60,11 +60,7 @@ export default function AgentConfig() {
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
   const [showMCPToolDialog, setShowMCPToolDialog] = useState(false);
-<<<<<<< HEAD
   const [showComplexBanner, setShowComplexBanner] = useRecoilState(showAgentComplexBanner);
-=======
-  const [showSkillDialog, setShowSkillDialog] = useState(false);
->>>>>>> 6c6c72def764765687950235aefaa48acad45aa3
   const {
     actions,
     setAction,
