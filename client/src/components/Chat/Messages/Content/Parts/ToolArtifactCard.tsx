@@ -70,6 +70,8 @@ interface ToolArtifactCardProps {
 const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) => {
   const localize = useLocalize();
   const claimKey = useId();
+  const file = attachment as TFile & TAttachmentMetadata;
+  const fileId = file.file_id;
   const setVisible = useSetRecoilState(store.artifactsVisibility);
   const setArtifacts = useSetRecoilState(store.artifactsState);
   const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
@@ -79,6 +81,22 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const [claim, setClaim] = useRecoilState(store.toolArtifactClaim(artifact.id));
   const isSelected = artifact.id === currentArtifactId;
   const isMyClaim = claim === claimKey;
+  /* Read+reset on mount only — `useRecoilCallback` avoids subscribing
+   * to the per-file_id flag (no re-renders when other files resolve).
+   * The deferred-preview hook flips this to `true` on the pending→ready
+   * edge; we consume it once and reset, so repeat mounts (panel close
+   * then reopen, history scroll) don't auto-open a second time. */
+  const consumeJustResolved = useRecoilCallback(
+    ({ snapshot, reset }) =>
+      (id: string) => {
+        const flagged = snapshot.getLoadable(store.previewJustResolved(id)).valueMaybe() ?? false;
+        if (flagged) {
+          reset(store.previewJustResolved(id));
+        }
+        return flagged;
+      },
+    [],
+  );
   /**
    * Captured at first render via a non-subscribing snapshot read so the
    * downstream effect doesn't re-fire (and the component doesn't
@@ -136,11 +154,6 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   }, [artifact, existingEntry, isMyClaim, setArtifacts]);
 
   useEffect(() => {
-    if (!mountedDuringStreamRef.current) {
-      // Card mounted as part of conversation history — leave focus and
-      // visibility alone so the side panel doesn't auto-open on navigation.
-      return;
-    }
     if (isCodeOnlyArtifact(artifact.type)) {
       // Source-code artifacts (`.py`, `.js`, `.cpp`, `Dockerfile`, …) are
       // click-to-open only. They're typically supporting scripts the
@@ -151,16 +164,33 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       // an HTML deliverable still surfaces immediately.
       return;
     }
-    // Streaming arrival: focus the new artifact AND force the panel
-    // visible. Without `setVisible(true)`, a session where the user had
-    // previously closed the panel (visibility=false) would surface the
-    // selection in the chip ("click to close") but never actually open
-    // — `Presentation` gates rendering on visibility.
+    /* Two paths qualify the card for auto-open:
+     *   1. Streaming-time mount — ref captured `isSubmitting === true`
+     *      at first render. The card is part of the live response, so
+     *      the legacy "panel pops open as artifacts arrive" UX applies.
+     *   2. Just-resolved deferred preview — `useAttachmentPreviewSync`
+     *      sets a one-shot flag on the pending→ready edge. The
+     *      deferred render can complete *after* the SSE stream closes,
+     *      so checking only `isSubmitting` would miss this case (the
+     *      chip would render in place but never auto-open). Consuming
+     *      the flag also resets it, so subsequent re-mounts (panel
+     *      close/reopen, history scroll) do not re-steal focus.
+     * History mounts (file already resolved on page load) hit neither
+     * path, so the panel stays closed on navigation — no jarring
+     * auto-open just from scrolling past an old artifact. */
+    const justResolved = fileId ? consumeJustResolved(fileId) : false;
+    if (!mountedDuringStreamRef.current && !justResolved) {
+      return;
+    }
+    // Streaming arrival or just-resolved preview: focus the new artifact
+    // AND force the panel visible. Without `setVisible(true)`, a session
+    // where the user had previously closed the panel (visibility=false)
+    // would surface the selection in the chip ("click to close") but
+    // never actually open — `Presentation` gates rendering on visibility.
     setCurrentArtifactId(artifact.id);
     setVisible(true);
-  }, [artifact.id, artifact.type, setCurrentArtifactId, setVisible]);
+  }, [artifact.id, artifact.type, fileId, consumeJustResolved, setCurrentArtifactId, setVisible]);
 
-  const file = attachment as TFile & TAttachmentMetadata;
   const { handleDownload } = useAttachmentLink({
     href: attachment.filepath ?? '',
     filename: attachment.filename ?? '',

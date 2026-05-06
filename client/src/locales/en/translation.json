@@ -1305,6 +1305,8 @@
   "com_ui_prev": "Prev",
   "com_ui_prev_result": "Previous result",
   "com_ui_preview": "Preview",
+  "com_ui_preview_failed": "Preview unavailable",
+  "com_ui_preview_preparing": "Preparing preview…",
   "com_ui_preview_unavailable": "Preview not available for this file type",
   "com_ui_privacy_policy": "Privacy policy",
   "com_ui_privacy_policy_url": "Privacy Policy URL",

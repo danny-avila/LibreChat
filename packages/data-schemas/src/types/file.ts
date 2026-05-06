@@ -19,6 +19,35 @@ export interface IMongoFile extends Omit<Document, 'model'> {
    * become executable markup. See Codex P1 review on PR #12934.
    */
   textFormat?: 'html' | 'text';
+  /**
+   * Lifecycle of the inline preview rendered from `text`. Tracks the
+   * deferred-preview code-execution flow (PR #12951 follow-up): the
+   * immediate persist step saves the file blob and emits the attachment
+   * record with `status: 'pending'`; a background render runs HTML
+   * extraction and updates the record to `'ready'` (with `text` +
+   * `textFormat`) or `'failed'` (with `previewError`). Decouples the
+   * agent's final response from CPU-heavy office-format rendering.
+   *
+   * Absent for legacy records and for files that never expect a preview
+   * (RAG uploads, images, plain-text artifacts). Clients MUST treat
+   * `undefined` as `'ready'` so prior-version records render normally.
+   */
+  status?: 'pending' | 'ready' | 'failed';
+  /**
+   * Short machine-readable reason when `status === 'failed'` —
+   * `'timeout'`, `'parser-error'`, `'oversized'`, `'orphaned'`. UI hint
+   * for tooltip text; not user-facing prose. Absent otherwise.
+   */
+  previewError?: string;
+  /**
+   * Generation marker for the deferred-preview lifecycle. The
+   * immediate persist step stamps a fresh UUID on every emit; the
+   * deferred render's update only commits when the marker still
+   * matches. Guards against an older render overwriting a newer
+   * record on cross-turn filename reuse. Absent for legacy records
+   * and for files that never expect a preview.
+   */
+  previewRevision?: string;
   filename: string;
   filepath: string;
   object: 'file';

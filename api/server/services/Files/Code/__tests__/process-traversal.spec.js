@@ -32,6 +32,13 @@ jest.mock('@librechat/api', () => {
      * mock returns null in lockstep with the null `text` above so
      * downstream consumers don't see a phantom format. */
     getExtractedTextFormat: jest.fn(() => null),
+    /* Pass-through `withTimeout`: this suite asserts traversal sanitization,
+     * not deferred preview timing. */
+    withTimeout: async (promise) => promise,
+    /* These traversal cases all use non-office filenames — keep the
+     * inline (non-finalize) path so existing assertions on a single
+     * createFile call hold. */
+    hasOfficeHtmlPath: jest.fn(() => false),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
   };
