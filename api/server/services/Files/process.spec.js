@@ -445,4 +445,37 @@ describe('processFileURL', () => {
       true,
     );
   });
+
+  it('preserves the user path segment for local fallback URLs', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      bytes: 256,
+      type: 'image/png',
+    });
+    const getFileURL = jest.fn().mockResolvedValue('/images/user-123/image.png');
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await processFileURL({
+      fileStrategy: FileSources.local,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+    });
+
+    expect(getFileURL).toHaveBeenCalledWith({
+      userId: 'user-123',
+      fileName: 'user-123/image.png',
+      basePath: 'images',
+      tenantId: 'tenant-a',
+    });
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filepath: '/images/user-123/image.png',
+        tenantId: 'tenant-a',
+      }),
+      true,
+    );
+  });
 });

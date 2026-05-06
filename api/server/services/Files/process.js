@@ -270,10 +270,15 @@ const processFileURL = async ({
       type = '',
       dimensions = {},
     } = typeof savedFile === 'string' ? {} : savedFile;
+    const fallbackFileName =
+      fileStrategy === FileSources.local || fileStrategy === FileSources.firebase
+        ? `${userId}/${fileName}`
+        : fileName;
     const filepath =
       typeof savedFile === 'string'
         ? savedFile
-        : (savedFile.filepath ?? (await getFileURL({ userId, fileName, basePath, tenantId })));
+        : (savedFile.filepath ??
+          (await getFileURL({ userId, fileName: fallbackFileName, basePath, tenantId })));
     if (!filepath) {
       throw new Error(`Strategy "${fileStrategy}" did not return a file URL for "${fileName}"`);
     }
