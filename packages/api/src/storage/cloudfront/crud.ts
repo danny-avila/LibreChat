@@ -10,6 +10,7 @@ import type {
   GetURLParams,
   SaveURLParams,
   UploadFileParams,
+  DownloadURLParams,
   UploadResult,
 } from '~/storage/types';
 import { getCloudFrontConfig } from '~/cdn/cloudfront';
@@ -77,9 +78,10 @@ export async function getCloudFrontURL({
   userId,
   fileName,
   basePath = defaultBasePath,
+  tenantId = null,
   sign = false,
 }: CloudFrontURLParams): Promise<string> {
-  const key = getS3Key(basePath, userId, fileName);
+  const key = getS3Key(basePath, userId, fileName, tenantId);
   const url = buildCloudFrontUrl(key);
   return sign ? signUrl(url) : url;
 }
@@ -146,4 +148,13 @@ export async function getCloudFrontFileStream(
   filePath: string,
 ): Promise<Readable> {
   return getS3FileStream(req, filePath);
+}
+
+/** Get a signed CloudFront URL for an authorized file download. */
+export async function getCloudFrontDownloadURL({ file }: DownloadURLParams): Promise<string> {
+  const key = extractKeyFromS3Url(file.filepath);
+  if (!key) {
+    throw new Error('[getCloudFrontDownloadURL] Unable to extract S3 key from file path');
+  }
+  return signUrl(buildCloudFrontUrl(key));
 }

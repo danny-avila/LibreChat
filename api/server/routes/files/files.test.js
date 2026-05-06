@@ -1,6 +1,7 @@
 const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
+const { Readable } = require('stream');
 const { v4: uuidv4 } = require('uuid');
 const { createMethods } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
@@ -9,6 +10,7 @@ const {
   ResourceType,
   AccessRoleIds,
   PrincipalType,
+  FileSources,
 } = require('librechat-data-provider');
 const { createAgent, createFile } = require('~/models');
 
@@ -61,6 +63,7 @@ jest.mock('~/config', () => ({
 }));
 
 const { processDeleteRequest } = require('~/server/services/Files/process');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 
 // Import the router after mocks
 const router = require('./files');
@@ -110,7 +113,7 @@ describe('File Routes - Delete with Agent Access', () => {
 
     app.use((req, res, next) => {
       req.user = {
-        id: otherUserId || 'default-user',
+        id: otherUserId?.toString() || 'default-user',
         role: SystemRoles.USER,
       };
       req.app = { locals: {} };
@@ -429,6 +432,107 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(response.body.message).toBe('You can only delete files you have access to');
       expect(response.body.unauthorizedFiles).toContain(fileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /files/download-url/:userId/:file_id', () => {
+    it('returns a direct signed download URL when the strategy supports it', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
+      getStrategyFunctions.mockReturnValue({ getDownloadURL });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
+        bytes: 200,
+        type: 'application/pdf',
+        source: FileSources.s3,
+      });
+
+      const response = await request(app).get(`/files/download-url/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        url: 'https://cdn.example.com/file.pdf?signed',
+        filename: 'file.pdf',
+        type: 'application/pdf',
+      });
+      expect(getDownloadURL).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file: expect.objectContaining({ file_id: userFileId }),
+          customFilename: 'file.pdf',
+          contentType: 'application/pdf',
+        }),
+      );
+    });
+
+    it('returns 501 when the strategy does not support direct URLs', async () => {
+      const userFileId = uuidv4();
+      getStrategyFunctions.mockReturnValue({});
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.txt',
+        filepath: 'uploads/user/file.txt',
+        bytes: 200,
+        type: 'text/plain',
+        source: FileSources.local,
+      });
+
+      const response = await request(app).get(`/files/download-url/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(501);
+    });
+  });
+
+  describe('GET /files/download/:userId/:file_id', () => {
+    it('redirects to a direct signed download URL when available', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
+      const getDownloadStream = jest.fn();
+      getStrategyFunctions.mockReturnValue({ getDownloadURL, getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
+        bytes: 200,
+        type: 'application/pdf',
+        source: FileSources.cloudfront,
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe('https://cdn.example.com/file.pdf?signed');
+      expect(getDownloadStream).not.toHaveBeenCalled();
+    });
+
+    it('falls back to streaming when direct URL generation fails', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockRejectedValue(new Error('missing signing keys'));
+      const getDownloadStream = jest.fn().mockResolvedValue(Readable.from(['file content']));
+      getStrategyFunctions.mockReturnValue({ getDownloadURL, getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.txt',
+        filepath: 'uploads/user/file.txt',
+        bytes: 200,
+        type: 'text/plain',
+        source: FileSources.s3,
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.toString()).toBe('file content');
+      expect(getDownloadStream).toHaveBeenCalledWith(expect.any(Object), 'uploads/user/file.txt');
     });
   });
 });

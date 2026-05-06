@@ -245,18 +245,31 @@ const processDeleteRequest = async ({ req, files }) => {
  * @param {string} params.fileName - The name that will be used to save the file (including extension)
  * @param {string} params.basePath - The base path or directory where the file will be saved or retrieved from.
  * @param {FileContext} params.context - The context of the file (e.g., 'avatar', 'image_generation', etc.)
+ * @param {string} [params.tenantId] - Optional tenant identifier for tenant-prefixed storage paths.
  * @returns {Promise<MongoFile>} A promise that resolves to the DB representation (MongoFile)
  *  of the processed file. It throws an error if the file processing fails at any stage.
  */
-const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, context }) => {
+const processFileURL = async ({
+  fileStrategy,
+  userId,
+  URL,
+  fileName,
+  basePath,
+  context,
+  tenantId,
+}) => {
   const { saveURL, getFileURL } = getStrategyFunctions(fileStrategy);
   try {
+    const savedFile = await saveURL({ userId, URL, fileName, basePath, tenantId });
     const {
       bytes = 0,
       type = '',
       dimensions = {},
-    } = (await saveURL({ userId, URL, fileName, basePath })) || {};
-    const filepath = await getFileURL({ fileName: `${userId}/${fileName}`, basePath });
+    } = typeof savedFile === 'string' ? {} : savedFile || {};
+    const filepath =
+      typeof savedFile === 'string'
+        ? savedFile
+        : await getFileURL({ fileName: `${userId}/${fileName}`, basePath });
     return await db.createFile(
       {
         user: userId,
@@ -354,7 +367,12 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     }`;
   }
   const fileName = `${file_id}-${filename}`;
-  const filepath = await saveBuffer({ userId: req.user.id, fileName, buffer });
+  const filepath = await saveBuffer({
+    userId: req.user.id,
+    fileName,
+    buffer,
+    tenantId: req.user.tenantId,
+  });
   return await db.createFile(
     {
       user: req.user.id,
@@ -954,6 +972,7 @@ async function saveBase64Image(
     userId: req.user.id,
     fileName: filename,
     buffer: image.buffer,
+    tenantId: req.user.tenantId,
   });
   return await db.createFile(
     {

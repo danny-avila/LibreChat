@@ -375,6 +375,57 @@ router.get('/:file_id/preview', fileAccess, async (req, res) => {
   }
 });
 
+const getDirectDownloadURL = async ({ req, file }) => {
+  const { getDownloadURL } = getStrategyFunctions(file.source);
+  if (!getDownloadURL) {
+    return null;
+  }
+
+  const cleanedFilename = cleanFileName(file.filename);
+  return getDownloadURL({
+    req,
+    file,
+    customFilename: cleanedFilename,
+    contentType: file.type || 'application/octet-stream',
+  });
+};
+
+router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
+  try {
+    const { userId, file_id } = req.params;
+    logger.debug(`File download URL requested by user ${userId}: ${file_id}`);
+
+    const file = req.fileAccess.file;
+    if (checkOpenAIStorage(file.source) && !file.model) {
+      logger.warn(
+        `File download URL requested by user ${userId} has no associated model: ${file_id}`,
+      );
+      return res.status(400).send('The model used when creating this file is not available');
+    }
+
+    const downloadURL = checkOpenAIStorage(file.source)
+      ? null
+      : await getDirectDownloadURL({ req, file });
+
+    if (!downloadURL) {
+      logger.debug(
+        `File download URL requested by user ${userId} is not supported for source: ${file.source}`,
+      );
+      return res.status(501).send('Not Implemented');
+    }
+
+    return res.status(200).json({
+      url: downloadURL,
+      filename: cleanFileName(file.filename),
+      type: file.type || 'application/octet-stream',
+      metadata: file,
+    });
+  } catch (error) {
+    logger.error('[DOWNLOAD URL ROUTE] Error generating file download URL:', error);
+    res.status(500).send('Error generating file download URL');
+  }
+});
+
 router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   try {
     const { userId, file_id } = req.params;
@@ -388,10 +439,10 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       return res.status(400).send('The model used when creating this file is not available');
     }
 
-    const { getDownloadStream } = getStrategyFunctions(file.source);
-    if (!getDownloadStream) {
+    const { getDownloadStream, getDownloadURL } = getStrategyFunctions(file.source);
+    if (!getDownloadStream && !getDownloadURL) {
       logger.warn(
-        `File download requested by user ${userId} has no stream method implemented: ${file.source}`,
+        `File download requested by user ${userId} has no download method implemented: ${file.source}`,
       );
       return res.status(501).send('Not Implemented');
     }
@@ -427,6 +478,29 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
       stream.pipe(res);
     } else {
+      if (getDownloadURL) {
+        try {
+          const downloadURL = await getDirectDownloadURL({ req, file });
+          if (downloadURL) {
+            res.setHeader('X-File-Metadata', JSON.stringify(file));
+            res.setHeader('Cache-Control', 'no-store');
+            return res.redirect(302, downloadURL);
+          }
+        } catch (error) {
+          logger.warn(
+            '[DOWNLOAD ROUTE] Falling back to stream after URL generation failed:',
+            error,
+          );
+        }
+      }
+
+      if (!getDownloadStream) {
+        logger.warn(
+          `File download requested by user ${userId} has no stream method implemented: ${file.source}`,
+        );
+        return res.status(501).send('Not Implemented');
+      }
+
       const fileStream = await getDownloadStream(req, file.filepath);
 
       fileStream.on('error', (streamError) => {

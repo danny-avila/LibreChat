@@ -62,6 +62,18 @@ export const useFileDownload = (userId?: string, file_id?: string): QueryObserve
         console.warn('No user ID provided for file download');
         return;
       }
+      try {
+        const directDownload = await dataService.getFileDownloadURL(userId, file_id);
+        if (directDownload.metadata) {
+          addFileToCache(queryClient, directDownload.metadata);
+        }
+        if (directDownload.url) {
+          return directDownload.url;
+        }
+      } catch {
+        // Fall back to the legacy proxied download for strategies without direct URLs.
+      }
+
       const response = await dataService.getFileDownload(userId, file_id);
       const blob = response.data;
       const downloadURL = window.URL.createObjectURL(blob);

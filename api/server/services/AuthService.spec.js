@@ -360,13 +360,16 @@ describe('CloudFront cookie integration', () => {
       refresh_token: 'the-refresh-token',
     };
 
-    it('calls setCloudFrontCookies with response object', () => {
+    it('calls setCloudFrontCookies with response object and user scope', () => {
       const req = mockRequest();
       const res = mockResponse();
 
-      setOpenIDAuthTokens(validTokenset, req, res, 'user-123');
+      setOpenIDAuthTokens(validTokenset, req, res, 'user-123', undefined, 'tenantA');
 
-      expect(setCloudFrontCookies).toHaveBeenCalledWith(res);
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(res, {
+        userId: 'user-123',
+        tenantId: 'tenantA',
+      });
     });
 
     it('succeeds even when setCloudFrontCookies returns false', () => {
@@ -383,7 +386,7 @@ describe('CloudFront cookie integration', () => {
 
   describe('setAuthTokens', () => {
     beforeEach(() => {
-      getUserById.mockResolvedValue({ _id: 'user-123' });
+      getUserById.mockResolvedValue({ _id: 'user-123', tenantId: 'tenantA' });
       generateToken.mockResolvedValue('mock-access-token');
       generateRefreshToken.mockReturnValue('mock-refresh-token');
       createSession.mockResolvedValue({
@@ -392,12 +395,15 @@ describe('CloudFront cookie integration', () => {
       });
     });
 
-    it('calls setCloudFrontCookies with response object', async () => {
+    it('calls setCloudFrontCookies with response object and user scope', async () => {
       const res = mockResponse();
 
       await setAuthTokens('user-123', res);
 
-      expect(setCloudFrontCookies).toHaveBeenCalledWith(res);
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(res, {
+        userId: 'user-123',
+        tenantId: 'tenantA',
+      });
     });
 
     it('succeeds even when setCloudFrontCookies returns false', async () => {

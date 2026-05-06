@@ -442,7 +442,10 @@ const setAuthTokens = async (userId, res, _session = null) => {
       sameSite: 'strict',
     });
 
-    setCloudFrontCookies(res);
+    setCloudFrontCookies(res, {
+      userId: user?._id?.toString?.() ?? userId,
+      tenantId: user?.tenantId?.toString?.() ?? user?.tenantId,
+    });
 
     return token;
   } catch (error) {
@@ -464,7 +467,7 @@ const setAuthTokens = async (userId, res, _session = null) => {
  * @param {string} [userId] - Optional MongoDB user ID for image path validation
  * @returns {String} - id_token (preferred) or access_token as the app auth token
  */
-const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) => {
+const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken, tenantId) => {
   try {
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
@@ -562,7 +565,10 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
       });
     }
 
-    setCloudFrontCookies(res);
+    setCloudFrontCookies(res, {
+      userId,
+      tenantId: tenantId ?? req.user?.tenantId,
+    });
 
     return appAuthToken;
   } catch (error) {

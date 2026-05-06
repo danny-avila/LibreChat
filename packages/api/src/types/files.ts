@@ -2,6 +2,7 @@ import type { BedrockDocumentFormat } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Readable } from 'stream';
 import type { ServerRequest } from './http';
+import type { DownloadURLParams } from '~/storage/types';
 export interface STTService {
   getInstance(): Promise<STTService>;
   getProviderSchema(req: ServerRequest): Promise<[string, object]>;
@@ -172,4 +173,5 @@ export interface ProcessedFile {
 
 export interface StrategyFunctions {
   getDownloadStream: (req: ServerRequest, filepath: string) => Promise<Readable>;
+  getDownloadURL?: (params: DownloadURLParams) => Promise<string>;
 }

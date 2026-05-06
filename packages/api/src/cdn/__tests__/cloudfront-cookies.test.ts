@@ -22,6 +22,8 @@ const { logger: mockLogger } = jest.requireMock('@librechat/data-schemas') as {
   logger: { warn: jest.Mock; error: jest.Mock; info: jest.Mock; debug: jest.Mock };
 };
 
+const defaultScope = { userId: 'user123' };
+
 describe('setCloudFrontCookies', () => {
   let mockRes: Partial<Response>;
   let cookieArgs: Array<[string, string, object]>;
@@ -40,7 +42,7 @@ describe('setCloudFrontCookies', () => {
   it('returns false when CloudFront config is null', () => {
     mockGetCloudFrontConfig.mockReturnValue(null);
 
-    const result = setCloudFrontCookies(mockRes as Response);
+    const result = setCloudFrontCookies(mockRes as Response, defaultScope);
 
     expect(result).toBe(false);
     expect(mockRes.cookie).not.toHaveBeenCalled();
@@ -55,7 +57,7 @@ describe('setCloudFrontCookies', () => {
       keyPairId: 'K123',
     });
 
-    const result = setCloudFrontCookies(mockRes as Response);
+    const result = setCloudFrontCookies(mockRes as Response, defaultScope);
 
     expect(result).toBe(false);
     expect(mockRes.cookie).not.toHaveBeenCalled();
@@ -70,7 +72,7 @@ describe('setCloudFrontCookies', () => {
       keyPairId: null,
     });
 
-    const result = setCloudFrontCookies(mockRes as Response);
+    const result = setCloudFrontCookies(mockRes as Response, defaultScope);
 
     expect(result).toBe(false);
     expect(mockRes.cookie).not.toHaveBeenCalled();
@@ -85,7 +87,7 @@ describe('setCloudFrontCookies', () => {
       keyPairId: 'K123ABC',
     });
 
-    const result = setCloudFrontCookies(mockRes as Response);
+    const result = setCloudFrontCookies(mockRes as Response, defaultScope);
 
     expect(result).toBe(false);
     expect(mockRes.cookie).not.toHaveBeenCalled();
@@ -107,7 +109,7 @@ describe('setCloudFrontCookies', () => {
       'CloudFront-Key-Pair-Id': 'K123ABC',
     });
 
-    const result = setCloudFrontCookies(mockRes as Response);
+    const result = setCloudFrontCookies(mockRes as Response, defaultScope);
 
     expect(result).toBe(true);
     expect(mockLogger.warn).not.toHaveBeenCalled();
@@ -116,7 +118,7 @@ describe('setCloudFrontCookies', () => {
     expect(isNaN((options as { expires: Date }).expires.getTime())).toBe(false);
   });
 
-  it('sets three CloudFront cookies when enabled', () => {
+  it('sets separate CloudFront cookie sets for private images and avatars when enabled', () => {
     mockGetCloudFrontConfig.mockReturnValue({
       domain: 'https://cdn.example.com',
       imageSigning: 'cookies',
@@ -132,10 +134,10 @@ describe('setCloudFrontCookies', () => {
       'CloudFront-Key-Pair-Id': 'K123ABC',
     });
 
-    const result = setCloudFrontCookies(mockRes as Response);
+    const result = setCloudFrontCookies(mockRes as Response, defaultScope);
 
     expect(result).toBe(true);
-    expect(mockRes.cookie).toHaveBeenCalledTimes(3);
+    expect(mockRes.cookie).toHaveBeenCalledTimes(6);
 
     const cookieNames = cookieArgs.map(([name]) => name);
     expect(cookieNames).toContain('CloudFront-Policy');
@@ -143,7 +145,7 @@ describe('setCloudFrontCookies', () => {
     expect(cookieNames).toContain('CloudFront-Key-Pair-Id');
   });
 
-  it('uses cookieDomain from config with path', () => {
+  it('uses cookieDomain from config with path-scoped cookies', () => {
     mockGetCloudFrontConfig.mockReturnValue({
       domain: 'https://cdn.example.com',
       imageSigning: 'cookies',
@@ -159,7 +161,7 @@ describe('setCloudFrontCookies', () => {
       'CloudFront-Key-Pair-Id': 'K123ABC',
     });
 
-    setCloudFrontCookies(mockRes as Response);
+    setCloudFrontCookies(mockRes as Response, defaultScope);
 
     const [, , options] = cookieArgs[0];
     expect(options).toMatchObject({
@@ -167,11 +169,12 @@ describe('setCloudFrontCookies', () => {
       secure: true,
       sameSite: 'none',
       domain: '.example.com',
-      path: '/images',
+      path: '/images/user123',
     });
+    expect(cookieArgs[3][2]).toMatchObject({ path: '/avatars' });
   });
 
-  it('builds correct custom policy for images resource', () => {
+  it('builds user-scoped custom policies for private images and avatars', () => {
     mockGetCloudFrontConfig.mockReturnValue({
       domain: 'https://cdn.example.com',
       imageSigning: 'cookies',
@@ -187,15 +190,59 @@ describe('setCloudFrontCookies', () => {
       'CloudFront-Key-Pair-Id': 'K123ABC',
     });
 
-    setCloudFrontCookies(mockRes as Response);
+    setCloudFrontCookies(mockRes as Response, defaultScope);
 
+    const privatePolicy = JSON.parse(mockGetSignedCookies.mock.calls[0][0].policy);
+    const avatarPolicy = JSON.parse(mockGetSignedCookies.mock.calls[1][0].policy);
+    expect(mockGetSignedCookies).toHaveBeenCalledTimes(2);
     expect(mockGetSignedCookies).toHaveBeenCalledWith(
       expect.objectContaining({
         keyPairId: 'K123ABC',
         privateKey: expect.stringContaining('BEGIN RSA PRIVATE KEY'),
-        policy: expect.stringContaining('https://cdn.example.com/images/*'),
       }),
     );
+    expect(privatePolicy.Statement).toEqual([
+      expect.objectContaining({ Resource: 'https://cdn.example.com/images/user123/*' }),
+    ]);
+    expect(avatarPolicy.Statement).toEqual([
+      expect.objectContaining({ Resource: 'https://cdn.example.com/avatars/*' }),
+    ]);
+  });
+
+  it('builds a tenant-scoped custom policy and cookie path', () => {
+    mockGetCloudFrontConfig.mockReturnValue({
+      domain: 'https://cdn.example.com',
+      imageSigning: 'cookies',
+      cookieExpiry: 1800,
+      cookieDomain: '.example.com',
+      privateKey: '-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----',
+      keyPairId: 'K123ABC',
+    });
+
+    mockGetSignedCookies.mockReturnValue({
+      'CloudFront-Policy': 'policy-value',
+      'CloudFront-Signature': 'signature-value',
+      'CloudFront-Key-Pair-Id': 'K123ABC',
+    });
+
+    const result = setCloudFrontCookies(mockRes as Response, {
+      userId: 'user123',
+      tenantId: 'tenantA',
+    });
+
+    const privatePolicy = JSON.parse(mockGetSignedCookies.mock.calls[0][0].policy);
+    const avatarPolicy = JSON.parse(mockGetSignedCookies.mock.calls[1][0].policy);
+    expect(result).toBe(true);
+    expect(privatePolicy.Statement).toEqual([
+      expect.objectContaining({
+        Resource: 'https://cdn.example.com/t/tenantA/images/user123/*',
+      }),
+    ]);
+    expect(avatarPolicy.Statement).toEqual([
+      expect.objectContaining({ Resource: 'https://cdn.example.com/t/tenantA/avatars/*' }),
+    ]);
+    expect(cookieArgs[0][2]).toMatchObject({ path: '/t/tenantA/images/user123' });
+    expect(cookieArgs[3][2]).toMatchObject({ path: '/t/tenantA/avatars' });
   });
 
   it('handles multiple trailing slashes in domain', () => {
@@ -214,11 +261,11 @@ describe('setCloudFrontCookies', () => {
       'CloudFront-Key-Pair-Id': 'K123ABC',
     });
 
-    setCloudFrontCookies(mockRes as Response);
+    setCloudFrontCookies(mockRes as Response, defaultScope);
 
     expect(mockGetSignedCookies).toHaveBeenCalledWith(
       expect.objectContaining({
-        policy: expect.stringContaining('https://cdn.example.com/images/*'),
+        policy: expect.stringContaining('https://cdn.example.com/images/user123/*'),
       }),
     );
   });
@@ -235,7 +282,7 @@ describe('setCloudFrontCookies', () => {
 
     mockGetSignedCookies.mockReturnValue({});
 
-    const result = setCloudFrontCookies(mockRes as Response);
+    const result = setCloudFrontCookies(mockRes as Response, defaultScope);
 
     expect(result).toBe(false);
     expect(mockRes.cookie).not.toHaveBeenCalled();
@@ -255,6 +302,22 @@ describe('setCloudFrontCookies', () => {
     });
 
     mockGetSignedCookies.mockReturnValue({ 'CloudFront-Policy': 'policy-value' });
+
+    const result = setCloudFrontCookies(mockRes as Response, defaultScope);
+
+    expect(result).toBe(false);
+    expect(mockRes.cookie).not.toHaveBeenCalled();
+  });
+
+  it('returns false when userId is missing from scope', () => {
+    mockGetCloudFrontConfig.mockReturnValue({
+      domain: 'https://cdn.example.com',
+      imageSigning: 'cookies',
+      cookieExpiry: 1800,
+      cookieDomain: '.example.com',
+      privateKey: '-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----',
+      keyPairId: 'K123ABC',
+    });
 
     const result = setCloudFrontCookies(mockRes as Response);
 
@@ -277,7 +340,7 @@ describe('setCloudFrontCookies', () => {
       throw signingError;
     });
 
-    const result = setCloudFrontCookies(mockRes as Response);
+    const result = setCloudFrontCookies(mockRes as Response, defaultScope);
 
     expect(result).toBe(false);
     expect(mockRes.cookie).not.toHaveBeenCalled();
@@ -311,7 +374,7 @@ describe('clearCloudFrontCookies', () => {
     expect(mockRes.clearCookie).not.toHaveBeenCalled();
   });
 
-  it('does nothing when imageSigning is not "cookies"', () => {
+  it('clears stale cookies when imageSigning is not "cookies"', () => {
     mockGetCloudFrontConfig.mockReturnValue({
       domain: 'https://cdn.example.com',
       imageSigning: 'none',
@@ -320,7 +383,7 @@ describe('clearCloudFrontCookies', () => {
 
     clearCloudFrontCookies(mockRes as Response);
 
-    expect(mockRes.clearCookie).not.toHaveBeenCalled();
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(9);
   });
 
   it('does nothing when cookieDomain is missing', () => {
@@ -334,7 +397,7 @@ describe('clearCloudFrontCookies', () => {
     expect(mockRes.clearCookie).not.toHaveBeenCalled();
   });
 
-  it('clears all three CloudFront cookies with correct domain', () => {
+  it('clears all CloudFront cookies with correct domain and legacy paths', () => {
     mockGetCloudFrontConfig.mockReturnValue({
       domain: 'https://cdn.example.com',
       imageSigning: 'cookies',
@@ -345,21 +408,31 @@ describe('clearCloudFrontCookies', () => {
 
     clearCloudFrontCookies(mockRes as Response);
 
-    expect(mockRes.clearCookie).toHaveBeenCalledTimes(3);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(9);
 
-    const expectedOptions = {
+    const legacyPathOptions = {
       domain: '.example.com',
       path: '/images',
       httpOnly: true,
       secure: true,
       sameSite: 'none',
     };
-    expect(clearedCookies).toContainEqual(['CloudFront-Policy', expectedOptions]);
-    expect(clearedCookies).toContainEqual(['CloudFront-Signature', expectedOptions]);
-    expect(clearedCookies).toContainEqual(['CloudFront-Key-Pair-Id', expectedOptions]);
+    const rootPathOptions = {
+      domain: '.example.com',
+      path: '/',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+    };
+    expect(clearedCookies).toContainEqual(['CloudFront-Policy', legacyPathOptions]);
+    expect(clearedCookies).toContainEqual(['CloudFront-Signature', legacyPathOptions]);
+    expect(clearedCookies).toContainEqual(['CloudFront-Key-Pair-Id', legacyPathOptions]);
+    expect(clearedCookies).toContainEqual(['CloudFront-Policy', rootPathOptions]);
+    expect(clearedCookies).toContainEqual(['CloudFront-Signature', rootPathOptions]);
+    expect(clearedCookies).toContainEqual(['CloudFront-Key-Pair-Id', rootPathOptions]);
   });
 
-  it('clears cookies with full security attributes matching set path', () => {
+  it('clears tenant-scoped cookies', () => {
     mockGetCloudFrontConfig.mockReturnValue({
       domain: 'https://cdn.example.com',
       imageSigning: 'cookies',
@@ -368,20 +441,19 @@ describe('clearCloudFrontCookies', () => {
       keyPairId: 'K123',
     });
 
-    clearCloudFrontCookies(mockRes as Response);
+    clearCloudFrontCookies(mockRes as Response, { userId: 'user123', tenantId: 'tenantA' });
 
-    expect(mockRes.clearCookie).toHaveBeenCalledTimes(3);
-
-    const expectedOptions = {
-      domain: '.example.com',
-      path: '/images',
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-    };
-    expect(clearedCookies).toContainEqual(['CloudFront-Policy', expectedOptions]);
-    expect(clearedCookies).toContainEqual(['CloudFront-Signature', expectedOptions]);
-    expect(clearedCookies).toContainEqual(['CloudFront-Key-Pair-Id', expectedOptions]);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(21);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Policy',
+      {
+        domain: '.example.com',
+        path: '/t/tenantA/images/user123',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+      },
+    ]);
   });
 
   it('logs warning and does not throw when clearing fails', () => {

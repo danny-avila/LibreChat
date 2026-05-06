@@ -960,6 +960,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       userId: req.user.id,
       manual: 'false',
       agentId: agent_id,
+      tenantId: req.user.tenantId,
     });
 
     const image = {

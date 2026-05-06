@@ -7,6 +7,7 @@ const {
   uploadFileToS3,
   saveBufferToS3,
   getS3FileStream,
+  getS3DownloadURL,
   deleteFileFromS3,
   getCloudFrontURL,
   uploadMistralOCR,
@@ -15,6 +16,7 @@ const {
   uploadFileToCloudFront,
   saveBufferToCloudFront,
   getCloudFrontFileStream,
+  getCloudFrontDownloadURL,
   deleteFileFromCloudFront,
   uploadGoogleVertexMistralOCR,
 } = require('@librechat/api');
@@ -119,6 +121,7 @@ const s3Strategy = () => ({
   processAvatar: processS3Avatar,
   handleImageUpload: uploadImageToS3,
   getDownloadStream: getS3FileStream,
+  getDownloadURL: getS3DownloadURL,
 });
 
 /**
@@ -135,6 +138,7 @@ const cloudfrontStrategy = () => ({
   processAvatar: processCloudFrontAvatar,
   handleImageUpload: uploadImageToCloudFront,
   getDownloadStream: getCloudFrontFileStream,
+  getDownloadURL: getCloudFrontDownloadURL,
 });
 
 /**

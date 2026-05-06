@@ -87,11 +87,44 @@ describe('S3 CRUD', () => {
       expect(key).toBe('files/user456/folder/subfolder/doc.pdf');
     });
 
+    it('constructs tenant-prefixed keys when tenantId is provided', async () => {
+      const { getS3Key } = await import('../crud');
+      const key = getS3Key('images', 'user123', 'file.png', 'tenantA');
+      expect(key).toBe('t/tenantA/images/user123/file.png');
+    });
+
     it('throws if basePath contains a slash', async () => {
       const { getS3Key } = await import('../crud');
       expect(() => getS3Key('a/b', 'user123', 'file.png')).toThrow(
         '[getS3Key] basePath must not contain slashes: "a/b"',
       );
+    });
+  });
+
+  describe('parseS3Key', () => {
+    it('parses legacy keys', async () => {
+      const { parseS3Key } = await import('../crud');
+      expect(parseS3Key('images/user123/folder/file.png')).toEqual({
+        basePath: 'images',
+        userId: 'user123',
+        fileName: 'folder/file.png',
+      });
+    });
+
+    it('parses tenant-prefixed keys', async () => {
+      const { parseS3Key } = await import('../crud');
+      expect(parseS3Key('t/tenantA/images/user123/file.png')).toEqual({
+        tenantId: 'tenantA',
+        basePath: 'images',
+        userId: 'user123',
+        fileName: 'file.png',
+      });
+    });
+
+    it('returns null for incomplete keys', async () => {
+      const { parseS3Key } = await import('../crud');
+      expect(parseS3Key('images/user123')).toBeNull();
+      expect(parseS3Key('t/tenantA/images/user123')).toBeNull();
     });
   });
 
@@ -122,6 +155,28 @@ describe('S3 CRUD', () => {
         Bucket: 'test-bucket',
         Key: 'documents/user123/document.pdf',
         Body: Buffer.from('test content'),
+      });
+    });
+
+    it('uses tenant-prefixed key and URL params when tenantId is provided', async () => {
+      const urlBuilder = jest.fn().mockResolvedValue('https://cdn.example.com/t/tenantA/file.txt');
+      const { saveBufferToS3 } = await import('../crud');
+      await saveBufferToS3({
+        userId: 'user123',
+        buffer: Buffer.from('test content'),
+        fileName: 'document.pdf',
+        basePath: 'documents',
+        tenantId: 'tenantA',
+        urlBuilder,
+      });
+
+      const calls = s3Mock.commandCalls(PutObjectCommand);
+      expect(calls[0].args[0].input.Key).toBe('t/tenantA/documents/user123/document.pdf');
+      expect(urlBuilder).toHaveBeenCalledWith({
+        userId: 'user123',
+        fileName: 'document.pdf',
+        basePath: 'documents',
+        tenantId: 'tenantA',
       });
     });
 
@@ -320,7 +375,19 @@ describe('S3 CRUD', () => {
       } as TFile;
 
       const { deleteFileFromS3 } = await import('../crud');
-      await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow('User ID mismatch');
+      await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow('File owner mismatch');
+      expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('throws error if tenant ID does not match', async () => {
+      const mockFile = {
+        filepath: 'https://bucket.s3.amazonaws.com/t/tenantB/images/user123/file.jpg',
+        file_id: 'file123',
+        tenantId: 'tenantA',
+      } as TFile;
+
+      const { deleteFileFromS3 } = await import('../crud');
+      await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow('Tenant ID mismatch');
       expect(logger.error).toHaveBeenCalled();
     });
 
@@ -367,6 +434,30 @@ describe('S3 CRUD', () => {
       expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload.jpg');
       expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(1);
       expect(fs.promises.unlink).not.toHaveBeenCalled();
+    });
+
+    it('uses tenantId from request when uploading a file', async () => {
+      const mockReqWithTenant = {
+        user: { id: 'user123', tenantId: 'tenantA' },
+      } as ServerRequest;
+      const mockFile = {
+        path: '/tmp/upload.jpg',
+        originalname: 'photo.jpg',
+      } as Express.Multer.File;
+
+      (fs.promises.stat as jest.Mock).mockResolvedValue({ size: 1024 });
+      (fs.createReadStream as jest.Mock).mockReturnValue(new Readable());
+
+      const { uploadFileToS3 } = await import('../crud');
+      await uploadFileToS3({
+        req: mockReqWithTenant,
+        file: mockFile,
+        file_id: 'file123',
+        basePath: 'images',
+      });
+
+      const calls = s3Mock.commandCalls(PutObjectCommand);
+      expect(calls[0].args[0].input.Key).toBe('t/tenantA/images/user123/file123__photo.jpg');
     });
 
     it('handles upload errors and cleans up temp file', async () => {
@@ -420,6 +511,36 @@ describe('S3 CRUD', () => {
     });
   });
 
+  describe('getS3DownloadURL', () => {
+    it('returns a signed URL for an existing file path', async () => {
+      const mockFile = {
+        filepath: 'https://bucket.s3.amazonaws.com/t/tenantA/uploads/user123/file.pdf',
+        filename: 'file.pdf',
+      } as TFile;
+
+      const { getS3DownloadURL } = await import('../crud');
+      const result = await getS3DownloadURL({
+        req: {} as ServerRequest,
+        file: mockFile,
+        customFilename: 'download.pdf',
+        contentType: 'application/pdf',
+      });
+
+      expect(result).toContain('signed=true');
+      expect(getSignedUrl).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Key: 't/tenantA/uploads/user123/file.pdf',
+            ResponseContentDisposition: 'attachment; filename="download.pdf"',
+            ResponseContentType: 'application/pdf',
+          }),
+        }),
+        expect.anything(),
+      );
+    });
+  });
+
   describe('needsRefresh', () => {
     it('returns false for non-signed URLs', async () => {
       const { needsRefresh } = await import('../crud');
@@ -467,6 +588,23 @@ describe('S3 CRUD', () => {
       );
 
       expect(result).toContain('signed=true');
+    });
+
+    it('generates a new URL from a tenant-prefixed S3 URL', async () => {
+      const { getNewS3URL } = await import('../crud');
+      await getNewS3URL(
+        'https://bucket.s3.amazonaws.com/t/tenantA/images/user123/file.jpg?signature=old',
+      );
+
+      expect(getSignedUrl).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Key: 't/tenantA/images/user123/file.jpg',
+          }),
+        }),
+        expect.anything(),
+      );
     });
 
     it('returns undefined for invalid URLs', async () => {

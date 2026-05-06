@@ -261,12 +261,15 @@ describe('LogoutController', () => {
     });
 
     it('calls clearCloudFrontCookies on successful logout', async () => {
-      const req = buildReq();
+      const req = buildReq({ user: { _id: 'user1', tenantId: 'tenantA' } });
       const res = buildRes();
 
       await logoutController(req, res);
 
-      expect(mockClearCloudFrontCookies).toHaveBeenCalledWith(res);
+      expect(mockClearCloudFrontCookies).toHaveBeenCalledWith(res, {
+        userId: 'user1',
+        tenantId: 'tenantA',
+      });
     });
   });
 

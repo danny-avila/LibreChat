@@ -13,26 +13,77 @@ const REQUIRED_CF_COOKIES = [
   'CloudFront-Key-Pair-Id',
 ] as const;
 
+export interface CloudFrontCookieScope {
+  userId?: string | null;
+  tenantId?: string | null;
+}
+
+function assertPathSegment(value: string, label: string): void {
+  if (value.includes('/')) {
+    throw new Error(`[CloudFront cookies] ${label} must not contain slashes.`);
+  }
+}
+
+function getPolicyScopes(
+  domain: string,
+  { userId, tenantId }: CloudFrontCookieScope,
+): Array<{ resource: string; path: string }> {
+  if (!userId) {
+    throw new Error('[CloudFront cookies] userId is required for private image access.');
+  }
+
+  assertPathSegment(userId, 'userId');
+  if (tenantId) {
+    assertPathSegment(tenantId, 'tenantId');
+    return [
+      {
+        resource: `${domain}/t/${tenantId}/images/${userId}/*`,
+        path: `/t/${tenantId}/images/${userId}`,
+      },
+      { resource: `${domain}/t/${tenantId}/avatars/*`, path: `/t/${tenantId}/avatars` },
+    ];
+  }
+
+  return [
+    { resource: `${domain}/images/${userId}/*`, path: `/images/${userId}` },
+    { resource: `${domain}/avatars/*`, path: '/avatars' },
+  ];
+}
+
 /**
  * Clears CloudFront signed cookies from the response.
  * Should be called during logout to revoke CDN access.
  */
-export function clearCloudFrontCookies(res: Response): void {
+export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieScope = {}): void {
   try {
     const config = getCloudFrontConfig();
-    if (!config?.cookieDomain || config.imageSigning !== 'cookies') {
+    if (!config?.cookieDomain) {
       return;
     }
-    const options = {
+    const baseOptions = {
       domain: config.cookieDomain,
-      path: '/images',
       httpOnly: true,
       secure: true,
       sameSite: 'none' as const,
     };
-    res.clearCookie('CloudFront-Policy', options);
-    res.clearCookie('CloudFront-Signature', options);
-    res.clearCookie('CloudFront-Key-Pair-Id', options);
+    const paths = new Set(['/images', '/avatars', '/']);
+    if (scope.userId) {
+      paths.add(`/images/${scope.userId}`);
+    }
+    if (scope.tenantId) {
+      paths.add(`/t/${scope.tenantId}`);
+      paths.add(`/t/${scope.tenantId}/avatars`);
+      if (scope.userId) {
+        paths.add(`/t/${scope.tenantId}/images/${scope.userId}`);
+      }
+    }
+
+    for (const path of paths) {
+      const options = { ...baseOptions, path };
+      res.clearCookie('CloudFront-Policy', options);
+      res.clearCookie('CloudFront-Signature', options);
+      res.clearCookie('CloudFront-Key-Pair-Id', options);
+    }
   } catch (error) {
     logger.warn('[clearCloudFrontCookies] Failed to clear cookies:', error);
   }
@@ -42,63 +93,76 @@ export function clearCloudFrontCookies(res: Response): void {
  * Sets CloudFront signed cookies on the response for CDN access.
  * Returns true if cookies were set, false if CloudFront cookies are not enabled.
  */
-export function setCloudFrontCookies(res: Response): boolean {
+export function setCloudFrontCookies(res: Response, scope: CloudFrontCookieScope = {}): boolean {
   const config = getCloudFrontConfig();
   if (
     !config ||
     config.imageSigning !== 'cookies' ||
     !config.privateKey ||
     !config.keyPairId ||
-    !config.cookieDomain
+    !config.cookieDomain ||
+    !scope.userId
   ) {
     return false;
   }
 
   try {
+    const { keyPairId, privateKey } = config;
     const cookieExpiry = config.cookieExpiry ?? DEFAULT_COOKIE_EXPIRY;
     const expiresAtMs = Date.now() + cookieExpiry * 1000;
     const expiresAt = new Date(expiresAtMs);
     const expiresAtEpoch = Math.floor(expiresAtMs / 1000);
 
-    const resourceUrl = `${config.domain.replace(/\/+$/, '')}/images/*`;
-
-    const policy = JSON.stringify({
-      Statement: [
-        {
-          Resource: resourceUrl,
-          Condition: {
-            DateLessThan: {
-              'AWS:EpochTime': expiresAtEpoch,
+    const cleanDomain = config.domain.replace(/\/+$/, '');
+    const policyScopes = getPolicyScopes(cleanDomain, scope);
+    // CloudFront custom-policy cookies are scoped to one resource, so issue
+    // separate path-specific cookie sets for private files and shared avatars.
+    const signedCookieSets = policyScopes.map(({ resource, path }) => {
+      const policy = JSON.stringify({
+        Statement: [
+          {
+            Resource: resource,
+            Condition: {
+              DateLessThan: {
+                'AWS:EpochTime': expiresAtEpoch,
+              },
             },
           },
-        },
-      ],
+        ],
+      });
+
+      return {
+        path,
+        cookies: getSignedCookies({
+          keyPairId,
+          privateKey,
+          policy,
+        }),
+      };
     });
 
-    const signedCookies = getSignedCookies({
-      keyPairId: config.keyPairId,
-      privateKey: config.privateKey,
-      policy,
-    });
-
-    const cookieOptions = {
+    const baseCookieOptions = {
       expires: expiresAt,
       httpOnly: true,
       secure: true,
       sameSite: 'none' as const,
       domain: config.cookieDomain,
-      path: '/images',
     };
 
-    for (const key of REQUIRED_CF_COOKIES) {
-      if (!signedCookies[key]) {
-        logger.error(`[setCloudFrontCookies] Missing expected cookie from AWS SDK: ${key}`);
-        return false;
+    for (const { cookies } of signedCookieSets) {
+      for (const key of REQUIRED_CF_COOKIES) {
+        if (!cookies[key]) {
+          logger.error(`[setCloudFrontCookies] Missing expected cookie from AWS SDK: ${key}`);
+          return false;
+        }
       }
     }
 
-    for (const key of REQUIRED_CF_COOKIES) {
-      res.cookie(key, signedCookies[key], cookieOptions);
+    for (const { cookies, path } of signedCookieSets) {
+      const cookieOptions = { ...baseCookieOptions, path };
+      for (const key of REQUIRED_CF_COOKIES) {
+        res.cookie(key, cookies[key], cookieOptions);
+      }
     }
 
     return true;

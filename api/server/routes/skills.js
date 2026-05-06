@@ -138,10 +138,12 @@ const importHandler = createImportHandler({
   upsertSkillFile,
   saveBuffer: (req, { userId, buffer, fileName, basePath, isImage }) => {
     const storage = resolveSkillStorage(req, { isImage });
-    return storage.saveBuffer({ userId, buffer, fileName, basePath }).then((filepath) => ({
-      filepath,
-      source: storage.source,
-    }));
+    return storage
+      .saveBuffer({ userId, buffer, fileName, basePath, tenantId: req.user.tenantId })
+      .then((filepath) => ({
+        filepath,
+        source: storage.source,
+      }));
   },
   deleteFile: (req, file) => {
     const { deleteFile } = getStrategyFunctions(file.source);
@@ -195,6 +197,7 @@ async function uploadFileHandler(req, res) {
       buffer: file.buffer,
       fileName: storageFileName,
       basePath: 'uploads',
+      tenantId: req.user.tenantId,
     });
 
     let result;

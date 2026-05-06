@@ -669,6 +669,8 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
         fileName,
         userId: user._id.toString(),
         buffer: imageBuffer,
+        basePath: 'avatars',
+        tenantId: user.tenantId,
       });
       user.avatar = imagePath ?? '';
     }

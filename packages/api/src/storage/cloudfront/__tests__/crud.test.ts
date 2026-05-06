@@ -4,7 +4,7 @@ import type { CloudFrontFullConfig } from '~/cdn/cloudfront';
 import type { ServerRequest } from '~/types';
 
 const mockGetCloudFrontConfig = jest.fn<CloudFrontFullConfig | null, []>();
-const mockGetS3Key = jest.fn<string, [string, string, string]>();
+const mockGetS3Key = jest.fn<string, [string, string, string, string?]>();
 const mockSaveBufferToS3 = jest.fn();
 const mockSaveURLToS3 = jest.fn();
 const mockUploadFileToS3 = jest.fn();
@@ -60,8 +60,10 @@ function makeConfig(overrides: Partial<CloudFrontFullConfig> = {}): CloudFrontFu
 describe('CloudFront CRUD', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetS3Key.mockImplementation(
-      (basePath, userId, fileName) => `${basePath}/${userId}/${fileName}`,
+    mockGetS3Key.mockImplementation((basePath, userId, fileName, tenantId) =>
+      tenantId
+        ? `t/${tenantId}/${basePath}/${userId}/${fileName}`
+        : `${basePath}/${userId}/${fileName}`,
     );
     mockGetCloudFrontConfig.mockReturnValue(makeConfig());
   });
@@ -82,6 +84,18 @@ describe('CloudFront CRUD', () => {
         basePath: 'documents',
       });
       expect(url).toBe('https://d123.cloudfront.net/documents/user1/doc.pdf');
+    });
+
+    it('uses tenant-prefixed keys when tenantId is provided', async () => {
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({
+        userId: 'user1',
+        fileName: 'doc.pdf',
+        basePath: 'documents',
+        tenantId: 'tenantA',
+      });
+      expect(url).toBe('https://d123.cloudfront.net/t/tenantA/documents/user1/doc.pdf');
+      expect(mockGetS3Key).toHaveBeenCalledWith('documents', 'user1', 'doc.pdf', 'tenantA');
     });
 
     it('strips trailing slash from domain', async () => {
@@ -435,6 +449,51 @@ describe('CloudFront CRUD', () => {
         'https://d123.cloudfront.net/images/u/f.webp',
       );
       expect(result).toBe(readable);
+    });
+  });
+
+  describe('getCloudFrontDownloadURL', () => {
+    it('returns a signed CloudFront URL for an existing file path', async () => {
+      mockGetCloudFrontConfig.mockReturnValue(
+        makeConfig({ privateKey: 'pk-secret', keyPairId: 'K123' }),
+      );
+      mockExtractKeyFromS3Url.mockReturnValue('t/tenantA/uploads/user1/doc.pdf');
+      mockGetSignedUrl.mockReturnValue(
+        'https://d123.cloudfront.net/t/tenantA/uploads/user1/doc.pdf?Policy=abc',
+      );
+
+      const { getCloudFrontDownloadURL } = await import('~/storage/cloudfront/crud');
+      const result = await getCloudFrontDownloadURL({
+        req: { user: { id: 'user1', tenantId: 'tenantA' } } as ServerRequest,
+        file: {
+          filepath: 'https://d123.cloudfront.net/t/tenantA/uploads/user1/doc.pdf',
+        } as TFile,
+      });
+
+      expect(result).toContain('Policy=abc');
+      expect(mockExtractKeyFromS3Url).toHaveBeenCalledWith(
+        'https://d123.cloudfront.net/t/tenantA/uploads/user1/doc.pdf',
+      );
+      expect(mockGetSignedUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://d123.cloudfront.net/t/tenantA/uploads/user1/doc.pdf',
+          keyPairId: 'K123',
+          privateKey: 'pk-secret',
+        }),
+      );
+    });
+
+    it('throws when signing keys are missing', async () => {
+      mockGetCloudFrontConfig.mockReturnValue(makeConfig({ privateKey: null, keyPairId: null }));
+      mockExtractKeyFromS3Url.mockReturnValue('uploads/user1/doc.pdf');
+
+      const { getCloudFrontDownloadURL } = await import('~/storage/cloudfront/crud');
+      await expect(
+        getCloudFrontDownloadURL({
+          req: { user: { id: 'user1' } } as ServerRequest,
+          file: { filepath: 'https://d123.cloudfront.net/uploads/user1/doc.pdf' } as TFile,
+        }),
+      ).rejects.toThrow('Signing keys not configured');
     });
   });
 });

@@ -490,6 +490,7 @@ const processCodeOutput = async ({
       buffer,
       fileName,
       basePath: 'uploads',
+      tenantId: req.user.tenantId,
     });
 
     /* `classifyCodeArtifact` and `extractCodeArtifactText` make
