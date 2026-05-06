@@ -1577,8 +1577,6 @@
   "com_ui_subagent_empty_result": "No text returned.",
   "com_ui_subagent_errored": "Agent errored",
   "com_ui_subagent_no_result_yet": "Still running — no final result yet.",
-  "com_ui_subagent_prompt_collapse": "Collapse prompt",
-  "com_ui_subagent_prompt_expand": "Expand prompt",
   "com_ui_subagent_running": "Running agent",
   "com_ui_subagent_scroll_to_bottom": "Scroll to latest",
   "com_ui_subagent_ticker_error": "Error",

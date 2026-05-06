@@ -611,9 +611,7 @@ function SubagentPrompt({
   const localize = useLocalize();
   const headingId = useId();
   const contentId = useId();
-  const toggleLabel = expanded
-    ? localize('com_ui_subagent_prompt_collapse')
-    : localize('com_ui_subagent_prompt_expand');
+  const toggleLabel = expanded ? localize('com_ui_collapse') : localize('com_ui_expand');
 
   return (
     <section

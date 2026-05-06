@@ -35,8 +35,8 @@ jest.mock('~/hooks', () => ({
         com_ui_subagent_dialog_description: 'Isolated child run.',
         com_ui_subagent_no_result_yet: 'No result yet.',
         com_ui_subagent_empty_result: 'No text.',
-        com_ui_subagent_prompt_collapse: 'Collapse prompt',
-        com_ui_subagent_prompt_expand: 'Expand prompt',
+        com_ui_collapse: 'Collapse',
+        com_ui_expand: 'Expand',
         com_ui_subagent_ticker_writing: 'Writing',
         com_ui_subagent_ticker_reasoning: 'Reasoning',
         com_ui_subagent_ticker_error: 'Error',
@@ -465,12 +465,12 @@ describe('SubagentCall — dialog content', () => {
     expect(screen.getByTestId('prompt-markdown')).toHaveTextContent('# Review prompt');
     expect(screen.getByText('final answer')).toBeInTheDocument();
 
-    const expandButton = screen.getByRole('button', { name: 'Expand prompt' });
+    const expandButton = screen.getByRole('button', { name: 'Expand' });
     expect(expandButton).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(expandButton);
 
-    expect(screen.getByRole('button', { name: 'Collapse prompt' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Collapse' })).toHaveAttribute(
       'aria-expanded',
       'true',
     );
