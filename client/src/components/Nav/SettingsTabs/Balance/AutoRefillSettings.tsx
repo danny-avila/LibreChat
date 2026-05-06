@@ -1,14 +1,14 @@
 import React from 'react';
 import { Label, InfoHoverCard, ESide } from '@librechat/client';
+import { getRefillEligibilityDate } from 'librechat-data-provider';
 
-import type { RefillIntervalUnit } from './utils';
+import type { RefillIntervalUnit, TBalanceResponse } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
 
-import { getNextRefillDate } from './utils';
 import { useLocalize } from '~/hooks';
 
 interface AutoRefillSettingsProps {
-  lastRefill: Date;
+  lastRefill: NonNullable<TBalanceResponse['lastRefill']>;
   refillAmount: number;
   refillIntervalUnit: RefillIntervalUnit;
   refillIntervalValue: number;
@@ -23,8 +23,8 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
   const localize = useLocalize();
 
   const lastRefillDate = lastRefill ? new Date(lastRefill) : null;
-  const nextRefill = lastRefillDate
-    ? getNextRefillDate(lastRefillDate, refillIntervalValue, refillIntervalUnit)
+  const refillEligibilityDate = lastRefillDate
+    ? getRefillEligibilityDate(lastRefillDate, refillIntervalValue, refillIntervalUnit)
     : null;
 
   const getLocalizedIntervalUnit = (value: number, unit: RefillIntervalUnit): string => {
@@ -79,7 +79,7 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
         </div>
 
         <span className="text-sm font-medium text-gray-800 dark:text-gray-200" role="note">
-          {nextRefill ? nextRefill.toLocaleString() : '-'}
+          {refillEligibilityDate ? refillEligibilityDate.toLocaleString() : '-'}
         </span>
       </div>
     </div>
