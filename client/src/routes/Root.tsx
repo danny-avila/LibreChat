@@ -22,7 +22,18 @@ import { UnifiedSidebar } from '~/components/UnifiedSidebar';
 import { TermsAndConditionsModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
+import '@newjersey/feedback-widget/feedback-widget.min.js';
 import SkipToContentLink from '~/nj/components/SkipToContentLink';
+
+// NJ: Tells TypeScript that <feedback-widget> is a valid custom element.
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace JSX {
+    interface IntrinsicElements {
+      'feedback-widget': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+    }
+  }
+}
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -95,6 +106,10 @@ export default function Root() {
                       <Outlet />
                     </div>
                   </div>
+                </div>
+                {/* For small screens, the widget blocks too much content, so hide then */}
+                <div className="hidden md:block">
+                  <feedback-widget show-comment-disclaimer="false" skip-email-step="true" />
                 </div>
               </div>
             </PromptGroupsProvider>

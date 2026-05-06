@@ -66,7 +66,7 @@
   --jersey-blue: #0c5295;
   --jersey-button: #0076d6;
   --jersey-button-hover: #005ea2;
-  --jersey-button-focus: #0050d8;
+  --jersey-button-focus: #0050D8;
   --info-lighter: #e7f6f8;
   --info: #00bde3;
 }
@@ -1429,8 +1429,7 @@ button {
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width))
     var(--jersey-button-focus);
   --tw-ring-offset-width: 2px;
-  box-shadow:
-    var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
 }
 .btn-primary.focus-visible {
   --tw-ring-opacity: 1;
@@ -1458,12 +1457,11 @@ button {
 }
 .btn-secondary:focus {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
-    var(--tw-ring-offset-color);
+  var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width))
-    var(--jersey-button-focus);
+  var(--jersey-button-focus);
   --tw-ring-offset-width: 2px;
-  box-shadow:
-    var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
 }
 .dark .btn-secondary:hover {
   --tw-bg-opacity: 1;
@@ -1473,7 +1471,7 @@ button {
 }
 .btn-neutral {
   color: var(--jersey-blue);
-  padding: 0.25rem 0.5rem;
+  padding: .25rem .5rem;
 }
 
 .btn-neutral:hover {
@@ -3015,9 +3013,42 @@ body {
 }
 /* End of NJ-specific Global Styles and Font Faces */
 
+/* Customization for feedback widget - no easier way to customize, sadly */
+.feedback-container {
+  background-color: #edeff0 !important;
+  padding: 12px 30px !important;
+}
+
+.feedback-text {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+}
+
+.feedback-button {
+  padding: 12px 20px !important;
+  font-weight: 700 !important;
+  width: auto !important;
+}
+
+.feedback-button:focus {
+  outline-offset: 4px !important;
+  outline: 4px solid #1b1b1b !important;
+}
+
+.confirmation-text {
+  font-size: 16px !important;
+}
+
 .flex-box {
   gap: 0.5rem !important;
 }
+
+@media screen and (max-width: 620px) {
+  .feedback-button {
+    padding: 6px 20px !important;
+  }
+}
+
 /* USWDS icon styling; we don't want all of USWDS styles (it overrides a lot of LibreChat styling) */
 .usa-icon {
   display: inline-block;
@@ -3116,11 +3147,11 @@ body {
 }
 
 .markdown-nj ul ul {
-  margin-top: 0.5rem;
+  margin-top: .5rem;
 }
 
 .markdown-nj li {
-  margin-bottom: 0.5rem;
+  margin-bottom: .5rem;
 }
 
 .markdown-nj li a {
