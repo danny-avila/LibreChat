@@ -182,6 +182,7 @@ function truncateLeafSegment(leaf: string): string {
  * carry semantic extensions, so we just slice and append the same 6-hex
  * disambiguation suffix. */
 function truncateDirSegment(seg: string): string {
+  if (utf8ByteLength(seg) <= ARTIFACT_PATH_SEGMENT_MAX_BYTES) return seg;
   return truncateWithSuffix(
     seg,
     '-' + deterministicHexSuffix(seg),
