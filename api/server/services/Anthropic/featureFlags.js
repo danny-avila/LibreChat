@@ -120,7 +120,9 @@ function getCustomSkills() {
  */
 function getSlimSystemPrompt() {
   if (!slimPromptEnabled()) return null;
-  if (cachedSlimPrompt !== null) return cachedSlimPrompt;
+  if (typeof cachedSlimPrompt === 'string' && cachedSlimPrompt.length > 0) {
+    return cachedSlimPrompt;
+  }
   try {
     cachedSlimPrompt = fs.readFileSync(SLIM_PROMPT_PATH, 'utf8');
     return cachedSlimPrompt;
@@ -128,7 +130,6 @@ function getSlimSystemPrompt() {
     logger.warn(
       `[featureFlags] failed to load slim prompt: ${error?.message ?? error}`,
     );
-    cachedSlimPrompt = '';
     return null;
   }
 }

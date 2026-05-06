@@ -11,7 +11,18 @@ const { logger } = require('~/config');
 
 const abortDataMap = new WeakMap();
 
-function cleanupAbortController(abortKey) {
+/**
+ * Cleans up the abort controller registered under `abortKey`.
+ *
+ * @param {string} abortKey
+ * @param {AbortController} [expectedController] If provided, the cleanup is a
+ *   no-op when the registry entry has been overwritten by a newer request
+ *   (i.e. the registry's controller is not the same instance as
+ *   `expectedController`). This guards against a race where a stale request's
+ *   late-running `performCleanup` would otherwise abort the next request's
+ *   in-flight controller — both share the conversationId-based key.
+ */
+function cleanupAbortController(abortKey, expectedController) {
   if (!abortControllers.has(abortKey)) {
     return false;
   }
@@ -21,6 +32,16 @@ function cleanupAbortController(abortKey) {
   if (!abortController) {
     abortControllers.delete(abortKey);
     return true;
+  }
+
+  /* If the caller is cleaning up a specific request and a newer request has
+   * overwritten the registry entry, leave the newer one alone. Without this,
+   * Request 1's late `performCleanup` (e.g. after addTitle finishes) would
+   * abort Request 2's controller, causing Request 2 to skip sending its
+   * `final: true` event and leaving the frontend in a perpetual "submitting"
+   * state. */
+  if (expectedController != null && abortController !== expectedController) {
+    return false;
   }
 
   // 1. Check if this controller has any composed signals and clean them up
@@ -98,7 +119,7 @@ async function abortMessage(req, res) {
     `[abortMessage] ID: ${req.user.id} | ${req.user.email} | Aborted request: ` +
     JSON.stringify({ abortKey }),
   );
-  cleanupAbortController(abortKey);
+  cleanupAbortController(abortKey, abortController);
 
   if (res.headersSent && finalEvent) {
     return sendMessage(res, finalEvent);
@@ -198,7 +219,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
       // Use a simple function for cleanup to avoid capturing context
       const cleanupHandler = () => {
         try {
-          cleanupAbortController(addedAbortKey);
+          cleanupAbortController(addedAbortKey, abortController);
         } catch (e) {
           // Ignore cleanup errors
         }
@@ -220,7 +241,7 @@ const createAbortController = (req, res, getAbortData, getReqData) => {
     // Use a simple function for cleanup to avoid capturing context
     const cleanupHandler = () => {
       try {
-        cleanupAbortController(abortKey);
+        cleanupAbortController(abortKey, abortController);
       } catch (e) {
         // Ignore cleanup errors
       }

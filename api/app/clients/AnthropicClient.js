@@ -41,6 +41,7 @@ const { DocBlockFilter } = require('~/server/services/Anthropic/documentBlocks')
 const {
   markdownToDocxBuffer,
   inferFilenameFromMarkdown,
+  sanitizeFilenameStem,
   DOCX_MIME,
 } = require('~/server/services/Files/Anthropic/markdownToDocx');
 const { saveBufferAsAttachment } = require('~/server/services/Files/Anthropic/saveAttachment');
@@ -1136,12 +1137,19 @@ class AnthropicClient extends BaseClient {
       if (!this.artifactPromises) {
         this.artifactPromises = [];
       }
-      for (const markdown of docBlocks) {
+      for (const block of docBlocks) {
+        const markdown = block.content;
+        /* Prefer the `Filename: NAME` line the prompt asks Claude to emit
+         * just before [DOCUMENT]. Fall back to the first H1/H2 heading in
+         * the markdown content if Claude omitted the line. */
+        const stem = block.filename
+          ? sanitizeFilenameStem(block.filename)
+          : inferFilenameFromMarkdown(markdown);
+        const filename = `${stem}.docx`;
         this.artifactPromises.push(
           (async () => {
             try {
               const buffer = await markdownToDocxBuffer(markdown);
-              const filename = `${inferFilenameFromMarkdown(markdown)}.docx`;
               return await saveBufferAsAttachment({
                 req: this.options.req,
                 buffer,
@@ -1162,7 +1170,18 @@ class AnthropicClient extends BaseClient {
       }
     }
 
-    return this.getStreamText(intermediateReply);
+    /* Append captured [DOCUMENT] content to the persisted message text so
+     * Claude can see its own prior generations on subsequent turns (e.g.
+     * "what was in that doc you just made?"). The user-visible stream
+     * already finished without these markers; this only affects the saved
+     * record. The frontend defensive strip in MessageContent.tsx hides
+     * [DOCUMENT]...[/DOCUMENT] blocks at render time, so this stays
+     * invisible in the chat UI. */
+    let finalText = this.getStreamText(intermediateReply);
+    for (const block of docBlocks) {
+      finalText += `\n\n[DOCUMENT]\n${block.content}\n[/DOCUMENT]`;
+    }
+    return finalText;
   }
 
   getSaveOptions() {

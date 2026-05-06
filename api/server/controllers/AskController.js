@@ -28,6 +28,11 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   let abortKey = null;
   let cleanupHandlers = [];
   let clientRef = null;
+  /** @type {AbortController | null} Captured for cleanup so performCleanup
+   *  can pass this specific controller to cleanupAbortController, avoiding
+   *  the conversation-keyed registry race where a later request's
+   *  controller could be aborted by this request's late cleanup. */
+  let localAbortController = null;
 
   logger.debug('[AskController]', {
     text,
@@ -90,8 +95,9 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     if (abortKey) {
       logger.debug('[AskController] Cleaning up abort controller');
-      cleanupAbortController(abortKey);
+      cleanupAbortController(abortKey, localAbortController);
       abortKey = null;
+      localAbortController = null;
     }
 
     if (client) {
@@ -150,6 +156,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       getAbortData,
       updateReqData,
     );
+    localAbortController = abortController;
 
     const closeHandler = () => {
       logger.debug('[AskController] Request closed');
@@ -205,9 +212,16 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       delete latestUserMessage.image_urls;
     }
 
+    logger.debug(
+      `[AskController] post-stream check: signal.aborted=${abortController.signal.aborted} ` +
+        `requestCompleted=${abortController.requestCompleted ?? false} ` +
+        `headersSent=${res.headersSent} writableEnded=${res.writableEnded} ` +
+        `destroyed=${res.destroyed}`,
+    );
     if (!abortController.signal.aborted) {
       const finalResponseMessage = { ...response };
 
+      logger.debug('[AskController] sending final event');
       sendMessage(res, {
         final: true,
         conversation,
@@ -215,7 +229,9 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
         requestMessage: latestUserMessage,
         responseMessage: finalResponseMessage,
       });
+      logger.debug('[AskController] final event written; calling res.end()');
       res.end();
+      logger.debug('[AskController] res.end() returned');
 
       if (client?.savedMessageIds && !client.savedMessageIds.has(response.messageId)) {
         await saveMessage(

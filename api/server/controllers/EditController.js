@@ -31,6 +31,8 @@ const EditController = async (req, res, next, initializeClient) => {
   let abortKey = null;
   let cleanupHandlers = [];
   let clientRef = null; // Declare clientRef here
+  /** @type {AbortController | null} See AskController for rationale. */
+  let localAbortController = null;
 
   logger.debug('[EditController]', {
     text,
@@ -85,8 +87,9 @@ const EditController = async (req, res, next, initializeClient) => {
 
     if (abortKey) {
       logger.debug('[AskController] Cleaning up abort controller');
-      cleanupAbortController(abortKey);
+      cleanupAbortController(abortKey, localAbortController);
       abortKey = null;
+      localAbortController = null;
     }
 
     if (client) {
@@ -145,6 +148,7 @@ const EditController = async (req, res, next, initializeClient) => {
       getAbortData,
       updateReqData,
     );
+    localAbortController = abortController;
 
     const closeHandler = () => {
       logger.debug('[EditController] Request closed');

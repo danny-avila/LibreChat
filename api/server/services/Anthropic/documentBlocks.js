@@ -34,8 +34,16 @@ class DocBlockFilter {
     this.inDocument = false;
     /** @type {string} content accumulated for the in-progress document */
     this.currentDoc = '';
-    /** @type {string[]} completed documents extracted from the stream */
+    /** Filename captured from a `Filename: NAME` line preceding the
+     *  current open `[DOCUMENT]`, per the prompt's developer-note format. */
+    this.currentFilename = null;
+    /** @type {Array<{ content: string, filename: string | null }>} */
     this.documents = [];
+    /** Last ~256 chars of emitted (visible) text. Scanned when a
+     *  `[DOCUMENT]` opener is detected to capture the most recent
+     *  `Filename:` line, since by then we may have already streamed the
+     *  filename declaration in an earlier delta. */
+    this.emitTail = '';
   }
 
   /**
@@ -64,14 +72,16 @@ class DocBlockFilter {
       /* Stream ended mid-document. Treat the partial content as a complete
        * doc — we'd rather attach a slightly truncated file than silently
        * drop the user's content. */
-      this.documents.push(this.currentDoc);
+      this.documents.push({ content: this.currentDoc, filename: this.currentFilename });
       this.currentDoc = '';
+      this.currentFilename = null;
       this.inDocument = false;
       this.buffer = '';
     } else if (this.buffer.length > 0) {
       /* Any held lookahead buffer at this point is not a marker — emit. */
       trailingText = this.buffer;
       this.buffer = '';
+      this._appendEmitTail(trailingText);
     }
     return { trailingText, documents: this.documents.slice() };
   }
@@ -86,8 +96,12 @@ class DocBlockFilter {
         const closeIdx = this._findMarker(this.buffer, CLOSE_MARKER);
         if (closeIdx !== -1) {
           this.currentDoc += this.buffer.slice(0, closeIdx);
-          this.documents.push(this.currentDoc);
+          this.documents.push({
+            content: this.currentDoc,
+            filename: this.currentFilename,
+          });
           this.currentDoc = '';
+          this.currentFilename = null;
           this.inDocument = false;
           this.buffer = this.buffer.slice(closeIdx + CLOSE_MARKER.length);
           continue;
@@ -104,17 +118,23 @@ class DocBlockFilter {
       } else {
         const openIdx = this._findMarker(this.buffer, OPEN_MARKER);
         if (openIdx !== -1) {
-          toEmit += this.buffer.slice(0, openIdx);
+          const beforeOpen = this.buffer.slice(0, openIdx);
+          toEmit += beforeOpen;
+          this._appendEmitTail(beforeOpen);
+          this.currentFilename = this._captureFilenameFromTail();
           this.buffer = this.buffer.slice(openIdx + OPEN_MARKER.length);
           this.inDocument = true;
           continue;
         }
         const partial = this._partialMarkerLength(this.buffer, OPEN_MARKER);
         if (partial > 0) {
-          toEmit += this.buffer.slice(0, this.buffer.length - partial);
+          const safe = this.buffer.slice(0, this.buffer.length - partial);
+          toEmit += safe;
+          this._appendEmitTail(safe);
           this.buffer = this.buffer.slice(this.buffer.length - partial);
         } else {
           toEmit += this.buffer;
+          this._appendEmitTail(this.buffer);
           this.buffer = '';
         }
         break;
@@ -122,6 +142,30 @@ class DocBlockFilter {
     }
 
     return toEmit;
+  }
+
+  /**
+   * Bounded ring of recently-emitted (visible) text. Used to look back for
+   * the `Filename:` declaration the prompt instructs Claude to emit on the
+   * line just before `[DOCUMENT]`.
+   * @param {string} text
+   */
+  _appendEmitTail(text) {
+    if (!text) return;
+    const combined = this.emitTail + text;
+    this.emitTail = combined.length > 256 ? combined.slice(-256) : combined;
+  }
+
+  /**
+   * Looks at the trailing portion of recently-emitted text for a
+   * `Filename: NAME` line and returns the captured name (without any
+   * trailing `.docx`). Returns null when no match.
+   * @returns {string | null}
+   */
+  _captureFilenameFromTail() {
+    const m = this.emitTail.match(/(?:^|\n)\s*Filename\s*:\s*([^\r\n]+?)\s*$/i);
+    if (!m) return null;
+    return m[1].replace(/\.docx$/i, '').trim() || null;
   }
 
   /**
