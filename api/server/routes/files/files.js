@@ -106,7 +106,9 @@ router.get('/agent/:agent_id', async (req, res) => {
       return res.status(200).json([]);
     }
 
-    const files = await db.getFiles({ file_id: { $in: agentFileIds } }, null, { text: 0 });
+    const files = await db.getFiles({ file_id: { $in: agentFileIds }, user: agent.author }, null, {
+      text: 0,
+    });
 
     res.status(200).json(files);
   } catch (error) {
@@ -187,6 +189,7 @@ router.delete('/', async (req, res) => {
         fileIds: nonOwnedFileIds,
         agentId: req.body.agent_id,
         isDelete: true,
+        files: nonOwnedFiles,
       });
 
       for (const file of nonOwnedFiles) {

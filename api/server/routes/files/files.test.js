@@ -270,6 +270,59 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(processDeleteRequest).toHaveBeenCalled();
     });
 
+    it('should prevent deleting files not owned by the agent author', async () => {
+      const thirdUserId = new mongoose.Types.ObjectId();
+      const thirdUserFileId = uuidv4();
+      await createFile({
+        user: thirdUserId,
+        file_id: thirdUserFileId,
+        filename: 'third-user-file.txt',
+        filepath: '/uploads/third-user-file.txt',
+        bytes: 300,
+        type: 'text/plain',
+      });
+
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [thirdUserFileId],
+          },
+        },
+      });
+
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          files: [
+            {
+              file_id: thirdUserFileId,
+              filepath: '/uploads/third-user-file.txt',
+            },
+          ],
+        });
+
+      expect(response.status).toBe(403);
+      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.unauthorizedFiles).toContain(thirdUserFileId);
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+    });
+
     it('should prevent deleting files not attached to the specified agent', async () => {
       // Create another file not attached to the agent
       const unattachedFileId = uuidv4();

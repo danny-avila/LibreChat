@@ -221,6 +221,49 @@ const filterAuthorizedTools = async ({
 };
 
 /**
+ * Removes file IDs from tool resources unless the referenced file is owned by
+ * the agent owner.
+ * @param {object} params
+ * @param {object} params.tool_resources
+ * @param {string | object} params.ownerId
+ * @param {string} params.logPrefix
+ * @returns {Promise<number>} Count of removed file references.
+ */
+const pruneToolResourceFileIdsForOwner = async ({ tool_resources, ownerId, logPrefix }) => {
+  const referencedFileIds = collectToolResourceFileIds(tool_resources);
+  if (referencedFileIds.length === 0) {
+    return 0;
+  }
+  if (!ownerId) {
+    return stripFileIdsFromToolResources(tool_resources, referencedFileIds).removedCount;
+  }
+  const ownerIdStr = ownerId.toString();
+
+  try {
+    const ownerFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
+      file_id: 1,
+      user: 1,
+    });
+    const allowedIds = new Set(
+      (ownerFiles ?? [])
+        .filter((file) => file.user && file.user.toString() === ownerIdStr)
+        .map((file) => file.file_id),
+    );
+    const disallowedIds = referencedFileIds.filter((id) => !allowedIds.has(id));
+    if (disallowedIds.length > 0) {
+      logger.warn(`${logPrefix} Pruning ${disallowedIds.length} invalid file reference(s)`);
+      return stripFileIdsFromToolResources(tool_resources, disallowedIds).removedCount;
+    }
+    return 0;
+  } catch (fileCheckError) {
+    logger.warn(`${logPrefix} File ownership check failed, pruning incoming file references`, {
+      error: fileCheckError?.message,
+    });
+    return stripFileIdsFromToolResources(tool_resources, referencedFileIds).removedCount;
+  }
+};
+
+/**
  * Creates an Agent.
  * @route POST /Agents
  * @param {ServerRequest} req - The request object.
@@ -238,6 +281,14 @@ const createAgentHandler = async (req, res) => {
     }
 
     const { id: userId, role: userRole } = req.user;
+
+    if (agentData.tool_resources) {
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: agentData.tool_resources,
+        ownerId: userId,
+        logPrefix: '[/Agents]',
+      });
+    }
 
     if (agentData.edges?.length) {
       const unauthorized = await validateEdgeAgentAccess(agentData.edges, userId, userRole);
@@ -509,36 +560,12 @@ const updateAgentHandler = async (req, res) => {
       updateData.tools = ocrConversion.tools;
     }
 
-    /*
-     * Strip orphaned file_id stubs from the incoming payload (see issue #12776).
-     * Scoped to updates that actually touch tool_resources: if the save does not
-     * modify that field, the delete-time cleanup in processDeleteRequest and the
-     * one-off migration already cover pre-existing corruption, so there's no
-     * reason to pay an extra DB round-trip here. Wrapped in try/catch so a
-     * transient failure in this integrity check never turns a good save into 500.
-     */
     if (updateData.tool_resources) {
-      try {
-        const referencedFileIds = collectToolResourceFileIds(updateData.tool_resources);
-        if (referencedFileIds.length > 0) {
-          const existingFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
-            file_id: 1,
-          });
-          const existingIds = new Set((existingFiles ?? []).map((f) => f.file_id));
-          const orphans = referencedFileIds.filter((id) => !existingIds.has(id));
-          if (orphans.length > 0) {
-            logger.warn(
-              `[/Agents/:id] Pruning ${orphans.length} orphaned file reference(s) from agent ${id}`,
-            );
-            stripFileIdsFromToolResources(updateData.tool_resources, orphans);
-          }
-        }
-      } catch (orphanCheckError) {
-        logger.warn(
-          '[/Agents/:id] Orphan file check failed, skipping cleanup for this request',
-          orphanCheckError,
-        );
-      }
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: updateData.tool_resources,
+        ownerId: existingAgent.author,
+        logPrefix: `[/Agents/:id] Agent ${id}`,
+      });
     }
 
     if (updateData.tools) {
@@ -719,6 +746,14 @@ const duplicateAgentHandler = async (req, res) => {
         availableTools,
         existingTools: newAgentData.tools,
         configServers,
+      });
+    }
+
+    if (newAgentData.tool_resources) {
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: newAgentData.tool_resources,
+        ownerId: userId,
+        logPrefix: '[/Agents/:id/duplicate]',
       });
     }
 
@@ -1056,6 +1091,7 @@ const revertAgentVersionHandler = async (req, res) => {
     // Permissions are enforced via route middleware (ACL EDIT)
 
     let updatedAgent = await db.revertAgentVersion({ id }, version_index);
+    const revertUpdates = {};
 
     if (updatedAgent.tools?.length) {
       const [availableTools, configServers] = await Promise.all([
@@ -1070,12 +1106,23 @@ const revertAgentVersionHandler = async (req, res) => {
         configServers,
       });
       if (filteredTools.length !== updatedAgent.tools.length) {
-        updatedAgent = await db.updateAgent(
-          { id },
-          { tools: filteredTools },
-          { updatingUserId: req.user.id },
-        );
+        revertUpdates.tools = filteredTools;
       }
+    }
+
+    if (updatedAgent.tool_resources) {
+      const removedCount = await pruneToolResourceFileIdsForOwner({
+        tool_resources: updatedAgent.tool_resources,
+        ownerId: existingAgent.author,
+        logPrefix: '[/Agents/:id/revert]',
+      });
+      if (removedCount > 0) {
+        revertUpdates.tool_resources = updatedAgent.tool_resources;
+      }
+    }
+
+    if (Object.keys(revertUpdates).length > 0) {
+      updatedAgent = await db.updateAgent({ id }, revertUpdates, { updatingUserId: req.user.id });
     }
 
     if (updatedAgent.author) {

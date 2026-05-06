@@ -5,15 +5,16 @@ const { getAgents, getFiles } = require('~/models');
 
 /**
  * Checks if user has access to a file through agent permissions
- * Files inherit permissions from agents - if you can view the agent, you can access its files
+ * Files inherit permissions from agents authored by the file owner
  */
-const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
+const checkAgentBasedFileAccess = async ({ userId, role, fileId, fileOwner }) => {
   try {
     /** Agents that have this file in their tool_resources */
     const agentsWithFile = await getAgents({
       $or: [
         { 'tool_resources.execute_code.file_ids': fileId },
         { 'tool_resources.file_search.file_ids': fileId },
+        { 'tool_resources.image_edit.file_ids': fileId },
         { 'tool_resources.context.file_ids': fileId },
         { 'tool_resources.ocr.file_ids': fileId },
       ],
@@ -23,15 +24,19 @@ const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
       return false;
     }
 
-    // Check if user has access to any of these agents
+    const fileOwnerId = fileOwner?.toString();
+    const userIdStr = userId.toString();
     for (const agent of agentsWithFile) {
-      // Check if user is the agent author
-      if (agent.author && agent.author.toString() === userId) {
+      const agentAuthorId = agent.author?.toString();
+      if (!agentAuthorId || !fileOwnerId || agentAuthorId !== fileOwnerId) {
+        continue;
+      }
+
+      if (agentAuthorId === userIdStr) {
         logger.debug(`[fileAccess] User is author of agent ${agent.id}`);
         return true;
       }
 
-      // Check ACL permissions for VIEW access on the agent
       try {
         const permissions = await getEffectivePermissions({
           userId,
@@ -49,7 +54,6 @@ const checkAgentBasedFileAccess = async ({ userId, role, fileId }) => {
           `[fileAccess] Permission check failed for agent ${agent.id}:`,
           permissionError.message,
         );
-        // Continue checking other agents
       }
     }
 
@@ -70,7 +74,7 @@ const denyFileAccess = (res) =>
 
 /**
  * Middleware to check if user can access a file
- * Checks: 1) File ownership, 2) Agent-based access (file inherits agent permissions)
+ * Checks: 1) File ownership, 2) Agent-based access through a file-owner agent
  */
 const fileAccess = async (req, res, next) => {
   try {
@@ -114,7 +118,12 @@ const fileAccess = async (req, res, next) => {
     }
 
     /** Agent-based access (file inherits agent permissions) */
-    const hasAgentAccess = await checkAgentBasedFileAccess({ userId, role: userRole, fileId });
+    const hasAgentAccess = await checkAgentBasedFileAccess({
+      userId,
+      role: userRole,
+      fileId,
+      fileOwner: file.user,
+    });
     if (hasAgentAccess) {
       req.fileAccess = { file };
       return next();
