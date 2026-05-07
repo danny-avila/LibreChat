@@ -9,12 +9,44 @@ jest.mock('@librechat/agents', () => ({
   getCodeBaseURL: jest.fn(() => 'https://code-api.example.com'),
 }));
 
+/* Inline the identity helpers' validation rules instead of pulling
+ * them through `@librechat/api`'s root barrel (which has init-time
+ * provider-config side effects that don't matter here) or its leaf
+ * module (the package's `exports` field only surfaces the root).
+ * The real implementation lives in `packages/api/src/files/code/identity.ts`
+ * and has its own dedicated `identity.spec.ts` covering the validation
+ * matrix; this stub just mirrors enough behavior for the surrounding
+ * crud tests to exercise the upload/download flow. */
+const VALID_KINDS = new Set(['skill', 'agent', 'user']);
+const validateIdentity = ({ kind, id, version }, label) => {
+  if (!kind || !VALID_KINDS.has(kind)) throw new Error(`${label}: invalid kind "${kind}"`);
+  if (!id) throw new Error(`${label}: missing id for kind "${kind}"`);
+  if (kind === 'skill' && version == null) {
+    throw new Error(`${label}: kind "skill" requires a numeric version`);
+  }
+  if (kind !== 'skill' && version != null) {
+    throw new Error(`${label}: version is only valid for kind "skill"`);
+  }
+};
+
 jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
   return {
     appendCodeEnvFile: jest.fn((form, stream, filename) => {
       form.append('file', stream, { filename });
+    }),
+    appendCodeEnvFileIdentity: jest.fn((form, identity) => {
+      validateIdentity(identity, 'appendCodeEnvFileIdentity');
+      form.append('kind', identity.kind);
+      form.append('id', identity.id);
+      if (identity.version != null) form.append('version', String(identity.version));
+    }),
+    buildCodeEnvDownloadQuery: jest.fn((identity) => {
+      validateIdentity(identity, 'buildCodeEnvDownloadQuery');
+      const params = new URLSearchParams({ kind: identity.kind, id: identity.id });
+      if (identity.version != null) params.set('version', String(identity.version));
+      return `?${params.toString()}`;
     }),
     logAxiosError: jest.fn(({ message }) => message),
     createAxiosInstance: jest.fn(() => mockAxios),

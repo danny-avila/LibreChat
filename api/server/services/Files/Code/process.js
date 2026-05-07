@@ -16,6 +16,7 @@ const {
   extractCodeArtifactText,
   getExtractedTextFormat,
   getStorageMetadata,
+  buildCodeEnvDownloadQuery,
 } = require('@librechat/api');
 const {
   Tools,
@@ -31,7 +32,6 @@ const {
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { buildCodeEnvDownloadQuery } = require('./crud');
 const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');

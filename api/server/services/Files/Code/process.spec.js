@@ -85,6 +85,16 @@ jest.mock('@librechat/api', () => {
      * if a case needs to assert the 'html' value. */
     getExtractedTextFormat: (...args) => mockGetExtractedTextFormat(...args),
     getStorageMetadata: jest.fn(() => ({})),
+    /* Identity helpers mirror codeapi's validator. The real impl
+     * lives in `packages/api/src/files/code/identity.ts` with its
+     * own dedicated `identity.spec.ts`; here we just stub the
+     * download-query builder since `processCodeOutput` calls it on
+     * every output download. */
+    buildCodeEnvDownloadQuery: jest.fn(({ kind, id, version }) => {
+      const params = new URLSearchParams({ kind, id });
+      if (version != null) params.set('version', String(version));
+      return `?${params.toString()}`;
+    }),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
   };

@@ -7,72 +7,13 @@ const {
   createAxiosInstance,
   codeServerHttpAgent,
   codeServerHttpsAgent,
+  appendCodeEnvFileIdentity,
+  buildCodeEnvDownloadQuery,
 } = require('@librechat/api');
 
 const axios = createAxiosInstance();
 
 const MAX_FILE_SIZE = 150 * 1024 * 1024;
-
-const VALID_CODE_ENV_KINDS = new Set(['skill', 'agent', 'user']);
-
-/**
- * Appends `kind`/`id`/`version?` form fields. Validates the same shape
- * the codeapi resolver enforces server-side (`version` required for
- * `'skill'`, forbidden otherwise; `kind` from the closed set) so a bad
- * caller fails fast on the client instead of round-tripping a 400.
- *
- * @param {FormData} form
- * @param {{ kind?: string; id?: string; version?: number }} identity
- */
-function appendCodeEnvFileIdentity(form, { kind, id, version }) {
-  if (!kind || !VALID_CODE_ENV_KINDS.has(kind)) {
-    throw new Error(`uploadCodeEnvFile: invalid kind "${kind}"`);
-  }
-  if (!id) {
-    throw new Error(`uploadCodeEnvFile: missing id for kind "${kind}"`);
-  }
-  if (kind === 'skill' && version == null) {
-    throw new Error(`uploadCodeEnvFile: kind "skill" requires a numeric version`);
-  }
-  if (kind !== 'skill' && version != null) {
-    throw new Error(`uploadCodeEnvFile: version is only valid for kind "skill"`);
-  }
-  form.append('kind', kind);
-  form.append('id', id);
-  if (version != null) {
-    form.append('version', String(version));
-  }
-}
-
-/**
- * Build the `?kind=...&id=...&version=...` query string codeapi's
- * `sessionAuth` middleware requires on `/download/...` URLs (post-Phase
- * C). Without these, codeapi 400s with "kind must be one of: skill,
- * agent, user" before serving the file. Mirrors the form-field shape
- * `appendCodeEnvFileIdentity` writes on the upload side.
- *
- * @param {{ kind: 'skill' | 'agent' | 'user'; id: string; version?: number }} identity
- * @returns {string} URL-encoded query string with leading '?'.
- */
-function buildCodeEnvDownloadQuery({ kind, id, version }) {
-  if (!kind || !VALID_CODE_ENV_KINDS.has(kind)) {
-    throw new Error(`getCodeOutputDownloadStream: invalid kind "${kind}"`);
-  }
-  if (!id) {
-    throw new Error(`getCodeOutputDownloadStream: missing id for kind "${kind}"`);
-  }
-  if (kind === 'skill' && version == null) {
-    throw new Error(`getCodeOutputDownloadStream: kind "skill" requires a numeric version`);
-  }
-  if (kind !== 'skill' && version != null) {
-    throw new Error(`getCodeOutputDownloadStream: version is only valid for kind "skill"`);
-  }
-  const params = new URLSearchParams({ kind, id });
-  if (version != null) {
-    params.set('version', String(version));
-  }
-  return `?${params.toString()}`;
-}
 
 /**
  * Retrieves a download stream for a specified file.
@@ -273,5 +214,4 @@ module.exports = {
   getCodeOutputDownloadStream,
   uploadCodeEnvFile,
   batchUploadCodeEnvFiles,
-  buildCodeEnvDownloadQuery,
 };
