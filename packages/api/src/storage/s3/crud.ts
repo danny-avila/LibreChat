@@ -105,10 +105,7 @@ const getParsedPathFlags = (
   if (inlinePathPrefix) {
     return { useInlinePath: true, inlinePathPrefix };
   }
-  if (storageRegion) {
-    return { useInlinePath: false };
-  }
-  return {};
+  return { useInlinePath: false };
 };
 
 const getDefaultStorageRegion = (): string | null =>
@@ -143,6 +140,7 @@ function normalizeS3KeyOptions(
     userId: userId ?? '',
     fileName: fileName ?? '',
     tenantId,
+    useInlinePath: false,
   };
 }
 
@@ -268,6 +266,9 @@ export function getStorageMetadataForKey(
 ): Pick<SaveURLResult, 'storageKey' | 'storageRegion'> {
   const normalizedKey = key.replace(/^\/+/, '');
   const parsedKey = parseS3Key(normalizedKey);
+  if (!parsedKey) {
+    return {};
+  }
   return {
     storageKey: normalizedKey,
     ...(parsedKey?.storageRegion ? { storageRegion: parsedKey.storageRegion } : {}),
@@ -626,6 +627,12 @@ export async function saveURLToS3(
 export function extractKeyFromS3Url(fileUrlOrKey: string): string {
   if (!fileUrlOrKey) {
     throw new Error('Invalid input: URL or key is empty');
+  }
+
+  if (!fileUrlOrKey.startsWith('http://') && !fileUrlOrKey.startsWith('https://')) {
+    const key = fileUrlOrKey.startsWith('/') ? fileUrlOrKey.substring(1) : fileUrlOrKey;
+    logger.debug(`[extractKeyFromS3Url] Non-URL input, using key directly: ${key}`);
+    return key;
   }
 
   try {

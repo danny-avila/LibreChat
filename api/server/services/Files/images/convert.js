@@ -13,7 +13,7 @@ const { resizeImageBuffer } = require('./resize');
  * @param {Buffer | Express.Multer.File} file - The file object, containing either a path or a buffer.
  * @param {'low' | 'high'} [resolution='high'] - The desired resolution for the output image.
  * @param {string} [basename=''] - The basename of the input file, if it is a buffer.
- * @returns {Promise<{filepath: string, bytes: number, width: number, height: number}>} An object containing the path, size, and dimensions of the converted image.
+ * @returns {Promise<{filepath: string, bytes: number, width: number, height: number, storageKey?: string, storageRegion?: string}>} An object containing the path, size, dimensions, and optional storage metadata of the converted image.
  * @throws Throws an error if there is an issue during the conversion process.
  */
 async function convertImage(req, file, resolution = 'high', basename = '') {

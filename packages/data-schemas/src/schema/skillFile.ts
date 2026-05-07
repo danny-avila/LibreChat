@@ -64,7 +64,6 @@ const skillFileSchema: Schema<ISkillFileDocument> = new Schema(
     },
     storageRegion: {
       type: String,
-      index: true,
     },
     source: {
       type: String,

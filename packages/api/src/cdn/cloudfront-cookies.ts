@@ -3,8 +3,9 @@ import { logger } from '@librechat/data-schemas';
 
 import type { Response } from 'express';
 
-import { assertPathSegment } from '~/storage/validation';
 import { INLINE_AVATAR_PATH_PREFIX, INLINE_IMAGE_PATH_PREFIX } from '~/storage/constants';
+import { assertPathSegment } from '~/storage/validation';
+import { s3Config } from '~/storage/s3/s3Config';
 import { getCloudFrontConfig } from './cloudfront';
 
 const DEFAULT_COOKIE_EXPIRY = 1800;
@@ -256,9 +257,9 @@ export function setCloudFrontCookies(
 
     const cleanDomain = config.domain.replace(/\/+$/, '');
     const includeRegionInPath = config.includeRegionInPath ?? false;
-    const scopedStorageRegion = includeRegionInPath
-      ? (scope.storageRegion ?? config.storageRegion ?? process.env.AWS_REGION)
-      : scope.storageRegion;
+    const configuredStorageRegion =
+      scope.storageRegion ?? config.storageRegion ?? s3Config.AWS_REGION ?? process.env.AWS_REGION;
+    const scopedStorageRegion = includeRegionInPath ? configuredStorageRegion : scope.storageRegion;
     const effectiveScope = {
       ...scope,
       ...(scopedStorageRegion ? { storageRegion: scopedStorageRegion } : {}),
@@ -270,6 +271,10 @@ export function setCloudFrontCookies(
     }
 
     const signedCookieSets = Array.from(resourcesByPath, ([path, resources]) => {
+      if (resources.length > 1) {
+        throw new Error('[CloudFront cookies] Multiple resources cannot share a cookie path.');
+      }
+
       const policy = JSON.stringify({
         Statement: [
           {
@@ -282,10 +287,6 @@ export function setCloudFrontCookies(
           },
         ],
       });
-
-      if (resources.length > 1) {
-        throw new Error('[CloudFront cookies] Multiple resources cannot share a cookie path.');
-      }
 
       return {
         path,

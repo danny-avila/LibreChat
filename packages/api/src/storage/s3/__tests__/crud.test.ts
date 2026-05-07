@@ -84,7 +84,33 @@ describe('S3 CRUD', () => {
     it('constructs key from basePath, userId, and fileName', async () => {
       const { getS3Key } = await import('../crud');
       const key = getS3Key('images', 'user123', 'file.png');
-      expect(key).toBe('i/images/user123/file.png');
+      expect(key).toBe('images/user123/file.png');
+    });
+
+    it('keeps the legacy positional overload outside inline cookie namespaces', async () => {
+      const { getS3Key } = await import('../crud');
+      expect(getS3Key('images', 'user123', 'file.png', 'tenantA')).toBe(
+        't/tenantA/images/user123/file.png',
+      );
+      expect(getS3Key('avatars', 'user123', 'avatar.png')).toBe('avatars/user123/avatar.png');
+    });
+
+    it('uses inline cookie namespaces with object-form image and avatar keys', async () => {
+      const { getS3Key } = await import('../crud');
+      expect(
+        getS3Key({
+          basePath: 'images',
+          userId: 'user123',
+          fileName: 'file.png',
+        }),
+      ).toBe('i/images/user123/file.png');
+      expect(
+        getS3Key({
+          basePath: 'avatars',
+          userId: 'user123',
+          fileName: 'avatar.png',
+        }),
+      ).toBe('a/avatars/user123/avatar.png');
     });
 
     it('handles nested file names', async () => {
@@ -96,7 +122,7 @@ describe('S3 CRUD', () => {
     it('constructs tenant-prefixed keys when tenantId is provided', async () => {
       const { getS3Key } = await import('../crud');
       const key = getS3Key('images', 'user123', 'file.png', 'tenantA');
-      expect(key).toBe('i/t/tenantA/images/user123/file.png');
+      expect(key).toBe('t/tenantA/images/user123/file.png');
     });
 
     it('constructs region-prefixed keys without tenant scope', async () => {
@@ -205,6 +231,7 @@ describe('S3 CRUD', () => {
     it('parses legacy keys', async () => {
       const { parseS3Key } = await import('../crud');
       expect(parseS3Key('images/user123/folder/file.png')).toEqual({
+        useInlinePath: false,
         basePath: 'images',
         userId: 'user123',
         fileName: 'folder/file.png',
@@ -214,11 +241,23 @@ describe('S3 CRUD', () => {
     it('parses tenant-prefixed keys', async () => {
       const { parseS3Key } = await import('../crud');
       expect(parseS3Key('t/tenantA/images/user123/file.png')).toEqual({
+        useInlinePath: false,
         tenantId: 'tenantA',
         basePath: 'images',
         userId: 'user123',
         fileName: 'file.png',
       });
+    });
+
+    it('round-trips legacy image and avatar keys without adding inline prefixes', async () => {
+      const { getS3Key, parseS3Key } = await import('../crud');
+      const imageKey = parseS3Key('images/user123/file.png');
+      const avatarKey = parseS3Key('avatars/user123/avatar.png');
+
+      expect(imageKey).not.toBeNull();
+      expect(avatarKey).not.toBeNull();
+      expect(getS3Key(imageKey!)).toBe('images/user123/file.png');
+      expect(getS3Key(avatarKey!)).toBe('avatars/user123/avatar.png');
     });
 
     it('parses region-prefixed keys', async () => {
@@ -1112,6 +1151,15 @@ describe('S3 CRUD', () => {
       );
 
       expect(result).toContain('signed=true');
+      expect(getSignedUrl).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Key: 'images/user123/file.jpg',
+          }),
+        }),
+        expect.anything(),
+      );
     });
 
     it('generates a new URL from a tenant-prefixed S3 URL', async () => {
@@ -1124,7 +1172,7 @@ describe('S3 CRUD', () => {
         expect.anything(),
         expect.objectContaining({
           input: expect.objectContaining({
-            Key: 'i/t/tenantA/images/user123/file.jpg',
+            Key: 't/tenantA/images/user123/file.jpg',
           }),
         }),
         expect.anything(),
@@ -1171,6 +1219,26 @@ describe('S3 CRUD', () => {
 
       expect(result[0].filepath).toContain('signed=true');
       expect(result[1].filepath).toContain('signed=true');
+      expect(getSignedUrl).toHaveBeenNthCalledWith(
+        1,
+        expect.anything(),
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Key: 'images/user123/file1.jpg',
+          }),
+        }),
+        expect.anything(),
+      );
+      expect(getSignedUrl).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Key: 'images/user456/file2.jpg',
+          }),
+        }),
+        expect.anything(),
+      );
       expect(mockBatchUpdate).toHaveBeenCalledWith([
         {
           file_id: 'file1',
