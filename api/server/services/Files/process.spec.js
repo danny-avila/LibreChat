@@ -346,6 +346,128 @@ describe('processAgentFileUpload', () => {
       ).resolves.not.toThrow();
     });
   });
+
+  /* Phase C / option α regression: the upload must persist its sandbox
+   * pointer under `metadata.codeEnvRef` (the post-cutover schema). The
+   * legacy `metadata.fileIdentifier` key is silently stripped by mongoose
+   * strict mode and downstream readers (`primeFiles`, `getCodeFilesByIds`,
+   * `categorizeFileForToolResources`, controller filtering) only check
+   * `codeEnvRef`. Storing under the legacy key would orphan the file —
+   * priming would skip it on subsequent code-execution turns and the
+   * sandbox copy would never re-mount. */
+  describe('execute_code uploads persist codeEnvRef metadata', () => {
+    const fs = require('fs');
+    const { Readable } = require('stream');
+    let createReadStreamSpy;
+
+    beforeEach(() => {
+      /* `processAgentFileUpload` opens the multer-staged temp file via
+       * `fs.createReadStream`. The test fixture path doesn't exist, so
+       * stub it to a tiny in-memory stream. */
+      createReadStreamSpy = jest
+        .spyOn(fs, 'createReadStream')
+        .mockImplementation(() => Readable.from(Buffer.from('')));
+    });
+
+    afterEach(() => {
+      createReadStreamSpy.mockRestore();
+    });
+
+    const setupCodeEnvUpload = (uploaded) => {
+      /* `processAgentFileUpload` calls `getStrategyFunctions` twice:
+       * once with `execute_code` for the codeapi upload, then again with
+       * the on-disk strategy (`local`) for the standard storage step that
+       * runs in the same flow. Both must return a working
+       * `handleFileUpload`. */
+      const codeEnvUpload = jest.fn().mockResolvedValue(uploaded);
+      const localUpload = jest.fn().mockResolvedValue({
+        bytes: 0,
+        filename: 'upload.bin',
+        filepath: '/uploads/upload.bin',
+      });
+      getStrategyFunctions.mockImplementation((src) =>
+        src === FileSources.execute_code
+          ? { handleFileUpload: codeEnvUpload }
+          : { handleFileUpload: localUpload, saveBuffer: jest.fn() },
+      );
+      return codeEnvUpload;
+    };
+
+    it('persists kind:user codeEnvRef for chat attachments (messageAttachment=true)', async () => {
+      setupCodeEnvUpload({ storage_session_id: 'sess-1', file_id: 'fid-1' });
+      const req = makeReq();
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+          message_file: true,
+        },
+      });
+
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: {
+            codeEnvRef: {
+              kind: 'user',
+              id: 'user-123',
+              storage_session_id: 'sess-1',
+              file_id: 'fid-1',
+            },
+          },
+        }),
+        true,
+      );
+    });
+
+    it('persists kind:agent codeEnvRef for agent setup files (messageAttachment=false)', async () => {
+      setupCodeEnvUpload({ storage_session_id: 'sess-2', file_id: 'fid-2' });
+      const req = makeReq();
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+        },
+      });
+
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: {
+            codeEnvRef: {
+              kind: 'agent',
+              id: 'agent-abc',
+              storage_session_id: 'sess-2',
+              file_id: 'fid-2',
+            },
+          },
+        }),
+        true,
+      );
+    });
+
+    it('does not persist legacy fileIdentifier key (mongoose strict drops it)', async () => {
+      setupCodeEnvUpload({ storage_session_id: 'sess-3', file_id: 'fid-3' });
+      const req = makeReq();
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+          message_file: true,
+        },
+      });
+
+      const persisted = db.createFile.mock.calls[0][0];
+      expect(persisted.metadata).not.toHaveProperty('fileIdentifier');
+    });
+  });
 });
 
 describe('processFileURL', () => {

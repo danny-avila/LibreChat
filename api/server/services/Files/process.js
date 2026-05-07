@@ -576,14 +576,28 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
      *   per agent identity. `id` carries the agent id. */
     const codeKind = messageAttachment === true ? 'user' : 'agent';
     const codeId = messageAttachment === true ? req.user.id : agent_id;
-    const fileIdentifier = await uploadCodeEnvFile({
+    const uploaded = await uploadCodeEnvFile({
       req,
       stream,
       filename: file.originalname,
       kind: codeKind,
       id: codeId,
     });
-    fileInfoMetadata = { fileIdentifier };
+    /* Persist under the structured `codeEnvRef` shape — the only key the
+     * post-cutover schema (`metadata.codeEnvRef`) and downstream readers
+     * (`primeFiles`, `getCodeFilesByIds`, `categorizeFileForToolResources`,
+     * controller filtering) accept. Storing under the legacy
+     * `fileIdentifier` key would be silently dropped by mongoose strict
+     * mode and the file would lose its sandbox reference on subsequent
+     * priming turns. */
+    fileInfoMetadata = {
+      codeEnvRef: {
+        kind: codeKind,
+        id: codeId,
+        storage_session_id: uploaded.storage_session_id,
+        file_id: uploaded.file_id,
+      },
+    };
   } else if (tool_resource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
     if (!isFileSearchEnabled) {

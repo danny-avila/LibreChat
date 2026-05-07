@@ -1234,7 +1234,11 @@ class BaseClient {
         allFiles.push(file);
         continue;
       }
-      if (file.embedded === true || file.metadata?.fileIdentifier != null) {
+      if (
+        file.embedded === true ||
+        file.metadata?.codeEnvRef != null ||
+        file.metadata?.fileIdentifier != null
+      ) {
         allFiles.push(file);
         continue;
       }
