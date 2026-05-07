@@ -630,9 +630,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
   }
 
   if (!fileUrlOrKey.startsWith('http://') && !fileUrlOrKey.startsWith('https://')) {
-    const key = fileUrlOrKey.startsWith('/') ? fileUrlOrKey.substring(1) : fileUrlOrKey;
-    logger.debug(`[extractKeyFromS3Url] Non-URL input, using key directly: ${key}`);
-    return key;
+    return fileUrlOrKey.startsWith('/') ? fileUrlOrKey.substring(1) : fileUrlOrKey;
   }
 
   try {

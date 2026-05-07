@@ -199,7 +199,10 @@ export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieSco
     const paths = new Set(['/images', '/avatars', '/r', '/i', '/a', '/']);
     const clearScope =
       config.includeRegionInPath && scope.userId && !scope.storageRegion
-        ? { ...scope, storageRegion: config.storageRegion ?? process.env.AWS_REGION }
+        ? {
+            ...scope,
+            storageRegion: config.storageRegion ?? s3Config.AWS_REGION ?? process.env.AWS_REGION,
+          }
         : scope;
     if (clearScope.userId) {
       for (const path of getScopeCookiePaths(clearScope, {

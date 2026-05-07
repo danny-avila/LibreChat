@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import { getStorageMetadata } from '../metadata';
 
+// getStorageMetadata uses real S3 key extraction/parsing from crud.ts; no S3 calls are made here.
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     debug: jest.fn(),

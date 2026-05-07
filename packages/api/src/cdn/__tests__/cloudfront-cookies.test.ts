@@ -778,6 +778,33 @@ describe('clearCloudFrontCookies', () => {
     ]);
   });
 
+  it('clears region-mode scoped cookies without requiring scope.storageRegion', () => {
+    mockGetCloudFrontConfig.mockReturnValue({
+      domain: 'https://cdn.example.com',
+      imageSigning: 'cookies',
+      cookieDomain: '.example.com',
+      privateKey: 'test-key',
+      keyPairId: 'K123',
+      storageRegion: 'us-east-2',
+      includeRegionInPath: true,
+    });
+
+    clearCloudFrontCookies(mockRes as Response, { userId: 'user123', tenantId: 'tenantA' });
+
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Policy',
+      expect.objectContaining({ path: '/i' }),
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Policy',
+      expect.objectContaining({ path: '/a' }),
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'LibreChat-CloudFront-Scope',
+      expect.objectContaining({ path: '/' }),
+    ]);
+  });
+
   it('logs warning and does not throw when clearing fails', () => {
     mockGetCloudFrontConfig.mockReturnValue({
       domain: 'https://cdn.example.com',
