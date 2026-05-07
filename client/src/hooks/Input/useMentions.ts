@@ -19,7 +19,7 @@ import {
 } from '~/data-provider';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
-import { mapEndpoints, getPresetTitle, getEndpointAlternateName } from '~/utils';
+import { mapEndpoints, getPresetTitle, getEndpointAlternateName, getModelDisplayName } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import useLocalize from '~/hooks/useLocalize';
@@ -169,7 +169,7 @@ export default function useMentions({
 
       const models = (modelsConfig?.[endpoint] ?? []).map((model) => ({
         value: endpoint,
-        label: model,
+        label: getModelDisplayName(model, localize).dropdownLabel,
         type: 'model' as const,
         icon: EndpointIcon({
           conversation: { endpoint, model },
@@ -241,6 +241,7 @@ export default function useMentions({
 
     return mentions;
   }, [
+    localize,
     presets,
     endpoints,
     modelSpecs,

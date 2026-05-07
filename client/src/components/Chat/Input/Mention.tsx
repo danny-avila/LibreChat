@@ -10,7 +10,7 @@ import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
-import { removeCharIfLast } from '~/utils';
+import { removeCharIfLast, getModelDisplayName } from '~/utils';
 import MentionItem from './MentionItem';
 
 const ROW_HEIGHT = 44;
@@ -108,7 +108,7 @@ function MentionContent({
     } else if (mention.type === 'endpoint') {
       const models = (modelsConfig?.[mention.value || ''] ?? []).map((model) => ({
         value: mention.value,
-        label: model,
+        label: getModelDisplayName(model, localize).dropdownLabel,
         type: 'model',
       }));
 

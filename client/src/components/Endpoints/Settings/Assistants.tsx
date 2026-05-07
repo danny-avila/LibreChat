@@ -9,6 +9,7 @@ import {
   removeFocusRings,
   mapAssistants,
   createDropdownSetter,
+  getModelDisplayName,
 } from '~/utils';
 import { useLocalize, useDebouncedInput, useAssistantListMap } from '~/hooks';
 import OptionHover from './OptionHover';
@@ -60,13 +61,16 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   }, [assistant_id, assistantListMap, endpoint]);
 
   const modelOptions = useMemo(() => {
-    return models.map((model) => ({
-      label:
-        model === activeAssistant?.model
-          ? `${model} (${localize('com_endpoint_assistant_model')})`
-          : model,
-      value: model,
-    }));
+    return models.map((model) => {
+      const humanLabel = getModelDisplayName(model, localize).dropdownLabel;
+      return {
+        label:
+          model === activeAssistant?.model
+            ? `${humanLabel} (${localize('com_endpoint_assistant_model')})`
+            : humanLabel,
+        value: model,
+      };
+    });
   }, [models, activeAssistant, localize]);
 
   const [assistantValue, setAssistantValue] = useState<Option>(
