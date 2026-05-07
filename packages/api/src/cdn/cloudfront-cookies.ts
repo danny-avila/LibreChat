@@ -259,11 +259,6 @@ export function setCloudFrontCookies(
     const scopedStorageRegion = includeRegionInPath
       ? (scope.storageRegion ?? config.storageRegion ?? process.env.AWS_REGION)
       : scope.storageRegion;
-    if (includeRegionInPath && !scopedStorageRegion) {
-      throw new Error(
-        '[CloudFront cookies] storageRegion is required when region pathing is enabled.',
-      );
-    }
     const effectiveScope = {
       ...scope,
       ...(scopedStorageRegion ? { storageRegion: scopedStorageRegion } : {}),

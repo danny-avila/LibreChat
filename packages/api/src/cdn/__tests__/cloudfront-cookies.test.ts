@@ -402,6 +402,57 @@ describe('setCloudFrontCookies', () => {
     );
   });
 
+  it('does not require a concrete storageRegion for wildcard region policies', () => {
+    const originalRegion = process.env.AWS_REGION;
+    delete process.env.AWS_REGION;
+    mockGetCloudFrontConfig.mockReturnValue({
+      domain: 'https://cdn.example.com',
+      imageSigning: 'cookies',
+      cookieExpiry: 1800,
+      cookieDomain: '.example.com',
+      privateKey: '-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----',
+      keyPairId: 'K123ABC',
+      includeRegionInPath: true,
+    });
+
+    mockGetSignedCookies.mockReturnValue({
+      'CloudFront-Policy': 'policy-value',
+      'CloudFront-Signature': 'signature-value',
+      'CloudFront-Key-Pair-Id': 'K123ABC',
+    });
+
+    try {
+      const result = setCloudFrontCookies(mockRes as Response, {
+        userId: 'user123',
+        tenantId: 'tenantA',
+      });
+
+      const privatePolicy = JSON.parse(mockGetSignedCookies.mock.calls[0][0].policy);
+      const avatarPolicy = JSON.parse(mockGetSignedCookies.mock.calls[1][0].policy);
+      const [, scopeValue] = cookieArgs[cookieArgs.length - 1];
+      expect(result).toBe(true);
+      expect(privatePolicy.Statement).toEqual([
+        expect.objectContaining({
+          Resource: 'https://cdn.example.com/i/r/*/t/tenantA/images/user123/*',
+        }),
+      ]);
+      expect(avatarPolicy.Statement).toEqual([
+        expect.objectContaining({
+          Resource: 'https://cdn.example.com/a/r/*/t/tenantA/avatars/*',
+        }),
+      ]);
+      expect(Buffer.from(scopeValue, 'base64url').toString('utf8')).toBe(
+        JSON.stringify({ userId: 'user123', tenantId: 'tenantA', storageRegion: null }),
+      );
+    } finally {
+      if (originalRegion == null) {
+        delete process.env.AWS_REGION;
+      } else {
+        process.env.AWS_REGION = originalRegion;
+      }
+    }
+  });
+
   it('builds a user-bounded region-wildcard policy for non-tenant installs', () => {
     mockGetCloudFrontConfig.mockReturnValue({
       domain: 'https://cdn.example.com',
