@@ -148,7 +148,7 @@ describe('setCloudFrontCookies', () => {
 
     expect(result).toBe(true);
     expect(mockRes.cookie).toHaveBeenCalledTimes(7);
-    expect(mockRes.clearCookie).toHaveBeenCalledTimes(15);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(18);
 
     const cookieNames = cookieArgs.map(([name]) => name);
     expect(cookieNames).toContain('CloudFront-Policy');
@@ -203,10 +203,14 @@ describe('setCloudFrontCookies', () => {
 
     setCloudFrontCookies(mockRes as Response, defaultScope);
 
-    expect(clearedCookies).toHaveLength(15);
+    expect(clearedCookies).toHaveLength(18);
     expect(clearedCookies).toContainEqual([
       'CloudFront-Policy',
       expect.objectContaining({ path: '/images' }),
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Signature',
+      expect.objectContaining({ path: '/images/user123' }),
     ]);
     expect(clearedCookies).toContainEqual([
       'CloudFront-Key-Pair-Id',
@@ -248,6 +252,22 @@ describe('setCloudFrontCookies', () => {
       { userId: 'oldUser', tenantId: 'oldTenant' },
     );
 
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Policy',
+      expect.objectContaining({ path: '/t/oldTenant/images/oldUser' }),
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Signature',
+      expect.objectContaining({ path: '/t/oldTenant/avatars' }),
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Key-Pair-Id',
+      expect.objectContaining({ path: '/t/newTenant/images/newUser' }),
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Policy',
+      expect.objectContaining({ path: '/t/newTenant/avatars' }),
+    ]);
     expect(clearedCookies).toContainEqual([
       'CloudFront-Policy',
       expect.objectContaining({ path: '/i' }),
@@ -745,7 +765,7 @@ describe('clearCloudFrontCookies', () => {
 
     clearCloudFrontCookies(mockRes as Response, { userId: 'user123', tenantId: 'tenantA' });
 
-    expect(mockRes.clearCookie).toHaveBeenCalledTimes(22);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(28);
     expect(clearedCookies).toContainEqual([
       'CloudFront-Policy',
       {
@@ -765,6 +785,14 @@ describe('clearCloudFrontCookies', () => {
         secure: true,
         sameSite: 'none',
       },
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Policy',
+      expect.objectContaining({ path: '/t/tenantA/images/user123' }),
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Signature',
+      expect.objectContaining({ path: '/t/tenantA/avatars' }),
     ]);
     expect(clearedCookies).toContainEqual([
       'LibreChat-CloudFront-Scope',
@@ -791,6 +819,14 @@ describe('clearCloudFrontCookies', () => {
 
     clearCloudFrontCookies(mockRes as Response, { userId: 'user123', tenantId: 'tenantA' });
 
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Policy',
+      expect.objectContaining({ path: '/t/tenantA/images/user123' }),
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Signature',
+      expect.objectContaining({ path: '/t/tenantA/avatars' }),
+    ]);
     expect(clearedCookies).toContainEqual([
       'CloudFront-Policy',
       expect.objectContaining({ path: '/i' }),

@@ -108,22 +108,24 @@ function getPolicyScopes(
 
 function getScopeCookiePaths(
   scope: CloudFrontCookieScope,
-  {
-    includeTenantRoot = false,
-    includeRegionInPath = false,
-  }: { includeTenantRoot?: boolean; includeRegionInPath?: boolean } = {},
+  { includeTenantRoot = false }: { includeTenantRoot?: boolean } = {},
 ): string[] {
   if (!scope.userId) {
     return [];
   }
 
-  assertPolicyPathSegment('userId', scope.userId);
   if (scope.storageRegion) {
     assertPolicyPathSegment('storageRegion', scope.storageRegion);
   }
+  const safeUserId = assertPolicyPathSegment('userId', scope.userId);
   const safeTenantId = scope.tenantId ? assertPolicyPathSegment('tenantId', scope.tenantId) : null;
   const paths = [`/${INLINE_IMAGE_PATH_PREFIX}`, `/${INLINE_AVATAR_PATH_PREFIX}`];
-  if (!includeRegionInPath && safeTenantId && includeTenantRoot) {
+  if (safeTenantId) {
+    paths.push(`/t/${safeTenantId}/images/${safeUserId}`, `/t/${safeTenantId}/avatars`);
+  } else {
+    paths.push(`/images/${safeUserId}`, '/avatars');
+  }
+  if (safeTenantId && includeTenantRoot) {
     paths.push(`/t/${safeTenantId}`);
   }
   return paths;
@@ -207,7 +209,6 @@ export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieSco
     if (clearScope.userId) {
       for (const path of getScopeCookiePaths(clearScope, {
         includeTenantRoot: true,
-        includeRegionInPath: config.includeRegionInPath,
       })) {
         paths.add(path);
       }
@@ -309,13 +310,11 @@ export function setCloudFrontCookies(
     };
     const stalePaths = new Set(['/images', '/avatars', '/r', '/i', '/a']);
     if (previousScope?.userId) {
-      for (const path of getScopeCookiePaths(previousScope, {
-        includeRegionInPath: Boolean(previousScope.storageRegion),
-      })) {
+      for (const path of getScopeCookiePaths(previousScope)) {
         stalePaths.add(path);
       }
     }
-    for (const path of getScopeCookiePaths(effectiveScope, { includeRegionInPath })) {
+    for (const path of getScopeCookiePaths(effectiveScope)) {
       stalePaths.add(path);
     }
 
