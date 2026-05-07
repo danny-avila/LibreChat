@@ -8,6 +8,7 @@ import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+import { REFILL_INTERVAL_UNITS } from './balance';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -1229,10 +1230,7 @@ export const balanceSchema = z.object({
   startBalance: z.number().optional().default(20000),
   autoRefillEnabled: z.boolean().optional().default(false),
   refillIntervalValue: z.number().optional().default(30),
-  refillIntervalUnit: z
-    .enum(['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'])
-    .optional()
-    .default('days'),
+  refillIntervalUnit: z.enum(REFILL_INTERVAL_UNITS).optional().default('days'),
   refillAmount: z.number().optional().default(10000),
 });
 
