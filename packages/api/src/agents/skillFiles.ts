@@ -2,6 +2,7 @@ import { Readable } from 'stream';
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import type { ToolSessionMap, CodeSessionContext } from '@librechat/agents';
+import type { CodeEnvRef } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type { ServerRequest } from '~/types';
 import { extractInvokedSkillsFromPayload } from './run';
@@ -12,11 +13,19 @@ export interface SkillFileRecord {
   filepath: string;
   source: string;
   bytes: number;
-  codeEnvIdentifier?: string;
+  codeEnvRef?: CodeEnvRef;
 }
 
 export interface PrimeSkillFilesParams {
-  skill: { body: string; name: string; _id: Types.ObjectId | string };
+  skill: {
+    body: string;
+    name: string;
+    _id: Types.ObjectId | string;
+    /** Monotonic counter on the skill record. Bumped on every edit
+     *  (frontmatter / body / file upsert). Threaded into `codeEnvRef.version`
+     *  so codeapi's sessionKey scopes the cache per-revision. */
+    version: number;
+  };
   skillFiles: SkillFileRecord[];
   req: ServerRequest;
   getStrategyFunctions: (source: string) => {
@@ -26,44 +35,45 @@ export interface PrimeSkillFilesParams {
   batchUploadCodeEnvFiles: (params: {
     req: ServerRequest;
     files: Array<{ stream: NodeJS.ReadableStream; filename: string }>;
-    entity_id?: string;
+    /** Resource kind that owns the batch's storage session. Drives codeapi's
+     *  sessionKey derivation (`<tenant>:<kind>:<id>[:v:<version>]`). */
+    kind: 'skill' | 'agent' | 'user';
+    /** Resource id (skillId / agentId / userId). */
+    id: string;
+    /** Required when `kind === 'skill'`; forbidden otherwise. */
+    version?: number;
     /** When true, codeapi tags every file in the batch as infrastructure
      *  (read-only inputs that must never surface as generated artifacts,
      *  even if sandboxed code mutates the bytes on disk). */
     read_only?: boolean;
   }) => Promise<{
-    session_id: string;
+    storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
   }>;
   /** Checks if a code env file is still active. Returns lastModified timestamp or null. */
-  getSessionInfo?: (fileIdentifier: string) => Promise<string | null>;
+  getSessionInfo?: (ref: CodeEnvRef) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
-  /** Persists codeEnvIdentifier on skill files after upload. Implementations
+  /** Persists `codeEnvRef` on skill files after upload. Implementations
    *  warn-log on partial writes (matchedCount/modifiedCount mismatch)
    *  internally — caller can fire-and-forget without losing visibility. */
   updateSkillFileCodeEnvIds?: (
     updates: Array<{
       skillId: Types.ObjectId | string;
       relativePath: string;
-      codeEnvIdentifier: string;
+      codeEnvRef: CodeEnvRef;
     }>,
   ) => Promise<{ matchedCount: number; modifiedCount: number } | void>;
 }
 
 export interface PrimeSkillFilesResult {
-  session_id: string;
-  files: Array<{ id: string; session_id: string; name: string; entity_id?: string }>;
-}
-
-/** Parses `entity_id` out of a persisted `codeEnvIdentifier`'s query string.
- *  Returns `undefined` when the identifier has no query string or no
- *  `entity_id` (legacy user-attachment uploads). */
-function parseEntityIdFromCodeEnvIdentifier(identifier: string): string | undefined {
-  const queryString = identifier.split('?')[1];
-  if (!queryString) return undefined;
-  const value = new URLSearchParams(queryString).get('entity_id');
-  return value && value.length > 0 ? value : undefined;
+  /** Representative storage session id (first file's). */
+  storage_session_id: string;
+  files: Array<{
+    id: string;
+    storage_session_id: string;
+    name: string;
+  }>;
 }
 
 /**
@@ -90,29 +100,27 @@ export async function primeSkillFiles(
     updateSkillFileCodeEnvIds,
   } = params;
 
-  // Check if ALL existing sessions are still active before reusing cached refs.
-  // Files normally share one session, but a partial bulkWrite failure during
-  // updateSkillFileCodeEnvIds can leave mixed session IDs. Checking every
-  // distinct session prevents serving stale identifiers that 404 in code env.
+  /* Cache-hit path: every skillFile carries a `codeEnvRef` from the
+   * previous prime. Check freshness against codeapi for every distinct
+   * storage session; if all are still active, reuse without
+   * re-uploading. The skill version is part of the ref — when the
+   * skill is edited, the upsert clears the ref and forces a fresh
+   * upload on the next prime. */
   if (getSessionInfo && checkIfActive && skillFiles.length > 0) {
-    // All files must have identifiers for the cache to be complete.
-    // Any missing identifier means partial persistence — fall through to re-upload.
-    const allHaveIds = skillFiles.every((sf) => sf.codeEnvIdentifier);
-    if (allHaveIds) {
-      const sessionIds = new Set(
-        skillFiles.map((sf) => (sf.codeEnvIdentifier as string).split('?')[0].split('/')[0]),
-      );
+    const allHaveRefs = skillFiles.every((sf) => sf.codeEnvRef !== undefined);
+    if (allHaveRefs) {
+      const refsBySession = new Map<string, CodeEnvRef>();
+      for (const sf of skillFiles) {
+        const ref = sf.codeEnvRef;
+        if (ref && !refsBySession.has(ref.storage_session_id)) {
+          refsBySession.set(ref.storage_session_id, ref);
+        }
+      }
 
       try {
         const checkResults = await Promise.all(
-          Array.from(sessionIds).map(async (sid) => {
-            const representative = skillFiles.find((sf) =>
-              sf.codeEnvIdentifier!.startsWith(`${sid}/`),
-            );
-            if (!representative) {
-              return false;
-            }
-            const lastModified = await getSessionInfo(representative.codeEnvIdentifier!);
+          Array.from(refsBySession.values()).map(async (ref) => {
+            const lastModified = await getSessionInfo(ref);
             return !!(lastModified && checkIfActive(lastModified));
           }),
         );
@@ -121,22 +129,20 @@ export async function primeSkillFiles(
         if (allActive) {
           const files: PrimeSkillFilesResult['files'] = [];
           for (const sf of skillFiles) {
-            const identifier = sf.codeEnvIdentifier as string;
-            const [sid, fid] = identifier.split('?')[0].split('/');
-            const entity_id = parseEntityIdFromCodeEnvIdentifier(identifier);
+            const ref = sf.codeEnvRef;
+            if (!ref) continue;
             files.push({
-              id: fid,
-              session_id: sid,
+              id: ref.file_id,
+              storage_session_id: ref.storage_session_id,
               name: `${skill.name}/${sf.relativePath}`,
-              ...(entity_id != null ? { entity_id } : {}),
             });
           }
 
           if (files.length > 0) {
             logger.debug(
-              `[primeSkillFiles] All ${sessionIds.size} session(s) active for skill "${skill.name}", reusing ${files.length} files`,
+              `[primeSkillFiles] All ${refsBySession.size} session(s) active for skill "${skill.name}", reusing ${files.length} files`,
             );
-            return { session_id: files[0].session_id, files };
+            return { storage_session_id: files[0].storage_session_id, files };
           }
         }
       } catch {
@@ -183,7 +189,13 @@ export async function primeSkillFiles(
     const result = await batchUploadCodeEnvFiles({
       req,
       files: filesToUpload,
-      entity_id: entityId,
+      /* Resource identity for codeapi's sessionKey: skill files share
+       * cross-user-within-tenant under `<tenant>:skill:<id>:v:<version>`.
+       * Bumping `skill.version` on edit naturally invalidates the prior
+       * cache entry under the new sessionKey. */
+      kind: 'skill',
+      id: entityId,
+      version: skill.version,
       /* Skill files are infrastructure: SKILL.md + bundled scripts/schemas/
        * docs that the agent reads but should never edit. Tag the upload as
        * read-only so codeapi seals the inputs (chmod 444 in-sandbox) and
@@ -194,15 +206,14 @@ export async function primeSkillFiles(
       read_only: true,
     });
     // Exclude SKILL.md from the returned files array — it is uploaded to disk
-    // for bash access but has no codeEnvIdentifier (cannot be cached). Omitting
-    // it here keeps the fresh-upload and cache-hit code paths consistent.
+    // for bash access but has no codeEnvRef (cannot be cached). Omitting it
+    // here keeps the fresh-upload and cache-hit code paths consistent.
     const files = result.files
       .filter((f) => !f.filename.endsWith('/SKILL.md'))
       .map((f) => ({
         id: f.fileId,
-        session_id: result.session_id,
+        storage_session_id: result.storage_session_id,
         name: f.filename,
-        entity_id: entityId,
       }));
 
     // Treat partial upload failures as a priming failure — missing bundled
@@ -220,39 +231,48 @@ export async function primeSkillFiles(
     }
 
     /**
-     * Persist codeEnvIdentifiers on skill files. Awaited (not
-     * fire-and-forget) so the next prime — which can start within
-     * milliseconds when many users hit the same skill concurrently —
-     * sees the cache pointer instead of racing the read against an
-     * in-flight write. Without the await, a fire-and-forget under
-     * concurrency stays in cache-miss steady-state for the duration
-     * of the burst (each user's prime reads stale, re-uploads, then
-     * fires its own forget that the next user also misses). Latency
-     * cost is ~10–50ms on the prime that does the upload; subsequent
-     * primes save an entire batch upload. Failures don't fail the
-     * prime — the file refs returned to the caller are still valid.
+     * Persist codeEnvRefs on skill files. Awaited (not fire-and-forget)
+     * so the next prime — which can start within milliseconds when
+     * many users hit the same skill concurrently — sees the cache
+     * pointer instead of racing the read against an in-flight write.
+     * Without the await, a fire-and-forget under concurrency stays in
+     * cache-miss steady-state for the duration of the burst (each
+     * user's prime reads stale, re-uploads, then fires its own forget
+     * that the next user also misses). Latency cost is ~10–50ms on
+     * the prime that does the upload; subsequent primes save an entire
+     * batch upload. Failures don't fail the prime — the file refs
+     * returned to the caller are still valid.
      */
     if (updateSkillFileCodeEnvIds) {
       const updates = result.files
         .filter((f) => !f.filename.endsWith('/SKILL.md'))
-        .map((f) => ({
-          skillId: skill._id,
-          relativePath: f.filename.slice(f.filename.indexOf('/') + 1),
-          codeEnvIdentifier: `${result.session_id}/${f.fileId}?entity_id=${entityId}`,
-        }));
+        .map((f) => {
+          const ref: CodeEnvRef = {
+            kind: 'skill',
+            id: entityId,
+            storage_session_id: result.storage_session_id,
+            file_id: f.fileId,
+            version: skill.version,
+          };
+          return {
+            skillId: skill._id,
+            relativePath: f.filename.slice(f.filename.indexOf('/') + 1),
+            codeEnvRef: ref,
+          };
+        });
       if (updates.length > 0) {
         try {
           await updateSkillFileCodeEnvIds(updates);
         } catch (err: unknown) {
           logger.warn(
-            '[primeSkillFiles] Failed to persist codeEnvIdentifiers:',
+            '[primeSkillFiles] Failed to persist codeEnvRefs:',
             err instanceof Error ? err.message : err,
           );
         }
       }
     }
 
-    return { session_id: result.session_id, files };
+    return { storage_session_id: result.storage_session_id, files };
   } catch (error) {
     logger.error(
       `[primeSkillFiles] Batch upload failed for skill "${skill.name}":`,
@@ -274,7 +294,13 @@ export interface PrimeInvokedSkillsDeps {
   getSkillByName: (
     name: string,
     accessibleIds: Types.ObjectId[],
-  ) => Promise<{ body: string; name: string; _id: Types.ObjectId; fileCount: number } | null>;
+  ) => Promise<{
+    body: string;
+    name: string;
+    _id: Types.ObjectId;
+    version: number;
+    fileCount: number;
+  } | null>;
   listSkillFiles: (skillId: Types.ObjectId | string) => Promise<SkillFileRecord[]>;
   getStrategyFunctions: PrimeSkillFilesParams['getStrategyFunctions'];
   batchUploadCodeEnvFiles: PrimeSkillFilesParams['batchUploadCodeEnvFiles'];
@@ -324,6 +350,7 @@ export async function primeInvokedSkills(
     body: string;
     name: string;
     _id: Types.ObjectId;
+    version: number;
     fileCount: number;
   }> = [];
   for (const r of resolveResults) {
@@ -353,23 +380,24 @@ export async function primeInvokedSkills(
     // ALL distinct sessions for freshness. If all are active, return cached
     // references with zero re-uploads. If any expired, re-upload everything.
     if (deps.getSessionInfo && deps.checkIfActive) {
-      const allFiles = fileListResults.flatMap((r) => r.files);
-      const allFilesWithIds = allFiles.filter((f) => f.codeEnvIdentifier);
+      const allResolved = fileListResults.flatMap((r) =>
+        r.files.map((f) => ({ skillName: r.skill.name, file: f, ref: f.codeEnvRef })),
+      );
+      const resolvedWithRef = allResolved.filter((x) => x.ref !== undefined);
 
-      // Only use cache when ALL files have identifiers (no partial persistence)
-      if (allFilesWithIds.length > 0 && allFilesWithIds.length === allFiles.length) {
-        const sessionIds = new Set(
-          allFilesWithIds.map((f) => f.codeEnvIdentifier!.split('?')[0].split('/')[0]),
-        );
+      // Only use cache when ALL files have refs (no partial persistence)
+      if (resolvedWithRef.length > 0 && resolvedWithRef.length === allResolved.length) {
+        const refsBySession = new Map<string, CodeEnvRef>();
+        for (const { ref } of resolvedWithRef) {
+          if (ref && !refsBySession.has(ref.storage_session_id)) {
+            refsBySession.set(ref.storage_session_id, ref);
+          }
+        }
 
         const checkResults = await Promise.all(
-          Array.from(sessionIds).map(async (sid) => {
-            const representative = allFilesWithIds.find((f) =>
-              f.codeEnvIdentifier!.startsWith(`${sid}/`),
-            );
-            if (!representative) return true;
+          Array.from(refsBySession.values()).map(async (ref) => {
             try {
-              const lastModified = await deps.getSessionInfo?.(representative.codeEnvIdentifier!);
+              const lastModified = await deps.getSessionInfo?.(ref);
               return !!(lastModified && deps.checkIfActive?.(lastModified));
             } catch {
               return false;
@@ -379,30 +407,24 @@ export async function primeInvokedSkills(
         const allActive = checkResults.every(Boolean);
 
         if (allActive) {
-          const cachedFiles = fileListResults.flatMap((r) =>
-            r.files
-              .filter((f) => f.codeEnvIdentifier)
-              .map((f) => {
-                const identifier = f.codeEnvIdentifier as string;
-                const [sid, fid] = identifier.split('?')[0].split('/');
-                const entity_id = parseEntityIdFromCodeEnvIdentifier(identifier);
-                return {
-                  id: fid,
-                  name: `${r.skill.name}/${f.relativePath}`,
-                  session_id: sid,
-                  ...(entity_id != null ? { entity_id } : {}),
-                };
-              }),
-          );
+          const cachedFiles = resolvedWithRef.map(({ skillName, file, ref }) => ({
+            id: ref!.file_id,
+            name: `${skillName}/${file.relativePath}`,
+            storage_session_id: ref!.storage_session_id,
+            kind: ref!.kind,
+            ...(ref!.kind === 'skill' ? { version: ref!.version } : {}),
+          }));
           if (cachedFiles.length > 0) {
             logger.debug(
-              `[primeInvokedSkills] All ${sessionIds.size} session(s) active, reusing ${cachedFiles.length} cached files`,
+              `[primeInvokedSkills] All ${refsBySession.size} session(s) active, reusing ${cachedFiles.length} cached files`,
             );
             sessions = new Map();
-            // session_id is a representative value. ToolNode uses per-file
-            // session_id from the files array (file.session_id ?? codeSession.session_id).
+            /* `session_id` at the top of CodeSessionContext is the
+             * (representative) execution session — ToolNode reads it
+             * for continuity. Per-file storage is on each
+             * `files[i].storage_session_id`. */
             sessions.set(Constants.EXECUTE_CODE, {
-              session_id: cachedFiles[0].session_id,
+              session_id: cachedFiles[0].storage_session_id,
               files: cachedFiles,
               lastUpdated: Date.now(),
             } satisfies CodeSessionContext);
@@ -412,14 +434,17 @@ export async function primeInvokedSkills(
       }
     }
 
-    // Per-skill upload: each skill gets its own session with entity_id=skillId.
-    // primeSkillFiles handles freshness caching per-skill, so only expired
-    // skills re-upload. The code env handles mixed session_ids natively.
+    // Per-skill upload: each skill gets its own storage session keyed
+    // by `(kind: 'skill', id: skillId, version: skill.version)`.
+    // primeSkillFiles handles freshness caching per-skill, so only
+    // expired skills re-upload. CodeAPI handles mixed
+    // storage_session_ids natively.
     const allPrimedFiles: Array<{
       id: string;
       name: string;
-      session_id: string;
-      entity_id?: string;
+      storage_session_id: string;
+      kind: 'skill';
+      version: number;
     }> = [];
     const primeResults = await Promise.allSettled(
       fileListResults.map(async ({ skill, files }) => {
@@ -442,8 +467,9 @@ export async function primeInvokedSkills(
           allPrimedFiles.push({
             id: f.id,
             name: f.name,
-            session_id: f.session_id,
-            ...(f.entity_id != null ? { entity_id: f.entity_id } : {}),
+            storage_session_id: f.storage_session_id,
+            kind: 'skill',
+            version: r.value.skill.version,
           });
         }
       } else if (r.status === 'rejected') {
@@ -453,11 +479,11 @@ export async function primeInvokedSkills(
 
     if (allPrimedFiles.length > 0) {
       sessions = new Map();
-      // session_id is a representative value (first skill's session). ToolNode
-      // uses per-file session_id from the files array (file.session_id ??
-      // codeSession.session_id), so mixed sessions work correctly.
+      /* `session_id` at the top of CodeSessionContext is the
+       * (representative) execution session. Per-file storage is on
+       * each file's `storage_session_id`. */
       sessions.set(Constants.EXECUTE_CODE, {
-        session_id: allPrimedFiles[0].session_id,
+        session_id: allPrimedFiles[0].storage_session_id,
         files: allPrimedFiles,
         lastUpdated: Date.now(),
       } satisfies CodeSessionContext);

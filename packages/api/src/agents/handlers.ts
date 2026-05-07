@@ -10,6 +10,7 @@ import type {
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
 import { Types } from 'mongoose';
+import type { CodeEnvRef } from 'librechat-data-provider';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
@@ -67,6 +68,11 @@ export interface ToolExecuteOptions {
     body: string;
     name: string;
     _id: Types.ObjectId;
+    /** Monotonic counter on the skill record. Threaded into
+     *  `codeEnvRef.version` so codeapi's sessionKey scopes the cache
+     *  per-revision; bumping the version on edit invalidates the
+     *  prior cache entry. */
+    version: number;
     fileCount: number;
     /**
      * Set when the skill author opted out of model invocation. The handler
@@ -83,22 +89,30 @@ export interface ToolExecuteOptions {
     getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
     [key: string]: unknown;
   };
-  /** Batch uploads files to the code execution environment */
+  /** Batch uploads files to the code execution environment. `kind`/`id`/
+   *  `version?` carry the resource identity codeapi uses to derive the
+   *  sessionKey for the batch's storage bucket. */
   batchUploadCodeEnvFiles?: (params: {
     req: ServerRequest;
     files: Array<{ stream: NodeJS.ReadableStream; filename: string }>;
-    entity_id?: string;
-  }) => Promise<{ session_id: string; files: Array<{ fileId: string; filename: string }> }>;
+    kind: 'skill' | 'agent' | 'user';
+    id: string;
+    version?: number;
+    read_only?: boolean;
+  }) => Promise<{
+    storage_session_id: string;
+    files: Array<{ fileId: string; filename: string }>;
+  }>;
   /** Checks if a code env file is still active. Returns lastModified or null. */
-  getSessionInfo?: (fileIdentifier: string) => Promise<string | null>;
+  getSessionInfo?: (ref: CodeEnvRef) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
-  /** Persists codeEnvIdentifiers on skill files after upload */
+  /** Persists `codeEnvRef` on skill files after upload */
   updateSkillFileCodeEnvIds?: (
     updates: Array<{
       skillId: Types.ObjectId | string;
       relativePath: string;
-      codeEnvIdentifier: string;
+      codeEnvRef: CodeEnvRef;
     }>,
   ) => Promise<void>;
   /** Loads a skill file by path (for read_file tool) */
@@ -888,7 +902,16 @@ async function handleSkillToolCall(
 
   const contentText = `Skill "${args.skillName}" loaded. Follow the instructions below.`;
   let artifact:
-    | { session_id: string; files: Array<{ id: string; session_id: string; name: string }> }
+    | {
+        session_id: string;
+        files: Array<{
+          id: string;
+          name: string;
+          storage_session_id: string;
+          kind?: 'skill' | 'agent' | 'user';
+          version?: number;
+        }>;
+      }
     | undefined;
 
   // Prime skill files to code env — only when the `execute_code` capability
@@ -916,7 +939,22 @@ async function handleSkillToolCall(
         updateSkillFileCodeEnvIds,
       });
       if (primeResult) {
-        artifact = primeResult;
+        /* `session_id` at the top of the artifact is the (representative)
+         * execution session — ToolNode reads it for CodeSessionContext
+         * continuity. Per-file storage lives on each file's
+         * `storage_session_id`. Skill files carry `kind: 'skill'` and
+         * the skill's version so codeapi's sessionKey scopes the
+         * cache per-revision. */
+        artifact = {
+          session_id: primeResult.storage_session_id,
+          files: primeResult.files.map((f) => ({
+            id: f.id,
+            name: f.name,
+            storage_session_id: f.storage_session_id,
+            kind: 'skill',
+            version: skill.version,
+          })),
+        };
       }
     } catch (error) {
       logger.error(

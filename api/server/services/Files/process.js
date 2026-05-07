@@ -569,11 +569,19 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     }
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
     const stream = fs.createReadStream(file.path);
+    /* Resource identity for codeapi's sessionKey:
+     * - chat attachments (messageAttachment=true): `kind: 'user'`, codeapi
+     *   buckets under `<tenant>:user:<authContext.userId>` regardless of `id`.
+     * - agent setup files (messageAttachment=false): `kind: 'agent'`, shared
+     *   per agent identity. `id` carries the agent id. */
+    const codeKind = messageAttachment === true ? 'user' : 'agent';
+    const codeId = messageAttachment === true ? req.user.id : agent_id;
     const fileIdentifier = await uploadCodeEnvFile({
       req,
       stream,
       filename: file.originalname,
-      entity_id,
+      kind: codeKind,
+      id: codeId,
     });
     fileInfoMetadata = { fileIdentifier };
   } else if (tool_resource === EToolResources.file_search) {

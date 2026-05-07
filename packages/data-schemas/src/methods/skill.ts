@@ -7,6 +7,7 @@ import {
   SKILL_BODY_MAX_LENGTH,
   SKILL_NAME_PATTERN as SKILL_NAME_PATTERN_SHARED,
 } from 'librechat-data-provider';
+import type { CodeEnvRef } from 'librechat-data-provider';
 import type { Model, Types, FilterQuery } from 'mongoose';
 import type {
   ISkill,
@@ -1436,7 +1437,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
           author: row.author,
           tenantId: row.tenantId,
         },
-        $unset: { content: '', isBinary: '', codeEnvIdentifier: '' },
+        $unset: { content: '', isBinary: '', codeEnvRef: '' },
       },
       { new: false, upsert: true },
     ).lean();
@@ -1493,7 +1494,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     updates: Array<{
       skillId: Types.ObjectId | string;
       relativePath: string;
-      codeEnvIdentifier: string;
+      codeEnvRef: CodeEnvRef;
     }>,
   ): Promise<{ matchedCount: number; modifiedCount: number }> {
     if (updates.length === 0) return { matchedCount: 0, modifiedCount: 0 };
@@ -1501,7 +1502,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     const ops = updates.map((u) => ({
       updateOne: {
         filter: { skillId: u.skillId, relativePath: u.relativePath },
-        update: { $set: { codeEnvIdentifier: u.codeEnvIdentifier } },
+        update: { $set: { codeEnvRef: u.codeEnvRef } },
       },
     }));
 
@@ -1515,7 +1516,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     const result = await tenantSafeBulkWrite(SkillFile, ops);
     if (result.modifiedCount < updates.length) {
       logger.warn(
-        `[updateSkillFileCodeEnvIds] Persisted ${result.modifiedCount}/${updates.length} codeEnvIdentifiers (matched ${result.matchedCount}). Subsequent primes for unmatched files will re-upload.`,
+        `[updateSkillFileCodeEnvIds] Persisted ${result.modifiedCount}/${updates.length} codeEnvRefs (matched ${result.matchedCount}). Subsequent primes for unmatched files will re-upload.`,
       );
     }
     return { matchedCount: result.matchedCount, modifiedCount: result.modifiedCount };

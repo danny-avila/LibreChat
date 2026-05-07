@@ -205,6 +205,7 @@ describe('createToolExecuteHandler', () => {
         name: 'pii-redactor',
         body: 'restricted body',
         fileCount: 0,
+        version: 1,
         disableModelInvocation: true,
       }));
       const handler = createSkillHandler(getSkillByName);
@@ -247,6 +248,7 @@ describe('createToolExecuteHandler', () => {
         name: 'normal-skill',
         body: 'body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createSkillHandler(getSkillByName);
 
@@ -276,6 +278,7 @@ describe('createToolExecuteHandler', () => {
         name: 'maybe-disabled',
         body: 'body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createSkillHandler(getSkillByName);
 
@@ -302,6 +305,7 @@ describe('createToolExecuteHandler', () => {
         name: 'maybe-disabled-read',
         body: '# Body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createToolExecuteHandler({
         loadTools: jest.fn(async () => ({
@@ -342,6 +346,7 @@ describe('createToolExecuteHandler', () => {
         name: 'manually-primed',
         body: '# Body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createToolExecuteHandler({
         loadTools: jest.fn(async () => ({
@@ -391,6 +396,7 @@ describe('createToolExecuteHandler', () => {
         name: 'pii-redactor',
         body: 'restricted body',
         fileCount: 0,
+        version: 1,
         disableModelInvocation: true,
       }));
       const handler = createToolExecuteHandler({
@@ -421,6 +427,7 @@ describe('createToolExecuteHandler', () => {
         name: 'normal-skill',
         body: '# Body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createToolExecuteHandler({
         loadTools: jest.fn(async () => ({
@@ -454,6 +461,7 @@ describe('createToolExecuteHandler', () => {
         name: 'manual-only-skill',
         body: '# Use references/docs.md for details',
         fileCount: 0,
+        version: 1,
         disableModelInvocation: true,
       }));
       const handler = createToolExecuteHandler({
@@ -489,6 +497,7 @@ describe('createToolExecuteHandler', () => {
         name: 'other-disabled-skill',
         body: 'restricted',
         fileCount: 0,
+        version: 1,
         disableModelInvocation: true,
       }));
       const handler = createToolExecuteHandler({
@@ -526,6 +535,7 @@ describe('createToolExecuteHandler', () => {
         name: 'always-applied-legal',
         body: '# Cite references/policy.md when advising',
         fileCount: 0,
+        version: 1,
         disableModelInvocation: true,
       }));
       const handler = createToolExecuteHandler({
@@ -566,6 +576,7 @@ describe('createToolExecuteHandler', () => {
         name: 'collides',
         body: '# primed body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createToolExecuteHandler({
         loadTools: jest.fn(async () => ({
@@ -615,6 +626,7 @@ describe('createToolExecuteHandler', () => {
         name: 'brand-guidelines',
         body: 'skill body',
         fileCount: 2,
+        version: 1,
       }));
       /* `loadTools` injects `codeEnvAvailable` into the returned
          `configurable`, which mirrors production flow through
@@ -789,6 +801,7 @@ describe('createToolExecuteHandler', () => {
         name: 'primed-only-skill',
         body: '# Primed skill body',
         fileCount: 1,
+        version: 1,
       }));
       const readSandboxFile = jest.fn();
       const getSkillFileByPath = jest.fn(async () => ({
@@ -888,6 +901,7 @@ describe('createToolExecuteHandler', () => {
         name: 'real-skill',
         body: '# Real Body',
         fileCount: 0,
+        version: 1,
       }));
       const readSandboxFile = jest.fn();
       const handler = makeReadFileHandler({

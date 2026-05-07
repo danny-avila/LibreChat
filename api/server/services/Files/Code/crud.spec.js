@@ -70,13 +70,15 @@ describe('Code CRUD', () => {
       req: { user: { id: 'user-123' } },
       stream: Readable.from(['file-content']),
       filename: 'data.csv',
+      kind: 'user',
+      id: 'user-123',
     };
 
     it('should pass dedicated keepAlive:false agents to axios', async () => {
       mockAxios.post.mockResolvedValue({
         data: {
           message: 'success',
-          session_id: 'sess-1',
+          storage_session_id: 'sess-1',
           files: [{ fileId: 'fid-1', filename: 'data.csv' }],
         },
       });
@@ -96,7 +98,7 @@ describe('Code CRUD', () => {
       mockAxios.post.mockResolvedValue({
         data: {
           message: 'success',
-          session_id: 'sess-1',
+          storage_session_id: 'sess-1',
           files: [{ fileId: 'fid-1', filename: 'data.csv' }],
         },
       });
@@ -107,35 +109,106 @@ describe('Code CRUD', () => {
       expect(callConfig.timeout).toBe(120000);
     });
 
-    it('should return fileIdentifier on success', async () => {
+    it('should return { storage_session_id, file_id } on success', async () => {
       mockAxios.post.mockResolvedValue({
         data: {
           message: 'success',
-          session_id: 'sess-1',
+          storage_session_id: 'sess-1',
           files: [{ fileId: 'fid-1', filename: 'data.csv' }],
         },
       });
 
       const result = await uploadCodeEnvFile(baseUploadParams);
-      expect(result).toBe('sess-1/fid-1');
+      expect(result).toEqual({ storage_session_id: 'sess-1', file_id: 'fid-1' });
     });
 
-    it('should append entity_id query param when provided', async () => {
-      mockAxios.post.mockResolvedValue({
+    /* Phase C / option α (codeapi #1455): the upload wire carries the
+     * resource identity codeapi uses for sessionKey derivation. Without
+     * these on the form, codeapi falls back to user bucketing for every
+     * upload and skill-cache invalidation never fires. Validation runs
+     * client-side too so a bad caller fails fast instead of round-tripping
+     * a 400. */
+    describe('codeapi resource identity (kind/id/version)', () => {
+      const FormData = require('form-data');
+      const successResponse = {
         data: {
           message: 'success',
-          session_id: 'sess-1',
+          storage_session_id: 'sess-1',
           files: [{ fileId: 'fid-1', filename: 'data.csv' }],
         },
+      };
+      let appendSpy;
+
+      beforeEach(() => {
+        /* Spying on the prototype lets us assert form fields without
+         * materializing the multipart body — `form.getBuffer()` would
+         * fail on the file-stream entry, but we don't care about the
+         * stream here, only the identity fields that ride beside it. */
+        appendSpy = jest.spyOn(FormData.prototype, 'append');
       });
 
-      const result = await uploadCodeEnvFile({ ...baseUploadParams, entity_id: 'agent-42' });
-      expect(result).toBe('sess-1/fid-1?entity_id=agent-42');
+      afterEach(() => {
+        appendSpy.mockRestore();
+      });
+
+      const fieldsAppended = () =>
+        appendSpy.mock.calls
+          .filter((call) => typeof call[1] === 'string' || typeof call[1] === 'number')
+          .reduce((acc, [name, value]) => ({ ...acc, [name]: value }), {});
+
+      it('forwards kind, id, and (when skill) version on the multipart form', async () => {
+        mockAxios.post.mockResolvedValue(successResponse);
+
+        await uploadCodeEnvFile({
+          ...baseUploadParams,
+          kind: 'skill',
+          id: 'skill-42',
+          version: 7,
+        });
+
+        expect(fieldsAppended()).toEqual({ kind: 'skill', id: 'skill-42', version: '7' });
+      });
+
+      it('omits version on the form for non-skill kinds', async () => {
+        mockAxios.post.mockResolvedValue(successResponse);
+
+        await uploadCodeEnvFile({ ...baseUploadParams, kind: 'agent', id: 'agent-9' });
+
+        const fields = fieldsAppended();
+        expect(fields).toEqual({ kind: 'agent', id: 'agent-9' });
+        expect(fields).not.toHaveProperty('version');
+      });
+
+      it('rejects unknown kind without dispatching to codeapi', async () => {
+        await expect(
+          uploadCodeEnvFile({ ...baseUploadParams, kind: 'system', id: 'x' }),
+        ).rejects.toThrow(/invalid kind/);
+        expect(mockAxios.post).not.toHaveBeenCalled();
+      });
+
+      it('rejects skill upload without a version (mirrors codeapi validator)', async () => {
+        await expect(
+          uploadCodeEnvFile({ ...baseUploadParams, kind: 'skill', id: 'skill-42' }),
+        ).rejects.toThrow(/skill.*version/);
+        expect(mockAxios.post).not.toHaveBeenCalled();
+      });
+
+      it('rejects version on non-skill kinds (mirrors codeapi validator)', async () => {
+        await expect(
+          uploadCodeEnvFile({
+            ...baseUploadParams,
+            kind: 'agent',
+            id: 'agent-9',
+            version: 3,
+          }),
+        ).rejects.toThrow(/version.*skill/);
+        expect(mockAxios.post).not.toHaveBeenCalled();
+      });
     });
 
     it('should throw when server returns non-success message', async () => {
       mockAxios.post.mockResolvedValue({
-        data: { message: 'quota_exceeded', session_id: 's', files: [] },
+        data: { message: 'quota_exceeded', storage_session_id: 's', files: [] },
       });
 
       await expect(uploadCodeEnvFile(baseUploadParams)).rejects.toThrow('quota_exceeded');

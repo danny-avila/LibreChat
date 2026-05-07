@@ -286,7 +286,7 @@ const runPreviewFinalize = ({ finalize, fileId, previewRevision, onResolved }) =
 /**
  * Process code execution output files — downloads and saves both images
  * and non-image files. All files are saved to local storage with
- * `fileIdentifier` metadata for code env re-upload.
+ * `codeEnvRef` metadata for code env re-upload.
  *
  * Returns a two-part shape so callers can ship the attachment to the
  * client immediately and run preview extraction in the background:
@@ -366,7 +366,15 @@ const processCodeOutput = async ({
       };
     }
 
-    const fileIdentifier = `${session_id}/${id}`;
+    /* Code-output files belong to the user who ran the execution.
+     * SessionKey on codeapi will be `<tenant>:user:<userId>` for these,
+     * so cache and access stay user-private. */
+    const codeEnvRef = {
+      kind: 'user',
+      id: req.user.id,
+      storage_session_id: session_id,
+      file_id: id,
+    };
 
     /* `safeName` keeps the directory structure (`a/b/file.txt` -> `a/b/file.txt`)
      * so the next prime() can place the file at the same nested path in the
@@ -444,7 +452,7 @@ const processCodeOutput = async ({
         updatedAt: formattedDate,
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
-        metadata: { fileIdentifier },
+        metadata: { codeEnvRef },
       };
       await createFile(file, true);
       return { file: Object.assign(file, { messageId, toolCallId }) };
@@ -542,7 +550,7 @@ const processCodeOutput = async ({
       tenantId: req.user.tenantId,
       bytes: buffer.length,
       updatedAt: formattedDate,
-      metadata: { fileIdentifier },
+      metadata: { codeEnvRef },
       source: appConfig.fileStrategy,
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
@@ -651,26 +659,26 @@ function checkIfActive(dateString) {
 /**
  * Retrieves the `lastModified` time string for a specified file from Code Execution Server.
  *
- * @param {string} fileIdentifier - The identifier for the file (e.g., "session_id/fileId").
+ * @param {import('librechat-data-provider').CodeEnvRef} ref - Typed pointer
+ *   into codeapi storage. Carries kind/id/storage_session_id/file_id;
+ *   codeapi resolves the sessionKey from the request's auth context.
  *
  * @returns {Promise<string|null>}
  *          A promise that resolves to the `lastModified` time string of the file if successful, or null if there is an
  *          error in initialization or fetching the info.
  */
-async function getSessionInfo(fileIdentifier) {
+async function getSessionInfo(ref) {
   try {
     const baseURL = getCodeBaseURL();
-    const [path, queryString] = fileIdentifier.split('?');
-    const [session_id, fileId] = path.split('/');
-    let queryParams = {};
-    if (queryString) {
-      queryParams = Object.fromEntries(new URLSearchParams(queryString).entries());
-    }
-
+    /* CodeAPI resolves the bucket's sessionKey from auth context
+     * (`<tenant>:<kind>:<id>...`). The freshness check just hits
+     * `/sessions/<storage_session_id>/objects/<file_id>` — codeapi's
+     * lookup of the cached sessionKey on the storage bucket
+     * authoritative-checks the requesting user. No per-request
+     * params needed. */
     const response = await axios({
       method: 'get',
-      url: `${baseURL}/sessions/${session_id}/objects/${fileId}`,
-      params: queryParams,
+      url: `${baseURL}/sessions/${ref.storage_session_id}/objects/${ref.file_id}`,
       headers: {
         'User-Agent': 'LibreChat/1.0',
       },
@@ -734,32 +742,28 @@ const primeFiles = async (options) => {
       continue;
     }
 
-    if (file.metadata.fileIdentifier) {
-      const [path, queryString] = file.metadata.fileIdentifier.split('?');
-      const [session_id, id] = path.split('/');
-
-      let queryParams = {};
-      if (queryString) {
-        queryParams = Object.fromEntries(new URLSearchParams(queryString).entries());
-      }
+    const ref = file.metadata?.codeEnvRef;
+    if (ref) {
+      const session_id = ref.storage_session_id;
+      const id = ref.file_id;
 
       /**
        * `pushFile` accepts optional overrides so the reupload path can
-       * push the FRESH `(session_id, id, entity_id)` parsed off the new
-       * `fileIdentifier`. Without these overrides, the closure would
+       * push the FRESH `(storage_session_id, file_id)` from the new
+       * `codeEnvRef`. Without these overrides, the closure would
        * capture the stale pre-reupload refs from the outer loop and
        * the in-memory `files` array (now consumed by
        * `buildInitialToolSessions` to seed `Graph.sessions`) would
        * point at a sandbox object that no longer exists. The DB record
-       * gets the new identifier via `updateFile`, but the seed would
-       * still inject the old one — bash_tool / read_file would 404
-       * trying to mount the file until the next turn re-reads metadata.
+       * gets the new ref via `updateFile`, but the seed would still
+       * inject the old one — bash_tool / read_file would 404 trying to
+       * mount the file until the next turn re-reads metadata.
        *
-       * `entity_id` is forwarded so codeapi can resolve sessionKey
-       * per-file, allowing one execute to mix files uploaded under
-       * different entities (e.g. a skill bundle plus a user attachment).
+       * `kind`, `id`, `version` are preserved on the in-memory ref so
+       * codeapi can resolve sessionKey per-file (kind switch +
+       * tenant prefix from auth context).
        */
-      const pushFile = (overrideSessionId, overrideId, overrideEntityId) => {
+      const pushFile = (overrideSessionId, overrideId) => {
         if (!toolContext) {
           toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
         }
@@ -771,8 +775,6 @@ const primeFiles = async (options) => {
               ? ' (from previous code execution)'
               : ' (attached by user)';
         }
-
-        const entity_id = overrideEntityId ?? queryParams.entity_id;
 
         /* Surface the preview lifecycle so the LLM knows when a
          * prior-turn artifact's rich preview didn't materialize. The
@@ -792,9 +794,10 @@ const primeFiles = async (options) => {
         toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}${previewSuffix}`;
         files.push({
           id: overrideId ?? id,
-          session_id: overrideSessionId ?? session_id,
+          storage_session_id: overrideSessionId ?? session_id,
           name: file.filename,
-          ...(entity_id ? { entity_id } : {}),
+          kind: ref.kind,
+          ...(ref.kind === 'skill' ? { version: ref.version } : {}),
         });
       };
 
@@ -810,42 +813,52 @@ const primeFiles = async (options) => {
             FileSources.execute_code,
           );
           const stream = await getDownloadStream(options.req, file.filepath);
-          const fileIdentifier = await uploadCodeEnvFile({
+          /* Reupload preserves the resource identity from the existing
+           * ref so codeapi re-buckets under the same sessionKey shape
+           * (skill stays skill, user stays user). Without this, a
+           * skill-cache-miss reupload would land in the user bucket
+           * and never re-shareable cross-user. */
+          const uploaded = await uploadCodeEnvFile({
             req: options.req,
             stream,
             filename: file.filename,
-            entity_id: queryParams.entity_id,
+            kind: ref.kind,
+            id: ref.id,
+            ...(ref.kind === 'skill' ? { version: ref.version } : {}),
           });
 
-          // Preserve existing metadata when adding fileIdentifier
+          /**
+           * Use the FRESH `(storage_session_id, file_id)` from the
+           * reupload response and route it through the dedupe Map, the
+           * persisted record, and the in-memory `files` list. The
+           * original ref captured at the top of this iteration refers
+           * to the old, expired/missing sandbox object — using it here
+           * would silently re-introduce the bug `Graph.sessions`
+           * seeding is supposed to fix.
+           *
+           * `kind`, `id`, `version` survive the round-trip: the
+           * upload preserves the resource identity, only the storage
+           * pointer changes.
+           */
+          const newRef = {
+            kind: ref.kind,
+            id: ref.id,
+            storage_session_id: uploaded.storage_session_id,
+            file_id: uploaded.file_id,
+            ...(ref.kind === 'skill' ? { version: ref.version } : {}),
+          };
+
           const updatedMetadata = {
-            ...file.metadata, // Preserve existing metadata (like S3 storage info)
-            fileIdentifier, // Add fileIdentifier
+            ...file.metadata,
+            codeEnvRef: newRef,
           };
 
           await updateFile({
             file_id: file.file_id,
             metadata: updatedMetadata,
           });
-          /**
-           * Parse the FRESH fileIdentifier returned by the reupload and
-           * route it through both the dedupe Map and the in-memory
-           * `files` list. The original `(session_id, id)` parsed at the
-           * top of this iteration refer to the old, expired/missing
-           * sandbox object — using them here would silently re-introduce
-           * the bug `Graph.sessions` seeding is supposed to fix.
-           *
-           * `entity_id` survives the round-trip: the upload was tagged
-           * with `queryParams.entity_id` above, so the new identifier
-           * carries the same scope.
-           */
-          const [newPath, newQuery] = fileIdentifier.split('?');
-          const [newSessionId, newId] = newPath.split('/');
-          const newQueryParams = newQuery
-            ? Object.fromEntries(new URLSearchParams(newQuery).entries())
-            : {};
-          sessions.set(newSessionId, true);
-          pushFile(newSessionId, newId, newQueryParams.entity_id);
+          sessions.set(newRef.storage_session_id, true);
+          pushFile(newRef.storage_session_id, newRef.file_id);
         } catch (error) {
           logger.error(
             `Error re-uploading file ${id} in session ${session_id}: ${error.message}`,
@@ -853,7 +866,7 @@ const primeFiles = async (options) => {
           );
         }
       };
-      const uploadTime = await getSessionInfo(file.metadata.fileIdentifier);
+      const uploadTime = await getSessionInfo(ref);
       if (!uploadTime) {
         logger.warn(`Failed to get upload time for file ${id} in session ${session_id}`);
         await reuploadFile();
