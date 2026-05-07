@@ -499,6 +499,8 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
      * Falls back to access_token for providers where id_token is not available.
      */
     const appAuthToken = tokenset.id_token || tokenset.access_token;
+    const sessionIdToken = req.session?.openidTokens?.idToken;
+    const logoutIdToken = tokenset.id_token || sessionIdToken;
 
     /**
      * Always set refresh token cookie so it survives express session expiry.
@@ -520,7 +522,7 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
     if (req.session) {
       req.session.openidTokens = {
         accessToken: tokenset.access_token,
-        idToken: tokenset.id_token,
+        idToken: logoutIdToken,
         refreshToken: refreshToken,
         expiresAt: expirationDate.getTime(),
       };
