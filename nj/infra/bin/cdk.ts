@@ -100,6 +100,7 @@ const ecsStack = new EcsStack(app, 'EcsStack', {
   env: env,
   envVars: envVars,
   mongoImage: `${env.account}.dkr.ecr.${env.region}.amazonaws.com/newjersey/mongo:latest`,
+  librechatAdminImage: `${env.account}.dkr.ecr.${env.region}.amazonaws.com/newjersey/librechat-admin-panel:${AWS_ENV}`,
   certificateArn: `arn:aws:acm:${env.region}:${env.account}:certificate/${process.env.ACM_CERTIFICATE_ID}`,
   redisEndpoint: databaseStack.redisEndpoint,
   redisPort: databaseStack.redisPort,
