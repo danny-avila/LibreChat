@@ -20,6 +20,7 @@ export type EnvVars = {
 export interface EcsServicesProps extends cdk.StackProps {
   envVars: EnvVars;
   mongoImage: string;
+  librechatAdminImage: string;
   certificateArn: string;
   redisEndpoint: string;
   redisPort: string;
@@ -65,7 +66,34 @@ export class EcsStack extends cdk.Stack {
     this.loadBalancer = librechatService.loadBalancer;
     this.service = librechatService;
 
+    librechatService.service.enableCloudMap({ name: 'librechat' });
+
     const ragApiService = this.CreateRagApiService(props, commonExecRole, cluster, librechatService);
+    const adminPanelService = this.CreateAdminPanelService(props, commonExecRole, vpc, cluster, librechatService);
+
+    librechatService.service.connections.allowFrom(
+      adminPanelService,
+      ec2.Port.tcp(3080),
+      'Admin Panel to LibreChat',
+    );
+    adminPanelService.connections.allowFrom(
+      librechatService.loadBalancer.connections.securityGroups[0],
+      ec2.Port.tcp(3000),
+      'ALB to Admin Panel',
+    );
+    adminPanelService.connections.allowFrom(
+      ec2.Peer.ipv4(vpc.vpcCidrBlock),
+      ec2.Port.tcp(3000),
+      'Health checks to Admin Panel',
+    );
+    new ec2.CfnSecurityGroupEgress(this, 'AlbToAdminPanelEgress', {
+      groupId: librechatService.loadBalancer.connections.securityGroups[0].securityGroupId,
+      ipProtocol: 'tcp',
+      fromPort: 3000,
+      toPort: 3000,
+      destinationSecurityGroupId: adminPanelService.connections.securityGroups[0].securityGroupId,
+      description: 'ALB to Admin Panel',
+    });
 
     if (!isProd) {
       this.CreateDatabaseSidecars(props, commonExecRole, vpc, cluster, librechatService, mongoSecret);
@@ -456,6 +484,72 @@ export class EcsStack extends cdk.Stack {
       );
     }
     return ragApiService;
+  }
+
+  private CreateAdminPanelService(
+    props: EcsServicesProps,
+    commonExecRole: iam.Role,
+    vpc: ec2.IVpc,
+    cluster: ecs.Cluster,
+    librechatService: ecsPatterns.ApplicationLoadBalancedFargateService,
+  ): ecs.FargateService {
+    const taskDef = new ecs.FargateTaskDefinition(this, 'AdminPanelTaskDef', {
+      cpu: 256,
+      memoryLimitMiB: 512,
+      executionRole: commonExecRole,
+      taskRole: commonExecRole,
+    });
+
+    taskDef.addContainer('librechat-admin-panel', {
+      image: ecs.ContainerImage.fromRegistry(props.librechatAdminImage),
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'admin-panel' }),
+      environment: {
+        PORT: '3000',
+        API_SERVER_URL: 'http://librechat.internal:3080',
+      },
+      portMappings: [{ containerPort: 3000 }],
+    });
+
+    const targetGroup = new elbv2.ApplicationTargetGroup(this, 'AdminPanelTg', {
+      vpc,
+      port: 3000,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targetType: elbv2.TargetType.IP,
+      deregistrationDelay: cdk.Duration.seconds(30),
+      healthCheck: {
+        path: '/',
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(10),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 3,
+        healthyHttpCodes: '200-399',
+      },
+    });
+
+    librechatService.listener.addAction('AdminPanelRule', {
+      conditions: [
+        elbv2.ListenerCondition.hostHeaders([props.envVars.domainName]),
+        elbv2.ListenerCondition.pathPatterns(['/admin', '/admin/*']),
+      ],
+      priority: 5,
+      action: elbv2.ListenerAction.forward([targetGroup]),
+    });
+
+    const service = new ecs.FargateService(this, 'AdminPanelService', {
+      cluster,
+      taskDefinition: taskDef,
+      desiredCount: 1,
+      minHealthyPercent: 50,
+      enableExecuteCommand: true,
+      cloudMapOptions: { name: 'admin-panel' },
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+    });
+
+    service.attachToApplicationTargetGroup(targetGroup);
+
+    new cdk.CfnOutput(this, 'AdminPanelImageUri', { value: props.librechatAdminImage });
+
+    return service;
   }
 
   private CreateFileS3Bucket() {
