@@ -203,6 +203,8 @@ export const cloudfrontConfigSchema = z
         message: 'cookieDomain must start with a dot (e.g., ".example.com") to apply to subdomains',
       })
       .optional(),
+    storageRegion: z.string().min(1).optional(),
+    includeRegionInPath: z.boolean().default(false),
   })
   .refine((data) => !data.invalidateOnDelete || !!data.distributionId, {
     message: 'distributionId is required when invalidateOnDelete is true',

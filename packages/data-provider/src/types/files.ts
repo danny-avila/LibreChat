@@ -100,6 +100,8 @@ export type TFile = {
   __v?: number;
   user: string;
   tenantId?: string;
+  storageRegion?: string;
+  storageKey?: string;
   conversationId?: string;
   message?: string;
   file_id: string;
@@ -228,6 +230,8 @@ export type DeleteFilesResponse = {
 export type BatchFile = {
   file_id: string;
   filepath: string;
+  storageRegion?: string;
+  storageKey?: string;
   embedded: boolean;
   source: FileSources;
   temp_file_id?: string;

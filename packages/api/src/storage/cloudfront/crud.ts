@@ -16,7 +16,7 @@ import type {
 } from '~/storage/types';
 import { getCloudFrontConfig } from '~/cdn/cloudfront';
 import { s3Config } from '~/storage/s3/s3Config';
-import { DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
+import { AVATAR_BASE_PATH, DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
 import { sanitizeContentDispositionFilename } from '~/storage/validation';
 import {
   getS3Key,
@@ -25,7 +25,7 @@ import {
   uploadFileToS3,
   deleteFileFromS3,
   getS3FileStream,
-  extractKeyFromS3Url,
+  resolveStoredS3Key,
 } from '~/storage/s3/crud';
 
 let _cloudFrontClient: CloudFrontClient | null = null;
@@ -43,6 +43,38 @@ function getOrCreateCloudFrontClient(): CloudFrontClient {
 
 export interface CloudFrontURLParams extends GetURLParams {
   sign?: boolean;
+}
+
+function getRegionPathOptions({
+  basePath = defaultBasePath,
+  storageRegion = null,
+  includeRegionInPath,
+  useInlinePath,
+}: {
+  basePath?: string;
+  storageRegion?: string | null;
+  includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
+}): Pick<GetURLParams, 'storageRegion' | 'includeRegionInPath' | 'useInlinePath'> {
+  const config = getCloudFrontConfig();
+  const shouldIncludeRegion = includeRegionInPath ?? config?.includeRegionInPath ?? false;
+  return {
+    includeRegionInPath: shouldIncludeRegion,
+    storageRegion: shouldIncludeRegion
+      ? (storageRegion ?? config?.storageRegion ?? s3Config.AWS_REGION ?? process.env.AWS_REGION)
+      : (storageRegion ?? config?.storageRegion),
+    useInlinePath: useInlinePath ?? (basePath === defaultBasePath || basePath === AVATAR_BASE_PATH),
+  };
+}
+
+function isInlineFileUpload({ basePath, file, useInlinePath }: UploadFileParams): boolean {
+  if (useInlinePath != null) {
+    return useInlinePath;
+  }
+  if (basePath === AVATAR_BASE_PATH) {
+    return true;
+  }
+  return (basePath ?? defaultBasePath) === defaultBasePath && file.mimetype?.startsWith('image/');
 }
 
 function buildCloudFrontUrl(s3Key: string): string {
@@ -127,9 +159,18 @@ export async function getCloudFrontURL({
   fileName,
   basePath = defaultBasePath,
   tenantId = null,
+  storageRegion = null,
+  includeRegionInPath,
+  useInlinePath,
   sign = false,
 }: CloudFrontURLParams): Promise<string> {
-  const key = getS3Key(basePath, userId, fileName, tenantId);
+  const key = getS3Key({
+    basePath,
+    userId,
+    fileName,
+    tenantId,
+    ...getRegionPathOptions({ basePath, storageRegion, includeRegionInPath, useInlinePath }),
+  });
   const url = buildCloudFrontUrl(key);
   return sign ? signUrl(url) : url;
 }
@@ -139,7 +180,12 @@ export async function saveBufferToCloudFront(
   params: SaveBufferParams & { sign?: boolean },
 ): Promise<string> {
   const { sign = false, ...rest } = params;
-  return saveBufferToS3({ ...rest, urlBuilder: (p) => getCloudFrontURL({ ...p, sign }) });
+  const regionOptions = getRegionPathOptions(rest);
+  return saveBufferToS3({
+    ...rest,
+    ...regionOptions,
+    urlBuilder: (p) => getCloudFrontURL({ ...p, ...regionOptions, sign }),
+  });
 }
 
 /** Save file from URL to S3 and return CloudFront URL. */
@@ -155,9 +201,11 @@ export async function saveURLToCloudFrontWithMetadata(
   params: SaveURLParams & { sign?: boolean },
 ): Promise<SaveURLResult> {
   const { sign = false, ...rest } = params;
+  const regionOptions = getRegionPathOptions(rest);
   return saveURLToS3WithMetadata({
     ...rest,
-    urlBuilder: (p) => getCloudFrontURL({ ...p, sign }),
+    ...regionOptions,
+    urlBuilder: (p) => getCloudFrontURL({ ...p, ...regionOptions, sign }),
   });
 }
 
@@ -166,7 +214,15 @@ export async function uploadFileToCloudFront(
   params: UploadFileParams & { sign?: boolean },
 ): Promise<UploadResult> {
   const { sign = false, ...rest } = params;
-  return uploadFileToS3({ ...rest, urlBuilder: (p) => getCloudFrontURL({ ...p, sign }) });
+  const regionOptions = getRegionPathOptions({
+    ...rest,
+    useInlinePath: isInlineFileUpload(rest),
+  });
+  return uploadFileToS3({
+    ...rest,
+    ...regionOptions,
+    urlBuilder: (p) => getCloudFrontURL({ ...p, ...regionOptions, sign }),
+  });
 }
 
 /** Delete file from S3 and optionally invalidate CloudFront cache. */
@@ -179,7 +235,7 @@ export async function deleteFileFromCloudFront(req: ServerRequest, file: TFile):
     try {
       const client = getOrCreateCloudFrontClient();
       // CloudFront URL pathname matches S3 key when no origin path prefix is configured
-      const key = extractKeyFromS3Url(file.filepath);
+      const key = resolveStoredS3Key(file);
       const path = key.startsWith('/') ? key : `/${key}`;
 
       await client.send(
@@ -215,7 +271,7 @@ export async function getCloudFrontDownloadURL({
   customFilename = null,
   contentType = null,
 }: DownloadURLParams): Promise<string> {
-  const key = extractKeyFromS3Url(file.filepath);
+  const key = resolveStoredS3Key(file);
   if (!key) {
     throw new Error('[getCloudFrontDownloadURL] Unable to extract S3 key from file path');
   }

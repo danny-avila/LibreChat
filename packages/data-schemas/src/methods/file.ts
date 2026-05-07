@@ -326,10 +326,15 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Batch updates files with new signed URLs in MongoDB
-   * @param updates - Array of updates in the format { file_id, filepath }
+   * @param updates - Array of updates in the format { file_id, filepath, storageKey?, storageRegion? }
    */
   async function batchUpdateFiles(
-    updates: Array<{ file_id: string; filepath: string }>,
+    updates: Array<{
+      file_id: string;
+      filepath: string;
+      storageKey?: string;
+      storageRegion?: string;
+    }>,
   ): Promise<void> {
     if (!updates || updates.length === 0) {
       return;
@@ -339,7 +344,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     const bulkOperations = updates.map((update) => ({
       updateOne: {
         filter: { file_id: update.file_id },
-        update: { $set: { filepath: update.filepath } },
+        update: {
+          $set: {
+            filepath: update.filepath,
+            ...(update.storageKey ? { storageKey: update.storageKey } : {}),
+            ...(update.storageRegion ? { storageRegion: update.storageRegion } : {}),
+          },
+        },
       },
     }));
 

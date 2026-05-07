@@ -3,7 +3,9 @@ import { logger } from '@librechat/data-schemas';
 
 import type { Response } from 'express';
 
+import { INLINE_AVATAR_PATH_PREFIX, INLINE_IMAGE_PATH_PREFIX } from '~/storage/constants';
 import { assertPathSegment } from '~/storage/validation';
+import { s3Config } from '~/storage/s3/s3Config';
 import { getCloudFrontConfig } from './cloudfront';
 
 const DEFAULT_COOKIE_EXPIRY = 1800;
@@ -20,6 +22,7 @@ const unsafePolicySegmentPattern = /[?*[\]\s]/;
 export interface CloudFrontCookieScope {
   userId?: string | null;
   tenantId?: string | null;
+  storageRegion?: string | null;
 }
 
 type CookieOptions = {
@@ -39,27 +42,67 @@ function assertPolicyPathSegment(label: string, value: string | null | undefined
 
 function getPolicyScopes(
   domain: string,
-  { userId, tenantId }: CloudFrontCookieScope,
+  { userId, tenantId, storageRegion }: CloudFrontCookieScope,
+  includeRegionInPath = false,
 ): Array<{ resource: string; path: string }> {
   if (!userId) {
     throw new Error('[CloudFront cookies] userId is required for private image access.');
   }
 
   const safeUserId = assertPolicyPathSegment('userId', userId);
+  if (includeRegionInPath) {
+    if (storageRegion) {
+      assertPolicyPathSegment('storageRegion', storageRegion);
+    }
+    if (tenantId) {
+      const safeTenantId = assertPolicyPathSegment('tenantId', tenantId);
+      return [
+        {
+          resource: `${domain}/${INLINE_IMAGE_PATH_PREFIX}/r/*/t/${safeTenantId}/images/${safeUserId}/*`,
+          path: `/${INLINE_IMAGE_PATH_PREFIX}`,
+        },
+        {
+          resource: `${domain}/${INLINE_AVATAR_PATH_PREFIX}/r/*/t/${safeTenantId}/avatars/*`,
+          path: `/${INLINE_AVATAR_PATH_PREFIX}`,
+        },
+      ];
+    }
+
+    return [
+      {
+        resource: `${domain}/${INLINE_IMAGE_PATH_PREFIX}/r/*/images/${safeUserId}/*`,
+        path: `/${INLINE_IMAGE_PATH_PREFIX}`,
+      },
+      {
+        resource: `${domain}/${INLINE_AVATAR_PATH_PREFIX}/r/*/avatars/*`,
+        path: `/${INLINE_AVATAR_PATH_PREFIX}`,
+      },
+    ];
+  }
+
   if (tenantId) {
     const safeTenantId = assertPolicyPathSegment('tenantId', tenantId);
     return [
       {
-        resource: `${domain}/t/${safeTenantId}/images/${safeUserId}/*`,
-        path: `/t/${safeTenantId}/images/${safeUserId}`,
+        resource: `${domain}/${INLINE_IMAGE_PATH_PREFIX}/t/${safeTenantId}/images/${safeUserId}/*`,
+        path: `/${INLINE_IMAGE_PATH_PREFIX}`,
       },
-      { resource: `${domain}/t/${safeTenantId}/avatars/*`, path: `/t/${safeTenantId}/avatars` },
+      {
+        resource: `${domain}/${INLINE_AVATAR_PATH_PREFIX}/t/${safeTenantId}/avatars/*`,
+        path: `/${INLINE_AVATAR_PATH_PREFIX}`,
+      },
     ];
   }
 
   return [
-    { resource: `${domain}/images/${safeUserId}/*`, path: `/images/${safeUserId}` },
-    { resource: `${domain}/avatars/*`, path: '/avatars' },
+    {
+      resource: `${domain}/${INLINE_IMAGE_PATH_PREFIX}/images/${safeUserId}/*`,
+      path: `/${INLINE_IMAGE_PATH_PREFIX}`,
+    },
+    {
+      resource: `${domain}/${INLINE_AVATAR_PATH_PREFIX}/avatars/*`,
+      path: `/${INLINE_AVATAR_PATH_PREFIX}`,
+    },
   ];
 }
 
@@ -71,23 +114,28 @@ function getScopeCookiePaths(
     return [];
   }
 
-  const safeUserId = assertPolicyPathSegment('userId', scope.userId);
-  if (scope.tenantId) {
-    const safeTenantId = assertPolicyPathSegment('tenantId', scope.tenantId);
-    const paths = [`/t/${safeTenantId}/images/${safeUserId}`, `/t/${safeTenantId}/avatars`];
-    if (includeTenantRoot) {
-      paths.push(`/t/${safeTenantId}`);
-    }
-    return paths;
+  if (scope.storageRegion) {
+    assertPolicyPathSegment('storageRegion', scope.storageRegion);
   }
-
-  return [`/images/${safeUserId}`, '/avatars'];
+  const safeUserId = assertPolicyPathSegment('userId', scope.userId);
+  const safeTenantId = scope.tenantId ? assertPolicyPathSegment('tenantId', scope.tenantId) : null;
+  const paths = [`/${INLINE_IMAGE_PATH_PREFIX}`, `/${INLINE_AVATAR_PATH_PREFIX}`];
+  if (safeTenantId) {
+    paths.push(`/t/${safeTenantId}/images/${safeUserId}`, `/t/${safeTenantId}/avatars`);
+  } else {
+    paths.push(`/images/${safeUserId}`, '/avatars');
+  }
+  if (safeTenantId && includeTenantRoot) {
+    paths.push(`/t/${safeTenantId}`);
+  }
+  return paths;
 }
 
 function encodeCloudFrontCookieScope(scope: CloudFrontCookieScope): string {
   const payload = {
     userId: scope.userId ?? null,
     tenantId: scope.tenantId ?? null,
+    storageRegion: scope.storageRegion ?? null,
   };
   return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }
@@ -103,6 +151,7 @@ export function parseCloudFrontCookieScope(
     const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as {
       userId?: unknown;
       tenantId?: unknown;
+      storageRegion?: unknown;
     };
     const scope: CloudFrontCookieScope = {};
     if (typeof parsed.userId === 'string') {
@@ -110,6 +159,9 @@ export function parseCloudFrontCookieScope(
     }
     if (typeof parsed.tenantId === 'string') {
       scope.tenantId = assertPolicyPathSegment('tenantId', parsed.tenantId);
+    }
+    if (typeof parsed.storageRegion === 'string') {
+      scope.storageRegion = assertPolicyPathSegment('storageRegion', parsed.storageRegion);
     }
     return scope.userId ? scope : null;
   } catch {
@@ -146,9 +198,18 @@ export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieSco
       secure: true,
       sameSite: 'none' as const,
     };
-    const paths = new Set(['/images', '/avatars', '/']);
-    if (scope.userId) {
-      for (const path of getScopeCookiePaths(scope, { includeTenantRoot: true })) {
+    const paths = new Set(['/images', '/avatars', '/r', '/i', '/a', '/']);
+    const clearScope =
+      config.includeRegionInPath && scope.userId && !scope.storageRegion
+        ? {
+            ...scope,
+            storageRegion: config.storageRegion ?? s3Config.AWS_REGION ?? process.env.AWS_REGION,
+          }
+        : scope;
+    if (clearScope.userId) {
+      for (const path of getScopeCookiePaths(clearScope, {
+        includeTenantRoot: true,
+      })) {
         paths.add(path);
       }
     }
@@ -199,14 +260,29 @@ export function setCloudFrontCookies(
     const expiresAtEpoch = Math.floor(expiresAtMs / 1000);
 
     const cleanDomain = config.domain.replace(/\/+$/, '');
-    const policyScopes = getPolicyScopes(cleanDomain, scope);
-    // CloudFront custom-policy cookies are scoped to one resource, so issue
-    // separate path-specific cookie sets for private files and shared avatars.
-    const signedCookieSets = policyScopes.map(({ resource, path }) => {
+    const includeRegionInPath = config.includeRegionInPath ?? false;
+    const configuredStorageRegion =
+      scope.storageRegion ?? config.storageRegion ?? s3Config.AWS_REGION ?? process.env.AWS_REGION;
+    const scopedStorageRegion = includeRegionInPath ? configuredStorageRegion : scope.storageRegion;
+    const effectiveScope = {
+      ...scope,
+      ...(scopedStorageRegion ? { storageRegion: scopedStorageRegion } : {}),
+    };
+    const policyScopes = getPolicyScopes(cleanDomain, effectiveScope, includeRegionInPath);
+    const resourcesByPath = new Map<string, string[]>();
+    for (const { resource, path } of policyScopes) {
+      resourcesByPath.set(path, [...(resourcesByPath.get(path) ?? []), resource]);
+    }
+
+    const signedCookieSets = Array.from(resourcesByPath, ([path, resources]) => {
+      if (resources.length > 1) {
+        throw new Error('[CloudFront cookies] Multiple resources cannot share a cookie path.');
+      }
+
       const policy = JSON.stringify({
         Statement: [
           {
-            Resource: resource,
+            Resource: resources[0],
             Condition: {
               DateLessThan: {
                 'AWS:EpochTime': expiresAtEpoch,
@@ -232,11 +308,14 @@ export function setCloudFrontCookies(
       sameSite: 'none' as const,
       domain: config.cookieDomain,
     };
-    const stalePaths = new Set(['/images', '/avatars']);
+    const stalePaths = new Set(['/images', '/avatars', '/r', '/i', '/a']);
     if (previousScope?.userId) {
       for (const path of getScopeCookiePaths(previousScope)) {
         stalePaths.add(path);
       }
+    }
+    for (const path of getScopeCookiePaths(effectiveScope)) {
+      stalePaths.add(path);
     }
 
     for (const { cookies } of signedCookieSets) {
@@ -257,7 +336,7 @@ export function setCloudFrontCookies(
         res.cookie(key, cookies[key], cookieOptions);
       }
     }
-    res.cookie(CLOUDFRONT_SCOPE_COOKIE, encodeCloudFrontCookieScope(scope), {
+    res.cookie(CLOUDFRONT_SCOPE_COOKIE, encodeCloudFrontCookieScope(effectiveScope), {
       ...baseCookieOptions,
       path: '/',
     });

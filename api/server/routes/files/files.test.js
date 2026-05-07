@@ -562,6 +562,8 @@ describe('File Routes - Delete with Agent Access', () => {
         file_id: userFileId,
         filename: 'file.pdf',
         filepath: 'uploads/user/file.pdf',
+        storageKey: 'r/us-east-2/uploads/user/file.pdf',
+        storageRegion: 'us-east-2',
         bytes: 200,
         type: 'application/pdf',
         source: FileSources.s3,
@@ -581,6 +583,8 @@ describe('File Routes - Delete with Agent Access', () => {
         file_id: userFileId,
         filename: 'file.pdf',
         filepath: 'uploads/user/file.pdf',
+        storageKey: 'r/us-east-2/uploads/user/file.pdf',
+        storageRegion: 'us-east-2',
         source: FileSources.s3,
       });
       expect(response.body.metadata).not.toHaveProperty('_id');
@@ -650,6 +654,8 @@ describe('File Routes - Delete with Agent Access', () => {
         file_id: userFileId,
         filename: 'file.pdf',
         filepath: 'uploads/user/file.pdf',
+        storageKey: 'r/us-east-2/uploads/user/file.pdf',
+        storageRegion: 'us-east-2',
         bytes: 200,
         type: 'application/pdf',
         source: FileSources.s3,
@@ -674,6 +680,8 @@ describe('File Routes - Delete with Agent Access', () => {
         file_id: userFileId,
         filename: 'file.pdf',
         filepath: 'uploads/user/file.pdf',
+        storageKey: 'r/us-east-2/uploads/user/file.pdf',
+        storageRegion: 'us-east-2',
         bytes: 200,
         type: 'application/pdf',
         source: FileSources.cloudfront,
@@ -690,6 +698,8 @@ describe('File Routes - Delete with Agent Access', () => {
         file_id: userFileId,
         filename: 'file.pdf',
         filepath: 'uploads/user/file.pdf',
+        storageKey: 'r/us-east-2/uploads/user/file.pdf',
+        storageRegion: 'us-east-2',
         source: FileSources.cloudfront,
       });
       expect(metadata).not.toHaveProperty('_id');
@@ -698,7 +708,10 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(metadata).not.toHaveProperty('tenantId');
       expect(metadata).not.toHaveProperty('text');
       expect(getDownloadURL).not.toHaveBeenCalled();
-      expect(getDownloadStream).toHaveBeenCalledWith(expect.any(Object), 'uploads/user/file.pdf');
+      expect(getDownloadStream).toHaveBeenCalledWith(
+        expect.any(Object),
+        'r/us-east-2/uploads/user/file.pdf',
+      );
     });
 
     it('redirects to a direct signed download URL when explicitly requested', async () => {

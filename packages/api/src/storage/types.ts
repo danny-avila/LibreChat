@@ -7,6 +7,9 @@ export interface SaveBufferParams {
   fileName: string;
   basePath?: string;
   tenantId?: string | null;
+  storageRegion?: string | null;
+  includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
 }
 
 export interface GetURLParams {
@@ -16,6 +19,9 @@ export interface GetURLParams {
   customFilename?: string | null;
   contentType?: string | null;
   tenantId?: string | null;
+  storageRegion?: string | null;
+  includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
 }
 
 export interface SaveURLParams {
@@ -24,10 +30,15 @@ export interface SaveURLParams {
   fileName: string;
   basePath?: string;
   tenantId?: string | null;
+  storageRegion?: string | null;
+  includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
 }
 
 export interface SaveURLResult {
   filepath: string;
+  storageKey?: string;
+  storageRegion?: string;
   bytes?: number;
   type?: string;
   dimensions?: {
@@ -42,6 +53,9 @@ export interface UploadFileParams {
   file_id: string;
   basePath?: string;
   tenantId?: string | null;
+  storageRegion?: string | null;
+  includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
 }
 
 export interface DownloadURLParams {
@@ -58,6 +72,8 @@ export interface UploadImageParams extends UploadFileParams {
 
 export interface UploadResult {
   filepath: string;
+  storageKey?: string;
+  storageRegion?: string;
   bytes: number;
 }
 
@@ -77,11 +93,15 @@ export interface ProcessAvatarParams {
 
 export interface S3FileRef {
   filepath: string;
+  storageKey?: string;
+  storageRegion?: string;
   source: string;
 }
 
 export type SaveBufferFn = (params: SaveBufferParams) => Promise<string>;
 
-export type BatchUpdateFn = (files: Array<{ file_id: string; filepath: string }>) => Promise<void>;
+export type BatchUpdateFn = (
+  files: Array<{ file_id: string; filepath: string; storageKey?: string; storageRegion?: string }>,
+) => Promise<void>;
 
 export type UrlBuilder = (params: GetURLParams) => Promise<string>;

@@ -36,13 +36,25 @@ cache: true
 #   invalidateOnDelete: false               # Create cache invalidation on file delete
 #   imageSigning: "none"                    # "none" (public) | "cookies" (signed cookies)
 #   # When imageSigning: "cookies", API + CloudFront must share a parent domain.
-#   # Cookies are path-scoped to private image prefixes and avatar prefixes.
-#   # If adding tenantId to a private pre-release CloudFront deployment, re-key
-#   # legacy /images and /avatars objects under /t/{tenantId}/ before enabling.
+#   # Cookies are path-scoped to inline assets only:
+#   #   /i/... private uploaded/generated images, user-scoped
+#   #   /a/... tenant-visible avatars, tenant-scoped when tenantId is present
+#   # Downloads, documents, uploads, and code outputs stay outside /i and /a and
+#   # use backend-authorized signed URLs instead of signed cookies.
 #   #   API: api.example.com, CloudFront CNAME: cdn.example.com, cookieDomain: ".example.com"
 #   cookieDomain: ".example.com"            # Required for "cookies" - shared parent domain
 #   cookieExpiry: 1800                      # Cookie lifetime in seconds (max: 604800 / 7 days, default: 1800 / 30 min)
 #   urlExpiry: 3600                         # Signed CloudFront download URL lifetime in seconds
+#   # Optional multi-region S3/CloudFront layout. Default: false.
+#   # When enabled, new object keys include:
+#   #   /i/r/{storageRegion}/t/{tenantId}/images/{userId}/{file}   (private inline images)
+#   #   /a/r/{storageRegion}/t/{tenantId}/avatars/{userId}/{file}  (tenant-visible avatars)
+#   #   /r/{storageRegion}/t/{tenantId}/{basePath}/{userId}/{file} (non-inline files)
+#   # storageRegion defaults to AWS_REGION when omitted, but only affects new keys
+#   # when includeRegionInPath is true. Existing files are not moved automatically.
+#   # LibreChat does not configure CloudFront origins, Route53, or regional routing.
+#   storageRegion: "us-east-2"
+#   includeRegionInPath: false
 #   # Direct-download filename/content-type overrides require the CloudFront cache/origin
 #   # request policy to forward and cache on response-content-disposition and
 #   # response-content-type query strings to S3.

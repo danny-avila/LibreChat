@@ -10,6 +10,7 @@ jest.mock('@librechat/api', () => ({
   sanitizeFilename: jest.fn((n) => n),
   parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
   processAudioFile: jest.fn(),
+  getStorageMetadata: jest.fn(() => ({})),
 }));
 
 jest.mock('librechat-data-provider', () => ({

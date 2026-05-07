@@ -15,6 +15,7 @@ const {
   codeServerHttpsAgent,
   extractCodeArtifactText,
   getExtractedTextFormat,
+  getStorageMetadata,
 } = require('@librechat/api');
 const {
   Tools,
@@ -421,9 +422,16 @@ const processCodeOutput = async ({
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
       const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
       const filepath = usage > 1 ? `${_file.filepath}?v=${Date.now()}` : _file.filepath;
+      const storageMetadata = getStorageMetadata({
+        filepath: _file.filepath,
+        source: appConfig.fileStrategy,
+        storageKey: _file.storageKey,
+        storageRegion: _file.storageRegion,
+      });
       const file = {
         ..._file,
         filepath,
+        ...storageMetadata,
         file_id,
         messageId: persistedMessageId,
         usage,
@@ -494,6 +502,10 @@ const processCodeOutput = async ({
       basePath: 'uploads',
       tenantId: req.user.tenantId,
     });
+    const storageMetadata = getStorageMetadata({
+      filepath,
+      source: appConfig.fileStrategy,
+    });
 
     /* `classifyCodeArtifact` and `extractCodeArtifactText` make
      * extension/bare-name decisions on the input string. With the
@@ -520,6 +532,7 @@ const processCodeOutput = async ({
     const baseFile = {
       file_id,
       filepath,
+      ...storageMetadata,
       messageId: persistedMessageId,
       object: 'file',
       filename: safeName,

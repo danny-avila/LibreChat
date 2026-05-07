@@ -432,6 +432,8 @@ const DOWNLOAD_METADATA_FIELDS = [
   'embedded',
   'filename',
   'filepath',
+  'storageKey',
+  'storageRegion',
   'object',
   'type',
   'usage',
@@ -573,7 +575,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
         return res.status(501).send('Not Implemented');
       }
 
-      const fileStream = await getDownloadStream(req, file.filepath);
+      const fileStream = await getDownloadStream(req, file.storageKey || file.filepath);
 
       fileStream.on('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);

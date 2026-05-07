@@ -26,6 +26,27 @@ describe('cloudfrontConfigSchema cookieDomain validation', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('defaults region pathing to disabled', () => {
+    const result = cloudfrontConfigSchema.safeParse({
+      domain: 'https://cdn.example.com',
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      throw result.error;
+    }
+    expect(result.data?.includeRegionInPath ?? false).toBe(false);
+    expect(result.data?.storageRegion).toBeUndefined();
+  });
+
+  it('accepts optional region pathing config', () => {
+    const result = cloudfrontConfigSchema.safeParse({
+      domain: 'https://cdn.example.com',
+      storageRegion: 'us-east-2',
+      includeRegionInPath: true,
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('cloudfrontConfigSchema cross-field refinements', () => {

@@ -688,6 +688,62 @@ describe('File Methods', () => {
       }
     });
 
+    it('should persist storage metadata when provided', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: 'region-file.txt',
+        filepath: '/old-path/file.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      await fileMethods.batchUpdateFiles([
+        {
+          file_id: fileId,
+          filepath: '/new-path/file.txt',
+          storageKey: 'i/r/us-east-2/images/user123/file.txt',
+          storageRegion: 'us-east-2',
+        },
+      ]);
+
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.filepath).toBe('/new-path/file.txt');
+      expect(file?.storageKey).toBe('i/r/us-east-2/images/user123/file.txt');
+      expect(file?.storageRegion).toBe('us-east-2');
+    });
+
+    it('should not overwrite existing storage metadata when omitted', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: 'existing-metadata.txt',
+        filepath: '/old-path/file.txt',
+        storageKey: 'r/eu-central-1/uploads/user123/file.txt',
+        storageRegion: 'eu-central-1',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      await fileMethods.batchUpdateFiles([
+        {
+          file_id: fileId,
+          filepath: '/new-path/file.txt',
+        },
+      ]);
+
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.filepath).toBe('/new-path/file.txt');
+      expect(file?.storageKey).toBe('r/eu-central-1/uploads/user123/file.txt');
+      expect(file?.storageRegion).toBe('eu-central-1');
+    });
+
     it('should handle empty updates array gracefully', async () => {
       await expect(fileMethods.batchUpdateFiles([])).resolves.toBeUndefined();
     });

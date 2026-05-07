@@ -587,6 +587,8 @@ export type UpsertSkillFileInput = {
   file_id: string;
   filename: string;
   filepath: string;
+  storageKey?: string;
+  storageRegion?: string;
   source: string;
   mimeType: string;
   bytes: number;
@@ -1424,6 +1426,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
           file_id: row.file_id,
           filename: row.filename,
           filepath: row.filepath,
+          storageKey: row.storageKey,
+          storageRegion: row.storageRegion,
           source: row.source,
           mimeType: row.mimeType,
           bytes: row.bytes,

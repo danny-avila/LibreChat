@@ -6,6 +6,7 @@ const {
   createSkillsHandlers,
   createImportHandler,
   generateCheckAccess,
+  getStorageMetadata,
 } = require('@librechat/api');
 const { isValidObjectIdString, logger } = require('@librechat/data-schemas');
 const {
@@ -143,6 +144,7 @@ const importHandler = createImportHandler({
       .then((filepath) => ({
         filepath,
         source: storage.source,
+        ...getStorageMetadata({ filepath, source: storage.source }),
       }));
   },
   deleteFile: (req, file) => {
@@ -199,6 +201,7 @@ async function uploadFileHandler(req, res) {
       basePath: 'uploads',
       tenantId: req.user.tenantId,
     });
+    const storageMetadata = getStorageMetadata({ filepath, source: storage.source });
 
     let result;
     try {
@@ -208,6 +211,7 @@ async function uploadFileHandler(req, res) {
         file_id: fileId,
         filename,
         filepath,
+        ...storageMetadata,
         source: storage.source,
         mimeType: file.mimetype || 'application/octet-stream',
         bytes: file.size,
