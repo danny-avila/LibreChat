@@ -290,6 +290,7 @@
   "com_endpoint_message_new": "Message {{0}}",
   "com_endpoint_message_placeholder": "Ask a question or describe a task...",
   "com_endpoint_message_not_appendable": "Edit your message or Regenerate.",
+  "com_endpoint_my_agents": "My Agents",
   "com_endpoint_my_preset": "My Preset",
   "com_endpoint_no_presets": "No presets yet, use the settings button to create one",
   "com_endpoint_openai_custom_name_placeholder": "Set a custom name for the AI",

@@ -2,7 +2,6 @@ import React, { useMemo, useCallback } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Permissions,
-  alternateName,
   EModelEndpoint,
   PermissionTypes,
   getEndpointField,
@@ -17,8 +16,8 @@ import type {
 } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { mapEndpoints, getIconKey } from '~/utils';
-import { useHasAccess } from '~/hooks';
+import { mapEndpoints, getIconKey, getEndpointAlternateName } from '~/utils';
+import { useHasAccess, useLocalize } from '~/hooks';
 import { icons } from './Icons';
 
 const defaultInterface = getConfigDefaults().interface;
@@ -34,6 +33,7 @@ export const useEndpoints = ({
   endpointsConfig: TEndpointsConfig;
   startupConfig: TStartupConfig | undefined;
 }) => {
+  const localize = useLocalize();
   const modelsQuery = useGetModelsQuery();
   const { data: endpoints = [] } = useGetEndpointsQuery({ select: mapEndpoints });
   const interfaceConfig = startupConfig?.interface ?? defaultInterface;
@@ -98,7 +98,7 @@ export const useEndpoints = ({
       // Base result object with formatted default icon
       const result: Endpoint = {
         value: ep,
-        label: alternateName[ep] || ep,
+        label: getEndpointAlternateName(ep, localize) || ep,
         hasModels,
         icon: Icon
           ? React.createElement(Icon, {
@@ -181,7 +181,7 @@ export const useEndpoints = ({
 
       return result;
     });
-  }, [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants, azureAssistants]);
+  }, [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants, azureAssistants, localize]);
 
   return {
     mappedEndpoints,

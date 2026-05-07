@@ -5,7 +5,6 @@ import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import {
-  alternateName,
   getSettingsKeys,
   getEndpointField,
   LocalStorageKeys,
@@ -18,7 +17,7 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
-import { cn } from '~/utils';
+import { cn, getEndpointAlternateName } from '~/utils';
 
 export default function ModelPanel({
   providers,
@@ -144,7 +143,7 @@ export default function ModelPanel({
                 <>
                   <ControlCombobox
                     selectedValue={value}
-                    displayValue={alternateName[display] ?? display}
+                    displayValue={getEndpointAlternateName(display, localize) ?? display}
                     selectPlaceholder={localize('com_ui_select_provider')}
                     searchPlaceholder={localize('com_ui_select_search_provider')}
                     setValue={field.onChange}

@@ -1,6 +1,7 @@
 import {
   Constants,
   EModelEndpoint,
+  alternateName,
   defaultEndpoints,
   modularEndpoints,
   LocalStorageKeys,
@@ -12,6 +13,16 @@ import {
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction, IconsRecord } from '~/common';
 import { getTimestampedValue } from './timestamps';
+
+export const getEndpointAlternateName = (
+  endpoint: string | undefined,
+  localize: LocalizeFunction,
+): string | undefined => {
+  if (endpoint === EModelEndpoint.agents) {
+    return localize('com_endpoint_my_agents');
+  }
+  return alternateName[endpoint ?? ''] as string | undefined;
+};
 
 /**
  * Clears model for non-ephemeral agent conversations.

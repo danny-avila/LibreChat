@@ -275,6 +275,7 @@
   "com_endpoint_message_new": "Message {{0}}",
   "com_endpoint_message_placeholder": "Pose ta question ou décris ta tâche...",
   "com_endpoint_message_not_appendable": "Editer votre message ou regénerer.",
+  "com_endpoint_my_agents": "Mes Agents",
   "com_endpoint_my_preset": "Mon préréglage",
   "com_endpoint_no_presets": "Aucun préréglage pour l'instant, utilisez le bouton paramètres pour en créer un",
   "com_endpoint_openai_custom_name_placeholder": "Définir un nom personnalisé pour ChatGPT",

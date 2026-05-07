@@ -10,10 +10,12 @@ import {
   CustomMinimalIcon,
 } from '@librechat/client';
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
+import useLocalize from '~/hooks/useLocalize';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
 const MinimalIcon: React.FC<IconProps> = (props) => {
+  const localize = useLocalize();
   const { size = 30, iconURL = '', iconClassName, error } = props;
 
   let endpoint = 'default'; // Default value for endpoint
@@ -44,7 +46,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.azureAssistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     [EModelEndpoint.agents]: {
       icon: <Feather className="icon-sm" aria-hidden="true" />,
-      name: props.modelLabel ?? alternateName[EModelEndpoint.agents],
+      name: props.modelLabel ?? localize('com_endpoint_my_agents'),
     },
     [EModelEndpoint.bedrock]: {
       icon: <BedrockIcon className="icon-xl text-text-primary" />,

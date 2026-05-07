@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
-import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { getEndpointAlternateName } from '~/utils';
 import {
   useRevokeUserKeyMutation,
   useRevokeAllUserKeysMutation,
@@ -279,7 +280,7 @@ const SetKeyDialog = ({
       <OGDialogContent className="w-11/12 max-w-2xl">
         <OGDialogHeader>
           <OGDialogTitle>
-            {`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
+            {`${localize('com_endpoint_config_key_for')} ${getEndpointAlternateName(endpoint, localize) ?? endpoint}`}
           </OGDialogTitle>
         </OGDialogHeader>
         <div className="grid w-full items-center gap-2 py-4">

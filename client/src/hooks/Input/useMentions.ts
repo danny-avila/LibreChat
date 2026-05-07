@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Permissions,
-  alternateName,
   PermissionBits,
   EModelEndpoint,
   PermissionTypes,
@@ -20,9 +19,10 @@ import {
 } from '~/data-provider';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
-import { mapEndpoints, getPresetTitle } from '~/utils';
+import { mapEndpoints, getPresetTitle, getEndpointAlternateName } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
+import useLocalize from '~/hooks/useLocalize';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -58,6 +58,7 @@ export default function useMentions({
   assistantMap: TAssistantsMap;
   includeAssistants: boolean;
 }) {
+  const localize = useLocalize();
   const hasAgentAccess = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
@@ -198,7 +199,7 @@ export default function useMentions({
       })),
       ...(interfaceConfig.modelSelect === true ? validEndpoints : []).map((endpoint) => ({
         value: endpoint,
-        label: alternateName[endpoint as string] ?? endpoint ?? '',
+        label: getEndpointAlternateName(endpoint as string, localize) ?? endpoint ?? '',
         type: 'endpoint' as const,
         icon: EndpointIcon({
           conversation: { endpoint },

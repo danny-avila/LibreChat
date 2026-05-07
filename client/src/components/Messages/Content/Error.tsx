@@ -1,5 +1,6 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
-import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provider';
+import { ViolationTypes, ErrorTypes } from 'librechat-data-provider';
+import { getEndpointAlternateName } from '~/utils';
 import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import { useLocalize } from '~/hooks';
@@ -47,13 +48,13 @@ const errorMessages = {
   [ErrorTypes.REFUSAL]: 'com_error_refusal',
   [ErrorTypes.MISSING_MODEL]: (json: TGenericError, localize: LocalizeFunction) => {
     const { info: endpoint } = json;
-    const provider = (alternateName[endpoint ?? ''] as string | undefined) ?? endpoint ?? 'unknown';
+    const provider = getEndpointAlternateName(endpoint, localize) ?? endpoint ?? 'unknown';
     return localize('com_error_missing_model', { 0: provider });
   },
   [ErrorTypes.MODELS_NOT_LOADED]: 'com_error_models_not_loaded',
   [ErrorTypes.ENDPOINT_MODELS_NOT_LOADED]: (json: TGenericError, localize: LocalizeFunction) => {
     const { info: endpoint } = json;
-    const provider = (alternateName[endpoint ?? ''] as string | undefined) ?? endpoint ?? 'unknown';
+    const provider = getEndpointAlternateName(endpoint, localize) ?? endpoint ?? 'unknown';
     return localize('com_error_endpoint_models_not_loaded', { 0: provider });
   },
   [ErrorTypes.NO_SYSTEM_MESSAGES]: `com_error_${ErrorTypes.NO_SYSTEM_MESSAGES}`,
@@ -67,7 +68,7 @@ const errorMessages = {
   },
   [ErrorTypes.INVALID_AGENT_PROVIDER]: (json: TGenericError, localize: LocalizeFunction) => {
     const { info } = json;
-    const provider = (alternateName[info] as string | undefined) ?? info;
+    const provider = getEndpointAlternateName(info, localize) ?? info;
     return localize('com_error_invalid_agent_provider', { 0: provider });
   },
   [ErrorTypes.GOOGLE_ERROR]: (json: TGenericError) => {
@@ -81,7 +82,7 @@ const errorMessages = {
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: (json: TGenericError, localize: LocalizeFunction) => {
     const { info } = json;
     const [endpoint, model = 'unknown'] = info?.split('|') ?? [];
-    const provider = (alternateName[endpoint ?? ''] as string | undefined) ?? endpoint ?? 'unknown';
+    const provider = getEndpointAlternateName(endpoint, localize) ?? endpoint ?? 'unknown';
     return localize('com_error_illegal_model_request', { 0: model, 1: provider });
   },
   invalid_api_key:
