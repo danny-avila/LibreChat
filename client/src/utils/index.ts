@@ -24,6 +24,7 @@ export * from './redirect';
 export * from './languages';
 export * from './endpoints';
 export * from './resources';
+export * from './downloadFile';
 export * from './scaleImage';
 export * from './timestamps';
 export * from './localStorage';

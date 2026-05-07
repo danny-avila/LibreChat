@@ -138,7 +138,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('@librechat/data-schemas');
-const { codeServerHttpAgent, codeServerHttpsAgent } = require('@librechat/api');
+const { codeServerHttpAgent, codeServerHttpsAgent, getStorageMetadata } = require('@librechat/api');
 
 const { processCodeOutput, getSessionInfo, readSandboxFile, primeFiles } = require('./process');
 
@@ -318,6 +318,70 @@ describe('Code Process', () => {
         expect(result.type).toBe('text/plain');
         expect(result.filepath).toBe('/uploads/saved-file.txt');
         expect(result.bytes).toBe(100);
+      });
+
+      it.each([
+        [
+          'slides.pptx',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        ],
+        ['sheet.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        [
+          'document.docx',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ],
+      ])('preserves stored metadata for code-generated office file %s', async (name, mime) => {
+        const cloudfrontReq = {
+          ...mockReq,
+          user: { ...mockReq.user, tenantId: 'tenantA' },
+          config: { ...mockReq.config, fileStrategy: 'cloudfront' },
+        };
+        const smallBuffer = Buffer.alloc(100);
+        const filepath = `https://cdn.example.com/r/us-east-2/t/tenantA/uploads/user-123/mock-uuid-1234__${name}`;
+        const storageKey = `r/us-east-2/t/tenantA/uploads/user-123/mock-uuid-1234__${name}`;
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+        determineFileType.mockResolvedValue({ mime });
+        mockHasOfficeHtmlPath.mockReturnValueOnce(true);
+        getStorageMetadata.mockReturnValueOnce({ storageKey, storageRegion: 'us-east-2' });
+        const mockSaveBuffer = jest.fn().mockResolvedValue(filepath);
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        const { file: result, finalize } = await processCodeOutput({
+          ...baseParams,
+          req: cloudfrontReq,
+          name,
+        });
+
+        expect(mockSaveBuffer).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: 'user-123',
+            basePath: 'uploads',
+            tenantId: 'tenantA',
+          }),
+        );
+        expect(result).toMatchObject({
+          file_id: 'mock-uuid-1234',
+          user: 'user-123',
+          tenantId: 'tenantA',
+          source: 'cloudfront',
+          filename: name,
+          filepath,
+          storageKey,
+          storageRegion: 'us-east-2',
+          status: 'pending',
+        });
+        expect(createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            file_id: 'mock-uuid-1234',
+            user: 'user-123',
+            tenantId: 'tenantA',
+            source: 'cloudfront',
+            storageKey,
+            storageRegion: 'us-east-2',
+          }),
+          true,
+        );
+        expect(typeof finalize).toBe('function');
       });
 
       it('passes and persists tenantId for non-image code output records', async () => {
@@ -595,6 +659,9 @@ describe('Code Process', () => {
 
         const { file: result } = await processCodeOutput(baseParams);
 
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Falling back to Code API download URL for strategy local'),
+        );
         expect(result.filepath).toContain('/api/files/code/download/session-123/file-id-123');
         expect(result.conversationId).toBe('conv-123');
         expect(result.messageId).toBe('msg-123');

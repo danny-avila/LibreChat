@@ -16,10 +16,10 @@ import {
 import type { ValidSource, ImageResult } from 'librechat-data-provider';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import SourcesErrorBoundary from './SourcesErrorBoundary';
-import { revokeDownloadURL, useFileDownload } from '~/data-provider';
+import { useFileDownload } from '~/data-provider';
 import { useSearchContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, triggerDownload } from '~/utils';
 import store from '~/store';
 
 interface SourceItemProps {
@@ -257,13 +257,7 @@ const FileItem = React.memo(function FileItem({
           });
           return;
         }
-        const link = document.createElement('a');
-        link.href = stream.data;
-        link.setAttribute('download', file.filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        revokeDownloadURL(stream.data);
+        triggerDownload(stream.data, file.filename);
       } catch (error) {
         console.error('Error downloading file:', error);
       }
