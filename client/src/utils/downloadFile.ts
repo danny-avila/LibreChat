@@ -6,10 +6,6 @@ export function triggerDownload(target: string, filename: string): void {
   const link = document.createElement('a');
   link.href = target;
   link.setAttribute('download', filename);
-  if (!isBlob) {
-    link.target = '_blank';
-    link.rel = 'noopener';
-  }
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

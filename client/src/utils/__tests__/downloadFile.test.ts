@@ -38,7 +38,7 @@ describe('downloadFile utilities', () => {
     expect(isHttpDownloadTarget(undefined)).toBe(false);
   });
 
-  it('navigates http URLs without revoking them', () => {
+  it('navigates http URLs in the same tab without revoking them', () => {
     triggerDownload('https://cdn.example.com/file.pdf?Policy=abc', 'file.pdf');
 
     expect(clickSpy).toHaveBeenCalledTimes(1);
@@ -46,8 +46,8 @@ describe('downloadFile utilities', () => {
     expect(removeSpy).toHaveBeenCalledTimes(1);
     expect(appendedLink?.href).toBe('https://cdn.example.com/file.pdf?Policy=abc');
     expect(appendedLink?.download).toBe('file.pdf');
-    expect(appendedLink?.target).toBe('_blank');
-    expect(appendedLink?.rel).toBe('noopener');
+    expect(appendedLink?.target).toBe('');
+    expect(appendedLink?.rel).toBe('');
     jest.runOnlyPendingTimers();
     expect(revokeSpy).not.toHaveBeenCalled();
   });
