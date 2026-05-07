@@ -32,6 +32,7 @@ const FarmerProfileSchema = new Schema(
     blockName: { type: String },
     district: { type: String },
     state: { type: String },
+    nearestKVK: { type: String },
     phoneNo: { type: String },
     languagePreference: { type: String },
     yearsOfExperience: { type: Number },
