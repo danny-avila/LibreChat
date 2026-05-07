@@ -164,18 +164,6 @@ router.delete('/', async (req, res) => {
       }
     }
 
-    if (nonOwnedFiles.length === 0) {
-      await processDeleteRequest({ req, files: ownedFiles });
-      logger.debug(
-        `[/files] Files deleted successfully: ${ownedFiles
-          .filter((f) => f.file_id)
-          .map((f) => f.file_id)
-          .join(', ')}`,
-      );
-      res.status(200).json({ message: 'Files deleted successfully' });
-      return;
-    }
-
     let authorizedFiles = [...ownedFiles];
     let unauthorizedFiles = [];
 
