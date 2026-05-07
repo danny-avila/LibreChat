@@ -31,6 +31,7 @@ const {
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+const { buildCodeEnvDownloadQuery } = require('./crud');
 const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
@@ -334,9 +335,15 @@ const processCodeOutput = async ({
 
   try {
     const formattedDate = currentDate.toISOString();
+    /* Code-output files are always user-private — no skill execution
+     * produces a skill-scoped output bucket. The download URL must
+     * carry `?kind=user&id=<userId>` so codeapi's `sessionAuth`
+     * resolves the matching `<tenant>:user:<userId>` sessionKey. See
+     * codeapi #1455 / Phase C. */
+    const downloadQuery = buildCodeEnvDownloadQuery({ kind: 'user', id: req.user.id });
     const response = await axios({
       method: 'get',
-      url: `${baseURL}/download/${session_id}/${id}`,
+      url: `${baseURL}/download/${session_id}/${id}${downloadQuery}`,
       responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'LibreChat/1.0',
@@ -670,15 +677,20 @@ function checkIfActive(dateString) {
 async function getSessionInfo(ref) {
   try {
     const baseURL = getCodeBaseURL();
-    /* CodeAPI resolves the bucket's sessionKey from auth context
-     * (`<tenant>:<kind>:<id>...`). The freshness check just hits
-     * `/sessions/<storage_session_id>/objects/<file_id>` — codeapi's
-     * lookup of the cached sessionKey on the storage bucket
-     * authoritative-checks the requesting user. No per-request
-     * params needed. */
+    /* `/sessions/.../objects/...` is gated by codeapi's `sessionAuth`
+     * middleware (post-Phase C). The middleware reconstructs the
+     * sessionKey from the URL query (`kind`/`id`/`version?`) plus the
+     * requester's auth context, then matches it against the cached
+     * sessionKey on the storage bucket. We have the full `codeEnvRef`
+     * here, so pass kind+id (+version when skill) directly. */
+    const query = buildCodeEnvDownloadQuery({
+      kind: ref.kind,
+      id: ref.id,
+      ...(ref.kind === 'skill' ? { version: ref.version } : {}),
+    });
     const response = await axios({
       method: 'get',
-      url: `${baseURL}/sessions/${ref.storage_session_id}/objects/${ref.file_id}`,
+      url: `${baseURL}/sessions/${ref.storage_session_id}/objects/${ref.file_id}${query}`,
       headers: {
         'User-Agent': 'LibreChat/1.0',
       },

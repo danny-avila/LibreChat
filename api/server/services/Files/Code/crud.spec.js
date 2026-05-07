@@ -32,11 +32,17 @@ describe('Code CRUD', () => {
   });
 
   describe('getCodeOutputDownloadStream', () => {
+    /* Code-output downloads always carry `kind: 'user'` + `id: <userId>`
+     * — codeapi's `sessionAuth` rejects without them post-Phase C. The
+     * fixture mirrors what `processCodeOutput` and the `/code/download`
+     * route pass in production. */
+    const userIdentity = { kind: 'user', id: 'user-123' };
+
     it('should pass dedicated keepAlive:false agents to axios', async () => {
       const mockResponse = { data: Readable.from(['chunk']) };
       mockAxios.mockResolvedValue(mockResponse);
 
-      await getCodeOutputDownloadStream('session-1/file-1');
+      await getCodeOutputDownloadStream('session-1/file-1', userIdentity);
 
       const callConfig = mockAxios.mock.calls[0][0];
       expect(callConfig.httpAgent).toBe(codeServerHttpAgent);
@@ -50,18 +56,52 @@ describe('Code CRUD', () => {
     it('should request stream response from the correct URL', async () => {
       mockAxios.mockResolvedValue({ data: Readable.from(['chunk']) });
 
-      await getCodeOutputDownloadStream('session-1/file-1');
+      await getCodeOutputDownloadStream('session-1/file-1', userIdentity);
 
       const callConfig = mockAxios.mock.calls[0][0];
-      expect(callConfig.url).toBe('https://code-api.example.com/download/session-1/file-1');
+      /* URL carries `?kind=user&id=<userId>` so codeapi's `sessionAuth`
+       * can reconstruct the matching `<tenant>:user:<userId>` sessionKey
+       * (Phase C / option α). */
+      expect(callConfig.url).toBe(
+        'https://code-api.example.com/download/session-1/file-1?kind=user&id=user-123',
+      );
       expect(callConfig.responseType).toBe('stream');
       expect(callConfig.timeout).toBe(15000);
+    });
+
+    it('forwards skill identity (kind/id/version) when re-downloading a primed skill file', async () => {
+      mockAxios.mockResolvedValue({ data: Readable.from(['chunk']) });
+
+      await getCodeOutputDownloadStream('session-2/file-x', {
+        kind: 'skill',
+        id: 'skill-abc',
+        version: 7,
+      });
+
+      const callConfig = mockAxios.mock.calls[0][0];
+      expect(callConfig.url).toBe(
+        'https://code-api.example.com/download/session-2/file-x?kind=skill&id=skill-abc&version=7',
+      );
+    });
+
+    it('rejects skill identity without a version (mirrors codeapi validator)', async () => {
+      await expect(
+        getCodeOutputDownloadStream('s/f', { kind: 'skill', id: 'skill-abc' }),
+      ).rejects.toThrow(/skill.*version/);
+      expect(mockAxios).not.toHaveBeenCalled();
+    });
+
+    it('rejects unknown kind without dispatching to codeapi', async () => {
+      await expect(getCodeOutputDownloadStream('s/f', { kind: 'system', id: 'x' })).rejects.toThrow(
+        /invalid kind/,
+      );
+      expect(mockAxios).not.toHaveBeenCalled();
     });
 
     it('should throw on network error', async () => {
       mockAxios.mockRejectedValue(new Error('ECONNREFUSED'));
 
-      await expect(getCodeOutputDownloadStream('s/f')).rejects.toThrow();
+      await expect(getCodeOutputDownloadStream('s/f', userIdentity)).rejects.toThrow();
     });
   });
 

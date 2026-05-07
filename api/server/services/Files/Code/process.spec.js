@@ -985,7 +985,12 @@ describe('Code Process', () => {
           data: [{ name: 'sess/fid', lastModified: new Date().toISOString() }],
         });
 
-        await getSessionInfo('sess/fid', 'api-key');
+        await getSessionInfo({
+          kind: 'user',
+          id: 'user-1',
+          storage_session_id: 'sess',
+          file_id: 'fid',
+        });
 
         const callConfig = mockAxios.mock.calls[0][0];
         expect(callConfig.httpAgent).toBe(codeServerHttpAgent);

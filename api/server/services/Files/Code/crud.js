@@ -45,18 +45,54 @@ function appendCodeEnvFileIdentity(form, { kind, id, version }) {
 }
 
 /**
+ * Build the `?kind=...&id=...&version=...` query string codeapi's
+ * `sessionAuth` middleware requires on `/download/...` URLs (post-Phase
+ * C). Without these, codeapi 400s with "kind must be one of: skill,
+ * agent, user" before serving the file. Mirrors the form-field shape
+ * `appendCodeEnvFileIdentity` writes on the upload side.
+ *
+ * @param {{ kind: 'skill' | 'agent' | 'user'; id: string; version?: number }} identity
+ * @returns {string} URL-encoded query string with leading '?'.
+ */
+function buildCodeEnvDownloadQuery({ kind, id, version }) {
+  if (!kind || !VALID_CODE_ENV_KINDS.has(kind)) {
+    throw new Error(`getCodeOutputDownloadStream: invalid kind "${kind}"`);
+  }
+  if (!id) {
+    throw new Error(`getCodeOutputDownloadStream: missing id for kind "${kind}"`);
+  }
+  if (kind === 'skill' && version == null) {
+    throw new Error(`getCodeOutputDownloadStream: kind "skill" requires a numeric version`);
+  }
+  if (kind !== 'skill' && version != null) {
+    throw new Error(`getCodeOutputDownloadStream: version is only valid for kind "skill"`);
+  }
+  const params = new URLSearchParams({ kind, id });
+  if (version != null) {
+    params.set('version', String(version));
+  }
+  return `?${params.toString()}`;
+}
+
+/**
  * Retrieves a download stream for a specified file.
  * @param {string} fileIdentifier - The identifier for the file (e.g., "session_id/fileId").
+ * @param {{ kind: 'skill' | 'agent' | 'user'; id: string; version?: number }} identity
+ *   Resource identity required by codeapi's `sessionAuth` to derive the
+ *   matching sessionKey. For code-output downloads this is always
+ *   `kind: 'user', id: <userId>`; for skill/agent re-downloads pass
+ *   the kind+id (+version for skill) from the file's `metadata.codeEnvRef`.
  * @returns {Promise<AxiosResponse>} A promise that resolves to a readable stream of the file content.
  * @throws {Error} If there's an error during the download process.
  */
-async function getCodeOutputDownloadStream(fileIdentifier) {
+async function getCodeOutputDownloadStream(fileIdentifier, identity) {
   try {
     const baseURL = getCodeBaseURL();
+    const query = buildCodeEnvDownloadQuery(identity);
     /** @type {import('axios').AxiosRequestConfig} */
     const options = {
       method: 'get',
-      url: `${baseURL}/download/${fileIdentifier}`,
+      url: `${baseURL}/download/${fileIdentifier}${query}`,
       responseType: 'stream',
       headers: {
         'User-Agent': 'LibreChat/1.0',
@@ -233,4 +269,9 @@ async function batchUploadCodeEnvFiles({ req, files, kind, id, version, read_onl
   }
 }
 
-module.exports = { getCodeOutputDownloadStream, uploadCodeEnvFile, batchUploadCodeEnvFiles };
+module.exports = {
+  getCodeOutputDownloadStream,
+  uploadCodeEnvFile,
+  batchUploadCodeEnvFiles,
+  buildCodeEnvDownloadQuery,
+};
