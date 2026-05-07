@@ -11,7 +11,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
    */
   async function findRoleById(roleId: string | Types.ObjectId): Promise<IAccessRole | null> {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
-    return await AccessRole.findById(roleId).lean();
+    return await AccessRole.findById(roleId).lean<IAccessRole>();
   }
 
   /**
@@ -23,7 +23,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
     accessRoleId: string | Types.ObjectId,
   ): Promise<IAccessRole | null> {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
-    return await AccessRole.findOne({ accessRoleId }).lean();
+    return await AccessRole.findOne({ accessRoleId }).lean<IAccessRole>();
   }
 
   /**
@@ -33,7 +33,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
    */
   async function findRolesByResourceType(resourceType: string): Promise<IAccessRole[]> {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
-    return await AccessRole.find({ resourceType }).lean();
+    return await AccessRole.find({ resourceType }).lean<IAccessRole[]>();
   }
 
   /**
@@ -47,7 +47,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
     permBits: PermissionBits | RoleBits,
   ): Promise<IAccessRole | null> {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
-    return await AccessRole.findOne({ resourceType, permBits }).lean();
+    return await AccessRole.findOne({ resourceType, permBits }).lean<IAccessRole>();
   }
 
   /**
@@ -75,7 +75,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
       { accessRoleId },
       { $set: updateData },
       { new: true },
-    ).lean();
+    ).lean<IAccessRole>();
   }
 
   /**
@@ -94,7 +94,7 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
    */
   async function getAllRoles(): Promise<IAccessRole[]> {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
-    return await AccessRole.find().lean();
+    return await AccessRole.find().lean<IAccessRole[]>();
   }
 
   /**
@@ -218,9 +218,11 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
         { accessRoleId: role.accessRoleId },
         { $setOnInsert: role },
         { upsert: true, new: true },
-      ).lean();
+      ).lean<IAccessRole>();
 
-      result[role.accessRoleId] = upsertedRole;
+      if (upsertedRole) {
+        result[role.accessRoleId] = upsertedRole;
+      }
     }
 
     return result;
@@ -237,13 +239,15 @@ export function createAccessRoleMethods(mongoose: typeof import('mongoose')) {
     permBits: PermissionBits | RoleBits,
   ): Promise<IAccessRole | null> {
     const AccessRole = mongoose.models.AccessRole as Model<IAccessRole>;
-    const exactMatch = await AccessRole.findOne({ resourceType, permBits }).lean();
+    const exactMatch = await AccessRole.findOne({ resourceType, permBits }).lean<IAccessRole>();
     if (exactMatch) {
       return exactMatch;
     }
 
     /** If no exact match, the closest role without exceeding permissions */
-    const roles = await AccessRole.find({ resourceType }).sort({ permBits: -1 }).lean();
+    const roles = await AccessRole.find({ resourceType })
+      .sort({ permBits: -1 })
+      .lean<IAccessRole[]>();
 
     return roles.find((role) => (role.permBits & permBits) === role.permBits) || null;
   }
