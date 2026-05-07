@@ -42,7 +42,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
-    return await query.lean();
+    return await query.lean<IUser>();
   }
 
   async function findUsers(
@@ -65,7 +65,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     if (options?.limit != null && options.limit > 0) {
       query.limit(options.limit);
     }
-    return (await query.lean()) as IUser[];
+    return await query.lean<IUser[]>();
   }
 
   /**
@@ -148,10 +148,10 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       $set: updateData,
       $unset: { expiresAt: '' }, // Remove the expiresAt field to prevent TTL
     };
-    return (await User.findByIdAndUpdate(userId, updateOperation, {
+    return await User.findByIdAndUpdate(userId, updateOperation, {
       new: true,
       runValidators: true,
-    }).lean()) as IUser | null;
+    }).lean<IUser>();
   }
 
   /**
@@ -166,7 +166,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
-    return (await query.lean()) as IUser | null;
+    return await query.lean<IUser>();
   }
 
   /**
@@ -233,10 +233,10 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       },
     };
 
-    return (await User.findByIdAndUpdate(userId, updateOperation, {
+    return await User.findByIdAndUpdate(userId, updateOperation, {
       new: true,
       runValidators: true,
-    }).lean()) as IUser | null;
+    }).lean<IUser>();
   }
 
   /**
@@ -270,14 +270,16 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       query.select(fieldsToSelect);
     }
 
-    const users = await query.lean();
+    const users = await query.lean<IUser[]>();
 
     // Score results by relevance
     const exactRegex = new RegExp(`^${searchPattern.trim()}$`, 'i');
     const startsWithPattern = searchPattern.trim().toLowerCase();
 
     const scoredUsers = users.map((user) => {
-      const searchableFields = [user.name, user.email, user.username].filter(Boolean);
+      const searchableFields = [user.name, user.email, user.username].filter(
+        (field): field is string => typeof field === 'string' && field.length > 0,
+      );
       let maxScore = 0;
 
       for (const field of searchableFields) {

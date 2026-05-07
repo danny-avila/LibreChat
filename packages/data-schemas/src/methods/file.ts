@@ -17,7 +17,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     options: Record<string, unknown> = {},
   ): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOne({ file_id, ...options }).lean();
+    return File.findOne({ file_id, ...options }).lean<IMongoFile>();
   }
 
   /** Select fields for query projection - 0 to exclude, 1 to include */
@@ -44,7 +44,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     } else {
       query.select({ text: 0 });
     }
-    return await query.sort(sortOptions).lean();
+    return await query.sort(sortOptions).lean<IMongoFile[]>();
   }
 
   /**
@@ -198,13 +198,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
       },
       { $setOnInsert: insertData },
       { upsert: true, new: true },
-    ).lean();
+    ).lean<IMongoFile>();
     if (!result) {
       throw new Error(
         `[claimCodeFile] Failed to claim file "${data.filename}" for conversation ${data.conversationId}`,
       );
     }
-    return result as IMongoFile;
+    return result;
   }
 
   /**
@@ -230,7 +230,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     return File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
       new: true,
       upsert: true,
-    }).lean();
+    }).lean<IMongoFile>();
   }
 
   /**
@@ -263,7 +263,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     const query: FilterQuery<IMongoFile> = extraFilter ? { file_id, ...extraFilter } : { file_id };
     return File.findOneAndUpdate(query, updateOperation, {
       new: true,
-    }).lean();
+    }).lean<IMongoFile>();
   }
 
   /**
@@ -283,7 +283,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     };
     return File.findOneAndUpdate({ file_id }, updateOperation, {
       new: true,
-    }).lean();
+    }).lean<IMongoFile>();
   }
 
   /**
@@ -293,7 +293,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    */
   async function deleteFile(file_id: string): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndDelete({ file_id }).lean();
+    return File.findOneAndDelete({ file_id }).lean<IMongoFile>();
   }
 
   /**
@@ -303,7 +303,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    */
   async function deleteFileByFilter(filter: FilterQuery<IMongoFile>): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndDelete(filter).lean();
+    return File.findOneAndDelete(filter).lean<IMongoFile>();
   }
 
   /**
