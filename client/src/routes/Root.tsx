@@ -86,7 +86,7 @@ export default function Root() {
       else if (/linux/i.test(ua)) platform = 'Linux';
       updateFarmerPlatform.mutate(platform);
     }
-    if (!termsData.farmerLocationCompleted) {
+    if (termsData.farmerNeedsUpdate) {
       setShowFarmerLocation(true);
     }
   }, [termsData]);
@@ -185,6 +185,7 @@ export default function Root() {
             open={showFarmerLocation}
             onOpenChange={setShowFarmerLocation}
             onComplete={handleFarmerLocationComplete}
+            missingFields={termsData?.missingFields || []}
           />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>

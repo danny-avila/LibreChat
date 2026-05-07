@@ -40,6 +40,7 @@ type FarmerProfileForm = {
     latitude: number;
     longitude: number;
   };
+  landhold: string;
 };
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -159,6 +160,7 @@ const FarmerProfileModal = ({
         .filter(Boolean),
       awarenessOfKCC: data.awarenessOfKCC === 'yes',
       usesAgriApps: data.usesAgriApps === 'yes',
+      landhold: data.landhold ? Number(data.landhold) : undefined,
       platform: detectDevice(),
       location:
         data.location?.latitude && data.location?.longitude
@@ -487,34 +489,25 @@ const FarmerProfileModal = ({
               </div>
 
               <div className={fieldClass}>
-                <Label>Crops Cultivated</Label>
-                <div className="mt-1 flex flex-wrap gap-2 rounded-md border border-border-heavy bg-surface-secondary px-3 py-2">
-                  {CROPS.map((crop) => {
-                    const isSelected = selectedCropsList.includes(crop);
-                    return (
-                      <button
-                        key={crop}
-                        type="button"
-                        onClick={() => {
-                          const updated = isSelected
-                            ? selectedCropsList.filter((c) => c !== crop)
-                            : [...selectedCropsList, crop];
-                          setValue('cropsCultivated', updated.join(', '), { shouldValidate: true });
-                        }}
-                        className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                          isSelected
-                            ? 'border-green-600 bg-green-600 text-white'
-                            : 'border-border-heavy bg-surface-primary text-text-primary hover:bg-surface-active'
-                        }`}
-                      >
-                        {crop}
-                      </button>
-                    );
-                  })}
-                </div>
-                <input
-                  type="hidden"
-                  {...register('cropsCultivated', { required: 'Please select at least one crop' })}
+                <Label htmlFor="landhold">Total Agricultural Landholding (Specify your total farm size in Acres)</Label>
+                <Input
+                  id="landhold"
+                  placeholder="e.g. 5"
+                  className={inputClass}
+                  {...register('landhold', { required: 'Landholding is required' })}
+                />
+                {errors.landhold && (
+                  <p className={errorClass}>{errors.landhold.message}</p>
+                )}
+              </div>
+
+              <div className={fieldClass}>
+                <Label htmlFor="cropsCultivated">Crops Cultivated</Label>
+                <Input
+                  id="cropsCultivated"
+                  placeholder="e.g. Wheat, Rice, Maize (comma separated)"
+                  className={inputClass}
+                  {...register('cropsCultivated', { required: 'Crops cultivated is required' })}
                 />
                 {errors.cropsCultivated && (
                   <p className={errorClass}>{errors.cropsCultivated.message}</p>
