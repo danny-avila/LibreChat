@@ -500,12 +500,22 @@ export class EcsStack extends cdk.Stack {
       taskRole: commonExecRole,
     });
 
+    const sessionSecret = secrets.Secret.fromSecretNameV2(
+      this,
+      'AdminPanelSessionSecret',
+      'ai-assistant/admin-panel/session-secret',
+    );
+
     taskDef.addContainer('librechat-admin-panel', {
       image: ecs.ContainerImage.fromRegistry(props.librechatAdminImage),
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'admin-panel' }),
       environment: {
         PORT: '3000',
+        NODE_ENV: 'production',
         API_SERVER_URL: 'http://librechat.internal:3080',
+      },
+      secrets: {
+        SESSION_SECRET: ecs.Secret.fromSecretsManager(sessionSecret, 'SESSION_SECRET'),
       },
       portMappings: [{ containerPort: 3000 }],
     });
