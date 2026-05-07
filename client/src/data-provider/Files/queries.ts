@@ -1,6 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, DynamicQueryKeys, dataService } from 'librechat-data-provider';
+import { FileSources, QueryKeys, DynamicQueryKeys, dataService } from 'librechat-data-provider';
 import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import { isEphemeralAgent } from '~/common';
@@ -53,15 +53,45 @@ export const useGetFileConfig = <TData = t.FileConfig>(
   );
 };
 
-export const useFileDownload = (userId?: string, file_id?: string): QueryObserverResult<string> => {
+type FileDownloadOptions = {
+  source?: string | null;
+  direct?: boolean;
+};
+
+export const isDirectDownloadSource = (source?: string | null): boolean =>
+  source === FileSources.s3 || source === FileSources.cloudfront;
+
+export const revokeDownloadURL = (url?: string | null): void => {
+  if (!url?.startsWith('blob:')) {
+    return;
+  }
+  window.URL.revokeObjectURL(url);
+};
+
+export const useFileDownload = (
+  userId?: string,
+  file_id?: string,
+  options: FileDownloadOptions = {},
+): QueryObserverResult<string> => {
   const queryClient = useQueryClient();
   return useQuery(
-    [QueryKeys.fileDownload, file_id],
+    [QueryKeys.fileDownload, file_id, options.source ?? '', options.direct ?? true],
     async () => {
       if (!userId || !file_id) {
         console.warn('No user ID provided for file download');
         return;
       }
+      if ((options.direct ?? true) && isDirectDownloadSource(options.source)) {
+        try {
+          const directDownload = await dataService.getFileDownloadURL(userId, file_id);
+          if (directDownload.url) {
+            return directDownload.url;
+          }
+        } catch {
+          // Fall back to the legacy proxied download for direct URL failures.
+        }
+      }
+
       const response = await dataService.getFileDownload(userId, file_id);
       const blob = response.data;
       const downloadURL = window.URL.createObjectURL(blob);

@@ -1,20 +1,30 @@
 import fs from 'fs';
+import { Readable } from 'stream';
 import {
+  UploadPartCommand,
   PutObjectCommand,
   GetObjectCommand,
+  CreateMultipartUploadCommand,
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import type { GetObjectCommandInput } from '@aws-sdk/client-s3';
+import type {
+  CompletedPart,
+  GetObjectCommandInput,
+  PutObjectCommandInput,
+} from '@aws-sdk/client-s3';
 import type { TFile } from 'librechat-data-provider';
-import type { Readable } from 'stream';
 import type { ServerRequest } from '~/types';
 import type {
   UploadFileParams,
   SaveBufferParams,
+  DownloadURLParams,
+  SaveURLResult,
   BatchUpdateFn,
   SaveURLParams,
   GetURLParams,
@@ -22,6 +32,11 @@ import type {
   UrlBuilder,
   S3FileRef,
 } from '~/storage/types';
+import {
+  assertS3FileName,
+  assertPathSegment,
+  sanitizeContentDispositionFilename,
+} from '~/storage/validation';
 import { initializeS3 } from '~/cdn/s3';
 import { deleteRagFile } from '~/files';
 import { s3Config } from './s3Config';
@@ -35,25 +50,88 @@ const {
   DEFAULT_BASE_PATH: defaultBasePath,
 } = s3Config;
 
-export const getS3Key = (basePath: string, userId: string, fileName: string): string => {
-  if (basePath.includes('/')) {
-    throw new Error(`[getS3Key] basePath must not contain slashes: "${basePath}"`);
+const MULTIPART_UPLOAD_PART_SIZE = 5 * 1024 * 1024;
+
+export interface S3KeyParts {
+  basePath: string;
+  userId: string;
+  fileName: string;
+  tenantId?: string;
+}
+
+const parseS3PathSegment = (value: string | undefined): string | null => {
+  try {
+    return assertPathSegment('S3 key segment', value, 'getS3Key');
+  } catch {
+    return null;
   }
-  return `${basePath}/${userId}/${fileName}`;
 };
 
-export async function getS3URL({
-  userId,
-  fileName,
-  basePath = defaultBasePath,
+export const getS3Key = (
+  basePath: string,
+  userId: string,
+  fileName: string,
+  tenantId?: string | null,
+): string => {
+  const safeBasePath = assertPathSegment('basePath', basePath, 'getS3Key');
+  const safeUserId = assertPathSegment('userId', userId, 'getS3Key');
+  const safeFileName = assertS3FileName('fileName', fileName, 'getS3Key');
+
+  if (tenantId) {
+    const safeTenantId = assertPathSegment('tenantId', tenantId, 'getS3Key');
+    return `t/${safeTenantId}/${safeBasePath}/${safeUserId}/${safeFileName}`;
+  }
+  return `${safeBasePath}/${safeUserId}/${safeFileName}`;
+};
+
+export const parseS3Key = (key: string): S3KeyParts | null => {
+  const normalizedKey = key.replace(/^\/+/, '');
+  const keyParts = normalizedKey.split('/');
+
+  if (keyParts[0] === 't') {
+    if (keyParts.length < 5) {
+      return null;
+    }
+    const [, tenantId, basePath, userId, ...fileNameParts] = keyParts;
+    const safeTenantId = parseS3PathSegment(tenantId);
+    const safeBasePath = parseS3PathSegment(basePath);
+    const safeUserId = parseS3PathSegment(userId);
+    if (!safeTenantId || !safeBasePath || !safeUserId) {
+      return null;
+    }
+    return {
+      tenantId: safeTenantId,
+      basePath: safeBasePath,
+      userId: safeUserId,
+      fileName: fileNameParts.join('/'),
+    };
+  }
+
+  if (keyParts.length < 3) {
+    return null;
+  }
+  const [basePath, userId, ...fileNameParts] = keyParts;
+  const safeBasePath = parseS3PathSegment(basePath);
+  const safeUserId = parseS3PathSegment(userId);
+  if (!safeBasePath || !safeUserId) {
+    return null;
+  }
+  return { basePath: safeBasePath, userId: safeUserId, fileName: fileNameParts.join('/') };
+};
+
+async function getS3URLForKey({
+  key,
   customFilename = null,
   contentType = null,
-}: GetURLParams): Promise<string> {
-  const key = getS3Key(basePath, userId, fileName);
+}: {
+  key: string;
+  customFilename?: string | null;
+  contentType?: string | null;
+}): Promise<string> {
   const params: GetObjectCommandInput = { Bucket: bucketName, Key: key };
 
   if (customFilename) {
-    const safeFilename = customFilename.replace(/["\r\n]/g, '');
+    const safeFilename = sanitizeContentDispositionFilename(customFilename);
     params.ResponseContentDisposition = `attachment; filename="${safeFilename}"`;
   }
   if (contentType) {
@@ -73,14 +151,27 @@ export async function getS3URL({
   }
 }
 
+export async function getS3URL({
+  userId,
+  fileName,
+  basePath = defaultBasePath,
+  customFilename = null,
+  contentType = null,
+  tenantId = null,
+}: GetURLParams): Promise<string> {
+  const key = getS3Key(basePath, userId, fileName, tenantId);
+  return getS3URLForKey({ key, customFilename, contentType });
+}
+
 export async function saveBufferToS3({
   userId,
   buffer,
   fileName,
   basePath = defaultBasePath,
+  tenantId = null,
   urlBuilder,
 }: SaveBufferParams & { urlBuilder?: UrlBuilder }): Promise<string> {
-  const key = getS3Key(basePath, userId, fileName);
+  const key = getS3Key(basePath, userId, fileName, tenantId);
   const params = { Bucket: bucketName, Key: key, Body: buffer };
 
   try {
@@ -91,32 +182,210 @@ export async function saveBufferToS3({
 
     await s3.send(new PutObjectCommand(params));
     const getUrl = urlBuilder ?? getS3URL;
-    return await getUrl({ userId, fileName, basePath });
+    return await getUrl({ userId, fileName, basePath, tenantId });
   } catch (error) {
     logger.error('[saveBufferToS3] Error uploading buffer to S3:', (error as Error).message);
     throw error;
   }
 }
 
-export async function saveURLToS3({
+interface PendingUploadBuffers {
+  buffers: Buffer[];
+  bytes: number;
+}
+
+const toUploadBuffer = (chunk: Buffer | string | Uint8Array): Buffer => {
+  if (Buffer.isBuffer(chunk)) {
+    return chunk;
+  }
+  return Buffer.from(chunk);
+};
+
+const takePendingBytes = (pending: PendingUploadBuffers, size: number): Buffer => {
+  const output = Buffer.allocUnsafe(size);
+  let offset = 0;
+
+  while (offset < size) {
+    const buffer = pending.buffers[0];
+    const bytesNeeded = size - offset;
+
+    if (buffer.length <= bytesNeeded) {
+      buffer.copy(output, offset);
+      offset += buffer.length;
+      pending.bytes -= buffer.length;
+      pending.buffers.shift();
+      continue;
+    }
+
+    buffer.copy(output, offset, 0, bytesNeeded);
+    pending.buffers[0] = buffer.subarray(bytesNeeded);
+    pending.bytes -= bytesNeeded;
+    offset += bytesNeeded;
+  }
+
+  return output;
+};
+
+async function saveReadableToS3({
+  userId,
+  body,
+  fileName,
+  basePath = defaultBasePath,
+  tenantId = null,
+  urlBuilder,
+}: Omit<SaveBufferParams, 'buffer'> & {
+  body: Readable;
+  urlBuilder?: UrlBuilder;
+}): Promise<{ filepath: string; bytes: number }> {
+  const key = getS3Key(basePath, userId, fileName, tenantId);
+  const pending: PendingUploadBuffers = { buffers: [], bytes: 0 };
+  const completedParts: CompletedPart[] = [];
+  let totalBytes = 0;
+  let partNumber = 1;
+  let uploadId: string | undefined;
+
+  try {
+    const s3 = initializeS3();
+    if (!s3) {
+      throw new Error('[saveReadableToS3] S3 not initialized');
+    }
+
+    const createMultipartUpload = async (): Promise<string> => {
+      if (uploadId) {
+        return uploadId;
+      }
+      const response = await s3.send(
+        new CreateMultipartUploadCommand({ Bucket: bucketName, Key: key }),
+      );
+      if (!response.UploadId) {
+        throw new Error('[saveReadableToS3] S3 did not return an upload ID');
+      }
+      uploadId = response.UploadId;
+      return uploadId;
+    };
+
+    const uploadPart = async (partBody: Buffer): Promise<void> => {
+      const currentUploadId = await createMultipartUpload();
+      const response = await s3.send(
+        new UploadPartCommand({
+          Bucket: bucketName,
+          Key: key,
+          UploadId: currentUploadId,
+          PartNumber: partNumber,
+          Body: partBody,
+        }),
+      );
+      completedParts.push({ ETag: response.ETag, PartNumber: partNumber });
+      partNumber += 1;
+    };
+
+    for await (const chunk of body as AsyncIterable<Buffer | string | Uint8Array>) {
+      const buffer = toUploadBuffer(chunk);
+      pending.buffers.push(buffer);
+      pending.bytes += buffer.length;
+      totalBytes += buffer.length;
+
+      while (pending.bytes >= MULTIPART_UPLOAD_PART_SIZE) {
+        await uploadPart(takePendingBytes(pending, MULTIPART_UPLOAD_PART_SIZE));
+      }
+    }
+
+    if (!uploadId) {
+      const bodyBuffer =
+        pending.bytes > 0 ? takePendingBytes(pending, pending.bytes) : Buffer.alloc(0);
+      const params: PutObjectCommandInput = { Bucket: bucketName, Key: key, Body: bodyBuffer };
+      await s3.send(new PutObjectCommand(params));
+    } else {
+      if (pending.bytes > 0) {
+        await uploadPart(takePendingBytes(pending, pending.bytes));
+      }
+      await s3.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: bucketName,
+          Key: key,
+          UploadId: uploadId,
+          MultipartUpload: { Parts: completedParts },
+        }),
+      );
+    }
+
+    const getUrl = urlBuilder ?? getS3URL;
+    return { filepath: await getUrl({ userId, fileName, basePath, tenantId }), bytes: totalBytes };
+  } catch (error) {
+    if (uploadId) {
+      try {
+        await initializeS3()?.send(
+          new AbortMultipartUploadCommand({ Bucket: bucketName, Key: key, UploadId: uploadId }),
+        );
+      } catch (abortError) {
+        logger.warn('[saveReadableToS3] Error aborting multipart upload:', abortError);
+      }
+    }
+    logger.error('[saveReadableToS3] Error uploading stream to S3:', (error as Error).message);
+    throw error;
+  }
+}
+
+export async function saveURLToS3WithMetadata({
   userId,
   URL,
   fileName,
   basePath = defaultBasePath,
+  tenantId = null,
   urlBuilder,
-}: SaveURLParams & { urlBuilder?: UrlBuilder }): Promise<string> {
+}: SaveURLParams & { urlBuilder?: UrlBuilder }): Promise<SaveURLResult> {
   try {
     const response = await fetch(URL);
     if (!response.ok) {
       throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
     }
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    return await saveBufferToS3({ userId, buffer, fileName, basePath, urlBuilder });
+    const contentType = response.headers.get('content-type') ?? '';
+    if (response.body) {
+      const source = Readable.fromWeb(
+        response.body as unknown as Parameters<typeof Readable.fromWeb>[0],
+      );
+      const result = await saveReadableToS3({
+        userId,
+        body: source,
+        fileName,
+        basePath,
+        tenantId,
+        urlBuilder,
+      });
+      return {
+        filepath: result.filepath,
+        bytes: result.bytes,
+        type: contentType,
+        dimensions: {},
+      };
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const filepath = await saveBufferToS3({
+      userId,
+      buffer,
+      fileName,
+      basePath,
+      tenantId,
+      urlBuilder,
+    });
+    return {
+      filepath,
+      bytes: buffer.byteLength,
+      type: contentType,
+      dimensions: {},
+    };
   } catch (error) {
     logger.error('[saveURLToS3] Error uploading file from URL to S3:', (error as Error).message);
     throw error;
   }
+}
+
+export async function saveURLToS3(
+  params: SaveURLParams & { urlBuilder?: UrlBuilder },
+): Promise<string> {
+  const { filepath } = await saveURLToS3WithMetadata(params);
+  return filepath;
 }
 
 export function extractKeyFromS3Url(fileUrlOrKey: string): string {
@@ -201,12 +470,24 @@ export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise
     throw new Error('[deleteFileFromS3] User not authenticated');
   }
 
-  const userId = req.user.id;
   const key = extractKeyFromS3Url(file.filepath);
+  const parsedKey = parseS3Key(key);
+  const ownerId = file.user?.toString?.();
+  const fileTenantId = file.tenantId?.toString?.() ?? null;
 
-  const keyParts = key.split('/');
-  if (keyParts.length < 2 || keyParts[1] !== userId) {
-    const message = `[deleteFileFromS3] User ID mismatch: ${userId} vs ${key}`;
+  if (!ownerId) {
+    const message = `[deleteFileFromS3] File record has no owner: ${key}`;
+    logger.error(message);
+    throw new Error(message);
+  }
+
+  if (!parsedKey || parsedKey.userId !== ownerId) {
+    const message = `[deleteFileFromS3] File owner mismatch: ${ownerId} vs ${key}`;
+    logger.error(message);
+    throw new Error(message);
+  }
+  if ((parsedKey.tenantId ?? null) !== fileTenantId) {
+    const message = `[deleteFileFromS3] Tenant ID mismatch: ${fileTenantId} vs ${key}`;
     logger.error(message);
     throw new Error(message);
   }
@@ -226,20 +507,21 @@ export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise
     } catch (headErr) {
       if ((headErr as { name?: string }).name === 'NotFound') {
         logger.warn(`[deleteFileFromS3] File does not exist: ${key}`);
-        await deleteRagFile({ userId, file });
+        await deleteRagFile({ userId: ownerId, file });
         return;
       }
       throw headErr;
     }
 
     await s3.send(new DeleteObjectCommand(params));
-    await deleteRagFile({ userId, file });
+    await deleteRagFile({ userId: ownerId, file });
     logger.debug('[deleteFileFromS3] S3 File deletion completed');
   } catch (error) {
     logger.error(`[deleteFileFromS3] Error deleting file from S3: ${(error as Error).message}`);
     logger.error((error as Error).stack);
 
     if ((error as { name?: string }).name === 'NoSuchKey') {
+      await deleteRagFile({ userId: ownerId, file });
       return;
     }
     throw error;
@@ -251,6 +533,7 @@ export async function uploadFileToS3({
   file,
   file_id,
   basePath = defaultBasePath,
+  tenantId = null,
   urlBuilder,
 }: UploadFileParams & { urlBuilder?: UrlBuilder }): Promise<UploadResult> {
   if (!req.user) {
@@ -260,8 +543,9 @@ export async function uploadFileToS3({
   try {
     const inputFilePath = file.path;
     const userId = req.user.id;
+    const resolvedTenantId = tenantId ?? req.user.tenantId ?? null;
     const fileName = `${file_id}__${file.originalname}`;
-    const key = getS3Key(basePath, userId, fileName);
+    const key = getS3Key(basePath, userId, fileName, resolvedTenantId);
 
     const stats = await fs.promises.stat(inputFilePath);
     const bytes = stats.size;
@@ -280,7 +564,7 @@ export async function uploadFileToS3({
 
     await s3.send(new PutObjectCommand(uploadParams));
     const getUrl = urlBuilder ?? getS3URL;
-    const fileURL = await getUrl({ userId, fileName, basePath });
+    const fileURL = await getUrl({ userId, fileName, basePath, tenantId: resolvedTenantId });
     // NOTE: temp file is intentionally NOT deleted on the success path.
     // The caller (processAgentFileUpload) reads file.path after this returns
     // to stream the file to the RAG vector embedding service (POST /embed).
@@ -318,6 +602,18 @@ export async function getS3FileStream(_req: ServerRequest, filePath: string): Pr
     logger.error('[getS3FileStream] Error retrieving S3 file stream:', error);
     throw error;
   }
+}
+
+export async function getS3DownloadURL({
+  file,
+  customFilename = null,
+  contentType = null,
+}: DownloadURLParams): Promise<string> {
+  const key = extractKeyFromS3Url(file.filepath);
+  if (!key) {
+    throw new Error('[getS3DownloadURL] Unable to extract S3 key from file path');
+  }
+  return getS3URLForKey({ key, customFilename, contentType });
 }
 
 export function needsRefresh(signedUrl: string, bufferSeconds: number): boolean {
@@ -366,16 +662,12 @@ export async function getNewS3URL(currentURL: string): Promise<string | undefine
       return;
     }
 
-    const keyParts = s3Key.split('/');
-    if (keyParts.length < 3) {
+    const parsedKey = parseS3Key(s3Key);
+    if (!parsedKey) {
       return;
     }
 
-    const basePath = keyParts[0];
-    const userId = keyParts[1];
-    const fileName = keyParts.slice(2).join('/');
-
-    return getS3URL({ userId, fileName, basePath });
+    return getS3URL(parsedKey);
   } catch (error) {
     logger.error('Error getting new S3 URL:', error);
   }
@@ -446,17 +738,13 @@ export async function refreshS3Url(fileObj: S3FileRef, bufferSeconds = 3600): Pr
       return fileObj.filepath;
     }
 
-    const keyParts = s3Key.split('/');
-    if (keyParts.length < 3) {
+    const parsedKey = parseS3Key(s3Key);
+    if (!parsedKey) {
       logger.warn(`Invalid S3 key format: ${s3Key}`);
       return fileObj.filepath;
     }
 
-    const basePath = keyParts[0];
-    const userId = keyParts[1];
-    const fileName = keyParts.slice(2).join('/');
-
-    const newUrl = await getS3URL({ userId, fileName, basePath });
+    const newUrl = await getS3URL(parsedKey);
     logger.debug(`Refreshed S3 URL for key: ${s3Key}`);
     return newUrl;
   } catch (error) {

@@ -99,6 +99,7 @@ export type TFile = {
   _id?: string;
   __v?: number;
   user: string;
+  tenantId?: string;
   conversationId?: string;
   message?: string;
   file_id: string;
@@ -174,6 +175,13 @@ export type TFilePreview = {
 
 export type AvatarUploadResponse = {
   url: string;
+};
+
+export type FileDownloadURLResponse = {
+  url: string;
+  filename: string;
+  type: string;
+  metadata: Partial<TFile>;
 };
 
 export type SpeechToTextResponse = {

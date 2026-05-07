@@ -12,6 +12,8 @@ const {
   isEnabled,
   checkEmailConfig,
   setCloudFrontCookies,
+  parseCloudFrontCookieScope,
+  CLOUDFRONT_SCOPE_COOKIE,
   isEmailDomainAllowed,
   shouldUseSecureCookie,
   resolveAppConfigForUser,
@@ -402,13 +404,22 @@ const resetPassword = async (userId, token, password) => {
 };
 
 /**
+ * Reads the previously issued CloudFront cookie scope used for stale cookie cleanup.
+ * @param {ServerRequest | null} [req=null]
+ * @returns {import('@librechat/api').CloudFrontCookieScope | null}
+ */
+const getPreviousCloudFrontScope = (req) =>
+  parseCloudFrontCookieScope(req?.cookies?.[CLOUDFRONT_SCOPE_COOKIE]);
+
+/**
  * Set Auth Tokens
  * @param {String | ObjectId} userId
  * @param {ServerResponse} res
- * @param {ISession | null} [session=null]
+ * @param {ISession | null} [_session=null]
+ * @param {ServerRequest | null} [req=null]
  * @returns
  */
-const setAuthTokens = async (userId, res, _session = null) => {
+const setAuthTokens = async (userId, res, _session = null, req = null) => {
   try {
     let session = _session;
     let refreshToken;
@@ -442,13 +453,35 @@ const setAuthTokens = async (userId, res, _session = null) => {
       sameSite: 'strict',
     });
 
-    setCloudFrontCookies(res);
+    setCloudFrontCookies(
+      res,
+      {
+        userId: user?._id?.toString?.() ?? userId,
+        tenantId: user?.tenantId?.toString?.(),
+      },
+      getPreviousCloudFrontScope(req),
+    );
 
     return token;
   } catch (error) {
     logger.error('[setAuthTokens] Error in setting authentication tokens:', error);
     throw error;
   }
+};
+
+const resolveOpenIDAuthTokenOptions = (optionsOrUserId, existingRefreshToken, tenantId) => {
+  if (optionsOrUserId != null && typeof optionsOrUserId === 'object') {
+    if (
+      'userId' in optionsOrUserId ||
+      'existingRefreshToken' in optionsOrUserId ||
+      'tenantId' in optionsOrUserId
+    ) {
+      return optionsOrUserId;
+    }
+    return {};
+  }
+
+  return { userId: optionsOrUserId, existingRefreshToken, tenantId };
 };
 
 /**
@@ -461,11 +494,27 @@ const setAuthTokens = async (userId, res, _session = null) => {
  * - The tokenset object containing access and refresh tokens
  * @param {Object} req - request object (for session access)
  * @param {Object} res - response object
- * @param {string} [userId] - Optional MongoDB user ID for image path validation
+ * @param {Object} [options] - Optional token/cookie context
+ * @param {string} [options.userId] - Optional MongoDB user ID for image path validation
+ * @param {string} [options.existingRefreshToken] - Optional existing refresh token to preserve
+ * @param {string} [options.tenantId] - Optional tenant identifier for CloudFront cookie scoping
  * @returns {String} - id_token (preferred) or access_token as the app auth token
  */
-const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) => {
+const setOpenIDAuthTokens = (
+  tokenset,
+  req,
+  res,
+  optionsOrUserId = null,
+  existingRefreshTokenArg,
+  tenantIdArg,
+) => {
   try {
+    const { userId, existingRefreshToken, tenantId } = resolveOpenIDAuthTokenOptions(
+      optionsOrUserId,
+      existingRefreshTokenArg,
+      tenantIdArg,
+    );
+
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
       return;
@@ -475,10 +524,6 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
       DEFAULT_REFRESH_TOKEN_EXPIRY,
     );
     const expirationDate = new Date(Date.now() + expiryInMilliseconds);
-    if (tokenset == null) {
-      logger.error('[setOpenIDAuthTokens] No tokenset found in request');
-      return;
-    }
     if (!tokenset.access_token) {
       logger.error('[setOpenIDAuthTokens] No access token found in tokenset');
       return;
@@ -562,7 +607,14 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
       });
     }
 
-    setCloudFrontCookies(res);
+    setCloudFrontCookies(
+      res,
+      {
+        userId,
+        tenantId: tenantId ?? req.user?.tenantId,
+      },
+      getPreviousCloudFrontScope(req),
+    );
 
     return appAuthToken;
   } catch (error) {

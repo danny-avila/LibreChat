@@ -1,3 +1,4 @@
+import type { TFile } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 
 export interface SaveBufferParams {
@@ -5,6 +6,7 @@ export interface SaveBufferParams {
   buffer: Buffer;
   fileName: string;
   basePath?: string;
+  tenantId?: string | null;
 }
 
 export interface GetURLParams {
@@ -13,6 +15,7 @@ export interface GetURLParams {
   basePath?: string;
   customFilename?: string | null;
   contentType?: string | null;
+  tenantId?: string | null;
 }
 
 export interface SaveURLParams {
@@ -20,6 +23,17 @@ export interface SaveURLParams {
   URL: string;
   fileName: string;
   basePath?: string;
+  tenantId?: string | null;
+}
+
+export interface SaveURLResult {
+  filepath: string;
+  bytes?: number;
+  type?: string;
+  dimensions?: {
+    width?: number;
+    height?: number;
+  };
 }
 
 export interface UploadFileParams {
@@ -27,6 +41,14 @@ export interface UploadFileParams {
   file: Express.Multer.File;
   file_id: string;
   basePath?: string;
+  tenantId?: string | null;
+}
+
+export interface DownloadURLParams {
+  req?: ServerRequest;
+  file: TFile;
+  customFilename?: string | null;
+  contentType?: string | null;
 }
 
 export interface UploadImageParams extends UploadFileParams {
@@ -50,6 +72,7 @@ export interface ProcessAvatarParams {
   manual: string;
   agentId?: string;
   basePath?: string;
+  tenantId?: string | null;
 }
 
 export interface S3FileRef {

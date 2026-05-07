@@ -29,17 +29,25 @@ cache: true
 # CloudFront CDN Configuration (optional)
 # Use when fileStrategy: "cloudfront" or fileStrategies includes cloudfront
 # Requires: AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_BUCKET_NAME
-# For signed cookies/URLs: CLOUDFRONT_KEY_PAIR_ID, CLOUDFRONT_PRIVATE_KEY
+# For signed cookies and direct download URLs: CLOUDFRONT_KEY_PAIR_ID, CLOUDFRONT_PRIVATE_KEY
 # cloudfront:
 #   domain: "https://cdn.example.com"       # CloudFront domain (CNAME recommended for cookies)
 #   distributionId: "E1234ABCD"             # Required if invalidateOnDelete is true
 #   invalidateOnDelete: false               # Create cache invalidation on file delete
 #   imageSigning: "none"                    # "none" (public) | "cookies" (signed cookies)
-#   # When imageSigning: "cookies", API + CloudFront must share a parent domain:
+#   # When imageSigning: "cookies", API + CloudFront must share a parent domain.
+#   # Cookies are path-scoped to private image prefixes and avatar prefixes.
+#   # If adding tenantId to a private pre-release CloudFront deployment, re-key
+#   # legacy /images and /avatars objects under /t/{tenantId}/ before enabling.
 #   #   API: api.example.com, CloudFront CNAME: cdn.example.com, cookieDomain: ".example.com"
 #   cookieDomain: ".example.com"            # Required for "cookies" - shared parent domain
 #   cookieExpiry: 1800                      # Cookie lifetime in seconds (max: 604800 / 7 days, default: 1800 / 30 min)
-#   urlExpiry: 3600                         # Reserved for future signed-URL mode (not yet implemented)
+#   urlExpiry: 3600                         # Signed CloudFront download URL lifetime in seconds
+#   # Direct-download filename/content-type overrides require the CloudFront cache/origin
+#   # request policy to forward and cache on response-content-disposition and
+#   # response-content-type query strings to S3.
+#   # Recommended for download paths: attach a CloudFront response headers policy
+#   # with X-Content-Type-Options: nosniff and CSP default-src 'none'.
 
 # Custom interface configuration
 interface:

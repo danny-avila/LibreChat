@@ -88,6 +88,84 @@ describe('File Methods', () => {
     });
   });
 
+  describe('claimCodeFile', () => {
+    it('claims code output files independently per tenant', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const tenantA = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-a',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+      const tenantB = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-b',
+        user: userId,
+        tenantId: 'tenant-b',
+      });
+      const tenantAAgain = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-a-new',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+
+      expect(tenantA.file_id).toBe('file-tenant-a');
+      expect(tenantA.tenantId).toBe('tenant-a');
+      expect(tenantB.file_id).toBe('file-tenant-b');
+      expect(tenantB.tenantId).toBe('tenant-b');
+      expect(tenantAAgain.file_id).toBe('file-tenant-a');
+    });
+
+    it('keeps non-tenant code output claims in the legacy namespace', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const legacy = await fileMethods.claimCodeFile({
+        filename: 'legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-file',
+        user: userId,
+      });
+      const tenant = await fileMethods.claimCodeFile({
+        filename: 'legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'tenant-file',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+
+      expect(legacy.file_id).toBe('legacy-file');
+      expect(legacy.tenantId).toBeNull();
+      expect(tenant.file_id).toBe('tenant-file');
+      expect(tenant.tenantId).toBe('tenant-a');
+    });
+
+    it('treats null tenantId as the legacy code output namespace', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const legacy = await fileMethods.claimCodeFile({
+        filename: 'nullable-legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-null-file',
+        user: userId,
+        tenantId: null,
+      });
+      const legacyAgain = await fileMethods.claimCodeFile({
+        filename: 'nullable-legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-null-file-new',
+        user: userId,
+      });
+
+      expect(legacy.file_id).toBe('legacy-null-file');
+      expect(legacyAgain.file_id).toBe('legacy-null-file');
+    });
+  });
+
   describe('findFileById', () => {
     it('should find a file by file_id', async () => {
       const fileId = uuidv4();

@@ -16,6 +16,8 @@ jest.mock('@librechat/api', () => ({
   shouldUseSecureCookie: jest.fn(() => false),
   resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
   setCloudFrontCookies: jest.fn(() => true),
+  parseCloudFrontCookieScope: jest.fn(() => null),
+  CLOUDFRONT_SCOPE_COOKIE: 'LibreChat-CloudFront-Scope',
 }));
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
@@ -42,6 +44,7 @@ const {
   isEmailDomainAllowed,
   resolveAppConfigForUser,
   setCloudFrontCookies,
+  parseCloudFrontCookieScope,
 } = require('@librechat/api');
 const {
   findUser,
@@ -66,9 +69,10 @@ function mockResponse() {
 }
 
 /** Helper to build a mock Express request with session */
-function mockRequest(sessionData = {}) {
+function mockRequest(sessionData = {}, cookies = {}) {
   return {
     session: { openidTokens: null, ...sessionData },
+    cookies,
   };
 }
 
@@ -360,13 +364,90 @@ describe('CloudFront cookie integration', () => {
       refresh_token: 'the-refresh-token',
     };
 
-    it('calls setCloudFrontCookies with response object', () => {
+    it('calls setCloudFrontCookies with response object and user scope from options', () => {
       const req = mockRequest();
       const res = mockResponse();
 
-      setOpenIDAuthTokens(validTokenset, req, res, 'user-123');
+      setOpenIDAuthTokens(validTokenset, req, res, {
+        userId: 'user-123',
+        tenantId: 'tenantA',
+      });
 
-      expect(setCloudFrontCookies).toHaveBeenCalledWith(res);
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: 'user-123',
+          tenantId: 'tenantA',
+        },
+        null,
+      );
+    });
+
+    it('keeps backward compatibility with positional user and tenant params', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+
+      setOpenIDAuthTokens(validTokenset, req, res, 'user-123', undefined, 'tenantA');
+
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: 'user-123',
+          tenantId: 'tenantA',
+        },
+        null,
+      );
+    });
+
+    it('treats a null options argument as an empty legacy user id', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(validTokenset, req, res, null);
+
+      expect(result).toBe('the-id-token');
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: null,
+          tenantId: undefined,
+        },
+        null,
+      );
+    });
+
+    it('treats omitted options as an empty legacy user id', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(validTokenset, req, res);
+
+      expect(result).toBe('the-id-token');
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: null,
+          tenantId: undefined,
+        },
+        null,
+      );
+    });
+
+    it('treats an object without token option keys as empty options', () => {
+      const req = mockRequest();
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(validTokenset, req, res, {});
+
+      expect(result).toBe('the-id-token');
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: undefined,
+          tenantId: undefined,
+        },
+        null,
+      );
     });
 
     it('succeeds even when setCloudFrontCookies returns false', () => {
@@ -383,7 +464,7 @@ describe('CloudFront cookie integration', () => {
 
   describe('setAuthTokens', () => {
     beforeEach(() => {
-      getUserById.mockResolvedValue({ _id: 'user-123' });
+      getUserById.mockResolvedValue({ _id: 'user-123', tenantId: 'tenantA' });
       generateToken.mockResolvedValue('mock-access-token');
       generateRefreshToken.mockReturnValue('mock-refresh-token');
       createSession.mockResolvedValue({
@@ -392,12 +473,37 @@ describe('CloudFront cookie integration', () => {
       });
     });
 
-    it('calls setCloudFrontCookies with response object', async () => {
+    it('calls setCloudFrontCookies with response object and user scope', async () => {
       const res = mockResponse();
 
       await setAuthTokens('user-123', res);
 
-      expect(setCloudFrontCookies).toHaveBeenCalledWith(res);
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: 'user-123',
+          tenantId: 'tenantA',
+        },
+        null,
+      );
+    });
+
+    it('passes the previous CloudFront cookie scope when present', async () => {
+      parseCloudFrontCookieScope.mockReturnValue({ userId: 'old-user', tenantId: 'old-tenant' });
+      const res = mockResponse();
+      const req = mockRequest({}, { 'LibreChat-CloudFront-Scope': 'encoded-scope' });
+
+      await setAuthTokens('user-123', res, null, req);
+
+      expect(parseCloudFrontCookieScope).toHaveBeenCalledWith('encoded-scope');
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: 'user-123',
+          tenantId: 'tenantA',
+        },
+        { userId: 'old-user', tenantId: 'old-tenant' },
+      );
     });
 
     it('succeeds even when setCloudFrontCookies returns false', async () => {

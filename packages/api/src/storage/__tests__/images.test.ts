@@ -89,6 +89,7 @@ describe('ImageService', () => {
         buffer: expect.any(Buffer),
         fileName: expect.stringContaining('file-456__'),
         basePath: 'images',
+        tenantId: null,
       });
 
       expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/upload-123.jpg');
@@ -233,7 +234,8 @@ describe('ImageService', () => {
         userId: 'user123',
         buffer,
         fileName: expect.stringMatching(/^avatar-\d+\.png$/),
-        basePath: 'images',
+        basePath: 'avatars',
+        tenantId: null,
       });
       expect(mockDeps.updateUser).toHaveBeenCalledWith('user123', {
         avatar: 'https://storage.example.com/images/user123/file.webp',
@@ -268,6 +270,24 @@ describe('ImageService', () => {
         }),
       );
       expect(mockDeps.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('passes tenantId through for avatar storage', async () => {
+      const buffer = Buffer.from('avatar-data');
+
+      await service.processAvatar({
+        buffer,
+        userId: 'user123',
+        manual: 'false',
+        tenantId: 'tenantA',
+      });
+
+      expect(mockSaveBuffer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          basePath: 'avatars',
+          tenantId: 'tenantA',
+        }),
+      );
     });
 
     it('appends manual param when config.appendManualParam is true', async () => {

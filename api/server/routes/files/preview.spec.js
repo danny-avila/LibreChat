@@ -24,11 +24,12 @@ jest.mock('@librechat/api', () => ({
 const mockFindFileById = jest.fn();
 const mockGetFiles = jest.fn();
 const mockUpdateFile = jest.fn();
+const mockGetAgents = jest.fn().mockResolvedValue([]);
 jest.mock('~/models', () => ({
   findFileById: (...args) => mockFindFileById(...args),
   getFiles: (...args) => mockGetFiles(...args),
   updateFile: (...args) => mockUpdateFile(...args),
-  getAgents: jest.fn().mockResolvedValue([]),
+  getAgents: (...args) => mockGetAgents(...args),
   batchUpdateFiles: jest.fn(),
 }));
 
@@ -96,6 +97,8 @@ describe('GET /files/:file_id/preview', () => {
     mockFindFileById.mockReset();
     mockGetFiles.mockReset();
     mockUpdateFile.mockReset();
+    mockGetAgents.mockReset();
+    mockGetAgents.mockResolvedValue([]);
   });
 
   it('returns 404 when the file does not exist (auth check fails first via fileAccess)', async () => {
@@ -117,6 +120,26 @@ describe('GET /files/:file_id/preview', () => {
       { file_id: 'someone-elses', user: 'other-user', filename: 'x.xlsx' },
     ]);
     const res = await request(buildApp()).get('/files/someone-elses/preview');
+    expect(res.status).toBe(403);
+    expect(mockFindFileById).not.toHaveBeenCalled();
+  });
+
+  it('does not disclose preview text through an attacker-authored agent file reference', async () => {
+    mockGetFiles.mockResolvedValueOnce([
+      { file_id: 'victim-file', user: 'victim-user', filename: 'secret.xlsx', status: 'ready' },
+    ]);
+    mockGetAgents.mockResolvedValueOnce([
+      {
+        id: 'agent-attacker',
+        author: 'attacker-user',
+        tool_resources: { execute_code: { file_ids: ['victim-file'] } },
+      },
+    ]);
+
+    const res = await request(buildApp({ user: { id: 'attacker-user', role: 'user' } })).get(
+      '/files/victim-file/preview',
+    );
+
     expect(res.status).toBe(403);
     expect(mockFindFileById).not.toHaveBeenCalled();
   });
