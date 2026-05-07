@@ -76,6 +76,11 @@ const ragApiJwtSecretSuffix: Record<AwsEnv, string> = {
   prod: 'YipukF',
 };
 
+const adminPanelSessionSecretSuffix: Record<AwsEnv, string> = {
+  dev: 'tlVoWO',
+  prod: 'r5o4mG',
+};
+
 const commonTags = {
   Project: 'AIAssistantService',
   ManagedBy: 'CDK',
@@ -110,6 +115,7 @@ const ecsStack = new EcsStack(app, 'EcsStack', {
   rdsSecurityGroup: databaseStack.rdsSecurityGroup,
   rdsSecret: databaseStack.rdsSecret,
   ragApiJwtSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:ai-assistant/rag-api/jwt-secret-${ragApiJwtSecretSuffix[AWS_ENV]}`,
+  adminPanelSessionSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:ai-assistant/admin-panel/session-secret-${adminPanelSessionSecretSuffix[AWS_ENV]}`,
   mongoSecretArn: `arn:aws:secretsmanager:${env.region}:${env.account}:secret:ai-assistant/dev/mongodb-Ajw7aQ`
 });
 

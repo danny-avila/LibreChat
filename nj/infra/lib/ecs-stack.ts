@@ -30,6 +30,7 @@ export interface EcsServicesProps extends cdk.StackProps {
   rdsSecurityGroup?: ec2.ISecurityGroup;
   rdsSecret?: secrets.ISecret;
   ragApiJwtSecretArn: string;
+  adminPanelSessionSecretArn: string;
   mongoSecretArn?: string;
 }
 
@@ -500,11 +501,12 @@ export class EcsStack extends cdk.Stack {
       taskRole: commonExecRole,
     });
 
-    const sessionSecret = secrets.Secret.fromSecretNameV2(
+    const sessionSecret = secrets.Secret.fromSecretCompleteArn(
       this,
       'AdminPanelSessionSecret',
-      'ai-assistant/admin-panel/session-secret',
+      props.adminPanelSessionSecretArn,
     );
+    sessionSecret.grantRead(commonExecRole);
     commonExecRole.addToPolicy(new iam.PolicyStatement({
       actions: ['secretsmanager:GetSecretValue'],
       resources: [`arn:aws:secretsmanager:${this.region}:${this.account}:secret:ai-assistant/admin-panel/session-secret-*`],
