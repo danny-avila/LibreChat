@@ -1,6 +1,6 @@
 import { useForm, Controller } from 'react-hook-form';
 import useGeolocation from '~/hooks/useGeolocation';
-import { SearchableSelect } from '~/components/ui';
+import { SearchableSelect, SearchableMultiSelect } from '~/components/ui';
 import {
   OGDialog,
   OGDialogContent,
@@ -487,31 +487,13 @@ const FarmerProfileModal = ({
               </div>
 
               <div className={fieldClass}>
-                <Label>Crops Cultivated</Label>
-                <div className="mt-1 flex flex-wrap gap-2 rounded-md border border-border-heavy bg-surface-secondary px-3 py-2">
-                  {CROPS.map((crop) => {
-                    const isSelected = selectedCropsList.includes(crop);
-                    return (
-                      <button
-                        key={crop}
-                        type="button"
-                        onClick={() => {
-                          const updated = isSelected
-                            ? selectedCropsList.filter((c) => c !== crop)
-                            : [...selectedCropsList, crop];
-                          setValue('cropsCultivated', updated.join(', '), { shouldValidate: true });
-                        }}
-                        className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                          isSelected
-                            ? 'border-green-600 bg-green-600 text-white'
-                            : 'border-border-heavy bg-surface-primary text-text-primary hover:bg-surface-active'
-                        }`}
-                      >
-                        {crop}
-                      </button>
-                    );
-                  })}
-                </div>
+                <Label htmlFor="cropsCultivated">Crops Cultivated</Label>
+                <SearchableMultiSelect
+                  options={CROPS}
+                  value={selectedCropsList}
+                  onChange={(selected) => setValue('cropsCultivated', selected.join(', '), { shouldValidate: true })}
+                  placeholder="Select crops..."
+                />
                 <input
                   type="hidden"
                   {...register('cropsCultivated', { required: 'Please select at least one crop' })}
