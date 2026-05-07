@@ -39,6 +39,13 @@ const file: Schema<IMongoFile> = new Schema(
       type: String,
       required: true,
     },
+    storageKey: {
+      type: String,
+    },
+    storageRegion: {
+      type: String,
+      index: true,
+    },
     object: {
       type: String,
       required: true,

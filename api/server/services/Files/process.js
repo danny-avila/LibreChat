@@ -19,7 +19,12 @@ const {
   documentParserMimeTypes,
 } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
-const { sanitizeFilename, parseText, processAudioFile } = require('@librechat/api');
+const {
+  sanitizeFilename,
+  parseText,
+  processAudioFile,
+  getStorageMetadata,
+} = require('@librechat/api');
 const {
   convertImage,
   resizeAndConvert,
@@ -282,6 +287,12 @@ const processFileURL = async ({
     if (!filepath) {
       throw new Error(`Strategy "${fileStrategy}" did not return a file URL for "${fileName}"`);
     }
+    const storageMetadata = getStorageMetadata({
+      filepath,
+      source: fileStrategy,
+      storageKey: typeof savedFile === 'string' ? undefined : savedFile.storageKey,
+      storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,
+    });
 
     return await db.createFile(
       {
@@ -289,6 +300,7 @@ const processFileURL = async ({
         file_id: v4(),
         bytes,
         filepath,
+        ...storageMetadata,
         filename: fileName,
         source: fileStrategy,
         type,
@@ -323,12 +335,13 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
 
-  const { filepath, bytes, width, height } = await handleImageUpload({
+  const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
     file,
     file_id,
     endpoint,
   });
+  const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
 
   const result = await db.createFile(
     {
@@ -337,6 +350,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
       temp_file_id,
       bytes,
       filepath,
+      ...storageMetadata,
       filename: file.originalname,
       context: FileContext.message_attachment,
       source,
@@ -388,12 +402,14 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     buffer,
     tenantId: req.user.tenantId,
   });
+  const storageMetadata = getStorageMetadata({ filepath, source });
   return await db.createFile(
     {
       user: req.user.id,
       file_id,
       bytes,
       filepath,
+      ...storageMetadata,
       filename,
       context,
       source,
@@ -440,6 +456,8 @@ const processFileUpload = async ({ req, res, metadata }) => {
     bytes,
     filename,
     filepath: _filepath,
+    storageKey: _storageKey,
+    storageRegion: _storageRegion,
     embedded,
     height,
     width,
@@ -465,6 +483,12 @@ const processFileUpload = async ({ req, res, metadata }) => {
   }
 
   let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
+  let storageMetadata = getStorageMetadata({
+    filepath,
+    source,
+    storageKey: _storageKey,
+    storageRegion: _storageRegion,
+  });
   if (isAssistantUpload && file.mimetype.startsWith('image')) {
     const result = await processImageFile({
       req,
@@ -473,6 +497,12 @@ const processFileUpload = async ({ req, res, metadata }) => {
       returnFile: true,
     });
     filepath = result.filepath;
+    storageMetadata = getStorageMetadata({
+      filepath,
+      source: result.source,
+      storageKey: result.storageKey,
+      storageRegion: result.storageRegion,
+    });
   }
 
   const result = await db.createFile(
@@ -482,6 +512,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
       temp_file_id,
       bytes,
       filepath,
+      ...storageMetadata,
       filename: filename ?? sanitizeFilename(file.originalname),
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       model: isAssistantUpload ? req.body.model : undefined,
@@ -714,7 +745,15 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     });
   }
 
-  let { bytes, filename, filepath: _filepath, height, width } = storageResult;
+  let {
+    bytes,
+    filename,
+    filepath: _filepath,
+    storageKey: _storageKey,
+    storageRegion: _storageRegion,
+    height,
+    width,
+  } = storageResult;
   // For RAG files, use embedding result; for others, use storage result
   let embedded = storageResult.embedded;
   if (tool_resource === EToolResources.file_search) {
@@ -723,6 +762,12 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   }
 
   let filepath = _filepath;
+  let storageMetadata = getStorageMetadata({
+    filepath,
+    source,
+    storageKey: _storageKey,
+    storageRegion: _storageRegion,
+  });
 
   if (!messageAttachment && tool_resource) {
     await db.addAgentResourceFile({
@@ -741,6 +786,12 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       returnFile: true,
     });
     filepath = result.filepath;
+    storageMetadata = getStorageMetadata({
+      filepath,
+      source: result.source,
+      storageKey: result.storageKey,
+      storageRegion: result.storageRegion,
+    });
   }
 
   const fileInfo = removeNullishValues({
@@ -749,6 +800,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     temp_file_id,
     bytes,
     filepath,
+    ...storageMetadata,
     filename: filename ?? sanitizeFilename(file.originalname),
     context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
     model: messageAttachment ? undefined : req.body.model,
@@ -995,6 +1047,7 @@ async function saveBase64Image(
     buffer: image.buffer,
     tenantId: req.user.tenantId,
   });
+  const storageMetadata = getStorageMetadata({ filepath, source });
   return await db.createFile(
     {
       type,
@@ -1002,6 +1055,7 @@ async function saveBase64Image(
       context,
       file_id,
       filepath,
+      ...storageMetadata,
       filename,
       user: req.user.id,
       bytes: image.bytes,

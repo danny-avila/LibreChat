@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { logger } = require('@librechat/data-schemas');
+const { getStorageMetadata } = require('@librechat/api');
 const { getStrategyFunctions } = require('../strategies');
 const { resizeImageBuffer } = require('./resize');
 
@@ -60,9 +61,13 @@ async function convertImage(req, file, resolution = 'high', basename = '') {
       fileName: newFileName,
       tenantId: req.user.tenantId,
     });
+    const storageMetadata = getStorageMetadata({
+      filepath: savedFilePath,
+      source: appConfig.fileStrategy,
+    });
 
     const bytes = Buffer.byteLength(outputBuffer);
-    return { filepath: savedFilePath, bytes, width, height };
+    return { filepath: savedFilePath, ...storageMetadata, bytes, width, height };
   } catch (err) {
     logger.error(err);
     throw err;

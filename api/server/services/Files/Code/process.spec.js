@@ -84,6 +84,7 @@ jest.mock('@librechat/api', () => {
      * test overrides via `mockGetExtractedTextFormat.mockReturnValue`
      * if a case needs to assert the 'html' value. */
     getExtractedTextFormat: (...args) => mockGetExtractedTextFormat(...args),
+    getStorageMetadata: jest.fn(() => ({})),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
   };

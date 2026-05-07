@@ -43,6 +43,14 @@ cache: true
 #   cookieDomain: ".example.com"            # Required for "cookies" - shared parent domain
 #   cookieExpiry: 1800                      # Cookie lifetime in seconds (max: 604800 / 7 days, default: 1800 / 30 min)
 #   urlExpiry: 3600                         # Signed CloudFront download URL lifetime in seconds
+#   # Optional multi-region S3/CloudFront layout. Default: false.
+#   # When enabled, new object keys include:
+#   #   r/{storageRegion}/t/{tenantId}/{basePath}/{userId}/{file}
+#   # storageRegion defaults to AWS_REGION when omitted, but only affects new keys
+#   # when includeRegionInPath is true. Existing files are not moved automatically.
+#   # LibreChat does not configure CloudFront origins, Route53, or regional routing.
+#   storageRegion: "us-east-2"
+#   includeRegionInPath: false
 #   # Direct-download filename/content-type overrides require the CloudFront cache/origin
 #   # request policy to forward and cache on response-content-disposition and
 #   # response-content-type query strings to S3.

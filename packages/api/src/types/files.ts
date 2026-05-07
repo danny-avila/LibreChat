@@ -177,6 +177,12 @@ export interface StrategyFunctions {
   getDownloadURL?: (params: DownloadURLParams) => Promise<string>;
   deleteFile?: (
     req: ServerRequest,
-    file: { filepath: string; user?: string; tenantId?: string | null },
+    file: {
+      filepath: string;
+      storageKey?: string | null;
+      storageRegion?: string | null;
+      user?: string;
+      tenantId?: string | null;
+    },
   ) => Promise<void>;
 }

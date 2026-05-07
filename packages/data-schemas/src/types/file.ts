@@ -50,6 +50,8 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   previewRevision?: string;
   filename: string;
   filepath: string;
+  storageKey?: string;
+  storageRegion?: string;
   object: 'file';
   embedded?: boolean;
   type: string;

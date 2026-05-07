@@ -4,13 +4,14 @@ import type { CloudFrontFullConfig } from '~/cdn/cloudfront';
 import type { ServerRequest } from '~/types';
 
 const mockGetCloudFrontConfig = jest.fn<CloudFrontFullConfig | null, []>();
-const mockGetS3Key = jest.fn<string, [string, string, string, string?]>();
+const mockGetS3Key = jest.fn();
 const mockSaveBufferToS3 = jest.fn();
 const mockSaveURLToS3WithMetadata = jest.fn();
 const mockUploadFileToS3 = jest.fn();
 const mockDeleteFileFromS3 = jest.fn();
 const mockGetS3FileStream = jest.fn();
 const mockExtractKeyFromS3Url = jest.fn<string, [string]>();
+const mockResolveStoredS3Key = jest.fn<string, [TFile]>();
 const mockCloudFrontSend = jest.fn();
 const mockGetSignedUrl = jest.fn<string, [object]>();
 const mockLogger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -27,6 +28,7 @@ jest.mock('~/storage/s3/crud', () => ({
   deleteFileFromS3: mockDeleteFileFromS3,
   getS3FileStream: mockGetS3FileStream,
   extractKeyFromS3Url: mockExtractKeyFromS3Url,
+  resolveStoredS3Key: mockResolveStoredS3Key,
 }));
 
 jest.mock('@aws-sdk/cloudfront-signer', () => ({
@@ -60,11 +62,16 @@ function makeConfig(overrides: Partial<CloudFrontFullConfig> = {}): CloudFrontFu
 describe('CloudFront CRUD', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetS3Key.mockImplementation((basePath, userId, fileName, tenantId) =>
-      tenantId
+    mockGetS3Key.mockImplementation(({ basePath, userId, fileName, tenantId, storageRegion }) => {
+      if (storageRegion) {
+        return tenantId
+          ? `r/${storageRegion}/t/${tenantId}/${basePath}/${userId}/${fileName}`
+          : `r/${storageRegion}/${basePath}/${userId}/${fileName}`;
+      }
+      return tenantId
         ? `t/${tenantId}/${basePath}/${userId}/${fileName}`
-        : `${basePath}/${userId}/${fileName}`,
-    );
+        : `${basePath}/${userId}/${fileName}`;
+    });
     mockGetCloudFrontConfig.mockReturnValue(makeConfig());
   });
 
@@ -95,7 +102,34 @@ describe('CloudFront CRUD', () => {
         tenantId: 'tenantA',
       });
       expect(url).toBe('https://d123.cloudfront.net/t/tenantA/documents/user1/doc.pdf');
-      expect(mockGetS3Key).toHaveBeenCalledWith('documents', 'user1', 'doc.pdf', 'tenantA');
+      expect(mockGetS3Key).toHaveBeenCalledWith(
+        expect.objectContaining({
+          basePath: 'documents',
+          userId: 'user1',
+          fileName: 'doc.pdf',
+          tenantId: 'tenantA',
+        }),
+      );
+    });
+
+    it('uses region-prefixed keys when configured', async () => {
+      mockGetCloudFrontConfig.mockReturnValue(
+        makeConfig({ storageRegion: 'us-east-2', includeRegionInPath: true }),
+      );
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({
+        userId: 'user1',
+        fileName: 'doc.pdf',
+        basePath: 'documents',
+        tenantId: 'tenantA',
+      });
+      expect(url).toBe('https://d123.cloudfront.net/r/us-east-2/t/tenantA/documents/user1/doc.pdf');
+      expect(mockGetS3Key).toHaveBeenCalledWith(
+        expect.objectContaining({
+          storageRegion: 'us-east-2',
+          includeRegionInPath: true,
+        }),
+      );
     });
 
     it('strips trailing slash from domain', async () => {
@@ -355,6 +389,7 @@ describe('CloudFront CRUD', () => {
     beforeEach(() => {
       mockDeleteFileFromS3.mockResolvedValue(undefined);
       mockExtractKeyFromS3Url.mockReturnValue('images/u/file.webp');
+      mockResolveStoredS3Key.mockReturnValue('images/u/file.webp');
     });
 
     it('calls deleteFileFromS3 to remove the file', async () => {
@@ -402,7 +437,7 @@ describe('CloudFront CRUD', () => {
     });
 
     it('prefixes key with / for invalidation path', async () => {
-      mockExtractKeyFromS3Url.mockReturnValue('images/u/file.webp'); // no leading slash
+      mockResolveStoredS3Key.mockReturnValue('images/u/file.webp'); // no leading slash
       mockGetCloudFrontConfig.mockReturnValue(
         makeConfig({ invalidateOnDelete: true, distributionId: 'E123' }),
       );
@@ -422,7 +457,7 @@ describe('CloudFront CRUD', () => {
     });
 
     it('does not re-prefix path that already has leading slash', async () => {
-      mockExtractKeyFromS3Url.mockReturnValue('/images/u/file.webp'); // already has slash
+      mockResolveStoredS3Key.mockReturnValue('/images/u/file.webp'); // already has slash
       mockGetCloudFrontConfig.mockReturnValue(
         makeConfig({ invalidateOnDelete: true, distributionId: 'E123' }),
       );
@@ -481,7 +516,7 @@ describe('CloudFront CRUD', () => {
       mockGetCloudFrontConfig.mockReturnValue(
         makeConfig({ privateKey: 'pk-secret', keyPairId: 'K123' }),
       );
-      mockExtractKeyFromS3Url.mockReturnValue('t/tenantA/uploads/user1/doc.pdf');
+      mockResolveStoredS3Key.mockReturnValue('t/tenantA/uploads/user1/doc.pdf');
       mockGetSignedUrl.mockReturnValue(
         'https://d123.cloudfront.net/t/tenantA/uploads/user1/doc.pdf?Policy=abc',
       );
@@ -495,8 +530,10 @@ describe('CloudFront CRUD', () => {
       });
 
       expect(result).toContain('Policy=abc');
-      expect(mockExtractKeyFromS3Url).toHaveBeenCalledWith(
-        'https://d123.cloudfront.net/t/tenantA/uploads/user1/doc.pdf',
+      expect(mockResolveStoredS3Key).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filepath: 'https://d123.cloudfront.net/t/tenantA/uploads/user1/doc.pdf',
+        }),
       );
       expect(mockGetSignedUrl).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -511,7 +548,7 @@ describe('CloudFront CRUD', () => {
       mockGetCloudFrontConfig.mockReturnValue(
         makeConfig({ privateKey: 'pk-secret', keyPairId: 'K123' }),
       );
-      mockExtractKeyFromS3Url.mockReturnValue('uploads/user1/report.pdf');
+      mockResolveStoredS3Key.mockReturnValue('uploads/user1/report.pdf');
       mockGetSignedUrl.mockReturnValue('signed-url');
 
       const { getCloudFrontDownloadURL } = await import('~/storage/cloudfront/crud');
@@ -553,7 +590,7 @@ describe('CloudFront CRUD', () => {
 
     it('throws when signing keys are missing', async () => {
       mockGetCloudFrontConfig.mockReturnValue(makeConfig({ privateKey: null, keyPairId: null }));
-      mockExtractKeyFromS3Url.mockReturnValue('uploads/user1/doc.pdf');
+      mockResolveStoredS3Key.mockReturnValue('uploads/user1/doc.pdf');
 
       const { getCloudFrontDownloadURL } = await import('~/storage/cloudfront/crud');
       await expect(

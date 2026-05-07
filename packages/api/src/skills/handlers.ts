@@ -203,6 +203,8 @@ function serializeSkillFile(file: ISkillFile & { _id: Types.ObjectId }): TSkillF
     file_id: file.file_id,
     filename: file.filename,
     filepath: file.filepath,
+    storageKey: file.storageKey,
+    storageRegion: file.storageRegion,
     source: file.source as TSkillFile['source'],
     mimeType: file.mimeType,
     bytes: file.bytes,
@@ -544,6 +546,8 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
         if (deleteBlob) {
           deleteBlob(req, {
             filepath: file.filepath,
+            storageKey: file.storageKey,
+            storageRegion: file.storageRegion,
             user: file.author?.toString?.(),
             tenantId: file.tenantId?.toString?.(),
           }).catch((e) =>
@@ -633,7 +637,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
           'Content-Disposition',
           `${isImageMime ? 'inline' : 'attachment'}; filename="${safeName}"`,
         );
-        const stream = await strategy.getDownloadStream(req, file.filepath);
+        const stream = await strategy.getDownloadStream(req, file.storageKey || file.filepath);
         stream.on('error', (err: Error) => {
           logger.error('[downloadFile] Stream error:', err);
           if (!res.headersSent) {
@@ -667,7 +671,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       // destroy (binary) or continue reading (text) in the same iteration.
       // N.B. breaking out of `for await...of` destroys the stream via
       // iterator.return(), so we must NOT use break + a second loop.
-      const stream = await strategy.getDownloadStream(req, file.filepath);
+      const stream = await strategy.getDownloadStream(req, file.storageKey || file.filepath);
       const chunks: Buffer[] = [];
       let totalBytes = 0;
       let binaryChecked = false;
@@ -749,6 +753,8 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       if (deleteBlob) {
         deleteBlob(req, {
           filepath: file.filepath,
+          storageKey: file.storageKey,
+          storageRegion: file.storageRegion,
           user: file.author?.toString?.(),
           tenantId: file.tenantId?.toString?.(),
         }).catch((e) => logger.error('[deleteFile] Storage cleanup failed:', e));

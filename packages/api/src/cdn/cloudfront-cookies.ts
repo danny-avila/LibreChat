@@ -20,6 +20,7 @@ const unsafePolicySegmentPattern = /[?*[\]\s]/;
 export interface CloudFrontCookieScope {
   userId?: string | null;
   tenantId?: string | null;
+  storageRegion?: string | null;
 }
 
 type CookieOptions = {
@@ -39,55 +40,88 @@ function assertPolicyPathSegment(label: string, value: string | null | undefined
 
 function getPolicyScopes(
   domain: string,
-  { userId, tenantId }: CloudFrontCookieScope,
+  { userId, tenantId, storageRegion }: CloudFrontCookieScope,
+  includeRegionInPath = false,
 ): Array<{ resource: string; path: string }> {
   if (!userId) {
     throw new Error('[CloudFront cookies] userId is required for private image access.');
   }
 
   const safeUserId = assertPolicyPathSegment('userId', userId);
+  const regionPrefix =
+    includeRegionInPath && storageRegion
+      ? {
+          resource: `/r/*`,
+          path: `/r/${assertPolicyPathSegment('storageRegion', storageRegion)}`,
+        }
+      : null;
   if (tenantId) {
     const safeTenantId = assertPolicyPathSegment('tenantId', tenantId);
+    const tenantPrefix = regionPrefix
+      ? {
+          resource: `${regionPrefix.resource}/t/${safeTenantId}`,
+          path: `${regionPrefix.path}/t/${safeTenantId}`,
+        }
+      : { resource: `/t/${safeTenantId}`, path: `/t/${safeTenantId}` };
     return [
       {
-        resource: `${domain}/t/${safeTenantId}/images/${safeUserId}/*`,
-        path: `/t/${safeTenantId}/images/${safeUserId}`,
+        resource: `${domain}${tenantPrefix.resource}/images/${safeUserId}/*`,
+        path: `${tenantPrefix.path}/images/${safeUserId}`,
       },
-      { resource: `${domain}/t/${safeTenantId}/avatars/*`, path: `/t/${safeTenantId}/avatars` },
+      {
+        resource: `${domain}${tenantPrefix.resource}/avatars/*`,
+        path: `${tenantPrefix.path}/avatars`,
+      },
     ];
   }
 
+  const publicPrefix = regionPrefix ?? { resource: '', path: '' };
   return [
-    { resource: `${domain}/images/${safeUserId}/*`, path: `/images/${safeUserId}` },
-    { resource: `${domain}/avatars/*`, path: '/avatars' },
+    {
+      resource: `${domain}${publicPrefix.resource}/images/${safeUserId}/*`,
+      path: `${publicPrefix.path}/images/${safeUserId}`,
+    },
+    {
+      resource: `${domain}${publicPrefix.resource}/avatars/*`,
+      path: `${publicPrefix.path}/avatars`,
+    },
   ];
 }
 
 function getScopeCookiePaths(
   scope: CloudFrontCookieScope,
-  { includeTenantRoot = false }: { includeTenantRoot?: boolean } = {},
+  {
+    includeTenantRoot = false,
+    includeRegionInPath = false,
+  }: { includeTenantRoot?: boolean; includeRegionInPath?: boolean } = {},
 ): string[] {
   if (!scope.userId) {
     return [];
   }
 
   const safeUserId = assertPolicyPathSegment('userId', scope.userId);
+  const regionPrefix =
+    includeRegionInPath && scope.storageRegion
+      ? `/r/${assertPolicyPathSegment('storageRegion', scope.storageRegion)}`
+      : '';
   if (scope.tenantId) {
     const safeTenantId = assertPolicyPathSegment('tenantId', scope.tenantId);
-    const paths = [`/t/${safeTenantId}/images/${safeUserId}`, `/t/${safeTenantId}/avatars`];
+    const tenantPrefix = `${regionPrefix}/t/${safeTenantId}`;
+    const paths = [`${tenantPrefix}/images/${safeUserId}`, `${tenantPrefix}/avatars`];
     if (includeTenantRoot) {
-      paths.push(`/t/${safeTenantId}`);
+      paths.push(tenantPrefix);
     }
     return paths;
   }
 
-  return [`/images/${safeUserId}`, '/avatars'];
+  return [`${regionPrefix}/images/${safeUserId}`, `${regionPrefix}/avatars`];
 }
 
 function encodeCloudFrontCookieScope(scope: CloudFrontCookieScope): string {
   const payload = {
     userId: scope.userId ?? null,
     tenantId: scope.tenantId ?? null,
+    storageRegion: scope.storageRegion ?? null,
   };
   return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }
@@ -103,6 +137,7 @@ export function parseCloudFrontCookieScope(
     const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as {
       userId?: unknown;
       tenantId?: unknown;
+      storageRegion?: unknown;
     };
     const scope: CloudFrontCookieScope = {};
     if (typeof parsed.userId === 'string') {
@@ -110,6 +145,9 @@ export function parseCloudFrontCookieScope(
     }
     if (typeof parsed.tenantId === 'string') {
       scope.tenantId = assertPolicyPathSegment('tenantId', parsed.tenantId);
+    }
+    if (typeof parsed.storageRegion === 'string') {
+      scope.storageRegion = assertPolicyPathSegment('storageRegion', parsed.storageRegion);
     }
     return scope.userId ? scope : null;
   } catch {
@@ -146,9 +184,16 @@ export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieSco
       secure: true,
       sameSite: 'none' as const,
     };
-    const paths = new Set(['/images', '/avatars', '/']);
-    if (scope.userId) {
-      for (const path of getScopeCookiePaths(scope, { includeTenantRoot: true })) {
+    const paths = new Set(['/images', '/avatars', '/r', '/']);
+    const clearScope =
+      config.includeRegionInPath && scope.userId && !scope.storageRegion
+        ? { ...scope, storageRegion: config.storageRegion ?? process.env.AWS_REGION }
+        : scope;
+    if (clearScope.userId) {
+      for (const path of getScopeCookiePaths(clearScope, {
+        includeTenantRoot: true,
+        includeRegionInPath: config.includeRegionInPath,
+      })) {
         paths.add(path);
       }
     }
@@ -199,7 +244,20 @@ export function setCloudFrontCookies(
     const expiresAtEpoch = Math.floor(expiresAtMs / 1000);
 
     const cleanDomain = config.domain.replace(/\/+$/, '');
-    const policyScopes = getPolicyScopes(cleanDomain, scope);
+    const includeRegionInPath = config.includeRegionInPath ?? false;
+    const scopedStorageRegion = includeRegionInPath
+      ? (scope.storageRegion ?? config.storageRegion ?? process.env.AWS_REGION)
+      : scope.storageRegion;
+    if (includeRegionInPath && !scopedStorageRegion) {
+      throw new Error(
+        '[CloudFront cookies] storageRegion is required when region pathing is enabled.',
+      );
+    }
+    const effectiveScope = {
+      ...scope,
+      ...(scopedStorageRegion ? { storageRegion: scopedStorageRegion } : {}),
+    };
+    const policyScopes = getPolicyScopes(cleanDomain, effectiveScope, includeRegionInPath);
     // CloudFront custom-policy cookies are scoped to one resource, so issue
     // separate path-specific cookie sets for private files and shared avatars.
     const signedCookieSets = policyScopes.map(({ resource, path }) => {
@@ -232,11 +290,16 @@ export function setCloudFrontCookies(
       sameSite: 'none' as const,
       domain: config.cookieDomain,
     };
-    const stalePaths = new Set(['/images', '/avatars']);
+    const stalePaths = new Set(['/images', '/avatars', '/r']);
     if (previousScope?.userId) {
-      for (const path of getScopeCookiePaths(previousScope)) {
+      for (const path of getScopeCookiePaths(previousScope, {
+        includeRegionInPath: Boolean(previousScope.storageRegion),
+      })) {
         stalePaths.add(path);
       }
+    }
+    for (const path of getScopeCookiePaths(effectiveScope, { includeRegionInPath })) {
+      stalePaths.add(path);
     }
 
     for (const { cookies } of signedCookieSets) {
@@ -257,7 +320,7 @@ export function setCloudFrontCookies(
         res.cookie(key, cookies[key], cookieOptions);
       }
     }
-    res.cookie(CLOUDFRONT_SCOPE_COOKIE, encodeCloudFrontCookieScope(scope), {
+    res.cookie(CLOUDFRONT_SCOPE_COOKIE, encodeCloudFrontCookieScope(effectiveScope), {
       ...baseCookieOptions,
       path: '/',
     });

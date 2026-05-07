@@ -148,7 +148,7 @@ describe('setCloudFrontCookies', () => {
 
     expect(result).toBe(true);
     expect(mockRes.cookie).toHaveBeenCalledTimes(7);
-    expect(mockRes.clearCookie).toHaveBeenCalledTimes(6);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(12);
 
     const cookieNames = cookieArgs.map(([name]) => name);
     expect(cookieNames).toContain('CloudFront-Policy');
@@ -203,7 +203,7 @@ describe('setCloudFrontCookies', () => {
 
     setCloudFrontCookies(mockRes as Response, defaultScope);
 
-    expect(clearedCookies).toHaveLength(6);
+    expect(clearedCookies).toHaveLength(12);
     expect(clearedCookies).toContainEqual([
       'CloudFront-Policy',
       expect.objectContaining({ path: '/images' }),
@@ -211,6 +211,10 @@ describe('setCloudFrontCookies', () => {
     expect(clearedCookies).toContainEqual([
       'CloudFront-Key-Pair-Id',
       expect.objectContaining({ path: '/avatars' }),
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Signature',
+      expect.objectContaining({ path: '/r' }),
     ]);
   });
 
@@ -268,7 +272,7 @@ describe('setCloudFrontCookies', () => {
     expect(name).toBe('LibreChat-CloudFront-Scope');
     expect(options).toMatchObject({ domain: '.example.com', path: '/' });
     expect(Buffer.from(value, 'base64url').toString('utf8')).toBe(
-      JSON.stringify({ userId: 'user123', tenantId: 'tenantA' }),
+      JSON.stringify({ userId: 'user123', tenantId: 'tenantA', storageRegion: null }),
     );
   });
 
@@ -341,6 +345,47 @@ describe('setCloudFrontCookies', () => {
     ]);
     expect(cookieArgs[0][2]).toMatchObject({ path: '/t/tenantA/images/user123' });
     expect(cookieArgs[3][2]).toMatchObject({ path: '/t/tenantA/avatars' });
+  });
+
+  it('builds region-prefixed custom policies when region pathing is enabled', () => {
+    mockGetCloudFrontConfig.mockReturnValue({
+      domain: 'https://cdn.example.com',
+      imageSigning: 'cookies',
+      cookieExpiry: 1800,
+      cookieDomain: '.example.com',
+      privateKey: '-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----',
+      keyPairId: 'K123ABC',
+      storageRegion: 'us-east-2',
+      includeRegionInPath: true,
+    });
+
+    mockGetSignedCookies.mockReturnValue({
+      'CloudFront-Policy': 'policy-value',
+      'CloudFront-Signature': 'signature-value',
+      'CloudFront-Key-Pair-Id': 'K123ABC',
+    });
+
+    const result = setCloudFrontCookies(mockRes as Response, {
+      userId: 'user123',
+      tenantId: 'tenantA',
+    });
+
+    const privatePolicy = JSON.parse(mockGetSignedCookies.mock.calls[0][0].policy);
+    const avatarPolicy = JSON.parse(mockGetSignedCookies.mock.calls[1][0].policy);
+    expect(result).toBe(true);
+    expect(privatePolicy.Statement[0].Resource).toBe(
+      'https://cdn.example.com/r/*/t/tenantA/images/user123/*',
+    );
+    expect(avatarPolicy.Statement[0].Resource).toBe(
+      'https://cdn.example.com/r/*/t/tenantA/avatars/*',
+    );
+    expect(cookieArgs[0][2]).toMatchObject({ path: '/r/us-east-2/t/tenantA/images/user123' });
+    expect(cookieArgs[3][2]).toMatchObject({ path: '/r/us-east-2/t/tenantA/avatars' });
+
+    const [, scopeValue] = cookieArgs[cookieArgs.length - 1];
+    expect(Buffer.from(scopeValue, 'base64url').toString('utf8')).toBe(
+      JSON.stringify({ userId: 'user123', tenantId: 'tenantA', storageRegion: 'us-east-2' }),
+    );
   });
 
   it('handles multiple trailing slashes in domain', () => {
@@ -537,7 +582,7 @@ describe('clearCloudFrontCookies', () => {
 
     clearCloudFrontCookies(mockRes as Response);
 
-    expect(mockRes.clearCookie).toHaveBeenCalledTimes(10);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(13);
   });
 
   it('does nothing when cookieDomain is missing', () => {
@@ -562,7 +607,7 @@ describe('clearCloudFrontCookies', () => {
 
     clearCloudFrontCookies(mockRes as Response);
 
-    expect(mockRes.clearCookie).toHaveBeenCalledTimes(10);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(13);
 
     const legacyPathOptions = {
       domain: '.example.com',
@@ -584,6 +629,10 @@ describe('clearCloudFrontCookies', () => {
     expect(clearedCookies).toContainEqual(['CloudFront-Policy', rootPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Signature', rootPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Key-Pair-Id', rootPathOptions]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Policy',
+      expect.objectContaining({ path: '/r' }),
+    ]);
   });
 
   it('clears tenant-scoped cookies', () => {
@@ -597,7 +646,7 @@ describe('clearCloudFrontCookies', () => {
 
     clearCloudFrontCookies(mockRes as Response, { userId: 'user123', tenantId: 'tenantA' });
 
-    expect(mockRes.clearCookie).toHaveBeenCalledTimes(19);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(22);
     expect(clearedCookies).toContainEqual([
       'CloudFront-Policy',
       {
