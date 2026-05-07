@@ -7,7 +7,7 @@ import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import SpecIcon from './SpecIcon';
-import { cn } from '~/utils';
+import { cn, getModelDisplayName } from '~/utils';
 
 interface SearchResultsProps {
   results: (TModelSpec | Endpoint)[] | null;
@@ -157,6 +157,8 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                     endpoint.assistantNames[modelId]
                   ) {
                     modelName = endpoint.assistantNames[modelId];
+                  } else {
+                    modelName = getModelDisplayName(modelId, localize).dropdownLabel;
                   }
 
                   const isModelSelected =

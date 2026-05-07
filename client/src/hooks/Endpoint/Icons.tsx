@@ -1,16 +1,19 @@
 import { Feather } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import {
-  GPTIcon,
   Sparkles,
   BedrockIcon,
   AssistantIcon,
-  AnthropicIcon,
   AzureMinimalIcon,
-  GoogleMinimalIcon,
   CustomMinimalIcon,
 } from '@librechat/client';
 import type { IconMapProps, AgentIconMapProps, IconsRecord } from '~/common';
+import {
+  OpenAIEditorIcon,
+  AnthropicEditorIcon,
+  GoogleEditorIcon,
+  FrenchAlpacaEditorIcon,
+} from '~/components/svg/editors/EditorIcons';
 import UnknownIcon from './UnknownIcon';
 import { cn } from '~/utils';
 
@@ -58,15 +61,20 @@ const Bedrock = ({ className = '' }: IconMapProps) => {
   return <BedrockIcon className={cn(className, 'h-full w-full')} />;
 };
 
+// TODO: migrer "French Models" / "Modèles français" vers iconURL dans librechat.yaml
+// quand l'archi le permettra. Hardcode actuel pour matcher le custom endpoint Vermeer
+// avant et après la traduction du nom côté DevOps.
 export const icons: IconsRecord = {
   [EModelEndpoint.azureOpenAI]: AzureMinimalIcon,
-  [EModelEndpoint.openAI]: GPTIcon,
-  [EModelEndpoint.anthropic]: AnthropicIcon,
-  [EModelEndpoint.google]: GoogleMinimalIcon,
+  [EModelEndpoint.openAI]: OpenAIEditorIcon,
+  [EModelEndpoint.anthropic]: AnthropicEditorIcon,
+  [EModelEndpoint.google]: GoogleEditorIcon,
   [EModelEndpoint.custom]: CustomMinimalIcon,
   [EModelEndpoint.assistants]: AssistantAvatar,
   [EModelEndpoint.azureAssistants]: AssistantAvatar,
   [EModelEndpoint.agents]: AgentAvatar,
   [EModelEndpoint.bedrock]: Bedrock,
+  'French Models': FrenchAlpacaEditorIcon,
+  'Modèles français': FrenchAlpacaEditorIcon,
   unknown: UnknownIcon,
 };

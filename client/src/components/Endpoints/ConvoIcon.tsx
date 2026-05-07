@@ -47,7 +47,7 @@ export default function ConvoIcon({
 
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
-  const Icon = icons[iconKey] ?? null;
+  const Icon = icons[endpoint ?? ''] ?? icons[iconKey] ?? null;
 
   return (
     <>

@@ -17,6 +17,7 @@ import useCopyToClipboard from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
+import { getModelDisplayName } from '~/utils/modelDisplay';
 import store from '~/store';
 
 export type TMessageActions = Pick<
@@ -130,6 +131,8 @@ export default function useMessageActions(props: TMessageActions) {
       return agent.name ?? 'Assistant';
     } else if (assistant) {
       return assistant.name ?? 'Assistant';
+    } else if (message?.model) {
+      return getModelDisplayName(message.model, localize).dropdownLabel;
     } else {
       return message?.sender;
     }

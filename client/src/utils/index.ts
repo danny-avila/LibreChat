@@ -23,6 +23,7 @@ export * from './messages';
 export * from './redirect';
 export * from './languages';
 export * from './endpoints';
+export * from './modelDisplay';
 export * from './resources';
 export * from './scaleImage';
 export * from './timestamps';

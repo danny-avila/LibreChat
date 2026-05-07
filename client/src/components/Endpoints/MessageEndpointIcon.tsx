@@ -2,17 +2,17 @@ import { memo } from 'react';
 import { Feather } from 'lucide-react';
 import { EModelEndpoint, isAssistantsEndpoint, alternateName } from 'librechat-data-provider';
 import {
-  Plugin,
-  GPTIcon,
-  PaLMIcon,
-  CodeyIcon,
-  GeminiIcon,
   BedrockIcon,
   AssistantIcon,
-  AnthropicIcon,
   AzureMinimalIcon,
   CustomMinimalIcon,
 } from '@librechat/client';
+import {
+  OpenAIEditorIcon,
+  AnthropicEditorIcon,
+  GoogleEditorIcon,
+  FrenchAlpacaEditorIcon,
+} from '~/components/svg/editors/EditorIcons';
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
@@ -29,16 +29,6 @@ function getOpenAIColor(_model: string | null | undefined) {
     return '#000000';
   }
   return model.includes('gpt-4') ? '#AB68FF' : '#19C37D';
-}
-
-function getGoogleIcon(model: string | null | undefined, size: number) {
-  if (model?.toLowerCase().includes('code') === true) {
-    return <CodeyIcon size={size * 0.75} />;
-  } else if (/gemini|learnlm|gemma/.test(model?.toLowerCase() ?? '')) {
-    return <GeminiIcon size={size * 0.7} />;
-  } else {
-    return <PaLMIcon size={size * 0.7} />;
-  }
 }
 
 function getGoogleModelName(model: string | null | undefined) {
@@ -129,16 +119,16 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
       name: 'ChatGPT',
     },
     [EModelEndpoint.openAI]: {
-      icon: <GPTIcon size={size * 0.5555555555555556} />,
+      icon: <OpenAIEditorIcon size={size * 0.5555555555555556} forceColor={false} />,
       bg: getOpenAIColor(model),
       name: 'ChatGPT',
     },
     [EModelEndpoint.google]: {
-      icon: getGoogleIcon(model, size),
+      icon: <GoogleEditorIcon size={size * 0.7} />,
       name: getGoogleModelName(model),
     },
     [EModelEndpoint.anthropic]: {
-      icon: <AnthropicIcon size={size * 0.5555555555555556} />,
+      icon: <AnthropicEditorIcon size={size * 0.5555555555555556} forceColor={false} />,
       bg: '#d09a74',
       name: 'Claude',
     },
@@ -151,7 +141,15 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
       icon: <CustomMinimalIcon size={size * 0.7} />,
       name: 'Custom',
     },
-    null: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'N/A' },
+    'French Models': {
+      icon: <FrenchAlpacaEditorIcon size={size * 0.7} />,
+      name: 'French-Alpaca',
+    },
+    'Modèles français': {
+      icon: <FrenchAlpacaEditorIcon size={size * 0.7} />,
+      name: 'French-Alpaca',
+    },
+    null: { icon: <OpenAIEditorIcon size={size * 0.7} forceColor={false} />, bg: 'grey', name: 'N/A' },
     default: {
       icon: (
         <div className="h-6 w-6">

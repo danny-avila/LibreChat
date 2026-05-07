@@ -7,6 +7,7 @@ import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons'
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import SearchContent from './Content/SearchContent';
 import { fontSizeAtom } from '~/store/fontSize';
+import { getModelDisplayName } from '~/utils/modelDisplay';
 import SearchButtons from './SearchButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
@@ -57,9 +58,13 @@ export default function SearchMessage({ message }: Pick<TMessageProps, 'message'
         ? (user?.name ?? '') || (user?.username ?? '')
         : localize('com_user_message');
     }
+    if (message?.model) {
+      return getModelDisplayName(message.model, localize).dropdownLabel;
+    }
     return message?.sender ?? '';
   }, [
     message?.isCreatedByUser,
+    message?.model,
     message?.sender,
     UsernameDisplay,
     user?.name,

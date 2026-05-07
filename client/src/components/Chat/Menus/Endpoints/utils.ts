@@ -9,6 +9,7 @@ import type {
 } from 'librechat-data-provider';
 import type { useLocalize } from '~/hooks';
 import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
+import { getModelDisplayName } from '~/utils/modelDisplay';
 import { Endpoint, SelectedValues } from '~/common';
 
 export function filterItems<
@@ -162,6 +163,12 @@ export function getSelectedIcon({
   return null;
 }
 
+export interface DisplayValue {
+  text: string;
+  editorIcon: React.ReactNode | null;
+  secondaryText?: string;
+}
+
 export const getDisplayValue = ({
   localize,
   mappedEndpoints,
@@ -174,16 +181,19 @@ export const getDisplayValue = ({
   mappedEndpoints: Endpoint[];
   modelSpecs: TModelSpec[];
   agentsMap?: TAgentsMap;
-}) => {
+}): DisplayValue => {
   if (selectedValues.modelSpec) {
     const spec = modelSpecs.find((s) => s.name === selectedValues.modelSpec);
-    return spec?.label || spec?.name || localize('com_ui_select_model');
+    return {
+      text: spec?.label || spec?.name || localize('com_ui_select_model'),
+      editorIcon: null,
+    };
   }
 
   if (selectedValues.model && selectedValues.endpoint) {
     const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
     if (!endpoint) {
-      return localize('com_ui_select_model');
+      return { text: localize('com_ui_select_model'), editorIcon: null };
     }
 
     if (
@@ -191,10 +201,10 @@ export const getDisplayValue = ({
       endpoint.agentNames &&
       endpoint.agentNames[selectedValues.model]
     ) {
-      return endpoint.agentNames[selectedValues.model];
+      return { text: endpoint.agentNames[selectedValues.model], editorIcon: null };
     } else if (isAgentsEndpoint(endpoint.value) && agentsMap) {
       const agent = agentsMap[selectedValues.model];
-      return agent?.name || selectedValues.model;
+      return { text: agent?.name || selectedValues.model, editorIcon: null };
     }
 
     if (
@@ -202,16 +212,21 @@ export const getDisplayValue = ({
       endpoint.assistantNames &&
       endpoint.assistantNames[selectedValues.model]
     ) {
-      return endpoint.assistantNames[selectedValues.model];
+      return { text: endpoint.assistantNames[selectedValues.model], editorIcon: null };
     }
 
-    return selectedValues.model;
+    const info = getModelDisplayName(selectedValues.model, localize);
+    return {
+      text: info.editorName,
+      editorIcon: info.editorIcon,
+      secondaryText: info.dropdownLabel,
+    };
   }
 
   if (selectedValues.endpoint) {
     const endpoint = mappedEndpoints.find((e) => e.value === selectedValues.endpoint);
-    return endpoint?.label || localize('com_ui_select_model');
+    return { text: endpoint?.label || localize('com_ui_select_model'), editorIcon: null };
   }
 
-  return localize('com_ui_select_model');
+  return { text: localize('com_ui_select_model'), editorIcon: null };
 };

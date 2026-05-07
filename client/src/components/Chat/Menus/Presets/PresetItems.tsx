@@ -135,7 +135,7 @@ const PresetItems: FC<{
             }
 
             const iconKey = getIconKey({ endpoint: preset.endpoint, endpointsConfig });
-            const Icon = icons[iconKey];
+            const Icon = icons[preset.endpoint ?? ''] ?? icons[iconKey];
 
             return (
               <Close asChild key={`preset-${presetId}`}>

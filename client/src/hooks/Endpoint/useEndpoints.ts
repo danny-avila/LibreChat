@@ -86,7 +86,7 @@ export const useEndpoints = ({
     return filteredEndpoints.map((ep) => {
       const endpointType = getEndpointField(endpointsConfig, ep, 'type');
       const iconKey = getIconKey({ endpoint: ep, endpointsConfig, endpointType });
-      const Icon = icons[iconKey];
+      const Icon = icons[ep] ?? icons[iconKey];
       const endpointIconURL = getEndpointField(endpointsConfig, ep, 'iconURL');
       const hasModels =
         (ep === EModelEndpoint.agents && (agents?.length ?? 0) > 0) ||

@@ -61,21 +61,34 @@ function ModelSelectorContent() {
     [localize, agentsMap, modelSpecs, selectedValues, mappedEndpoints],
   );
 
+  const tooltipDescription = localize('com_ui_click_to_change_model');
+
+  const triggerIcon = selectedDisplayValue.editorIcon ?? selectedIcon;
+
   const trigger = (
     <TooltipAnchor
       aria-label={localize('com_ui_select_model')}
-      description={localize('com_ui_select_model')}
+      description={tooltipDescription}
       render={
         <button
-          className="my-1 flex h-9 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
+          className="my-1 flex w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
           aria-label={localize('com_ui_select_model')}
         >
-          {selectedIcon && React.isValidElement(selectedIcon) && (
+          {triggerIcon && React.isValidElement(triggerIcon) && (
             <div className="flex flex-shrink-0 items-center justify-center overflow-hidden">
-              {selectedIcon}
+              {triggerIcon}
             </div>
           )}
-          <span className="flex-grow truncate text-left">{selectedDisplayValue}</span>
+          <div className="flex min-w-0 flex-grow flex-col text-left">
+            <span className="truncate font-medium leading-tight">
+              {selectedDisplayValue.text}
+            </span>
+            {selectedDisplayValue.secondaryText && (
+              <span className="truncate text-xs leading-tight text-text-secondary">
+                {selectedDisplayValue.secondaryText}
+              </span>
+            )}
+          </div>
         </button>
       }
     />

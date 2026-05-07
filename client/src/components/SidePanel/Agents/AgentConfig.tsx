@@ -209,7 +209,7 @@ export default function AgentConfig() {
       endpointType,
       endpointIconURL,
     });
-    Icon = icons[iconKey];
+    Icon = icons[providerValue as string] ?? icons[iconKey];
   }
 
   const { toolIds, mcpServerNames } = useVisibleTools(tools, regularTools, mcpServersMap);
