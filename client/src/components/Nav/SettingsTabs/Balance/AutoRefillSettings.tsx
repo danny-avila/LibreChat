@@ -7,6 +7,10 @@ import type { TranslationKeys } from '~/hooks';
 
 import { useLocalize } from '~/hooks';
 
+function ensureExhaustive(value: never): void {
+  void value;
+}
+
 interface AutoRefillSettingsProps {
   lastRefill: NonNullable<TBalanceResponse['lastRefill']>;
   refillAmount: number;
@@ -49,8 +53,8 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
         key = value === 1 ? 'com_nav_balance_month' : 'com_nav_balance_months';
         break;
       default: {
-        const exhaustiveCheck: never = unit;
-        key = exhaustiveCheck;
+        ensureExhaustive(unit);
+        key = 'com_nav_balance_seconds';
       }
     }
     return localize(key);
