@@ -70,12 +70,12 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
     }, [value, isCopied, disabled, onCopy, copyFeedbackDuration]);
 
     return (
-      <div className={cn('group/secret-input relative flex items-center', containerClassName)}>
+      <div className={cn('group/secret-input relative', containerClassName)}>
         <input
           id={id}
           type={isVisible ? 'text' : 'password'}
           className={cn(
-            'flex h-10 w-full rounded-lg border border-border-light bg-transparent py-2 pl-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+            'focus-visible:ring-ring-primary/30 flex h-10 w-full rounded-lg border border-border-light bg-transparent py-2 pl-3 text-sm transition-colors placeholder:text-muted-foreground hover:border-border-medium focus-visible:border-border-heavy focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50',
             className ?? '',
             showCopy ? 'pr-20' : 'pr-11',
           )}
@@ -93,9 +93,9 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
         )}
         <div
           className={cn(
-            'absolute inset-y-0 right-2 flex items-center gap-0.5',
+            'pointer-events-none absolute inset-y-0 right-1.5 flex items-center gap-0.5 [&>button]:pointer-events-auto',
             controlsOnHover &&
-              'pointer-events-none opacity-0 transition-opacity duration-150 group-focus-within/secret-input:pointer-events-auto group-focus-within/secret-input:opacity-100 group-hover/secret-input:pointer-events-auto group-hover/secret-input:opacity-100',
+              'opacity-0 transition-opacity duration-150 group-focus-within/secret-input:opacity-100 group-hover/secret-input:opacity-100',
             controlsClassName,
           )}
         >
@@ -105,8 +105,10 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
               onClick={handleCopy}
               disabled={disabled || !value}
               className={cn(
-                'flex size-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                disabled || !value ? 'cursor-not-allowed opacity-50' : 'hover:text-text-primary',
+                'inline-flex size-7 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary [&>svg]:block',
+                disabled || !value
+                  ? 'cursor-not-allowed opacity-50'
+                  : 'hover:bg-surface-hover hover:text-text-primary',
                 buttonClassName,
               )}
               aria-label={isCopied ? 'Copied' : 'Copy to clipboard'}
@@ -119,8 +121,10 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
             onClick={toggleVisibility}
             disabled={disabled}
             className={cn(
-              'flex size-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-              disabled ? 'cursor-not-allowed opacity-50' : 'hover:text-text-primary',
+              'inline-flex size-7 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary [&>svg]:block',
+              disabled
+                ? 'cursor-not-allowed opacity-50'
+                : 'hover:bg-surface-hover hover:text-text-primary',
               buttonClassName,
             )}
             aria-label={isVisible ? 'Hide secret' : 'Show secret'}
