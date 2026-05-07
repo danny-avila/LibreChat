@@ -139,7 +139,7 @@ describe('processCodeOutput path traversal protection', () => {
   });
 
   test('getRetentionExpiry is called with the request object', async () => {
-    mockSanitizeFilename.mockReturnValueOnce('output.csv');
+    mockSanitizeArtifactPath.mockReturnValueOnce('output.csv');
     await processCodeOutput({ ...baseParams, name: 'output.csv' });
     expect(getRetentionExpiry).toHaveBeenCalledWith(baseParams.req);
   });
