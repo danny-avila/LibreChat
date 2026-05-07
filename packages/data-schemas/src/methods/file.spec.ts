@@ -318,6 +318,154 @@ describe('File Methods', () => {
     });
   });
 
+  describe('getCodeGeneratedFiles', () => {
+    /* The function filters by `file_id IN threadFileIds` — the file_ids
+     * referenced by messages in the current conversation thread —
+     * rather than by `messageId IN threadMessageIds`. The change
+     * matters when a code-output file is shared across sibling branches
+     * (regenerations); the File record's own `messageId` points at
+     * whichever sibling FIRST created it (preserved deliberately by
+     * processCodeOutput for provenance), but `threadFileIds` reaches
+     * any sibling that references the file via `messages.files[]`. */
+
+    it('finds a code-output file referenced by the current thread', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId,
+        messageId: 'msg-original-creator',
+        filename: 'output.csv',
+        filepath: '/uploads/output.csv',
+        type: 'text/csv',
+        bytes: 100,
+        context: FileContext.execute_code,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles(conversationId, [fileId]);
+      expect(files).toHaveLength(1);
+      expect(files[0].file_id).toBe(fileId);
+    });
+
+    it('reaches a file whose creator messageId is on a sibling branch (regression)', async () => {
+      /* Branched-conversation case: sibling A creates the file (its
+       * messageId is preserved on the File record), sibling N
+       * recreates the same filename — claimCodeFile finds the existing
+       * record and the messageId stays at A. The current thread (parent
+       * = N) doesn't include A. Filtering by threadFileIds (which
+       * includes the file_id N's message references) reaches it. */
+      const userId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId,
+        /* The file's messageId points at sibling A — NOT in the
+         * current thread [siblingN, root]. The old `messageId IN`
+         * filter would have excluded the file here. */
+        messageId: 'siblingA',
+        filename: 'output.csv',
+        filepath: '/uploads/output.csv',
+        type: 'text/csv',
+        bytes: 100,
+        context: FileContext.execute_code,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles(conversationId, [fileId]);
+      expect(files).toHaveLength(1);
+      expect(files[0].file_id).toBe(fileId);
+    });
+
+    it('returns empty when threadFileIds is missing or empty', async () => {
+      const conversationId = uuidv4();
+      expect(await fileMethods.getCodeGeneratedFiles(conversationId)).toEqual([]);
+      expect(await fileMethods.getCodeGeneratedFiles(conversationId, [])).toEqual([]);
+    });
+
+    it('does not cross conversation boundaries even with matching file_id', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId: 'other-conv',
+        messageId: 'msg-creator',
+        filename: 'output.csv',
+        filepath: '/uploads/output.csv',
+        type: 'text/csv',
+        bytes: 100,
+        context: FileContext.execute_code,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles('this-conv', [fileId]);
+      expect(files).toEqual([]);
+    });
+
+    it('excludes non-execute_code files even when file_id matches', async () => {
+      /* `tool_resources.execute_code.file_ids` is the source of
+       * threadFileIds, but `messages.files[]` includes files of
+       * every context. The `context: execute_code` filter prevents
+       * a user-uploaded chat file from being mistakenly fetched via
+       * this function (it'd go through getUserCodeFiles instead). */
+      const userId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId,
+        messageId: 'msg-1',
+        filename: 'note.txt',
+        filepath: '/uploads/note.txt',
+        type: 'text/plain',
+        bytes: 100,
+        context: FileContext.message_attachment,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles(conversationId, [fileId]);
+      expect(files).toEqual([]);
+    });
+  });
+
   describe('updateFile', () => {
     it('should update file data and remove TTL', async () => {
       const fileId = uuidv4();
