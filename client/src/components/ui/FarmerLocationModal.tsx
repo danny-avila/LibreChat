@@ -1,32 +1,90 @@
-import { useForm } from 'react-hook-form';
-import useGeolocation from '~/hooks/useGeolocation';
-import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle, Label } from '@librechat/client';
+/* eslint-disable i18next/no-literal-string */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { useForm, Controller } from 'react-hook-form';
+import { useState, useEffect } from 'react';
+import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle, Label, Input } from '@librechat/client';
 import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
+import { useAuthContext } from '~/hooks/AuthContext';
+import useGeolocation from '~/hooks/useGeolocation';
+import { STATES, DISTRICTS, INDIAN_LANGUAGES } from '~/utils/metaData';
+import SearchableSelect from './SearchableSelect';
 
-type FarmerLocationForm = {
-  location?: {
-    latitude: number;
-    longitude: number;
-  };
+type FarmerLocationForm = Partial<IFarmerProfile> & { 
+  landhold?: string; 
+  age?: string; 
+  yearsOfExperience?: string; 
+  numberOfSmartphones?: string;
+  customDistrict?: string;
 };
 
 const FarmerLocationModal = ({
   open,
   onOpenChange,
   onComplete,
+  missingFields = [],
 }: {
   open: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onComplete: () => void;
+  missingFields?: string[];
 }) => {
+  const { user } = useAuthContext();
+  const [submitError, setSubmitError] = useState('');
+
   const {
     register,
     handleSubmit,
     watch,
     setValue,
-    formState: { isValid },
-  } = useForm<FarmerLocationForm>({ mode: 'onChange' });
+    control,
+    unregister,
+    clearErrors,
+    formState: { errors, isValid },
+  } = useForm<FarmerLocationForm>({ 
+    mode: 'onChange',
+    shouldUnregister: true 
+  });
+
+  useEffect(() => {
+    const allFields: (keyof FarmerLocationForm)[] = [
+      'farmerName', 'age', 'gender', 'villageName', 'blockName', 'district', 'state', 'phoneNo', 
+      'languagePreference', 'yearsOfExperience', 'highestEducatedPerson', 'numberOfSmartphones', 
+      'primaryCrop', 'secondaryCrop', 'cropsCultivated', 'landhold', 'awarenessOfKCC', 'usesAgriApps', 'customDistrict'
+    ];
+    
+    const fieldsToUnregister = allFields.filter(f => !missingFields.includes(f as string));
+    
+    fieldsToUnregister.forEach(f => {
+       unregister(f);
+       clearErrors(f);
+    });
+  }, [missingFields, unregister, clearErrors]);
+
+  const watchedState = watch('state');
+  const selectedState = watchedState || user?.farmerProfile?.state;
+  const selectedDistrict = watch('district');
+
+  const matchedStateKey = selectedState 
+    ? Object.keys(DISTRICTS).find(k => k.toLowerCase() === selectedState.toLowerCase())
+    : undefined;
+
+  const districtOptions = matchedStateKey
+    ? [...(DISTRICTS[matchedStateKey] ?? []), 'Other']
+    : ['Other'];
+
+  const handleStateChange = (val: string) => {
+    setValue('state', val, { shouldValidate: true });
+    setValue('district', '', { shouldValidate: false });
+    setValue('customDistrict', '', { shouldValidate: false });
+  };
+
+  const handleDistrictChange = (val: string) => {
+    setValue('district', val, { shouldValidate: true });
+    if (val !== 'Other') {
+      setValue('customDistrict', '', { shouldValidate: false });
+    }
+  };
 
   const { isLocating, locationError, getLocation } = useGeolocation({
     onSuccess: (latitude, longitude) => {
@@ -37,42 +95,200 @@ const FarmerLocationModal = ({
 
   const saveMutation = useSaveFarmerProfileMutation({
     onSuccess: () => {
+      setSubmitError('');
       onComplete();
     },
+    onError: (error) => {
+      console.error('Mutation error:', error);
+      setSubmitError('Failed to save profile. Please try again.');
+    }
   });
 
+  const onFormError = (formErrors: any) => {
+    console.error('Form validation failed:', formErrors);
+  };
+
   const onSubmit = (data: FarmerLocationForm) => {
-    const profilePayload: IFarmerProfile = {
-      location:
-        data.location?.latitude && data.location?.longitude
-          ? {
-              latitude: Number(data.location.latitude),
-              longitude: Number(data.location.longitude),
-            }
-          : undefined,
-    };
+    const profilePayload: IFarmerProfile = {};
+    
+    missingFields.forEach((field) => {
+      if (field === 'location' && data.location?.latitude && data.location?.longitude) {
+        profilePayload.location = {
+          latitude: Number(data.location.latitude),
+          longitude: Number(data.location.longitude),
+        };
+      } else if (['landhold', 'age', 'yearsOfExperience', 'numberOfSmartphones'].includes(field)) {
+        if (data[field as keyof FarmerLocationForm]) {
+           profilePayload[field as keyof IFarmerProfile] = Number(data[field as keyof FarmerLocationForm]) as any;
+        }
+      } else if (['awarenessOfKCC', 'usesAgriApps'].includes(field)) {
+         if (data[field as keyof FarmerLocationForm]) {
+             profilePayload[field as keyof IFarmerProfile] = (data[field as keyof FarmerLocationForm] === 'yes') as any;
+         }
+      } else if (field === 'district') {
+         profilePayload.district = data.district === 'Other' ? data.customDistrict : data.district;
+      } else if (field === 'cropsCultivated' && data.cropsCultivated) {
+         profilePayload.cropsCultivated = (data.cropsCultivated as any).split(',').map((c: string) => c.trim()).filter(Boolean);
+      } else {
+        if (data[field as keyof FarmerLocationForm]) {
+          profilePayload[field as keyof IFarmerProfile] = data[field as keyof FarmerLocationForm] as any;
+        }
+      }
+    });
+    
     saveMutation.mutate(profilePayload);
   };
 
   const fieldClass = 'mb-4';
+  const inputClass = 'mt-1 block w-full rounded-md border border-border-heavy bg-surface-secondary px-3 py-2 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-green-500';
+
+  const isLocationMissing = missingFields.includes('location');
+  const otherMissingFields = missingFields.filter(f => f !== 'location');
+
+  const fieldConfig: Record<string, { label: string, type: string, placeholder?: string, options?: string[] }> = {
+    farmerName: { label: 'Farmer Name', type: 'text', placeholder: 'e.g. John Doe' },
+    age: { label: 'Age', type: 'number', placeholder: 'e.g. 45' },
+    gender: { label: 'Gender', type: 'searchable-select', options: ['Male', 'Female', 'Other'] },
+    state: { label: 'State', type: 'searchable-select', options: STATES },
+    district: { label: 'District', type: 'searchable-select', options: districtOptions },
+    villageName: { label: 'Village Name', type: 'text', placeholder: 'e.g. Kothrud' },
+    blockName: { label: 'Block Name', type: 'text', placeholder: 'e.g. Haveli' },
+    phoneNo: { label: 'Phone Number', type: 'text', placeholder: 'e.g. 9876543210' },
+    languagePreference: { label: 'Language Preference', type: 'searchable-select', options: INDIAN_LANGUAGES },
+    yearsOfExperience: { label: 'Years of Farming Experience', type: 'number', placeholder: 'e.g. 20' },
+    highestEducatedPerson: { label: 'Highest Educated Person in Family', type: 'searchable-select', options: ['Under Graduate', 'Graduate', 'Post Graduate'] },
+    numberOfSmartphones: { label: 'Number of Smartphones in Family', type: 'number', placeholder: 'e.g. 2' },
+    primaryCrop: { label: 'Primary Crop', type: 'text', placeholder: 'e.g. Wheat' },
+    secondaryCrop: { label: 'Secondary Crop', type: 'text', placeholder: 'e.g. Rice' },
+    cropsCultivated: { label: 'Crops Cultivated (comma separated)', type: 'text', placeholder: 'e.g. Wheat, Rice' },
+    landhold: { label: 'Total Agricultural Landholding (Acres)', type: 'number', placeholder: 'e.g. 5' },
+    awarenessOfKCC: { label: 'Awareness of Kisan Call Centre (KCC)', type: 'radio' },
+    usesAgriApps: { label: 'Usage of Any Agricultural Mobile Applications', type: 'radio' },
+  };
+
+  const isFormValid = () => {
+    return missingFields.every(field => {
+       if (field === 'location') {
+          return !!watch('location.latitude') && !!watch('location.longitude');
+       }
+       if (field === 'district' && watch('district') === 'Other') {
+          return !!watch('customDistrict');
+       }
+       return !!watch(field as any);
+    });
+  };
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent showCloseButton={true} className="flex w-11/12 max-w-md flex-col sm:w-full">
+      <OGDialogContent showCloseButton={true} className="flex w-11/12 max-w-md flex-col sm:w-full overflow-y-auto max-h-[90vh]">
         <OGDialogHeader>
           <OGDialogTitle className="text-lg font-bold text-text-primary">
-            Register Home Location
+            Complete Your Profile
           </OGDialogTitle>
         </OGDialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="mt-4 flex flex-col">
-          <input type="hidden" {...register('location.latitude', { required: true })} />
-          <input type="hidden" {...register('location.longitude', { required: true })} />
-
+        <form onSubmit={handleSubmit(onSubmit, onFormError)} className="mt-4 flex flex-col">
           <p className="mb-4 text-sm text-text-secondary">
-            We noticed you haven't shared your location with us yet. Please capture it below.
+            We noticed you haven't shared some details with us yet. Please provide them below.
           </p>
 
+          {otherMissingFields.map((field) => {
+            const config = fieldConfig[field];
+            if (!config) return null;
+            
+            if (config.type === 'searchable-select') {
+              return (
+                <div key={field} className={fieldClass}>
+                  <Label>{config.label}</Label>
+                  <Controller
+                    name={field as any}
+                    control={control}
+                    rules={{ required: `${config.label} is required` }}
+                    render={({ field: controllerField }) => (
+                      <SearchableSelect
+                        options={field === 'district' ? districtOptions : config.options || []}
+                        value={controllerField.value ?? ''}
+                        onChange={
+                          field === 'state' 
+                            ? handleStateChange 
+                            : field === 'district'
+                            ? handleDistrictChange
+                            : controllerField.onChange
+                        }
+                        placeholder={`Select ${config.label}`}
+                        disabled={field === 'district' && !selectedState}
+                      />
+                    )}
+                  />
+                  {errors[field as keyof FarmerLocationForm] && (
+                    <p className="mt-1 text-xs text-red-500">{(errors[field as keyof FarmerLocationForm] as any)?.message}</p>
+                  )}
+                  {/* Custom District Input */}
+                  {field === 'district' && selectedDistrict === 'Other' && (
+                    <div className="mt-4">
+                      <Label htmlFor="customDistrict">Enter Your District</Label>
+                      <Input
+                        id="customDistrict"
+                        placeholder="Type your district name"
+                        className={inputClass}
+                        {...register('customDistrict', {
+                          required: 'Please enter your district name',
+                        })}
+                      />
+                      {errors.customDistrict && (
+                        <p className="mt-1 text-xs text-red-500">{errors.customDistrict.message}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            if (config.type === 'radio') {
+              return (
+                <div key={field} className={fieldClass}>
+                  <Label>{config.label}</Label>
+                  <div className="mt-2 flex gap-6">
+                    {['yes', 'no'].map((val) => (
+                      <label key={val} className="flex items-center gap-2 cursor-pointer text-sm text-text-primary">
+                        <input
+                          type="radio"
+                          value={val}
+                          className="accent-green-600"
+                          {...register(field as any, { required: 'This field is required' })}
+                        />
+                        {val.charAt(0).toUpperCase() + val.slice(1)}
+                      </label>
+                    ))}
+                  </div>
+                  {errors[field as keyof FarmerLocationForm] && (
+                    <p className="mt-1 text-xs text-red-500">{(errors[field as keyof FarmerLocationForm] as any)?.message}</p>
+                  )}
+                </div>
+              );
+            }
+            
+            return (
+              <div key={field} className={fieldClass}>
+                <Label htmlFor={field}>{config.label}</Label>
+                <Input
+                  id={field}
+                  type={config.type}
+                  placeholder={config.placeholder}
+                  className={inputClass}
+                  {...register(field as any, { required: `${config.label} is required` })}
+                />
+                {errors[field as keyof FarmerLocationForm] && (
+                  <p className="mt-1 text-xs text-red-500">{(errors[field as keyof FarmerLocationForm] as any)?.message}</p>
+                )}
+              </div>
+            );
+          })}
+
+          {isLocationMissing && (
+            <>
+              <input type="hidden" {...register('location.latitude')} />
+              <input type="hidden" {...register('location.longitude')} />
           <div className="mb-4 rounded-md border border-blue-100 bg-blue-50/50 p-4 dark:border-blue-800 dark:bg-blue-900/10">
             <div className="flex">
               <div className="flex-shrink-0">
@@ -119,14 +335,25 @@ const FarmerLocationModal = ({
               {locationError && <span className="text-sm text-red-500">{locationError}</span>}
             </div>
           </div>
+            </>
+          )}
+
+          {Object.keys(errors).length > 0 && (
+            <div className="mt-2 text-sm text-red-500">
+              Please fix the errors before submitting.
+            </div>
+          )}
+          {submitError && (
+            <div className="mt-2 text-sm text-red-500">{submitError}</div>
+          )}
 
           <div className="mt-4 flex justify-end gap-2 border-t border-border-heavy pt-4">
             <button
               type="submit"
-              disabled={!isValid || saveMutation.isLoading}
+              disabled={saveMutation.isLoading || !isFormValid()}
               className="hover:bg-surface-active-hover inline-flex items-center justify-center rounded-lg bg-surface-active px-6 py-2 text-sm font-medium text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {saveMutation.isLoading ? 'Saving...' : 'Save Location'}
+              {saveMutation.isLoading ? 'Saving...' : 'Save Details'}
             </button>
           </div>
         </form>

@@ -26,6 +26,7 @@ export interface IFarmerProfile {
     latitude: number;
     longitude: number;
   };
+  landhold?: number;
 }
 
 export interface IUser extends Document {

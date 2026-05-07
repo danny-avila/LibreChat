@@ -41,6 +41,7 @@ type FarmerProfileForm = {
     latitude: number;
     longitude: number;
   };
+  landhold: string;
 };
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -165,6 +166,7 @@ const FarmerProfileModal = ({
         .filter(Boolean),
       awarenessOfKCC: data.awarenessOfKCC === 'yes',
       usesAgriApps: data.usesAgriApps === 'yes',
+      landhold: data.landhold ? Number(data.landhold) : undefined,
       platform: detectDevice(),
       location:
         data.location?.latitude && data.location?.longitude
@@ -518,6 +520,19 @@ const FarmerProfileModal = ({
                 />
                 {errors.yearsOfExperience && (
                   <p className={errorClass}>{errors.yearsOfExperience.message}</p>
+                )}
+              </div>
+
+              <div className={fieldClass}>
+                <Label htmlFor="landhold">Total Agricultural Landholding (Specify your total farm size in Acres)</Label>
+                <Input
+                  id="landhold"
+                  placeholder="e.g. 5"
+                  className={inputClass}
+                  {...register('landhold', { required: 'Landholding is required' })}
+                />
+                {errors.landhold && (
+                  <p className={errorClass}>{errors.landhold.message}</p>
                 )}
               </div>
 

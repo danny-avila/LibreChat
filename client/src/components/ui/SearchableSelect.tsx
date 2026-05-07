@@ -20,7 +20,9 @@ const SearchableSelect = ({
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filtered = options.filter((o) => o.toLowerCase().includes(search.toLowerCase()));
+  const filtered = options.filter((o) =>
+    o.toLowerCase().includes(search.toLowerCase()),
+  );
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -47,29 +49,29 @@ const SearchableSelect = ({
 
   return (
     <div ref={ref} className="relative mt-1">
+      {/* Trigger */}
       <button
         type="button"
         onClick={handleOpen}
         disabled={disabled}
-        className={`flex w-full items-center justify-between rounded-md border border-border-heavy bg-surface-secondary px-3 py-2 text-left text-sm focus:outline-none focus:ring-1 focus:ring-green-500 disabled:cursor-not-allowed disabled:opacity-50 ${
+        className={`flex w-full items-center justify-between rounded-md border border-border-heavy bg-surface-secondary px-3 py-2 text-sm text-left focus:outline-none focus:ring-1 focus:ring-green-500 disabled:cursor-not-allowed disabled:opacity-50 ${
           value ? 'text-text-primary' : 'text-text-secondary'
         }`}
       >
         <span className="truncate">{value || placeholder}</span>
         <svg
           className={`ml-2 h-4 w-4 shrink-0 text-text-secondary transition-transform ${open ? 'rotate-180' : ''}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 
+      {/* Dropdown */}
       {open && (
         <div className="absolute z-[300] mt-1 w-full rounded-md border border-border-heavy bg-surface-primary shadow-lg">
-          <div className="border-b border-border-heavy p-2">
+          {/* Search input */}
+          <div className="p-2 border-b border-border-heavy">
             <input
               ref={inputRef}
               type="text"
@@ -88,9 +90,7 @@ const SearchableSelect = ({
                   key={opt}
                   onMouseDown={() => handleSelect(opt)}
                   className={`cursor-pointer px-3 py-2 text-sm hover:bg-surface-active ${
-                    value === opt
-                      ? 'bg-green-50 font-medium text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                      : 'text-text-primary'
+                    value === opt ? 'bg-green-50 text-green-700 font-medium dark:bg-green-900/20 dark:text-green-400' : 'text-text-primary'
                   }`}
                 >
                   {opt}

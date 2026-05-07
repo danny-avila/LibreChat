@@ -3,6 +3,6 @@ export { default as ImportantNoticeModal } from './ImportantNoticeModal';
 export { default as FarmerProfileModal } from './FarmerProfileModal';
 export { default as FarmerLocationModal } from './FarmerLocationModal';
 export { default as AdminSettingsDialog } from './AdminSettingsDialog';
-export type { PermissionConfig, AdminSettingsDialogProps } from './AdminSettingsDialog';
-export { default as SearchableMultiSelect } from './SearchableMultiSelect';
 export { default as SearchableSelect } from './SearchableSelect';
+export { default as SearchableMultiSelect } from './SearchableMultiSelect';
+export type { PermissionConfig, AdminSettingsDialogProps } from './AdminSettingsDialog';
