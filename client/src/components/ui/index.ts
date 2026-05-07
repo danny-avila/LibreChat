@@ -5,4 +5,3 @@ export { default as FarmerLocationModal } from './FarmerLocationModal';
 export { default as AdminSettingsDialog } from './AdminSettingsDialog';
 export { default as SearchableSelect } from './SearchableSelect';
 export type { PermissionConfig, AdminSettingsDialogProps } from './AdminSettingsDialog';
-export { default as SearchableSelect } from './SearchableSelect';

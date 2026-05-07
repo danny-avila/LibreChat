@@ -6,6 +6,7 @@ import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle, Label, Input 
 import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import useGeolocation from '~/hooks/useGeolocation';
 import { STATES, DISTRICTS, INDIAN_LANGUAGES } from '~/utils/metaData';
 import SearchableSelect from './SearchableSelect';
 
@@ -28,6 +29,9 @@ const FarmerLocationModal = ({
   onComplete: () => void;
   missingFields?: string[];
 }) => {
+  const { user } = useAuthContext();
+  const [submitError, setSubmitError] = useState('');
+
   const {
     register,
     handleSubmit,
@@ -91,11 +95,12 @@ const FarmerLocationModal = ({
 
   const saveMutation = useSaveFarmerProfileMutation({
     onSuccess: () => {
+      setSubmitError('');
       onComplete();
     },
     onError: (error) => {
       console.error('Mutation error:', error);
-      setLocationError('Failed to save profile. Please try again.');
+      setSubmitError('Failed to save profile. Please try again.');
     }
   });
 
@@ -337,6 +342,9 @@ const FarmerLocationModal = ({
             <div className="mt-2 text-sm text-red-500">
               Please fix the errors before submitting.
             </div>
+          )}
+          {submitError && (
+            <div className="mt-2 text-sm text-red-500">{submitError}</div>
           )}
 
           <div className="mt-4 flex justify-end gap-2 border-t border-border-heavy pt-4">
