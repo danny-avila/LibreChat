@@ -10,7 +10,7 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
@@ -26,7 +26,12 @@ const initializeOAuthReconnectManager = require('./services/initializeOAuthRecon
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
-const { getRoleByName, updateAccessPermissions, seedDatabase } = require('~/models');
+const {
+  getRoleByName,
+  updateAccessPermissions,
+  seedDatabase,
+  sweepOrphanedPreviews,
+} = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
@@ -220,6 +225,11 @@ if (cluster.isMaster) {
     /** Seed database (idempotent) */
     await seedDatabase();
 
+    /* Mirrors `server/index.js`; `runAsSystem` for tenant-isolated File. */
+    runAsSystem(sweepOrphanedPreviews).catch((err) => {
+      logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
+    });
+
     /** Initialize app configuration */
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
@@ -310,6 +320,7 @@ if (cluster.isMaster) {
     app.use('/api/convos', routes.convos);
     app.use('/api/presets', routes.presets);
     app.use('/api/prompts', routes.prompts);
+    app.use('/api/skills', routes.skills);
     app.use('/api/categories', routes.categories);
     app.use('/api/endpoints', routes.endpoints);
     app.use('/api/balance', routes.balance);
@@ -362,10 +373,22 @@ if (cluster.isMaster) {
         }:${port}`,
       );
 
-      /** Initialize MCP servers and OAuth reconnection for this worker */
-      await initializeMCPs();
-      await initializeOAuthReconnectManager();
-      await checkMigrations();
+      /**
+       * The listen callback is async, so any rejection from these awaits
+       * would otherwise be detached from `startServer().catch(...)`. Without
+       * explicit handling, the global `unhandledRejection` handler would
+       * swallow init failures and leave the worker listening but only
+       * partially initialized.
+       */
+      try {
+        /** Initialize MCP servers and OAuth reconnection for this worker */
+        await initializeMCPs();
+        await initializeOAuthReconnectManager();
+        await checkMigrations();
+      } catch (initErr) {
+        logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
+        process.exit(1);
+      }
     });
 
     /** Handle inter-process messages from master */
@@ -440,4 +463,30 @@ process.on('uncaughtException', (err) => {
   }
 
   process.exit(1);
+});
+
+/**
+ * Unhandled promise rejection handler.
+ *
+ * Node 15+ terminates the process by default when a promise rejection is
+ * unhandled. MCP OAuth reconnect storms and streamable-HTTP transport resets
+ * can produce transient fire-and-forget rejections (ECONNRESET, token refresh
+ * races) that are recoverable — the server should log and keep serving other
+ * requests rather than silently crash under load.
+ *
+ * Non-Error reasons are forwarded as-is so structured payloads (e.g.
+ * `{ code: "ECONNRESET", errno: -104 }`) survive instead of being collapsed to
+ * "[object Object]" by `String()`.
+ */
+process.on('unhandledRejection', (reason) => {
+  if (reason instanceof Error) {
+    logger.error('Unhandled promise rejection. The app will continue running.', {
+      name: reason.name,
+      message: reason.message,
+      stack: reason.stack,
+      cause: reason.cause,
+    });
+    return;
+  }
+  logger.error('Unhandled promise rejection. The app will continue running.', { reason });
 });

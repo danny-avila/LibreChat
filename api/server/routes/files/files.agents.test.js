@@ -333,7 +333,7 @@ describe('File Routes - Agent Files Endpoint', () => {
       expect(response.body).toHaveLength(2);
     });
 
-    it('should return files uploaded by other users to shared agent for author', async () => {
+    it('should not return files owned by other users through agent file references', async () => {
       const anotherUserId = new mongoose.Types.ObjectId();
       const otherUserFileId = uuidv4();
 
@@ -380,9 +380,9 @@ describe('File Routes - Agent Files Endpoint', () => {
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
-      expect(response.body).toHaveLength(2);
+      expect(response.body).toHaveLength(1);
       expect(response.body.map((f) => f.file_id)).toContain(fileId1);
-      expect(response.body.map((f) => f.file_id)).toContain(otherUserFileId);
+      expect(response.body.map((f) => f.file_id)).not.toContain(otherUserFileId);
     });
   });
 

@@ -1,5 +1,5 @@
+import type { TConversation, TEndpointOption } from 'librechat-data-provider';
 import type { IUser, AppConfig } from '@librechat/data-schemas';
-import type { TEndpointOption } from 'librechat-data-provider';
 import type { Request } from 'express';
 
 /**
@@ -21,4 +21,8 @@ export type RequestBody = {
 export type ServerRequest = Request<unknown, unknown, RequestBody> & {
   user?: IUser;
   config?: AppConfig;
+  /** Server-captured conversation creation time used to anchor dynamic prompt variables. */
+  conversationCreatedAt?: string;
+  /** Conversation loaded while resolving the prompt timestamp anchor, reused by save logic. */
+  resolvedConversation?: Partial<TConversation> | null;
 };

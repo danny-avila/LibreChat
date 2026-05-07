@@ -7,8 +7,19 @@ import type { TUser, TConversation } from '../src/types';
 
 // Mock dayjs module with consistent date/time values regardless of environment
 jest.mock('dayjs', () => {
-  const mockDayjs = () => ({
+  const mockDayjs = (input?: unknown) => ({
     format: (format: string) => {
+      if (input === '2023-12-31T23:59:58.000Z') {
+        if (format === 'YYYY-MM-DD') {
+          return '2023-12-31';
+        }
+        if (format === 'YYYY-MM-DD HH:mm:ss Z') {
+          return '2023-12-31 23:59:58 +00:00';
+        }
+        if (format === 'dddd') {
+          return 'Sunday';
+        }
+      }
       if (format === 'YYYY-MM-DD') {
         return '2024-04-29';
       }
@@ -22,7 +33,10 @@ jest.mock('dayjs', () => {
         `Unhandled dayjs().format() call in mock: "${format}". Update the mock in parsers.spec.ts`,
       );
     },
-    toISOString: () => '2024-04-29T16:34:56.000Z',
+    toISOString: () =>
+      input === '2023-12-31T23:59:58.000Z'
+        ? '2023-12-31T23:59:58.000Z'
+        : '2024-04-29T16:34:56.000Z',
   });
 
   mockDayjs.extend = jest.fn();
@@ -60,6 +74,25 @@ describe('replaceSpecialVars', () => {
   test('should replace {{iso_datetime}} with the ISO datetime', () => {
     const result = replaceSpecialVars({ text: 'ISO time: {{iso_datetime}}' });
     expect(result).toBe('ISO time: 2024-04-29T16:34:56.000Z');
+  });
+
+  test('should use supplied anchor time for date variables', () => {
+    const result = replaceSpecialVars({
+      text: '{{current_date}} | {{current_datetime}} | {{iso_datetime}}',
+      now: '2023-12-31T23:59:58.000Z',
+    });
+    expect(result).toBe(
+      '2023-12-31 (Sunday) | 2023-12-31 23:59:58 +00:00 (Sunday) | 2023-12-31T23:59:58.000Z',
+    );
+  });
+
+  test('should replace special variables with surrounding whitespace', () => {
+    const result = replaceSpecialVars({
+      text: '{{ current_date }} | {{ current_user }}',
+      user: mockUser,
+    });
+
+    expect(result).toBe('2024-04-29 (Monday) | Test User');
   });
 
   test('should replace {{current_user}} with the user name if provided', () => {

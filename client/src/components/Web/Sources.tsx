@@ -16,7 +16,7 @@ import {
 import type { ValidSource, ImageResult } from 'librechat-data-provider';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import SourcesErrorBoundary from './SourcesErrorBoundary';
-import { useFileDownload } from '~/data-provider';
+import { revokeDownloadURL, useFileDownload } from '~/data-provider';
 import { useSearchContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -212,7 +212,9 @@ const FileItem = React.memo(function FileItem({
   const user = useRecoilValue(store.user);
   const { showToast } = useToastContext();
 
-  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file.file_id);
+  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file.file_id, {
+    source: file.source,
+  });
 
   // Extract error message logic to avoid duplication
   const getErrorMessage = useCallback(
@@ -261,7 +263,7 @@ const FileItem = React.memo(function FileItem({
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        window.URL.revokeObjectURL(stream.data);
+        revokeDownloadURL(stream.data);
       } catch (error) {
         console.error('Error downloading file:', error);
       }

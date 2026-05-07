@@ -20,6 +20,7 @@ jest.mock('~/endpoints/models', () => ({
 
 jest.mock('~/cache', () => ({
   standardCache: jest.fn(() => ({ get: jest.fn().mockResolvedValue(null) })),
+  tokenConfigCache: jest.fn(() => ({ get: jest.fn().mockResolvedValue(null) })),
 }));
 
 jest.mock('~/utils', () => ({
@@ -178,6 +179,7 @@ describe('initializeCustom – SSRF guard wiring', () => {
     expect(mockValidateEndpointURL).toHaveBeenCalledWith(
       'https://user-api.example.com/v1',
       'test-custom',
+      undefined,
     );
   });
 
