@@ -22,21 +22,24 @@ export interface CodeFilesAgent {
  * after the first call returns one, so primed files were silently dropped.
  *
  * Files from `primeFiles` (api/server/services/Files/Code/process.js) carry
- * per-file `session_id`s. The map's representative `session_id` is taken from
- * the first incoming file (matching `primeInvokedSkills`); per-file ids on the
- * `files` array are what `ToolNode` actually uses (`file.session_id ?? codeSession.session_id`).
+ * per-file `storage_session_id`s (the long-lived storage bucket id). The
+ * map's representative top-level `session_id` is seeded from the first
+ * incoming file's `storage_session_id` (matching `primeInvokedSkills`),
+ * since no execution session exists yet at seed time. Per-file ids on the
+ * `files` array are what `ToolNode` actually uses
+ * (`file.storage_session_id ?? execSessionId`).
  *
  * When an entry already exists (e.g. seeded by `primeInvokedSkills` for skill
  * files), incoming files are appended after the existing ones. The pre-existing
  * representative `session_id` is preserved so a partial-cache/fresh-prime
  * collision doesn't shift which session id `ToolNode` picks for the call.
  *
- * Files are deduplicated by `session_id + id` as the stable identity key.
- * Multiple agents in the same run commonly carry the same primed
- * code-execution resources (shared conversation files), and without dedupe
- * `_injected_files` would grow proportionally to agent count and inflate
- * every `/exec` POST. First-seen wins so the original ordering / source
- * is preserved.
+ * Files are deduplicated by `storage_session_id + id` as the stable
+ * identity key. Multiple agents in the same run commonly carry the same
+ * primed code-execution resources (shared conversation files), and without
+ * dedupe `_injected_files` would grow proportionally to agent count and
+ * inflate every `/exec` POST. First-seen wins so the original ordering /
+ * source is preserved.
  */
 export function seedCodeFilesIntoSessions(
   files: CodeEnvFile[] | undefined,
@@ -50,15 +53,15 @@ export function seedCodeFilesIntoSessions(
   const prior = sessions.get(Constants.EXECUTE_CODE) as CodeSessionContext | undefined;
 
   /**
-   * Compose `(session_id, id)` as a stable identity. `name` alone isn't
-   * sufficient — two distinct primed uploads can share a filename
-   * (different sessions, different file_ids). The composite stays
+   * Compose `(storage_session_id, id)` as a stable identity. `name` alone
+   * isn't sufficient — two distinct primed uploads can share a filename
+   * (different storage sessions, different file_ids). The composite stays
    * cheap to compute and the keys are short uuids.
    */
   const seenKeys = new Set<string>();
   const mergedFiles: FileRefs = [];
-  const pushIfFresh = (f: { id?: string; session_id?: string; name?: string }): void => {
-    const key = `${f.session_id ?? ''}\0${f.id ?? ''}`;
+  const pushIfFresh = (f: { id?: string; storage_session_id?: string; name?: string }): void => {
+    const key = `${f.storage_session_id ?? ''}\0${f.id ?? ''}`;
     if (seenKeys.has(key)) return;
     seenKeys.add(key);
     mergedFiles.push(f as FileRefs[number]);
@@ -68,7 +71,14 @@ export function seedCodeFilesIntoSessions(
   }
   for (const f of files) pushIfFresh(f);
 
-  const representativeSessionId = prior?.session_id ?? files[0].session_id;
+  /* Representative top-level `session_id` for the seed CodeSessionContext.
+   * No execution session exists yet at seed time, so the first incoming
+   * file's `storage_session_id` stands in until the first `/exec` call
+   * returns a real execution session id. ToolNode reads per-file
+   * `storage_session_id` for actual injection — the representative is
+   * informational rather than load-bearing. Mirrors the same convention
+   * used in `primeInvokedSkills`. */
+  const representativeSessionId = prior?.session_id ?? files[0].storage_session_id;
   if (!representativeSessionId) {
     return existing;
   }
