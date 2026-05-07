@@ -1,6 +1,8 @@
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
+  isPermissiveMimeConfig,
+  convertStringsToRegex,
   documentParserMimeTypes,
   getEndpointFileConfig,
   applicationMimeTypes,
@@ -15,6 +17,10 @@ import { EModelEndpoint } from './schemas';
 describe('inferMimeType', () => {
   it('should normalize text/x-python-script to text/x-python', () => {
     expect(inferMimeType('test.py', 'text/x-python-script')).toBe('text/x-python');
+  });
+
+  it('should normalize text/x-markdown to text/markdown', () => {
+    expect(inferMimeType('test.md', 'text/x-markdown')).toBe('text/markdown');
   });
 
   it('should return a type that matches textMimeTypes after normalization', () => {
@@ -43,8 +49,17 @@ describe('inferMimeType', () => {
     expect(baseFileConfig.checkType(normalized)).toBe(true);
   });
 
+  it('should produce a type accepted by checkType after normalizing text/x-markdown', () => {
+    const normalized = inferMimeType('test.md', 'text/x-markdown');
+    expect(baseFileConfig.checkType(normalized)).toBe(true);
+  });
+
   it('should reject raw text/x-python-script without normalization', () => {
     expect(baseFileConfig.checkType('text/x-python-script')).toBe(false);
+  });
+
+  it('should reject raw text/x-markdown without normalization', () => {
+    expect(baseFileConfig.checkType('text/x-markdown')).toBe(false);
   });
 });
 
@@ -1244,5 +1259,64 @@ describe('getEndpointFileConfig', () => {
       expect(result.totalSizeLimit).toBe(0);
       expect(result.supportedMimeTypes).toEqual([]);
     });
+  });
+});
+
+describe('isPermissiveMimeConfig', () => {
+  it('returns true for wildcard .* pattern', () => {
+    expect(isPermissiveMimeConfig([/.*/])).toBe(true);
+  });
+
+  it('returns true for .+ pattern', () => {
+    expect(isPermissiveMimeConfig([/.+/])).toBe(true);
+  });
+
+  it('returns true for anchored ^.*$ pattern', () => {
+    expect(isPermissiveMimeConfig([/^.*$/])).toBe(true);
+  });
+
+  it('returns true for anchored ^.+$ pattern', () => {
+    expect(isPermissiveMimeConfig([/^.+$/])).toBe(true);
+  });
+
+  it('returns true when at least one pattern is permissive', () => {
+    expect(isPermissiveMimeConfig([/^image\/.*$/, /.*/])).toBe(true);
+  });
+
+  it('returns false for image-only patterns', () => {
+    expect(isPermissiveMimeConfig([/^image\/(jpeg|png)$/])).toBe(false);
+  });
+
+  it('returns false for category patterns', () => {
+    expect(isPermissiveMimeConfig([/^image\/.*$/, /^text\/.*$/])).toBe(false);
+  });
+
+  it('returns false for specific MIME type patterns', () => {
+    expect(isPermissiveMimeConfig([/^application\/pdf$/])).toBe(false);
+  });
+
+  it('returns false for broad application category pattern', () => {
+    expect(isPermissiveMimeConfig([/^application\/.*$/])).toBe(false);
+  });
+
+  it('returns false for multi-category pattern', () => {
+    expect(isPermissiveMimeConfig([/^(application|text)\/.*$/])).toBe(false);
+  });
+
+  it('returns false for default supportedMimeTypes', () => {
+    expect(isPermissiveMimeConfig(supportedMimeTypes)).toBe(false);
+  });
+
+  it('returns false for undefined', () => {
+    expect(isPermissiveMimeConfig(undefined)).toBe(false);
+  });
+
+  it('returns false for empty array', () => {
+    expect(isPermissiveMimeConfig([])).toBe(false);
+  });
+
+  it('returns true for regex produced by convertStringsToRegex with .*', () => {
+    const converted = convertStringsToRegex(['.*']);
+    expect(isPermissiveMimeConfig(converted)).toBe(true);
   });
 });

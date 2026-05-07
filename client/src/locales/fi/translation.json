@@ -133,7 +133,6 @@
   "com_citation_source": "Lähde",
   "com_click_to_download": "(lataa napauttamalla tästä)",
   "com_download_expired": "(lataus on vanhentunut)",
-  "com_download_expires": "(lataa napauttamalla tätä - vanhenee {{0}})",
   "com_endpoint": "Päätepiste",
   "com_endpoint_agent": "Agentti",
   "com_endpoint_agent_placeholder": "Valitse agentti",

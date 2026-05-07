@@ -202,6 +202,20 @@ export interface MCPAuthValuesResponse {
   authValueFlags: Record<string, boolean>;
 }
 
+/**
+ * User Favorites — pinned agents, models, and model specs.
+ * Exactly one variant should be set per entry; exclusivity is enforced
+ * server-side in FavoritesController. Shape is loose for state-update ergonomics.
+ */
+export type TUserFavorite = {
+  agentId?: string;
+  model?: string;
+  endpoint?: string;
+  spec?: string;
+  /** Phase 2 — skill favoriting isn't persisted yet, but the shape is reserved. */
+  skillId?: string;
+};
+
 /* SharePoint Graph API Token */
 export type GraphTokenParams = {
   scopes: string;

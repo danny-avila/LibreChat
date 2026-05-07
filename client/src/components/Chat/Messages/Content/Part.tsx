@@ -8,7 +8,19 @@ import {
   isImageVisionTool,
 } from 'librechat-data-provider';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
-import { ImageGen, ExecuteCode, AgentUpdate, EmptyText, Reasoning, Summary, Text } from './Parts';
+import {
+  ImageGen,
+  ExecuteCode,
+  AgentUpdate,
+  EmptyText,
+  Reasoning,
+  Summary,
+  Text,
+  SkillCall,
+  ReadFileCall,
+  BashCall,
+  SubagentCall,
+} from './Parts';
 import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
 import { getCachedPreview } from '~/utils';
@@ -145,6 +157,59 @@ const Part = memo(function Part({
           toolName={toolCall.name}
           args={typeof toolCall.args === 'string' ? toolCall.args : ''}
           output={toolCall.output ?? ''}
+          attachments={attachments}
+        />
+      );
+    } else if (isToolCall && toolCall.name === 'skill') {
+      return (
+        <SkillCall
+          args={toolCall.args}
+          output={toolCall.output ?? ''}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          attachments={attachments}
+        />
+      );
+    } else if (isToolCall && toolCall.name === Constants.SUBAGENT) {
+      /** `subagent_content` is the aggregated content-parts array the
+       *  backend writes onto the tool_call at message-save time so the
+       *  child's activity survives a page refresh. Not present on older
+       *  runs recorded before the persistence path existed — those fall
+       *  back to the Recoil atom (live session) or the raw tool output
+       *  inside `SubagentCall`. */
+      const persistedContent = (
+        toolCall as unknown as {
+          subagent_content?: TMessageContentParts[];
+        }
+      ).subagent_content;
+      return (
+        <SubagentCall
+          toolCallId={toolCall.id ?? ''}
+          args={toolCall.args}
+          output={toolCall.output ?? ''}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          attachments={attachments}
+          persistedContent={persistedContent}
+        />
+      );
+    } else if (isToolCall && toolCall.name === 'read_file') {
+      return (
+        <ReadFileCall
+          args={toolCall.args}
+          output={toolCall.output ?? ''}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          attachments={attachments}
+        />
+      );
+    } else if (isToolCall && toolCall.name === 'bash_tool') {
+      return (
+        <BashCall
+          args={toolCall.args}
+          output={toolCall.output ?? ''}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
           attachments={attachments}
         />
       );

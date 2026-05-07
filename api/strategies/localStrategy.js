@@ -18,7 +18,7 @@ async function passportLogin(req, email, password, done) {
   try {
     const validationError = await validateLoginRequest(req);
     if (validationError) {
-      logError('Passport Local Strategy - Validation Error', { reqBody: req.body });
+      logError('Passport Local Strategy - Validation Error', { email: req.body?.email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
       return done(null, false, { message: validationError });
     }

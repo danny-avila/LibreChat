@@ -124,6 +124,28 @@ export function buildOAuthToolCallName(serverName: string): string {
   return `${oauthPrefix}${normalizeServerName(serverName)}`;
 }
 
+const INVALID_CLIENT_PATTERNS = [
+  'invalid_client',
+  'client_id mismatch',
+  'client not found',
+  'unknown client',
+] as const;
+
+/** Checks whether a message indicates the stored client registration is invalid/stale. */
+export function isInvalidClientMessage(message: string): boolean {
+  const msg = message.toLowerCase();
+  return INVALID_CLIENT_PATTERNS.some((p) => msg.includes(p));
+}
+
+/**
+ * Checks whether a message indicates the OAuth client registration was rejected.
+ * Superset of `isInvalidClientMessage`: also matches `unauthorized_client`
+ * (grant-type refusal), which has different recovery semantics.
+ */
+export function isClientRejectionMessage(message: string): boolean {
+  return isInvalidClientMessage(message) || message.toLowerCase().includes('unauthorized_client');
+}
+
 /**
  * Sanitizes a URL by removing query parameters to prevent credential leakage in logs.
  * @param url - The URL to sanitize (string or URL object)

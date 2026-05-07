@@ -57,6 +57,8 @@ const openAIModels = {
   'gpt-5.3': 400000,
   'gpt-5.4': 272000, // standard context; 1M experimental available via API opt-in (2x rate)
   'gpt-5.4-pro': 272000, // same window as gpt-5.4
+  'gpt-5.5': 1050000,
+  'gpt-5.5-pro': 1050000,
   'gpt-5-mini': 400000,
   'gpt-5-nano': 400000,
   'gpt-5-pro': 400000,
@@ -138,9 +140,11 @@ const anthropicModels = {
   'claude-haiku-4-5': 200000,
   'claude-opus-4': 200000,
   'claude-opus-4-5': 200000,
-  'claude-sonnet-4': 1000000,
+  'claude-sonnet-4': 200000,
+  'claude-sonnet-4-5': 200000,
   'claude-sonnet-4-6': 1000000,
   'claude-opus-4-6': 1000000,
+  'claude-opus-4-7': 1000000,
 };
 
 const deepseekModels = {
@@ -366,6 +370,8 @@ export const modelMaxOutputs = {
   'gpt-5.3': 128000,
   'gpt-5.4': 128000,
   'gpt-5.4-pro': 128000,
+  'gpt-5.5': 128000,
+  'gpt-5.5-pro': 128000,
   'gpt-5-mini': 128000,
   'gpt-5-nano': 128000,
   'gpt-5-pro': 128000,
@@ -386,6 +392,7 @@ const anthropicMaxOutputs = {
   'claude-opus-4': 32000,
   'claude-opus-4-5': 64000,
   'claude-opus-4-6': 128000,
+  'claude-opus-4-7': 128000,
   'claude-3.5-sonnet': 8192,
   'claude-3-5-sonnet': 8192,
   'claude-3.7-sonnet': 128000,

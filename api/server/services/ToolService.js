@@ -1,11 +1,11 @@
 const { logger } = require('@librechat/data-schemas');
-const { tool: toolFn, DynamicStructuredTool } = require('@langchain/core/tools');
+const { tool: toolFn, DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 const {
   sleep,
-  EnvVar,
   StepTypes,
   GraphEvents,
   createToolSearch,
+  createBashExecutionTool,
   Constants: AgentConstants,
   createProgrammaticToolCallingTool,
 } = require('@librechat/agents');
@@ -20,9 +20,10 @@ const {
   isActionDomainAllowed,
   buildWebSearchContext,
   buildImageToolContext,
-  buildToolClassification,
   buildOAuthToolCallName,
   MCPToolCallValidationHandler,
+  buildToolClassification,
+  buildWebSearchDynamicContext,
 } = require('@librechat/api');
 const {
   Time,
@@ -62,7 +63,6 @@ const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileS
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
-const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { resolveConfigServers } = require('~/server/services/MCP');
 const { recordUsage } = require('~/server/services/Threads');
@@ -73,6 +73,83 @@ const { getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
+
+/**
+ * Collapse every `actionDomainSeparator` sequence in the encoded-domain
+ * suffix of a fully-qualified action tool name to an underscore. Agents
+ * can store tool names in the raw `domainParser(..., true)` output,
+ * which for short hostnames is a `---`-separated string (e.g.
+ * `medium---com`). The lookup maps below are always keyed with the
+ * `_`-collapsed domain, so every read must normalize that suffix or
+ * short-hostname tools silently fail to resolve.
+ *
+ * The operationId portion (everything before the last `actionDelimiter`)
+ * is deliberately left untouched: `openapiToFunction` preserves hyphens
+ * in generated operationIds, so two specs can legitimately produce
+ * operationIds that differ only in hyphens-vs-underscores (e.g.
+ * `get_foo---bar` vs `get_foo_bar`). Collapsing the operationId would
+ * merge those into a single map slot and silently drop one tool.
+ */
+const normalizeActionToolName = (toolName) => {
+  const delimiterIndex = toolName.lastIndexOf(actionDelimiter);
+  if (delimiterIndex === -1) {
+    return toolName;
+  }
+  const prefixEnd = delimiterIndex + actionDelimiter.length;
+  const encodedDomain = toolName.slice(prefixEnd);
+  return toolName.slice(0, prefixEnd) + encodedDomain.replace(domainSeparatorRegex, '_');
+};
+
+/**
+ * Populate a `toolToAction` map with one slot per fully-qualified tool
+ * name (`<operationId><actionDelimiter><encoded-domain>`). Both the new
+ * and the legacy encodings of the domain are registered for every
+ * function so agents whose stored tool names predate the current
+ * encoding still resolve correctly.
+ *
+ * Indexing on the full tool name instead of the encoded domain alone is
+ * what makes multi-action agents work when two actions share a hostname:
+ * the operationId disambiguates them, so neither overwrites the other.
+ *
+ * Two actions that additionally share the same operationId still
+ * collide (nothing in the key distinguishes them). That case is
+ * pathological — `sanitizeOperationId` plus OpenAPI's own uniqueness
+ * requirement make it very unlikely — but when it does happen we log
+ * a warning so the silent-overwrite mode from the original bug cannot
+ * reappear under a different disguise.
+ */
+const registerActionTools = ({
+  toolToAction,
+  functionSignatures,
+  normalizedDomain,
+  legacyNormalized,
+  makeEntry,
+}) => {
+  const setKey = (key, entry) => {
+    if (toolToAction.has(key)) {
+      logger.warn(
+        `[Actions] operationId collision: "${key}" already registered; ` +
+          `action "${entry.action?.action_id}" overwrites the previous entry. ` +
+          `Two actions share both the operationId and the encoded hostname.`,
+      );
+    }
+    toolToAction.set(key, entry);
+  };
+
+  for (const sig of functionSignatures) {
+    const entry = makeEntry(sig);
+    // Use `sig.name` verbatim: `openapiToFunction` keeps hyphens in
+    // generated operationIds, so `get_foo---bar` and `get_foo_bar` are
+    // distinct operations on the same spec. `normalizeActionToolName`
+    // only touches the encoded-domain suffix at lookup time, so map
+    // keys and lookups stay consistent without merging distinct
+    // operationIds into the same slot.
+    setKey(`${sig.name}${actionDelimiter}${normalizedDomain}`, entry);
+    if (legacyNormalized !== normalizedDomain) {
+      setKey(`${sig.name}${actionDelimiter}${legacyNormalized}`, entry);
+    }
+  }
+};
 
 /**
  * Resolves the set of enabled agent capabilities from endpoints config,
@@ -274,23 +351,19 @@ async function processRequiredActions(client, requiredActions) {
             assistant_id: client.req.body.assistant_id,
           })) ?? [];
 
-        // Process all action sets once
-        // Map domains to their processed action sets
-        const processedDomains = new Map();
-        const domainLookupMap = new Map();
+        // See registerActionTools for the key-shape rationale.
+        const toolToAction = new Map();
 
         for (const action of actionSets) {
           const domain = await domainParser(action.metadata.domain, true);
-          domainLookupMap.set(domain, domain);
-
+          const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
           const legacyDomain = legacyDomainEncode(action.metadata.domain);
-          if (legacyDomain !== domain) {
-            domainLookupMap.set(legacyDomain, domain);
-          }
+          const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
 
           const isDomainAllowed = await isActionDomainAllowed(
             action.metadata.domain,
             appConfig?.actions?.allowedDomains,
+            appConfig?.actions?.allowedAddresses,
           );
           if (!isDomainAllowed) {
             continue;
@@ -319,7 +392,7 @@ async function processRequiredActions(client, requiredActions) {
           }
 
           // Process the OpenAPI spec
-          const { requestBuilders } = openapiToFunction(validationResult.spec);
+          const { requestBuilders, functionSignatures } = openapiToFunction(validationResult.spec);
 
           // Store encrypted values for OAuth flow
           const encrypted = {
@@ -331,45 +404,35 @@ async function processRequiredActions(client, requiredActions) {
           const decryptedAction = { ...action };
           decryptedAction.metadata = await decryptMetadata(action.metadata);
 
-          processedDomains.set(domain, {
-            action: decryptedAction,
-            requestBuilders,
-            encrypted,
+          registerActionTools({
+            toolToAction,
+            functionSignatures,
+            normalizedDomain,
+            legacyNormalized,
+            makeEntry: (sig) => ({
+              action: decryptedAction,
+              requestBuilder: requestBuilders[sig.name],
+              encrypted,
+            }),
           });
 
           // Store builders for reuse
           ActionBuildersMap[action.metadata.domain] = requestBuilders;
         }
 
-        actionSetsData = { domainLookupMap, processedDomains };
+        actionSetsData = toolToAction;
       }
 
-      let currentDomain = '';
-      let matchedKey = '';
-      for (const [key, canonical] of actionSetsData.domainLookupMap.entries()) {
-        if (currentAction.tool.includes(key)) {
-          currentDomain = canonical;
-          matchedKey = key;
-          break;
-        }
-      }
-
-      if (!currentDomain || !actionSetsData.processedDomains.has(currentDomain)) {
+      const entry = actionSetsData.get(normalizeActionToolName(currentAction.tool));
+      if (!entry) {
         continue;
       }
 
-      const { action, requestBuilders, encrypted } =
-        actionSetsData.processedDomains.get(currentDomain);
-      const functionName = currentAction.tool.replace(`${actionDelimiter}${matchedKey}`, '');
-      const requestBuilder = requestBuilders[functionName];
-
-      if (!requestBuilder) {
-        // throw new Error(`Tool ${currentAction.tool} not found.`);
-        continue;
-      }
+      const { action, requestBuilder, encrypted } = entry;
 
       // We've already decrypted the metadata, so we can pass it directly
       const _allowedDomains = appConfig?.actions?.allowedDomains;
+      const _allowedAddresses = appConfig?.actions?.allowedAddresses;
       tool = await createActionTool({
         userId: client.req.user.id,
         res: client.res,
@@ -378,6 +441,7 @@ async function processRequiredActions(client, requiredActions) {
         // Note: intentionally not passing zodSchema, name, and description for assistants API
         encrypted, // Pass the encrypted values for OAuth flow
         useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
+        allowedAddresses: _allowedAddresses,
       });
       if (!tool) {
         logger.warn(
@@ -432,6 +496,7 @@ async function processRequiredActions(client, requiredActions) {
  * @returns {Promise<{
  *   tools?: StructuredTool[];
  *   toolContextMap?: Record<string, unknown>;
+ *   dynamicToolContextMap?: Record<string, unknown>;
  *   userMCPAuthMap?: Record<string, Record<string, string>>;
  *   toolRegistry?: Map<string, import('~/utils/toolClassification').LCTool>;
  *   hasDeferredTools?: boolean;
@@ -600,6 +665,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const definitions = [];
     const allowedDomains = appConfig?.actions?.allowedDomains;
+    const allowedAddresses = appConfig?.actions?.allowedAddresses;
     const normalizedToolNames = new Set(
       actionToolNames.map((n) => n.replace(domainSeparatorRegex, '_')),
     );
@@ -611,7 +677,11 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       const legacyDomain = legacyDomainEncode(action.metadata.domain);
       const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
 
-      const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
+      const isDomainAllowed = await isActionDomainAllowed(
+        action.metadata.domain,
+        allowedDomains,
+        allowedAddresses,
+      );
       if (!isDomainAllowed) {
         logger.warn(
           `[Actions] Domain "${action.metadata.domain}" not in allowedDomains. ` +
@@ -656,7 +726,6 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     },
     {
       isBuiltInTool,
-      loadAuthValues,
       getOrFetchMCPServerTools,
       getActionToolDefinitions,
     },
@@ -711,7 +780,6 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         },
         {
           isBuiltInTool,
-          loadAuthValues,
           getOrFetchMCPServerTools,
           getActionToolDefinitions,
         },
@@ -724,30 +792,39 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
+  /** @type {Record<string, string>} */
+  const dynamicToolContextMap = {};
   const hasWebSearch = filteredTools.includes(Tools.web_search);
   const hasFileSearch = filteredTools.includes(Tools.file_search);
   const hasExecuteCode = filteredTools.includes(Tools.execute_code);
 
   if (hasWebSearch) {
     toolContextMap[Tools.web_search] = buildWebSearchContext();
+    dynamicToolContextMap[Tools.web_search] = buildWebSearchDynamicContext(
+      req.conversationCreatedAt,
+    );
   }
 
+  /**
+   * `files` carry the upload session_ids; we surface them so client.js can
+   * seed `Graph.sessions[EXECUTE_CODE]` before run start. Without that seed,
+   * the agents-side `ToolNode.getCodeSessionContext` returns undefined on
+   * call #1, `_injected_files` is never set on the tool call, and the
+   * sandbox can't see the prior turn's generated artifacts on first read.
+   */
+  let primedCodeFiles;
   if (hasExecuteCode && tool_resources) {
     try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: [EnvVar.CODE_API_KEY],
+      const { toolContext, files } = await primeCodeFiles({
+        req,
+        tool_resources,
+        agentId: agent.id,
       });
-      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-
-      if (codeApiKey) {
-        const { toolContext } = await primeCodeFiles(
-          { req, tool_resources, agentId: agent.id },
-          codeApiKey,
-        );
-        if (toolContext) {
-          toolContextMap[Tools.execute_code] = toolContext;
-        }
+      if (toolContext) {
+        dynamicToolContextMap[Tools.execute_code] = toolContext;
+      }
+      if (files?.length) {
+        primedCodeFiles = files;
       }
     } catch (error) {
       logger.error('[loadToolDefinitionsWrapper] Error priming code files:', error);
@@ -762,7 +839,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         agentId: agent.id,
       });
       if (toolContext) {
-        toolContextMap[Tools.file_search] = toolContext;
+        dynamicToolContextMap[Tools.file_search] = toolContext;
       }
     } catch (error) {
       logger.error('[loadToolDefinitionsWrapper] Error priming search files:', error);
@@ -781,7 +858,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         contextDescription: 'image editing',
       });
       if (toolContext) {
-        toolContextMap.image_edit_oai = toolContext;
+        dynamicToolContextMap.image_edit_oai = toolContext;
       }
     }
 
@@ -792,7 +869,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         contextDescription: 'image context',
       });
       if (toolContext) {
-        toolContextMap.gemini_image_gen = toolContext;
+        dynamicToolContextMap.gemini_image_gen = toolContext;
       }
     }
   }
@@ -801,9 +878,11 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     toolRegistry,
     userMCPAuthMap,
     toolContextMap,
+    dynamicToolContextMap,
     toolDefinitions,
     hasDeferredTools,
     actionsEnabled,
+    primedCodeFiles,
   };
 }
 
@@ -993,7 +1072,7 @@ async function loadAgentTools({
     });
   }
 
-  const { loadedTools, toolContextMap } = await loadTools({
+  const { loadedTools, toolContextMap, dynamicToolContextMap, primedCodeFiles } = await loadTools({
     agent,
     signal,
     userMCPAuthMap,
@@ -1024,7 +1103,6 @@ async function loadAgentTools({
       agentId: agent.id,
       agentToolOptions: agent.tool_options,
       deferredToolsEnabled,
-      loadAuthValues,
     });
 
   const toolApprovalConfig = appConfig.endpoints?.[EModelEndpoint.agents]?.toolApproval;
@@ -1086,10 +1164,12 @@ async function loadAgentTools({
       toolRegistry,
       userMCPAuthMap,
       toolContextMap,
+      dynamicToolContextMap,
       toolDefinitions,
       hasDeferredTools,
       actionsEnabled,
       tools: agentTools,
+      primedCodeFiles,
     };
   }
 
@@ -1102,27 +1182,28 @@ async function loadAgentTools({
       toolRegistry,
       userMCPAuthMap,
       toolContextMap,
+      dynamicToolContextMap,
       toolDefinitions,
       hasDeferredTools,
       actionsEnabled,
       tools: agentTools,
+      primedCodeFiles,
     };
   }
 
-  const processedActionSets = new Map();
-  const domainLookupMap = new Map();
+  // See registerActionTools for the key-shape rationale.
+  const toolToAction = new Map();
 
   for (const action of actionSets) {
     const domain = await domainParser(action.metadata.domain, true);
-    domainLookupMap.set(domain, domain);
-
+    const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
     const legacyDomain = legacyDomainEncode(action.metadata.domain);
-    if (legacyDomain !== domain) {
-      domainLookupMap.set(legacyDomain, domain);
-    }
+    const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
+
     const isDomainAllowed = await isActionDomainAllowed(
       action.metadata.domain,
       appConfig?.actions?.allowedDomains,
+      appConfig?.actions?.allowedAddresses,
     );
     if (!isDomainAllowed) {
       continue;
@@ -1164,12 +1245,18 @@ async function loadAgentTools({
       true,
     );
 
-    processedActionSets.set(domain, {
-      action: decryptedAction,
-      requestBuilders,
+    registerActionTools({
+      toolToAction,
       functionSignatures,
-      zodSchemas,
-      encrypted,
+      normalizedDomain,
+      legacyNormalized,
+      makeEntry: (sig) => ({
+        action: decryptedAction,
+        requestBuilder: requestBuilders[sig.name],
+        zodSchema: zodSchemas[sig.name],
+        functionSignature: sig,
+        encrypted,
+      }),
     });
   }
 
@@ -1181,52 +1268,37 @@ async function loadAgentTools({
       continue;
     }
 
-    let currentDomain = '';
-    let matchedKey = '';
-    for (const [key, canonical] of domainLookupMap.entries()) {
-      if (toolName.includes(key)) {
-        currentDomain = canonical;
-        matchedKey = key;
-        break;
-      }
-    }
-
-    if (!currentDomain || !processedActionSets.has(currentDomain)) {
+    const entry = toolToAction.get(normalizeActionToolName(toolName));
+    if (!entry) {
       continue;
     }
 
-    const { action, encrypted, zodSchemas, requestBuilders, functionSignatures } =
-      processedActionSets.get(currentDomain);
-    const functionName = toolName.replace(`${actionDelimiter}${matchedKey}`, '');
-    const functionSig = functionSignatures.find((sig) => sig.name === functionName);
-    const requestBuilder = requestBuilders[functionName];
-    const zodSchema = zodSchemas[functionName];
+    const { action, encrypted, zodSchema, requestBuilder, functionSignature } = entry;
+    const _allowedDomains = appConfig?.actions?.allowedDomains;
+    const _allowedAddresses = appConfig?.actions?.allowedAddresses;
+    const tool = await createActionTool({
+      userId: req.user.id,
+      res,
+      action,
+      requestBuilder,
+      zodSchema,
+      encrypted,
+      name: toolName,
+      description: functionSignature.description,
+      streamId,
+      useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
+      allowedAddresses: _allowedAddresses,
+    });
 
-    if (requestBuilder) {
-      const _allowedDomains = appConfig?.actions?.allowedDomains;
-      const tool = await createActionTool({
-        userId: req.user.id,
-        res,
-        action,
-        requestBuilder,
-        zodSchema,
-        encrypted,
-        name: toolName,
-        description: functionSig.description,
-        streamId,
-        useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
-      });
-
-      if (!tool) {
-        logger.warn(
-          `Invalid action: user: ${req.user.id} | agent_id: ${agent.id} | toolName: ${toolName}`,
-        );
-        throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
-      }
-
-      agentTools.push(tool);
-      ActionToolMap[toolName] = tool;
+    if (!tool) {
+      logger.warn(
+        `Invalid action: user: ${req.user.id} | agent_id: ${agent.id} | toolName: ${toolName}`,
+      );
+      throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
     }
+
+    agentTools.push(tool);
+    ActionToolMap[toolName] = tool;
   }
 
   if (_agentTools.length > 0 && agentTools.length === 0) {
@@ -1237,11 +1309,13 @@ async function loadAgentTools({
   return {
     toolRegistry,
     toolContextMap,
+    dynamicToolContextMap,
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
     actionsEnabled,
     tools: agentTools,
+    primedCodeFiles,
   };
 }
 
@@ -1305,26 +1379,33 @@ async function loadToolsForExecution({
   if (isPTC && toolRegistry) {
     configurable.toolRegistry = toolRegistry;
     try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: [EnvVar.CODE_API_KEY],
-      });
-      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-
-      if (codeApiKey) {
-        const ptcTool = createProgrammaticToolCallingTool({ apiKey: codeApiKey });
-        allLoadedTools.push(ptcTool);
-      } else {
-        logger.warn('[loadToolsForExecution] PTC requested but CODE_API_KEY not available');
-      }
+      /**
+       * PTC auth is handled by the agents library / sandbox service
+       * directly; LibreChat no longer threads a per-run credential.
+       */
+      const ptcTool = createProgrammaticToolCallingTool({});
+      allLoadedTools.push(ptcTool);
     } catch (error) {
       logger.error('[loadToolsForExecution] Error creating PTC tool:', error);
+    }
+  }
+
+  const isBashTool = toolNames.includes(AgentConstants.BASH_TOOL);
+  if (isBashTool) {
+    try {
+      const bashTool = createBashExecutionTool({});
+      allLoadedTools.push(bashTool);
+    } catch (error) {
+      logger.error('[loadToolsForExecution] Failed to create bash_tool', error);
     }
   }
 
   const specialToolNames = new Set([
     AgentConstants.TOOL_SEARCH,
     AgentConstants.PROGRAMMATIC_TOOL_CALLING,
+    AgentConstants.BASH_TOOL,
+    AgentConstants.SKILL_TOOL,
+    AgentConstants.READ_FILE,
   ]);
 
   let ptcOrchestratedToolNames = [];
@@ -1442,23 +1523,22 @@ async function loadActionToolsForExecution({
     return loadedActionTools;
   }
 
-  const processedActionSets = new Map();
-  /** Maps both new and legacy normalized domains to their canonical (new) domain key */
-  const normalizedToDomain = new Map();
+  // See registerActionTools for the key-shape rationale.
+  const toolToAction = new Map();
   const allowedDomains = appConfig?.actions?.allowedDomains;
+  const allowedAddresses = appConfig?.actions?.allowedAddresses;
 
   for (const action of actionSets) {
     const domain = await domainParser(action.metadata.domain, true);
     const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
-    normalizedToDomain.set(normalizedDomain, domain);
-
     const legacyDomain = legacyDomainEncode(action.metadata.domain);
     const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
-    if (legacyNormalized !== normalizedDomain) {
-      normalizedToDomain.set(legacyNormalized, domain);
-    }
 
-    const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
+    const isDomainAllowed = await isActionDomainAllowed(
+      action.metadata.domain,
+      allowedDomains,
+      allowedAddresses,
+    );
     if (!isDomainAllowed) {
       logger.warn(
         `[Actions] Domain "${action.metadata.domain}" not in allowedDomains. ` +
@@ -1499,60 +1579,28 @@ async function loadActionToolsForExecution({
       true,
     );
 
-    processedActionSets.set(domain, {
-      action: decryptedAction,
-      requestBuilders,
+    registerActionTools({
+      toolToAction,
       functionSignatures,
-      zodSchemas,
-      encrypted,
+      normalizedDomain,
       legacyNormalized,
+      makeEntry: (sig) => ({
+        action: decryptedAction,
+        requestBuilder: requestBuilders[sig.name],
+        zodSchema: zodSchemas[sig.name],
+        functionSignature: sig,
+        encrypted,
+      }),
     });
   }
 
   for (const toolName of actionToolNames) {
-    let currentDomain = '';
-    for (const [normalizedDomain, canonicalDomain] of normalizedToDomain.entries()) {
-      if (toolName.includes(normalizedDomain)) {
-        currentDomain = canonicalDomain;
-        break;
-      }
-    }
-
-    if (!currentDomain || !processedActionSets.has(currentDomain)) {
+    const entry = toolToAction.get(normalizeActionToolName(toolName));
+    if (!entry) {
       continue;
     }
 
-    const { action, encrypted, zodSchemas, requestBuilders, functionSignatures, legacyNormalized } =
-      processedActionSets.get(currentDomain);
-    const normalizedDomain = currentDomain.replace(domainSeparatorRegex, '_');
-    const functionName = toolName.replace(`${actionDelimiter}${normalizedDomain}`, '');
-    const functionSig = functionSignatures.find((sig) => sig.name === functionName);
-    const requestBuilder = requestBuilders[functionName];
-    const zodSchema = zodSchemas[functionName];
-
-    if (!requestBuilder) {
-      const legacyFnName = toolName.replace(`${actionDelimiter}${legacyNormalized}`, '');
-      if (legacyFnName !== toolName && requestBuilders[legacyFnName]) {
-        const legacyTool = await createActionTool({
-          userId: req.user.id,
-          res,
-          action,
-          streamId,
-          encrypted,
-          requestBuilder: requestBuilders[legacyFnName],
-          zodSchema: zodSchemas[legacyFnName],
-          name: toolName,
-          description:
-            functionSignatures.find((sig) => sig.name === legacyFnName)?.description ?? '',
-          useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
-        });
-        if (legacyTool) {
-          loadedActionTools.push(legacyTool);
-        }
-      }
-      continue;
-    }
-
+    const { action, encrypted, zodSchema, requestBuilder, functionSignature } = entry;
     const tool = await createActionTool({
       userId: req.user.id,
       res,
@@ -1562,8 +1610,9 @@ async function loadActionToolsForExecution({
       encrypted,
       requestBuilder,
       name: toolName,
-      description: functionSig?.description ?? '',
+      description: functionSignature.description,
       useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
+      allowedAddresses,
     });
 
     if (!tool) {

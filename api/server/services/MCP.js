@@ -1,4 +1,4 @@
-const { tool } = require('@langchain/core/tools');
+const { tool } = require('@librechat/agents/langchain/tools');
 const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   Providers,
@@ -425,7 +425,12 @@ async function createMCPTools({
   if (serverConfig?.url) {
     const appConfig = await getAppConfig({ role: user?.role, tenantId: user?.tenantId });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
-    const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
+    const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
+    const isDomainAllowed = await isMCPDomainAllowed(
+      serverConfig,
+      allowedDomains,
+      allowedAddresses,
+    );
     if (!isDomainAllowed) {
       logger.warn(`[MCP][${serverName}] Domain not allowed, skipping all tools`);
       return [];
@@ -508,7 +513,12 @@ async function createMCPTool({
   if (serverConfig?.url) {
     const appConfig = await getAppConfig({ role: user?.role, tenantId: user?.tenantId });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
-    const isDomainAllowed = await isMCPDomainAllowed(serverConfig, allowedDomains);
+    const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
+    const isDomainAllowed = await isMCPDomainAllowed(
+      serverConfig,
+      allowedDomains,
+      allowedAddresses,
+    );
     if (!isDomainAllowed) {
       logger.warn(`[MCP][${serverName}] Domain no longer allowed, skipping tool: ${toolName}`);
       return undefined;

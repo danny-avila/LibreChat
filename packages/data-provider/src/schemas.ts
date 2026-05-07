@@ -182,8 +182,31 @@ export enum AnthropicEffort {
   low = 'low',
   medium = 'medium',
   high = 'high',
+  xhigh = 'xhigh',
   max = 'max',
 }
+
+/**
+ * Controls whether the model's reasoning content is returned in responses.
+ *
+ * - `'auto'` - LibreChat decides: opt in to `'summarized'` for models that
+ *   omit by default (Opus 4.7+), leave the field off for older models.
+ * - `'summarized'` - always request a post-hoc summary of the reasoning.
+ * - `'omitted'` - always suppress reasoning content. Slightly lower latency.
+ *
+ * See https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-7#thinking-content-omitted-by-default
+ */
+export enum ThinkingDisplay {
+  auto = 'auto',
+  summarized = 'summarized',
+  omitted = 'omitted',
+}
+
+/**
+ * Wire-level values accepted by the Anthropic Messages API `thinking.display`
+ * field. Excludes the LibreChat-only `'auto'` sentinel.
+ */
+export type ThinkingDisplayWireValue = Exclude<ThinkingDisplay, ThinkingDisplay.auto>;
 
 export enum BedrockReasoningConfig {
   low = 'low',
@@ -228,6 +251,7 @@ export const imageDetailValue = {
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
 export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
 export const eAnthropicEffortSchema = z.nativeEnum(AnthropicEffort);
+export const eThinkingDisplaySchema = z.nativeEnum(ThinkingDisplay);
 export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
 export const eVerbositySchema = z.nativeEnum(Verbosity);
 export const eThinkingLevelSchema = z.nativeEnum(ThinkingLevel);
@@ -269,6 +293,16 @@ export const defaultAgentFormValues = {
     name: '',
     email: '',
   },
+  /** Optional allowlist. Only applies when `skills_enabled === true`.
+   *  Empty/undefined + enabled = full catalog; non-empty + enabled = narrow to ids. */
+  skills: undefined as string[] | undefined,
+  /** Master toggle for skill use on this agent. `true` activates skills
+   *  (full catalog unless `skills` narrows it). Anything else = inactive. */
+  skills_enabled: undefined as boolean | undefined,
+  /** `undefined` = feature disabled by default (no subagent tool injected). */
+  subagents: undefined as
+    | { enabled?: boolean; allowSelf?: boolean; agent_ids?: string[] }
+    | undefined,
 };
 
 export const ImageVisionTool: FunctionTool = {
@@ -491,8 +525,13 @@ export const anthropicSettings = {
       AnthropicEffort.low,
       AnthropicEffort.medium,
       AnthropicEffort.high,
+      AnthropicEffort.xhigh,
       AnthropicEffort.max,
     ],
+  },
+  thinkingDisplay: {
+    default: ThinkingDisplay.auto,
+    options: [ThinkingDisplay.auto, ThinkingDisplay.summarized, ThinkingDisplay.omitted],
   },
   web_search: {
     default: false as const,
@@ -646,6 +685,23 @@ export const tMessageSchema = z.object({
         ),
     })
     .optional(),
+  /**
+   * Skill names the user invoked manually via the `$` popover on this turn.
+   * Purely UI metadata — `SkillPills` renders these above the message
+   * bubble so users can see which skills they asked for in history and on
+   * reload. Runtime resolution uses the top-level payload field with the
+   * same name. Empty / absent for model-invoked skills (shown as tool_call
+   * content parts on the assistant message instead).
+   */
+  manualSkills: z.array(z.string()).optional(),
+  /**
+   * Skill names auto-primed on this turn because their `always-apply`
+   * frontmatter flag is set. Persisted at turn time so the pinned-variant
+   * pills on the user bubble survive reload and stay stable across later
+   * edits to the skill's `alwaysApply` flag (the user bubble reflects
+   * what actually ran, not the current catalog).
+   */
+  alwaysAppliedSkills: z.array(z.string()).optional(),
 });
 
 export type MemoryArtifact = {
@@ -772,6 +828,8 @@ export const tConversationSchema = z.object({
   useResponsesApi: z.boolean().optional(),
   /* Anthropic: Effort control */
   effort: eAnthropicEffortSchema.optional().nullable(),
+  /* Anthropic: Thinking visibility (Opus 4.7+ opt-in) */
+  thinkingDisplay: eThinkingDisplaySchema.optional().nullable(),
   /* OpenAI Responses API / Anthropic API / Google API */
   web_search: z.boolean().optional(),
   /* disable streaming */
@@ -896,6 +954,7 @@ export const tQueryParamsSchema = tConversationSchema
     thinkingBudget: true,
     thinkingLevel: true,
     effort: true,
+    thinkingDisplay: true,
     /** @endpoints bedrock */
     region: true,
     /** @endpoints bedrock */
@@ -923,7 +982,13 @@ export const tQueryParamsSchema = tConversationSchema
     }),
   );
 
-/** Narrowed preset schema for use in model specs — omits system/DB/deprecated fields */
+/** Narrowed preset schema for use in model specs — omits system/DB/deprecated fields.
+ *
+ * `greeting` and `iconURL` are admin-configurable display fields on a model spec's
+ * preset (landing greeting, preset-level icon fallback) and must be preserved.
+ * `spec` is set by the client from `modelSpec.name` via `getModelSpecPreset` and is
+ * omitted to avoid duplicate configuration surface.
+ */
 export const tModelSpecPresetSchema = tPresetSchema.omit({
   conversationId: true,
   presetId: true,
@@ -940,8 +1005,6 @@ export const tModelSpecPresetSchema = tPresetSchema.omit({
   resendImages: true,
   chatGptLabel: true,
   presetOverride: true,
-  greeting: true,
-  iconURL: true,
   spec: true,
 });
 
@@ -1220,6 +1283,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   thinking: true,
   thinkingBudget: true,
   effort: true,
+  thinkingDisplay: true,
   artifacts: true,
   iconURL: true,
   greeting: true,

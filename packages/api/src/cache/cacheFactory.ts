@@ -9,18 +9,33 @@ const KeyvRedis = require('@keyv/redis').default as typeof import('@keyv/redis')
 import { Keyv } from 'keyv';
 import createMemoryStore from 'memorystore';
 import { RedisStore } from 'rate-limit-redis';
-import { Time } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
 import session, { MemoryStore } from 'express-session';
+import { Time, CacheKeys } from 'librechat-data-provider';
 import { RedisStore as ConnectRedis } from 'connect-redis';
 import type { SendCommandFn } from 'rate-limit-redis';
 import { keyvRedisClient, ioredisClient } from './redisClients';
+import { batchDeleteKeys, scanKeys } from './redisUtils';
 import { cacheConfig } from './cacheConfig';
 import { violationFile } from './keyvFiles';
-import { batchDeleteKeys, scanKeys } from './redisUtils';
+
+/**
+ * Memoized in-memory Keyv instances keyed by namespace.
+ * Without Redis, each `new Keyv()` gets its own internal Map, so callers that
+ * write in one call-site and read in another would see an empty store.
+ * Memoizing ensures a single shared Map per namespace across the entire bundle.
+ *
+ * Only applies to the plain in-memory path (no Redis, no custom fallbackStore).
+ */
+const inMemoryCacheMap = new Map<string, Keyv>();
 
 /**
  * Creates a cache instance using Redis or a fallback store. Suitable for general caching needs.
+ *
+ * **In-memory mode** (no Redis, no custom fallbackStore): instances are memoized by
+ * namespace so that every call-site shares the same underlying `Map`. The first
+ * caller's TTL wins for a given namespace.
+ *
  * @param namespace - The cache namespace.
  * @param ttl - Time to live for cache entries.
  * @param fallbackStore - Optional fallback store if Redis is not used.
@@ -73,8 +88,18 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
   if (fallbackStore) {
     return new Keyv({ store: fallbackStore, namespace, ttl });
   }
-  return new Keyv({ namespace, ttl });
+  const existing = inMemoryCacheMap.get(namespace);
+  if (existing) {
+    return existing;
+  }
+  const cache = new Keyv({ namespace, ttl });
+  inMemoryCacheMap.set(namespace, cache);
+  return cache;
 };
+
+/** Convenience accessor for the TOKEN_CONFIG cache namespace. */
+export const tokenConfigCache = (): Keyv =>
+  standardCache(CacheKeys.TOKEN_CONFIG, Time.THIRTY_MINUTES);
 
 /**
  * Creates a cache instance for storing violation data.

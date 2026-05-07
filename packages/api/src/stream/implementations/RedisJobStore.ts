@@ -47,6 +47,8 @@ const DEFAULT_TTL = {
   chunksAfterComplete: 0,
   /** TTL for run steps after completion (0 = delete immediately) */
   runStepsAfterComplete: 0,
+  /** Safety-net TTL for per-user job tracking sets (24 hours). Refreshed on each createJob. */
+  userJobsSet: 86400,
 };
 
 /**
@@ -79,6 +81,8 @@ export interface RedisJobStoreOptions {
   chunksAfterCompleteTtl?: number;
   /** TTL for run steps after completion in seconds (default: 0 = delete immediately) */
   runStepsAfterCompleteTtl?: number;
+  /** TTL for per-user job tracking sets in seconds (default: 86400 = 24 hours). 0 = no TTL. */
+  userJobsSetTtl?: number;
 }
 
 export class RedisJobStore implements IJobStore {
@@ -113,6 +117,7 @@ export class RedisJobStore implements IJobStore {
       running: options?.runningTtl ?? DEFAULT_TTL.running,
       chunksAfterComplete: options?.chunksAfterCompleteTtl ?? DEFAULT_TTL.chunksAfterComplete,
       runStepsAfterComplete: options?.runStepsAfterCompleteTtl ?? DEFAULT_TTL.runStepsAfterComplete,
+      userJobsSet: options?.userJobsSetTtl ?? DEFAULT_TTL.userJobsSet,
     };
     // Detect cluster mode using ioredis's isCluster property
     this.isCluster = (redis as Cluster).isCluster === true;
@@ -163,12 +168,18 @@ export class RedisJobStore implements IJobStore {
       await this.redis.expire(key, this.ttl.running);
       await this.redis.sadd(KEYS.runningJobs, streamId);
       await this.redis.sadd(userJobsKey, streamId);
+      if (this.ttl.userJobsSet > 0) {
+        await this.redis.expire(userJobsKey, this.ttl.userJobsSet);
+      }
     } else {
       const pipeline = this.redis.pipeline();
       pipeline.hset(key, this.serializeJob(job));
       pipeline.expire(key, this.ttl.running);
       pipeline.sadd(KEYS.runningJobs, streamId);
       pipeline.sadd(userJobsKey, streamId);
+      if (this.ttl.userJobsSet > 0) {
+        pipeline.expire(userJobsKey, this.ttl.userJobsSet);
+      }
       await pipeline.exec();
     }
 
@@ -204,10 +215,11 @@ export class RedisJobStore implements IJobStore {
       return;
     }
 
-    // If status changed to complete/error/aborted, update TTL and remove from running set
-    // Note: userJobs cleanup is handled lazily via self-healing in getActiveJobIdsByUser
     if (updates.status && ['complete', 'error', 'aborted'].includes(updates.status)) {
-      // In cluster mode, separate runningJobs (global) from stream-specific keys
+      // Proactively remove from user's job set (requires reading userId from the job hash)
+      const job = await this.getJob(streamId);
+      const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
+
       if (this.isCluster) {
         await this.redis.expire(key, this.ttl.completed);
         await this.redis.srem(KEYS.runningJobs, streamId);
@@ -222,6 +234,10 @@ export class RedisJobStore implements IJobStore {
           await this.redis.del(KEYS.runSteps(streamId));
         } else {
           await this.redis.expire(KEYS.runSteps(streamId), this.ttl.runStepsAfterComplete);
+        }
+
+        if (userJobsKey) {
+          await this.redis.srem(userJobsKey, streamId);
         }
       } else {
         const pipeline = this.redis.pipeline();
@@ -240,33 +256,46 @@ export class RedisJobStore implements IJobStore {
           pipeline.expire(KEYS.runSteps(streamId), this.ttl.runStepsAfterComplete);
         }
 
+        if (userJobsKey) {
+          pipeline.srem(userJobsKey, streamId);
+        }
+
         await pipeline.exec();
       }
     }
   }
 
   async deleteJob(streamId: string): Promise<void> {
-    // Clear local caches
+    this.localGraphCache.delete(streamId);
+    this.localCollectedUsageCache.delete(streamId);
+    const job = await this.getJob(streamId);
+    const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
+    return this.deleteJobInternal(streamId, userJobsKey);
+  }
+
+  private async deleteJobInternal(streamId: string, userJobsKey: string | null): Promise<void> {
     this.localGraphCache.delete(streamId);
     this.localCollectedUsageCache.delete(streamId);
 
-    // Note: userJobs cleanup is handled lazily via self-healing in getActiveJobIdsByUser
-    // In cluster mode, separate runningJobs (global) from stream-specific keys (same slot)
     if (this.isCluster) {
-      // Stream-specific keys all hash to same slot due to {streamId}
       const pipeline = this.redis.pipeline();
       pipeline.del(KEYS.job(streamId));
       pipeline.del(KEYS.chunks(streamId));
       pipeline.del(KEYS.runSteps(streamId));
       await pipeline.exec();
-      // Global set is on different slot - execute separately
       await this.redis.srem(KEYS.runningJobs, streamId);
+      if (userJobsKey) {
+        await this.redis.srem(userJobsKey, streamId);
+      }
     } else {
       const pipeline = this.redis.pipeline();
       pipeline.del(KEYS.job(streamId));
       pipeline.del(KEYS.chunks(streamId));
       pipeline.del(KEYS.runSteps(streamId));
       pipeline.srem(KEYS.runningJobs, streamId);
+      if (userJobsKey) {
+        pipeline.srem(userJobsKey, streamId);
+      }
       await pipeline.exec();
     }
     logger.debug(`[RedisJobStore] Deleted job: ${streamId}`);
@@ -322,8 +351,13 @@ export class RedisJobStore implements IJobStore {
           }
 
           // Job completed but still in running set (shouldn't happen, but handle it)
+          // Only remove from tracking sets — do NOT delete the job hash, which has
+          // its own completedTtl so clients can still poll for final status.
           if (job.status !== 'running') {
             await this.redis.srem(KEYS.runningJobs, streamId);
+            if (job.userId) {
+              await this.redis.srem(KEYS.userJobs(job.userId, job.tenantId), streamId);
+            }
             this.localGraphCache.delete(streamId);
             this.localCollectedUsageCache.delete(streamId);
             return 1;
@@ -332,7 +366,8 @@ export class RedisJobStore implements IJobStore {
           // Stale running job (failsafe - running for > configured TTL)
           if (now - job.createdAt > this.ttl.running * 1000) {
             logger.warn(`[RedisJobStore] Cleaning up stale job: ${streamId}`);
-            await this.deleteJob(streamId);
+            const userJobsKey = job.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
+            await this.deleteJobInternal(streamId, userJobsKey);
             return 1;
           }
 
@@ -402,7 +437,6 @@ export class RedisJobStore implements IJobStore {
       }
     }
 
-    // Clean up stale entries
     if (staleIds.length > 0) {
       await this.redis.srem(userJobsKey, ...staleIds);
       logger.debug(

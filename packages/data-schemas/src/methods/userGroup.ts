@@ -49,6 +49,29 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
+   * Find multiple groups by their external IDs (e.g., Entra IDs) in a single query
+   * @param idsOnTheSource - Array of external IDs
+   * @param source - The source ('entra' or 'local')
+   * @param session - Optional MongoDB session for transactions
+   * @returns Array of group documents
+   */
+  async function findGroupsByExternalIds(
+    idsOnTheSource: string[],
+    source: 'entra' | 'local' = 'entra',
+    session?: ClientSession,
+  ): Promise<IGroup[]> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = Group.find(
+      { idOnTheSource: { $in: idsOnTheSource }, source },
+      { idOnTheSource: 1, _id: 0 },
+    );
+    if (session) {
+      query.session(session);
+    }
+    return await query.lean();
+  }
+
+  /**
    * Find groups by name pattern (case-insensitive partial match)
    * @param namePattern - The name pattern to search for
    * @param source - Optional source filter ('entra', 'local', or null for all)
@@ -754,6 +777,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   return {
     findGroupById,
     findGroupByExternalId,
+    findGroupsByExternalIds,
     findGroupsByNamePattern,
     findGroupsByMemberId,
     createGroup,
