@@ -32,6 +32,7 @@ jest.mock('@librechat/api', () => {
      * mock returns null in lockstep with the null `text` above so
      * downstream consumers don't see a phantom format. */
     getExtractedTextFormat: jest.fn(() => null),
+    getStorageMetadata: jest.fn(() => ({})),
     /* Pass-through `withTimeout`: this suite asserts traversal sanitization,
      * not deferred preview timing. */
     withTimeout: async (promise) => promise,

@@ -53,6 +53,7 @@ function makeConfig(overrides: Partial<CloudFrontFullConfig> = {}): CloudFrontFu
     imageSigning: 'none',
     urlExpiry: 3600,
     cookieExpiry: 1800,
+    includeRegionInPath: false,
     privateKey: null,
     keyPairId: null,
     ...overrides,
