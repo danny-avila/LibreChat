@@ -446,7 +446,7 @@ describe('SubagentCall — ticker', () => {
 });
 
 describe('SubagentCall — dialog content', () => {
-  it('renders the prompt through MarkdownLite and expands it over the activity area', () => {
+  it('renders the prompt through MarkdownLite and expands it inline with the activity area', () => {
     render(
       <RecoilRoot>
         <SubagentCall
@@ -474,7 +474,7 @@ describe('SubagentCall — dialog content', () => {
       'aria-expanded',
       'true',
     );
-    expect(screen.queryByText('final answer')).not.toBeInTheDocument();
+    expect(screen.getByText('final answer')).toBeInTheDocument();
   });
 
   it('renders aggregated text, reasoning, and tool_call parts through leaf renderers', () => {

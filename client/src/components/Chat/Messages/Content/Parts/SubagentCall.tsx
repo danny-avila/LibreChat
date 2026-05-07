@@ -344,15 +344,16 @@ export default function SubagentCall({
     setPromptExpanded(false);
   }, [open]);
 
-  /** Snap to bottom every time the dialog opens so a freshly-opened
-   *  dialog starts parked on the live cursor. */
+  /** Start at the top every time the dialog opens so the prompt reads as the
+   *  first item in the scrollable trace instead of a fixed header. */
   useEffect(() => {
-    if (!open || promptExpanded) return;
+    if (!open) return;
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    setIsAtBottom(true);
-  }, [open, promptExpanded]);
+    el.scrollTop = 0;
+    const distance = el.scrollHeight - el.clientHeight;
+    setIsAtBottom(distance <= DIALOG_AT_BOTTOM_THRESHOLD_PX);
+  }, [open]);
 
   /** Keep the view pinned to the bottom while the user is at/near it —
    *  including during delta streams that grow the last TEXT/THINK part
@@ -362,7 +363,7 @@ export default function SubagentCall({
    *  auto-scroll doesn't desync just because tokens are piling into an
    *  existing part. */
   useEffect(() => {
-    if (!open || promptExpanded) return;
+    if (!open) return;
     const scrollEl = scrollRef.current;
     const contentEl = contentRef.current;
     if (!scrollEl || !contentEl) return;
@@ -373,7 +374,7 @@ export default function SubagentCall({
     });
     observer.observe(contentEl);
     return () => observer.disconnect();
-  }, [open, promptExpanded, isAtBottom]);
+  }, [open, isAtBottom]);
 
   const scrollDialogToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -524,47 +525,38 @@ export default function SubagentCall({
             </OGDialogDescription>
           </div>
 
-          <div className="relative flex min-h-0 flex-1 flex-col border-t border-border-light bg-surface-primary px-3 pb-3 pt-3">
-            {prompt ? (
-              <SubagentPrompt
-                prompt={prompt}
-                expanded={promptExpanded}
-                onToggle={() => setPromptExpanded((expanded) => !expanded)}
-              />
-            ) : null}
-
-            {!promptExpanded && (
-              <div className="relative min-h-0 flex-1">
-                {!isAtBottom && (
-                  <button
-                    type="button"
-                    onClick={scrollDialogToBottom}
-                    aria-label={localize('com_ui_subagent_scroll_to_bottom')}
-                    className="absolute bottom-3 right-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
-                  >
-                    <ArrowDown size={16} aria-hidden="true" />
-                  </button>
-                )}
-                <div
-                  ref={scrollRef}
-                  onScroll={handleScroll}
-                  /** Mirrors the main conversation's content-parts wrapper
-                   *  (`max-w-full flex-grow flex-col gap-0` from
-                   *  `MessageParts.tsx`). Part-specific wrappers (`Container`
-                   *  on TEXT, the Reasoning component's own wrapper on THINK,
-                   *  `ToolCallGroup` margins on grouped tools) handle their
-                   *  own spacing — we don't re-wrap everything in `Container`
-                   *  because that would constrain Reasoning's full-column
-                   *  width the way it has in regular messages.
-                   *  Outer `px-4 py-3` gives the dialog breathing room. */
-                  className="h-full overflow-y-auto px-2 py-2 sm:px-3"
-                >
-                  <div ref={contentRef} className="flex max-w-full flex-grow flex-col gap-0">
-                    {dialogContent}
-                  </div>
-                </div>
-              </div>
+          <div className="relative min-h-0 flex-1 border-t border-border-light bg-surface-primary">
+            {!isAtBottom && (
+              <button
+                type="button"
+                onClick={scrollDialogToBottom}
+                aria-label={localize('com_ui_subagent_scroll_to_bottom')}
+                className="absolute bottom-3 right-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
+              >
+                <ArrowDown size={16} aria-hidden="true" />
+              </button>
             )}
+            <div
+              ref={scrollRef}
+              onScroll={handleScroll}
+              /** The prompt and activity trace share one scroller so expanded
+               *  prompt content participates in the same reading flow as the
+               *  subagent output instead of reserving fixed dialog space.
+               *  Part-specific wrappers (`Container`, `Reasoning`,
+               *  `ToolCallGroup`) handle their own widths and spacing. */
+              className="h-full overflow-y-auto px-3 py-3"
+            >
+              <div ref={contentRef} className="flex max-w-full flex-grow flex-col gap-0">
+                {prompt ? (
+                  <SubagentPrompt
+                    prompt={prompt}
+                    expanded={promptExpanded}
+                    onToggle={() => setPromptExpanded((expanded) => !expanded)}
+                  />
+                ) : null}
+                {dialogContent}
+              </div>
+            </div>
           </div>
         </OGDialogContent>
       </OGDialog>
@@ -621,10 +613,7 @@ function SubagentPrompt({
   return (
     <section
       aria-labelledby={headingId}
-      className={cn(
-        'overflow-hidden rounded-lg border border-border-light bg-surface-secondary text-text-primary',
-        expanded ? 'flex min-h-0 flex-1 flex-col' : 'mb-3 shrink-0',
-      )}
+      className="mb-3 shrink-0 overflow-hidden rounded-lg border border-border-light bg-surface-secondary text-text-primary"
     >
       <div className="flex min-h-[2.75rem] items-center justify-between gap-3 border-b border-border-light px-3 py-2">
         <h3 id={headingId} className="text-sm font-medium text-text-primary">
@@ -651,7 +640,7 @@ function SubagentPrompt({
         id={contentId}
         className={cn(
           'relative min-w-0 px-4 py-3',
-          expanded ? 'min-h-0 flex-1 overflow-y-auto' : 'max-h-32 overflow-hidden',
+          expanded ? 'overflow-visible' : 'max-h-32 overflow-hidden',
         )}
       >
         <div className="markdown prose prose-sm message-content light dark:prose-invert w-full max-w-none break-words text-text-primary dark:text-gray-100">
