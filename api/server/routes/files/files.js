@@ -220,14 +220,16 @@ router.delete('/', async (req, res) => {
       const agentFiles = files
         .filter((f) => toolResourceFiles.includes(f.file_id))
         .map((file) => ({ tool_resource: req.body.tool_resource, file_id: file.file_id }));
-      const accessMap = await hasAccessToFilesViaAgent({
-        userId: req.user.id,
-        role: req.user.role,
-        fileIds: agentFiles.map((file) => file.file_id),
-        agentId: req.body.agent_id,
-        isDelete: true,
-      });
-      const unauthorizedFiles = agentFiles.filter((file) => !accessMap.get(file.file_id));
+      const hasAgentEditAccess =
+        agent.author?.toString() === req.user.id.toString() ||
+        (await checkPermission({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          requiredPermission: PermissionBits.EDIT,
+        }));
+      const unauthorizedFiles = hasAgentEditAccess ? [] : agentFiles;
       if (unauthorizedFiles.length > 0) {
         return res.status(403).json({
           message: 'You can only delete files you have access to',
