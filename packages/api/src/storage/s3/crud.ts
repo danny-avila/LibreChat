@@ -114,7 +114,7 @@ const getInlinePathPrefix = ({
   useInlinePath,
 }: Pick<S3KeyOptions, 'basePath' | 'useInlinePath'>): string | null => {
   const prefix = INLINE_STORAGE_PREFIXES.get(basePath);
-  const shouldUseInlinePath = useInlinePath ?? Boolean(prefix);
+  const shouldUseInlinePath = useInlinePath ?? false;
   if (!shouldUseInlinePath) {
     return null;
   }
