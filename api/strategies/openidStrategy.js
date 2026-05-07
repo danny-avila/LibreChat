@@ -565,12 +565,8 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       email: email || '',
       emailVerified: userinfo.email_verified || false,
       name: fullName,
-<<<<<<< HEAD
-      idOnTheSource: userinfo.oid,
-      openidIssuer,
-=======
       idOnTheSource: userinfo.oid || userinfo.sub, // Use sub as fallback for non-Microsoft OIDC providers
->>>>>>> b91703fe7 (feat: Add OIDC group sync for Keycloak and generic OpenID providers)
+      openidIssuer,
     };
 
     const balanceConfig = getBalanceConfig(appConfig);
