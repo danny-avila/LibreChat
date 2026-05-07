@@ -505,7 +505,10 @@ export class EcsStack extends cdk.Stack {
       'AdminPanelSessionSecret',
       'ai-assistant/admin-panel/session-secret',
     );
-    sessionSecret.grantRead(commonExecRole);
+    commonExecRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['secretsmanager:GetSecretValue'],
+      resources: [`arn:aws:secretsmanager:${this.region}:${this.account}:secret:ai-assistant/admin-panel/session-secret-*`],
+    }));
 
     taskDef.addContainer('librechat-admin-panel', {
       image: ecs.ContainerImage.fromRegistry(props.librechatAdminImage),
