@@ -4,8 +4,8 @@ import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import CopyButton from '~/components/Messages/Content/CopyButton';
-import { logger, sortPagesByRelevance } from '~/utils';
-import { revokeDownloadURL, useFileDownload } from '~/data-provider';
+import { logger, sortPagesByRelevance, triggerDownload } from '~/utils';
+import { useFileDownload } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -201,13 +201,7 @@ export default function FilePreviewDialog({
       if (!result.data) {
         return;
       }
-      const a = document.createElement('a');
-      a.href = result.data;
-      a.setAttribute('download', fileName);
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => revokeDownloadURL(result.data), 1000);
+      triggerDownload(result.data, fileName);
     } catch (err) {
       logger.error('[FilePreviewDialog] Download failed:', err);
     }

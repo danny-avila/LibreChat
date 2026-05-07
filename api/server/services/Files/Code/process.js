@@ -621,6 +621,9 @@ const processCodeOutput = async ({
       message: 'Error downloading/processing code environment file',
       error,
     });
+    logger.warn(
+      `[processCodeOutput] Falling back to Code API download URL for strategy ${appConfig.fileStrategy}`,
+    );
 
     // Fallback for download errors - return download URL so user can still manually download
     return {
