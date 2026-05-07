@@ -93,7 +93,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     if (resourceType) {
       query.resourceType = resourceType;
     }
-    return await AclEntry.find(query).lean();
+    return await AclEntry.find(query).lean<IAclEntry[]>();
   }
 
   /**
