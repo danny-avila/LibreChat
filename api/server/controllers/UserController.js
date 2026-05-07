@@ -123,28 +123,28 @@ const acceptSecondTermsController = async (req, res) => {
 const updateFarmerPlatformController = async (req, res) => {
   try {
     const existingUser = await User.findById(req.user.id);
-if (!existingUser) {
-  return res.status(404).json({ message: 'User not found' });
-}
+    if (!existingUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
-const alreadyExists = existingUser.farmerProfile?.platformHistory?.some(
-  (entry) => entry.os === req.body.platform
-);
+    const alreadyExists = existingUser.farmerProfile?.platformHistory?.some(
+      (entry) => entry.os === req.body.platform
+    );
 
-const updateQuery = {
-  $set: { 'farmerProfile.platform': req.body.platform },
-};
+    const updateQuery = {
+      $set: { 'farmerProfile.platform': req.body.platform },
+    };
 
-if (!alreadyExists) {
-  updateQuery.$push = {
-    'farmerProfile.platformHistory': {
-      os: req.body.platform,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
+    if (!alreadyExists) {
+      updateQuery.$push = {
+        'farmerProfile.platformHistory': {
+          os: req.body.platform,
+          timestamp: new Date().toISOString(),
+        },
+      };
+    }
 
-const user = await User.findByIdAndUpdate(req.user.id, updateQuery, { new: true });
+    const user = await User.findByIdAndUpdate(req.user.id, updateQuery, { new: true });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -177,6 +177,9 @@ const saveFarmerProfileController = async (req, res) => {
     }
     if (farmerProfile.phoneNo !== undefined) {
       updateQuery.$set['farmerProfile.phoneNo'] = farmerProfile.phoneNo?.trim().replace(/\s+/g, '');
+    }
+    if (farmerProfile.nearestKVK !== undefined) {
+      updateQuery.$set['farmerProfile.nearestKVK'] = farmerProfile.nearestKVK?.trim();
     }
     if (farmerProfile.languagePreference !== undefined) {
       updateQuery.$set['farmerProfile.languagePreference'] = farmerProfile.languagePreference?.trim().toLowerCase();
