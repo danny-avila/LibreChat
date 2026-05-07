@@ -1,23 +1,26 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { ArrowDown, ChevronRight, Users } from 'lucide-react';
-import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
+import { ArrowDown, ChevronRight, Maximize2, Minimize2, Users } from 'lucide-react';
+import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+
 import type { TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
-import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
-import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
-import Container from '~/components/Chat/Messages/Content/Container';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
+import type { SubagentTickerLine } from '~/utils/subagentContent';
+
+import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
+import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
+import { cn, groupSequentialToolCalls, parseToolName } from '~/utils';
+import Container from '~/components/Chat/Messages/Content/Container';
+import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
+import { MessageContext } from '~/Providers/MessageContext';
+import { subagentProgressByToolCallId } from '~/store';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';
-import Text from './Text';
-import Reasoning from './Reasoning';
 import { AttachmentGroup } from './Attachment';
-import { MessageContext } from '~/Providers/MessageContext';
 import { useLocalize } from '~/hooks';
-import { subagentProgressByToolCallId } from '~/store';
-import type { SubagentTickerLine } from '~/utils/subagentContent';
-import { cn, groupSequentialToolCalls, parseToolName } from '~/utils';
+import Reasoning from './Reasoning';
+import Text from './Text';
 
 interface SubagentCallProps {
   toolCallId: string;
@@ -163,6 +166,7 @@ export default function SubagentCall({
   const progress = useRecoilValue(subagentProgressByToolCallId(toolCallId));
   const agentsMap = useAgentsMapContext();
   const [open, setOpen] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
   const isSelfSpawn = subagentType === 'self';
@@ -241,18 +245,19 @@ export default function SubagentCall({
     shouldThrottleTicker,
   );
 
-  const description = typeof args === 'string' ? tryDescription(args) : extractDescription(args);
+  const prompt = typeof args === 'string' ? tryPrompt(args) : extractPrompt(args);
 
   /** Base verb-only label ("Running agent" / "Ran agent"). The agent name
    *  is rendered separately as a muted sub-label so "agent" stays a
    *  constant visual anchor regardless of name length. */
-  const headerText = hasError
-    ? localize('com_ui_subagent_errored')
-    : cancelled
-      ? localize('com_ui_subagent_cancelled')
-      : running
-        ? localize('com_ui_subagent_running')
-        : localize('com_ui_subagent_complete');
+  let headerText = localize('com_ui_subagent_complete');
+  if (hasError) {
+    headerText = localize('com_ui_subagent_errored');
+  } else if (cancelled) {
+    headerText = localize('com_ui_subagent_cancelled');
+  } else if (running) {
+    headerText = localize('com_ui_subagent_running');
+  }
   /** Muted sub-label shown to the right of the base label: the
    *  configured agent name for named subagents. Self-spawns omit it
    *  (redundant — the header already says "agent") as do cases where
@@ -333,14 +338,21 @@ export default function SubagentCall({
     setIsAtBottom(distance <= DIALOG_AT_BOTTOM_THRESHOLD_PX);
   }, []);
 
-  /** Snap to bottom every time the dialog opens so a freshly-opened
-   *  dialog starts parked on the live cursor. */
+  /** Reset to the compact prompt preview every time the dialog closes. */
+  useEffect(() => {
+    if (open) return;
+    setPromptExpanded(false);
+  }, [open]);
+
+  /** Start at the top every time the dialog opens so the prompt reads as the
+   *  first item in the scrollable trace instead of a fixed header. */
   useEffect(() => {
     if (!open) return;
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    setIsAtBottom(true);
+    el.scrollTop = 0;
+    const distance = el.scrollHeight - el.clientHeight;
+    setIsAtBottom(distance <= DIALOG_AT_BOTTOM_THRESHOLD_PX);
   }, [open]);
 
   /** Keep the view pinned to the bottom while the user is at/near it —
@@ -370,6 +382,61 @@ export default function SubagentCall({
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     setIsAtBottom(true);
   }, []);
+
+  const emptyDialogText = running
+    ? localize('com_ui_subagent_no_result_yet')
+    : localize('com_ui_subagent_empty_result');
+
+  let dialogContent: JSX.Element;
+  if (contentParts.length > 0) {
+    dialogContent = (
+      <MessageContext.Provider value={dialogMessageContext}>
+        {groupedParts.map((group) => {
+          if (group.type === 'single') {
+            const { part, idx } = group.part;
+            /** Per-type dispatch handles wrapping: TEXT goes through
+             *  `Container`, THINK/TOOL_CALL render directly so their own
+             *  wrappers set the width and spacing. */
+            return renderDialogPart(part, idx, idx === lastPartIndex);
+          }
+          /** Consecutive tool_calls (2+) collapse into a `Used N tools`
+           *  group — same behavior as the main message view. */
+          return (
+            <ToolCallGroup
+              key={`${toolCallId}-group-${group.parts[0].idx}`}
+              parts={group.parts}
+              isSubmitting={running}
+              isLast={group.parts.some((p) => p.idx === lastPartIndex)}
+              renderPart={renderDialogPart}
+              lastContentIdx={lastPartIndex}
+            />
+          );
+        })}
+      </MessageContext.Provider>
+    );
+  } else if (output) {
+    /** Fallback: no aggregated content parts but the backend wrote a final
+     *  tool_call output. Happens for older subagent runs recorded before the
+     *  event forwarder existed. Route through the same leaf renderer so
+     *  markdown renders properly. */
+    dialogContent = (
+      <MessageContext.Provider value={dialogMessageContext}>
+        <SubagentDialogPart
+          part={
+            {
+              type: ContentTypes.TEXT,
+              text: output,
+            } as unknown as TMessageContentParts
+          }
+          isSubmitting={false}
+          showCursor={false}
+          isLast
+        />
+      </MessageContext.Provider>
+    );
+  } else {
+    dialogContent = <div className="text-sm italic text-text-secondary">{emptyDialogText}</div>;
+  }
 
   return (
     <>
@@ -435,11 +502,11 @@ export default function SubagentCall({
       <OGDialog open={open} onOpenChange={setOpen}>
         <OGDialogContent
           className={cn(
-            'max-h-[85vh] overflow-hidden',
+            'flex h-[min(85vh,56rem)] flex-col overflow-hidden p-0',
             /** Tighter inter-row gap than the dialog default (`gap-4`)
              *  — title + description + scroll area read as one block
              *  rather than three separated panels. */
-            'gap-2',
+            'gap-0',
             /** Responsive width: narrow on phones, scales up to ~80rem on
              *  widescreens. Viewport-relative max keeps margin on the
              *  edges while still using real estate on laptops / large
@@ -447,22 +514,24 @@ export default function SubagentCall({
             'w-[min(96vw,80rem)] max-w-[min(96vw,80rem)]',
           )}
         >
-          <OGDialogTitle>
-            {isSelfSpawn
-              ? localize('com_ui_subagent_dialog_title_self')
-              : localize('com_ui_subagent_dialog_title', { 0: subagentType })}
-          </OGDialogTitle>
-          <OGDialogDescription className="text-sm text-text-secondary">
-            {description || localize('com_ui_subagent_dialog_description')}
-          </OGDialogDescription>
+          <div className="shrink-0 px-6 pb-3 pr-14 pt-6">
+            <OGDialogTitle>
+              {isSelfSpawn
+                ? localize('com_ui_subagent_dialog_title_self')
+                : localize('com_ui_subagent_dialog_title', { 0: subagentType })}
+            </OGDialogTitle>
+            <OGDialogDescription className="sr-only">
+              {localize('com_ui_subagent_dialog_description')}
+            </OGDialogDescription>
+          </div>
 
-          <div className="relative mt-3">
+          <div className="relative min-h-0 flex-1 border-t border-border-light bg-surface-primary">
             {!isAtBottom && (
               <button
                 type="button"
                 onClick={scrollDialogToBottom}
                 aria-label={localize('com_ui_subagent_scroll_to_bottom')}
-                className="absolute bottom-3 right-6 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
+                className="absolute bottom-3 right-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
               >
                 <ArrowDown size={16} aria-hidden="true" />
               </button>
@@ -470,70 +539,22 @@ export default function SubagentCall({
             <div
               ref={scrollRef}
               onScroll={handleScroll}
-              /** Mirrors the main conversation's content-parts wrapper
-               *  (`max-w-full flex-grow flex-col gap-0` from
-               *  `MessageParts.tsx`). Part-specific wrappers (`Container`
-               *  on TEXT, the Reasoning component's own wrapper on THINK,
-               *  `ToolCallGroup` margins on grouped tools) handle their
-               *  own spacing — we don't re-wrap everything in `Container`
-               *  because that would constrain Reasoning's full-column
-               *  width the way it has in regular messages.
-               *  Outer `px-4 py-3` gives the dialog breathing room. */
-              className="max-h-[65vh] overflow-y-auto px-4 py-3"
+              /** The prompt and activity trace share one scroller so expanded
+               *  prompt content participates in the same reading flow as the
+               *  subagent output instead of reserving fixed dialog space.
+               *  Part-specific wrappers (`Container`, `Reasoning`,
+               *  `ToolCallGroup`) handle their own widths and spacing. */
+              className="h-full overflow-y-auto px-3 py-3"
             >
               <div ref={contentRef} className="flex max-w-full flex-grow flex-col gap-0">
-                {contentParts.length > 0 ? (
-                  <MessageContext.Provider value={dialogMessageContext}>
-                    {groupedParts.map((group) => {
-                      if (group.type === 'single') {
-                        const { part, idx } = group.part;
-                        /** Per-type dispatch handles wrapping: TEXT goes
-                         *  through `Container`, THINK/TOOL_CALL render
-                         *  directly so their own wrappers set the width
-                         *  and spacing. */
-                        return renderDialogPart(part, idx, idx === lastPartIndex);
-                      }
-                      /** Consecutive tool_calls (2+) collapse into a
-                       *  `Used N tools` group — same behavior as the main
-                       *  message view. */
-                      return (
-                        <ToolCallGroup
-                          key={`${toolCallId}-group-${group.parts[0].idx}`}
-                          parts={group.parts}
-                          isSubmitting={running}
-                          isLast={group.parts.some((p) => p.idx === lastPartIndex)}
-                          renderPart={renderDialogPart}
-                          lastContentIdx={lastPartIndex}
-                        />
-                      );
-                    })}
-                  </MessageContext.Provider>
-                ) : output ? (
-                  /** Fallback: no aggregated content parts but the backend
-                   *  wrote a final tool_call output. Happens for older
-                   *  subagent runs recorded before the event forwarder
-                   *  existed. Route through the same leaf renderer so
-                   *  markdown renders properly. */
-                  <MessageContext.Provider value={dialogMessageContext}>
-                    <SubagentDialogPart
-                      part={
-                        {
-                          type: ContentTypes.TEXT,
-                          text: output,
-                        } as unknown as TMessageContentParts
-                      }
-                      isSubmitting={false}
-                      showCursor={false}
-                      isLast
-                    />
-                  </MessageContext.Provider>
-                ) : (
-                  <div className="text-sm italic text-text-secondary">
-                    {running
-                      ? localize('com_ui_subagent_no_result_yet')
-                      : localize('com_ui_subagent_empty_result')}
-                  </div>
-                )}
+                {prompt ? (
+                  <SubagentPrompt
+                    prompt={prompt}
+                    expanded={promptExpanded}
+                    onToggle={() => setPromptExpanded((expanded) => !expanded)}
+                  />
+                ) : null}
+                {dialogContent}
               </div>
             </div>
           </div>
@@ -558,18 +579,82 @@ function extractSubagentType(args: SubagentCallProps['args']): string {
   return a?.subagent_type ?? 'agent';
 }
 
-function extractDescription(args: Record<string, unknown> | undefined): string | undefined {
-  const d = args?.description;
-  return typeof d === 'string' && d.length > 0 ? d : undefined;
+function extractPrompt(args: Record<string, unknown> | undefined): string | undefined {
+  if (!args) return undefined;
+  for (const key of ['prompt', 'description', 'task', 'instructions']) {
+    const value = args[key];
+    if (typeof value === 'string' && value.trim().length > 0) return value;
+  }
+  return undefined;
 }
 
-function tryDescription(args: string): string | undefined {
+function tryPrompt(args: string): string | undefined {
   try {
-    const parsed = JSON.parse(args) as { description?: string };
-    return typeof parsed?.description === 'string' ? parsed.description : undefined;
+    return extractPrompt(JSON.parse(args) as Record<string, unknown>);
   } catch {
     return undefined;
   }
+}
+
+function SubagentPrompt({
+  prompt,
+  expanded,
+  onToggle,
+}: {
+  prompt: string;
+  expanded: boolean;
+  onToggle: () => void;
+}): JSX.Element {
+  const localize = useLocalize();
+  const headingId = useId();
+  const contentId = useId();
+  const toggleLabel = expanded ? localize('com_ui_collapse') : localize('com_ui_expand');
+
+  return (
+    <section
+      aria-labelledby={headingId}
+      className="mb-3 shrink-0 overflow-hidden rounded-lg border border-border-light bg-surface-secondary text-text-primary"
+    >
+      <div className="flex min-h-[2.75rem] items-center justify-between gap-3 border-b border-border-light px-3 py-2">
+        <h3 id={headingId} className="text-sm font-medium text-text-primary">
+          {localize('com_ui_prompt')}
+        </h3>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-controls={contentId}
+          aria-expanded={expanded}
+          aria-label={toggleLabel}
+          title={toggleLabel}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-text-secondary transition hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          {expanded ? (
+            <Minimize2 size={14} aria-hidden="true" />
+          ) : (
+            <Maximize2 size={14} aria-hidden="true" />
+          )}
+          <span className="hidden sm:inline">{toggleLabel}</span>
+        </button>
+      </div>
+      <div
+        id={contentId}
+        className={cn(
+          'relative min-w-0 px-4 py-3',
+          expanded ? 'overflow-visible' : 'max-h-32 overflow-hidden',
+        )}
+      >
+        <div className="markdown prose prose-sm message-content light dark:prose-invert w-full max-w-none break-words text-text-primary dark:text-gray-100">
+          <MarkdownLite content={prompt} codeExecution={false} />
+        </div>
+        {!expanded && (
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-surface-secondary to-transparent"
+            aria-hidden="true"
+          />
+        )}
+      </div>
+    </section>
+  );
 }
 
 /** Stable key for a ticker line — helps React reuse the DOM node across
