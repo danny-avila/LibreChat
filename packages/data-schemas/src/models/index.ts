@@ -26,6 +26,7 @@ import { createAccessRoleModel } from './accessRole';
 import { createAclEntryModel } from './aclEntry';
 import { createGroupModel } from './group';
 import { createSubscriptionProfileModel } from './subscriptionProfile';
+import { createAdminAuditLogModel } from './adminAuditLog';
 
 /**
  * Creates all database models for all collections
@@ -60,5 +61,6 @@ export function createModels(mongoose: typeof import('mongoose')) {
     AccessRole: createAccessRoleModel(mongoose),
     AclEntry: createAclEntryModel(mongoose),
     Group: createGroupModel(mongoose),
+    AdminAuditLog: createAdminAuditLogModel(mongoose),
   };
 }

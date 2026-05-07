@@ -2,8 +2,9 @@
 import { useEffect, useState, memo } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
-import { FileText, LogOut } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { FileText, LogOut, Shield } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { SystemRoles } from 'librechat-data-provider';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
@@ -18,7 +19,9 @@ type SettingsTab = 'account' | 'subscription';
 function AccountSettings() {
   const localize = useLocalize();
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
   const { isPro } = useSubscription();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -150,6 +153,20 @@ function AccountSettings() {
             <LinkIcon aria-hidden="true" />
             {localize('com_ui_terms_of_service')}
           </Select.SelectItem>
+        )}
+        {isAdmin && (
+          <>
+            <DropdownMenuSeparator />
+            <Select.SelectItem
+              value=""
+              onClick={() => navigate('/admin/overview')}
+              className="select-item text-sm"
+              data-testid="nav-admin-dashboard"
+            >
+              <Shield className="icon-md" aria-hidden="true" />
+              Admin Dashboard
+            </Select.SelectItem>
+          </>
         )}
         <DropdownMenuSeparator />
         <Select.SelectItem

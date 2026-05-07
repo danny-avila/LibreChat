@@ -398,3 +398,67 @@ export const getEffectivePermissions = (resourceType: ResourceType, resourceId: 
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+/* ---------- Admin ---------- */
+
+const adminRoot = () => `${BASE_URL}/api/admin`;
+
+export const adminBuildQuery = buildQuery;
+
+export const adminReauth = () => `${adminRoot()}/reauth`;
+export const adminOverview = () => `${adminRoot()}/overview`;
+
+export const adminUsers = (params: Record<string, unknown> = {}) =>
+  `${adminRoot()}/users${buildQuery(params)}`;
+export const adminUserDetail = (id: string) => `${adminRoot()}/users/${id}`;
+export const adminUserBan = (id: string) => `${adminRoot()}/users/${id}/ban`;
+export const adminUserUnban = (id: string) => `${adminRoot()}/users/${id}/unban`;
+export const adminUserRole = (id: string) => `${adminRoot()}/users/${id}/role`;
+export const adminUserResetPassword = (id: string) => `${adminRoot()}/users/${id}/reset-password`;
+export const adminUsersInvite = () => `${adminRoot()}/users/invite`;
+export const adminUserDelete = (id: string) => `${adminRoot()}/users/${id}`;
+
+export const adminSubscriptionList = (params: Record<string, unknown> = {}) =>
+  `${adminRoot()}/subscription${buildQuery(params)}`;
+export const adminSubscriptionForUser = (userId: string) =>
+  `${adminRoot()}/subscription/users/${userId}`;
+export const adminSubscriptionGrant = (userId: string) =>
+  `${adminRoot()}/subscription/users/${userId}/grant`;
+export const adminSubscriptionRevoke = (userId: string) =>
+  `${adminRoot()}/subscription/users/${userId}/revoke`;
+export const adminSubscriptionClearOverride = (userId: string) =>
+  `${adminRoot()}/subscription/users/${userId}/clear-override`;
+export const adminSubscriptionRefresh = (userId: string) =>
+  `${adminRoot()}/subscription/users/${userId}/refresh`;
+
+export const adminBalanceForUser = (userId: string) => `${adminRoot()}/balance/users/${userId}`;
+export const adminBalanceAdjust = (userId: string) =>
+  `${adminRoot()}/balance/users/${userId}/adjust`;
+export const adminBalanceSet = (userId: string) => `${adminRoot()}/balance/users/${userId}/set`;
+
+export const adminUsageForUser = (userId: string, params: Record<string, unknown> = {}) =>
+  `${adminRoot()}/usage/users/${userId}${buildQuery(params)}`;
+export const adminUsageTransactions = (params: Record<string, unknown> = {}) =>
+  `${adminRoot()}/usage/transactions${buildQuery(params)}`;
+export const adminUsageStatsOverview = () => `${adminRoot()}/usage/stats/overview`;
+export const adminUsageStats = (params: Record<string, unknown> = {}) =>
+  `${adminRoot()}/usage/stats/usage${buildQuery(params)}`;
+
+export const adminConversationsForUser = (userId: string, params: Record<string, unknown> = {}) =>
+  `${adminRoot()}/messages/users/${userId}/conversations${buildQuery(params)}`;
+export const adminConversationDetail = (userId: string, conversationId: string) =>
+  `${adminRoot()}/messages/users/${userId}/conversations/${conversationId}`;
+export const adminConversationMessages = (
+  userId: string,
+  conversationId: string,
+  params: Record<string, unknown> = {},
+) =>
+  `${adminRoot()}/messages/users/${userId}/conversations/${conversationId}/messages${buildQuery(
+    params,
+  )}`;
+export const adminMessage = (messageId: string) => `${adminRoot()}/messages/messages/${messageId}`;
+
+export const adminAudit = (params: Record<string, unknown> = {}) =>
+  `${adminRoot()}/audit${buildQuery(params)}`;
+export const adminAuditActions = () => `${adminRoot()}/audit/actions`;
+export const adminAuditEntry = (id: string) => `${adminRoot()}/audit/${id}`;

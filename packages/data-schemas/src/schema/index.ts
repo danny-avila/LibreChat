@@ -1,4 +1,5 @@
 export { default as actionSchema } from './action';
+export { default as adminAuditLogSchema } from './adminAuditLog';
 export { default as agentSchema } from './agent';
 export { default as agentCategorySchema } from './agentCategory';
 export { default as assistantSchema } from './assistant';
