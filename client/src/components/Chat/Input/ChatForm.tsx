@@ -25,7 +25,6 @@ import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
 import { cn, removeFocusRings } from '~/utils';
-import TextareaHeader from './TextareaHeader';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
 import SkillsCommand from './SkillsCommand';
 import PromptsCommand from './PromptsCommand';
@@ -90,11 +89,7 @@ const ChatForm = memo(function ChatForm({
 
   const { requiresKey } = useRequiresKey();
   const methods = useChatFormContext();
-  const {
-    generateConversation,
-    conversation: addedConvo,
-    setConversation: setAddedConvo,
-  } = useAddedChatContext();
+  const { generateConversation } = useAddedChatContext();
   const assistantMap = useAssistantsMapContext();
 
   const endpoint = useMemo(
@@ -272,7 +267,6 @@ const ChatForm = memo(function ChatForm({
                 : 'border-border-light bg-surface-chat',
             )}
           >
-            <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <PendingManualSkillsChips conversationId={conversationId} />
             {/* WIP */}
             <EditBadges

@@ -6,6 +6,7 @@ import { useGetConversation, useNewConvo } from '~/hooks';
 import store from '~/store';
 
 interface ModelSelectorChatContextValue {
+  index: number;
   endpoint?: EModelEndpoint | null;
   model?: string | null;
   spec?: string | null;
@@ -19,15 +20,21 @@ const ModelSelectorChatContext = createContext<ModelSelectorChatContextValue | u
   undefined,
 );
 
-export function ModelSelectorChatProvider({ children }: { children: React.ReactNode }) {
-  const getConversation = useGetConversation(0);
-  const { newConversation: nextNewConversation } = useNewConvo();
+export function ModelSelectorChatProvider({
+  children,
+  index = 0,
+}: {
+  children: React.ReactNode;
+  index?: number;
+}) {
+  const getConversation = useGetConversation(index);
+  const { newConversation: nextNewConversation } = useNewConvo(index);
 
-  const spec = useRecoilValue(store.conversationSpecByIndex(0));
-  const model = useRecoilValue(store.conversationModelByIndex(0));
-  const agent_id = useRecoilValue(store.conversationAgentIdByIndex(0));
-  const endpoint = useRecoilValue(store.conversationEndpointByIndex(0));
-  const assistant_id = useRecoilValue(store.conversationAssistantIdByIndex(0));
+  const spec = useRecoilValue(store.conversationSpecByIndex(index));
+  const model = useRecoilValue(store.conversationModelByIndex(index));
+  const agent_id = useRecoilValue(store.conversationAgentIdByIndex(index));
+  const endpoint = useRecoilValue(store.conversationEndpointByIndex(index));
+  const assistant_id = useRecoilValue(store.conversationAssistantIdByIndex(index));
 
   const newConversationRef = useRef(nextNewConversation);
   newConversationRef.current = nextNewConversation;
@@ -39,6 +46,7 @@ export function ModelSelectorChatProvider({ children }: { children: React.ReactN
   /** Context value only created when relevant conversation properties change */
   const contextValue = useMemo<ModelSelectorChatContextValue>(
     () => ({
+      index,
       model,
       spec,
       agent_id,
@@ -47,7 +55,7 @@ export function ModelSelectorChatProvider({ children }: { children: React.ReactN
       getConversation,
       newConversation,
     }),
-    [endpoint, model, spec, agent_id, assistant_id, getConversation, newConversation],
+    [index, endpoint, model, spec, agent_id, assistant_id, getConversation, newConversation],
   );
 
   return (

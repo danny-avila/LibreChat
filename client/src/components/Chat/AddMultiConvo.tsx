@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { PlusCircle } from 'lucide-react';
+import { GitCompareArrows } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
@@ -38,15 +38,16 @@ function AddMultiConvo() {
 
   return (
     <TooltipAnchor
-      description={localize('com_ui_add_multi_conversation')}
+      description={localize('com_ui_compare_tooltip')}
       role="button"
       tabIndex={0}
-      aria-label={localize('com_ui_add_multi_conversation')}
+      aria-label={localize('com_ui_compare')}
       onClick={clickHandler}
       data-testid="add-multi-convo-button"
-      className="inline-flex size-9 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+      className="inline-flex h-9 flex-shrink-0 items-center justify-center gap-1.5 rounded-xl border border-border-light bg-presentation px-3 text-sm text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
     >
-      <PlusCircle className="icon-sm" aria-hidden="true" />
+      <GitCompareArrows className="icon-sm" aria-hidden="true" />
+      <span>{localize('com_ui_compare')}</span>
     </TooltipAnchor>
   );
 }

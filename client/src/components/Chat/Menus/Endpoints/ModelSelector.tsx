@@ -17,7 +17,7 @@ import { useLocalize } from '~/hooks';
 
 const defaultInterface = getConfigDefaults().interface;
 
-function ModelSelectorContent() {
+function ModelSelectorContent({ className }: { className?: string }) {
   const localize = useLocalize();
 
   const {
@@ -71,7 +71,7 @@ function ModelSelectorContent() {
       description={tooltipDescription}
       render={
         <button
-          className="my-1 flex w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
+          className={`my-1 flex w-full ${className ?? 'max-w-[70vw]'} items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt`}
           aria-label={localize('com_ui_select_model')}
         >
           {triggerIcon && React.isValidElement(triggerIcon) && (
@@ -136,7 +136,11 @@ function ModelSelectorContent() {
   );
 }
 
-export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
+export default function ModelSelector({
+  startupConfig,
+  index = 0,
+  className,
+}: ModelSelectorProps) {
   const interfaceConfig = startupConfig?.interface ?? defaultInterface;
   const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
 
@@ -146,9 +150,9 @@ export default function ModelSelector({ startupConfig }: ModelSelectorProps) {
   }
 
   return (
-    <ModelSelectorChatProvider>
+    <ModelSelectorChatProvider index={index}>
       <ModelSelectorProvider startupConfig={startupConfig}>
-        <ModelSelectorContent />
+        <ModelSelectorContent className={className} />
       </ModelSelectorProvider>
     </ModelSelectorChatProvider>
   );

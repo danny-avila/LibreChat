@@ -37,6 +37,8 @@ export default function useTextarea({
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
+  const addedConvo = useRecoilValue(store.conversationByIndex(1));
+  const isComparisonMode = !!addedConvo;
 
   const { index, conversation, isSubmitting, filesLoading, setFilesLoading } = useChatContext();
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
@@ -89,6 +91,10 @@ export default function useTextarea({
         return localize('com_endpoint_message_not_appendable');
       }
 
+      if (isComparisonMode) {
+        return localize('com_endpoint_message_placeholder_comparison');
+      }
+
       return localize('com_endpoint_message_placeholder');
     };
 
@@ -122,6 +128,7 @@ export default function useTextarea({
     conversation,
     latestMessage,
     isNotAppendable,
+    isComparisonMode,
   ]);
 
   const handleKeyDown = useCallback(

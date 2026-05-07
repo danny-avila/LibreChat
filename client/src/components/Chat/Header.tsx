@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react';
-import { useRecoilValue } from 'recoil';
-import { useMediaQuery } from '@librechat/client';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { X } from 'lucide-react';
+import { useMediaQuery, TooltipAnchor } from '@librechat/client';
 import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
@@ -9,7 +10,7 @@ import { OpenSidebar, PresetsMenu } from './Menus';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -17,7 +18,11 @@ const defaultInterface = getConfigDefaults().interface;
 
 function Header() {
   const { data: startupConfig } = useGetStartupConfig();
+  const localize = useLocalize();
   const navVisible = useRecoilValue(store.sidebarExpanded);
+  const addedConvo = useRecoilValue(store.conversationByIndex(1));
+  const setAddedConvo = useSetRecoilState(store.conversationByIndex(1));
+  const isComparisonMode = !!addedConvo;
 
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
@@ -53,10 +58,50 @@ function Header() {
                 !isSmallScreen ? 'transition-all duration-200 ease-in-out' : '',
               )}
             >
-              <ModelSelector startupConfig={startupConfig} />
-              {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
-              {hasAccessToBookmarks === true && <BookmarkMenu />}
-              {hasAccessToMultiConvo === true && <AddMultiConvo />}
+              {isComparisonMode ? (
+                <>
+                  <ModelSelector
+                    startupConfig={startupConfig}
+                    index={0}
+                    className="max-w-[35vw]"
+                  />
+                  <span
+                    className="px-1 text-xs uppercase text-text-secondary"
+                    aria-hidden="true"
+                  >
+                    {localize('com_ui_versus')}
+                  </span>
+                  <ModelSelector
+                    startupConfig={startupConfig}
+                    index={1}
+                    className="max-w-[35vw]"
+                  />
+                  {interfaceConfig.presets === true && interfaceConfig.modelSelect && (
+                    <PresetsMenu />
+                  )}
+                  {hasAccessToBookmarks === true && <BookmarkMenu />}
+                  <TooltipAnchor
+                    description={localize('com_ui_exit_comparison')}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={localize('com_ui_exit_comparison')}
+                    onClick={() => setAddedConvo(null)}
+                    className="inline-flex h-9 flex-shrink-0 items-center justify-center gap-1.5 rounded-xl border border-border-light bg-presentation px-3 text-sm text-text-primary transition-all ease-in-out hover:bg-surface-tertiary"
+                  >
+                    <X className="icon-sm" aria-hidden="true" />
+                    <span>{localize('com_ui_exit')}</span>
+                  </TooltipAnchor>
+                </>
+              ) : (
+                <>
+                  <ModelSelector startupConfig={startupConfig} />
+                  {interfaceConfig.presets === true && interfaceConfig.modelSelect && (
+                    <PresetsMenu />
+                  )}
+                  {hasAccessToBookmarks === true && <BookmarkMenu />}
+                  {hasAccessToMultiConvo === true && <AddMultiConvo />}
+                </>
+              )}
               {isSmallScreen && (
                 <>
                   <ExportAndShareMenu
