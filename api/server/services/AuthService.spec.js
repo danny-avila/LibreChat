@@ -172,7 +172,30 @@ describe('setOpenIDAuthTokens', () => {
       setOpenIDAuthTokens(tokenset, req, res, 'user-123');
 
       expect(req.session.openidTokens.accessToken).toBe('the-access-token');
+      expect(req.session.openidTokens.idToken).toBe('the-id-token');
       expect(req.session.openidTokens.refreshToken).toBe('the-refresh-token');
+    });
+
+    it('should preserve the existing session id_token when refresh omits one', () => {
+      const tokenset = {
+        access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
+      };
+      const req = mockRequest({
+        openidTokens: {
+          accessToken: 'old-access-token',
+          idToken: 'existing-id-token',
+          refreshToken: 'old-refresh-token',
+        },
+      });
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+      expect(result).toBe('new-access-token');
+      expect(req.session.openidTokens.accessToken).toBe('new-access-token');
+      expect(req.session.openidTokens.idToken).toBe('existing-id-token');
+      expect(req.session.openidTokens.refreshToken).toBe('new-refresh-token');
     });
   });
 
