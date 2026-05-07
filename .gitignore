@@ -137,13 +137,18 @@ helm/**/.values.yaml
 
 # AI Assistants
 /.claude/
+/.agents/
+**/.agents/
 /.codex/
+.codex
 /.cursor/
 /.copilot/
 /.aider/
 /.openai/
 /.tabnine/
 /.codeium
+.gsd-id
+codedb.snapshot
 *.local.md
 
 # Removed Windows wrapper files per user request
