@@ -9,6 +9,7 @@ export interface SaveBufferParams {
   tenantId?: string | null;
   storageRegion?: string | null;
   includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
 }
 
 export interface GetURLParams {
@@ -20,6 +21,7 @@ export interface GetURLParams {
   tenantId?: string | null;
   storageRegion?: string | null;
   includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
 }
 
 export interface SaveURLParams {
@@ -30,6 +32,7 @@ export interface SaveURLParams {
   tenantId?: string | null;
   storageRegion?: string | null;
   includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
 }
 
 export interface SaveURLResult {
@@ -52,6 +55,7 @@ export interface UploadFileParams {
   tenantId?: string | null;
   storageRegion?: string | null;
   includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
 }
 
 export interface DownloadURLParams {

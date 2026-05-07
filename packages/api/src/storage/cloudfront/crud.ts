@@ -16,7 +16,7 @@ import type {
 } from '~/storage/types';
 import { getCloudFrontConfig } from '~/cdn/cloudfront';
 import { s3Config } from '~/storage/s3/s3Config';
-import { DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
+import { AVATAR_BASE_PATH, DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
 import { sanitizeContentDispositionFilename } from '~/storage/validation';
 import {
   getS3Key,
@@ -46,12 +46,16 @@ export interface CloudFrontURLParams extends GetURLParams {
 }
 
 function getRegionPathOptions({
+  basePath = defaultBasePath,
   storageRegion = null,
   includeRegionInPath,
+  useInlinePath,
 }: {
+  basePath?: string;
   storageRegion?: string | null;
   includeRegionInPath?: boolean;
-}): Pick<GetURLParams, 'storageRegion' | 'includeRegionInPath'> {
+  useInlinePath?: boolean;
+}): Pick<GetURLParams, 'storageRegion' | 'includeRegionInPath' | 'useInlinePath'> {
   const config = getCloudFrontConfig();
   const shouldIncludeRegion = includeRegionInPath ?? config?.includeRegionInPath ?? false;
   return {
@@ -59,7 +63,18 @@ function getRegionPathOptions({
     storageRegion: shouldIncludeRegion
       ? (storageRegion ?? config?.storageRegion ?? s3Config.AWS_REGION ?? process.env.AWS_REGION)
       : (storageRegion ?? config?.storageRegion),
+    useInlinePath: useInlinePath ?? (basePath === defaultBasePath || basePath === AVATAR_BASE_PATH),
   };
+}
+
+function isInlineFileUpload({ basePath, file, useInlinePath }: UploadFileParams): boolean {
+  if (useInlinePath != null) {
+    return useInlinePath;
+  }
+  if (basePath === AVATAR_BASE_PATH) {
+    return true;
+  }
+  return (basePath ?? defaultBasePath) === defaultBasePath && file.mimetype?.startsWith('image/');
 }
 
 function buildCloudFrontUrl(s3Key: string): string {
@@ -146,6 +161,7 @@ export async function getCloudFrontURL({
   tenantId = null,
   storageRegion = null,
   includeRegionInPath,
+  useInlinePath,
   sign = false,
 }: CloudFrontURLParams): Promise<string> {
   const key = getS3Key({
@@ -153,7 +169,7 @@ export async function getCloudFrontURL({
     userId,
     fileName,
     tenantId,
-    ...getRegionPathOptions({ storageRegion, includeRegionInPath }),
+    ...getRegionPathOptions({ basePath, storageRegion, includeRegionInPath, useInlinePath }),
   });
   const url = buildCloudFrontUrl(key);
   return sign ? signUrl(url) : url;
@@ -198,7 +214,10 @@ export async function uploadFileToCloudFront(
   params: UploadFileParams & { sign?: boolean },
 ): Promise<UploadResult> {
   const { sign = false, ...rest } = params;
-  const regionOptions = getRegionPathOptions(rest);
+  const regionOptions = getRegionPathOptions({
+    ...rest,
+    useInlinePath: isInlineFileUpload(rest),
+  });
   return uploadFileToS3({
     ...rest,
     ...regionOptions,

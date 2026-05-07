@@ -39,6 +39,12 @@ import {
 } from '~/storage/validation';
 import { initializeS3 } from '~/cdn/s3';
 import { deleteRagFile } from '~/files';
+import {
+  AVATAR_BASE_PATH,
+  DEFAULT_BASE_PATH as defaultBasePath,
+  INLINE_AVATAR_PATH_PREFIX,
+  INLINE_IMAGE_PATH_PREFIX,
+} from '~/storage/constants';
 import { s3Config } from './s3Config';
 
 const {
@@ -47,10 +53,13 @@ const {
   AWS_FORCE_PATH_STYLE: forcePathStyle,
   S3_URL_EXPIRY_SECONDS: s3UrlExpirySeconds,
   S3_REFRESH_EXPIRY_MS: s3RefreshExpiryMs,
-  DEFAULT_BASE_PATH: defaultBasePath,
 } = s3Config;
 
 const MULTIPART_UPLOAD_PART_SIZE = 5 * 1024 * 1024;
+const INLINE_STORAGE_PREFIXES = new Map([
+  [defaultBasePath, INLINE_IMAGE_PATH_PREFIX],
+  [AVATAR_BASE_PATH, INLINE_AVATAR_PATH_PREFIX],
+]);
 
 export interface S3KeyParts {
   storageRegion?: string;
@@ -58,6 +67,9 @@ export interface S3KeyParts {
   userId: string;
   fileName: string;
   tenantId?: string;
+  includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
+  inlinePathPrefix?: string;
 }
 
 export interface S3KeyOptions {
@@ -67,6 +79,7 @@ export interface S3KeyOptions {
   tenantId?: string | null;
   storageRegion?: string | null;
   includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
 }
 
 const parseS3PathSegment = (value: string | undefined): string | null => {
@@ -85,8 +98,36 @@ const parseS3FileName = (value: string | undefined): string | null => {
   }
 };
 
+const getParsedPathFlags = (
+  storageRegion?: string,
+  inlinePathPrefix?: string,
+): Pick<S3KeyParts, 'useInlinePath' | 'inlinePathPrefix'> => {
+  if (inlinePathPrefix) {
+    return { useInlinePath: true, inlinePathPrefix };
+  }
+  if (storageRegion) {
+    return { useInlinePath: false };
+  }
+  return {};
+};
+
 const getDefaultStorageRegion = (): string | null =>
   s3Config.AWS_REGION || process.env.AWS_REGION || null;
+
+const getInlinePathPrefix = ({
+  basePath,
+  useInlinePath,
+}: Pick<S3KeyOptions, 'basePath' | 'useInlinePath'>): string | null => {
+  const prefix = INLINE_STORAGE_PREFIXES.get(basePath);
+  const shouldUseInlinePath = useInlinePath ?? Boolean(prefix);
+  if (!shouldUseInlinePath) {
+    return null;
+  }
+  if (!prefix) {
+    throw new Error(`[getS3Key] inline path is not supported for basePath: "${basePath}"`);
+  }
+  return prefix;
+};
 
 function normalizeS3KeyOptions(
   basePathOrOptions: string | S3KeyOptions,
@@ -123,8 +164,15 @@ export function getS3Key(
   const safeBasePath = assertPathSegment('basePath', options.basePath, 'getS3Key');
   const safeUserId = assertPathSegment('userId', options.userId, 'getS3Key');
   const safeFileName = assertS3FileName('fileName', options.fileName, 'getS3Key');
+  const inlinePathPrefix = getInlinePathPrefix({
+    ...options,
+    basePath: safeBasePath,
+  });
 
   const pathParts: string[] = [];
+  if (inlinePathPrefix) {
+    pathParts.push(inlinePathPrefix);
+  }
   if (includeRegionInPath) {
     const storageRegion = options.storageRegion ?? getDefaultStorageRegion();
     pathParts.push('r', assertPathSegment('storageRegion', storageRegion, 'getS3Key'));
@@ -136,7 +184,11 @@ export function getS3Key(
   return pathParts.join('/');
 }
 
-const parseS3KeyParts = (keyParts: string[], storageRegion?: string): S3KeyParts | null => {
+const parseS3KeyParts = (
+  keyParts: string[],
+  storageRegion?: string,
+  inlinePathPrefix?: string,
+): S3KeyParts | null => {
   if (keyParts[0] === 't') {
     if (keyParts.length < 5) {
       return null;
@@ -149,8 +201,14 @@ const parseS3KeyParts = (keyParts: string[], storageRegion?: string): S3KeyParts
     if (!safeTenantId || !safeBasePath || !safeUserId || !safeFileName) {
       return null;
     }
+    const expectedInlinePrefix = INLINE_STORAGE_PREFIXES.get(safeBasePath);
+    if (inlinePathPrefix && expectedInlinePrefix !== inlinePathPrefix) {
+      return null;
+    }
     return {
       ...(storageRegion ? { storageRegion } : {}),
+      ...(storageRegion ? { includeRegionInPath: true } : {}),
+      ...getParsedPathFlags(storageRegion, inlinePathPrefix),
       tenantId: safeTenantId,
       basePath: safeBasePath,
       userId: safeUserId,
@@ -168,8 +226,14 @@ const parseS3KeyParts = (keyParts: string[], storageRegion?: string): S3KeyParts
   if (!safeBasePath || !safeUserId || !safeFileName) {
     return null;
   }
+  const expectedInlinePrefix = INLINE_STORAGE_PREFIXES.get(safeBasePath);
+  if (inlinePathPrefix && expectedInlinePrefix !== inlinePathPrefix) {
+    return null;
+  }
   return {
     ...(storageRegion ? { storageRegion } : {}),
+    ...(storageRegion ? { includeRegionInPath: true } : {}),
+    ...getParsedPathFlags(storageRegion, inlinePathPrefix),
     basePath: safeBasePath,
     userId: safeUserId,
     fileName: safeFileName,
@@ -179,6 +243,10 @@ const parseS3KeyParts = (keyParts: string[], storageRegion?: string): S3KeyParts
 export const parseS3Key = (key: string): S3KeyParts | null => {
   const normalizedKey = key.replace(/^\/+/, '');
   const keyParts = normalizedKey.split('/');
+  const inlinePathPrefix =
+    keyParts[0] === INLINE_IMAGE_PATH_PREFIX || keyParts[0] === INLINE_AVATAR_PATH_PREFIX
+      ? keyParts.shift()
+      : undefined;
 
   if (keyParts[0] === 'r') {
     if (keyParts.length < 5) {
@@ -189,10 +257,10 @@ export const parseS3Key = (key: string): S3KeyParts | null => {
     if (!safeStorageRegion) {
       return null;
     }
-    return parseS3KeyParts(remainingParts, safeStorageRegion);
+    return parseS3KeyParts(remainingParts, safeStorageRegion, inlinePathPrefix);
   }
 
-  return parseS3KeyParts(keyParts);
+  return parseS3KeyParts(keyParts, undefined, inlinePathPrefix);
 };
 
 export function getStorageMetadataForKey(
@@ -253,6 +321,7 @@ export async function getS3URL({
   tenantId = null,
   storageRegion = null,
   includeRegionInPath = false,
+  useInlinePath,
 }: GetURLParams): Promise<string> {
   const key = getS3Key({
     basePath,
@@ -261,6 +330,7 @@ export async function getS3URL({
     tenantId,
     storageRegion,
     includeRegionInPath,
+    useInlinePath,
   });
   return getS3URLForKey({ key, customFilename, contentType });
 }
@@ -273,6 +343,7 @@ export async function saveBufferToS3({
   tenantId = null,
   storageRegion = null,
   includeRegionInPath = false,
+  useInlinePath,
   urlBuilder,
 }: SaveBufferParams & { urlBuilder?: UrlBuilder }): Promise<string> {
   const key = getS3Key({
@@ -282,6 +353,7 @@ export async function saveBufferToS3({
     tenantId,
     storageRegion,
     includeRegionInPath,
+    useInlinePath,
   });
   const params = { Bucket: bucketName, Key: key, Body: buffer };
 
@@ -300,6 +372,7 @@ export async function saveBufferToS3({
       tenantId,
       storageRegion,
       includeRegionInPath,
+      useInlinePath,
     });
   } catch (error) {
     logger.error('[saveBufferToS3] Error uploading buffer to S3:', (error as Error).message);
@@ -352,6 +425,7 @@ async function saveReadableToS3({
   tenantId = null,
   storageRegion = null,
   includeRegionInPath = false,
+  useInlinePath,
   urlBuilder,
 }: Omit<SaveBufferParams, 'buffer'> & {
   body: Readable;
@@ -364,6 +438,7 @@ async function saveReadableToS3({
     tenantId,
     storageRegion,
     includeRegionInPath,
+    useInlinePath,
   });
   const pending: PendingUploadBuffers = { buffers: [], bytes: 0 };
   const completedParts: CompletedPart[] = [];
@@ -445,6 +520,7 @@ async function saveReadableToS3({
         tenantId,
         storageRegion,
         includeRegionInPath,
+        useInlinePath,
       }),
       bytes: totalBytes,
       ...getStorageMetadataForKey(key),
@@ -472,6 +548,7 @@ export async function saveURLToS3WithMetadata({
   tenantId = null,
   storageRegion = null,
   includeRegionInPath = false,
+  useInlinePath,
   urlBuilder,
 }: SaveURLParams & { urlBuilder?: UrlBuilder }): Promise<SaveURLResult> {
   try {
@@ -492,6 +569,7 @@ export async function saveURLToS3WithMetadata({
         tenantId,
         storageRegion,
         includeRegionInPath,
+        useInlinePath,
         urlBuilder,
       });
       return {
@@ -513,6 +591,7 @@ export async function saveURLToS3WithMetadata({
       tenantId,
       storageRegion,
       includeRegionInPath,
+      useInlinePath,
       urlBuilder,
     });
     const key = getS3Key({
@@ -522,6 +601,7 @@ export async function saveURLToS3WithMetadata({
       tenantId,
       storageRegion,
       includeRegionInPath,
+      useInlinePath,
     });
     return {
       filepath,
@@ -691,6 +771,7 @@ export async function uploadFileToS3({
   tenantId = null,
   storageRegion = null,
   includeRegionInPath = false,
+  useInlinePath,
   urlBuilder,
 }: UploadFileParams & { urlBuilder?: UrlBuilder }): Promise<UploadResult> {
   if (!req.user) {
@@ -709,6 +790,7 @@ export async function uploadFileToS3({
       tenantId: resolvedTenantId,
       storageRegion,
       includeRegionInPath,
+      useInlinePath,
     });
 
     const stats = await fs.promises.stat(inputFilePath);
@@ -735,6 +817,7 @@ export async function uploadFileToS3({
       tenantId: resolvedTenantId,
       storageRegion,
       includeRegionInPath,
+      useInlinePath,
     });
     // NOTE: temp file is intentionally NOT deleted on the success path.
     // The caller (processAgentFileUpload) reads file.path after this returns

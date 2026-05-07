@@ -63,16 +63,23 @@ function makeConfig(overrides: Partial<CloudFrontFullConfig> = {}): CloudFrontFu
 describe('CloudFront CRUD', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetS3Key.mockImplementation(({ basePath, userId, fileName, tenantId, storageRegion }) => {
-      if (storageRegion) {
+    mockGetS3Key.mockImplementation(
+      ({ basePath, userId, fileName, tenantId, storageRegion, useInlinePath }) => {
+        let inlinePrefix = null;
+        if (useInlinePath) {
+          inlinePrefix = basePath === 'avatars' ? 'a' : 'i';
+        }
+        const prefix = inlinePrefix ? `${inlinePrefix}/` : '';
+        if (storageRegion) {
+          return tenantId
+            ? `${prefix}r/${storageRegion}/t/${tenantId}/${basePath}/${userId}/${fileName}`
+            : `${prefix}r/${storageRegion}/${basePath}/${userId}/${fileName}`;
+        }
         return tenantId
-          ? `r/${storageRegion}/t/${tenantId}/${basePath}/${userId}/${fileName}`
-          : `r/${storageRegion}/${basePath}/${userId}/${fileName}`;
-      }
-      return tenantId
-        ? `t/${tenantId}/${basePath}/${userId}/${fileName}`
-        : `${basePath}/${userId}/${fileName}`;
-    });
+          ? `${prefix}t/${tenantId}/${basePath}/${userId}/${fileName}`
+          : `${prefix}${basePath}/${userId}/${fileName}`;
+      },
+    );
     mockGetCloudFrontConfig.mockReturnValue(makeConfig());
   });
 
@@ -80,7 +87,7 @@ describe('CloudFront CRUD', () => {
     it('returns plain CloudFront URL when sign is false (default)', async () => {
       const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
       const url = await getCloudFrontURL({ userId: 'user1', fileName: 'photo.webp' });
-      expect(url).toBe('https://d123.cloudfront.net/images/user1/photo.webp');
+      expect(url).toBe('https://d123.cloudfront.net/i/images/user1/photo.webp');
       expect(mockGetSignedUrl).not.toHaveBeenCalled();
     });
 
@@ -133,13 +140,51 @@ describe('CloudFront CRUD', () => {
       );
     });
 
+    it('uses region-aware private inline image keys when configured', async () => {
+      mockGetCloudFrontConfig.mockReturnValue(
+        makeConfig({ storageRegion: 'eu-central-1', includeRegionInPath: true }),
+      );
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({
+        userId: 'user1',
+        fileName: 'photo.webp',
+        tenantId: 'tenantA',
+      });
+      expect(url).toBe(
+        'https://d123.cloudfront.net/i/r/eu-central-1/t/tenantA/images/user1/photo.webp',
+      );
+      expect(mockGetS3Key).toHaveBeenCalledWith(
+        expect.objectContaining({
+          basePath: 'images',
+          useInlinePath: true,
+        }),
+      );
+    });
+
+    it('uses avatar cookie namespace for avatar URLs', async () => {
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({
+        userId: 'user1',
+        fileName: 'avatar.png',
+        basePath: 'avatars',
+        tenantId: 'tenantA',
+      });
+      expect(url).toBe('https://d123.cloudfront.net/a/t/tenantA/avatars/user1/avatar.png');
+      expect(mockGetS3Key).toHaveBeenCalledWith(
+        expect.objectContaining({
+          basePath: 'avatars',
+          useInlinePath: true,
+        }),
+      );
+    });
+
     it('strips trailing slash from domain', async () => {
       mockGetCloudFrontConfig.mockReturnValue(
         makeConfig({ domain: 'https://d123.cloudfront.net/' }),
       );
       const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
       const url = await getCloudFrontURL({ userId: 'user1', fileName: 'photo.webp' });
-      expect(url).toBe('https://d123.cloudfront.net/images/user1/photo.webp');
+      expect(url).toBe('https://d123.cloudfront.net/i/images/user1/photo.webp');
     });
 
     it('strips multiple trailing slashes from domain', async () => {
@@ -148,7 +193,7 @@ describe('CloudFront CRUD', () => {
       );
       const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
       const url = await getCloudFrontURL({ userId: 'user1', fileName: 'photo.webp' });
-      expect(url).toBe('https://d123.cloudfront.net/images/user1/photo.webp');
+      expect(url).toBe('https://d123.cloudfront.net/i/images/user1/photo.webp');
     });
 
     it('strips leading slash from S3 key', async () => {
@@ -258,6 +303,7 @@ describe('CloudFront CRUD', () => {
           buffer: Buffer.from('data'),
           fileName: 'f.webp',
           basePath: 'images',
+          useInlinePath: true,
           urlBuilder: expect.any(Function),
         }),
       );
@@ -353,12 +399,43 @@ describe('CloudFront CRUD', () => {
   });
 
   describe('uploadFileToCloudFront', () => {
-    it('delegates to uploadFileToS3 with a urlBuilder', async () => {
-      const uploadResult = { filepath: 'https://d123.cloudfront.net/images/u/f.pdf', bytes: 1024 };
+    it('keeps document uploads outside the inline cookie namespaces', async () => {
+      const uploadResult = { filepath: 'https://d123.cloudfront.net/uploads/u/f.pdf', bytes: 1024 };
       mockUploadFileToS3.mockResolvedValue(uploadResult);
 
       const mockReq = { user: { id: 'u' } } as ServerRequest;
-      const mockFile = { path: '/tmp/f.pdf' } as Express.Multer.File;
+      const mockFile = {
+        path: '/tmp/f.pdf',
+        mimetype: 'application/pdf',
+      } as Express.Multer.File;
+
+      const { uploadFileToCloudFront } = await import('~/storage/cloudfront/crud');
+      const result = await uploadFileToCloudFront({
+        req: mockReq,
+        file: mockFile,
+        file_id: 'fid-1',
+        basePath: 'uploads',
+      });
+
+      expect(mockUploadFileToS3).toHaveBeenCalledWith(
+        expect.objectContaining({
+          req: mockReq,
+          file: mockFile,
+          file_id: 'fid-1',
+          basePath: 'uploads',
+          useInlinePath: false,
+          urlBuilder: expect.any(Function),
+        }),
+      );
+      expect(result).toEqual(uploadResult);
+    });
+
+    it('keeps image uploads in the private inline namespace', async () => {
+      const uploadResult = { filepath: 'https://d123.cloudfront.net/i/images/u/f.png', bytes: 512 };
+      mockUploadFileToS3.mockResolvedValue(uploadResult);
+
+      const mockReq = { user: { id: 'u' } } as ServerRequest;
+      const mockFile = { path: '/tmp/f.png', mimetype: 'image/png' } as Express.Multer.File;
 
       const { uploadFileToCloudFront } = await import('~/storage/cloudfront/crud');
       const result = await uploadFileToCloudFront({
@@ -369,10 +446,7 @@ describe('CloudFront CRUD', () => {
 
       expect(mockUploadFileToS3).toHaveBeenCalledWith(
         expect.objectContaining({
-          req: mockReq,
-          file: mockFile,
-          file_id: 'fid-1',
-          urlBuilder: expect.any(Function),
+          useInlinePath: true,
         }),
       );
       expect(result).toEqual(uploadResult);

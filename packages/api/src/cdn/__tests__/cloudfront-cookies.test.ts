@@ -148,7 +148,7 @@ describe('setCloudFrontCookies', () => {
 
     expect(result).toBe(true);
     expect(mockRes.cookie).toHaveBeenCalledTimes(7);
-    expect(mockRes.clearCookie).toHaveBeenCalledTimes(12);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(15);
 
     const cookieNames = cookieArgs.map(([name]) => name);
     expect(cookieNames).toContain('CloudFront-Policy');
@@ -180,9 +180,9 @@ describe('setCloudFrontCookies', () => {
       secure: true,
       sameSite: 'none',
       domain: '.example.com',
-      path: '/images/user123',
+      path: '/i',
     });
-    expect(cookieArgs[3][2]).toMatchObject({ path: '/avatars' });
+    expect(cookieArgs[3][2]).toMatchObject({ path: '/a' });
   });
 
   it('clears legacy image-wide and avatar cookie paths before setting scoped cookies', () => {
@@ -203,7 +203,7 @@ describe('setCloudFrontCookies', () => {
 
     setCloudFrontCookies(mockRes as Response, defaultScope);
 
-    expect(clearedCookies).toHaveLength(12);
+    expect(clearedCookies).toHaveLength(15);
     expect(clearedCookies).toContainEqual([
       'CloudFront-Policy',
       expect.objectContaining({ path: '/images' }),
@@ -215,6 +215,14 @@ describe('setCloudFrontCookies', () => {
     expect(clearedCookies).toContainEqual([
       'CloudFront-Signature',
       expect.objectContaining({ path: '/r' }),
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Policy',
+      expect.objectContaining({ path: '/i' }),
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Key-Pair-Id',
+      expect.objectContaining({ path: '/a' }),
     ]);
   });
 
@@ -242,11 +250,11 @@ describe('setCloudFrontCookies', () => {
 
     expect(clearedCookies).toContainEqual([
       'CloudFront-Policy',
-      expect.objectContaining({ path: '/t/oldTenant/images/oldUser' }),
+      expect.objectContaining({ path: '/i' }),
     ]);
     expect(clearedCookies).toContainEqual([
       'CloudFront-Signature',
-      expect.objectContaining({ path: '/t/oldTenant/avatars' }),
+      expect.objectContaining({ path: '/a' }),
     ]);
   });
 
@@ -304,10 +312,10 @@ describe('setCloudFrontCookies', () => {
       }),
     );
     expect(privatePolicy.Statement).toEqual([
-      expect.objectContaining({ Resource: 'https://cdn.example.com/images/user123/*' }),
+      expect.objectContaining({ Resource: 'https://cdn.example.com/i/images/user123/*' }),
     ]);
     expect(avatarPolicy.Statement).toEqual([
-      expect.objectContaining({ Resource: 'https://cdn.example.com/avatars/*' }),
+      expect.objectContaining({ Resource: 'https://cdn.example.com/a/avatars/*' }),
     ]);
   });
 
@@ -337,17 +345,17 @@ describe('setCloudFrontCookies', () => {
     expect(result).toBe(true);
     expect(privatePolicy.Statement).toEqual([
       expect.objectContaining({
-        Resource: 'https://cdn.example.com/t/tenantA/images/user123/*',
+        Resource: 'https://cdn.example.com/i/t/tenantA/images/user123/*',
       }),
     ]);
     expect(avatarPolicy.Statement).toEqual([
-      expect.objectContaining({ Resource: 'https://cdn.example.com/t/tenantA/avatars/*' }),
+      expect.objectContaining({ Resource: 'https://cdn.example.com/a/t/tenantA/avatars/*' }),
     ]);
-    expect(cookieArgs[0][2]).toMatchObject({ path: '/t/tenantA/images/user123' });
-    expect(cookieArgs[3][2]).toMatchObject({ path: '/t/tenantA/avatars' });
+    expect(cookieArgs[0][2]).toMatchObject({ path: '/i' });
+    expect(cookieArgs[3][2]).toMatchObject({ path: '/a' });
   });
 
-  it('builds region-prefixed custom policies when region pathing is enabled', () => {
+  it('builds disjoint region-wildcard image and avatar policies', () => {
     mockGetCloudFrontConfig.mockReturnValue({
       domain: 'https://cdn.example.com',
       imageSigning: 'cookies',
@@ -373,19 +381,59 @@ describe('setCloudFrontCookies', () => {
     const privatePolicy = JSON.parse(mockGetSignedCookies.mock.calls[0][0].policy);
     const avatarPolicy = JSON.parse(mockGetSignedCookies.mock.calls[1][0].policy);
     expect(result).toBe(true);
-    expect(privatePolicy.Statement[0].Resource).toBe(
-      'https://cdn.example.com/r/*/t/tenantA/images/user123/*',
-    );
-    expect(avatarPolicy.Statement[0].Resource).toBe(
-      'https://cdn.example.com/r/*/t/tenantA/avatars/*',
-    );
-    expect(cookieArgs[0][2]).toMatchObject({ path: '/r/us-east-2/t/tenantA/images/user123' });
-    expect(cookieArgs[3][2]).toMatchObject({ path: '/r/us-east-2/t/tenantA/avatars' });
+    expect(mockGetSignedCookies).toHaveBeenCalledTimes(2);
+    expect(mockRes.cookie).toHaveBeenCalledTimes(7);
+    expect(privatePolicy.Statement).toEqual([
+      expect.objectContaining({
+        Resource: 'https://cdn.example.com/i/r/*/t/tenantA/images/user123/*',
+      }),
+    ]);
+    expect(avatarPolicy.Statement).toEqual([
+      expect.objectContaining({
+        Resource: 'https://cdn.example.com/a/r/*/t/tenantA/avatars/*',
+      }),
+    ]);
+    expect(cookieArgs[0][2]).toMatchObject({ path: '/i' });
+    expect(cookieArgs[3][2]).toMatchObject({ path: '/a' });
 
     const [, scopeValue] = cookieArgs[cookieArgs.length - 1];
     expect(Buffer.from(scopeValue, 'base64url').toString('utf8')).toBe(
       JSON.stringify({ userId: 'user123', tenantId: 'tenantA', storageRegion: 'us-east-2' }),
     );
+  });
+
+  it('builds a user-bounded region-wildcard policy for non-tenant installs', () => {
+    mockGetCloudFrontConfig.mockReturnValue({
+      domain: 'https://cdn.example.com',
+      imageSigning: 'cookies',
+      cookieExpiry: 1800,
+      cookieDomain: '.example.com',
+      privateKey: '-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----',
+      keyPairId: 'K123ABC',
+      storageRegion: 'us-east-2',
+      includeRegionInPath: true,
+    });
+
+    mockGetSignedCookies.mockReturnValue({
+      'CloudFront-Policy': 'policy-value',
+      'CloudFront-Signature': 'signature-value',
+      'CloudFront-Key-Pair-Id': 'K123ABC',
+    });
+
+    const result = setCloudFrontCookies(mockRes as Response, { userId: 'user123' });
+
+    const privatePolicy = JSON.parse(mockGetSignedCookies.mock.calls[0][0].policy);
+    const avatarPolicy = JSON.parse(mockGetSignedCookies.mock.calls[1][0].policy);
+    expect(result).toBe(true);
+    expect(mockGetSignedCookies).toHaveBeenCalledTimes(2);
+    expect(privatePolicy.Statement).toEqual([
+      expect.objectContaining({ Resource: 'https://cdn.example.com/i/r/*/images/user123/*' }),
+    ]);
+    expect(avatarPolicy.Statement).toEqual([
+      expect.objectContaining({ Resource: 'https://cdn.example.com/a/r/*/avatars/*' }),
+    ]);
+    expect(cookieArgs[0][2]).toMatchObject({ path: '/i' });
+    expect(cookieArgs[3][2]).toMatchObject({ path: '/a' });
   });
 
   it('handles multiple trailing slashes in domain', () => {
@@ -408,7 +456,7 @@ describe('setCloudFrontCookies', () => {
 
     expect(mockGetSignedCookies).toHaveBeenCalledWith(
       expect.objectContaining({
-        policy: expect.stringContaining('https://cdn.example.com/images/user123/*'),
+        policy: expect.stringContaining('https://cdn.example.com/i/images/user123/*'),
       }),
     );
   });
@@ -582,7 +630,7 @@ describe('clearCloudFrontCookies', () => {
 
     clearCloudFrontCookies(mockRes as Response);
 
-    expect(mockRes.clearCookie).toHaveBeenCalledTimes(13);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(19);
   });
 
   it('does nothing when cookieDomain is missing', () => {
@@ -607,7 +655,7 @@ describe('clearCloudFrontCookies', () => {
 
     clearCloudFrontCookies(mockRes as Response);
 
-    expect(mockRes.clearCookie).toHaveBeenCalledTimes(13);
+    expect(mockRes.clearCookie).toHaveBeenCalledTimes(19);
 
     const legacyPathOptions = {
       domain: '.example.com',
@@ -651,7 +699,17 @@ describe('clearCloudFrontCookies', () => {
       'CloudFront-Policy',
       {
         domain: '.example.com',
-        path: '/t/tenantA/images/user123',
+        path: '/i',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+      },
+    ]);
+    expect(clearedCookies).toContainEqual([
+      'CloudFront-Policy',
+      {
+        domain: '.example.com',
+        path: '/a',
         httpOnly: true,
         secure: true,
         sameSite: 'none',

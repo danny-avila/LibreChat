@@ -84,7 +84,7 @@ describe('S3 CRUD', () => {
     it('constructs key from basePath, userId, and fileName', async () => {
       const { getS3Key } = await import('../crud');
       const key = getS3Key('images', 'user123', 'file.png');
-      expect(key).toBe('images/user123/file.png');
+      expect(key).toBe('i/images/user123/file.png');
     });
 
     it('handles nested file names', async () => {
@@ -96,7 +96,7 @@ describe('S3 CRUD', () => {
     it('constructs tenant-prefixed keys when tenantId is provided', async () => {
       const { getS3Key } = await import('../crud');
       const key = getS3Key('images', 'user123', 'file.png', 'tenantA');
-      expect(key).toBe('t/tenantA/images/user123/file.png');
+      expect(key).toBe('i/t/tenantA/images/user123/file.png');
     });
 
     it('constructs region-prefixed keys without tenant scope', async () => {
@@ -107,8 +107,9 @@ describe('S3 CRUD', () => {
         fileName: 'file.png',
         storageRegion: 'us-east-2',
         includeRegionInPath: true,
+        useInlinePath: true,
       });
-      expect(key).toBe('r/us-east-2/images/user123/file.png');
+      expect(key).toBe('i/r/us-east-2/images/user123/file.png');
     });
 
     it('constructs region and tenant-prefixed keys together', async () => {
@@ -120,8 +121,36 @@ describe('S3 CRUD', () => {
         tenantId: 'tenantA',
         storageRegion: 'eu-central-1',
         includeRegionInPath: true,
+        useInlinePath: true,
       });
-      expect(key).toBe('r/eu-central-1/t/tenantA/images/user123/file.png');
+      expect(key).toBe('i/r/eu-central-1/t/tenantA/images/user123/file.png');
+    });
+
+    it('constructs avatar-prefixed region keys under the avatar cookie namespace', async () => {
+      const { getS3Key } = await import('../crud');
+      const key = getS3Key({
+        basePath: 'avatars',
+        userId: 'user123',
+        fileName: 'avatar.png',
+        tenantId: 'tenantA',
+        storageRegion: 'ap-southeast-1',
+        includeRegionInPath: true,
+        useInlinePath: true,
+      });
+      expect(key).toBe('a/r/ap-southeast-1/t/tenantA/avatars/user123/avatar.png');
+    });
+
+    it('keeps uploads outside the inline cookie namespaces when region pathing is enabled', async () => {
+      const { getS3Key } = await import('../crud');
+      const key = getS3Key({
+        basePath: 'uploads',
+        userId: 'user123',
+        fileName: 'report.pdf',
+        tenantId: 'tenantA',
+        storageRegion: 'eu-central-1',
+        includeRegionInPath: true,
+      });
+      expect(key).toBe('r/eu-central-1/t/tenantA/uploads/user123/report.pdf');
     });
 
     it('throws if storageRegion contains unsafe path characters', async () => {
@@ -194,11 +223,47 @@ describe('S3 CRUD', () => {
 
     it('parses region-prefixed keys', async () => {
       const { parseS3Key } = await import('../crud');
-      expect(parseS3Key('r/us-east-2/images/user123/file.png')).toEqual({
+      expect(parseS3Key('i/r/us-east-2/images/user123/file.png')).toEqual({
         storageRegion: 'us-east-2',
+        includeRegionInPath: true,
+        useInlinePath: true,
+        inlinePathPrefix: 'i',
         basePath: 'images',
         userId: 'user123',
         fileName: 'file.png',
+      });
+    });
+
+    it('parses non-region inline-prefixed keys', async () => {
+      const { parseS3Key } = await import('../crud');
+      expect(parseS3Key('i/t/tenantA/images/user123/file.png')).toEqual({
+        useInlinePath: true,
+        inlinePathPrefix: 'i',
+        tenantId: 'tenantA',
+        basePath: 'images',
+        userId: 'user123',
+        fileName: 'file.png',
+      });
+      expect(parseS3Key('a/avatars/user123/avatar.png')).toEqual({
+        useInlinePath: true,
+        inlinePathPrefix: 'a',
+        basePath: 'avatars',
+        userId: 'user123',
+        fileName: 'avatar.png',
+      });
+    });
+
+    it('parses region-prefixed avatar keys', async () => {
+      const { parseS3Key } = await import('../crud');
+      expect(parseS3Key('a/r/us-east-2/t/tenantA/avatars/user123/avatar.png')).toEqual({
+        storageRegion: 'us-east-2',
+        includeRegionInPath: true,
+        useInlinePath: true,
+        inlinePathPrefix: 'a',
+        tenantId: 'tenantA',
+        basePath: 'avatars',
+        userId: 'user123',
+        fileName: 'avatar.png',
       });
     });
 
@@ -206,11 +271,20 @@ describe('S3 CRUD', () => {
       const { parseS3Key } = await import('../crud');
       expect(parseS3Key('r/ap-southeast-1/t/tenantA/uploads/user123/report.pdf')).toEqual({
         storageRegion: 'ap-southeast-1',
+        includeRegionInPath: true,
+        useInlinePath: false,
         tenantId: 'tenantA',
         basePath: 'uploads',
         userId: 'user123',
         fileName: 'report.pdf',
       });
+    });
+
+    it('rejects malformed inline-prefixed keys', async () => {
+      const { parseS3Key } = await import('../crud');
+      expect(parseS3Key('i/r/us-east-2/uploads/user123/file.pdf')).toBeNull();
+      expect(parseS3Key('a/r/us-east-2/images/user123/file.png')).toBeNull();
+      expect(parseS3Key('i/r/us-east-2/images/user123')).toBeNull();
     });
 
     it('returns null for incomplete keys', async () => {
@@ -279,6 +353,7 @@ describe('S3 CRUD', () => {
         tenantId: 'tenantA',
         storageRegion: null,
         includeRegionInPath: false,
+        useInlinePath: undefined,
       });
     });
 
@@ -309,6 +384,7 @@ describe('S3 CRUD', () => {
         tenantId: 'tenantA',
         storageRegion: 'us-east-2',
         includeRegionInPath: true,
+        useInlinePath: undefined,
       });
     });
 
@@ -321,7 +397,7 @@ describe('S3 CRUD', () => {
       });
 
       const calls = s3Mock.commandCalls(PutObjectCommand);
-      expect(calls[0].args[0].input.Key).toBe('images/user123/test.txt');
+      expect(calls[0].args[0].input.Key).toBe('i/images/user123/test.txt');
     });
 
     it('handles S3 upload errors', async () => {
@@ -450,7 +526,7 @@ describe('S3 CRUD', () => {
       expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(1);
       expect(result).toEqual({
         filepath: 'https://bucket.s3.amazonaws.com/test-key?signed=true',
-        storageKey: 'images/user123/downloaded.jpg',
+        storageKey: 'i/images/user123/downloaded.jpg',
         bytes: 8,
         type: 'image/jpeg',
         dimensions: {},
@@ -469,11 +545,11 @@ describe('S3 CRUD', () => {
       });
 
       expect(result).toMatchObject({
-        storageKey: 'r/us-east-2/t/tenantA/images/user123/downloaded.jpg',
+        storageKey: 'i/r/us-east-2/t/tenantA/images/user123/downloaded.jpg',
         storageRegion: 'us-east-2',
       });
       expect(s3Mock.commandCalls(PutObjectCommand)[0].args[0].input.Key).toBe(
-        'r/us-east-2/t/tenantA/images/user123/downloaded.jpg',
+        'i/r/us-east-2/t/tenantA/images/user123/downloaded.jpg',
       );
     });
 
@@ -825,7 +901,7 @@ describe('S3 CRUD', () => {
 
       expect(result).toEqual({
         filepath: expect.stringContaining('signed=true'),
-        storageKey: 'images/user123/file123__photo.jpg',
+        storageKey: 'i/images/user123/file123__photo.jpg',
         bytes: 1024,
       });
       expect(fs.createReadStream).toHaveBeenCalledWith('/tmp/upload.jpg');
@@ -854,7 +930,7 @@ describe('S3 CRUD', () => {
       });
 
       const calls = s3Mock.commandCalls(PutObjectCommand);
-      expect(calls[0].args[0].input.Key).toBe('t/tenantA/images/user123/file123__photo.jpg');
+      expect(calls[0].args[0].input.Key).toBe('i/t/tenantA/images/user123/file123__photo.jpg');
     });
 
     it('uses region-prefixed keys when uploading a file from disk', async () => {
@@ -877,9 +953,9 @@ describe('S3 CRUD', () => {
       });
 
       const calls = s3Mock.commandCalls(PutObjectCommand);
-      expect(calls[0].args[0].input.Key).toBe('r/us-east-2/images/user123/file123__photo.jpg');
+      expect(calls[0].args[0].input.Key).toBe('i/r/us-east-2/images/user123/file123__photo.jpg');
       expect(result).toMatchObject({
-        storageKey: 'r/us-east-2/images/user123/file123__photo.jpg',
+        storageKey: 'i/r/us-east-2/images/user123/file123__photo.jpg',
         storageRegion: 'us-east-2',
       });
     });
@@ -1048,7 +1124,7 @@ describe('S3 CRUD', () => {
         expect.anything(),
         expect.objectContaining({
           input: expect.objectContaining({
-            Key: 't/tenantA/images/user123/file.jpg',
+            Key: 'i/t/tenantA/images/user123/file.jpg',
           }),
         }),
         expect.anything(),
