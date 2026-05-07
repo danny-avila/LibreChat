@@ -75,7 +75,7 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
           id={id}
           type={isVisible ? 'text' : 'password'}
           className={cn(
-            'focus-visible:ring-ring-primary/30 flex h-10 w-full rounded-lg border border-border-light bg-transparent py-2 pl-3 text-sm transition-colors placeholder:text-muted-foreground hover:border-border-medium focus-visible:border-border-heavy focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50',
+            'flex h-10 w-full rounded-lg border border-border-light bg-transparent py-2 pl-3 text-sm transition-colors placeholder:text-muted-foreground hover:border-border-medium focus-visible:border-border-heavy focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
             className ?? '',
             showCopy ? 'pr-20' : 'pr-11',
           )}
