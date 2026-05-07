@@ -1327,3 +1327,54 @@ export const CROPS = [
   "Wood apple",
   "Yam"
 ];
+
+export const KVKS: Record<string, string[]> = {
+  // Kerala
+  Thiruvananthapuram: [
+    'KVK Thiruvananthapuram',
+    'ICAR-KVK Vellanikkara',
+  ],
+  Kollam: [
+    'KVK Kollam',
+    'ICAR KVK Kottarakkara',
+  ],
+  Ernakulam: [
+    'KVK Ernakulam',
+    'Central Marine Fisheries KVK',
+  ],
+
+  // Karnataka
+  Bengaluru: [
+    'KVK Bengaluru Rural',
+    'GKVK Bengaluru',
+  ],
+  Mysuru: [
+    'KVK Mysuru',
+    'ICAR-KVK Naganahalli',
+  ],
+
+  // Tamil Nadu
+  Chennai: [
+    'KVK Chennai',
+    'TNAU Extension Center',
+  ],
+  Coimbatore: [
+    'KVK Coimbatore',
+    'TNAU KVK',
+  ],
+
+  // Maharashtra
+  Pune: [
+    'KVK Pune',
+    'ICAR-KVK Baramati',
+  ],
+  Nagpur: [
+    'KVK Nagpur',
+    'ICAR Central Citrus Research KVK',
+  ],
+
+  // Default fallback
+  Other: [
+    'Nearest KVK Center',
+  ],
+};
