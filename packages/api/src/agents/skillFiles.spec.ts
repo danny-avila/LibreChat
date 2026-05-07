@@ -162,6 +162,12 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     expect(codeSession?.files).toEqual([
       {
         id: 'file-1',
+        /* `resource_id` is the skill `_id` — drives codeapi's
+         * sessionKey re-derivation. Distinct from `id` (the storage
+         * file_id). The split fixes the shared-kind 403 mismatch
+         * where codeapi computed sessionKey from the storage nanoid
+         * instead of the skill _id. */
+        resource_id: SKILL_ID.toString(),
         name: 'brand-guidelines/references/style.md',
         storage_session_id: 'session-42',
         kind: 'skill',
@@ -283,6 +289,9 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     expect(codeSession?.files).toEqual([
       {
         id: 'file-cached',
+        /* From the cache-hit path: pulls `resource_id` directly off
+         * the persisted `codeEnvRef.id` (the skill `_id`). */
+        resource_id: SKILL_ID.toString(),
         name: 'brand-guidelines/references/style.md',
         storage_session_id: 'session-cached',
         kind: 'skill',

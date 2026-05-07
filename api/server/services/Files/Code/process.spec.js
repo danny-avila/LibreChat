@@ -1624,7 +1624,16 @@ describe('Code Process', () => {
       // The seed list (consumed by buildInitialToolSessions) MUST carry
       // the post-reupload ids — not the stale pre-reupload ones.
       expect(result.files).toEqual([
-        { id: 'NEW_ID', storage_session_id: 'NEW_SESSION', name: 'sentinel.txt', kind: 'user' },
+        {
+          id: 'NEW_ID',
+          /* `resource_id` carries the codeEnvRef.id (= original
+           * userId for kind: 'user'), threaded onto the in-memory
+           * file ref for codeapi's sessionKey re-derivation. */
+          resource_id: 'user-123',
+          storage_session_id: 'NEW_SESSION',
+          name: 'sentinel.txt',
+          kind: 'user',
+        },
       ]);
     });
 
@@ -1748,6 +1757,11 @@ describe('Code Process', () => {
       expect(result.files).toEqual([
         {
           id: 'STRUCT_ID',
+          /* `resource_id` from the persisted codeEnvRef.id — for
+           * `kind: 'user'` this is informational (codeapi derives
+           * sessionKey from auth context) but threaded for shape
+           * uniformity with shared kinds. */
+          resource_id: 'user-123',
           storage_session_id: 'STRUCT_SESSION',
           name: 'sentinel.txt',
           kind: 'user',

@@ -804,8 +804,15 @@ const primeFiles = async (options) => {
         }
 
         toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}${previewSuffix}`;
+        /* `id` is the storage file_id (drives codeapi's upload-key
+         * existence check), `resource_id` is the entity that owns
+         * the storage session (drives sessionKey re-derivation). For
+         * code-output files this is `kind: 'user'` and `resource_id`
+         * is informational (codeapi ignores it for user kind), but
+         * we still send it for shape uniformity with shared kinds. */
         files.push({
           id: overrideId ?? id,
+          resource_id: ref.id,
           storage_session_id: overrideSessionId ?? session_id,
           name: file.filename,
           kind: ref.kind,

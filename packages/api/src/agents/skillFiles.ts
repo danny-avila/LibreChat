@@ -407,8 +407,17 @@ export async function primeInvokedSkills(
         const allActive = checkResults.every(Boolean);
 
         if (allActive) {
+          /* `id` is the STORAGE file_id (the per-file uuid the
+           * file_server registered the upload under); `resource_id`
+           * is the entity that owns the storage session — the
+           * skill's `_id` here. codeapi's auth layer needs both:
+           * `id` for the upload-existence check, `resource_id` for
+           * sessionKey re-derivation (`<tenant>:skill:<resource_id>:v:<version>`).
+           * Conflating them sent the storage nanoid through the
+           * sessionKey switch and 403'd every shared-kind /exec. */
           const cachedFiles = resolvedWithRef.map(({ skillName, file, ref }) => ({
             id: ref!.file_id,
+            resource_id: ref!.id,
             name: `${skillName}/${file.relativePath}`,
             storage_session_id: ref!.storage_session_id,
             kind: ref!.kind,
@@ -441,6 +450,7 @@ export async function primeInvokedSkills(
     // storage_session_ids natively.
     const allPrimedFiles: Array<{
       id: string;
+      resource_id: string;
       name: string;
       storage_session_id: string;
       kind: 'skill';
@@ -466,6 +476,10 @@ export async function primeInvokedSkills(
         for (const f of r.value.result.files) {
           allPrimedFiles.push({
             id: f.id,
+            /* `resource_id` is the skill's `_id` — drives codeapi's
+             * sessionKey re-derivation. See cachedFiles above for the
+             * full id-vs-resource_id rationale. */
+            resource_id: r.value.skill._id.toString(),
             name: f.name,
             storage_session_id: f.storage_session_id,
             kind: 'skill',
