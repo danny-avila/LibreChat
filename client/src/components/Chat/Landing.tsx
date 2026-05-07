@@ -66,12 +66,21 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
 
   const getGreeting = useCallback(() => {
     if (typeof startupConfig?.interface?.customWelcome === 'string') {
-      const customWelcome = startupConfig.interface.customWelcome;
-      // Replace {{user.name}} with actual user name if available
-      if (user?.name && customWelcome.includes('{{user.name}}')) {
-        return customWelcome.replace(/{{user.name}}/g, user.name);
+      let welcome = startupConfig.interface.customWelcome;
+      const firstName = user?.name ? user.name.trim().split(/\s+/)[0] : '';
+
+      if (firstName) {
+        welcome = welcome
+          .replace(/{{user\.firstName}}/g, firstName)
+          .replace(/{{user\.name}}/g, user?.name ?? '');
+      } else {
+        welcome = welcome
+          .replace(/\s*{{user\.firstName}}\s*/g, ' ')
+          .replace(/\s*{{user\.name}}\s*/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
       }
-      return customWelcome;
+      return welcome;
     }
 
     const now = new Date();

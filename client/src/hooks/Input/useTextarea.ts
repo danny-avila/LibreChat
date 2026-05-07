@@ -1,18 +1,15 @@
 import debounce from 'lodash/debounce';
 import { useEffect, useRef, useCallback } from 'react';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import {
   forceResize,
   insertTextAtCursor,
-  getEntityName,
   getEntity,
   checkIfScrollable,
 } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
-import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useInteractionHealthCheck } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
@@ -34,7 +31,6 @@ export default function useTextarea({
   disabled?: boolean;
 }) {
   const localize = useLocalize();
-  const getSender = useGetSender();
   const isComposing = useRef(false);
   const agentsMap = useAgentsMapContext();
   const { handleFiles } = useFileHandling();
@@ -47,14 +43,13 @@ export default function useTextarea({
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
   const { endpoint = '' } = conversation || {};
-  const { entity, isAgent, isAssistant } = getEntity({
+  const { isAgent, isAssistant } = getEntity({
     endpoint,
     agentsMap,
     assistantMap,
     agent_id: conversation?.agent_id,
     assistant_id: conversation?.assistant_id,
   });
-  const entityName = entity?.name ?? '';
 
   const isNotAppendable = latestMessage?.error === true && !isAssistant;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
@@ -94,14 +89,7 @@ export default function useTextarea({
         return localize('com_endpoint_message_not_appendable');
       }
 
-      const sender =
-        isAssistant || isAgent
-          ? getEntityName({ name: entityName, isAgent, localize })
-          : getSender(conversation as TEndpointOption);
-
-      return `${localize('com_endpoint_message_new', {
-        0: sender ? sender : localize('com_endpoint_ai'),
-      })}`;
+      return localize('com_endpoint_message_placeholder');
     };
 
     const placeholder = getPlaceholderText();
@@ -127,9 +115,7 @@ export default function useTextarea({
     isAgent,
     localize,
     disabled,
-    getSender,
     agentsMap,
-    entityName,
     textAreaRef,
     isAssistant,
     assistantMap,
