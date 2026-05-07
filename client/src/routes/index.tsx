@@ -15,8 +15,10 @@ import { AuthContextProvider } from '~/hooks/AuthContext';
 import { SubscriptionProvider } from '~/hooks/Subscription';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
+import ImpersonateConsumer from './Admin/ImpersonateConsumer';
 import LoginLayout from './Layouts/Login';
 import dashboardRoutes from './Dashboard';
+import adminRoutes from './Admin';
 import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
@@ -80,6 +82,13 @@ export const router = createBrowserRouter(
       errorElement: <RouteErrorBoundary />,
     },
     {
+      // Consumer for one-shot admin impersonation tokens. Lives outside
+      // AuthLayout: it must run without (and refuses) an existing session.
+      path: 'login/impersonate',
+      element: <ImpersonateConsumer />,
+      errorElement: <RouteErrorBoundary />,
+    },
+    {
       element: <AuthLayout />,
       errorElement: <RouteErrorBoundary />,
       children: [
@@ -98,6 +107,7 @@ export const router = createBrowserRouter(
           ],
         },
         dashboardRoutes,
+        adminRoutes,
         {
           path: '/',
           element: <Root />,

@@ -24,6 +24,7 @@ const uaParser = require('./uaParser');
 const checkBan = require('./checkBan');
 const noIndex = require('./noIndex');
 const roles = require('./roles');
+const admin = require('./admin');
 const subscriptionQuota = require('./subscriptionQuota');
 
 module.exports = {
@@ -31,6 +32,7 @@ module.exports = {
   ...validate,
   ...limiters,
   ...roles,
+  ...admin,
   ...subscriptionQuota,
   ...accessResources,
   noIndex,

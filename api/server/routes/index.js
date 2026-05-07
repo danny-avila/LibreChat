@@ -29,8 +29,10 @@ const user = require('./user');
 const mcp = require('./mcp');
 const revenuecat = require('./revenuecat');
 const subscription = require('./subscription');
+const admin = require('./admin');
 
 module.exports = {
+  admin,
   subscription,
   revenuecat,
   mcp,
