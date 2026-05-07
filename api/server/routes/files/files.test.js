@@ -685,7 +685,7 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(response.status).toBe(200);
       expect(response.body.toString()).toBe('file content');
       expect(response.headers.location).toBeUndefined();
-      const metadata = JSON.parse(response.headers['x-file-metadata']);
+      const metadata = JSON.parse(decodeURIComponent(response.headers['x-file-metadata']));
       expect(metadata).toMatchObject({
         file_id: userFileId,
         filename: 'file.pdf',
