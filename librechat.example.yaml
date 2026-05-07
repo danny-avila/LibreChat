@@ -525,6 +525,17 @@ endpoints:
       modelDisplayLabel: 'Portkey'
       iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
 
+    # API NODE Example
+    - name: 'API NODE'
+      apiKey: '${APINODE_API_KEY}'
+      baseURL: 'https://apinode.pro'
+      models:
+        default: ['gpt-5.5']
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-5.5'
+      modelDisplayLabel: 'API NODE'
+
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:
