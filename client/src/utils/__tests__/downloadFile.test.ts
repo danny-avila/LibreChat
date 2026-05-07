@@ -6,10 +6,12 @@ describe('downloadFile utilities', () => {
   let removeSpy: jest.SpyInstance;
   let revokeSpy: jest.Mock;
   let appendedLink: HTMLAnchorElement | null;
+  let originalRevokeObjectURL: typeof URL.revokeObjectURL | undefined;
 
   beforeEach(() => {
     jest.useFakeTimers();
     appendedLink = null;
+    originalRevokeObjectURL = URL.revokeObjectURL;
     clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation();
     appendSpy = jest.spyOn(document.body, 'appendChild').mockImplementation((node: Node) => {
       appendedLink = node as HTMLAnchorElement;
@@ -27,6 +29,10 @@ describe('downloadFile utilities', () => {
     clickSpy.mockRestore();
     appendSpy.mockRestore();
     removeSpy.mockRestore();
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: originalRevokeObjectURL,
+    });
     jest.useRealTimers();
   });
 
