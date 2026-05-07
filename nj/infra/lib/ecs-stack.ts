@@ -531,7 +531,7 @@ export class EcsStack extends cdk.Stack {
         elbv2.ListenerCondition.hostHeaders([props.envVars.domainName]),
         elbv2.ListenerCondition.pathPatterns(['/admin', '/admin/*']),
       ],
-      priority: 5,
+      priority: 20,
       action: elbv2.ListenerAction.forward([targetGroup]),
     });
 
