@@ -233,7 +233,7 @@ router.delete('/', async (req, res) => {
       if (unauthorizedFiles.length > 0) {
         return res.status(403).json({
           message: 'You can only delete files you have access to',
-          unauthorizedFiles: agentFiles.map((file) => file.file_id),
+          unauthorizedFiles: unauthorizedFiles.map((file) => file.file_id),
         });
       }
 

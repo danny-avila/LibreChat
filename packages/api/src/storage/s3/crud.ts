@@ -61,25 +61,23 @@ const INLINE_STORAGE_PREFIXES = new Map([
   [AVATAR_BASE_PATH, INLINE_AVATAR_PATH_PREFIX],
 ]);
 
-export interface S3KeyParts {
-  storageRegion?: string;
+interface S3KeyBase {
   basePath: string;
   userId: string;
   fileName: string;
-  tenantId?: string;
   includeRegionInPath?: boolean;
   useInlinePath?: boolean;
+}
+
+export interface S3KeyParts extends S3KeyBase {
+  storageRegion?: string;
+  tenantId?: string;
   inlinePathPrefix?: string;
 }
 
-export interface S3KeyOptions {
-  basePath: string;
-  userId: string;
-  fileName: string;
+export interface S3KeyOptions extends S3KeyBase {
   tenantId?: string | null;
   storageRegion?: string | null;
-  includeRegionInPath?: boolean;
-  useInlinePath?: boolean;
 }
 
 const parseS3PathSegment = (value: string | undefined): string | null => {
