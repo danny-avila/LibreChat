@@ -20,6 +20,7 @@ export interface IFarmerProfile {
   highestEducatedPerson?: string;
   numberOfSmartphones?: number;
   platform?: string;
+  platformHistory?: { os: string; timestamp: string }[];
   location?: {
     latitude: number;
     longitude: number;

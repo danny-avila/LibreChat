@@ -1,5 +1,6 @@
 import { useForm, Controller } from 'react-hook-form';
-import { useState, useRef, useEffect } from 'react';
+import useGeolocation from '~/hooks/useGeolocation';
+import { SearchableSelect } from '~/components/ui';
 import {
   OGDialog,
   OGDialogContent,
@@ -10,9 +11,7 @@ import {
 } from '@librechat/client';
 import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
-import { STATES, DISTRICTS, INDIAN_LANGUAGES } from '~/utils/metaData';
-
-import SearchableSelect from './SearchableSelect';
+import { STATES, DISTRICTS, BLOCKS, VILLAGES, CROPS, INDIAN_LANGUAGES } from '~/utils/metaData';
 
 // ── Form Types ───────────────────────────────────────────────────────────────
 
@@ -24,7 +23,9 @@ type FarmerProfileForm = {
   district: string;
   customDistrict: string;
   blockName: string;
+  customBlock: string;
   villageName: string;
+  customVillage: string;
   phoneNo: string;
   languagePreference: string;
   yearsOfExperience: number;
@@ -55,9 +56,6 @@ const FarmerProfileModal = ({
   onComplete: () => void;
   onDecline: () => void;
 }) => {
-  const [isLocating, setIsLocating] = useState(false);
-  const [locationError, setLocationError] = useState('');
-
   const {
     register,
     handleSubmit,
@@ -68,13 +66,24 @@ const FarmerProfileModal = ({
     formState: { errors, isValid },
   } = useForm<FarmerProfileForm>({ mode: 'onChange' });
 
+  const { isLocating, locationError, getLocation } = useGeolocation({
+    onSuccess: (latitude, longitude) => {
+      setValue('location.latitude', latitude, { shouldValidate: true });
+      setValue('location.longitude', longitude, { shouldValidate: true });
+    },
+  });
+
   const selectedState = watch('state');
   const selectedDistrict = watch('district');
+  const selectedBlock = watch('blockName');
+  const selectedCrops = watch('cropsCultivated');
 
   const handleStateChange = (val: string) => {
     setValue('state', val, { shouldValidate: true });
     setValue('district', '', { shouldValidate: false });
     setValue('customDistrict', '', { shouldValidate: false });
+    setValue('blockName', '', { shouldValidate: false });
+    setValue('villageName', '', { shouldValidate: false });
   };
 
   const handleDistrictChange = (val: string) => {
@@ -82,18 +91,43 @@ const FarmerProfileModal = ({
     if (val !== 'Other') {
       setValue('customDistrict', '', { shouldValidate: false });
     }
+    setValue('blockName', '', { shouldValidate: false });
+    setValue('villageName', '', { shouldValidate: false });
+  };
+
+  const handleBlockChange = (val: string) => {
+    setValue('blockName', val, { shouldValidate: true });
+    setValue('villageName', '', { shouldValidate: false });
   };
 
   const districtOptions = selectedState
     ? [...(DISTRICTS[selectedState] ?? []), 'Other']
     : ['Other'];
 
+  const blockOptions =
+    selectedDistrict && selectedDistrict !== 'Other'
+      ? [...(BLOCKS[selectedDistrict] ?? []), 'Other']
+      : ['Other'];
+
+  const villageOptions =
+    selectedBlock && selectedBlock !== 'Other'
+      ? [...(VILLAGES[selectedBlock] ?? []), 'Other']
+      : ['Other'];
+
+  const selectedCropsList = selectedCrops
+    ? selectedCrops
+        .split(',')
+        .map((c: string) => c.trim())
+        .filter(Boolean)
+    : [];
+
   const saveMutation = useSaveFarmerProfileMutation({
-    onSuccess: () => { onComplete(); },
+    onSuccess: () => {
+      onComplete();
+    },
   });
 
   const handleOpenChange = (isOpen: boolean) => {
-    /*if (open && !isOpen) { onDecline(); return; }*/
     onOpenChange(isOpen);
   };
 
@@ -108,27 +142,33 @@ const FarmerProfileModal = ({
   };
 
   const onSubmit = (data: FarmerProfileForm) => {
-    const resolvedDistrict =
-      data.district === 'Other' ? data.customDistrict : data.district;
+    const resolvedDistrict = data.district === 'Other' ? data.customDistrict : data.district;
+    const resolvedBlock = data.blockName === 'Other' ? data.customBlock : data.blockName;
+    const resolvedVillage = data.villageName === 'Other' ? data.customVillage : data.villageName;
 
     const profile: IFarmerProfile = {
       ...data,
       district: resolvedDistrict,
+      blockName: resolvedBlock,
+      villageName: resolvedVillage,
       age: Number(data.age),
       yearsOfExperience: Number(data.yearsOfExperience),
       numberOfSmartphones: Number(data.numberOfSmartphones),
       cropsCultivated: data.cropsCultivated
-        .split(',').map((c) => c.trim()).filter(Boolean),
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean),
       awarenessOfKCC: data.awarenessOfKCC === 'yes',
       usesAgriApps: data.usesAgriApps === 'yes',
       landhold: data.landhold ? Number(data.landhold) : undefined,
       platform: detectDevice(),
-      location: data.location?.latitude && data.location?.longitude 
-        ? {
-            latitude: Number(data.location.latitude),
-            longitude: Number(data.location.longitude),
-          }
-        : undefined,
+      location:
+        data.location?.latitude && data.location?.longitude
+          ? {
+              latitude: Number(data.location.latitude),
+              longitude: Number(data.location.longitude),
+            }
+          : undefined,
     };
     saveMutation.mutate(profile);
   };
@@ -146,8 +186,8 @@ const FarmerProfileModal = ({
       <OGDialogContent
         showCloseButton={false}
         onInteractOutside={(e) => e.preventDefault()}
-       onEscapeKeyDown={(e) => e.preventDefault()}
-        className="w-11/12 max-w-2xl sm:w-3/4 md:w-2/3 lg:w-1/2 max-h-[90vh] flex flex-col overflow-y-hidden"
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="flex max-h-[90vh] w-11/12 max-w-2xl flex-col overflow-y-hidden sm:w-3/4 md:w-2/3 lg:w-1/2"
       >
         <OGDialogHeader>
           <OGDialogTitle className="text-lg font-bold text-text-primary">
@@ -155,17 +195,16 @@ const FarmerProfileModal = ({
           </OGDialogTitle>
         </OGDialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
           <input type="hidden" {...register('location.latitude')} />
           <input type="hidden" {...register('location.longitude')} />
-          
+
           {/* ── Notice — pinned above the scrollable area ── */}
           <p className="shrink-0 px-1 pb-3 text-sm font-medium text-red-500">
             * Please fill in all the details below to complete your registration.
           </p>
 
           <div className="flex-1 overflow-y-auto px-1 py-2">
-
             {/* ── Section 1: Demographic Details ── */}
             <div className={sectionClass}>
               <h3 className={sectionTitleClass}>Demographic Details</h3>
@@ -249,26 +288,7 @@ const FarmerProfileModal = ({
                 <div className="mt-2 flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsLocating(true);
-                      setLocationError('');
-                      if (!navigator.geolocation) {
-                        setLocationError('Geolocation is not supported by your browser');
-                        setIsLocating(false);
-                        return;
-                      }
-                      navigator.geolocation.getCurrentPosition(
-                        (position) => {
-                          setValue('location.latitude', position.coords.latitude, { shouldValidate: true });
-                          setValue('location.longitude', position.coords.longitude, { shouldValidate: true });
-                          setIsLocating(false);
-                        },
-                        (error) => {
-                          setLocationError('Unable to retrieve your location');
-                          setIsLocating(false);
-                        }
-                      );
-                    }}
+                    onClick={getLocation}
                     disabled={isLocating}
                     className="inline-flex items-center justify-center rounded-lg border border-border-heavy bg-surface-secondary px-4 py-2 text-sm font-medium text-text-primary hover:bg-surface-active disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -276,12 +296,10 @@ const FarmerProfileModal = ({
                   </button>
                   {watch('location.latitude') && watch('location.longitude') && (
                     <span className="text-sm font-medium text-green-600 dark:text-green-500">
-                      ✓ Location Captured Succesfully
+                      ✓ Location Captured Successfully
                     </span>
                   )}
-                  {locationError && (
-                    <span className="text-sm text-red-500">{locationError}</span>
-                  )}
+                  {locationError && <span className="text-sm text-red-500">{locationError}</span>}
                 </div>
               </div>
 
@@ -342,26 +360,74 @@ const FarmerProfileModal = ({
               )}
 
               <div className={fieldClass}>
-                <Label htmlFor="blockName">Block Name</Label>
-                <Input
-                  id="blockName"
-                  placeholder="Enter block name"
-                  className={inputClass}
-                  {...register('blockName', { required: 'Block name is required' })}
+                <Label>Block Name</Label>
+                <Controller
+                  name="blockName"
+                  control={control}
+                  rules={{ required: 'Block name is required' }}
+                  render={({ field }) => (
+                    <SearchableSelect
+                      options={blockOptions}
+                      value={field.value ?? ''}
+                      onChange={handleBlockChange}
+                      placeholder={selectedDistrict ? 'Select block' : 'Select a district first'}
+                      disabled={!selectedDistrict}
+                    />
+                  )}
                 />
                 {errors.blockName && <p className={errorClass}>{errors.blockName.message}</p>}
               </div>
 
+              {selectedBlock === 'Other' && (
+                <div className={fieldClass}>
+                  <Label htmlFor="customBlock">Enter Your Block Name</Label>
+                  <Input
+                    id="customBlock"
+                    placeholder="Type your block name"
+                    className={inputClass}
+                    {...register('customBlock', {
+                      required: 'Please enter your block name',
+                    })}
+                  />
+                  {errors.customBlock && <p className={errorClass}>{errors.customBlock.message}</p>}
+                </div>
+              )}
+
               <div className={fieldClass}>
-                <Label htmlFor="villageName">Village Name</Label>
-                <Input
-                  id="villageName"
-                  placeholder="Enter village name"
-                  className={inputClass}
-                  {...register('villageName', { required: 'Village name is required' })}
+                <Label>Village Name</Label>
+                <Controller
+                  name="villageName"
+                  control={control}
+                  rules={{ required: 'Village name is required' }}
+                  render={({ field }) => (
+                    <SearchableSelect
+                      options={villageOptions}
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      placeholder={selectedBlock ? 'Select village' : 'Select a block first'}
+                      disabled={!selectedBlock}
+                    />
+                  )}
                 />
                 {errors.villageName && <p className={errorClass}>{errors.villageName.message}</p>}
               </div>
+
+              {selectedBlock === 'Other' || watch('villageName') === 'Other' ? (
+                <div className={fieldClass}>
+                  <Label htmlFor="customVillage">Enter Your Village Name</Label>
+                  <Input
+                    id="customVillage"
+                    placeholder="Type your village name"
+                    className={inputClass}
+                    {...register('customVillage', {
+                      required: 'Please enter your village name',
+                    })}
+                  />
+                  {errors.customVillage && (
+                    <p className={errorClass}>{errors.customVillage.message}</p>
+                  )}
+                </div>
+              ) : null}
 
               <div className={fieldClass}>
                 <Label htmlFor="phoneNo">Phone No.</Label>
@@ -450,25 +516,43 @@ const FarmerProfileModal = ({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className={fieldClass}>
-                  <Label htmlFor="primaryCrop">Primary Crop</Label>
-                  <Input
-                    id="primaryCrop"
-                    placeholder="e.g. Wheat"
-                    className={inputClass}
-                    {...register('primaryCrop', { required: 'Primary crop is required' })}
+                  <Label>Primary Crop</Label>
+                  <Controller
+                    name="primaryCrop"
+                    control={control}
+                    rules={{ required: 'Primary crop is required' }}
+                    render={({ field }) => (
+                      <SearchableSelect
+                        options={selectedCropsList}
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        placeholder={
+                          selectedCropsList.length ? 'Select primary crop' : 'Select crops first'
+                        }
+                        disabled={!selectedCropsList.length}
+                      />
+                    )}
                   />
-                  {errors.primaryCrop && (
-                    <p className={errorClass}>{errors.primaryCrop.message}</p>
-                  )}
+                  {errors.primaryCrop && <p className={errorClass}>{errors.primaryCrop.message}</p>}
                 </div>
 
                 <div className={fieldClass}>
-                  <Label htmlFor="secondaryCrop">Secondary Crop</Label>
-                  <Input
-                    id="secondaryCrop"
-                    placeholder="e.g. Rice"
-                    className={inputClass}
-                    {...register('secondaryCrop', { required: 'Secondary crop is required' })}
+                  <Label>Secondary Crop</Label>
+                  <Controller
+                    name="secondaryCrop"
+                    control={control}
+                    rules={{ required: 'Secondary crop is required' }}
+                    render={({ field }) => (
+                      <SearchableSelect
+                        options={selectedCropsList}
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        placeholder={
+                          selectedCropsList.length ? 'Select secondary crop' : 'Select crops first'
+                        }
+                        disabled={!selectedCropsList.length}
+                      />
+                    )}
                   />
                   {errors.secondaryCrop && (
                     <p className={errorClass}>{errors.secondaryCrop.message}</p>
@@ -485,7 +569,10 @@ const FarmerProfileModal = ({
                 <Label>Awareness of Kisan Call Centre (KCC)</Label>
                 <div className="mt-2 flex gap-6">
                   {['yes', 'no'].map((val) => (
-                    <label key={val} className="flex items-center gap-2 cursor-pointer text-sm text-text-primary">
+                    <label
+                      key={val}
+                      className="flex cursor-pointer items-center gap-2 text-sm text-text-primary"
+                    >
                       <input
                         type="radio"
                         value={val}
@@ -505,7 +592,10 @@ const FarmerProfileModal = ({
                 <Label>Usage of Any Agricultural Mobile Applications</Label>
                 <div className="mt-2 flex gap-6">
                   {['yes', 'no'].map((val) => (
-                    <label key={val} className="flex items-center gap-2 cursor-pointer text-sm text-text-primary">
+                    <label
+                      key={val}
+                      className="flex cursor-pointer items-center gap-2 text-sm text-text-primary"
+                    >
                       <input
                         type="radio"
                         value={val}
@@ -516,9 +606,7 @@ const FarmerProfileModal = ({
                     </label>
                   ))}
                 </div>
-                {errors.usesAgriApps && (
-                  <p className={errorClass}>{errors.usesAgriApps.message}</p>
-                )}
+                {errors.usesAgriApps && <p className={errorClass}>{errors.usesAgriApps.message}</p>}
               </div>
             </div>
 

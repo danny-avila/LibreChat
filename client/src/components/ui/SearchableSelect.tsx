@@ -81,7 +81,6 @@ const SearchableSelect = ({
               className="w-full rounded border border-border-heavy bg-surface-secondary px-2 py-1.5 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-green-500"
             />
           </div>
-          {/* Options */}
           <ul className="max-h-52 overflow-y-auto py-1">
             {filtered.length === 0 ? (
               <li className="px-3 py-2 text-sm text-text-secondary">No results found</li>

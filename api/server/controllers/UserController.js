@@ -171,11 +171,29 @@ const acceptSecondTermsController = async (req, res) => {
 
 const updateFarmerPlatformController = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(
-      req.user.id,
-      { $set: { 'farmerProfile.platform': req.body.platform } },
-      { new: true },
-    );
+    const existingUser = await User.findById(req.user.id);
+if (!existingUser) {
+  return res.status(404).json({ message: 'User not found' });
+}
+
+const alreadyExists = existingUser.farmerProfile?.platformHistory?.some(
+  (entry) => entry.os === req.body.platform
+);
+
+const updateQuery = {
+  $set: { 'farmerProfile.platform': req.body.platform },
+};
+
+if (!alreadyExists) {
+  updateQuery.$push = {
+    'farmerProfile.platformHistory': {
+      os: req.body.platform,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+const user = await User.findByIdAndUpdate(req.user.id, updateQuery, { new: true });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }

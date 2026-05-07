@@ -28,10 +28,6 @@ const FarmerLocationModal = ({
   onComplete: () => void;
   missingFields?: string[];
 }) => {
-  const [isLocating, setIsLocating] = useState(false);
-  const [locationError, setLocationError] = useState('');
-  const { user } = useAuthContext();
-
   const {
     register,
     handleSubmit,
@@ -85,6 +81,13 @@ const FarmerLocationModal = ({
       setValue('customDistrict', '', { shouldValidate: false });
     }
   };
+
+  const { isLocating, locationError, getLocation } = useGeolocation({
+    onSuccess: (latitude, longitude) => {
+      setValue('location.latitude', latitude, { shouldValidate: true });
+      setValue('location.longitude', longitude, { shouldValidate: true });
+    },
+  });
 
   const saveMutation = useSaveFarmerProfileMutation({
     onSuccess: () => {
@@ -313,30 +316,7 @@ const FarmerLocationModal = ({
             <div className="mt-2 flex flex-col gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  setIsLocating(true);
-                  setLocationError('');
-                  if (!navigator.geolocation) {
-                    setLocationError('Geolocation is not supported by your browser');
-                    setIsLocating(false);
-                    return;
-                  }
-                  navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                      setValue('location.latitude', position.coords.latitude, {
-                        shouldValidate: true,
-                      });
-                      setValue('location.longitude', position.coords.longitude, {
-                        shouldValidate: true,
-                      });
-                      setIsLocating(false);
-                    },
-                    (error) => {
-                      setLocationError('Unable to retrieve your location');
-                      setIsLocating(false);
-                    },
-                  );
-                }}
+                onClick={getLocation}
                 disabled={isLocating}
                 className="inline-flex w-fit items-center justify-center rounded-lg border border-border-heavy bg-surface-secondary px-4 py-2 text-sm font-medium text-text-primary hover:bg-surface-active disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -344,7 +324,7 @@ const FarmerLocationModal = ({
               </button>
               {watch('location.latitude') && watch('location.longitude') && (
                 <span className="text-sm font-medium text-green-600 dark:text-green-500">
-                  ✓ Location Captured Succesfully
+                  ✓ Location Captured Successfully
                 </span>
               )}
               {locationError && <span className="text-sm text-red-500">{locationError}</span>}

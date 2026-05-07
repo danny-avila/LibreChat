@@ -82,7 +82,7 @@ export default function useChatFunctions({
       parentMessageId = null,
       conversationId = null,
       messageId = null,
-      position
+      position,
     },
     {
       editedContent = null,
@@ -136,8 +136,6 @@ export default function useChatFunctions({
         conversation.promptPrefix += locationText;
       }
     }
-
-
 
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
