@@ -505,6 +505,7 @@ export class EcsStack extends cdk.Stack {
       'AdminPanelSessionSecret',
       'ai-assistant/admin-panel/session-secret',
     );
+    sessionSecret.grantRead(commonExecRole);
 
     taskDef.addContainer('librechat-admin-panel', {
       image: ecs.ContainerImage.fromRegistry(props.librechatAdminImage),
