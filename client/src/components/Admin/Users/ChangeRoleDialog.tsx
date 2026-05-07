@@ -126,7 +126,7 @@ export default function ChangeRoleDialog({ user, open, onOpenChange, onSuccess }
           <select
             id="change-role-select"
             disabled={pending}
-            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-surface-primary [&>option]:text-text-primary"
             {...register('role')}
           >
             {roleOptions.map((opt) => (

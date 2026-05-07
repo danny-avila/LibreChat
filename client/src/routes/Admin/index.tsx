@@ -22,6 +22,7 @@ const adminRoutes = {
     { path: 'usage/users/:userId', element: <Usage /> },
     { path: 'messages', element: <Messages /> },
     { path: 'messages/users/:userId', element: <Messages /> },
+    { path: 'messages/users/:userId/conversations', element: <Messages /> },
     {
       path: 'messages/users/:userId/conversations/:conversationId',
       element: <Messages />,

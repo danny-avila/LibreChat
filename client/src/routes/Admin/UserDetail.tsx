@@ -27,6 +27,7 @@ import {
   ChangeRoleDialog,
   ResetPasswordDialog,
   DeleteUserDialog,
+  ImpersonateDialog,
   AdjustBalanceDialog,
   SetBalanceDialog,
   GrantProDialog,
@@ -142,6 +143,7 @@ type ActionKind =
   | 'role'
   | 'reset'
   | 'delete'
+  | 'impersonate'
   | 'grantPro'
   | 'revokePro'
   | 'clearOverride'
@@ -266,12 +268,42 @@ export default function UserDetailPage() {
 
       <Tabs defaultValue="profile" className="w-full">
         <TabsList className="flex flex-wrap gap-1">
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="subscription">Subscription</TabsTrigger>
-          <TabsTrigger value="balance">Balance</TabsTrigger>
-          <TabsTrigger value="usage">Usage</TabsTrigger>
-          <TabsTrigger value="conversations">Conversations</TabsTrigger>
-          <TabsTrigger value="audit">Audit</TabsTrigger>
+          <TabsTrigger
+            value="profile"
+            className="text-text-secondary data-[state=active]:text-text-primary"
+          >
+            Profile
+          </TabsTrigger>
+          <TabsTrigger
+            value="subscription"
+            className="text-text-secondary data-[state=active]:text-text-primary"
+          >
+            Subscription
+          </TabsTrigger>
+          <TabsTrigger
+            value="balance"
+            className="text-text-secondary data-[state=active]:text-text-primary"
+          >
+            Balance
+          </TabsTrigger>
+          <TabsTrigger
+            value="usage"
+            className="text-text-secondary data-[state=active]:text-text-primary"
+          >
+            Usage
+          </TabsTrigger>
+          <TabsTrigger
+            value="conversations"
+            className="text-text-secondary data-[state=active]:text-text-primary"
+          >
+            Conversations
+          </TabsTrigger>
+          <TabsTrigger
+            value="audit"
+            className="text-text-secondary data-[state=active]:text-text-primary"
+          >
+            Audit
+          </TabsTrigger>
         </TabsList>
 
         {/* Profile */}
@@ -304,6 +336,20 @@ export default function UserDetailPage() {
             </Button>
             <Button variant="outline" onClick={() => setActiveAction('reset')}>
               Reset password
+            </Button>
+            <Button
+              variant="outline"
+              disabled={user.role === 'ADMIN' || user.banned === true}
+              title={
+                user.role === 'ADMIN'
+                  ? 'Cannot impersonate another admin'
+                  : user.banned
+                    ? 'Cannot impersonate a banned user'
+                    : 'Open a new tab signed in as this user'
+              }
+              onClick={() => setActiveAction('impersonate')}
+            >
+              Sign in as user
             </Button>
             <Button variant="destructive" onClick={() => setActiveAction('delete')}>
               Delete user
@@ -555,6 +601,9 @@ export default function UserDetailPage() {
       ) : null}
       {activeAction === 'delete' ? (
         <DeleteUserDialog user={userItem} open onOpenChange={(o) => !o && closeAction()} />
+      ) : null}
+      {activeAction === 'impersonate' ? (
+        <ImpersonateDialog user={userItem} open onOpenChange={(o) => !o && closeAction()} />
       ) : null}
       {activeAction === 'grantPro' ? (
         <GrantProDialog user={userItem} open onOpenChange={(o) => !o && closeAction()} />

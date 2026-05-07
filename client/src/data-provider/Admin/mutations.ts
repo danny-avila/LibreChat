@@ -132,6 +132,26 @@ export const useDeleteUserMutation = (
   });
 };
 
+export const useImpersonateUserMutation = (
+  options?: Options<t.AdminImpersonateResponse, WithUserId<t.AdminImpersonateRequest>>,
+): UseMutationResult<t.AdminImpersonateResponse, unknown, WithUserId<t.AdminImpersonateRequest>> =>
+  useMutation<t.AdminImpersonateResponse, unknown, WithUserId<t.AdminImpersonateRequest>>({
+    mutationFn: ({ id, ...payload }) => adminService.impersonateAdminUser(id, payload),
+    ...(options ?? {}),
+  });
+
+export const useConsumeImpersonationMutation = (
+  options?: Options<t.AdminImpersonateConsumeResponse, t.AdminImpersonateConsumeRequest>,
+): UseMutationResult<
+  t.AdminImpersonateConsumeResponse,
+  unknown,
+  t.AdminImpersonateConsumeRequest
+> =>
+  useMutation<t.AdminImpersonateConsumeResponse, unknown, t.AdminImpersonateConsumeRequest>({
+    mutationFn: (payload) => adminService.consumeImpersonationToken(payload),
+    ...(options ?? {}),
+  });
+
 /* ---------- Subscription mutations ---------- */
 
 type WithUserKey<T> = T & { userId: string };

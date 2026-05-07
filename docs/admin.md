@@ -30,6 +30,7 @@ account menu and can navigate to `/admin/overview`.
 | `ADMIN_RATE_LIMIT_PER_MIN` | `60` | Per-admin-user requests-per-minute cap on admin endpoints. Clamped to `[1, 1000]`. |
 | `ADMIN_FRESH_AUTH_TTL_SEC` | `300` | Lifetime (seconds) of fresh-auth tokens issued by `/api/admin/reauth`. |
 | `ADMIN_AUDIT_LOG_RETENTION_DAYS` | `365` | TTL for `adminAuditLogs` documents. `0` disables expiry (retain forever). Applied at schema definition time only — see retention notes below. |
+| `ADMIN_IMPERSONATE_TTL_SEC` | `300` | Lifetime (seconds) of one-shot impersonation tokens. Each token is single-use. |
 
 > The IP allowlist relies on Express `req.ip`, which depends on the app's
 > `trust proxy` setting. Configure your reverse proxy correctly before relying
@@ -94,6 +95,7 @@ All routes are mounted at `/api/admin/*`.
 | `POST` | `/users/:id/reset-password` | yes | Email a reset link |
 | `POST` | `/users/invite` | — | Invite user by email |
 | `DELETE` | `/users/:id` | yes | Delete user (typed-email confirm) |
+| `POST` | `/users/:id/impersonate` | yes | Issue a one-shot impersonation URL. Body `{ reason }`. Refuses self / banned / admin targets. URL valid 5min, single-use. |
 | `GET` | `/subscription` | — | List active Pro subscriptions |
 | `GET` | `/subscription/users/:userId` | — | Subscription detail |
 | `POST` | `/subscription/users/:userId/grant` | yes | Manual Pro grant |
@@ -114,6 +116,42 @@ All routes are mounted at `/api/admin/*`.
 | `GET` | `/audit` | — | Paginated audit log with filters |
 | `GET` | `/audit/actions` | — | Distinct actions + 30d counts |
 | `GET` | `/audit/:id` | — | Single audit row |
+
+## Impersonation ("Sign in as user")
+
+Admins can issue a one-shot URL that signs them in as a target user — meant
+for support workflows ("the user reports X is broken; let me reproduce as
+them"). Every step is auditable.
+
+```
+[Admin tab]  POST /api/admin/users/:id/impersonate { reason }   (admin + fresh-auth)
+           ← { url, expiresAt }
+[Admin tab]  navigates to url
+[Same tab]   POST /api/auth/impersonate { token }               (token IS the auth)
+           ← Set-Cookie: refreshToken=…  + { token, user }       (target user)
+           → /c/new
+```
+
+The flow ends the admin's session and signs the same browser tab in as the
+target user. Browser cookies are domain-scoped, not tab-scoped — so opening
+the consume URL in a new tab would still overwrite the admin's
+`refreshToken` cookie and break the original session anyway. Replacing the
+current tab is the honest UX. Admins log back in with their own credentials
+to end an impersonated session, the same way "view as user" / "assume role"
+tools work in most admin platforms.
+
+Guardrails:
+
+- Admin must pass fresh-auth before issuance
+- Cannot impersonate yourself, a banned user, or another admin
+- Token is HMAC-SHA256 (`JWT_SECRET`), 5-minute TTL, single-use
+- Atomic CAS on `jti` in `impersonationTokens` prevents replay
+- The consume endpoint refuses if the caller already holds a Bearer JWT —
+  forces session boundary clarity
+- Two audit rows: `USER_IMPERSONATE_ISSUED` and `USER_IMPERSONATE_CONSUMED`
+  (consume row carries IP/UA at consume time)
+- Actions during the impersonated session are recorded as the target user;
+  cross-reference via the `meta.jti` field on the audit consume row
 
 ## Privacy: viewing message content
 

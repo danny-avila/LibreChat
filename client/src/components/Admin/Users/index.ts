@@ -9,3 +9,4 @@ export { default as SetBalanceDialog } from './SetBalanceDialog';
 export { default as GrantProDialog } from './GrantProDialog';
 export { default as RevokeProDialog } from './RevokeProDialog';
 export { default as ClearOverrideDialog } from './ClearOverrideDialog';
+export { default as ImpersonateDialog } from './ImpersonateDialog';

@@ -201,6 +201,27 @@ export type AdminDeleteUserResponse = {
   [key: string]: unknown;
 };
 
+/* ---------- Impersonation ---------- */
+
+export type AdminImpersonateRequest = AdminFreshAuthOptions & {
+  reason: string;
+};
+
+export type AdminImpersonateResponse = {
+  url: string;
+  expiresAt: number;
+  targetEmail: string | null;
+};
+
+export type AdminImpersonateConsumeRequest = {
+  token: string;
+};
+
+export type AdminImpersonateConsumeResponse = {
+  token: string;
+  user: AdminUserListItem;
+};
+
 /* ---------- Subscriptions list ---------- */
 
 export type AdminSubscriptionListItem = {
@@ -301,6 +322,8 @@ export type AdminUserUsageResponse = {
 export type AdminTransactionItem = {
   _id: string;
   user?: string;
+  userEmail?: string | null;
+  userName?: string | null;
   conversationId?: string | null;
   tokenType?: string | null;
   model?: string | null;

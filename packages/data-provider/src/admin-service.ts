@@ -162,6 +162,28 @@ export function deleteAdminUser(
   );
 }
 
+export function impersonateAdminUser(
+  id: string,
+  payload: t.AdminImpersonateRequest,
+): Promise<t.AdminImpersonateResponse> {
+  const { freshAuthToken, ...body } = payload;
+  return postWithConfig<t.AdminImpersonateResponse>(
+    endpoints.adminUserImpersonate(id),
+    body,
+    freshAuthConfig(freshAuthToken),
+  );
+}
+
+export function consumeImpersonationToken(
+  payload: t.AdminImpersonateConsumeRequest,
+): Promise<t.AdminImpersonateConsumeResponse> {
+  // No fresh-auth header — the body token IS the auth.
+  return request.post(
+    endpoints.authImpersonateConsume(),
+    payload,
+  ) as Promise<t.AdminImpersonateConsumeResponse>;
+}
+
 /* ---------- Subscriptions ---------- */
 
 export function listAdminSubscriptions(

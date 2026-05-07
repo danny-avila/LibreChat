@@ -417,6 +417,8 @@ export const adminUserRole = (id: string) => `${adminRoot()}/users/${id}/role`;
 export const adminUserResetPassword = (id: string) => `${adminRoot()}/users/${id}/reset-password`;
 export const adminUsersInvite = () => `${adminRoot()}/users/invite`;
 export const adminUserDelete = (id: string) => `${adminRoot()}/users/${id}`;
+export const adminUserImpersonate = (id: string) => `${adminRoot()}/users/${id}/impersonate`;
+export const authImpersonateConsume = () => '/api/auth/impersonate';
 
 export const adminSubscriptionList = (params: Record<string, unknown> = {}) =>
   `${adminRoot()}/subscription${buildQuery(params)}`;

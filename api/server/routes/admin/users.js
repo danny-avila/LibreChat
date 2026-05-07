@@ -10,6 +10,7 @@ const {
   requireFreshAuth,
 } = require('~/server/middleware');
 const usersService = require('~/server/services/admin/users');
+const impersonateService = require('~/server/services/admin/impersonate');
 
 const router = express.Router();
 
@@ -291,5 +292,65 @@ router.delete(
     }
   },
 );
+
+/**
+ * POST /api/admin/users/:id/impersonate
+ * Issues a one-shot impersonation URL for the target user. Returns the URL
+ * the admin should open in a new tab; the token in that URL is consumed
+ * exactly once at /api/auth/impersonate.
+ */
+router.post(
+  '/:id/impersonate',
+  requireFreshAuth,
+  auditLogger(AdminAuditActions.USER_IMPERSONATE_ISSUED, {
+    targetType: 'user',
+    getTargetId: (req) => req.params.id,
+    getReason: (req) => (typeof req.body?.reason === 'string' ? req.body.reason.trim() : null),
+    getMeta: (req, res) => {
+      const audit = res.locals?.audit;
+      return audit?.meta ?? null;
+    },
+  }),
+  async (req, res) => {
+    try {
+      const { reason } = req.body || {};
+      const result = await impersonateService.issueImpersonationToken({
+        targetUserId: req.params.id,
+        actor: req.user,
+        reason,
+      });
+      res.locals.audit = {
+        meta: {
+          jti: extractJtiFromToken(result.token),
+          targetEmail: result.targetEmail,
+          ttlSec: Math.round((result.expiresAt - Date.now()) / 1000),
+        },
+      };
+      return res.status(200).json({
+        url: result.url,
+        expiresAt: result.expiresAt,
+        targetEmail: result.targetEmail,
+      });
+    } catch (err) {
+      if (err && err.code) {
+        return sendServiceError(res, err);
+      }
+      logger.error('[admin /users/:id/impersonate] failed', err);
+      return res.status(500).json({ message: 'Internal Server Error' });
+    }
+  },
+);
+
+function extractJtiFromToken(token) {
+  // Best-effort decode for the audit meta — token is admin-trusted output we just signed.
+  try {
+    const dot = token.indexOf('.');
+    if (dot <= 0) return null;
+    const payload = JSON.parse(Buffer.from(token.slice(0, dot), 'base64url').toString('utf8'));
+    return payload?.jti ?? null;
+  } catch (_e) {
+    return null;
+  }
+}
 
 module.exports = router;

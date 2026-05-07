@@ -15,6 +15,7 @@ import { AuthContextProvider } from '~/hooks/AuthContext';
 import { SubscriptionProvider } from '~/hooks/Subscription';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
+import ImpersonateConsumer from './Admin/ImpersonateConsumer';
 import LoginLayout from './Layouts/Login';
 import dashboardRoutes from './Dashboard';
 import adminRoutes from './Admin';
@@ -78,6 +79,13 @@ export const router = createBrowserRouter(
     {
       path: 'verify',
       element: <VerifyEmail />,
+      errorElement: <RouteErrorBoundary />,
+    },
+    {
+      // Consumer for one-shot admin impersonation tokens. Lives outside
+      // AuthLayout: it must run without (and refuses) an existing session.
+      path: 'login/impersonate',
+      element: <ImpersonateConsumer />,
       errorElement: <RouteErrorBoundary />,
     },
     {

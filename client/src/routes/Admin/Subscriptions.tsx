@@ -480,7 +480,7 @@ export default function SubscriptionsPage() {
             id="subs-store"
             value={store}
             onChange={(e) => updateParam('store', e.target.value)}
-            className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm focus:outline-none"
+            className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm text-text-primary focus:outline-none [&>option]:bg-surface-primary [&>option]:text-text-primary"
           >
             {STORE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -497,7 +497,7 @@ export default function SubscriptionsPage() {
             onChange={(e) =>
               updateParam('manuallyOverridden', e.target.value === 'all' ? null : e.target.value)
             }
-            className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm focus:outline-none"
+            className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm text-text-primary focus:outline-none [&>option]:bg-surface-primary [&>option]:text-text-primary"
           >
             {OVERRIDE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -593,7 +593,7 @@ export default function SubscriptionsPage() {
             id="subs-page-size"
             value={limit}
             onChange={(e) => updateParam('limit', e.target.value)}
-            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm text-text-primary [&>option]:bg-surface-primary [&>option]:text-text-primary"
           >
             {PAGE_SIZES.map((size) => (
               <option key={size} value={size}>

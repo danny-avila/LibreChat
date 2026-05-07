@@ -425,7 +425,7 @@ export default function UsersPage() {
           </Label>
           <select
             id="users-role"
-            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-gray-400 [&>option]:bg-surface-primary [&>option]:text-text-primary"
             value={urlRole}
             onChange={(e) =>
               updateParams((p) => {
@@ -449,7 +449,7 @@ export default function UsersPage() {
           </Label>
           <select
             id="users-provider"
-            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-gray-400 [&>option]:bg-surface-primary [&>option]:text-text-primary"
             value={urlProvider}
             onChange={(e) =>
               updateParams((p) => {
@@ -473,7 +473,7 @@ export default function UsersPage() {
           </Label>
           <select
             id="users-banned"
-            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-gray-400 [&>option]:bg-surface-primary [&>option]:text-text-primary"
             value={urlBanned}
             onChange={(e) =>
               updateParams((p) => {
@@ -495,7 +495,7 @@ export default function UsersPage() {
           <input
             id="users-created-after"
             type="date"
-            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-gray-400 [&>option]:bg-surface-primary [&>option]:text-text-primary"
             value={urlCreatedAfter}
             onChange={(e) =>
               updateParams((p) => {
@@ -513,7 +513,7 @@ export default function UsersPage() {
           <input
             id="users-created-before"
             type="date"
-            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-gray-400 [&>option]:bg-surface-primary [&>option]:text-text-primary"
             value={urlCreatedBefore}
             onChange={(e) =>
               updateParams((p) => {
@@ -596,7 +596,7 @@ export default function UsersPage() {
           <span>Rows per page</span>
           <select
             aria-label="Rows per page"
-            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm text-text-primary [&>option]:bg-surface-primary [&>option]:text-text-primary"
             value={urlLimit}
             onChange={(e) =>
               updateParams((p) => {

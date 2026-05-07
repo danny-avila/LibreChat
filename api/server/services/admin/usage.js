@@ -230,7 +230,33 @@ async function listTransactions({ userId, from, to, tokenType, model, page, limi
     Transaction.countDocuments(filter),
   ]);
 
-  return { items, page: p, limit: l, total };
+  // Enrich each transaction with the user's email/name so the UI doesn't have
+  // to do a second roundtrip per row. Single $in query, lean projection.
+  const userIds = [...new Set(items.map((t) => (t.user ? String(t.user) : null)).filter(Boolean))];
+  const userMap = new Map();
+  if (userIds.length > 0) {
+    const users = await User.find(
+      { _id: { $in: userIds } },
+      { email: 1, name: 1, username: 1 },
+    ).lean();
+    for (const u of users) {
+      userMap.set(String(u._id), {
+        email: u.email || null,
+        name: u.name || null,
+        username: u.username || null,
+      });
+    }
+  }
+  const enriched = items.map((t) => {
+    const u = t.user ? userMap.get(String(t.user)) : null;
+    return {
+      ...t,
+      userEmail: u?.email ?? null,
+      userName: u?.name ?? u?.username ?? null,
+    };
+  });
+
+  return { items: enriched, page: p, limit: l, total };
 }
 
 /**

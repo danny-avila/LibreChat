@@ -284,16 +284,17 @@ function TransactionsSection() {
         header: 'User',
         cell: ({ row }) => {
           const userId = row.original.user;
+          const userEmail = row.original.userEmail;
           if (!userId) {
             return <span className="text-gray-400">—</span>;
           }
           return (
             <Link
               to={`/admin/users/${userId}`}
-              className="font-mono text-xs text-blue-600 hover:underline dark:text-blue-400"
-              title={userId}
+              className="text-xs text-blue-600 hover:underline dark:text-blue-400"
+              title={userEmail ? `${userEmail} (${userId})` : userId}
             >
-              {userId.slice(0, 8)}…
+              {userEmail ?? `${userId.slice(0, 8)}…`}
             </Link>
           );
         },
