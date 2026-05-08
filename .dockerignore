@@ -5,6 +5,10 @@
 **/.DS_Store
 **/.vscode
 **/node_modules
+**/.turbo
+**/coverage
+**/dist
+**/build
 
 # Specific patterns to ignore
 data-node
@@ -12,6 +16,33 @@ meili_data*
 librechat*
 Dockerfile*
 docs
+logs
+uploads
+images
+api/data
+archive
+release
+test-image*
+dump.rdb
+*.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.code-workspace
+*.local.md
+auth.json
+cache.json
+codedb.snapshot
+junit.xml
+monospace.json
+owner.yml
+vite-output.log
+playwright-report
+test-results
+e2e/playwright-report
+e2e/specs/.test-results
+playwright/.cache
 
 # Ignore all hidden files
 .*
