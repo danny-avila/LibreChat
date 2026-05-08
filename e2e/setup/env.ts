@@ -1,31 +1,85 @@
+import crypto from 'crypto';
+import path from 'path';
+
 const DEFAULT_BASE_URL = 'http://localhost:3080';
 const DEFAULT_MONGO_URI = 'mongodb://127.0.0.1:27017/LibreChat-e2e';
-const DEFAULT_CREDS_KEY = 'f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0';
-const DEFAULT_CREDS_IV = 'e2341419ec3dd3d19b13a1a87fafcbfb';
-const DEFAULT_JWT_SECRET = '16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef';
-const DEFAULT_JWT_REFRESH_SECRET =
-  'eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418';
+const DEFAULT_RUNTIME_ENV_PATH = path.resolve(__dirname, '../specs/.test-results/runtime-env.json');
+const GENERATED_CREDS_KEY = crypto.randomBytes(32).toString('hex');
+const GENERATED_CREDS_IV = crypto.randomBytes(16).toString('hex');
+const GENERATED_JWT_SECRET = crypto.randomBytes(32).toString('hex');
+const GENERATED_JWT_REFRESH_SECRET = crypto.randomBytes(32).toString('hex');
+const PASSTHROUGH_ENV_KEYS = [
+  'APPDATA',
+  'CI',
+  'FORCE_COLOR',
+  'HOME',
+  'LOCALAPPDATA',
+  'NO_COLOR',
+  'NO_PROXY',
+  'NODE_OPTIONS',
+  'PATH',
+  'PLAYWRIGHT_BROWSERS_PATH',
+  'SHELL',
+  'TEMP',
+  'TMP',
+  'TMPDIR',
+  'USER',
+  'USERNAME',
+  'http_proxy',
+  'https_proxy',
+  'no_proxy',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+];
 
 export function getE2EBaseURL() {
-  return process.env.E2E_BASE_URL ?? process.env.DOMAIN_CLIENT ?? DEFAULT_BASE_URL;
+  return process.env.E2E_BASE_URL ?? DEFAULT_BASE_URL;
+}
+
+export function getRuntimeEnvPath() {
+  return process.env.E2E_RUNTIME_ENV_PATH ?? DEFAULT_RUNTIME_ENV_PATH;
+}
+
+function getPassthroughEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  const passthroughKeys = [
+    ...PASSTHROUGH_ENV_KEYS,
+    ...(process.env.E2E_PASSTHROUGH_ENV?.split(',') ?? []),
+  ];
+
+  for (const key of passthroughKeys) {
+    const value = process.env[key.trim()];
+    if (value != null) {
+      env[key.trim()] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith('MONGOMS_') && value != null) {
+      env[key] = value;
+    }
+  }
+
+  return env;
 }
 
 export function getBaseE2EEnv(): Record<string, string> {
   const baseURL = getE2EBaseURL();
 
   return {
-    ...process.env,
+    ...getPassthroughEnv(),
     NODE_ENV: 'CI',
     MONGO_URI: process.env.MONGO_URI ?? DEFAULT_MONGO_URI,
-    DOMAIN_CLIENT: process.env.DOMAIN_CLIENT ?? baseURL,
-    DOMAIN_SERVER: process.env.DOMAIN_SERVER ?? baseURL,
+    DOMAIN_CLIENT: process.env.E2E_DOMAIN_CLIENT ?? baseURL,
+    DOMAIN_SERVER: process.env.E2E_DOMAIN_SERVER ?? baseURL,
+    E2E_RUNTIME_ENV_PATH: getRuntimeEnvPath(),
     E2E_USE_MEMORY_MONGO: process.env.E2E_USE_MEMORY_MONGO ?? 'auto',
     NO_INDEX: process.env.NO_INDEX ?? 'true',
     OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? 'user_provided',
-    CREDS_KEY: process.env.CREDS_KEY ?? DEFAULT_CREDS_KEY,
-    CREDS_IV: process.env.CREDS_IV ?? DEFAULT_CREDS_IV,
-    JWT_SECRET: process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET,
-    JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? DEFAULT_JWT_REFRESH_SECRET,
+    CREDS_KEY: process.env.CREDS_KEY ?? GENERATED_CREDS_KEY,
+    CREDS_IV: process.env.CREDS_IV ?? GENERATED_CREDS_IV,
+    JWT_SECRET: process.env.JWT_SECRET ?? GENERATED_JWT_SECRET,
+    JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? GENERATED_JWT_REFRESH_SECRET,
     EMAIL_HOST: '',
     SEARCH: 'false',
     SESSION_EXPIRY: '60000',

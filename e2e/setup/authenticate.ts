@@ -11,8 +11,6 @@ async function register(page: Page, user: User) {
   await page.getByRole('link', { name: 'Sign up' }).click();
   await page.getByLabel('Full name').click();
   await page.getByLabel('Full name').fill(user.name);
-  await page.getByText('Username (optional)').click();
-  await page.getByLabel('Username (optional)').fill(user.name);
   await page.getByLabel('Email').click();
   await page.getByLabel('Email').fill(user.email);
   await page.getByLabel('Email').press('Tab');
@@ -40,7 +38,7 @@ async function authenticate(config: FullConfig, user: User) {
   console.log('🤖: global setup has been started');
   const { baseURL, storageState } = config.projects[0].use;
   console.log('🤖: using baseURL', baseURL);
-  console.dir(user, { depth: null });
+  console.log('🤖: using E2E user:', user.email);
   if (typeof storageState !== 'string') {
     throw new Error('🤖: storageState must be a file path');
   }

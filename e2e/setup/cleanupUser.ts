@@ -1,15 +1,27 @@
-import { connectDb } from '@librechat/backend/db/connect';
-import {
-  findUser,
-  deleteConvos,
-  deleteMessages,
-  deleteAllUserSessions,
-} from '@librechat/backend/models';
-import { User, Balance, Transaction, AclEntry, Token, Group } from '@librechat/backend/db/models';
+import { applyRuntimeEnv } from './runtimeEnv';
 
 type TUser = { email: string; password: string };
 
 export default async function cleanupUser(user: TUser) {
+  applyRuntimeEnv();
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { connectDb } = require('@librechat/backend/db/connect');
+  const {
+    findUser,
+    deleteConvos,
+    deleteMessages,
+    deleteAllUserSessions,
+  } = require('@librechat/backend/models');
+  const {
+    User,
+    Balance,
+    Transaction,
+    AclEntry,
+    Token,
+    Group,
+  } = require('@librechat/backend/db/models');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
   const { email } = user;
   try {
     console.log('🤖: global teardown has been started');
