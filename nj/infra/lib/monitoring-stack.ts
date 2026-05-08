@@ -173,7 +173,7 @@ export class MonitoringStack extends cdk.Stack {
         period: Duration.minutes(1),
         statistic: 'Sum',
       }),
-      threshold: 1,
+      threshold: 3,
       evaluationPeriods: 1,
       datapointsToAlarm: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
