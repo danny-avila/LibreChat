@@ -309,6 +309,7 @@
   "com_endpoint_openai_use_web_search": "Enable web search functionality using OpenAI's built-in search capabilities. This allows the model to search the web for up-to-date information and provide more accurate, current responses.",
   "com_endpoint_openai_verbosity": "Constrains the verbosity of the model's response. Lower values will result in more concise responses, while higher values will result in more verbose responses. Currently supported values are low, medium, and high.",
   "com_endpoint_output": "Output",
+  "com_endpoint_param_default": "default",
   "com_endpoint_plug_image_detail": "Image Detail",
   "com_endpoint_plug_resend_files": "Resend Files",
   "com_endpoint_presence_penalty": "Presence Penalty",
