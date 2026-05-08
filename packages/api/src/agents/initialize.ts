@@ -233,8 +233,10 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   getToolFilesByIds: (fileIds: string[], toolSet: Set<EToolResources>) => Promise<unknown[]>;
   /** Get conversation file IDs */
   getConvoFiles: (conversationId: string) => Promise<string[] | null>;
-  /** Get code-generated files by conversation ID and optional message IDs */
-  getCodeGeneratedFiles?: (conversationId: string, messageIds?: string[]) => Promise<unknown[]>;
+  /** Get code-generated files by conversation ID and the file_ids
+   *  referenced from messages in the current thread (collected via
+   *  `messages.files[].file_id` during thread walk). */
+  getCodeGeneratedFiles?: (conversationId: string, threadFileIds?: string[]) => Promise<unknown[]>;
   /** Get user-uploaded execute_code files by file IDs (from message.files in thread) */
   getUserCodeFiles?: (fileIds: string[]) => Promise<unknown[]>;
   /** Get messages for a conversation (supports select for field projection) */
@@ -423,7 +425,6 @@ export async function initializeAgent(
     let userCodeFiles: IMongoFile[] = [];
 
     if (toolResourceSet.has(EToolResources.execute_code)) {
-      let threadMessageIds: string[] | undefined;
       let threadFileIds: string[] | undefined;
 
       if (parentMessageId && parentMessageId !== Constants.NO_PARENT && db.getMessages) {
@@ -433,22 +434,29 @@ export async function initializeAgent(
           'messageId parentMessageId files',
         );
         if (messages && messages.length > 0) {
-          /** Single O(n) pass: build Map, traverse thread, collect both IDs */
-          const threadData = getThreadData(messages, parentMessageId);
-          threadMessageIds = threadData.messageIds;
-          threadFileIds = threadData.fileIds;
+          /** Walk the parent chain and collect file_ids referenced by
+           *  any message in the thread (`messages.files[].file_id`).
+           *  Used as the primary anchor for both
+           *  `getCodeGeneratedFiles` and `getUserCodeFiles` —
+           *  message ids no longer needed at this layer. */
+          threadFileIds = getThreadData(messages, parentMessageId).fileIds;
         }
       }
 
-      /** Code-generated files (context: execute_code) filtered by messageId */
+      /** Code-generated and user-uploaded execute_code files share the
+       *  same primary anchor: file_ids referenced by messages in the
+       *  current thread. The two queries differ only by `context`
+       *  (`execute_code` for generated outputs, others for uploads).
+       *  Anchoring both on `threadFileIds` reaches files regardless of
+       *  which sibling first generated them — see `getCodeGeneratedFiles`
+       *  for the branched-conversation rationale. */
       if (db.getCodeGeneratedFiles) {
         codeGeneratedFiles = (await db.getCodeGeneratedFiles(
           conversationId,
-          threadMessageIds,
+          threadFileIds,
         )) as IMongoFile[];
       }
 
-      /** User-uploaded execute_code files (context: agents/message_attachment) from thread messages */
       if (db.getUserCodeFiles && threadFileIds && threadFileIds.length > 0) {
         userCodeFiles = (await db.getUserCodeFiles(threadFileIds)) as IMongoFile[];
       }
