@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { runAsSystem, logger } from '@librechat/data-schemas';
+import { logger } from '@librechat/data-schemas';
 
 import type { IUser } from '@librechat/data-schemas';
 import type { FilterQuery } from 'mongoose';
@@ -91,6 +91,16 @@ export interface AdminRefreshOptions {
    * `openidId` alone.
    */
   expectedIssuer?: string;
+  /**
+   * Trusted tenant id resolved by the route layer (e.g. `getTenantId()` from
+   * the pre-auth tenant ALS scope). When provided, the helper:
+   *   - constrains the fallback `findUsers` lookup with `tenantId`, and
+   *   - asserts a direct `getUserById` result has a matching `tenantId`,
+   * so the same `(sub, iss)` existing in another tenant can never resolve
+   * here. Multi-tenant deployments MUST pass this. Single-tenant deployments
+   * may omit it.
+   */
+  tenantId?: string;
 }
 
 export class AdminRefreshError extends Error {
@@ -110,10 +120,10 @@ async function resolveAdminUser(
   normalizedIssuer: string | undefined,
   options: AdminRefreshOptions,
 ): Promise<IUser | undefined> {
+  const expectedTenantId = options.tenantId;
+
   if (options.userId && Types.ObjectId.isValid(options.userId)) {
-    const direct = await runAsSystem(() =>
-      deps.getUserById(options.userId as string, SAFE_USER_PROJECTION),
-    );
+    const direct = await deps.getUserById(options.userId as string, SAFE_USER_PROJECTION);
     if (direct) {
       if (direct.openidId !== openidId) {
         throw new AdminRefreshError(
@@ -129,6 +139,13 @@ async function resolveAdminUser(
           'Provided user_id matches sub but issuer differs from the refreshed identity',
         );
       }
+      if (expectedTenantId && direct.tenantId !== expectedTenantId) {
+        throw new AdminRefreshError(
+          'TENANT_MISMATCH',
+          401,
+          'Provided user_id resolves outside the request tenant',
+        );
+      }
       return direct;
     }
     logger.debug(
@@ -137,15 +154,16 @@ async function resolveAdminUser(
   }
 
   const issuerBound = getIssuerBoundConditions('openidId', openidId, normalizedIssuer);
-  const filter: FilterQuery<IUser> =
+  const baseFilter: FilterQuery<IUser> =
     issuerBound.length > 0 ? { $or: issuerBound } : ({ openidId } as FilterQuery<IUser>);
+  const filter: FilterQuery<IUser> = expectedTenantId
+    ? ({ ...baseFilter, tenantId: expectedTenantId } as FilterQuery<IUser>)
+    : baseFilter;
 
-  const [user] = await runAsSystem(() =>
-    deps.findUsers(filter, SAFE_USER_PROJECTION, {
-      sort: { updatedAt: -1 },
-      limit: 1,
-    }),
-  );
+  const [user] = await deps.findUsers(filter, SAFE_USER_PROJECTION, {
+    sort: { updatedAt: -1 },
+    limit: 1,
+  });
   return user;
 }
 

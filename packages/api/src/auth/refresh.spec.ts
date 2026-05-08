@@ -386,6 +386,89 @@ describe('applyAdminRefresh', () => {
     });
   });
 
+  describe('tenant scoping', () => {
+    it('constrains the fallback findUsers filter to options.tenantId', async () => {
+      const user = makeUser({ tenantId: 'tenant-a' } as Partial<IUser>);
+      const deps = makeDeps(user);
+
+      await applyAdminRefresh(makeTokenset(), deps, { tenantId: 'tenant-a' });
+
+      const [filter] = (deps.findUsers as jest.Mock).mock.calls[0];
+      expect(filter).toMatchObject({ openidId: SUB, tenantId: 'tenant-a' });
+    });
+
+    it('returns the tenant-A user when two users share (sub, iss) across tenants', async () => {
+      const userA = makeUser({ tenantId: 'tenant-a', email: 'a@example.com' } as Partial<IUser>);
+      const userB = makeUser({ tenantId: 'tenant-b', email: 'b@example.com' } as Partial<IUser>);
+
+      const findUsers = jest.fn().mockImplementation(async (filter: { tenantId?: string }) => {
+        if (filter.tenantId === 'tenant-a') return [userA];
+        if (filter.tenantId === 'tenant-b') return [userB];
+        return [userA, userB];
+      });
+      const deps = makeDeps(userA, { findUsers });
+
+      const result = await applyAdminRefresh(makeTokenset(), deps, { tenantId: 'tenant-a' });
+
+      expect(result.user.email).toBe('a@example.com');
+      expect(findUsers).toHaveBeenCalledWith(
+        { openidId: SUB, tenantId: 'tenant-a' },
+        '-password -__v -totpSecret -backupCodes',
+        { sort: { updatedAt: -1 }, limit: 1 },
+      );
+    });
+
+    it('throws TENANT_MISMATCH when direct user_id resolves to a different tenant', async () => {
+      const id = new Types.ObjectId();
+      const user = makeUser({ _id: id, tenantId: 'tenant-b' } as Partial<IUser>);
+      const deps = makeDeps(user, {
+        getUserById: jest.fn().mockResolvedValue(user),
+        findUsers: jest.fn(),
+      });
+
+      await expect(
+        applyAdminRefresh(makeTokenset(), deps, {
+          userId: id.toString(),
+          tenantId: 'tenant-a',
+        }),
+      ).rejects.toMatchObject({
+        name: 'AdminRefreshError',
+        code: 'TENANT_MISMATCH',
+        status: 401,
+      });
+      expect(deps.findUsers).not.toHaveBeenCalled();
+      expect(deps.mintToken).not.toHaveBeenCalled();
+    });
+
+    it('accepts direct user_id when stored tenantId matches options.tenantId', async () => {
+      const id = new Types.ObjectId();
+      const user = makeUser({ _id: id, tenantId: 'tenant-a' } as Partial<IUser>);
+      const deps = makeDeps(user, {
+        getUserById: jest.fn().mockResolvedValue(user),
+        findUsers: jest.fn(),
+      });
+
+      const result = await applyAdminRefresh(makeTokenset(), deps, {
+        userId: id.toString(),
+        tenantId: 'tenant-a',
+      });
+
+      expect(result.token).toBe('minted-jwt');
+      expect(deps.findUsers).not.toHaveBeenCalled();
+    });
+
+    it('falls back to openidId-only filter when options.tenantId is omitted', async () => {
+      const user = makeUser();
+      const deps = makeDeps(user);
+
+      await applyAdminRefresh(makeTokenset(), deps);
+
+      const [filter] = (deps.findUsers as jest.Mock).mock.calls[0];
+      expect(filter).toEqual({ openidId: SUB });
+      expect(filter).not.toHaveProperty('tenantId');
+    });
+  });
+
   describe('admin-access guard', () => {
     it('throws FORBIDDEN and does not mint when canAccessAdmin returns false', async () => {
       const user = makeUser();

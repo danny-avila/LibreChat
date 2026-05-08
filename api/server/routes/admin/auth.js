@@ -3,13 +3,19 @@ const passport = require('passport');
 const crypto = require('node:crypto');
 const openIdClient = require('openid-client');
 const { CacheKeys } = require('librechat-data-provider');
-const { logger, DEFAULT_SESSION_EXPIRY, SystemCapabilities } = require('@librechat/data-schemas');
+const {
+  logger,
+  DEFAULT_SESSION_EXPIRY,
+  SystemCapabilities,
+  getTenantId,
+} = require('@librechat/data-schemas');
 const {
   getAdminPanelUrl,
   exchangeAdminCode,
   createSetBalanceConfig,
   storeAndStripChallenge,
   tenantContextMiddleware,
+  preAuthTenantMiddleware,
   applyAdminRefresh,
   AdminRefreshError,
 } = require('@librechat/api');
@@ -492,98 +498,105 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
  *   401 USER_NOT_FOUND         — no LibreChat user matches the refreshed sub
  *   401 USER_ID_MISMATCH       — supplied user_id resolves to a user with a different openidId
  *   401 ISSUER_MISMATCH        — refreshed tokenset was issued by an unexpected issuer
+ *   401 TENANT_MISMATCH        — resolved user belongs to a different tenant than the request
  *   403 FORBIDDEN              — resolved user no longer holds ACCESS_ADMIN
  *   502 IDP_INCOMPLETE         — IdP returned a tokenset missing access_token
  *   502 CLAIMS_INCOMPLETE      — IdP tokenset has no readable claims or no sub
  *   503 OPENID_NOT_CONFIGURED  — OpenID is not configured on this server
  *   500 INTERNAL_ERROR         — anything else (logged server-side)
  */
-router.post('/oauth/refresh', middleware.loginLimiter, async (req, res) => {
-  try {
-    const { refresh_token: refreshToken, user_id: userId } = req.body ?? {};
-    if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
-      return res.status(400).json({
-        error: 'Missing refresh_token',
-        error_code: 'MISSING_REFRESH_TOKEN',
-      });
-    }
-
-    let openIdConfig;
+router.post(
+  '/oauth/refresh',
+  middleware.loginLimiter,
+  preAuthTenantMiddleware,
+  async (req, res) => {
     try {
-      openIdConfig = getOpenIdConfig();
-    } catch {
-      return res.status(503).json({
-        error: 'OpenID is not configured',
-        error_code: 'OPENID_NOT_CONFIGURED',
-      });
-    }
-
-    const refreshParams = process.env.OPENID_SCOPE ? { scope: process.env.OPENID_SCOPE } : {};
-    let tokenset;
-    try {
-      tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken, refreshParams);
-    } catch (err) {
-      logger.warn('[admin/oauth/refresh] IdP refresh grant failed', {
-        code: err?.code,
-        name: err?.name,
-      });
-      return res.status(401).json({
-        error: 'Refresh failed',
-        error_code: 'REFRESH_FAILED',
-      });
-    }
-
-    const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
-    const expectedIssuer = openIdConfig.serverMetadata?.()?.issuer;
-
-    try {
-      const result = await applyAdminRefresh(
-        tokenset,
-        {
-          findUsers,
-          getUserById,
-          canAccessAdmin: async (user) => {
-            try {
-              return await hasCapability(
-                {
-                  id: user.id ?? user._id?.toString(),
-                  role: user.role ?? '',
-                  tenantId: user.tenantId,
-                },
-                SystemCapabilities.ACCESS_ADMIN,
-              );
-            } catch (err) {
-              logger.warn(
-                `[admin/oauth/refresh] capability check failed, denying: ${err?.message}`,
-              );
-              return false;
-            }
-          },
-          mintToken: async (user) => ({
-            token: await generateToken(user, sessionExpiry),
-            expiresAt: Date.now() + sessionExpiry,
-          }),
-        },
-        {
-          userId: typeof userId === 'string' && userId.length > 0 ? userId : undefined,
-          previousRefreshToken: refreshToken,
-          expectedIssuer,
-        },
-      );
-      return res.json(result);
-    } catch (err) {
-      if (err instanceof AdminRefreshError) {
-        return res.status(err.status).json({ error: err.message, error_code: err.code });
+      const { refresh_token: refreshToken, user_id: userId } = req.body ?? {};
+      if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
+        return res.status(400).json({
+          error: 'Missing refresh_token',
+          error_code: 'MISSING_REFRESH_TOKEN',
+        });
       }
-      throw err;
+
+      let openIdConfig;
+      try {
+        openIdConfig = getOpenIdConfig();
+      } catch {
+        return res.status(503).json({
+          error: 'OpenID is not configured',
+          error_code: 'OPENID_NOT_CONFIGURED',
+        });
+      }
+
+      const refreshParams = process.env.OPENID_SCOPE ? { scope: process.env.OPENID_SCOPE } : {};
+      let tokenset;
+      try {
+        tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken, refreshParams);
+      } catch (err) {
+        logger.warn('[admin/oauth/refresh] IdP refresh grant failed', {
+          code: err?.code,
+          name: err?.name,
+        });
+        return res.status(401).json({
+          error: 'Refresh failed',
+          error_code: 'REFRESH_FAILED',
+        });
+      }
+
+      const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
+      const expectedIssuer = openIdConfig.serverMetadata?.()?.issuer;
+
+      try {
+        const result = await applyAdminRefresh(
+          tokenset,
+          {
+            findUsers,
+            getUserById,
+            canAccessAdmin: async (user) => {
+              try {
+                return await hasCapability(
+                  {
+                    id: user.id ?? user._id?.toString(),
+                    role: user.role ?? '',
+                    tenantId: user.tenantId,
+                  },
+                  SystemCapabilities.ACCESS_ADMIN,
+                );
+              } catch (err) {
+                logger.warn(
+                  `[admin/oauth/refresh] capability check failed, denying: ${err?.message}`,
+                );
+                return false;
+              }
+            },
+            mintToken: async (user) => ({
+              token: await generateToken(user, sessionExpiry),
+              expiresAt: Date.now() + sessionExpiry,
+            }),
+          },
+          {
+            userId: typeof userId === 'string' && userId.length > 0 ? userId : undefined,
+            previousRefreshToken: refreshToken,
+            expectedIssuer,
+            tenantId: getTenantId(),
+          },
+        );
+        return res.json(result);
+      } catch (err) {
+        if (err instanceof AdminRefreshError) {
+          return res.status(err.status).json({ error: err.message, error_code: err.code });
+        }
+        throw err;
+      }
+    } catch (error) {
+      logger.error('[admin/oauth/refresh] Error:', error);
+      res.status(500).json({
+        error: 'Internal server error',
+        error_code: 'INTERNAL_ERROR',
+      });
     }
-  } catch (error) {
-    logger.error('[admin/oauth/refresh] Error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      error_code: 'INTERNAL_ERROR',
-    });
-  }
-});
+  },
+);
 
 module.exports = router;
