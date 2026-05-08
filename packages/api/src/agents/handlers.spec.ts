@@ -72,8 +72,18 @@ describe('createToolExecuteHandler', () => {
           codeSessionContext: {
             session_id: 'prev-session-abc',
             files: [
-              { session_id: 'prev-session-abc', id: 'f1', name: 'data.parquet' },
-              { session_id: 'prev-session-abc', id: 'f2', name: 'chart.png' },
+              {
+                storage_session_id: 'prev-session-abc',
+                id: 'f1',
+                name: 'data.parquet',
+                kind: 'user',
+              },
+              {
+                storage_session_id: 'prev-session-abc',
+                id: 'f2',
+                name: 'chart.png',
+                kind: 'user',
+              },
             ],
           },
         },
@@ -84,8 +94,18 @@ describe('createToolExecuteHandler', () => {
       expect(capturedConfigs).toHaveLength(1);
       expect(capturedConfigs[0].session_id).toBe('prev-session-abc');
       expect(capturedConfigs[0]._injected_files).toEqual([
-        { session_id: 'prev-session-abc', id: 'f1', name: 'data.parquet' },
-        { session_id: 'prev-session-abc', id: 'f2', name: 'chart.png' },
+        {
+          storage_session_id: 'prev-session-abc',
+          id: 'f1',
+          name: 'data.parquet',
+          kind: 'user',
+        },
+        {
+          storage_session_id: 'prev-session-abc',
+          id: 'f2',
+          name: 'chart.png',
+          kind: 'user',
+        },
       ]);
     });
 
@@ -141,7 +161,7 @@ describe('createToolExecuteHandler', () => {
           args: { lang: 'python', code: 'step_1()' },
           codeSessionContext: {
             session_id: 'session-A',
-            files: [{ session_id: 'session-A', id: 'fa', name: 'a.csv' }],
+            files: [{ storage_session_id: 'session-A', id: 'fa', name: 'a.csv', kind: 'user' }],
           },
         },
         {
@@ -150,7 +170,7 @@ describe('createToolExecuteHandler', () => {
           args: { lang: 'python', code: 'step_2()' },
           codeSessionContext: {
             session_id: 'session-A',
-            files: [{ session_id: 'session-A', id: 'fa', name: 'a.csv' }],
+            files: [{ storage_session_id: 'session-A', id: 'fa', name: 'a.csv', kind: 'user' }],
           },
         },
       ];
@@ -161,7 +181,7 @@ describe('createToolExecuteHandler', () => {
       for (const config of capturedConfigs) {
         expect(config.session_id).toBe('session-A');
         expect(config._injected_files).toEqual([
-          { session_id: 'session-A', id: 'fa', name: 'a.csv' },
+          { storage_session_id: 'session-A', id: 'fa', name: 'a.csv', kind: 'user' },
         ]);
       }
     });
@@ -177,7 +197,7 @@ describe('createToolExecuteHandler', () => {
           args: { query: 'test' },
           codeSessionContext: {
             session_id: 'should-be-ignored',
-            files: [{ session_id: 'x', id: 'y', name: 'z' }],
+            files: [{ storage_session_id: 'x', id: 'y', name: 'z', kind: 'user' }],
           },
         },
       ];
