@@ -21,6 +21,7 @@ function makeConfig(overrides: Partial<RequiredCloudFrontConfig> = {}): Required
     imageSigning: 'none',
     urlExpiry: 3600,
     cookieExpiry: 1800,
+    includeRegionInPath: false,
     ...overrides,
   };
 }

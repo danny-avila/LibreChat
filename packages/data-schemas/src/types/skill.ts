@@ -116,6 +116,8 @@ export interface ISkillFile {
   file_id: string;
   filename: string;
   filepath: string;
+  storageKey?: string;
+  storageRegion?: string;
   source: string;
   mimeType: string;
   bytes: number;

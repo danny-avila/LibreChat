@@ -1318,6 +1318,27 @@ describe('SkillFile methods', () => {
     expect(files[0].file_id).toBe('file-2');
   });
 
+  it('upsertSkillFile persists storage metadata', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput());
+    await methods.upsertSkillFile({
+      skillId: skill._id,
+      relativePath: 'scripts/parse.sh',
+      file_id: 'file-1',
+      filename: 'parse.sh',
+      filepath: '/tmp/v1',
+      storageKey: 'r/us-east-2/uploads/user123/parse.sh',
+      storageRegion: 'us-east-2',
+      source: 's3',
+      mimeType: 'text/plain',
+      bytes: 10,
+      author: owner._id,
+    });
+
+    const files = await methods.listSkillFiles(skill._id);
+    expect(files[0].storageKey).toBe('r/us-east-2/uploads/user123/parse.sh');
+    expect(files[0].storageRegion).toBe('us-east-2');
+  });
+
   it('deleteSkillFile recounts and bumps version', async () => {
     const { skill } = await methods.createSkill(makeSkillInput());
     await methods.upsertSkillFile({

@@ -1,6 +1,7 @@
 /* config */
 export * from './azure';
 export * from './bedrock';
+export * from './balance';
 export * from './config';
 export * from './file-config';
 /* messages  */

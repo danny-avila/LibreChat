@@ -41,6 +41,7 @@ import { useApplyAgentTemplate } from '~/hooks/Agents';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
+import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import store from '~/store';
 
 type TSyncData = {
@@ -204,23 +205,30 @@ export default function useEventHandlers({
    *  doesn't lose any viewable history — it just keeps `atomFamily`
    *  bounded across multi-conversation sessions.
    *
-   *  Rule: only reset when transitioning AWAY FROM an established
-   *  conversation (`previous != null`). Transitions FROM null or
-   *  undefined pass through:
+   *  Rule: reset on real conversation switches, but preserve atoms for
+   *  the single `new` → saved-id transition created by this active run.
+   *  Transitions FROM null or undefined pass through:
    *    - initial mount on a new-chat route: nothing to clear.
-   *    - new-chat URL stamp mid-stream (null → newId): the in-flight
-   *      subagent ticker/content state for that freshly-stamped id
-   *      would be wiped if we reset here — that id IS the current
-   *      run, not a stale one.
+   *    - new-chat URL stamp mid-stream (`new` → savedId): the final
+   *      handler marks that saved id before navigation so the in-flight
+   *      subagent ticker/content state survives. Cancelled subagent
+   *      runs depend on this live atom because the server may not have
+   *      persisted `subagent_content` before interruption.
    *  Cases that DO reset (previous non-null, value changed):
    *    - id1 → id2 (switching between established chats)
+   *    - new → id (user selected an existing chat from the sidebar)
    *    - id → null (user clicked "new chat")
    *    - id → undefined (route teardown / navigate away) */
   const lastConversationIdRef = useRef<string | null | undefined>(paramId);
+  const preserveSubagentAtomsForNewConvoIdRef = useRef<string | null>(null);
   useEffect(() => {
     const previous = lastConversationIdRef.current;
+    const preserveNewConversationId = preserveSubagentAtomsForNewConvoIdRef.current;
     lastConversationIdRef.current = paramId;
-    if (previous != null && previous !== paramId) {
+    preserveSubagentAtomsForNewConvoIdRef.current = null;
+    if (
+      shouldResetSubagentAtomsOnConversationChange(previous, paramId, preserveNewConversationId)
+    ) {
       resetSubagentAtoms();
     }
   }, [paramId, resetSubagentAtoms]);
@@ -644,6 +652,7 @@ export default function useEventHandlers({
           }
 
           if (location.pathname === `/c/${Constants.NEW_CONVO}`) {
+            preserveSubagentAtomsForNewConvoIdRef.current = conversation.conversationId;
             navigate(`/c/${conversation.conversationId}`, { replace: true });
           }
         }

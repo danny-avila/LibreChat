@@ -188,18 +188,19 @@ describe('S3 Integration Tests', () => {
 
   describe('saveURLToS3', () => {
     it('fetches URL content and uploads to S3', async () => {
-      const { saveURLToS3 } = await import('~/storage/s3/crud');
+      const { saveURLToS3WithMetadata } = await import('~/storage/s3/crud');
       const fileName = `url-upload-${Date.now()}.json`;
 
-      const downloadURL = await saveURLToS3({
+      const savedFile = await saveURLToS3WithMetadata({
         userId: TEST_USER_ID,
         URL: 'https://raw.githubusercontent.com/danny-avila/LibreChat/main/package.json',
         fileName,
         basePath: TEST_BASE_PATH,
       });
 
-      expect(downloadURL).toBeDefined();
-      expect(downloadURL).toContain('X-Amz-Signature');
+      expect(savedFile.filepath).toBeDefined();
+      expect(savedFile.filepath).toContain('X-Amz-Signature');
+      expect(savedFile.bytes).toBeGreaterThan(0);
     });
   });
 

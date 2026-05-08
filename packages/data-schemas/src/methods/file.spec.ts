@@ -88,6 +88,84 @@ describe('File Methods', () => {
     });
   });
 
+  describe('claimCodeFile', () => {
+    it('claims code output files independently per tenant', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const tenantA = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-a',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+      const tenantB = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-b',
+        user: userId,
+        tenantId: 'tenant-b',
+      });
+      const tenantAAgain = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-a-new',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+
+      expect(tenantA.file_id).toBe('file-tenant-a');
+      expect(tenantA.tenantId).toBe('tenant-a');
+      expect(tenantB.file_id).toBe('file-tenant-b');
+      expect(tenantB.tenantId).toBe('tenant-b');
+      expect(tenantAAgain.file_id).toBe('file-tenant-a');
+    });
+
+    it('keeps non-tenant code output claims in the legacy namespace', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const legacy = await fileMethods.claimCodeFile({
+        filename: 'legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-file',
+        user: userId,
+      });
+      const tenant = await fileMethods.claimCodeFile({
+        filename: 'legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'tenant-file',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+
+      expect(legacy.file_id).toBe('legacy-file');
+      expect(legacy.tenantId).toBeNull();
+      expect(tenant.file_id).toBe('tenant-file');
+      expect(tenant.tenantId).toBe('tenant-a');
+    });
+
+    it('treats null tenantId as the legacy code output namespace', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const legacy = await fileMethods.claimCodeFile({
+        filename: 'nullable-legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-null-file',
+        user: userId,
+        tenantId: null,
+      });
+      const legacyAgain = await fileMethods.claimCodeFile({
+        filename: 'nullable-legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-null-file-new',
+        user: userId,
+      });
+
+      expect(legacy.file_id).toBe('legacy-null-file');
+      expect(legacyAgain.file_id).toBe('legacy-null-file');
+    });
+  });
+
   describe('findFileById', () => {
     it('should find a file by file_id', async () => {
       const fileId = uuidv4();
@@ -608,6 +686,62 @@ describe('File Methods', () => {
         const file = await fileMethods.findFileById(fileId);
         expect(file?.filepath).toBe(`/new-path/${fileId}.txt`);
       }
+    });
+
+    it('should persist storage metadata when provided', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: 'region-file.txt',
+        filepath: '/old-path/file.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      await fileMethods.batchUpdateFiles([
+        {
+          file_id: fileId,
+          filepath: '/new-path/file.txt',
+          storageKey: 'i/r/us-east-2/images/user123/file.txt',
+          storageRegion: 'us-east-2',
+        },
+      ]);
+
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.filepath).toBe('/new-path/file.txt');
+      expect(file?.storageKey).toBe('i/r/us-east-2/images/user123/file.txt');
+      expect(file?.storageRegion).toBe('us-east-2');
+    });
+
+    it('should not overwrite existing storage metadata when omitted', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: 'existing-metadata.txt',
+        filepath: '/old-path/file.txt',
+        storageKey: 'r/eu-central-1/uploads/user123/file.txt',
+        storageRegion: 'eu-central-1',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      await fileMethods.batchUpdateFiles([
+        {
+          file_id: fileId,
+          filepath: '/new-path/file.txt',
+        },
+      ]);
+
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.filepath).toBe('/new-path/file.txt');
+      expect(file?.storageKey).toBe('r/eu-central-1/uploads/user123/file.txt');
+      expect(file?.storageRegion).toBe('eu-central-1');
     });
 
     it('should handle empty updates array gracefully', async () => {

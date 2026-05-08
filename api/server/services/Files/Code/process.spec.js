@@ -84,6 +84,7 @@ jest.mock('@librechat/api', () => {
      * test overrides via `mockGetExtractedTextFormat.mockReturnValue`
      * if a case needs to assert the 'html' value. */
     getExtractedTextFormat: (...args) => mockGetExtractedTextFormat(...args),
+    getStorageMetadata: jest.fn(() => ({})),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
   };
@@ -137,7 +138,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('@librechat/data-schemas');
-const { codeServerHttpAgent, codeServerHttpsAgent } = require('@librechat/api');
+const { codeServerHttpAgent, codeServerHttpsAgent, getStorageMetadata } = require('@librechat/api');
 
 const { processCodeOutput, getSessionInfo, readSandboxFile, primeFiles } = require('./process');
 
@@ -245,6 +246,29 @@ describe('Code Process', () => {
         expect(result.filename).toBe('chart.png');
       });
 
+      it('persists tenantId on image code output records when present', async () => {
+        const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
+        const imageBuffer = Buffer.alloc(500);
+        mockAxios.mockResolvedValue({ data: imageBuffer });
+        convertImage.mockResolvedValue({
+          filepath: '/t/tenantA/images/user-123/mock-uuid-1234.webp',
+        });
+
+        await processCodeOutput({
+          ...baseParams,
+          req: tenantReq,
+          name: 'chart.png',
+        });
+
+        expect(mockClaimCodeFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+        );
+        expect(createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+          true,
+        );
+      });
+
       it('should update existing image file with cache-busted filepath', async () => {
         const imageParams = { ...baseParams, name: 'chart.png' };
         mockClaimCodeFile.mockResolvedValue({
@@ -294,6 +318,97 @@ describe('Code Process', () => {
         expect(result.type).toBe('text/plain');
         expect(result.filepath).toBe('/uploads/saved-file.txt');
         expect(result.bytes).toBe(100);
+      });
+
+      it.each([
+        [
+          'slides.pptx',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        ],
+        ['sheet.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        [
+          'document.docx',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ],
+      ])('preserves stored metadata for code-generated office file %s', async (name, mime) => {
+        const cloudfrontReq = {
+          ...mockReq,
+          user: { ...mockReq.user, tenantId: 'tenantA' },
+          config: { ...mockReq.config, fileStrategy: 'cloudfront' },
+        };
+        const smallBuffer = Buffer.alloc(100);
+        const filepath = `https://cdn.example.com/r/us-east-2/t/tenantA/uploads/user-123/mock-uuid-1234__${name}`;
+        const storageKey = `r/us-east-2/t/tenantA/uploads/user-123/mock-uuid-1234__${name}`;
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+        determineFileType.mockResolvedValue({ mime });
+        mockHasOfficeHtmlPath.mockReturnValueOnce(true);
+        getStorageMetadata.mockReturnValueOnce({ storageKey, storageRegion: 'us-east-2' });
+        const mockSaveBuffer = jest.fn().mockResolvedValue(filepath);
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        const { file: result, finalize } = await processCodeOutput({
+          ...baseParams,
+          req: cloudfrontReq,
+          name,
+        });
+
+        expect(mockSaveBuffer).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: 'user-123',
+            basePath: 'uploads',
+            tenantId: 'tenantA',
+          }),
+        );
+        expect(result).toMatchObject({
+          file_id: 'mock-uuid-1234',
+          user: 'user-123',
+          tenantId: 'tenantA',
+          source: 'cloudfront',
+          filename: name,
+          filepath,
+          storageKey,
+          storageRegion: 'us-east-2',
+          status: 'pending',
+        });
+        expect(createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            file_id: 'mock-uuid-1234',
+            user: 'user-123',
+            tenantId: 'tenantA',
+            source: 'cloudfront',
+            storageKey,
+            storageRegion: 'us-east-2',
+          }),
+          true,
+        );
+        expect(typeof finalize).toBe('function');
+      });
+
+      it('passes and persists tenantId for non-image code output records', async () => {
+        const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+
+        const mockSaveBuffer = jest
+          .fn()
+          .mockResolvedValue('/t/tenantA/uploads/user-123/mock-file-path.txt');
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        await processCodeOutput({
+          ...baseParams,
+          req: tenantReq,
+        });
+
+        expect(mockClaimCodeFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+        );
+        expect(mockSaveBuffer).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+        );
+        expect(createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+          true,
+        );
       });
 
       it('preserves nested directory paths in the DB record while flattening the storage key', async () => {
@@ -544,6 +659,9 @@ describe('Code Process', () => {
 
         const { file: result } = await processCodeOutput(baseParams);
 
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Falling back to Code API download URL for strategy local'),
+        );
         expect(result.filepath).toContain('/api/files/code/download/session-123/file-id-123');
         expect(result.conversationId).toBe('conv-123');
         expect(result.messageId).toBe('msg-123');

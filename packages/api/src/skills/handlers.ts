@@ -31,7 +31,7 @@ import type {
   TSkillConflictResponse,
   TSkillFileContentResponse,
 } from 'librechat-data-provider';
-import type { ServerRequest } from '~/types/http';
+import type { ServerRequest, StrategyFunctions } from '~/types';
 import { isBinaryBuffer } from './binary';
 
 /** Thin error shape the skill methods throw on validation failure. */
@@ -107,10 +107,7 @@ export interface SkillsHandlersDeps {
   ) => Promise<void>;
 
   /** Storage strategy resolver — returns stream/URL helpers keyed by source. */
-  getStrategyFunctions: (source: string) => {
-    getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
-    [key: string]: unknown;
-  };
+  getStrategyFunctions: (source: string) => Partial<StrategyFunctions>;
 
   /** ObjectId validation helper from data-schemas. */
   isValidObjectIdString: (value: unknown) => boolean;
@@ -206,6 +203,8 @@ function serializeSkillFile(file: ISkillFile & { _id: Types.ObjectId }): TSkillF
     file_id: file.file_id,
     filename: file.filename,
     filepath: file.filepath,
+    storageKey: file.storageKey,
+    storageRegion: file.storageRegion,
     source: file.source as TSkillFile['source'],
     mimeType: file.mimeType,
     bytes: file.bytes,
@@ -287,19 +286,6 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
     grantPermission,
     isValidObjectIdString,
   } = deps;
-
-  async function getPublicSkillIdSet(): Promise<Set<string>> {
-    try {
-      const publicIds = await findPubliclyAccessibleResources({
-        resourceType: ResourceType.SKILL,
-        requiredPermissions: PermissionBits.VIEW,
-      });
-      return new Set(publicIds.map((id) => id.toString()));
-    } catch (error) {
-      logger.error('[skills] Failed to fetch public skill IDs', error);
-      return new Set();
-    }
-  }
 
   /** O(1) public check for a single skill (avoids fetching all public IDs). */
   async function isSkillPublic(skillId: string | Types.ObjectId): Promise<boolean> {
@@ -556,11 +542,15 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
 
       // Fire-and-forget blob cleanup for each file
       for (const file of files) {
-        const { deleteFile: deleteBlob } = getStrategyFunctions(file.source) as {
-          deleteFile?: (r: ServerRequest, f: { filepath: string }) => Promise<void>;
-        };
+        const { deleteFile: deleteBlob } = getStrategyFunctions(file.source);
         if (deleteBlob) {
-          deleteBlob(req, { filepath: file.filepath }).catch((e) =>
+          deleteBlob(req, {
+            filepath: file.filepath,
+            storageKey: file.storageKey,
+            storageRegion: file.storageRegion,
+            user: file.author?.toString?.(),
+            tenantId: file.tenantId?.toString?.(),
+          }).catch((e) =>
             logger.error(`[deleteSkill] Blob cleanup failed for ${file.relativePath}:`, e),
           );
         }
@@ -647,7 +637,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
           'Content-Disposition',
           `${isImageMime ? 'inline' : 'attachment'}; filename="${safeName}"`,
         );
-        const stream = await strategy.getDownloadStream(req, file.filepath);
+        const stream = await strategy.getDownloadStream(req, file.storageKey || file.filepath);
         stream.on('error', (err: Error) => {
           logger.error('[downloadFile] Stream error:', err);
           if (!res.headersSent) {
@@ -681,7 +671,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       // destroy (binary) or continue reading (text) in the same iteration.
       // N.B. breaking out of `for await...of` destroys the stream via
       // iterator.return(), so we must NOT use break + a second loop.
-      const stream = await strategy.getDownloadStream(req, file.filepath);
+      const stream = await strategy.getDownloadStream(req, file.storageKey || file.filepath);
       const chunks: Buffer[] = [];
       let totalBytes = 0;
       let binaryChecked = false;
@@ -759,13 +749,15 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps) {
       }
 
       // Clean up the stored blob — fire-and-forget so the response isn't delayed
-      const { deleteFile: deleteBlob } = getStrategyFunctions(file.source) as {
-        deleteFile?: (req: ServerRequest, file: { filepath: string }) => Promise<void>;
-      };
+      const { deleteFile: deleteBlob } = getStrategyFunctions(file.source);
       if (deleteBlob) {
-        deleteBlob(req, { filepath: file.filepath }).catch((e) =>
-          logger.error('[deleteFile] Storage cleanup failed:', e),
-        );
+        deleteBlob(req, {
+          filepath: file.filepath,
+          storageKey: file.storageKey,
+          storageRegion: file.storageRegion,
+          user: file.author?.toString?.(),
+          tenantId: file.tenantId?.toString?.(),
+        }).catch((e) => logger.error('[deleteFile] Storage cleanup failed:', e));
       }
 
       const response: TDeleteSkillFileResponse = {
