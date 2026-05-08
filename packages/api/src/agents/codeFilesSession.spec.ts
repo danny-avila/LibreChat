@@ -8,6 +8,11 @@ import {
 
 const file = (id: string, storage_session_id: string, name: string): CodeEnvFile => ({
   id,
+  /* `resource_id` is informational for `kind: 'user'` (codeapi derives
+   * the sessionKey from the auth-context user, not this field) but
+   * still required by the type for shape uniformity. The id stand-in
+   * is fine here because no test asserts on its value. */
+  resource_id: id,
   storage_session_id,
   name,
   /* `kind` drives codeapi's sessionKey shape; defaults to `'user'` for

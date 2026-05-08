@@ -1060,6 +1060,56 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     toolCallConfig.session_id = tc.codeSessionContext.session_id;
                     if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
                       toolCallConfig._injected_files = tc.codeSessionContext.files;
+                      /* Last LC-controlled point before the wire. Mirrors
+                       * codeapi's validator context so the two log sides
+                       * correlate on a single grep. */
+                      const refs = tc.codeSessionContext.files as Array<{
+                        id?: unknown;
+                        resource_id?: unknown;
+                        storage_session_id?: unknown;
+                        kind?: unknown;
+                        version?: unknown;
+                        name?: unknown;
+                      }>;
+                      const summary = refs.map((f) => ({
+                        kind: f.kind,
+                        hasResourceId: typeof f.resource_id === 'string' && !!f.resource_id,
+                        hasStorageSessionId:
+                          typeof f.storage_session_id === 'string' && !!f.storage_session_id,
+                        hasVersion: typeof f.version === 'number',
+                      }));
+                      const missingResourceId = summary.filter((s) => !s.hasResourceId).length;
+                      logger.debug(
+                        `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
+                          `missingResourceId=${missingResourceId}`,
+                        { summary },
+                      );
+                      if (missingResourceId > 0) {
+                        logger.warn(
+                          `[code-env:inject] ${missingResourceId}/${refs.length} files missing resource_id ` +
+                            `for tool=${tc.name} — codeapi will reject with 400`,
+                          { summary },
+                        );
+                      }
+                    } else {
+                      /* Empty `_injected_files` on a code-execution tool
+                       * call. Almost always means the seeding chain
+                       * (primeCodeFiles → initialSessions →
+                       * CodeSessionContext) dropped the file upstream.
+                       * `session_id` is still emitted; agents falls
+                       * through to the `/files/<sid>` legacy fetch
+                       * which is post-cutover broken (returns 400).
+                       * Pair with `[primeCodeFiles]` traces below to
+                       * locate the layer that lost the ref. */
+                      logger.warn(
+                        `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
+                        {
+                          tool: tc.name,
+                          session_id: tc.codeSessionContext.session_id,
+                          codeSessionContextHasFiles: tc.codeSessionContext.files !== undefined,
+                          codeSessionContextFileCount: tc.codeSessionContext.files?.length ?? 0,
+                        },
+                      );
                     }
                   }
 

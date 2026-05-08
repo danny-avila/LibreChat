@@ -726,6 +726,15 @@ const primeFiles = async (options) => {
   const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.execute_code]?.files ?? [];
 
+  /* Step 1 of the priming trace: input volume. Pair with the
+   * per-file `[primeCodeFiles] file=...` lines and the final
+   * `[primeCodeFiles] returned=...` line below to locate which
+   * layer drops a file the sandbox doesn't end up seeing. */
+  logger.debug(
+    `[primeCodeFiles] in: file_ids=${file_ids.length} resourceFiles=${resourceFiles.length}`,
+    { agentId, file_ids, resourceFileIds: resourceFiles.map((f) => f?.file_id) },
+  );
+
   // Get all files first
   const allFiles = (await getFiles({ file_id: { $in: file_ids } }, null, { text: 0 })) ?? [];
 
@@ -748,6 +757,12 @@ const primeFiles = async (options) => {
   const sessions = new Map();
   let toolContext = '';
 
+  /* Per-file path counters — emitted at the bottom so a single
+   * grep on `[primeCodeFiles]` shows the input volume, the per-file
+   * paths taken, and the final dispatch summary in one trace. */
+  let skippedNoRef = 0;
+  let reuploadFailures = 0;
+
   for (let i = 0; i < dbFiles.length; i++) {
     const file = dbFiles[i];
     if (!file) {
@@ -755,150 +770,181 @@ const primeFiles = async (options) => {
     }
 
     const ref = file.metadata?.codeEnvRef;
-    if (ref) {
-      const session_id = ref.storage_session_id;
-      const id = ref.file_id;
+    if (!ref) {
+      skippedNoRef += 1;
+      logger.debug(
+        `[primeCodeFiles] file=${file.file_id} path=skip reason=no-codeenvref filename=${file.filename}`,
+      );
+      continue;
+    }
+    const session_id = ref.storage_session_id;
+    const id = ref.file_id;
 
-      /**
-       * `pushFile` accepts optional overrides so the reupload path can
-       * push the FRESH `(storage_session_id, file_id)` from the new
-       * `codeEnvRef`. Without these overrides, the closure would
-       * capture the stale pre-reupload refs from the outer loop and
-       * the in-memory `files` array (now consumed by
-       * `buildInitialToolSessions` to seed `Graph.sessions`) would
-       * point at a sandbox object that no longer exists. The DB record
-       * gets the new ref via `updateFile`, but the seed would still
-       * inject the old one — bash_tool / read_file would 404 trying to
-       * mount the file until the next turn re-reads metadata.
-       *
-       * `kind`, `id`, `version` are preserved on the in-memory ref so
-       * codeapi can resolve sessionKey per-file (kind switch +
-       * tenant prefix from auth context).
-       */
-      const pushFile = (overrideSessionId, overrideId) => {
-        if (!toolContext) {
-          toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
-        }
+    /**
+     * `pushFile` accepts optional overrides so the reupload path can
+     * push the FRESH `(storage_session_id, file_id)` from the new
+     * `codeEnvRef`. Without these overrides, the closure would
+     * capture the stale pre-reupload refs from the outer loop and
+     * the in-memory `files` array (now consumed by
+     * `buildInitialToolSessions` to seed `Graph.sessions`) would
+     * point at a sandbox object that no longer exists. The DB record
+     * gets the new ref via `updateFile`, but the seed would still
+     * inject the old one — bash_tool / read_file would 404 trying to
+     * mount the file until the next turn re-reads metadata.
+     *
+     * `kind`, `id`, `version` are preserved on the in-memory ref so
+     * codeapi can resolve sessionKey per-file (kind switch +
+     * tenant prefix from auth context).
+     */
+    const pushFile = (overrideSessionId, overrideId) => {
+      if (!toolContext) {
+        toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
+      }
 
-        let fileSuffix = '';
-        if (!agentResourceIds.has(file.file_id)) {
-          fileSuffix =
-            file.context === FileContext.execute_code
-              ? ' (from previous code execution)'
-              : ' (attached by user)';
-        }
+      let fileSuffix = '';
+      if (!agentResourceIds.has(file.file_id)) {
+        fileSuffix =
+          file.context === FileContext.execute_code
+            ? ' (from previous code execution)'
+            : ' (attached by user)';
+      }
 
-        /* Surface the preview lifecycle so the LLM knows when a
-         * prior-turn artifact's rich preview didn't materialize. The
-         * file blob is always available (`processCodeOutput` persists
-         * it before returning), so the model can still tell the user
-         * "you can download it" even when the preview never resolved.
-         * Absent status means legacy or non-office — render normally. */
-        let previewSuffix = '';
-        if (file.status === 'pending') {
-          previewSuffix = ' (preview not yet generated)';
-        } else if (file.status === 'failed') {
-          previewSuffix = file.previewError
-            ? ` (preview unavailable: ${file.previewError})`
-            : ' (preview unavailable)';
-        }
+      /* Surface the preview lifecycle so the LLM knows when a
+       * prior-turn artifact's rich preview didn't materialize. The
+       * file blob is always available (`processCodeOutput` persists
+       * it before returning), so the model can still tell the user
+       * "you can download it" even when the preview never resolved.
+       * Absent status means legacy or non-office — render normally. */
+      let previewSuffix = '';
+      if (file.status === 'pending') {
+        previewSuffix = ' (preview not yet generated)';
+      } else if (file.status === 'failed') {
+        previewSuffix = file.previewError
+          ? ` (preview unavailable: ${file.previewError})`
+          : ' (preview unavailable)';
+      }
 
-        toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}${previewSuffix}`;
-        /* `id` is the storage file_id (drives codeapi's upload-key
-         * existence check), `resource_id` is the entity that owns
-         * the storage session (drives sessionKey re-derivation). For
-         * code-output files this is `kind: 'user'` and `resource_id`
-         * is informational (codeapi ignores it for user kind), but
-         * we still send it for shape uniformity with shared kinds. */
-        files.push({
-          id: overrideId ?? id,
-          resource_id: ref.id,
-          storage_session_id: overrideSessionId ?? session_id,
-          name: file.filename,
+      toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}${previewSuffix}`;
+      /* `id` is the storage file_id (drives codeapi's upload-key
+       * existence check), `resource_id` is the entity that owns
+       * the storage session (drives sessionKey re-derivation). For
+       * code-output files this is `kind: 'user'` and `resource_id`
+       * is informational (codeapi ignores it for user kind), but
+       * we still send it for shape uniformity with shared kinds. */
+      files.push({
+        id: overrideId ?? id,
+        resource_id: ref.id,
+        storage_session_id: overrideSessionId ?? session_id,
+        name: file.filename,
+        kind: ref.kind,
+        ...(ref.kind === 'skill' ? { version: ref.version } : {}),
+      });
+    };
+
+    if (sessions.has(session_id)) {
+      logger.debug(
+        `[primeCodeFiles] file=${file.file_id} path=cache-hit-by-session storage_session_id=${session_id}`,
+      );
+      pushFile();
+      continue;
+    }
+
+    const reuploadFile = async () => {
+      try {
+        const { getDownloadStream } = getStrategyFunctions(file.source);
+        const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
+          FileSources.execute_code,
+        );
+        const stream = await getDownloadStream(options.req, file.filepath);
+        /* Reupload preserves the resource identity from the existing
+         * ref so codeapi re-buckets under the same sessionKey shape
+         * (skill stays skill, user stays user). Without this, a
+         * skill-cache-miss reupload would land in the user bucket
+         * and never re-shareable cross-user. */
+        const uploaded = await uploadCodeEnvFile({
+          req: options.req,
+          stream,
+          filename: file.filename,
           kind: ref.kind,
+          id: ref.id,
           ...(ref.kind === 'skill' ? { version: ref.version } : {}),
         });
-      };
 
-      if (sessions.has(session_id)) {
-        pushFile();
-        continue;
+        /**
+         * Use the FRESH `(storage_session_id, file_id)` from the
+         * reupload response and route it through the dedupe Map, the
+         * persisted record, and the in-memory `files` list. The
+         * original ref captured at the top of this iteration refers
+         * to the old, expired/missing sandbox object — using it here
+         * would silently re-introduce the bug `Graph.sessions`
+         * seeding is supposed to fix.
+         *
+         * `kind`, `id`, `version` survive the round-trip: the
+         * upload preserves the resource identity, only the storage
+         * pointer changes.
+         */
+        const newRef = {
+          kind: ref.kind,
+          id: ref.id,
+          storage_session_id: uploaded.storage_session_id,
+          file_id: uploaded.file_id,
+          ...(ref.kind === 'skill' ? { version: ref.version } : {}),
+        };
+
+        const updatedMetadata = {
+          ...file.metadata,
+          codeEnvRef: newRef,
+        };
+
+        await updateFile({
+          file_id: file.file_id,
+          metadata: updatedMetadata,
+        });
+        sessions.set(newRef.storage_session_id, true);
+        pushFile(newRef.storage_session_id, newRef.file_id);
+        logger.debug(
+          `[primeCodeFiles] file=${file.file_id} path=reupload-success ` +
+            `oldSession=${session_id} newSession=${newRef.storage_session_id} newFileId=${newRef.file_id}`,
+        );
+      } catch (error) {
+        reuploadFailures += 1;
+        logger.error(
+          `[primeCodeFiles] file=${file.file_id} path=reupload-failed session=${session_id}: ${error.message}`,
+          error,
+        );
       }
-
-      const reuploadFile = async () => {
-        try {
-          const { getDownloadStream } = getStrategyFunctions(file.source);
-          const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
-            FileSources.execute_code,
-          );
-          const stream = await getDownloadStream(options.req, file.filepath);
-          /* Reupload preserves the resource identity from the existing
-           * ref so codeapi re-buckets under the same sessionKey shape
-           * (skill stays skill, user stays user). Without this, a
-           * skill-cache-miss reupload would land in the user bucket
-           * and never re-shareable cross-user. */
-          const uploaded = await uploadCodeEnvFile({
-            req: options.req,
-            stream,
-            filename: file.filename,
-            kind: ref.kind,
-            id: ref.id,
-            ...(ref.kind === 'skill' ? { version: ref.version } : {}),
-          });
-
-          /**
-           * Use the FRESH `(storage_session_id, file_id)` from the
-           * reupload response and route it through the dedupe Map, the
-           * persisted record, and the in-memory `files` list. The
-           * original ref captured at the top of this iteration refers
-           * to the old, expired/missing sandbox object — using it here
-           * would silently re-introduce the bug `Graph.sessions`
-           * seeding is supposed to fix.
-           *
-           * `kind`, `id`, `version` survive the round-trip: the
-           * upload preserves the resource identity, only the storage
-           * pointer changes.
-           */
-          const newRef = {
-            kind: ref.kind,
-            id: ref.id,
-            storage_session_id: uploaded.storage_session_id,
-            file_id: uploaded.file_id,
-            ...(ref.kind === 'skill' ? { version: ref.version } : {}),
-          };
-
-          const updatedMetadata = {
-            ...file.metadata,
-            codeEnvRef: newRef,
-          };
-
-          await updateFile({
-            file_id: file.file_id,
-            metadata: updatedMetadata,
-          });
-          sessions.set(newRef.storage_session_id, true);
-          pushFile(newRef.storage_session_id, newRef.file_id);
-        } catch (error) {
-          logger.error(
-            `Error re-uploading file ${id} in session ${session_id}: ${error.message}`,
-            error,
-          );
-        }
-      };
-      const uploadTime = await getSessionInfo(ref);
-      if (!uploadTime) {
-        logger.warn(`Failed to get upload time for file ${id} in session ${session_id}`);
-        await reuploadFile();
-        continue;
-      }
-      if (!checkIfActive(uploadTime)) {
-        await reuploadFile();
-        continue;
-      }
-      sessions.set(session_id, true);
-      pushFile();
+    };
+    const uploadTime = await getSessionInfo(ref);
+    if (!uploadTime) {
+      logger.debug(
+        `[primeCodeFiles] file=${file.file_id} path=reupload reason=no-uploadtime ` +
+          `storage_session_id=${session_id}`,
+      );
+      await reuploadFile();
+      continue;
     }
+    if (!checkIfActive(uploadTime)) {
+      logger.debug(
+        `[primeCodeFiles] file=${file.file_id} path=reupload reason=stale ` +
+          `uploadTime=${uploadTime} storage_session_id=${session_id}`,
+      );
+      await reuploadFile();
+      continue;
+    }
+    sessions.set(session_id, true);
+    logger.debug(
+      `[primeCodeFiles] file=${file.file_id} path=fresh-active storage_session_id=${session_id}`,
+    );
+    pushFile();
   }
+
+  /* Dispatch summary — emitted unconditionally so a single grep on
+   * `[primeCodeFiles] out` always shows the final state, not only
+   * the per-path trail leading up to it. */
+  logger.debug(
+    `[primeCodeFiles] out: returned=${files.length} ` +
+      `skippedNoRef=${skippedNoRef} reuploadFailures=${reuploadFailures}`,
+  );
 
   return { files, toolContext };
 };
