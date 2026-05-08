@@ -39,7 +39,7 @@ async function getCachedTools(options = {}) {
  * @param {Object} options - Options for caching tools
  * @param {string} [options.userId] - User ID for user-specific MCP tools
  * @param {string} [options.serverName] - MCP server name for server-specific tools
- * @param {number} [options.ttl] - Time to live in milliseconds (default: 12 hours)
+ * @param {number} [options.ttl] - Time to live in milliseconds (default: 12 hours for MCP, none for global)
  * @returns {Promise<boolean>} Whether the operation was successful
  */
 async function setCachedTools(tools, options = {}) {
@@ -51,8 +51,8 @@ async function setCachedTools(tools, options = {}) {
     return await cache.set(ToolCacheKeys.MCP_SERVER(userId, serverName), tools, ttl);
   }
 
-  // Default to global cache
-  return await cache.set(ToolCacheKeys.GLOBAL, tools, ttl);
+  // Global tools persist until server restart or explicit invalidation
+  return await cache.set(ToolCacheKeys.GLOBAL, tools);
 }
 
 /**

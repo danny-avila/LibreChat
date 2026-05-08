@@ -416,6 +416,41 @@ const isBuiltInTool = (toolName) =>
       nativeTools.has(toolName),
   );
 
+const mcpToolPattern = /_mcp_/;
+
+/**
+ * Augments tool definitions with custom tools that are in the manifest
+ * but not in the hardcoded registry (e.g., custom structured tools).
+ * Uses the cached system tools populated at startup by loadAndFormatTools.
+ */
+async function augmentWithCustomToolDefs({ filteredTools, toolDefinitions, toolRegistry }) {
+  const cachedSystemTools = (await getCachedTools()) ?? {};
+  for (const toolName of filteredTools) {
+    if (
+      toolRegistry.has(toolName) ||
+      toolName.includes(actionDelimiter) ||
+      mcpToolPattern.test(toolName)
+    ) {
+      continue;
+    }
+    const cached = cachedSystemTools[toolName];
+    if (!cached?.function) {
+      continue;
+    }
+    toolDefinitions.push({
+      name: toolName,
+      description: cached.function.description,
+      parameters: cached.function.parameters,
+    });
+    toolRegistry.set(toolName, {
+      name: toolName,
+      description: cached.function.description,
+      parameters: cached.function.parameters,
+      allowed_callers: ['direct'],
+    });
+  }
+}
+
 /**
  * Loads only tool definitions without creating tool instances.
  * This is the efficient path for event-driven mode where tools are loaded on-demand.
@@ -625,6 +660,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     },
   );
 
+  await augmentWithCustomToolDefs({ filteredTools, toolDefinitions, toolRegistry });
+
   if (pendingOAuthServers.size > 0 && (res || streamId)) {
     const serverNames = Array.from(pendingOAuthServers);
     logger.info(
@@ -681,6 +718,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       toolDefinitions = reloadResult.toolDefinitions;
       toolRegistry = reloadResult.toolRegistry;
       hasDeferredTools = reloadResult.hasDeferredTools;
+      await augmentWithCustomToolDefs({ filteredTools, toolDefinitions, toolRegistry });
     }
   }
 

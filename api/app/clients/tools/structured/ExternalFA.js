@@ -1,7 +1,7 @@
 const axios = require('axios').default;
 
 const { z } = require('zod');
-const { StructuredTool } = require('langchain/tools');
+const { StructuredTool } = require('@langchain/core/tools');
 const { logger } = require('~/config');
 
 class ExternalFA extends StructuredTool {

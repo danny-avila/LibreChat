@@ -164,7 +164,7 @@
     "name": "Dify Vtiger Forma Aquae",
     "pluginKey": "vtiger_fa_api",
     "description": "Dify Vtiger Forma Aquae is a robust search API tailored for LLM Agents. Get an API key here: https://formaaquae.cleversoft.it",
-    "icon": "https://icon2.cleanpng.com/20181125/cf/kisspng-vtiger-crm-logo-business-brand-customer-relationsh-customer-relationship-management-system-web-devz-5bfb3ea47bf809.4195674915431922285078.jpg",
+    "icon": "https://vtiger-website.cdn.prismic.io/vtiger-website/dd7afe10-8740-44ec-abe2-4ed24cea9555_Vtiger+CRM+Logo.svg",
     "authConfig": []
   },
   {

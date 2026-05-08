@@ -1,4 +1,4 @@
-LibreChatservices:
+services:
   api:
     build:
       context: .
@@ -9,7 +9,7 @@ LibreChatservices:
     ports:
       - 3080:3080
     depends_on:
-      - mongodbghcr.io/danny-avila/librechat-dev-api:latest
+      - mongodb
       - rag_api
     restart: always
     extra_hosts:
