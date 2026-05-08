@@ -2,6 +2,9 @@ const cookies = require('cookie');
 const passport = require('passport');
 const { isEnabled, tenantContextMiddleware } = require('@librechat/api');
 
+const hasPassportStrategy = (strategy) =>
+  typeof passport._strategy === 'function' && passport._strategy(strategy) != null;
+
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse.
  * Switches between JWT and OpenID authentication based on cookies and environment settings.
@@ -14,10 +17,11 @@ const requireJwtAuth = (req, res, next) => {
   const cookieHeader = req.headers.cookie;
   const tokenProvider = cookieHeader ? cookies.parse(cookieHeader).token_provider : null;
   const openidReuseEnabled = isEnabled(process.env.OPENID_REUSE_TOKENS);
+  const openidJwtAvailable = openidReuseEnabled && hasPassportStrategy('openidJwt');
   const strategies =
-    tokenProvider === 'openid' && openidReuseEnabled
+    tokenProvider === 'openid' && openidJwtAvailable
       ? ['openidJwt', 'jwt']
-      : ['jwt', ...(openidReuseEnabled ? ['openidJwt'] : [])];
+      : ['jwt', ...(openidJwtAvailable ? ['openidJwt'] : [])];
 
   const authenticateWithStrategy = (index) => {
     const strategy = strategies[index];
