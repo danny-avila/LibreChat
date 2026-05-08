@@ -66,6 +66,5 @@ export default defineConfig({
     ignoreHTTPSErrors: true,
     timeout: 120_000,
     reuseExistingServer: true,
-    env: e2eEnv,
   },
 });

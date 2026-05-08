@@ -19,7 +19,6 @@ const config: PlaywrightTestConfig = {
     ...mainConfig.webServer,
     command: `node ${serverPath}`,
     cwd: rootPath,
-    env: e2eEnv,
   },
   fullyParallel: false, // if you are on Windows, keep this as `false`. On a Mac, `true` could make tests faster (maybe on some Windows too, just try)
   // workers: 1,

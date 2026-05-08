@@ -34,6 +34,11 @@ async function login(page: Page, user: User) {
   await page.getByTestId('login-button').click();
 }
 
+function appURL(baseURL: string, pathname = '') {
+  const normalizedBaseURL = baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
+  return new URL(pathname.replace(/^\/+/, ''), normalizedBaseURL).toString();
+}
+
 async function authenticate(config: FullConfig, user: User) {
   console.log('🤖: global setup has been started');
   const { baseURL, storageState } = config.projects[0].use;
@@ -50,9 +55,11 @@ async function authenticate(config: FullConfig, user: User) {
     const page = await browser.newPage();
     console.log('🤖: 🗝  authenticating user:', user.email);
 
-    if (!baseURL) {
+    if (typeof baseURL !== 'string') {
       throw new Error('🤖: baseURL is not defined');
     }
+    const conversationURL = appURL(baseURL, 'c/new');
+    const loginURL = appURL(baseURL, 'login');
 
     // Set localStorage before navigating to the page
     await page.context().addInitScript(() => {
@@ -63,7 +70,7 @@ async function authenticate(config: FullConfig, user: User) {
     await page.goto(baseURL, { timeout });
     await register(page, user);
     try {
-      await page.waitForURL(`${baseURL}/c/new`, { timeout });
+      await page.waitForURL(conversationURL, { timeout });
     } catch (error) {
       console.error('Error:', error);
       if (await registrationErrorIsVisible(page)) {
@@ -71,16 +78,16 @@ async function authenticate(config: FullConfig, user: User) {
         await cleanupUser(user);
         await page.goto(baseURL, { timeout });
         await register(page, user);
-        await page.waitForURL(`${baseURL}/c/new`, { timeout });
+        await page.waitForURL(conversationURL, { timeout });
       } else {
         throw new Error('🤖: 🚨  user failed to register');
       }
     }
     console.log('🤖: ✔️  user successfully registered');
 
-    await page.goto(`${baseURL}/login`, { timeout });
+    await page.goto(loginURL, { timeout });
     await login(page, user);
-    await page.waitForURL(`${baseURL}/c/new`, { timeout });
+    await page.waitForURL(conversationURL, { timeout });
     console.log('🤖: ✔️  user successfully authenticated');
 
     await page.context().storageState({ path: storageState });
