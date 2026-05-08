@@ -3,6 +3,21 @@ import type { TCustomConfig } from 'librechat-data-provider';
 import { loadDefaultInterface } from './interface';
 
 describe('loadDefaultInterface', () => {
+  it('preserves disabled URL auto-submit config', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        autoSubmitFromUrl: false,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.autoSubmitFromUrl).toBe(false);
+  });
+
   it('preserves the configured temporary chat retention period', async () => {
     const config: Partial<TCustomConfig> = {
       interface: {
