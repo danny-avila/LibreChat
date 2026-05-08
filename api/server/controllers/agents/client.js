@@ -82,6 +82,7 @@ class AgentClient extends BaseClient {
       agentConfigs,
       contentParts,
       collectedUsage,
+      collectedThoughtSignatures,
       artifactPromises,
       maxContextTokens,
       subagentAggregatorsByToolCallId,
@@ -94,6 +95,12 @@ class AgentClient extends BaseClient {
     this.contentParts = contentParts;
     /** @type {Array<UsageMetadata>} */
     this.collectedUsage = collectedUsage;
+    /** Vertex Gemini 3 thought signatures captured during the run, keyed by
+     *  `tool_call_id`. Persisted on `responseMessage.metadata.thoughtSignatures`
+     *  and restored as `additional_kwargs.signatures` on subsequent turns to
+     *  keep tool round-trips valid across DB reconstruction.
+     *  @type {Record<string, string> | undefined} */
+    this.collectedThoughtSignatures = collectedThoughtSignatures;
     /** @type {ArtifactPromises} */
     this.artifactPromises = artifactPromises;
     /** Per-request map of `createContentAggregator` instances keyed by
@@ -722,7 +729,11 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
-    return { completion };
+    const signatures = this.collectedThoughtSignatures;
+    if (!signatures || Object.keys(signatures).length === 0) {
+      return { completion };
+    }
+    return { completion, metadata: { thoughtSignatures: signatures } };
   }
 
   /**
