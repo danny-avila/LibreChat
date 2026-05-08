@@ -38,3 +38,5 @@ export * from './admin';
 export * from './web';
 /* MCP Servers */
 export * from './mcp';
+/* Interactions */
+export type * from './interaction';

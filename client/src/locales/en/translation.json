@@ -738,6 +738,7 @@
   "com_ui_all_proper": "All",
   "com_ui_analyzing": "Analyzing",
   "com_ui_analyzing_finished": "Finished analyzing",
+  "com_ui_analytics": "Interaction Analytics",
   "com_ui_api_key": "API Key",
   "com_ui_api_key_copied": "API key copied to clipboard",
   "com_ui_api_key_create_error": "Failed to create API key",

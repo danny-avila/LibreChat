@@ -491,3 +491,11 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+const analyticsRoot = `${BASE_URL}/api/analytics`;
+
+export const analyticsMock = () => `${analyticsRoot}/mock`;
+
+export const analyticsInteractions = (params: q.InteractionAnalyticsParams = {}) => {
+  return `${analyticsRoot}/interactions${buildQuery(params as Record<string, unknown>)}`;
+};

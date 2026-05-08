@@ -227,3 +227,48 @@ export type GraphTokenResponse = {
   expires_in: number;
   scope: string;
 };
+
+export type InteractionStatus = 'success' | 'error';
+export type InteractionProvider = 'mock';
+
+export interface InteractionRow {
+  conversationId: string | null;
+  promptLength: number;
+  responseLength: number;
+  latencyMs: number;
+  provider: InteractionProvider;
+  status: InteractionStatus;
+  createdAt: string;
+}
+
+export interface InteractionSeriesItem {
+  date: string;
+  count: number;
+}
+
+export interface InteractionSummary {
+  total: number;
+  successRate: number;
+  avgLatencyMs: number;
+}
+
+export interface InteractionAnalyticsResponse {
+  summary: InteractionSummary;
+  series: InteractionSeriesItem[];
+  recent: InteractionRow[];
+}
+
+export interface InteractionAnalyticsParams {
+  from?: string;
+  to?: string;
+}
+
+export interface MockInteractionRequest {
+  prompt: string;
+  conversationId?: string;
+}
+
+export interface MockInteractionResponse {
+  answer: string;
+  latencyMs: number;
+}

@@ -1278,3 +1278,15 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+export const sendMockInteraction = (
+  payload: q.MockInteractionRequest,
+): Promise<q.MockInteractionResponse> => {
+  return request.post(endpoints.analyticsMock(), payload);
+};
+
+export const getInteractionAnalytics = (
+  params: q.InteractionAnalyticsParams = {},
+): Promise<q.InteractionAnalyticsResponse> => {
+  return request.get(endpoints.analyticsInteractions(params));
+};
