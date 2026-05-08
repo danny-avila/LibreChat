@@ -18,6 +18,100 @@ export type OboTokenResolver = (
   fromCache?: boolean,
 ) => Promise<{ access_token: string; expires_in?: number }>;
 
+export type OboTokenResolutionReason =
+  | 'missing_upstream_token'
+  | 'missing_upstream_access_token'
+  | 'empty_exchange_response'
+  | 'exchange_failed';
+
+const RETRYABLE_OBO_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const RETRYABLE_OBO_ERROR_CODES = new Set(['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ENOTFOUND']);
+
+function getErrorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') {
+    return undefined;
+  }
+
+  const candidate = error as {
+    status?: number;
+    statusCode?: number;
+    response?: { status?: number };
+  };
+
+  return candidate.status ?? candidate.statusCode ?? candidate.response?.status;
+}
+
+function getErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('code' in error)) {
+    return undefined;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code.toUpperCase() : undefined;
+}
+
+function getErrorRetryableFlag(error: unknown): boolean | undefined {
+  if (!error || typeof error !== 'object' || !('retryable' in error)) {
+    return undefined;
+  }
+
+  const retryable = (error as { retryable?: unknown }).retryable;
+  return typeof retryable === 'boolean' ? retryable : undefined;
+}
+
+export class OboTokenResolutionError extends Error {
+  public readonly reason: OboTokenResolutionReason;
+  public readonly retryable: boolean;
+  public readonly userMessage: string;
+  public override readonly cause?: unknown;
+
+  constructor(
+    reason: OboTokenResolutionReason,
+    userMessage: string,
+    retryable = false,
+    cause?: unknown,
+  ) {
+    super(userMessage);
+    this.name = 'OboTokenResolutionError';
+    this.reason = reason;
+    this.retryable = retryable;
+    this.userMessage = userMessage;
+    this.cause = cause;
+  }
+}
+
+function isRetryableOboExchangeError(error: unknown): boolean {
+  const taggedRetryable = getErrorRetryableFlag(error);
+  if (taggedRetryable != null) {
+    return taggedRetryable;
+  }
+
+  const status = getErrorStatus(error);
+  if (status != null && RETRYABLE_OBO_STATUS_CODES.has(status)) {
+    return true;
+  }
+
+  const code = getErrorCode(error);
+  if (code != null && RETRYABLE_OBO_ERROR_CODES.has(code)) {
+    return true;
+  }
+
+  if (!error || typeof error !== 'object' || !('message' in error)) {
+    return false;
+  }
+
+  const message = String((error as { message?: unknown }).message ?? '').toLowerCase();
+  return (
+    message.includes('timed out') ||
+    message.includes('timeout') ||
+    message.includes('econnreset') ||
+    message.includes('socket hang up') ||
+    message.includes('temporarily unavailable') ||
+    message.includes('too many requests') ||
+    message.includes('service unavailable')
+  );
+}
+
 /**
  * Performs an OBO token exchange for the given user and MCP server OBO config.
  * Returns MCPOAuthTokens suitable for injection into the MCP connection.
@@ -26,18 +120,24 @@ export async function resolveOboToken(
   user: IUser,
   oboConfig: OboConfig,
   oboTokenResolver: OboTokenResolver,
-): Promise<MCPOAuthTokens | null> {
+): Promise<MCPOAuthTokens> {
   const tokenInfo = extractOpenIDTokenInfo(user);
   if (!tokenInfo || !isOpenIDTokenValid(tokenInfo)) {
     logger.warn(
       `[OBO] No valid OpenID token available for OBO exchange (provider: ${user.provider}, hasOpenidId: ${!!user.openidId}, hasFederatedTokens: ${!!user.federatedTokens})`,
     );
-    return null;
+    throw new OboTokenResolutionError(
+      'missing_upstream_token',
+      'No valid OpenID access token is available for OBO exchange.',
+    );
   }
 
   if (!tokenInfo.accessToken) {
     logger.warn('[OBO] OpenID token info present but access_token is missing');
-    return null;
+    throw new OboTokenResolutionError(
+      'missing_upstream_access_token',
+      'The upstream OpenID access token is missing for OBO exchange.',
+    );
   }
 
   try {
@@ -45,7 +145,10 @@ export async function resolveOboToken(
 
     if (!response?.access_token) {
       logger.warn('[OBO] Token exchange did not return an access token');
-      return null;
+      throw new OboTokenResolutionError(
+        'empty_exchange_response',
+        'The identity provider returned no access token for the OBO exchange.',
+      );
     }
 
     const now = Date.now();
@@ -58,7 +161,19 @@ export async function resolveOboToken(
       expires_at: now + expiresIn * 1000,
     };
   } catch (error) {
+    if (error instanceof OboTokenResolutionError) {
+      throw error;
+    }
+
     logger.error('[OBO] Failed to exchange token:', error);
-    return null;
+    const retryable = isRetryableOboExchangeError(error);
+    throw new OboTokenResolutionError(
+      'exchange_failed',
+      retryable
+        ? 'Temporary OBO token exchange failure.'
+        : 'The identity provider rejected the OBO token exchange.',
+      retryable,
+      error,
+    );
   }
 }

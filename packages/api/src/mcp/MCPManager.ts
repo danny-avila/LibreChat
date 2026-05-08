@@ -15,12 +15,26 @@ import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
-import { resolveOboToken } from '~/mcp/oauth';
+import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
 import { isUserSourced } from './utils';
+
+function createOboToolCallErrorMessage(
+  logPrefix: string,
+  toolName: string,
+  error: OboTokenResolutionError,
+): string {
+  const failureSuffix = error.retryable
+    ? 'Please retry.'
+    : error.reason === 'exchange_failed'
+      ? 'Re-authenticate the user or verify the configured OBO scopes and retry.'
+      : 'Re-authenticate the user and retry.';
+
+  return `${logPrefix} ${error.userMessage} Cannot execute tool ${toolName}. ${failureSuffix}`;
+}
 
 /**
  * Centralized manager for MCP server connections and tool execution.
@@ -358,10 +372,26 @@ Please follow these instructions when using tools from the respective MCP server
       /** Refresh OBO token on each tool call to ensure it's current */
       const oboConfig = rawConfig.obo;
       if (oboConfig && oboTokenResolver && user) {
-        const oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
-        if (oboTokens?.access_token) {
-          resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
+        let oboTokens: MCPOAuthTokens;
+        try {
+          oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
+        } catch (error) {
+          if (error instanceof OboTokenResolutionError) {
+            throw new McpError(
+              ErrorCode.InternalError,
+              createOboToolCallErrorMessage(logPrefix, toolName, error),
+            );
+          }
+          throw error;
         }
+
+        if (!oboTokens.access_token) {
+          throw new McpError(
+            ErrorCode.InternalError,
+            `${logPrefix} OBO token refresh failed. Cannot execute tool ${toolName}. Re-authenticate the user and retry.`,
+          );
+        }
+        resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
       }
 
       connection.setRequestHeaders(resolvedHeaders);

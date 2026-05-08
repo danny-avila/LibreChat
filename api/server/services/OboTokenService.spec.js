@@ -5,6 +5,7 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: {
     error: jest.fn(),
     debug: jest.fn(),
+    warn: jest.fn(),
   },
 }));
 
@@ -192,6 +193,48 @@ describe('OboTokenService', () => {
       await expect(exchangeOboToken(mockUser, 'bad-token', 'api://scope')).rejects.toThrow(
         'invalid_grant: AADSTS50013: Assertion failed signature validation',
       );
+    });
+
+    it('should retry once for transient Entra failures and succeed on the second attempt', async () => {
+      const transientError = Object.assign(new Error('Service unavailable'), { status: 503 });
+      const setTimeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation((callback) => {
+        callback();
+        return 0;
+      });
+
+      try {
+        client.genericGrantRequest
+          .mockRejectedValueOnce(transientError)
+          .mockResolvedValueOnce({
+            access_token: 'retried-obo-token',
+            expires_in: 1800,
+          });
+
+        const result = await exchangeOboToken(mockUser, 'access-token', 'api://scope');
+
+        expect(client.genericGrantRequest).toHaveBeenCalledTimes(2);
+        expect(result).toEqual({
+          access_token: 'retried-obo-token',
+          token_type: 'Bearer',
+          expires_in: 1800,
+          scope: 'api://scope',
+        });
+      } finally {
+        setTimeoutSpy.mockRestore();
+      }
+    });
+
+    it('should not retry permanent OBO exchange failures', async () => {
+      const permanentError = new Error(
+        'invalid_grant: AADSTS50013: Assertion failed signature validation',
+      );
+      client.genericGrantRequest.mockRejectedValue(permanentError);
+
+      await expect(exchangeOboToken(mockUser, 'bad-token', 'api://scope')).rejects.toThrow(
+        'invalid_grant: AADSTS50013: Assertion failed signature validation',
+      );
+
+      expect(client.genericGrantRequest).toHaveBeenCalledTimes(1);
     });
   });
 
