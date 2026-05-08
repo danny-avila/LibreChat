@@ -33,7 +33,7 @@ import {
   removeConvoFromAllQueries,
   findConversationInInfinite,
 } from '~/utils';
-import { queueTitleGeneration } from '~/data-provider/SSE/queries';
+import { startupConfigKey, queueTitleGeneration } from '~/data-provider';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
@@ -406,7 +406,7 @@ export default function useEventHandlers({
           sourceId: submission.conversation?.conversationId,
           ephemeralAgent: submission.ephemeralAgent,
           specName: submission.conversation?.spec,
-          startupConfig: queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]),
+          startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
         });
       }
 
@@ -526,6 +526,23 @@ export default function useEventHandlers({
         } else if (requestMessage != null && responseMessage != null) {
           finalMessages = [...messages, requestMessage, responseMessage];
         }
+
+        /* Preserve files from current messages when server response lacks them */
+        if (finalMessages.length > 0) {
+          const currentMsgMap = new Map(
+            currentMessages
+              .filter((m) => m.files && m.files.length > 0)
+              .map((m) => [m.messageId, m.files]),
+          );
+          for (let i = 0; i < finalMessages.length; i++) {
+            const msg = finalMessages[i];
+            const preservedFiles = currentMsgMap.get(msg.messageId);
+            if (msg.files == null && preservedFiles) {
+              finalMessages[i] = { ...msg, files: preservedFiles };
+            }
+          }
+        }
+
         if (finalMessages.length > 0) {
           setFinalMessages(conversation.conversationId, finalMessages);
         } else if (
@@ -571,7 +588,7 @@ export default function useEventHandlers({
               sourceId: submissionConvo.conversationId,
               ephemeralAgent: submission.ephemeralAgent,
               specName: submission.conversation?.spec,
-              startupConfig: queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]),
+              startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
             });
           }
 

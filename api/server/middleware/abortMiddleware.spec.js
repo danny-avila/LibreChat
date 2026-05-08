@@ -20,16 +20,6 @@ const mockRecordCollectedUsage = jest
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
 const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
 
-jest.mock('~/models/spendTokens', () => ({
-  spendTokens: (...args) => mockSpendTokens(...args),
-  spendStructuredTokens: (...args) => mockSpendStructuredTokens(...args),
-}));
-
-jest.mock('~/models/tx', () => ({
-  getMultiplier: mockGetMultiplier,
-  getCacheMultiplier: mockGetCacheMultiplier,
-}));
-
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
@@ -73,6 +63,10 @@ jest.mock('~/models', () => ({
   getConvo: jest.fn().mockResolvedValue({ title: 'Test Chat' }),
   updateBalance: mockUpdateBalance,
   bulkInsertTransactions: mockBulkInsertTransactions,
+  spendTokens: (...args) => mockSpendTokens(...args),
+  spendStructuredTokens: (...args) => mockSpendStructuredTokens(...args),
+  getMultiplier: mockGetMultiplier,
+  getCacheMultiplier: mockGetCacheMultiplier,
 }));
 
 jest.mock('./abortRun', () => ({

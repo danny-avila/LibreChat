@@ -111,6 +111,16 @@ const defaultRolesSchema = z.object({
   }),
 });
 
+const systemRoleSet = new Set(Object.values(SystemRoles).map((r) => r.toUpperCase()));
+
+/** Case-insensitive check for reserved system role names. */
+export function isSystemRoleName(name: string | undefined | null): boolean {
+  if (!name) {
+    return false;
+  }
+  return systemRoleSet.has(name.toUpperCase());
+}
+
 export const roleDefaults = defaultRolesSchema.parse({
   [SystemRoles.ADMIN]: {
     name: SystemRoles.ADMIN,
@@ -180,10 +190,20 @@ export const roleDefaults = defaultRolesSchema.parse({
   [SystemRoles.USER]: {
     name: SystemRoles.USER,
     permissions: {
-      [PermissionTypes.PROMPTS]: {},
+      [PermissionTypes.PROMPTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
       [PermissionTypes.BOOKMARKS]: {},
       [PermissionTypes.MEMORIES]: {},
-      [PermissionTypes.AGENTS]: {},
+      [PermissionTypes.AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
       [PermissionTypes.MULTI_CONVO]: {},
       [PermissionTypes.TEMPORARY_CHAT]: {},
       [PermissionTypes.RUN_CODE]: {},
@@ -198,8 +218,18 @@ export const roleDefaults = defaultRolesSchema.parse({
       },
       [PermissionTypes.FILE_SEARCH]: {},
       [PermissionTypes.FILE_CITATIONS]: {},
-      [PermissionTypes.MCP_SERVERS]: {},
-      [PermissionTypes.REMOTE_AGENTS]: {},
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: false,
+        [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     },
   },
 });

@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, tenantStorage, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import {
   SystemRoles,
   Permissions,
@@ -54,6 +54,7 @@ export async function updateInterfacePermissions({
   appConfig,
   getRoleByName,
   updateAccessPermissions,
+  tenantId,
 }: {
   appConfig: AppConfig;
   getRoleByName: (roleName: string, fieldsToSelect?: string | string[]) => Promise<IRole | null>;
@@ -63,7 +64,19 @@ export async function updateInterfacePermissions({
 
     roleData?: IRole | null,
   ) => Promise<void>;
-}) {
+  /**
+   * Optional tenant ID for scoping role updates to a specific tenant.
+   * When provided (and not SYSTEM_TENANT_ID), runs inside `tenantStorage.run({ tenantId })`.
+   * When omitted or SYSTEM_TENANT_ID, uses the caller's existing ALS context.
+   */
+  tenantId?: string;
+}): Promise<void> {
+  if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
+    return tenantStorage.run({ tenantId }, async () =>
+      updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions }),
+    );
+  }
+
   const loadedInterface = appConfig?.interfaceConfig;
   if (!loadedInterface) {
     return;
@@ -352,11 +365,19 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.USE],
           defaults.mcpServers?.use,
         ),
-        [Permissions.CREATE]: getPermissionValue(
-          loadedInterface.mcpServers?.create,
-          defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.CREATE],
-          defaults.mcpServers?.create,
-        ),
+        ...((typeof interfaceConfig?.mcpServers === 'object' &&
+          'create' in interfaceConfig.mcpServers) ||
+        !existingPermissions?.[PermissionTypes.MCP_SERVERS]
+          ? {
+              [Permissions.CREATE]: getPermissionValue(
+                typeof interfaceConfig?.mcpServers === 'object'
+                  ? interfaceConfig.mcpServers.create
+                  : undefined,
+                defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.CREATE],
+                defaults.mcpServers?.create,
+              ),
+            }
+          : {}),
         ...((typeof interfaceConfig?.mcpServers === 'object' &&
           ('share' in interfaceConfig.mcpServers || 'public' in interfaceConfig.mcpServers)) ||
         !existingPermissions?.[PermissionTypes.MCP_SERVERS]
@@ -380,11 +401,19 @@ export async function updateInterfacePermissions({
           defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.USE],
           defaults.remoteAgents?.use,
         ),
-        [Permissions.CREATE]: getPermissionValue(
-          loadedInterface.remoteAgents?.create,
-          defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.CREATE],
-          defaults.remoteAgents?.create,
-        ),
+        ...((typeof interfaceConfig?.remoteAgents === 'object' &&
+          'create' in interfaceConfig.remoteAgents) ||
+        !existingPermissions?.[PermissionTypes.REMOTE_AGENTS]
+          ? {
+              [Permissions.CREATE]: getPermissionValue(
+                typeof interfaceConfig?.remoteAgents === 'object'
+                  ? interfaceConfig.remoteAgents.create
+                  : undefined,
+                defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.CREATE],
+                defaults.remoteAgents?.create,
+              ),
+            }
+          : {}),
         ...((typeof interfaceConfig?.remoteAgents === 'object' &&
           ('share' in interfaceConfig.remoteAgents || 'public' in interfaceConfig.remoteAgents)) ||
         !existingPermissions?.[PermissionTypes.REMOTE_AGENTS]
@@ -508,6 +537,31 @@ export async function updateInterfacePermissions({
         );
         // Merge into any update already queued by addPermissionIfNeeded, or create a new entry
         permissionsToUpdate[permType] = { ...permissionsToUpdate[permType], ...missingFields };
+      }
+    }
+
+    /**
+     * One-time migration: correct MCP_SERVERS.CREATE for USER role.
+     * Before the explicit roleDefaults fix, Zod schema defaults resolved CREATE to true
+     * for all roles. ADMIN should keep CREATE: true, but USER should have CREATE: false
+     * unless explicitly configured otherwise in librechat.yaml.
+     */
+    if (roleName === SystemRoles.USER) {
+      const existingMcpPerms = existingPermissions?.[PermissionTypes.MCP_SERVERS];
+      const mcpCreateExplicit =
+        typeof interfaceConfig?.mcpServers === 'object' && 'create' in interfaceConfig.mcpServers;
+      if (
+        existingMcpPerms?.[Permissions.CREATE] === true &&
+        !mcpCreateExplicit &&
+        defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.CREATE] === false
+      ) {
+        logger.debug(
+          `Role '${roleName}': Migrating MCP_SERVERS.CREATE from true to false (Zod default correction)`,
+        );
+        permissionsToUpdate[PermissionTypes.MCP_SERVERS] = {
+          ...permissionsToUpdate[PermissionTypes.MCP_SERVERS],
+          [Permissions.CREATE]: false,
+        };
       }
     }
 

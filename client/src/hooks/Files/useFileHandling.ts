@@ -16,13 +16,13 @@ import debounce from 'lodash/debounce';
 import type { EModelEndpoint, TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import type { TConversation } from 'librechat-data-provider';
+import { logger, validateFiles, cachePreview, getCachedPreview, removePreviewEntry } from '~/utils';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import { processFileForUpload } from '~/utils/heicConverter';
 import { useChatContext } from '~/Providers/ChatContext';
 import { ephemeralAgentByConvoId } from '~/store';
-import { logger, validateFiles } from '~/utils';
 import useClientResize from './useClientResize';
 import useUpdateFiles from './useUpdateFiles';
 
@@ -30,8 +30,10 @@ type UseFileHandling = {
   fileSetter?: FileSetter;
   fileFilter?: (file: File) => boolean;
   additionalMetadata?: Record<string, string | undefined>;
-  /** Overrides both `endpoint` and `endpointType` for validation and upload routing */
-  endpointOverride?: EModelEndpoint;
+  /** Overrides `endpoint` for upload routing; also used as `endpointType` fallback when `endpointTypeOverride` is not set */
+  endpointOverride?: EModelEndpoint | string;
+  /** Overrides `endpointType` independently from `endpointOverride` */
+  endpointTypeOverride?: EModelEndpoint | string;
 };
 
 export type FileHandlingState = {
@@ -64,9 +66,10 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
   const endpointOverride = params?.endpointOverride;
+  const endpointTypeOverride = params?.endpointTypeOverride;
   const endpointType = useMemo(
-    () => endpointOverride ?? conversation?.endpointType,
-    [endpointOverride, conversation?.endpointType],
+    () => endpointTypeOverride ?? endpointOverride ?? conversation?.endpointType,
+    [endpointTypeOverride, endpointOverride, conversation?.endpointType],
   );
   const endpoint = useMemo(
     () => endpointOverride ?? conversation?.endpoint ?? 'default',
@@ -130,6 +133,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         );
 
         setTimeout(() => {
+          const cachedBlob = getCachedPreview(data.temp_file_id);
+          if (cachedBlob && data.file_id !== data.temp_file_id) {
+            cachePreview(data.file_id, cachedBlob);
+            removePreviewEntry(data.temp_file_id);
+          }
           updateFileById(
             data.temp_file_id,
             {
@@ -260,7 +268,6 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       replaceFile(extendedFile);
 
       await startUpload(extendedFile);
-      URL.revokeObjectURL(preview);
     };
     img.src = preview;
   };
@@ -301,6 +308,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       try {
         // Create initial preview with original file
         const initialPreview = URL.createObjectURL(originalFile);
+        cachePreview(file_id, initialPreview);
 
         // Create initial ExtendedFile to show immediately
         const initialExtendedFile: ExtendedFile = {
@@ -378,6 +386,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         if (finalProcessedFile !== originalFile) {
           URL.revokeObjectURL(initialPreview); // Clean up original preview
           const newPreview = URL.createObjectURL(finalProcessedFile);
+          cachePreview(file_id, newPreview);
 
           const updatedExtendedFile: ExtendedFile = {
             ...initialExtendedFile,

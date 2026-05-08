@@ -1377,6 +1377,37 @@ describe('Claude Model Tests', () => {
     });
   });
 
+  it('should return correct context length for Claude Opus 4.7 (1M)', () => {
+    expect(getModelMaxTokens('claude-opus-4-7', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-7'],
+    );
+    expect(getModelMaxTokens('claude-opus-4-7')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-7'],
+    );
+  });
+
+  it('should return correct max output tokens for Claude Opus 4.7 (128K)', () => {
+    const { getModelMaxOutputTokens } = require('@librechat/api');
+    expect(getModelMaxOutputTokens('claude-opus-4-7', EModelEndpoint.anthropic)).toBe(
+      maxOutputTokensMap[EModelEndpoint.anthropic]['claude-opus-4-7'],
+    );
+  });
+
+  it('should match model names correctly for Claude Opus 4.7', () => {
+    const modelVariations = [
+      'claude-opus-4-7',
+      'claude-opus-4-7-20260401',
+      'claude-opus-4-7-latest',
+      'anthropic/claude-opus-4-7',
+      'claude-opus-4-7/anthropic',
+      'claude-opus-4-7-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-opus-4-7');
+    });
+  });
+
   it('should return correct context length for Claude Sonnet 4.6 (1M)', () => {
     expect(getModelMaxTokens('claude-sonnet-4-6', EModelEndpoint.anthropic)).toBe(
       maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
@@ -1810,6 +1841,60 @@ describe('GLM Model Tests (Zhipu AI)', () => {
       expect(matchModelName('zai-org/GLM-4.6')).toBe('glm-4.6');
       expect(matchModelName('zai-org/GLM-4.5V')).toBe('glm-4.5v');
       expect(matchModelName('zai-org/GLM-4-32B-0414')).toBe('glm-4-32b');
+    });
+  });
+});
+
+describe('Mistral Model Tests', () => {
+  describe('getModelMaxTokens', () => {
+    test('should return correct tokens for mistral-large-3 (256k context)', () => {
+      expect(getModelMaxTokens('mistral-large-3', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large-3'],
+      );
+    });
+
+    test('should match mistral-large-3 for suffixed variants', () => {
+      expect(getModelMaxTokens('mistral-large-3-instruct', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large-3'],
+      );
+    });
+
+    test('should not match mistral-large-3 for generic mistral-large', () => {
+      expect(getModelMaxTokens('mistral-large', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large'],
+      );
+      expect(getModelMaxTokens('mistral-large-latest', EModelEndpoint.custom)).toBe(
+        maxTokensMap[EModelEndpoint.custom]['mistral-large'],
+      );
+    });
+  });
+
+  describe('matchModelName', () => {
+    test('should match mistral-large-3 exactly', () => {
+      expect(matchModelName('mistral-large-3', EModelEndpoint.custom)).toBe('mistral-large-3');
+    });
+
+    test('should match mistral-large-3 for prefixed/suffixed variants', () => {
+      expect(matchModelName('mistral/mistral-large-3', EModelEndpoint.custom)).toBe(
+        'mistral-large-3',
+      );
+      expect(matchModelName('mistral-large-3-instruct', EModelEndpoint.custom)).toBe(
+        'mistral-large-3',
+      );
+    });
+
+    test('should match generic mistral-large for non-3 variants', () => {
+      expect(matchModelName('mistral-large-latest', EModelEndpoint.custom)).toBe('mistral-large');
+    });
+  });
+
+  describe('findMatchingPattern', () => {
+    test('should prefer mistral-large-3 over mistral-large for mistral-large-3 variants', () => {
+      const result = findMatchingPattern(
+        'mistral-large-3-instruct',
+        maxTokensMap[EModelEndpoint.custom],
+      );
+      expect(result).toBe('mistral-large-3');
     });
   });
 });

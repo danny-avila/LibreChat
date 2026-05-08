@@ -25,6 +25,7 @@ const mockRegistryInstance = {
   getServerConfig: jest.fn(),
   getAllServerConfigs: jest.fn(),
   shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
+  getAllowedDomains: jest.fn().mockReturnValue(null),
 };
 
 jest.mock('../registry/MCPServersRegistry', () => ({
@@ -45,8 +46,8 @@ describe('ConnectionsRepository', () => {
 
   beforeEach(() => {
     mockServerConfigs = {
-      server1: { url: 'http://localhost:3001' },
-      server2: { command: 'test-command', args: ['--test'] },
+      server1: { url: 'http://localhost:3001', type: 'sse' },
+      server2: { command: 'test-command', args: ['--test'], type: 'stdio' },
       server3: { url: 'ws://localhost:8080', type: 'websocket' },
     };
 
@@ -110,6 +111,7 @@ describe('ConnectionsRepository', () => {
           serverName: 'server1',
           serverConfig: mockServerConfigs.server1,
           useSSRFProtection: false,
+          allowedDomains: null,
           dbSourced: false,
         },
         undefined,
@@ -133,6 +135,7 @@ describe('ConnectionsRepository', () => {
           serverName: 'server1',
           serverConfig: mockServerConfigs.server1,
           useSSRFProtection: false,
+          allowedDomains: null,
           dbSourced: false,
         },
         undefined,
@@ -173,6 +176,7 @@ describe('ConnectionsRepository', () => {
           serverName: 'server1',
           serverConfig: configWithCachedAt,
           useSSRFProtection: false,
+          allowedDomains: null,
           dbSourced: false,
         },
         undefined,
@@ -392,6 +396,36 @@ describe('ConnectionsRepository', () => {
         expect(await repository.has('oauthDisabledServer')).toBe(false);
       });
 
+      it('should NOT allow connection to servers with customUserVars', async () => {
+        mockServerConfigs.customVarServer = {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', '@test/mcp-stdio-server'],
+          env: { API_KEY: '{{MY_KEY}}' },
+          customUserVars: {
+            MY_KEY: { title: 'API Key', description: 'Your API key' },
+          },
+        };
+
+        expect(await repository.has('customVarServer')).toBe(false);
+      });
+
+      it('should NOT allow connection when customUserVars is defined, even when startup is explicitly true', async () => {
+        mockServerConfigs.customVarStartupServer = {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', '@test/mcp-stdio-server'],
+          env: { TOKEN: '{{USER_TOKEN}}' },
+          startup: true,
+          requiresOAuth: false,
+          customUserVars: {
+            USER_TOKEN: { title: 'Token', description: 'Your token' },
+          },
+        };
+
+        expect(await repository.has('customVarStartupServer')).toBe(false);
+      });
+
       it('should disconnect existing connection when server becomes not allowed', async () => {
         // Initially setup as regular server
         mockServerConfigs.changingServer = {
@@ -469,6 +503,20 @@ describe('ConnectionsRepository', () => {
         };
 
         expect(await repository.has('oauthDisabledServer')).toBe(true);
+      });
+
+      it('should allow connection to servers with customUserVars', async () => {
+        mockServerConfigs.customVarServer = {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', '@test/mcp-stdio-server'],
+          env: { API_KEY: '{{MY_KEY}}' },
+          customUserVars: {
+            MY_KEY: { title: 'API Key', description: 'Your API key' },
+          },
+        };
+
+        expect(await repository.has('customVarServer')).toBe(true);
       });
 
       it('should return null from get() when server config does not exist', async () => {

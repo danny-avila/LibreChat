@@ -182,8 +182,31 @@ export enum AnthropicEffort {
   low = 'low',
   medium = 'medium',
   high = 'high',
+  xhigh = 'xhigh',
   max = 'max',
 }
+
+/**
+ * Controls whether the model's reasoning content is returned in responses.
+ *
+ * - `'auto'` - LibreChat decides: opt in to `'summarized'` for models that
+ *   omit by default (Opus 4.7+), leave the field off for older models.
+ * - `'summarized'` - always request a post-hoc summary of the reasoning.
+ * - `'omitted'` - always suppress reasoning content. Slightly lower latency.
+ *
+ * See https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-7#thinking-content-omitted-by-default
+ */
+export enum ThinkingDisplay {
+  auto = 'auto',
+  summarized = 'summarized',
+  omitted = 'omitted',
+}
+
+/**
+ * Wire-level values accepted by the Anthropic Messages API `thinking.display`
+ * field. Excludes the LibreChat-only `'auto'` sentinel.
+ */
+export type ThinkingDisplayWireValue = Exclude<ThinkingDisplay, ThinkingDisplay.auto>;
 
 export enum BedrockReasoningConfig {
   low = 'low',
@@ -228,6 +251,7 @@ export const imageDetailValue = {
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
 export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
 export const eAnthropicEffortSchema = z.nativeEnum(AnthropicEffort);
+export const eThinkingDisplaySchema = z.nativeEnum(ThinkingDisplay);
 export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
 export const eVerbositySchema = z.nativeEnum(Verbosity);
 export const eThinkingLevelSchema = z.nativeEnum(ThinkingLevel);
@@ -258,11 +282,8 @@ export const defaultAgentFormValues = {
   tools: [],
   tool_options: {},
   provider: {},
-  projectIds: [],
   edges: [],
   artifacts: '',
-  /** @deprecated Use ACL permissions instead */
-  isCollaborative: false,
   recursion_limit: undefined,
   [Tools.execute_code]: false,
   [Tools.file_search]: false,
@@ -494,8 +515,13 @@ export const anthropicSettings = {
       AnthropicEffort.low,
       AnthropicEffort.medium,
       AnthropicEffort.high,
+      AnthropicEffort.xhigh,
       AnthropicEffort.max,
     ],
+  },
+  thinkingDisplay: {
+    default: ThinkingDisplay.auto,
+    options: [ThinkingDisplay.auto, ThinkingDisplay.summarized, ThinkingDisplay.omitted],
   },
   web_search: {
     default: false as const,
@@ -633,6 +659,22 @@ export const tMessageSchema = z.object({
   feedback: feedbackSchema.optional(),
   /** metadata */
   metadata: z.record(z.unknown()).optional(),
+  contextMeta: z
+    .object({
+      calibrationRatio: z
+        .number()
+        .optional()
+        .describe(
+          'EMA ratio of provider-reported vs local token estimates; seeds the pruner on subsequent runs',
+        ),
+      encoding: z
+        .string()
+        .optional()
+        .describe(
+          'Tokenizer encoding used when this ratio was computed (e.g. "claude", "o200k_base")',
+        ),
+    })
+    .optional(),
 });
 
 export type MemoryArtifact = {
@@ -759,6 +801,8 @@ export const tConversationSchema = z.object({
   useResponsesApi: z.boolean().optional(),
   /* Anthropic: Effort control */
   effort: eAnthropicEffortSchema.optional().nullable(),
+  /* Anthropic: Thinking visibility (Opus 4.7+ opt-in) */
+  thinkingDisplay: eThinkingDisplaySchema.optional().nullable(),
   /* OpenAI Responses API / Anthropic API / Google API */
   web_search: z.boolean().optional(),
   /* disable streaming */
@@ -883,6 +927,7 @@ export const tQueryParamsSchema = tConversationSchema
     thinkingBudget: true,
     thinkingLevel: true,
     effort: true,
+    thinkingDisplay: true,
     /** @endpoints bedrock */
     region: true,
     /** @endpoints bedrock */
@@ -909,6 +954,30 @@ export const tQueryParamsSchema = tConversationSchema
       endpoint: extendedModelEndpointSchema.nullable(),
     }),
   );
+
+/** Narrowed preset schema for use in model specs — omits system/DB/deprecated fields */
+export const tModelSpecPresetSchema = tPresetSchema.omit({
+  conversationId: true,
+  presetId: true,
+  title: true,
+  defaultPreset: true,
+  order: true,
+  isArchived: true,
+  user: true,
+  messages: true,
+  tags: true,
+  file_ids: true,
+  expiredAt: true,
+  parentMessageId: true,
+  resendImages: true,
+  chatGptLabel: true,
+  presetOverride: true,
+  greeting: true,
+  iconURL: true,
+  spec: true,
+});
+
+export type TModelSpecPreset = z.infer<typeof tModelSpecPresetSchema>;
 
 export type TPreset = z.infer<typeof tPresetSchema>;
 
@@ -1183,6 +1252,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   thinking: true,
   thinkingBudget: true,
   effort: true,
+  thinkingDisplay: true,
   artifacts: true,
   iconURL: true,
   greeting: true,

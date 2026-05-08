@@ -7,7 +7,7 @@ const { createMCPServersRegistry, createMCPManager } = require('~/config');
  * Initialize MCP servers
  */
 async function initializeMCPs() {
-  const appConfig = await getAppConfig();
+  const appConfig = await getAppConfig({ baseOnly: true });
   const mcpServers = appConfig.mcpConfig;
 
   try {

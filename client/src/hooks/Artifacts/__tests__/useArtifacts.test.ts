@@ -372,6 +372,75 @@ describe('useArtifacts', () => {
     });
   });
 
+  describe('artifact selection preservation', () => {
+    it('should preserve selection when a new artifact is added', () => {
+      const artifact1 = createArtifact({ id: 'artifact-1', lastUpdateTime: 1000 });
+
+      (useRecoilValue as jest.Mock).mockReturnValue({ 'artifact-1': artifact1 });
+      (useRecoilState as jest.Mock).mockReturnValue(['artifact-1', mockSetCurrentArtifactId]);
+
+      const { rerender } = renderHook(() => useArtifacts());
+
+      mockSetCurrentArtifactId.mockClear();
+
+      /** Append a second artifact; mock still returns 'artifact-1' as current */
+      const artifact2 = createArtifact({ id: 'artifact-2', lastUpdateTime: 2000 });
+      (useRecoilValue as jest.Mock).mockReturnValue({
+        'artifact-1': artifact1,
+        'artifact-2': artifact2,
+      });
+
+      rerender();
+
+      expect(mockSetCurrentArtifactId).not.toHaveBeenCalled();
+    });
+
+    it('should advance to new artifact during streaming', () => {
+      const artifact1 = createArtifact({ id: 'artifact-1', lastUpdateTime: 1000, content: 'c1' });
+
+      (useRecoilValue as jest.Mock).mockReturnValue({ 'artifact-1': artifact1 });
+      (useRecoilState as jest.Mock).mockReturnValue(['artifact-1', mockSetCurrentArtifactId]);
+      (useArtifactsContext as jest.Mock).mockReturnValue({
+        ...defaultContext,
+        isSubmitting: true,
+        latestMessageId: 'msg-1',
+      });
+
+      const { rerender } = renderHook(() => useArtifacts());
+      mockSetCurrentArtifactId.mockClear();
+
+      const artifact2 = createArtifact({ id: 'artifact-2', lastUpdateTime: 2000, content: 'c2' });
+      (useRecoilValue as jest.Mock).mockReturnValue({
+        'artifact-1': artifact1,
+        'artifact-2': artifact2,
+      });
+
+      rerender();
+
+      expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-2');
+    });
+
+    it('should keep selection null after an explicit reset', () => {
+      const artifact1 = createArtifact({ id: 'artifact-1', lastUpdateTime: 1000 });
+
+      /** First render: valid selection */
+      (useRecoilValue as jest.Mock).mockReturnValue({ 'artifact-1': artifact1 });
+      (useRecoilState as jest.Mock).mockReturnValue(['artifact-1', mockSetCurrentArtifactId]);
+
+      const { rerender } = renderHook(() => useArtifacts());
+
+      mockSetCurrentArtifactId.mockClear();
+
+      /** Rerender: currentArtifactId transitions to null (user closed the panel) */
+      (useRecoilState as jest.Mock).mockReturnValue([null, mockSetCurrentArtifactId]);
+
+      rerender();
+
+      /** Should NOT bounce back to 'artifact-1' */
+      expect(mockSetCurrentArtifactId).not.toHaveBeenCalled();
+    });
+  });
+
   describe('cleanup on unmount', () => {
     it('should reset artifacts when unmounting', () => {
       (useRecoilValue as jest.Mock).mockReturnValue({});

@@ -5,6 +5,7 @@ export interface IKey extends Document {
   name: string;
   value: string;
   expiresAt?: Date;
+  tenantId?: string;
 }
 
 const keySchema: Schema<IKey> = new Schema({
@@ -23,6 +24,10 @@ const keySchema: Schema<IKey> = new Schema({
   },
   expiresAt: {
     type: Date,
+  },
+  tenantId: {
+    type: String,
+    index: true,
   },
 });
 

@@ -63,16 +63,12 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
             return;
           }
 
-          resetCurrentArtifactId();
+          setCurrentArtifactId(artifact.id);
           setVisible(true);
 
           if (artifacts?.[artifact.id] == null) {
             setArtifacts(visibleArtifacts);
           }
-
-          setTimeout(() => {
-            setCurrentArtifactId(artifact.id);
-          }, 15);
         };
 
         const buttonClass = cn(

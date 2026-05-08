@@ -252,15 +252,12 @@ export type Agent = {
   instructions?: string | null;
   additional_instructions?: string | null;
   tools?: string[];
-  projectIds?: string[];
   tool_kwargs?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
   conversation_starters?: string[];
-  /** @deprecated Use ACL permissions instead */
-  isCollaborative?: boolean;
   tool_resources?: AgentToolResources;
   /** @deprecated Use edges instead */
   agent_ids?: string[];
@@ -313,9 +310,6 @@ export type AgentUpdateParams = {
   provider?: AgentProvider;
   model?: string | null;
   model_parameters?: AgentModelParameters;
-  projectIds?: string[];
-  removeProjectIds?: string[];
-  isCollaborative?: boolean;
 } & Pick<
   Agent,
   | 'agent_ids'
@@ -527,6 +521,21 @@ export type ContentPart = (
 
 export type TextData = (Text & PartMetadata) | undefined;
 
+export type SummaryContentPart = {
+  type: ContentTypes.SUMMARY;
+  content?: Array<{ type: ContentTypes.TEXT; text: string }>;
+  tokenCount?: number;
+  summarizing?: boolean;
+  summaryVersion?: number;
+  model?: string;
+  provider?: string;
+  createdAt?: string;
+  boundary?: {
+    messageId: string;
+    contentIndex: number;
+  };
+};
+
 export type TMessageContentParts =
   | ({
       type: ContentTypes.ERROR;
@@ -551,6 +560,7 @@ export type TMessageContentParts =
         PartMetadata;
     } & ContentMetadata)
   | ({ type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata } & ContentMetadata)
+  | (SummaryContentPart & ContentMetadata)
   | (Agents.AgentUpdate & ContentMetadata)
   | (Agents.MessageContentImageUrl & ContentMetadata)
   | (Agents.MessageContentVideoUrl & ContentMetadata)
@@ -573,6 +583,35 @@ export type TContentData = StreamContentData & {
 
 export const actionDelimiter = '_action_';
 export const actionDomainSeparator = '---';
+/** Mirrors `Constants.mcp_delimiter`; duplicated here to avoid a circular import from `config.ts`. */
+const mcpDelimiter = '_mcp_';
+
+/**
+ * Checks whether a tool name is an OpenAPI action tool.
+ *
+ * Action format: `operationId_action_normalizedDomain`
+ * MCP format:    `toolName_mcp_serverName`
+ *
+ * Cross-delimiter collision: an MCP tool like `get_action_mcp_srv` contains
+ * `_action_` as a false positive. Guarded by checking whether `_mcp_` appears
+ * after `_action_`. In the collision case the `_mcp_` suffix always follows
+ * `_action_`; in a valid action tool whose operationId contains `_mcp_`, the
+ * `_mcp_` precedes `_action_`.
+ *
+ * Theoretical limitation: a non-RFC-compliant domain containing literal
+ * underscores that form `_mcp_` (e.g. `api_mcp_internal.com`) would produce
+ * a false negative. RFC 952/1123 prohibit underscores in hostnames, so this
+ * is not expected in practice.
+ */
+export function isActionTool(toolName: string): boolean {
+  const actionIdx = toolName.indexOf(actionDelimiter);
+  if (actionIdx < 0) {
+    return false;
+  }
+  const mcpIdx = toolName.indexOf(mcpDelimiter);
+  return mcpIdx < 0 || mcpIdx < actionIdx;
+}
+
 export const hostImageIdSuffix = '_host_copy';
 export const hostImageNamePrefix = 'host_copy_';
 

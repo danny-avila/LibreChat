@@ -72,6 +72,7 @@ const mistralModels = {
   'mistral-large-2402': 127500,
   'mistral-large-2407': 127500,
   'mistral-large': 131000,
+  'mistral-large-3': 255000,
   'mistral-saba': 32000,
   'ministral-3b': 131000,
   'ministral-8b': 131000,
@@ -140,6 +141,7 @@ const anthropicModels = {
   'claude-sonnet-4': 1000000,
   'claude-sonnet-4-6': 1000000,
   'claude-opus-4-6': 1000000,
+  'claude-opus-4-7': 1000000,
 };
 
 const deepseekModels = {
@@ -385,6 +387,7 @@ const anthropicMaxOutputs = {
   'claude-opus-4': 32000,
   'claude-opus-4-5': 64000,
   'claude-opus-4-6': 128000,
+  'claude-opus-4-7': 128000,
   'claude-3.5-sonnet': 8192,
   'claude-3-5-sonnet': 8192,
   'claude-3.7-sonnet': 128000,
@@ -593,42 +596,3 @@ export function processModelData(input: z.infer<typeof inputSchema>): EndpointTo
 
   return tokenConfig;
 }
-
-export const tiktokenModels = new Set([
-  'text-davinci-003',
-  'text-davinci-002',
-  'text-davinci-001',
-  'text-curie-001',
-  'text-babbage-001',
-  'text-ada-001',
-  'davinci',
-  'curie',
-  'babbage',
-  'ada',
-  'code-davinci-002',
-  'code-davinci-001',
-  'code-cushman-002',
-  'code-cushman-001',
-  'davinci-codex',
-  'cushman-codex',
-  'text-davinci-edit-001',
-  'code-davinci-edit-001',
-  'text-embedding-ada-002',
-  'text-similarity-davinci-001',
-  'text-similarity-curie-001',
-  'text-similarity-babbage-001',
-  'text-similarity-ada-001',
-  'text-search-davinci-doc-001',
-  'text-search-curie-doc-001',
-  'text-search-babbage-doc-001',
-  'text-search-ada-doc-001',
-  'code-search-babbage-code-001',
-  'code-search-ada-code-001',
-  'gpt2',
-  'gpt-4',
-  'gpt-4-0314',
-  'gpt-4-32k',
-  'gpt-4-32k-0314',
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-0301',
-]);

@@ -1,9 +1,16 @@
 import debounce from 'lodash/debounce';
-import { LocalStorageKeys } from 'librechat-data-provider';
+import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 
 export const clearDraft = debounce((id?: string | null) => {
   localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
 }, 2500);
+
+/** Synchronously removes both text and file drafts for a conversation (or NEW_CONVO fallback) */
+export const clearAllDrafts = (conversationId?: string | null) => {
+  const key = conversationId || Constants.NEW_CONVO;
+  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${key}`);
+  localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${key}`);
+};
 
 export const encodeBase64 = (plainText: string): string => {
   try {

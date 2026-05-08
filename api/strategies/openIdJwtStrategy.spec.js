@@ -271,6 +271,32 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     expect(user).toBe(false);
   });
 
+  it('should reject login when email fallback finds user with mismatched openidId', async () => {
+    const emailMatchWithDifferentSub = {
+      _id: 'user-id-2',
+      provider: 'openid',
+      openidId: 'different-sub',
+      email: payload.email,
+      role: SystemRoles.USER,
+    };
+
+    findUser.mockImplementation(async (query) => {
+      if (query.$or) {
+        return null;
+      }
+      if (query.email === payload.email) {
+        return emailMatchWithDifferentSub;
+      }
+      return null;
+    });
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user, info } = await invokeVerify(req, payload);
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: 'auth_failed' });
+  });
+
   it('should trim whitespace from OPENID_EMAIL_CLAIM', async () => {
     process.env.OPENID_EMAIL_CLAIM = '  upn  ';
     findUser.mockResolvedValue(null);

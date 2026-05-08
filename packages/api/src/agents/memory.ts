@@ -19,7 +19,8 @@ import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { BaseMessage, ToolMessage } from '@langchain/core/messages';
 import type { Response as ServerResponse } from 'express';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
-import { Tokenizer, resolveHeaders, createSafeUser } from '~/utils';
+import { resolveHeaders, createSafeUser } from '~/utils';
+import Tokenizer from '~/utils/tokenizer';
 
 type RequiredMemoryMethods = Pick<
   MemoryMethods,

@@ -26,7 +26,7 @@ export default function MCPTools({
   }
   return (
     <div className="mb-4">
-      <label className="text-token-text-primary mb-2 block font-medium">
+      <label className="text-token-text-primary mb-2 block text-sm font-medium">
         {localize('com_ui_mcp_servers')}
       </label>
       <div>

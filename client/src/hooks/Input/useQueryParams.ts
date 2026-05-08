@@ -12,14 +12,15 @@ import type {
 import {
   clearModelForNonEphemeralAgent,
   removeUnavailableTools,
+  specDisplayFieldReset,
   processValidSettings,
   getModelSpecIconURL,
   getConvoSwitchLogic,
   logger,
 } from '~/utils';
 import { useAuthContext, useAgentsMap, useDefaultConvo, useSubmitMessage } from '~/hooks';
+import { startupConfigKey, useGetAgentByIdQuery } from '~/data-provider';
 import { useChatContext, useChatFormContext } from '~/Providers';
-import { useGetAgentByIdQuery } from '~/data-provider';
 import store from '~/store';
 
 const injectAgentIntoAgentsMap = (queryClient: QueryClient, agent: any) => {
@@ -83,7 +84,7 @@ export default function useQueryParams({
       }
       let newPreset = removeUnavailableTools(_newPreset, availableTools);
       if (newPreset.spec != null && newPreset.spec !== '') {
-        const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+        const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
         const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
         const spec = modelSpecs.find((s) => s.name === newPreset.spec);
         if (!spec) {
@@ -128,13 +129,10 @@ export default function useQueryParams({
         endpointsConfig,
       });
 
-      let resetParams = {};
+      const resetFields = newPreset.spec == null ? specDisplayFieldReset : {};
       if (newPreset.spec == null) {
-        template.spec = null;
-        template.iconURL = null;
-        template.modelLabel = null;
-        resetParams = { spec: null, iconURL: null, modelLabel: null };
-        newPreset = { ...newPreset, ...resetParams };
+        Object.assign(template, specDisplayFieldReset);
+        newPreset = { ...newPreset, ...specDisplayFieldReset };
       }
 
       // Sync agent_id from newPreset to template, then clear model if non-ephemeral agent
@@ -152,7 +150,7 @@ export default function useQueryParams({
           conversation: {
             ...(conversation ?? {}),
             endpointType: template.endpointType,
-            ...resetParams,
+            ...resetFields,
           },
           preset: template,
           cleanOutput: newPreset.spec != null && newPreset.spec !== '',
@@ -260,7 +258,7 @@ export default function useQueryParams({
       if (!textAreaRef.current) {
         return;
       }
-      const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+      const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
       if (!startupConfig) {
         return;
       }

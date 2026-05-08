@@ -10,15 +10,25 @@ import type { Request as ServerRequest } from 'express';
  * @param filter - MongoDB filter query for files
  * @param _sortOptions - Sorting options (currently unused)
  * @param selectFields - Field selection options
- * @param options - Additional options including userId and agentId for access control
  * @returns Promise resolving to array of files
  */
 export type TGetFiles = (
   filter: FilterQuery<IMongoFile>,
   _sortOptions: ProjectionType<IMongoFile> | null | undefined,
   selectFields: QueryOptions<IMongoFile> | null | undefined,
-  options?: { userId?: string; agentId?: string },
 ) => Promise<Array<TFile>>;
+
+/**
+ * Function type for filtering files by agent access permissions.
+ * Used to enforce that only files the user has access to (via ownership or agent attachment)
+ * are returned after a raw DB query.
+ */
+export type TFilterFilesByAgentAccess = (params: {
+  files: Array<TFile>;
+  userId: string;
+  role?: string;
+  agentId: string;
+}) => Promise<Array<TFile>>;
 
 /**
  * Helper function to add a file to a specific tool resource category
@@ -128,7 +138,7 @@ const categorizeFileForToolResources = ({
 /**
  * Primes resources for agent execution by processing attachments and tool resources
  * This function:
- * 1. Fetches OCR files if OCR is enabled
+ * 1. Fetches context/OCR files (filtered by agent access control when available)
  * 2. Processes attachment files
  * 3. Categorizes files into appropriate tool resources
  * 4. Prevents duplicate files across all sources
@@ -137,15 +147,18 @@ const categorizeFileForToolResources = ({
  * @param params.req - Express request object
  * @param params.appConfig - Application configuration object
  * @param params.getFiles - Function to retrieve files from database
+ * @param params.filterFiles - Optional function to enforce agent-based file access control
  * @param params.requestFileSet - Set of file IDs from the current request
  * @param params.attachments - Promise resolving to array of attachment files
  * @param params.tool_resources - Existing tool resources for the agent
+ * @param params.agentId - Agent ID used for access control filtering
  * @returns Promise resolving to processed attachments and updated tool resources
  */
 export const primeResources = async ({
   req,
   appConfig,
   getFiles,
+  filterFiles,
   requestFileSet,
   attachments: _attachments,
   tool_resources: _tool_resources,
@@ -157,6 +170,7 @@ export const primeResources = async ({
   attachments: Promise<Array<TFile | null>> | undefined;
   tool_resources: AgentToolResources | undefined;
   getFiles: TGetFiles;
+  filterFiles?: TFilterFilesByAgentAccess;
   agentId?: string;
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
@@ -228,14 +242,22 @@ export const primeResources = async ({
 
     if (fileIds.length > 0 && isContextEnabled) {
       delete tool_resources[EToolResources.context];
-      const context = await getFiles(
+      let context = await getFiles(
         {
           file_id: { $in: fileIds },
         },
         {},
         {},
-        { userId: req.user?.id, agentId },
       );
+
+      if (filterFiles && req.user?.id && agentId) {
+        context = await filterFiles({
+          files: context,
+          userId: req.user.id,
+          role: req.user.role,
+          agentId,
+        });
+      }
 
       for (const file of context) {
         if (!file?.file_id) {

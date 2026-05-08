@@ -2,9 +2,8 @@ import React, { memo, useMemo, useRef, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
-import MermaidErrorBoundary from '~/components/Messages/Content/MermaidErrorBoundary';
+import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
-import Mermaid from '~/components/Messages/Content/Mermaid';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import { useCodeBlockContext } from '~/Providers';
@@ -16,6 +15,16 @@ type TCodeProps = {
   inline?: boolean;
   className?: string;
   children: React.ReactNode;
+};
+
+const isSingleLineCode = (children: React.ReactNode): boolean => {
+  if (typeof children === 'string') {
+    return !children.includes('\n');
+  }
+  if (Array.isArray(children)) {
+    return children.every((child) => typeof child === 'string' && !child.includes('\n'));
+  }
+  return false;
 };
 
 export const code: React.ElementType = memo(function MarkdownCode({
@@ -30,7 +39,7 @@ export const code: React.ElementType = memo(function MarkdownCode({
   const lang = match && match[1];
   const isMath = lang === 'math';
   const isMermaid = lang === 'mermaid';
-  const isSingleLine = typeof children === 'string' && children.split('\n').length === 1;
+  const isSingleLine = isSingleLineCode(children);
 
   const { getNextIndex, resetCounter } = useCodeBlockContext();
   const blockIndex = useRef(getNextIndex(isMath || isMermaid || isSingleLine)).current;
@@ -79,7 +88,7 @@ export const codeNoExecution: React.ElementType = memo(function MarkdownCodeNoEx
   } else if (lang === 'mermaid') {
     const content = typeof children === 'string' ? children : String(children);
     return <Mermaid>{content}</Mermaid>;
-  } else if (typeof children === 'string' && children.split('\n').length === 1) {
+  } else if (isSingleLineCode(children)) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
         {children}

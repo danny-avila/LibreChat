@@ -172,6 +172,13 @@ export type AccessRole = {
 
 export type AccessRolesResponse = AccessRole[];
 
+export type ListRolesResponse = {
+  roles: Array<{ _id?: string; name: string; description?: string }>;
+  total: number;
+  limit: number;
+  offset?: number;
+};
+
 export interface MCPServerStatus {
   requiresOAuth: boolean;
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -194,6 +201,18 @@ export interface MCPAuthValuesResponse {
   serverName: string;
   authValueFlags: Record<string, boolean>;
 }
+
+/**
+ * User Favorites — pinned agents, models, and model specs.
+ * Exactly one variant should be set per entry; exclusivity is enforced
+ * server-side in FavoritesController. Shape is loose for state-update ergonomics.
+ */
+export type TUserFavorite = {
+  agentId?: string;
+  model?: string;
+  endpoint?: string;
+  spec?: string;
+};
 
 /* SharePoint Graph API Token */
 export type GraphTokenParams = {

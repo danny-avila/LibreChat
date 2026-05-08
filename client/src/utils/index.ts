@@ -3,33 +3,35 @@ import type { UIActionResult } from '@mcp-ui/client';
 import { TAskFunction } from '~/common';
 import logger from './logger';
 
-export * from './errors';
 export * from './map';
 export * from './json';
+export * from './email';
+export * from './share';
 export * from './files';
 export * from './latex';
 export * from './forms';
+export * from './roles';
+export * from './errors';
 export * from './agents';
 export * from './drafts';
 export * from './convos';
 export * from './routes';
-export * from './redirect';
 export * from './presets';
 export * from './prompts';
 export * from './textarea';
 export * from './messages';
+export * from './redirect';
 export * from './languages';
 export * from './endpoints';
 export * from './resources';
-export * from './roles';
+export * from './scaleImage';
+export * from './timestamps';
 export * from './localStorage';
 export * from './promptGroups';
-export * from './email';
-export * from './share';
-export * from './timestamps';
+export * from './previewCache';
+export * from './groupToolCalls';
 export { default as cn } from './cn';
 export { default as logger } from './logger';
-export { default as scaleImage } from './scaleImage';
 export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
 export { default as buildDefaultConvo } from './buildDefaultConvo';
@@ -111,24 +113,6 @@ export const extractContent = (
     return children.map(extractContent).join('');
   }
   return '';
-};
-
-export const normalizeLayout = (layout: number[]) => {
-  const sum = layout.reduce((acc, size) => acc + size, 0);
-  if (Math.abs(sum - 100) < 0.01) {
-    return layout.map((size) => Number(size.toFixed(2)));
-  }
-
-  const factor = 100 / sum;
-  const normalizedLayout = layout.map((size) => Number((size * factor).toFixed(2)));
-
-  const adjustedSum = normalizedLayout.reduce(
-    (acc, size, index) => (index === layout.length - 1 ? acc : acc + size),
-    0,
-  );
-  normalizedLayout[normalizedLayout.length - 1] = Number((100 - adjustedSum).toFixed(2));
-
-  return normalizedLayout;
 };
 
 export const handleUIAction = async (result: UIActionResult, ask: TAskFunction) => {

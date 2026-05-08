@@ -5,7 +5,11 @@ const passport = require('passport');
 const { ErrorTypes } = require('librechat-data-provider');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
-const { getBalanceConfig, isEmailDomainAllowed } = require('@librechat/api');
+const {
+  getBalanceConfig,
+  isEmailDomainAllowed,
+  resolveAppConfigForUser,
+} = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
@@ -174,125 +178,178 @@ function convertToUsername(input, defaultValue = '') {
   return defaultValue;
 }
 
+/**
+ * Creates a SAML authentication callback.
+ * @param {boolean} [existingUsersOnly=false] - If true, only existing users will be authenticated.
+ * @returns {Function} The SAML callback function for passport.
+ */
+function createSamlCallback(existingUsersOnly = false) {
+  return async (profile, done) => {
+    try {
+      logger.info(`[samlStrategy] SAML authentication received for NameID: ${profile.nameID}`);
+      logger.debug('[samlStrategy] SAML profile:', profile);
+
+      const userEmail = getEmail(profile) || '';
+
+      const baseConfig = await getAppConfig({ baseOnly: true });
+      if (!isEmailDomainAllowed(userEmail, baseConfig?.registration?.allowedDomains)) {
+        logger.error(
+          `[SAML Strategy] Authentication blocked - email domain not allowed [Email: ${userEmail}]`,
+        );
+        return done(null, false, { message: 'Email domain not allowed' });
+      }
+
+      let user = await findUser({ samlId: profile.nameID });
+      logger.info(
+        `[samlStrategy] User ${user ? 'found' : 'not found'} with SAML ID: ${profile.nameID}`,
+      );
+
+      if (!user) {
+        user = await findUser({ email: userEmail });
+        logger.info(`[samlStrategy] User ${user ? 'found' : 'not found'} with email: ${userEmail}`);
+      }
+
+      if (user && user.provider !== 'saml') {
+        logger.info(
+          `[samlStrategy] User ${user.email} already exists with provider ${user.provider}`,
+        );
+        return done(null, false, {
+          message: ErrorTypes.AUTH_FAILED,
+        });
+      }
+
+      const appConfig = user?.tenantId
+        ? await resolveAppConfigForUser(getAppConfig, user)
+        : baseConfig;
+
+      if (!isEmailDomainAllowed(userEmail, appConfig?.registration?.allowedDomains)) {
+        logger.error(
+          `[SAML Strategy] Authentication blocked - email domain not allowed [Email: ${userEmail}]`,
+        );
+        return done(null, false, { message: 'Email domain not allowed' });
+      }
+
+      const fullName = getFullName(profile);
+
+      const username = convertToUsername(
+        getUserName(profile) || getGivenName(profile) || getEmail(profile),
+      );
+
+      if (!user) {
+        if (existingUsersOnly) {
+          logger.error(
+            `[samlStrategy] Admin auth blocked - user does not exist [Email: ${userEmail}]`,
+          );
+          return done(null, false, { message: 'User does not exist' });
+        }
+
+        user = {
+          provider: 'saml',
+          samlId: profile.nameID,
+          username,
+          email: userEmail,
+          emailVerified: true,
+          name: fullName,
+        };
+        const balanceConfig = getBalanceConfig(appConfig);
+        user = await createUser(user, balanceConfig, true, true);
+      } else {
+        user.provider = 'saml';
+        user.samlId = profile.nameID;
+        user.username = username;
+        user.name = fullName;
+      }
+
+      const picture = getPicture(profile);
+      if (picture && !user.avatar?.includes('manual=true')) {
+        const imageBuffer = await downloadImage(profile.picture);
+        if (imageBuffer) {
+          let fileName;
+          if (crypto) {
+            fileName = (await hashToken(profile.nameID)) + '.png';
+          } else {
+            fileName = profile.nameID + '.png';
+          }
+
+          const { saveBuffer } = getStrategyFunctions(
+            appConfig?.fileStrategy ?? process.env.CDN_PROVIDER,
+          );
+          const imagePath = await saveBuffer({
+            fileName,
+            userId: user._id.toString(),
+            buffer: imageBuffer,
+          });
+          user.avatar = imagePath ?? '';
+        }
+      }
+
+      user = await updateUser(user._id, user);
+
+      logger.info(
+        `[samlStrategy] Login success SAML ID: ${user.samlId} | email: ${user.email} | username: ${user.username}`,
+        {
+          user: {
+            samlId: user.samlId,
+            username: user.username,
+            email: user.email,
+            name: user.name,
+          },
+        },
+      );
+
+      done(null, user);
+    } catch (err) {
+      logger.error('[samlStrategy] Login failed', err);
+      done(err);
+    }
+  };
+}
+
+/**
+ * Returns the base SAML configuration shared by both regular and admin strategies.
+ * @returns {object} The SAML configuration object.
+ */
+function getBaseSamlConfig() {
+  return {
+    entryPoint: process.env.SAML_ENTRY_POINT,
+    issuer: process.env.SAML_ISSUER,
+    idpCert: getCertificateContent(process.env.SAML_CERT),
+    wantAssertionsSigned: process.env.SAML_USE_AUTHN_RESPONSE_SIGNED === 'true' ? false : true,
+    wantAuthnResponseSigned: process.env.SAML_USE_AUTHN_RESPONSE_SIGNED === 'true' ? true : false,
+  };
+}
+
 async function setupSaml() {
   try {
+    const baseConfig = getBaseSamlConfig();
     const samlConfig = {
-      entryPoint: process.env.SAML_ENTRY_POINT,
-      issuer: process.env.SAML_ISSUER,
+      ...baseConfig,
       callbackUrl: process.env.SAML_CALLBACK_URL,
-      idpCert: getCertificateContent(process.env.SAML_CERT),
-      wantAssertionsSigned: process.env.SAML_USE_AUTHN_RESPONSE_SIGNED === 'true' ? false : true,
-      wantAuthnResponseSigned: process.env.SAML_USE_AUTHN_RESPONSE_SIGNED === 'true' ? true : false,
     };
 
-    passport.use(
-      'saml',
-      new SamlStrategy(samlConfig, async (profile, done) => {
-        try {
-          logger.info(`[samlStrategy] SAML authentication received for NameID: ${profile.nameID}`);
-          logger.debug('[samlStrategy] SAML profile:', profile);
-
-          const userEmail = getEmail(profile) || '';
-          const appConfig = await getAppConfig();
-
-          if (!isEmailDomainAllowed(userEmail, appConfig?.registration?.allowedDomains)) {
-            logger.error(
-              `[SAML Strategy] Authentication blocked - email domain not allowed [Email: ${userEmail}]`,
-            );
-            return done(null, false, { message: 'Email domain not allowed' });
-          }
-
-          let user = await findUser({ samlId: profile.nameID });
-          logger.info(
-            `[samlStrategy] User ${user ? 'found' : 'not found'} with SAML ID: ${profile.nameID}`,
-          );
-
-          if (!user) {
-            user = await findUser({ email: userEmail });
-            logger.info(
-              `[samlStrategy] User ${user ? 'found' : 'not found'} with email: ${userEmail}`,
-            );
-          }
-
-          if (user && user.provider !== 'saml') {
-            logger.info(
-              `[samlStrategy] User ${user.email} already exists with provider ${user.provider}`,
-            );
-            return done(null, false, {
-              message: ErrorTypes.AUTH_FAILED,
-            });
-          }
-
-          const fullName = getFullName(profile);
-
-          const username = convertToUsername(
-            getUserName(profile) || getGivenName(profile) || getEmail(profile),
-          );
-
-          if (!user) {
-            user = {
-              provider: 'saml',
-              samlId: profile.nameID,
-              username,
-              email: userEmail,
-              emailVerified: true,
-              name: fullName,
-            };
-            const balanceConfig = getBalanceConfig(appConfig);
-            user = await createUser(user, balanceConfig, true, true);
-          } else {
-            user.provider = 'saml';
-            user.samlId = profile.nameID;
-            user.username = username;
-            user.name = fullName;
-          }
-
-          const picture = getPicture(profile);
-          if (picture && !user.avatar?.includes('manual=true')) {
-            const imageBuffer = await downloadImage(profile.picture);
-            if (imageBuffer) {
-              let fileName;
-              if (crypto) {
-                fileName = (await hashToken(profile.nameID)) + '.png';
-              } else {
-                fileName = profile.nameID + '.png';
-              }
-
-              const { saveBuffer } = getStrategyFunctions(
-                appConfig?.fileStrategy ?? process.env.CDN_PROVIDER,
-              );
-              const imagePath = await saveBuffer({
-                fileName,
-                userId: user._id.toString(),
-                buffer: imageBuffer,
-              });
-              user.avatar = imagePath ?? '';
-            }
-          }
-
-          user = await updateUser(user._id, user);
-
-          logger.info(
-            `[samlStrategy] Login success SAML ID: ${user.samlId} | email: ${user.email} | username: ${user.username}`,
-            {
-              user: {
-                samlId: user.samlId,
-                username: user.username,
-                email: user.email,
-                name: user.name,
-              },
-            },
-          );
-
-          done(null, user);
-        } catch (err) {
-          logger.error('[samlStrategy] Login failed', err);
-          done(err);
-        }
-      }),
-    );
+    passport.use('saml', new SamlStrategy(samlConfig, createSamlCallback(false)));
+    setupSamlAdmin(baseConfig);
   } catch (err) {
     logger.error('[samlStrategy]', err);
+  }
+}
+
+/**
+ * Sets up the SAML strategy specifically for admin authentication.
+ * Rejects users that don't already exist.
+ * @param {object} [baseConfig] - Pre-parsed base SAML config to avoid redundant cert parsing.
+ */
+function setupSamlAdmin(baseConfig) {
+  try {
+    const samlAdminConfig = {
+      ...(baseConfig ?? getBaseSamlConfig()),
+      callbackUrl: `${process.env.DOMAIN_SERVER}/api/admin/oauth/saml/callback`,
+    };
+
+    passport.use('samlAdmin', new SamlStrategy(samlAdminConfig, createSamlCallback(true)));
+    logger.info('[samlStrategy] Admin SAML strategy registered.');
+  } catch (err) {
+    logger.error('[samlStrategy] setupSamlAdmin', err);
   }
 }
 

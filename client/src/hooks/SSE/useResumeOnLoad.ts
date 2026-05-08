@@ -125,7 +125,11 @@ export default function useResumeOnLoad(
     conversationId !== Constants.NEW_CONVO &&
     processedConvoRef.current !== conversationId; // Don't re-check processed convos
 
-  const { data: streamStatus, isSuccess } = useStreamStatus(conversationId, shouldCheck);
+  const {
+    data: streamStatus,
+    isSuccess,
+    isFetching,
+  } = useStreamStatus(conversationId, shouldCheck);
 
   useEffect(() => {
     console.log('[ResumeOnLoad] Effect check', {
@@ -135,6 +139,7 @@ export default function useResumeOnLoad(
       hasCurrentSubmission: !!currentSubmission,
       currentSubmissionConvoId: currentSubmission?.conversation?.conversationId,
       isSuccess,
+      isFetching,
       streamStatusActive: streamStatus?.active,
       streamStatusStreamId: streamStatus?.streamId,
       processedConvoRef: processedConvoRef.current,
@@ -171,8 +176,9 @@ export default function useResumeOnLoad(
       );
     }
 
-    // Wait for stream status query to complete
-    if (!isSuccess || !streamStatus) {
+    // Wait for stream status query to complete (including background refetches
+    // that may replace a stale cached result with fresh data)
+    if (!isSuccess || !streamStatus || isFetching) {
       console.log('[ResumeOnLoad] Waiting for stream status query');
       return;
     }
@@ -183,15 +189,12 @@ export default function useResumeOnLoad(
       return;
     }
 
-    // Check if there's an active job to resume
-    // DON'T mark as processed here - only mark when we actually create a submission
-    // This prevents stale cache data from blocking subsequent resume attempts
     if (!streamStatus.active || !streamStatus.streamId) {
       console.log('[ResumeOnLoad] No active job to resume for:', conversationId);
+      processedConvoRef.current = conversationId;
       return;
     }
 
-    // Mark as processed NOW - we verified there's an active job and will create submission
     processedConvoRef.current = conversationId;
 
     console.log('[ResumeOnLoad] Found active job, creating submission...', {
@@ -241,6 +244,7 @@ export default function useResumeOnLoad(
     submissionConvoId,
     currentSubmission,
     isSuccess,
+    isFetching,
     streamStatus,
     getMessages,
     setSubmission,

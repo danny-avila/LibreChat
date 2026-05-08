@@ -20,14 +20,20 @@ const {
   isImageVisionTool,
   actionDomainSeparator,
 } = require('librechat-data-provider');
-const { findToken, updateToken, createToken } = require('~/models');
-const { getActions, deleteActions } = require('~/models/Action');
-const { deleteAssistant } = require('~/models/Assistant');
+const {
+  findToken,
+  updateToken,
+  createToken,
+  getActions,
+  deleteActions,
+  deleteAssistant,
+} = require('~/models');
 const { getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const toolNameRegex = /^[a-zA-Z0-9_-]+$/;
+const protocolRegex = /^https?:\/\//;
 const replaceSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
 
 /**
@@ -48,7 +54,11 @@ const validateAndUpdateTool = async ({ req, tool, assistant_id }) => {
     actions = await getActions({ assistant_id, user: req.user.id }, true);
     const matchingActions = actions.filter((action) => {
       const metadata = action.metadata;
-      return metadata && metadata.domain === domain;
+      if (!metadata) {
+        return false;
+      }
+      const strippedMetaDomain = stripProtocol(metadata.domain);
+      return strippedMetaDomain === domain || metadata.domain === domain;
     });
     const action = matchingActions[0];
     if (!action) {
@@ -66,10 +76,36 @@ const validateAndUpdateTool = async ({ req, tool, assistant_id }) => {
   return tool;
 };
 
+/** @param {string} domain */
+function stripProtocol(domain) {
+  const stripped = domain.replace(protocolRegex, '');
+  const pathIdx = stripped.indexOf('/');
+  return pathIdx === -1 ? stripped : stripped.substring(0, pathIdx);
+}
+
+/**
+ * Encodes a domain using the legacy scheme (full URL including protocol).
+ * Used for backward-compatible matching against agents saved before the collision fix.
+ * @param {string} domain
+ * @returns {string}
+ */
+function legacyDomainEncode(domain) {
+  if (!domain) {
+    return '';
+  }
+  if (domain.length <= Constants.ENCODED_DOMAIN_LENGTH) {
+    return domain.replace(/\./g, actionDomainSeparator);
+  }
+  const modifiedDomain = Buffer.from(domain).toString('base64');
+  return modifiedDomain.substring(0, Constants.ENCODED_DOMAIN_LENGTH);
+}
+
 /**
  * Encodes or decodes a domain name to/from base64, or replacing periods with a custom separator.
  *
  * Necessary due to `[a-zA-Z0-9_-]*` Regex Validation, limited to a 64-character maximum.
+ * Strips protocol prefix before encoding to prevent base64 collisions
+ * (all `https://` URLs share the same 10-char base64 prefix).
  *
  * @param {string} domain - The domain name to encode/decode.
  * @param {boolean} inverse - False to decode from base64, true to encode to base64.
@@ -79,23 +115,27 @@ async function domainParser(domain, inverse = false) {
   if (!domain) {
     return;
   }
-  const domainsCache = getLogStores(CacheKeys.ENCODED_DOMAINS);
-  const cachedDomain = await domainsCache.get(domain);
-  if (inverse && cachedDomain) {
-    return domain;
-  }
 
-  if (inverse && domain.length <= Constants.ENCODED_DOMAIN_LENGTH) {
-    return domain.replace(/\./g, actionDomainSeparator);
-  }
+  const domainsCache = getLogStores(CacheKeys.ENCODED_DOMAINS);
 
   if (inverse) {
-    const modifiedDomain = Buffer.from(domain).toString('base64');
+    const hostname = stripProtocol(domain);
+    const cachedDomain = await domainsCache.get(hostname);
+    if (cachedDomain) {
+      return hostname;
+    }
+
+    if (hostname.length <= Constants.ENCODED_DOMAIN_LENGTH) {
+      return hostname.replace(/\./g, actionDomainSeparator);
+    }
+
+    const modifiedDomain = Buffer.from(hostname).toString('base64');
     const key = modifiedDomain.substring(0, Constants.ENCODED_DOMAIN_LENGTH);
     await domainsCache.set(key, modifiedDomain);
     return key;
   }
 
+  const cachedDomain = await domainsCache.get(domain);
   if (!cachedDomain) {
     return domain.replace(replaceSeparatorRegex, '.');
   }
@@ -456,6 +496,7 @@ const deleteAssistantActions = async ({ req, assistant_id }) => {
 module.exports = {
   deleteAssistantActions,
   validateAndUpdateTool,
+  legacyDomainEncode,
   createActionTool,
   encryptMetadata,
   decryptMetadata,

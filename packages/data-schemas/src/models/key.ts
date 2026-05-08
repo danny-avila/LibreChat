@@ -1,8 +1,7 @@
 import keySchema, { IKey } from '~/schema/key';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
 
-/**
- * Creates or returns the Key model using the provided mongoose instance and schema
- */
 export function createKeyModel(mongoose: typeof import('mongoose')) {
+  applyTenantIsolation(keySchema);
   return mongoose.models.Key || mongoose.model<IKey>('Key', keySchema);
 }

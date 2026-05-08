@@ -1,12 +1,8 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
-import copy from 'copy-to-clipboard';
 import rehypeKatex from 'rehype-katex';
 import ReactMarkdown from 'react-markdown';
-import { Button } from '@librechat/client';
 import rehypeHighlight from 'rehype-highlight';
-import { Copy, CircleCheckBig } from 'lucide-react';
 import { handleDoubleClick, langSubset } from '~/utils';
-import { useLocalize } from '~/hooks';
 
 type TCodeProps = {
   inline: boolean;
@@ -29,22 +25,22 @@ export const code: React.ElementType = memo(({ inline, className, children }: TC
   return <code className={`hljs language-${lang} !whitespace-pre`}>{children}</code>;
 });
 
+const rehypePlugins = [
+  [rehypeKatex],
+  [
+    rehypeHighlight,
+    {
+      detect: true,
+      ignoreMissing: true,
+      subset: langSubset,
+    },
+  ],
+];
+
 export const CodeMarkdown = memo(
   ({ content = '', isSubmitting }: { content: string; isSubmitting: boolean }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
     const [userScrolled, setUserScrolled] = useState(false);
-    const currentContent = content;
-    const rehypePlugins = [
-      [rehypeKatex],
-      [
-        rehypeHighlight,
-        {
-          detect: true,
-          ignoreMissing: true,
-          subset: langSubset,
-        },
-      ],
-    ];
 
     useEffect(() => {
       const scrollContainer = scrollRef.current;
@@ -82,7 +78,7 @@ export const CodeMarkdown = memo(
     return (
       <div ref={scrollRef} className="max-h-full overflow-y-auto">
         <ReactMarkdown
-          /* @ts-ignore */
+          /* @ts-expect-error — rehypePlugins type mismatch between react-markdown and unified PluggableList */
           rehypePlugins={rehypePlugins}
           components={
             { code } as {
@@ -90,35 +86,9 @@ export const CodeMarkdown = memo(
             }
           }
         >
-          {currentContent}
+          {content}
         </ReactMarkdown>
       </div>
     );
   },
 );
-
-export const CopyCodeButton: React.FC<{ content: string }> = ({ content }) => {
-  const localize = useLocalize();
-  const [isCopied, setIsCopied] = useState(false);
-
-  const handleCopy = () => {
-    copy(content, { format: 'text/plain' });
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 3000);
-  };
-
-  return (
-    <Button
-      size="icon"
-      variant="ghost"
-      onClick={handleCopy}
-      aria-label={isCopied ? localize('com_ui_copied') : localize('com_ui_copy_code')}
-    >
-      {isCopied ? (
-        <CircleCheckBig size={16} aria-hidden="true" />
-      ) : (
-        <Copy size={16} aria-hidden="true" />
-      )}
-    </Button>
-  );
-};

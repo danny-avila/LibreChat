@@ -132,13 +132,6 @@ export type NavLink = {
   id: string;
 };
 
-export interface NavProps {
-  isCollapsed: boolean;
-  links: NavLink[];
-  resize?: (size: number) => void;
-  defaultActive?: string;
-}
-
 export interface DataColumnMeta {
   meta:
     | {
@@ -362,6 +355,28 @@ export type TOptions = {
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
 
+/**
+ * Stable context object passed from non-memo'd wrapper components (Message, MessageContent)
+ * to memo'd inner components (MessageRender, ContentRender) via props.
+ *
+ * This avoids subscribing to ChatContext inside memo'd components, which would bypass React.memo
+ * and cause unnecessary re-renders when `isSubmitting` changes during streaming.
+ *
+ * The `isSubmitting` property should use a getter backed by a ref so it returns the current
+ * value at call-time (for callback guards) without being a reactive dependency.
+ */
+export type TMessageChatContext = {
+  ask: (...args: Parameters<TAskFunction>) => void;
+  index: number;
+  regenerate: (message: t.TMessage, options?: { addedConvo?: t.TConversation | null }) => void;
+  conversation: t.TConversation | null;
+  latestMessageId: string | undefined;
+  latestMessageDepth: number | undefined;
+  handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  /** Should be a getter backed by a ref — reads current value without triggering re-renders */
+  readonly isSubmitting: boolean;
+};
+
 export type TMessageProps = {
   conversation?: t.TConversation | null;
   messageId?: string | null;
@@ -560,11 +575,6 @@ export interface ModelItemProps {
   icon?: JSX.Element;
   className?: string;
 }
-
-export type ContextType = {
-  navVisible: boolean;
-  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
-};
 
 export interface SwitcherProps {
   endpoint?: t.EModelEndpoint | null;

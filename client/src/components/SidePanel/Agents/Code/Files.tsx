@@ -1,18 +1,11 @@
 import { memo, useMemo, useRef, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AttachmentIcon } from '@librechat/client';
-import {
-  EToolResources,
-  EModelEndpoint,
-  mergeFileConfig,
-  AgentCapabilities,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
+import { EToolResources, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
 import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
+import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
-import { useLocalize, useLazyEffect } from '~/hooks';
-import { useGetFileConfig } from '~/data-provider';
 import { isEphemeralAgent } from '~/common';
 
 const tool_resource = EToolResources.execute_code;
@@ -29,14 +22,14 @@ function Files({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
   const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
-  const { data: fileConfig = null } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
+  const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
+  const endpointOverride = providerValue || EModelEndpoint.agents;
   const { abortUpload, handleFileChange } = useFileHandlingNoChatContext(
     {
       fileSetter: setFiles,
       additionalMetadata: { agent_id, tool_resource },
-      endpointOverride: EModelEndpoint.agents,
+      endpointOverride,
+      endpointTypeOverride: endpointType,
     },
     fileHandlingState,
   );
@@ -52,12 +45,6 @@ function Files({
   );
 
   const codeChecked = watch(AgentCapabilities.execute_code);
-
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig,
-    endpoint: EModelEndpoint.agents,
-    endpointType: EModelEndpoint.agents,
-  });
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   if (isUploadDisabled) {
@@ -90,7 +77,7 @@ function Files({
           <button
             type="button"
             disabled={isEphemeralAgent(agent_id) || codeChecked === false}
-            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
             onClick={handleButtonClick}
           >
             <div className="flex w-full items-center justify-center gap-1">

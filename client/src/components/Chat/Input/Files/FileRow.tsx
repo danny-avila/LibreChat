@@ -3,10 +3,10 @@ import { useToastContext } from '@librechat/client';
 import { EToolResources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
+import { logger, getCachedPreview } from '~/utils';
 import { useFileDeletion } from '~/hooks/Files';
 import FileContainer from './FileContainer';
 import { useLocalize } from '~/hooks';
-import { logger } from '~/utils';
 import Image from './Image';
 
 export default function FileRow({
@@ -112,12 +112,14 @@ export default function FileRow({
           )
           .uniqueFiles.map((file: ExtendedFile, index: number) => {
             const handleDelete = () => {
-              showToast({
-                message: localize('com_ui_deleting_file'),
-                status: 'info',
-              });
               if (abortUpload && file.progress < 1) {
                 abortUpload();
+              }
+              if (file.progress >= 1) {
+                showToast({
+                  message: localize('com_ui_deleting_file'),
+                  status: 'info',
+                });
               }
               deleteFile({ file, setFiles });
             };
@@ -134,7 +136,7 @@ export default function FileRow({
               >
                 {isImage ? (
                   <Image
-                    url={file.progress === 1 ? file.filepath : (file.preview ?? file.filepath)}
+                    url={getCachedPreview(file.file_id) ?? file.preview ?? file.filepath}
                     onDelete={handleDelete}
                     progress={file.progress}
                     source={file.source}

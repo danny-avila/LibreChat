@@ -22,12 +22,6 @@ const promptGroupSchema = new Schema<IPromptGroupDocument>(
       default: '',
       index: true,
     },
-    projectIds: {
-      type: [Schema.Types.ObjectId],
-      ref: 'Project',
-      index: true,
-      default: [],
-    },
     productionId: {
       type: Schema.Types.ObjectId,
       ref: 'Prompt',
@@ -59,12 +53,16 @@ const promptGroupSchema = new Schema<IPromptGroupDocument>(
         `Command cannot be longer than ${Constants.COMMANDS_MAX_LENGTH} characters`,
       ],
     }, // Casting here bypasses the type error for the command field.
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,
   },
 );
 
-promptGroupSchema.index({ createdAt: 1, updatedAt: 1 });
+promptGroupSchema.index({ numberOfGenerations: -1, updatedAt: -1, _id: 1 });
 
 export default promptGroupSchema;

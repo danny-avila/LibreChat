@@ -97,7 +97,6 @@
   "com_endpoint_message_not_appendable": "Edit pesan Anda atau Regenerasi.",
   "com_endpoint_my_preset": "Preset Saya",
   "com_endpoint_no_presets": "Belum ada preset, gunakan tombol pengaturan untuk membuat satu",
-  "com_endpoint_open_menu": "Buka Menu",
   "com_endpoint_openai_custom_name_placeholder": "Tetapkan nama kustom untuk ChatGPT",
   "com_endpoint_openai_detail": "Resolusi untuk permintaan Vision. \"Rendah\" lebih murah dan lebih cepat, \"Tinggi\" lebih detail dan mahal, dan \"Otomatis\" akan secara otomatis memilih antara keduanya berdasarkan resolusi gambar.",
   "com_endpoint_openai_freq": "Angka antara -2,0 dan 2,0. Nilai positif menghukum token baru berdasarkan frekuensi mereka yang ada dalam teks sejauh ini, mengurangi kemungkinan model untuk mengulangi baris yang sama secara harfiah.",

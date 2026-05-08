@@ -9,6 +9,7 @@ const {
 } = require('librechat-data-provider');
 const {
   bulkUpdateResourcePermissions,
+  syncUserEntraGroupMemberships,
   getEffectivePermissions,
   findAccessibleResources,
   getAvailableRoles,
@@ -26,7 +27,12 @@ jest.mock('@librechat/data-schemas', () => ({
 
 // Mock GraphApiService to prevent config loading issues
 jest.mock('~/server/services/GraphApiService', () => ({
+  entraIdPrincipalFeatureEnabled: jest.fn().mockReturnValue(false),
+  getUserOwnedEntraGroups: jest.fn().mockResolvedValue([]),
+  getUserEntraGroups: jest.fn().mockResolvedValue([]),
+  getEntraGroupDetailsBatch: jest.fn().mockResolvedValue([]),
   getGroupMembers: jest.fn().mockResolvedValue([]),
+  getGroupOwners: jest.fn().mockResolvedValue([]),
 }));
 
 // Mock the logger
@@ -1931,5 +1937,178 @@ describe('PermissionService', () => {
       expect(permissionsMap.get(resource1.toString())).toBe(1);
       expect(permissionsMap.get(resource2.toString())).toBe(3);
     });
+  });
+});
+
+describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
+  const {
+    entraIdPrincipalFeatureEnabled,
+    getUserEntraGroups,
+  } = require('~/server/services/GraphApiService');
+  const { Group } = require('~/db/models');
+
+  const userEntraId = 'entra-user-001';
+  const user = {
+    openidId: 'openid-sub-001',
+    idOnTheSource: userEntraId,
+    provider: 'openid',
+  };
+
+  beforeEach(async () => {
+    await Group.deleteMany({});
+    entraIdPrincipalFeatureEnabled.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    entraIdPrincipalFeatureEnabled.mockReturnValue(false);
+    getUserEntraGroups.mockResolvedValue([]);
+  });
+
+  it('should add user to matching Entra groups and remove from non-matching ones', async () => {
+    await Group.create([
+      { name: 'Group A', source: 'entra', idOnTheSource: 'entra-group-a', memberIds: [] },
+      {
+        name: 'Group B',
+        source: 'entra',
+        idOnTheSource: 'entra-group-b',
+        memberIds: [userEntraId],
+      },
+      {
+        name: 'Group C',
+        source: 'entra',
+        idOnTheSource: 'entra-group-c',
+        memberIds: [userEntraId],
+      },
+    ]);
+
+    getUserEntraGroups.mockResolvedValue(['entra-group-a', 'entra-group-c']);
+
+    await syncUserEntraGroupMemberships(user, 'fake-access-token');
+
+    const groups = await Group.find({ source: 'entra' }).sort({ name: 1 }).lean();
+    expect(groups[0].memberIds).toContain(userEntraId);
+    expect(groups[1].memberIds).not.toContain(userEntraId);
+    expect(groups[2].memberIds).toContain(userEntraId);
+  });
+
+  it('should not modify groups when API returns empty list (early return)', async () => {
+    await Group.create([
+      {
+        name: 'Group X',
+        source: 'entra',
+        idOnTheSource: 'entra-x',
+        memberIds: [userEntraId, 'other-user'],
+      },
+      { name: 'Group Y', source: 'entra', idOnTheSource: 'entra-y', memberIds: [userEntraId] },
+    ]);
+
+    getUserEntraGroups.mockResolvedValue([]);
+
+    await syncUserEntraGroupMemberships(user, 'fake-token');
+
+    const groups = await Group.find({ source: 'entra' }).sort({ name: 1 }).lean();
+    expect(groups[0].memberIds).toContain(userEntraId);
+    expect(groups[0].memberIds).toContain('other-user');
+    expect(groups[1].memberIds).toContain(userEntraId);
+  });
+
+  it('should remove user from groups not in the API response via $pullAll', async () => {
+    await Group.create([
+      { name: 'Keep', source: 'entra', idOnTheSource: 'entra-keep', memberIds: [userEntraId] },
+      {
+        name: 'Remove',
+        source: 'entra',
+        idOnTheSource: 'entra-remove',
+        memberIds: [userEntraId, 'other-user'],
+      },
+    ]);
+
+    getUserEntraGroups.mockResolvedValue(['entra-keep']);
+
+    await syncUserEntraGroupMemberships(user, 'fake-token');
+
+    const keep = await Group.findOne({ idOnTheSource: 'entra-keep' }).lean();
+    const remove = await Group.findOne({ idOnTheSource: 'entra-remove' }).lean();
+    expect(keep.memberIds).toContain(userEntraId);
+    expect(remove.memberIds).not.toContain(userEntraId);
+    expect(remove.memberIds).toContain('other-user');
+  });
+
+  it('should not modify local groups', async () => {
+    await Group.create([
+      { name: 'Local Group', source: 'local', memberIds: [userEntraId] },
+      {
+        name: 'Entra Group',
+        source: 'entra',
+        idOnTheSource: 'entra-only',
+        memberIds: [userEntraId],
+      },
+    ]);
+
+    getUserEntraGroups.mockResolvedValue([]);
+
+    await syncUserEntraGroupMemberships(user, 'fake-token');
+
+    const localGroup = await Group.findOne({ source: 'local' }).lean();
+    expect(localGroup.memberIds).toContain(userEntraId);
+  });
+
+  it('should early-return when feature is disabled', async () => {
+    entraIdPrincipalFeatureEnabled.mockReturnValue(false);
+
+    await Group.create({
+      name: 'Should Not Touch',
+      source: 'entra',
+      idOnTheSource: 'entra-safe',
+      memberIds: [userEntraId],
+    });
+
+    getUserEntraGroups.mockResolvedValue([]);
+    await syncUserEntraGroupMemberships(user, 'fake-token');
+
+    const group = await Group.findOne({ idOnTheSource: 'entra-safe' }).lean();
+    expect(group.memberIds).toContain(userEntraId);
+  });
+
+  it('should handle mix of existing and missing groups correctly (regression test)', async () => {
+    // This is the critical bug fix: previously syncUserEntraGroups would remove user from existing groups
+    // when called with only missing groups. Now using upserts + bulkUpdate to avoid this issue.
+
+    const { getEntraGroupDetailsBatch } = require('~/server/services/GraphApiService');
+
+    // Create existing groups A and B
+    await Group.create([
+      { name: 'Group A', source: 'entra', idOnTheSource: 'entra-group-a', memberIds: [] },
+      { name: 'Group B', source: 'entra', idOnTheSource: 'entra-group-b', memberIds: [] },
+    ]);
+
+    // User is member of A, B, and C (but C doesn't exist yet)
+    getUserEntraGroups.mockResolvedValue(['entra-group-a', 'entra-group-b', 'entra-group-c']);
+
+    // Mock batch fetch to return details for missing group C
+    getEntraGroupDetailsBatch.mockResolvedValue([
+      {
+        id: 'entra-group-c',
+        name: 'Group C',
+        email: 'groupc@example.com',
+        description: 'Group C Description',
+      },
+    ]);
+
+    await syncUserEntraGroupMemberships(user, 'fake-token');
+
+    // Verify ALL three groups now have the user as member
+    const groupA = await Group.findOne({ idOnTheSource: 'entra-group-a' }).lean();
+    const groupB = await Group.findOne({ idOnTheSource: 'entra-group-b' }).lean();
+    const groupC = await Group.findOne({ idOnTheSource: 'entra-group-c' }).lean();
+
+    expect(groupA.memberIds).toContain(userEntraId);
+    expect(groupB.memberIds).toContain(userEntraId);
+    expect(groupC).toBeTruthy();
+    expect(groupC.memberIds).toContain(userEntraId);
+    expect(groupC.name).toBe('Group C');
+
+    // Reset mock
+    getEntraGroupDetailsBatch.mockResolvedValue([]);
   });
 });

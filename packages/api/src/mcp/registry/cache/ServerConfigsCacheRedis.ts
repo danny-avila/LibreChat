@@ -52,6 +52,12 @@ export class ServerConfigsCacheRedis
     this.successCheck(`update ${this.namespace} server "${serverName}"`, success);
   }
 
+  public async upsert(serverName: string, config: ParsedServerConfig): Promise<void> {
+    if (this.leaderOnly) await this.leaderCheck(`upsert ${this.namespace} MCP servers`);
+    const success = await this.cache.set(serverName, { ...config, updatedAt: Date.now() });
+    this.successCheck(`upsert ${this.namespace} server "${serverName}"`, success);
+  }
+
   public async remove(serverName: string): Promise<void> {
     if (this.leaderOnly) await this.leaderCheck(`remove ${this.namespace} MCP servers`);
     const success = await this.cache.delete(serverName);

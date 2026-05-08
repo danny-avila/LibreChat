@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
-const { agentSchema } = require('@librechat/data-schemas');
-const { FileSources } = require('librechat-data-provider');
+const { agentSchema, fileSchema } = require('@librechat/data-schemas');
+const { FileSources, PermissionBits } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 // Only mock the dependencies that are not database-related
@@ -14,10 +14,6 @@ jest.mock('~/server/services/Config', () => ({
   }),
 }));
 
-jest.mock('~/models/Project', () => ({
-  getProjectByName: jest.fn().mockResolvedValue(null),
-}));
-
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(),
 }));
@@ -26,7 +22,16 @@ jest.mock('~/server/services/Files/images/avatar', () => ({
   resizeAvatar: jest.fn(),
 }));
 
-jest.mock('~/server/services/Files/S3/crud', () => ({
+jest.mock('sharp', () =>
+  jest.fn(() => ({
+    metadata: jest.fn().mockResolvedValue({}),
+    toFormat: jest.fn().mockReturnThis(),
+    toBuffer: jest.fn().mockResolvedValue(Buffer.alloc(0)),
+  })),
+);
+
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   refreshS3Url: jest.fn(),
 }));
 
@@ -34,26 +39,26 @@ jest.mock('~/server/services/Files/process', () => ({
   filterFile: jest.fn(),
 }));
 
-jest.mock('~/models/Action', () => ({
-  updateAction: jest.fn(),
-  getActions: jest.fn().mockResolvedValue([]),
-}));
-
-jest.mock('~/models/File', () => ({
-  deleteFileByFilter: jest.fn(),
-}));
-
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
   findPubliclyAccessibleResources: jest.fn().mockResolvedValue([]),
+  getResourcePermissionsMap: jest.fn().mockResolvedValue(new Map()),
   grantPermission: jest.fn(),
   hasPublicPermission: jest.fn().mockResolvedValue(false),
-  checkPermission: jest.fn().mockResolvedValue(true),
 }));
 
-jest.mock('~/models', () => ({
-  getCategoriesWithCounts: jest.fn(),
-}));
+jest.mock('~/models', () => {
+  const mongoose = require('mongoose');
+  const { createMethods } = require('@librechat/data-schemas');
+  const methods = createMethods(mongoose, {
+    removeAllPermissions: jest.fn().mockResolvedValue(undefined),
+  });
+  return {
+    ...methods,
+    getCategoriesWithCounts: jest.fn(),
+    deleteFileByFilter: jest.fn(),
+  };
+});
 
 // Mock cache for S3 avatar refresh tests
 const mockCache = {
@@ -74,9 +79,10 @@ const {
 const {
   findAccessibleResources,
   findPubliclyAccessibleResources,
+  getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
 
-const { refreshS3Url } = require('~/server/services/Files/S3/crud');
+const { refreshS3Url } = require('@librechat/api');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -93,6 +99,9 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     const mongoUri = mongoServer.getUri();
     await mongoose.connect(mongoUri);
     Agent = mongoose.models.Agent || mongoose.model('Agent', agentSchema);
+    // Register File so orphan-pruning tests (and the tool_resources validation
+    // test, which now needs real File docs for its ids) have a working model.
+    mongoose.models.File || mongoose.model('File', fileSchema);
   }, 20000);
 
   afterAll(async () => {
@@ -175,7 +184,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         // Unauthorized fields that should be stripped
         author: new mongoose.Types.ObjectId().toString(), // Should not be able to set author
         authorName: 'Hacker', // Should be stripped
-        isCollaborative: true, // Should be stripped on creation
         versions: [], // Should be stripped
         _id: new mongoose.Types.ObjectId(), // Should be stripped
         id: 'custom_agent_id', // Should be overridden
@@ -194,7 +202,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       // Verify unauthorized fields were not set
       expect(createdAgent.author.toString()).toBe(mockReq.user.id); // Should be the request user, not the malicious value
       expect(createdAgent.authorName).toBeUndefined();
-      expect(createdAgent.isCollaborative).toBeFalsy();
       expect(createdAgent.versions).toHaveLength(1); // Should have exactly 1 version from creation
       expect(createdAgent.id).not.toBe('custom_agent_id'); // Should have generated ID
       expect(createdAgent.id).toMatch(/^agent_/); // Should have proper prefix
@@ -445,7 +452,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         model: 'gpt-3.5-turbo',
         author: existingAgentAuthorId,
         description: 'Original description',
-        isCollaborative: false,
         versions: [
           {
             name: 'Original Agent',
@@ -467,7 +473,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         name: 'Updated Agent',
         description: 'Updated description',
         model: 'gpt-4',
-        isCollaborative: true, // This IS allowed in updates
       };
 
       await updateAgentHandler(mockReq, mockRes);
@@ -480,13 +485,11 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(updatedAgent.name).toBe('Updated Agent');
       expect(updatedAgent.description).toBe('Updated description');
       expect(updatedAgent.model).toBe('gpt-4');
-      expect(updatedAgent.isCollaborative).toBe(true);
       expect(updatedAgent.author).toBe(existingAgentAuthorId.toString());
 
       // Verify in database
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(agentInDb.name).toBe('Updated Agent');
-      expect(agentInDb.isCollaborative).toBe(true);
     });
 
     test('should reject update with unauthorized fields (mass assignment protection)', async () => {
@@ -541,27 +544,24 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(updatedAgent.name).toBe('Admin Update');
     });
 
-    test('should handle projectIds updates', async () => {
-      mockReq.user.id = existingAgentAuthorId.toString();
-      mockReq.params.id = existingAgentId;
-
-      const projectId1 = new mongoose.Types.ObjectId().toString();
-      const projectId2 = new mongoose.Types.ObjectId().toString();
-
-      mockReq.body = {
-        projectIds: [projectId1, projectId2],
-      };
-
-      await updateAgentHandler(mockReq, mockRes);
-
-      expect(mockRes.json).toHaveBeenCalled();
-
-      const updatedAgent = mockRes.json.mock.calls[0][0];
-      expect(updatedAgent).toBeDefined();
-      // Note: updateAgentProjects requires more setup, so we just verify the handler doesn't crash
-    });
-
     test('should validate tool_resources in updates', async () => {
+      // Back these ids with real File docs so the orphan-pruning added for
+      // issue #12776 does not strip them — this test is about OCR conversion
+      // and schema filtering, not file existence.
+      const File = mongoose.models.File;
+      for (const id of ['ocr1', 'ocr2', 'img1']) {
+        await File.create({
+          file_id: id,
+          user: existingAgentAuthorId,
+          filename: `${id}.txt`,
+          filepath: `/tmp/${id}`,
+          object: 'file',
+          type: 'text/plain',
+          bytes: 1,
+          source: FileSources.local,
+        });
+      }
+
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
       mockReq.body = {
@@ -748,6 +748,93 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           details: expect.any(Array),
         }),
       );
+    });
+
+    describe('orphan file_id pruning (issue #12776)', () => {
+      const File = () => mongoose.models.File;
+
+      const createFileDoc = async (file_id, userId) =>
+        File().create({
+          file_id,
+          user: userId,
+          filename: `${file_id}.txt`,
+          filepath: `/tmp/${file_id}`,
+          object: 'file',
+          type: 'text/plain',
+          bytes: 1,
+          source: FileSources.local,
+        });
+
+      beforeEach(async () => {
+        await File().deleteMany({});
+      });
+
+      test('strips orphan file_ids from incoming tool_resources before persisting', async () => {
+        const keeper = `file_${uuidv4()}`;
+        const orphan = `file_${uuidv4()}`;
+        await createFileDoc(keeper, existingAgentAuthorId);
+
+        mockReq.user.id = existingAgentAuthorId.toString();
+        mockReq.params.id = existingAgentId;
+        mockReq.body = {
+          tool_resources: {
+            file_search: { file_ids: [keeper, orphan] },
+          },
+        };
+
+        await updateAgentHandler(mockReq, mockRes);
+
+        const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+        expect(agentInDb.tool_resources.file_search.file_ids).toEqual([keeper]);
+      });
+
+      test('leaves tool_resources alone when the update omits it', async () => {
+        const orphan = `file_${uuidv4()}`;
+        await Agent.updateOne(
+          { id: existingAgentId },
+          { $set: { tool_resources: { file_search: { file_ids: [orphan] } } } },
+        );
+
+        mockReq.user.id = existingAgentAuthorId.toString();
+        mockReq.params.id = existingAgentId;
+        mockReq.body = { name: 'Unrelated Rename' };
+
+        await updateAgentHandler(mockReq, mockRes);
+
+        const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+        expect(agentInDb.name).toBe('Unrelated Rename');
+        // Save-time pruning is intentionally scoped to tool_resources updates.
+        // The delete-time fix and migration script cover the untouched case.
+        expect(agentInDb.tool_resources.file_search.file_ids).toEqual([orphan]);
+      });
+
+      test('swallows errors from the file-existence check and still completes the save', async () => {
+        const db = require('~/models');
+        const originalGetFiles = db.getFiles;
+        db.getFiles = jest.fn().mockRejectedValue(new Error('transient DB error'));
+
+        const orphan = `file_${uuidv4()}`;
+        mockReq.user.id = existingAgentAuthorId.toString();
+        mockReq.params.id = existingAgentId;
+        mockReq.body = {
+          name: 'Save Succeeds',
+          tool_resources: { file_search: { file_ids: [orphan] } },
+        };
+
+        try {
+          await updateAgentHandler(mockReq, mockRes);
+
+          expect(mockRes.status).not.toHaveBeenCalledWith(500);
+          expect(mockRes.json).toHaveBeenCalled();
+          const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+          expect(agentInDb.name).toBe('Save Succeeds');
+          // Cleanup skipped on error, so the id remains — the delete-time path
+          // or the next successful save will reconcile it.
+          expect(agentInDb.tool_resources.file_search.file_ids).toEqual([orphan]);
+        } finally {
+          db.getFiles = originalGetFiles;
+        }
+      });
     });
   });
 
@@ -1645,6 +1732,114 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       const responseData = mockRes.json.mock.calls[0][0];
       const agent = responseData.data.find((a) => a.id === agentWithS3Avatar.id);
       expect(agent.avatar.filepath).toBe('old-s3-path.jpg');
+    });
+  });
+
+  describe('Edge ACL validation', () => {
+    let targetAgent;
+
+    beforeEach(async () => {
+      targetAgent = await Agent.create({
+        id: `agent_${nanoid()}`,
+        author: new mongoose.Types.ObjectId().toString(),
+        name: 'Target Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+      });
+    });
+
+    test('createAgentHandler should return 403 when user lacks VIEW on an edge-referenced agent', async () => {
+      const permMap = new Map();
+      getResourcePermissionsMap.mockResolvedValueOnce(permMap);
+
+      mockReq.body = {
+        name: 'Attacker Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        edges: [{ from: 'self_placeholder', to: targetAgent.id, edgeType: 'handoff' }],
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.agent_ids).toContain(targetAgent.id);
+    });
+
+    test('createAgentHandler should succeed when user has VIEW on all edge-referenced agents', async () => {
+      const permMap = new Map([[targetAgent._id.toString(), 1]]);
+      getResourcePermissionsMap.mockResolvedValueOnce(permMap);
+
+      mockReq.body = {
+        name: 'Legit Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        edges: [{ from: 'self_placeholder', to: targetAgent.id, edgeType: 'handoff' }],
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+    });
+
+    test('createAgentHandler should allow edges referencing non-existent agents (self-reference at create time)', async () => {
+      mockReq.body = {
+        name: 'Self-Ref Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        edges: [{ from: 'agent_does_not_exist_yet', to: 'agent_also_new', edgeType: 'handoff' }],
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+    });
+
+    test('updateAgentHandler should return 403 when user lacks VIEW on an edge-referenced agent', async () => {
+      const ownedAgent = await Agent.create({
+        id: `agent_${nanoid()}`,
+        author: mockReq.user.id,
+        name: 'Owned Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+      });
+
+      const permMap = new Map([[ownedAgent._id.toString(), PermissionBits.VIEW]]);
+      getResourcePermissionsMap.mockResolvedValueOnce(permMap);
+
+      mockReq.params = { id: ownedAgent.id };
+      mockReq.body = {
+        edges: [{ from: ownedAgent.id, to: targetAgent.id, edgeType: 'handoff' }],
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.agent_ids).toContain(targetAgent.id);
+      expect(response.agent_ids).not.toContain(ownedAgent.id);
+    });
+
+    test('updateAgentHandler should succeed when edges field is absent from payload', async () => {
+      const ownedAgent = await Agent.create({
+        id: `agent_${nanoid()}`,
+        author: mockReq.user.id,
+        name: 'Owned Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+      });
+
+      mockReq.params = { id: ownedAgent.id };
+      mockReq.body = { name: 'Renamed Agent' };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(403);
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.name).toBe('Renamed Agent');
     });
   });
 });

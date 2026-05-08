@@ -47,6 +47,10 @@ const Action = new Schema<IAction>({
     oauth_client_id: String,
     oauth_client_secret: String,
   },
+  tenantId: {
+    type: String,
+    index: true,
+  },
 });
 
 export default Action;

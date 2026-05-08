@@ -3,11 +3,9 @@ const { createContentAggregator } = require('@librechat/agents');
 const {
   initializeAgent,
   validateAgentModel,
-  createEdgeCollector,
-  filterOrphanedEdges,
   GenerationJobManager,
   getCustomEndpointConfig,
-  createSequentialChainEdges,
+  discoverConnectedAgents,
 } = require('@librechat/api');
 const {
   EModelEndpoint,
@@ -20,11 +18,11 @@ const {
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { checkPermission } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
-const { getConvoFiles } = require('~/models/Conversation');
 const { processAddedConvo } = require('./addedConvo');
-const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -80,6 +78,14 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
   };
 }
 
+/**
+ * Initializes the AgentClient for a given request/response cycle.
+ * @param {Object} params
+ * @param {Express.Request} params.req
+ * @param {Express.Response} params.res
+ * @param {AbortSignal} params.signal
+ * @param {Object} params.endpointOption
+ */
 const initializeClient = async ({ req, res, signal, endpointOption }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
@@ -125,6 +131,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         toolRegistry: ctx.toolRegistry,
         userMCPAuthMap: ctx.userMCPAuthMap,
         tool_resources: ctx.tool_resources,
+        actionsEnabled: ctx.actionsEnabled,
       });
 
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
@@ -133,9 +140,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     toolEndCallback,
   };
 
+  const summarizationOptions =
+    appConfig?.summarization?.enabled === false ? { enabled: false } : { enabled: true };
+
   const eventHandlers = getDefaultHandlers({
     res,
     toolExecuteOptions,
+    summarizationOptions,
     aggregateContent,
     toolEndCallback,
     collectedUsage,
@@ -191,15 +202,16 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       isInitialAgent: true,
     },
     {
-      getConvoFiles,
       getFiles: db.getFiles,
       getUserKey: db.getUserKey,
       getMessages: db.getMessages,
+      getConvoFiles: db.getConvoFiles,
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
       getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+      filterFilesByAgentAccess,
     },
   );
 
@@ -211,123 +223,75 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     toolRegistry: primaryConfig.toolRegistry,
     userMCPAuthMap: primaryConfig.userMCPAuthMap,
     tool_resources: primaryConfig.tool_resources,
+    actionsEnabled: primaryConfig.actionsEnabled,
   });
 
-  const agent_ids = primaryConfig.agent_ids;
-  let userMCPAuthMap = primaryConfig.userMCPAuthMap;
-
-  /** @type {Set<string>} Track agents that failed to load (orphaned references) */
-  const skippedAgentIds = new Set();
-
-  async function processAgent(agentId) {
-    const agent = await getAgent({ id: agentId });
-    if (!agent) {
-      logger.warn(
-        `[processAgent] Handoff agent ${agentId} not found, skipping (orphaned reference)`,
-      );
-      skippedAgentIds.add(agentId);
-      return null;
-    }
-
-    const validationResult = await validateAgentModel({
+  const {
+    agentConfigs: discoveredConfigs,
+    edges: discoveredEdges,
+    userMCPAuthMap: discoveredMCPAuthMap,
+  } = await discoverConnectedAgents(
+    {
       req,
       res,
-      agent,
+      primaryConfig,
+      agent_ids: primaryConfig.agent_ids,
+      endpointOption,
+      allowedProviders,
       modelsConfig,
+      loadTools,
+      requestFiles,
+      conversationId,
+      parentMessageId,
+    },
+    {
+      getAgent: db.getAgent,
+      checkPermission,
       logViolation,
-    });
-
-    if (!validationResult.isValid) {
-      throw new Error(validationResult.error?.message);
-    }
-
-    const config = await initializeAgent(
-      {
-        req,
-        res,
-        agent,
-        loadTools,
-        requestFiles,
-        conversationId,
-        parentMessageId,
-        endpointOption,
-        allowedProviders,
-      },
-      {
-        getConvoFiles,
+      db: {
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
+        getConvoFiles: db.getConvoFiles,
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getUserCodeFiles: db.getUserCodeFiles,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+        filterFilesByAgentAccess,
       },
-    );
-
-    if (userMCPAuthMap != null) {
-      Object.assign(userMCPAuthMap, config.userMCPAuthMap ?? {});
-    } else {
-      userMCPAuthMap = config.userMCPAuthMap;
-    }
-
-    /** Store handoff agent's tool context for ON_TOOL_EXECUTE callback */
-    agentToolContexts.set(agentId, {
-      agent,
-      toolRegistry: config.toolRegistry,
-      userMCPAuthMap: config.userMCPAuthMap,
-      tool_resources: config.tool_resources,
-    });
-
-    agentConfigs.set(agentId, config);
-    return agent;
-  }
-
-  const checkAgentInit = (agentId) => agentId === primaryConfig.id || agentConfigs.has(agentId);
-
-  // Graph topology discovery for recursive agent handoffs (BFS)
-  const { edgeMap, agentsToProcess, collectEdges } = createEdgeCollector(
-    checkAgentInit,
-    skippedAgentIds,
+      // The callback fires during BFS, before the helper prunes agents
+      // whose edges end up filtered. Don't populate `agentConfigs` here —
+      // `discoveredConfigs` (returned below) is the authoritative pruned
+      // set. The per-agent tool context map is OK to keep populated even
+      // for pruned ids: it's only read by closure in ON_TOOL_EXECUTE,
+      // stale entries are unreachable at runtime.
+      onAgentInitialized: (agentId, agent, config) => {
+        agentToolContexts.set(agentId, {
+          agent,
+          toolRegistry: config.toolRegistry,
+          userMCPAuthMap: config.userMCPAuthMap,
+          tool_resources: config.tool_resources,
+          actionsEnabled: config.actionsEnabled,
+        });
+      },
+      // Pass through the `@librechat/api` exports so that tests which
+      // `jest.mock('@librechat/api')` can override the initializer/validator.
+      initializeAgent,
+      validateAgentModel,
+    },
   );
 
-  // Seed with primary agent's edges
-  collectEdges(primaryConfig.edges);
-
-  // BFS to load and merge all connected agents (enables transitive handoffs: A->B->C)
-  while (agentsToProcess.size > 0) {
-    const agentId = agentsToProcess.values().next().value;
-    agentsToProcess.delete(agentId);
-    try {
-      const agent = await processAgent(agentId);
-      if (agent?.edges?.length) {
-        collectEdges(agent.edges);
-      }
-    } catch (err) {
-      logger.error(`[initializeClient] Error processing agent ${agentId}:`, err);
-      skippedAgentIds.add(agentId);
-    }
+  // Copy the pruned discovery result into the outer map. Anything the
+  // helper dropped (skipped or unreachable after edge filtering) is
+  // intentionally absent. `processAddedConvo` below may still add more
+  // entries for parallel multi-convo execution.
+  for (const [agentId, config] of discoveredConfigs) {
+    agentConfigs.set(agentId, config);
   }
 
-  /** @deprecated Agent Chain */
-  if (agent_ids?.length) {
-    for (const agentId of agent_ids) {
-      if (checkAgentInit(agentId)) {
-        continue;
-      }
-      try {
-        await processAgent(agentId);
-      } catch (err) {
-        logger.error(`[initializeClient] Error processing chain agent ${agentId}:`, err);
-        skippedAgentIds.add(agentId);
-      }
-    }
-    const chain = await createSequentialChainEdges([primaryConfig.id].concat(agent_ids), '{convo}');
-    collectEdges(chain);
-  }
-
-  let edges = Array.from(edgeMap.values());
+  let userMCPAuthMap = discoveredMCPAuthMap;
+  let edges = discoveredEdges;
 
   /** Multi-Convo: Process addedConvo for parallel agent execution */
   const { userMCPAuthMap: updatedMCPAuthMap } = await processAddedConvo({
@@ -351,15 +315,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     userMCPAuthMap = updatedMCPAuthMap;
   }
 
-  // Ensure edges is an array when we have multiple agents (multi-agent mode)
-  // MultiAgentGraph.categorizeEdges requires edges to be iterable
-  if (agentConfigs.size > 0 && !edges) {
-    edges = [];
+  for (const [agentId, config] of agentConfigs) {
+    if (agentToolContexts.has(agentId)) {
+      continue;
+    }
+    agentToolContexts.set(agentId, {
+      agent: config,
+      toolRegistry: config.toolRegistry,
+      userMCPAuthMap: config.userMCPAuthMap,
+      tool_resources: config.tool_resources,
+      actionsEnabled: config.actionsEnabled,
+    });
   }
 
-  // Filter out edges referencing non-existent agents (orphaned references)
-  edges = filterOrphanedEdges(edges, skippedAgentIds);
-
+  // `discoverConnectedAgents` always returns a concrete array, so no
+  // further normalization is needed before handing this to `createRun`.
   primaryConfig.edges = edges;
 
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];

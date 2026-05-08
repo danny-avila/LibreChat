@@ -1259,7 +1259,7 @@ code[class*='language-'],
 pre[class*='language-'] {
   word-wrap: normal;
   background: none;
-  color: #fff;
+  color: var(--gray-800);
   -webkit-hyphens: none;
   hyphens: none;
   font-size: 0.85rem;
@@ -1281,27 +1281,27 @@ pre[class*='language-'] {
   white-space: normal;
 }
 .hljs-comment {
-  color: hsla(0, 0%, 100%, 0.5);
+  color: var(--gray-500);
 }
 .hljs-meta {
-  color: hsla(0, 0%, 100%, 0.6);
+  color: var(--gray-600);
 }
 .hljs-built_in,
 .hljs-class .hljs-title {
-  color: #e9950c;
+  color: #9a6700;
 }
 .hljs-doctag,
 .hljs-formula,
 .hljs-keyword,
 .hljs-literal {
-  color: #2e95d3;
+  color: #0550ae;
 }
 .hljs-addition,
 .hljs-attribute,
 .hljs-meta-string,
 .hljs-regexp,
 .hljs-string {
-  color: #00a67d;
+  color: #0a7b62;
 }
 .hljs-attr,
 .hljs-number,
@@ -1311,13 +1311,58 @@ pre[class*='language-'] {
 .hljs-template-variable,
 .hljs-type,
 .hljs-variable {
-  color: #df3079;
+  color: #9a2f6a;
 }
 .hljs-bullet,
 .hljs-link,
 .hljs-selector-id,
 .hljs-symbol,
 .hljs-title {
+  color: #b42318;
+}
+.dark code.hljs,
+.dark code[class*='language-'],
+.dark pre[class*='language-'] {
+  color: #fff;
+}
+.dark .hljs-comment {
+  color: hsla(0, 0%, 100%, 0.5);
+}
+.dark .hljs-meta {
+  color: hsla(0, 0%, 100%, 0.6);
+}
+.dark .hljs-built_in,
+.dark .hljs-class .hljs-title {
+  color: #e9950c;
+}
+.dark .hljs-doctag,
+.dark .hljs-formula,
+.dark .hljs-keyword,
+.dark .hljs-literal {
+  color: #2e95d3;
+}
+.dark .hljs-addition,
+.dark .hljs-attribute,
+.dark .hljs-meta-string,
+.dark .hljs-regexp,
+.dark .hljs-string {
+  color: #00a67d;
+}
+.dark .hljs-attr,
+.dark .hljs-number,
+.dark .hljs-selector-attr,
+.dark .hljs-selector-class,
+.dark .hljs-selector-pseudo,
+.dark .hljs-template-variable,
+.dark .hljs-type,
+.dark .hljs-variable {
+  color: #df3079;
+}
+.dark .hljs-bullet,
+.dark .hljs-link,
+.dark .hljs-selector-id,
+.dark .hljs-symbol,
+.dark .hljs-title {
   color: #f22c3d;
 }
 
@@ -2532,7 +2577,7 @@ html {
 }
 
 .message-content pre code {
-  font-size: calc(0.85 * var(--markdown-font-size, var(--font-size-base)));
+  font-size: calc(0.9 * var(--markdown-font-size, var(--font-size-base)));
 }
 
 .message-content pre {
@@ -2541,7 +2586,7 @@ html {
 
 .code-analyze-block pre code,
 .code-analyze-block .overflow-y-auto code {
-  font-size: calc(0.85 * var(--markdown-font-size, var(--font-size-base)));
+  font-size: calc(0.9 * var(--markdown-font-size, var(--font-size-base)));
 }
 
 .code-analyze-block pre,
@@ -2549,9 +2594,14 @@ html {
   font-size: var(--markdown-font-size, var(--font-size-base));
 }
 
+.tool-status-text {
+  font-size: calc(0.9 * var(--markdown-font-size, var(--font-size-base)));
+  line-height: calc(1.25 * 0.9 * var(--markdown-font-size, var(--font-size-base)));
+}
+
 .progress-text-wrapper {
-  font-size: var(--markdown-font-size, var(--font-size-base));
-  line-height: calc(1.25 * var(--markdown-font-size, var(--font-size-base)));
+  font-size: calc(0.9 * var(--markdown-font-size, var(--font-size-base)));
+  line-height: calc(1.25 * 0.9 * var(--markdown-font-size, var(--font-size-base)));
 }
 
 .progress-text-content {

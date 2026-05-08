@@ -37,7 +37,6 @@ const userSchema = new Schema<IUser>(
       type: String,
       required: [true, "can't be blank"],
       lowercase: true,
-      unique: true,
       match: [/\S+@\S+\.\S+/, 'is invalid'],
       index: true,
     },
@@ -68,43 +67,27 @@ const userSchema = new Schema<IUser>(
     },
     googleId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     facebookId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     openidId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     samlId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     ldapId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     githubId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     discordId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     appleId: {
       type: String,
-      unique: true,
-      sparse: true,
     },
     plugins: {
       type: Array,
@@ -120,6 +103,15 @@ const userSchema = new Schema<IUser>(
     backupCodes: {
       type: [BackupCodeSchema],
       select: false,
+    },
+    pendingTotpSecret: {
+      type: String,
+      select: false,
+    },
+    pendingBackupCodes: {
+      type: [BackupCodeSchema],
+      select: false,
+      default: undefined,
     },
     refreshToken: {
       type: [SessionSchema],
@@ -145,9 +137,10 @@ const userSchema = new Schema<IUser>(
       type: [
         {
           _id: false,
-          agentId: String, // for agent
-          model: String, // for model
-          endpoint: String, // for model
+          agentId: { type: String, maxlength: 256 },
+          model: { type: String, maxlength: 256 },
+          endpoint: { type: String, maxlength: 256 },
+          spec: { type: String, maxlength: 256 },
         },
       ],
       default: [],
@@ -157,8 +150,33 @@ const userSchema = new Schema<IUser>(
       type: String,
       sparse: true,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   { timestamps: true },
 );
+
+userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
+userSchema.index({ role: 1, tenantId: 1 });
+
+const oAuthIdFields = [
+  'googleId',
+  'facebookId',
+  'openidId',
+  'samlId',
+  'ldapId',
+  'githubId',
+  'discordId',
+  'appleId',
+] as const;
+
+for (const field of oAuthIdFields) {
+  userSchema.index(
+    { [field]: 1, tenantId: 1 },
+    { unique: true, partialFilterExpression: { [field]: { $exists: true } } },
+  );
+}
 
 export default userSchema;

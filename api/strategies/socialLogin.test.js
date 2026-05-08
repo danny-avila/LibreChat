@@ -3,6 +3,8 @@ const { ErrorTypes } = require('librechat-data-provider');
 const { createSocialUser, handleExistingUser } = require('./process');
 const socialLogin = require('./socialLogin');
 const { findUser } = require('~/models');
+const { resolveAppConfigForUser } = require('@librechat/api');
+const { getAppConfig } = require('~/server/services/Config');
 
 jest.mock('@librechat/data-schemas', () => {
   const actualModule = jest.requireActual('@librechat/data-schemas');
@@ -25,6 +27,10 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn().mockReturnValue(true),
   isEmailDomainAllowed: jest.fn().mockReturnValue(true),
+  resolveAppConfigForUser: jest.fn().mockResolvedValue({
+    fileStrategy: 'local',
+    balance: { enabled: false },
+  }),
 }));
 
 jest.mock('~/models', () => ({
@@ -66,10 +72,7 @@ describe('socialLogin', () => {
         googleId: googleId,
       };
 
-      /** Mock findUser to return user on first call (by googleId), null on second call */
-      findUser
-        .mockResolvedValueOnce(existingUser) // First call: finds by googleId
-        .mockResolvedValueOnce(null); // Second call would be by email, but won't be reached
+      findUser.mockResolvedValueOnce(existingUser).mockResolvedValueOnce(null);
 
       const mockProfile = {
         id: googleId,
@@ -83,13 +86,9 @@ describe('socialLogin', () => {
 
       await loginFn(null, null, null, mockProfile, callback);
 
-      /** Verify it searched by googleId first */
       expect(findUser).toHaveBeenNthCalledWith(1, { googleId: googleId });
-
-      /** Verify it did NOT search by email (because it found user by googleId) */
       expect(findUser).toHaveBeenCalledTimes(1);
 
-      /** Verify handleExistingUser was called with the new email */
       expect(handleExistingUser).toHaveBeenCalledWith(
         existingUser,
         'https://example.com/avatar.png',
@@ -97,7 +96,6 @@ describe('socialLogin', () => {
         newEmail,
       );
 
-      /** Verify callback was called with success */
       expect(callback).toHaveBeenCalledWith(null, existingUser);
     });
 
@@ -113,7 +111,7 @@ describe('socialLogin', () => {
         facebookId: facebookId,
       };
 
-      findUser.mockResolvedValue(existingUser); // Always returns user
+      findUser.mockResolvedValue(existingUser);
 
       const mockProfile = {
         id: facebookId,
@@ -127,7 +125,6 @@ describe('socialLogin', () => {
 
       await loginFn(null, null, null, mockProfile, callback);
 
-      /** Verify it searched by facebookId first */
       expect(findUser).toHaveBeenCalledWith({ facebookId: facebookId });
       expect(findUser.mock.calls[0]).toEqual([{ facebookId: facebookId }]);
 
@@ -150,13 +147,10 @@ describe('socialLogin', () => {
         _id: 'user789',
         email: email,
         provider: 'google',
-        googleId: 'old-google-id', // Different googleId (edge case)
+        googleId: 'old-google-id',
       };
 
-      /** First call (by googleId) returns null, second call (by email) returns user */
-      findUser
-        .mockResolvedValueOnce(null) // By googleId
-        .mockResolvedValueOnce(existingUser); // By email
+      findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
 
       const mockProfile = {
         id: googleId,
@@ -170,13 +164,10 @@ describe('socialLogin', () => {
 
       await loginFn(null, null, null, mockProfile, callback);
 
-      /** Verify both searches happened */
       expect(findUser).toHaveBeenNthCalledWith(1, { googleId: googleId });
-      /** Email passed as-is; findUser implementation handles case normalization */
       expect(findUser).toHaveBeenNthCalledWith(2, { email: email });
       expect(findUser).toHaveBeenCalledTimes(2);
 
-      /** Verify warning log */
       expect(logger.warn).toHaveBeenCalledWith(
         `[${provider}Login] User found by email: ${email} but not by ${provider}Id`,
       );
@@ -197,7 +188,6 @@ describe('socialLogin', () => {
         googleId: googleId,
       };
 
-      /** Both searches return null */
       findUser.mockResolvedValue(null);
       createSocialUser.mockResolvedValue(newUser);
 
@@ -213,10 +203,8 @@ describe('socialLogin', () => {
 
       await loginFn(null, null, null, mockProfile, callback);
 
-      /** Verify both searches happened */
       expect(findUser).toHaveBeenCalledTimes(2);
 
-      /** Verify createSocialUser was called */
       expect(createSocialUser).toHaveBeenCalledWith({
         email: email,
         avatarUrl: 'https://example.com/avatar.png',
@@ -242,12 +230,10 @@ describe('socialLogin', () => {
       const existingUser = {
         _id: 'user123',
         email: email,
-        provider: 'local', // Different provider
+        provider: 'local',
       };
 
-      findUser
-        .mockResolvedValueOnce(null) // By googleId
-        .mockResolvedValueOnce(existingUser); // By email
+      findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
 
       const mockProfile = {
         id: googleId,
@@ -261,7 +247,6 @@ describe('socialLogin', () => {
 
       await loginFn(null, null, null, mockProfile, callback);
 
-      /** Verify error callback */
       expect(callback).toHaveBeenCalledWith(
         expect.objectContaining({
           code: ErrorTypes.AUTH_FAILED,
@@ -271,6 +256,106 @@ describe('socialLogin', () => {
 
       expect(logger.info).toHaveBeenCalledWith(
         `[${provider}Login] User ${email} already exists with provider local`,
+      );
+    });
+  });
+
+  describe('Tenant-scoped config', () => {
+    it('should call resolveAppConfigForUser for tenant user', async () => {
+      const provider = 'google';
+      const googleId = 'google-tenant-user';
+      const email = 'tenant@example.com';
+
+      const existingUser = {
+        _id: 'userTenant',
+        email,
+        provider: 'google',
+        googleId,
+        tenantId: 'tenant-b',
+        role: 'USER',
+      };
+
+      findUser.mockResolvedValue(existingUser);
+
+      const mockProfile = {
+        id: googleId,
+        emails: [{ value: email, verified: true }],
+        photos: [{ value: 'https://example.com/avatar.png' }],
+        name: { givenName: 'Tenant', familyName: 'User' },
+      };
+
+      const loginFn = socialLogin(provider, mockGetProfileDetails);
+      const callback = jest.fn();
+
+      await loginFn(null, null, null, mockProfile, callback);
+
+      expect(resolveAppConfigForUser).toHaveBeenCalledWith(getAppConfig, existingUser);
+    });
+
+    it('should use baseConfig for non-tenant user without calling resolveAppConfigForUser', async () => {
+      const provider = 'google';
+      const googleId = 'google-new-tenant';
+      const email = 'new@example.com';
+
+      findUser.mockResolvedValue(null);
+      createSocialUser.mockResolvedValue({
+        _id: 'newUser',
+        email,
+        provider: 'google',
+        googleId,
+      });
+
+      const mockProfile = {
+        id: googleId,
+        emails: [{ value: email, verified: true }],
+        photos: [{ value: 'https://example.com/avatar.png' }],
+        name: { givenName: 'New', familyName: 'User' },
+      };
+
+      const loginFn = socialLogin(provider, mockGetProfileDetails);
+      const callback = jest.fn();
+
+      await loginFn(null, null, null, mockProfile, callback);
+
+      expect(resolveAppConfigForUser).not.toHaveBeenCalled();
+      expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+    });
+
+    it('should block login when tenant config restricts the domain', async () => {
+      const { isEmailDomainAllowed } = require('@librechat/api');
+      const provider = 'google';
+      const googleId = 'google-tenant-blocked';
+      const email = 'blocked@example.com';
+
+      const existingUser = {
+        _id: 'userBlocked',
+        email,
+        provider: 'google',
+        googleId,
+        tenantId: 'tenant-restrict',
+        role: 'USER',
+      };
+
+      findUser.mockResolvedValue(existingUser);
+      resolveAppConfigForUser.mockResolvedValue({
+        registration: { allowedDomains: ['other.com'] },
+      });
+      isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+      const mockProfile = {
+        id: googleId,
+        emails: [{ value: email, verified: true }],
+        photos: [{ value: 'https://example.com/avatar.png' }],
+        name: { givenName: 'Blocked', familyName: 'User' },
+      };
+
+      const loginFn = socialLogin(provider, mockGetProfileDetails);
+      const callback = jest.fn();
+
+      await loginFn(null, null, null, mockProfile, callback);
+
+      expect(callback).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Email domain not allowed' }),
       );
     });
   });

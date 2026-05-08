@@ -197,6 +197,8 @@ describe('getOpenAIConfig', () => {
     expect(result.configOptions?.defaultHeaders).toMatchObject({
       'HTTP-Referer': 'https://librechat.ai',
       'X-Title': 'LibreChat',
+      'X-OpenRouter-Title': 'LibreChat',
+      'X-OpenRouter-Categories': 'general-chat,personal-agent',
     });
     expect(result.llmConfig.include_reasoning).toBe(true);
     expect(result.provider).toBe('openrouter');
@@ -893,6 +895,8 @@ describe('getOpenAIConfig', () => {
       expect(result.configOptions?.defaultHeaders).toEqual({
         'HTTP-Referer': 'https://librechat.ai',
         'X-Title': 'LibreChat',
+        'X-OpenRouter-Title': 'LibreChat',
+        'X-OpenRouter-Categories': 'general-chat,personal-agent',
         'X-Custom-Header': 'custom-value',
         Authorization: 'Bearer custom-token',
       });
@@ -1395,10 +1399,8 @@ describe('getOpenAIConfig', () => {
           dropParams: ['presence_penalty'],
           titleConvo: true,
           titleModel: 'gpt-3.5-turbo',
-          summaryModel: 'gpt-3.5-turbo',
           modelDisplayLabel: 'Custom GPT-4',
           titleMethod: 'completion',
-          contextStrategy: 'summarize',
           directEndpoint: true,
           titleMessageRole: 'user',
           streamRate: 25,
@@ -1413,10 +1415,8 @@ describe('getOpenAIConfig', () => {
           customParams: {},
           titleConvo: endpointConfig.titleConvo,
           titleModel: endpointConfig.titleModel,
-          summaryModel: endpointConfig.summaryModel,
           modelDisplayLabel: endpointConfig.modelDisplayLabel,
           titleMethod: endpointConfig.titleMethod,
-          contextStrategy: endpointConfig.contextStrategy,
           directEndpoint: endpointConfig.directEndpoint,
           titleMessageRole: endpointConfig.titleMessageRole,
           streamRate: endpointConfig.streamRate,

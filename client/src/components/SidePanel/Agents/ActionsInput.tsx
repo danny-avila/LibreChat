@@ -202,39 +202,25 @@ export default function ActionsInput({
 
   return (
     <>
-      <div className="">
+      <div className="flex min-h-0 flex-1 flex-col">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-4">
           <label
             htmlFor="schemaInput"
-            className="text-token-text-primary whitespace-nowrap font-medium"
+            className="text-token-text-primary whitespace-nowrap text-sm font-medium"
           >
             {localize('com_ui_schema')}
           </label>
-          {/* TODO: Implement examples functionality
-          <div className="flex items-center gap-2">
-            <select
-              onChange={(e) => logger.log('actions', 'selecting example action', e.target.value)}
-              className="border-token-border-medium h-8 min-w-[100px] rounded-lg border bg-transparent px-2 py-0 text-sm"
-            >
-              <option value="label">{localize('com_ui_examples')}</option>
-              <option value="0">Weather (JSON)</option>
-              <option value="1">Pet Store (YAML)</option>
-              <option value="2">Blank Template</option>
-            </select>
-          </div>
-          */}
         </div>
-        <div className="border-token-border-medium bg-token-surface-primary hover:border-token-border-hover mb-4 w-full overflow-hidden rounded-lg border ring-0">
-          <div className="relative">
+        <div className="border-token-border-medium bg-token-surface-primary hover:border-token-border-hover mb-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border ring-0">
+          <div className="relative flex min-h-0 flex-1 flex-col">
             <textarea
               id="schemaInput"
               value={inputValue}
               onChange={handleInputChange}
               spellCheck="false"
               placeholder={localize('com_ui_enter_openapi_schema')}
-              className="text-token-text-primary block h-96 w-full bg-transparent p-2 font-mono text-xs outline-none focus:ring-1 focus:ring-border-light"
+              className="text-token-text-primary block min-h-[12rem] flex-1 resize-y bg-transparent p-2 font-mono text-xs outline-none focus:ring-1 focus:ring-border-light"
             />
-            {/* TODO: format input button */}
           </div>
           {validationResult && validationResult.message !== 'OpenAPI spec is valid.' && (
             <div className="border-token-border-light border-t p-2 text-red-500">
@@ -248,7 +234,7 @@ export default function ActionsInput({
       {!!data && (
         <div className="my-2">
           <div className="flex items-center">
-            <label className="text-token-text-primary block font-medium">
+            <label className="text-token-text-primary block text-sm font-medium">
               {localize('com_assistants_available_actions')}
             </label>
           </div>
@@ -258,7 +244,7 @@ export default function ActionsInput({
       <div className="relative my-1">
         <ActionCallback action_id={action?.action_id} />
         <div className="mb-1.5 flex items-center">
-          <label className="text-token-text-primary block font-medium">
+          <label className="text-token-text-primary block text-sm font-medium">
             {localize('com_ui_privacy_policy_url')}
           </label>
         </div>
@@ -270,11 +256,11 @@ export default function ActionsInput({
           />
         </div>
       </div>
-      <div className="flex items-center justify-end">
+      <div className="mt-auto flex items-center justify-end pt-2">
         <button
           disabled={!functions || !functions.length}
           onClick={saveAction}
-          className="focus:shadow-outline mt-1 flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0 disabled:bg-green-400"
+          className="focus:shadow-outline flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0 disabled:bg-green-400"
           type="button"
         >
           {getButtonContent()}

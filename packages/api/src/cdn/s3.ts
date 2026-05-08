@@ -25,6 +25,13 @@ export const initializeS3 = (): S3Client | null => {
     return null;
   }
 
+  if (!process.env.AWS_BUCKET_NAME) {
+    throw new Error(
+      '[S3] AWS_BUCKET_NAME environment variable is required for S3 operations. ' +
+        'Please set this environment variable to enable S3 storage.',
+    );
+  }
+
   // Read the custom endpoint if provided.
   const endpoint = process.env.AWS_ENDPOINT_URL;
   const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
