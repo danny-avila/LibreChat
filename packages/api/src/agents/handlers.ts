@@ -906,6 +906,9 @@ async function handleSkillToolCall(
         session_id: string;
         files: Array<{
           id: string;
+          /** Resource id (skill `_id`). codeapi requires this distinct
+           *  from the storage `id` to scope sessionKey by resource. */
+          resource_id: string;
           name: string;
           storage_session_id: string;
           kind?: 'skill' | 'agent' | 'user';
@@ -949,6 +952,10 @@ async function handleSkillToolCall(
           session_id: primeResult.storage_session_id,
           files: primeResult.files.map((f) => ({
             id: f.id,
+            /* `resource_id` (skill `_id`) is what codeapi feeds into
+             * `<tenant>:skill:<id>:v:<version>` — without it the next
+             * /exec authorizer sees `resource_id: undefined` and 400s. */
+            resource_id: f.resource_id,
             name: f.name,
             storage_session_id: f.storage_session_id,
             kind: 'skill',

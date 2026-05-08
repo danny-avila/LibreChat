@@ -70,9 +70,17 @@ export interface PrimeSkillFilesResult {
   /** Representative storage session id (first file's). */
   storage_session_id: string;
   files: Array<{
+    /** Storage file id (the per-file uuid file_server returned at upload). */
     id: string;
+    /** Resource id — the entity that owns the storage session. For skill
+     *  files this is `skill._id.toString()`. Distinct from `id`; codeapi
+     *  derives the sessionKey from `resource_id` (shared cache scope) but
+     *  validates upload presence under `id` (per-file storage key). */
+    resource_id: string;
     storage_session_id: string;
     name: string;
+    kind: 'skill' | 'agent' | 'user';
+    version?: number;
   }>;
 }
 
@@ -131,10 +139,20 @@ export async function primeSkillFiles(
           for (const sf of skillFiles) {
             const ref = sf.codeEnvRef;
             if (!ref) continue;
+            /* Cache-hit refs already carry resource identity (kind / id /
+             * version) — pull them through so the artifact emitted by
+             * `handle_skill` and forwarded to `_injected_files` includes
+             * `resource_id`. Without this the next /exec sends
+             * `resource_id: undefined` and codeapi 400s. The discriminated
+             * union pins `version` to the skill branch only — destructure
+             * before the spread so TS accepts the conditional pull. */
             files.push({
               id: ref.file_id,
+              resource_id: ref.id,
               storage_session_id: ref.storage_session_id,
               name: `${skill.name}/${sf.relativePath}`,
+              kind: ref.kind,
+              ...(ref.kind === 'skill' ? { version: ref.version } : {}),
             });
           }
 
@@ -208,12 +226,18 @@ export async function primeSkillFiles(
     // Exclude SKILL.md from the returned files array — it is uploaded to disk
     // for bash access but has no codeEnvRef (cannot be cached). Omitting it
     // here keeps the fresh-upload and cache-hit code paths consistent.
-    const files = result.files
+    const files: PrimeSkillFilesResult['files'] = result.files
       .filter((f) => !f.filename.endsWith('/SKILL.md'))
       .map((f) => ({
         id: f.fileId,
+        /* `resource_id` is the skill `_id` (the entity codeapi scopes
+         * the sessionKey on). Distinct from `id` (the per-file storage
+         * uuid) — both are required on the request. */
+        resource_id: entityId,
         storage_session_id: result.storage_session_id,
         name: f.filename,
+        kind: 'skill',
+        version: skill.version,
       }));
 
     // Treat partial upload failures as a priming failure — missing bundled

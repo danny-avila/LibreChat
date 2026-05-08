@@ -14,8 +14,8 @@ jest.mock('./run', () => ({
 
 import { Readable } from 'stream';
 import { Types } from 'mongoose';
-import { primeInvokedSkills } from './skillFiles';
-import type { PrimeInvokedSkillsDeps } from './skillFiles';
+import { primeInvokedSkills, primeSkillFiles } from './skillFiles';
+import type { PrimeInvokedSkillsDeps, PrimeSkillFilesParams } from './skillFiles';
 
 const SKILL_ID = new Types.ObjectId();
 const SKILL_VERSION = 7;
@@ -294,6 +294,111 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
         resource_id: SKILL_ID.toString(),
         name: 'brand-guidelines/references/style.md',
         storage_session_id: 'session-cached',
+        kind: 'skill',
+        version: SKILL_VERSION,
+      },
+    ]);
+  });
+});
+
+/* The tool-invoked skill loader (`handle_skill` -> `primeSkillFiles`)
+ * is a separate code path from `primeInvokedSkills` (the NL-detected
+ * loader). Both feed `_injected_files` on the next /exec; both must
+ * carry `resource_id` end-to-end, otherwise codeapi 400s with
+ * `resource_id is invalid` (`type: 'undefined'`). Tests below lock
+ * that contract on the lower-level helper directly. */
+describe('primeSkillFiles — resource identity propagation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function makeSkillFilesDeps(
+    overrides: Partial<PrimeSkillFilesParams> = {},
+  ): PrimeSkillFilesParams {
+    return {
+      skill: {
+        _id: SKILL_ID,
+        name: 'brand-guidelines',
+        body: 'skill body',
+        version: SKILL_VERSION,
+      },
+      skillFiles: [],
+      req: { user: { id: 'user-1' } } as PrimeSkillFilesParams['req'],
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from(''))),
+      }),
+      batchUploadCodeEnvFiles: jest.fn().mockResolvedValue({
+        storage_session_id: 'session-fresh',
+        files: [
+          { fileId: 'file-fresh', filename: 'brand-guidelines/references/style.md' },
+          { fileId: 'file-skillmd', filename: 'brand-guidelines/SKILL.md' },
+        ],
+      }),
+      ...overrides,
+    };
+  }
+
+  it('fresh-upload path: emits resource_id=skill._id, kind=skill, version on each file', async () => {
+    const deps = makeSkillFilesDeps({
+      skillFiles: [
+        {
+          relativePath: 'references/style.md',
+          filename: 'style.md',
+          filepath: '/storage/brand-guidelines/references/style.md',
+          source: 's3',
+          bytes: 256,
+        },
+      ],
+    });
+
+    const result = await primeSkillFiles(deps);
+
+    expect(result?.files).toEqual([
+      {
+        id: 'file-fresh',
+        resource_id: SKILL_ID.toString(),
+        storage_session_id: 'session-fresh',
+        name: 'brand-guidelines/references/style.md',
+        kind: 'skill',
+        version: SKILL_VERSION,
+      },
+    ]);
+  });
+
+  it('cache-hit path: re-derives resource_id/kind/version from persisted codeEnvRef', async () => {
+    const cachedRef = {
+      kind: 'skill' as const,
+      id: SKILL_ID.toString(),
+      storage_session_id: 'session-cached',
+      file_id: 'file-cached',
+      version: SKILL_VERSION,
+    };
+    const batchUploadCodeEnvFiles = jest.fn();
+    const deps = makeSkillFilesDeps({
+      skillFiles: [
+        {
+          relativePath: 'references/style.md',
+          filename: 'style.md',
+          filepath: '/storage/brand-guidelines/references/style.md',
+          source: 's3',
+          bytes: 256,
+          codeEnvRef: cachedRef,
+        },
+      ],
+      batchUploadCodeEnvFiles,
+      getSessionInfo: jest.fn().mockResolvedValue('2026-05-06T00:00:00Z'),
+      checkIfActive: jest.fn().mockReturnValue(true),
+    });
+
+    const result = await primeSkillFiles(deps);
+
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+    expect(result?.files).toEqual([
+      {
+        id: 'file-cached',
+        resource_id: SKILL_ID.toString(),
+        storage_session_id: 'session-cached',
+        name: 'brand-guidelines/references/style.md',
         kind: 'skill',
         version: SKILL_VERSION,
       },
