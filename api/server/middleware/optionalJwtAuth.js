@@ -14,6 +14,10 @@ const optionalJwtAuth = (req, res, next) => {
     }
     if (user) {
       req.user = user;
+      req.authStrategy =
+        tokenProvider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)
+          ? 'openidJwt'
+          : 'jwt';
       return tenantContextMiddleware(req, res, next);
     }
     next();

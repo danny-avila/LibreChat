@@ -25,4 +25,6 @@ export type ServerRequest = Request<unknown, unknown, RequestBody> & {
   conversationCreatedAt?: string;
   /** Conversation loaded while resolving the prompt timestamp anchor, reused by save logic. */
   resolvedConversation?: Partial<TConversation> | null;
+  /** Passport strategy that populated req.user for this request. */
+  authStrategy?: string;
 };

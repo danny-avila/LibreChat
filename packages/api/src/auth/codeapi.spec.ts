@@ -1,0 +1,227 @@
+import {
+  createHash,
+  generateKeyPairSync,
+  verify as cryptoVerify,
+} from 'crypto';
+import type { KeyObject } from 'crypto';
+import type { ServerRequest } from '~/types';
+import { getCodeApiAuthHeaders, mintCodeApiToken } from './codeapi';
+
+jest.mock(
+  '@librechat/data-schemas',
+  () => ({
+    getTenantId: jest.fn(),
+  }),
+  { virtual: true },
+);
+
+jest.mock('~/utils', () => ({
+  isEnabled: (value?: string) => value === 'true' || value === '1',
+}));
+
+const mockGetTenantId = jest.requireMock('@librechat/data-schemas').getTenantId as jest.Mock;
+
+const ENV_KEYS = [
+  'CODEAPI_AUTH_PROVIDER',
+  'CODEAPI_JWT_ENABLED',
+  'CODEAPI_JWT_PRIVATE_KEY',
+  'CODEAPI_JWT_PRIVATE_KEY_BASE64',
+  'CODEAPI_JWT_PRIVATE_JWK_JSON',
+  'CODEAPI_JWT_ALGORITHM',
+  'CODEAPI_JWT_KID',
+  'CODEAPI_JWT_KEY_ID',
+  'CODEAPI_JWT_ISSUER',
+  'CODEAPI_JWT_AUDIENCE',
+  'CODEAPI_JWT_TTL_SECONDS',
+  'CODEAPI_JWT_MINT_CACHE_SECONDS',
+  'OPENID_REUSE_TOKENS',
+] as const;
+
+type Claims = Record<string, unknown>;
+
+function baseRequest(overrides: Record<string, unknown> = {}): ServerRequest {
+  return {
+    user: {
+      _id: { toString: () => 'user_123' },
+      tenantId: 'tenant_abc',
+      role: 'USER',
+      provider: 'local',
+      ...overrides,
+    },
+    body: { tenant_id: 'spoofed_tenant' },
+    headers: { 'x-tenant-id': 'spoofed_header_tenant' },
+  } as unknown as ServerRequest;
+}
+
+function decodeToken(token: string): { header: Claims; claims: Claims; signingInput: string; signature: Buffer } {
+  const [header, payload, signature] = token.split('.') as [string, string, string];
+  return {
+    header: JSON.parse(Buffer.from(header, 'base64url').toString('utf8')) as Claims,
+    claims: JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Claims,
+    signingInput: `${header}.${payload}`,
+    signature: Buffer.from(signature, 'base64url'),
+  };
+}
+
+function expectedContextHash(input: {
+  userId: string;
+  tenantId: string;
+  role: string;
+  principalSource: string;
+  orgId?: string;
+  serviceId?: string;
+  chcUserId?: string;
+}): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        chc_user_id: input.chcUserId ?? '',
+        org_id: input.orgId ?? '',
+        principal_source: input.principalSource,
+        role: input.role,
+        service_id: input.serviceId ?? '',
+        sub: input.userId,
+        tenant_id: input.tenantId,
+      }),
+    )
+    .digest('hex');
+}
+
+describe('CodeAPI JWT minting', () => {
+  const originalEnv = new Map<string, string | undefined>();
+  let publicKey: KeyObject;
+
+  beforeAll(() => {
+    for (const key of ENV_KEYS) {
+      originalEnv.set(key, process.env[key]);
+    }
+  });
+
+  beforeEach(() => {
+    const keyPair = generateKeyPairSync('ed25519');
+    publicKey = keyPair.publicKey;
+    process.env.CODEAPI_AUTH_PROVIDER = 'librechat-jwt';
+    process.env.CODEAPI_JWT_PRIVATE_JWK_JSON = JSON.stringify(
+      keyPair.privateKey.export({ format: 'jwk' }),
+    );
+    process.env.CODEAPI_JWT_ALGORITHM = 'EdDSA';
+    process.env.CODEAPI_JWT_KID = 'test-kid';
+    process.env.CODEAPI_JWT_ISSUER = 'librechat';
+    process.env.CODEAPI_JWT_AUDIENCE = 'codeapi';
+    process.env.CODEAPI_JWT_TTL_SECONDS = '300';
+    process.env.CODEAPI_JWT_MINT_CACHE_SECONDS = '30';
+    delete process.env.CODEAPI_JWT_PRIVATE_KEY;
+    delete process.env.CODEAPI_JWT_PRIVATE_KEY_BASE64;
+    delete process.env.OPENID_REUSE_TOKENS;
+    mockGetTenantId.mockReset();
+  });
+
+  afterAll(() => {
+    for (const key of ENV_KEYS) {
+      const value = originalEnv.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  it('mints a CodeAPI-scoped token from canonical LibreChat JWT context', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_778_250_000_000);
+
+    const token = await mintCodeApiToken(baseRequest());
+    const decoded = decodeToken(token);
+
+    expect(decoded.header).toEqual({
+      alg: 'EdDSA',
+      typ: 'JWT',
+      kid: 'test-kid',
+    });
+    expect(
+      cryptoVerify(null, Buffer.from(decoded.signingInput), publicKey, decoded.signature),
+    ).toBe(true);
+    expect(decoded.claims).toMatchObject({
+      iss: 'librechat',
+      aud: 'codeapi',
+      sub: 'user_123',
+      iat: 1_778_250_000,
+      nbf: 1_778_250_000,
+      exp: 1_778_250_300,
+      tenant_id: 'tenant_abc',
+      role: 'USER',
+      principal_source: 'librechat_jwt',
+    });
+    expect(decoded.claims.auth_context_hash).toBe(
+      expectedContextHash({
+        userId: 'user_123',
+        tenantId: 'tenant_abc',
+        role: 'USER',
+        principalSource: 'librechat_jwt',
+      }),
+    );
+    expect(decoded.claims).not.toHaveProperty('refresh_token');
+    expect(decoded.claims).not.toHaveProperty('openid_token');
+  });
+
+  it('marks OpenID reuse callers without forwarding upstream credentials', async () => {
+    process.env.OPENID_REUSE_TOKENS = 'true';
+
+    const token = await mintCodeApiToken(
+      baseRequest({
+        provider: 'openid',
+        idOnTheSource: 'chc_user_123',
+        refreshToken: 'do-not-forward',
+        accessToken: 'do-not-forward',
+      }),
+    );
+    const { claims } = decodeToken(token);
+
+    expect(claims).toMatchObject({
+      principal_source: 'openid_reuse',
+      chc_user_id: 'chc_user_123',
+    });
+    expect(JSON.stringify(claims)).not.toContain('do-not-forward');
+  });
+
+  it('rejects minting without tenant context in managed mode', async () => {
+    mockGetTenantId.mockReturnValue(undefined);
+
+    await expect(mintCodeApiToken(baseRequest({ tenantId: undefined }))).rejects.toThrow(
+      'CodeAPI JWT auth requires tenant context',
+    );
+  });
+
+  it('ignores caller-supplied tenant spoofing fields', async () => {
+    const token = await mintCodeApiToken(baseRequest({ tenantId: 'tenant_canonical' }));
+    const { claims } = decodeToken(token);
+
+    expect(claims.tenant_id).toBe('tenant_canonical');
+    expect(JSON.stringify(claims)).not.toContain('spoofed_tenant');
+    expect(JSON.stringify(claims)).not.toContain('spoofed_header_tenant');
+  });
+
+  it('caches minted tokens for at most the configured 30 second window', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_778_250_000_000);
+    const req = baseRequest();
+
+    const first = await mintCodeApiToken(req);
+    const second = await mintCodeApiToken(req);
+    now.mockReturnValue(1_778_250_031_000);
+    const afterCacheWindow = await mintCodeApiToken(req);
+
+    expect(second).toBe(first);
+    expect(afterCacheWindow).not.toBe(first);
+  });
+
+  it('returns Authorization headers only when a request and managed auth are present', async () => {
+    await expect(getCodeApiAuthHeaders()).resolves.toEqual({});
+    await expect(getCodeApiAuthHeaders(baseRequest())).resolves.toEqual({
+      Authorization: expect.stringMatching(/^Bearer /),
+    });
+
+    process.env.CODEAPI_AUTH_PROVIDER = 'legacy-api-key';
+    delete process.env.CODEAPI_JWT_ENABLED;
+    await expect(getCodeApiAuthHeaders(baseRequest())).resolves.toEqual({});
+  });
+});

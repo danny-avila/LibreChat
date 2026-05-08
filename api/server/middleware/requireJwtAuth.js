@@ -21,6 +21,7 @@ const requireJwtAuth = (req, res, next) => {
     if (err) {
       return next(err);
     }
+    req.authStrategy = strategy;
     // req.user is now populated by passport — set up tenant ALS context
     tenantContextMiddleware(req, res, next);
   });

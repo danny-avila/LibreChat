@@ -321,7 +321,7 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
     const response = await getDownloadStream(`${session_id}/${fileId}`, {
       kind: 'user',
       id: req.user.id,
-    });
+    }, req);
     res.set(response.headers);
     response.data.pipe(res);
   } catch (error) {

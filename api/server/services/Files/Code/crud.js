@@ -9,6 +9,7 @@ const {
   codeServerHttpsAgent,
   appendCodeEnvFileIdentity,
   buildCodeEnvDownloadQuery,
+  getCodeApiAuthHeaders,
 } = require('@librechat/api');
 
 const axios = createAxiosInstance();
@@ -26,10 +27,11 @@ const MAX_FILE_SIZE = 150 * 1024 * 1024;
  * @returns {Promise<AxiosResponse>} A promise that resolves to a readable stream of the file content.
  * @throws {Error} If there's an error during the download process.
  */
-async function getCodeOutputDownloadStream(fileIdentifier, identity) {
+async function getCodeOutputDownloadStream(fileIdentifier, identity, req) {
   try {
     const baseURL = getCodeBaseURL();
     const query = buildCodeEnvDownloadQuery(identity);
+    const authHeaders = await getCodeApiAuthHeaders(req);
     /** @type {import('axios').AxiosRequestConfig} */
     const options = {
       method: 'get',
@@ -37,6 +39,7 @@ async function getCodeOutputDownloadStream(fileIdentifier, identity) {
       responseType: 'stream',
       headers: {
         'User-Agent': 'LibreChat/1.0',
+        ...authHeaders,
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -85,6 +88,7 @@ async function uploadCodeEnvFile({ req, stream, filename, kind, id, version }) {
     appendCodeEnvFile(form, stream, filename);
 
     const baseURL = getCodeBaseURL();
+    const authHeaders = await getCodeApiAuthHeaders(req);
     /** @type {import('axios').AxiosRequestConfig} */
     const options = {
       headers: {
@@ -92,6 +96,7 @@ async function uploadCodeEnvFile({ req, stream, filename, kind, id, version }) {
         'Content-Type': 'multipart/form-data',
         'User-Agent': 'LibreChat/1.0',
         'User-Id': req.user.id,
+        ...authHeaders,
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -156,6 +161,7 @@ async function batchUploadCodeEnvFiles({ req, files, kind, id, version, read_onl
     }
 
     const baseURL = getCodeBaseURL();
+    const authHeaders = await getCodeApiAuthHeaders(req);
     /** @type {import('axios').AxiosRequestConfig} */
     const options = {
       headers: {
@@ -163,6 +169,7 @@ async function batchUploadCodeEnvFiles({ req, files, kind, id, version, read_onl
         'Content-Type': 'multipart/form-data',
         'User-Agent': 'LibreChat/1.0',
         'User-Id': req.user.id,
+        ...authHeaders,
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
