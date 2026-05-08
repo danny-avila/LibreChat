@@ -260,5 +260,16 @@
   "com_farmer_option_other": "ਹੋਰ",
   "com_farmer_option_under_graduate": "ਸਨਾਤਕ ਤੋਂ ਘੱਟ",
   "com_farmer_option_graduate": "ਸਨਾਤਕ",
-  "com_farmer_option_post_graduate": "ਪੋਸਟ ਗ੍ਰੈਜੂਏਟ"
+  "com_farmer_option_post_graduate": "ਪੋਸਟ ਗ੍ਰੈਜੂਏਟ",
+  "com_farmer_label_nearest_kvk": "ਨਜ਼ਦੀਕੀ KVK",
+  "com_farmer_placeholder_select_nearest_kvk": "ਨਜ਼ਦੀਕੀ KVK ਚੁਣੋ",
+  "com_farmer_validation_nearest_kvk_required": "ਨਜ਼ਦੀਕੀ KVK ਲਾਜ਼ਮੀ ਹੈ",
+  "com_farmer_validation_phone_exact_10": "ਫੋਨ ਨੰਬਰ ਬਿਲਕੁਲ 10 ਅੰਕਾਂ ਦਾ ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ",
+  "com_farmer_validation_age_integer": "ਉਮਰ ਪੂਰੀ ਸੰਖਿਆ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ",
+  "com_farmer_validation_age_range": "ਉਮਰ 16 ਤੋਂ 100 ਦੇ ਵਿਚਕਾਰ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ",
+  "com_farmer_validation_experience_integer": "ਅਨੁਭਵ ਦੇ ਸਾਲ ਪੂਰੀ ਸੰਖਿਆ ਹੋਣੇ ਚਾਹੀਦੇ ਹਨ",
+  "com_farmer_validation_experience_range": "ਅਨੁਭਵ ਦੇ ਸਾਲ 0 ਤੋਂ 70 ਦੇ ਵਿਚਕਾਰ ਹੋਣੇ ਚਾਹੀਦੇ ਹਨ",
+  "com_farmer_validation_landholding_valid": "ਜ਼ਮੀਨ ਦੀ ਮਾਤਰਾ ਵੈਧ ਸੰਖਿਆ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ।",
+  "com_farmer_validation_smartphones_integer": "ਸਮਾਰਟਫੋਨਾਂ ਦੀ ਗਿਣਤੀ ਪੂਰੀ ਸੰਖਿਆ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ",
+  "com_farmer_validation_smartphones_range": "ਸਮਾਰਟਫੋਨਾਂ ਦੀ ਗਿਣਤੀ 0 ਤੋਂ 20 ਦੇ ਵਿਚਕਾਰ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ"
 }

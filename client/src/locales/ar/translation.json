@@ -797,5 +797,16 @@
   "com_farmer_option_other": "آخر",
   "com_farmer_option_under_graduate": "مرحلة جامعية",
   "com_farmer_option_graduate": "خريج",
-  "com_farmer_option_post_graduate": "دراسات عليا"
+  "com_farmer_option_post_graduate": "دراسات عليا",
+  "com_farmer_label_nearest_kvk": "أقرب مركز KVK",
+  "com_farmer_placeholder_select_nearest_kvk": "اختر أقرب مركز KVK",
+  "com_farmer_validation_nearest_kvk_required": "أقرب مركز KVK مطلوب",
+  "com_farmer_validation_phone_exact_10": "يجب أن يتكون رقم الهاتف من 10 أرقام بالضبط",
+  "com_farmer_validation_age_integer": "يجب أن يكون العمر عددًا صحيحًا",
+  "com_farmer_validation_age_range": "يجب أن يكون العمر بين 16 و100",
+  "com_farmer_validation_experience_integer": "يجب أن تكون سنوات الخبرة عددًا صحيحًا",
+  "com_farmer_validation_experience_range": "يجب أن تكون سنوات الخبرة بين 0 و70",
+  "com_farmer_validation_landholding_valid": "يجب أن تكون الحيازة الزراعية رقمًا صحيحًا.",
+  "com_farmer_validation_smartphones_integer": "يجب أن يكون عدد الهواتف الذكية عددًا صحيحًا",
+  "com_farmer_validation_smartphones_range": "يجب أن يكون عدد الهواتف الذكية بين 0 و20"
 }
