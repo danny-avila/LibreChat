@@ -14,7 +14,7 @@ const {
   AdminRefreshError,
 } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
-const { requireCapability } = require('~/server/middleware/roles/capabilities');
+const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
 const {
   findBalanceByUser,
@@ -492,6 +492,7 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
  *   401 USER_NOT_FOUND         — no LibreChat user matches the refreshed sub
  *   401 USER_ID_MISMATCH       — supplied user_id resolves to a user with a different openidId
  *   401 ISSUER_MISMATCH        — refreshed tokenset was issued by an unexpected issuer
+ *   403 FORBIDDEN              — resolved user no longer holds ACCESS_ADMIN
  *   502 IDP_INCOMPLETE         — IdP returned a tokenset missing access_token
  *   502 CLAIMS_INCOMPLETE      — IdP tokenset has no readable claims or no sub
  *   503 OPENID_NOT_CONFIGURED  — OpenID is not configured on this server
@@ -541,6 +542,23 @@ router.post('/oauth/refresh', middleware.loginLimiter, async (req, res) => {
         {
           findUsers,
           getUserById,
+          canAccessAdmin: async (user) => {
+            try {
+              return await hasCapability(
+                {
+                  id: user.id ?? user._id?.toString(),
+                  role: user.role ?? '',
+                  tenantId: user.tenantId,
+                },
+                SystemCapabilities.ACCESS_ADMIN,
+              );
+            } catch (err) {
+              logger.warn(
+                `[admin/oauth/refresh] capability check failed, denying: ${err?.message}`,
+              );
+              return false;
+            }
+          },
           mintToken: async (user) => ({
             token: await generateToken(user, sessionExpiry),
             expiresAt: Date.now() + sessionExpiry,

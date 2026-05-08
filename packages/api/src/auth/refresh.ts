@@ -52,6 +52,15 @@ export interface AdminRefreshDeps {
    */
   mintToken: (user: IUser, tokenset: RefreshTokenset) => Promise<MintedToken>;
   /**
+   * Authorizes the resolved user against the same admin-access invariant
+   * the initial OAuth callback enforces. The IdP refresh token can outlive
+   * a capability/role change, so the bearer must not be reissued for a
+   * user who no longer holds `ACCESS_ADMIN`. Optional only for backward
+   * compatibility with existing callers; route handlers that mint admin
+   * bearers should always inject this.
+   */
+  canAccessAdmin?: (user: IUser) => Promise<boolean>;
+  /**
    * Optional post-success hook for forks that need to do additional work
    * with the refreshed tokenset and resolved user (e.g. update a server-side
    * token cache or reconcile downstream session state). Errors thrown here
@@ -202,6 +211,10 @@ export async function applyAdminRefresh(
   const user = await resolveAdminUser(deps, openidId, expected, options);
   if (!user) {
     throw new AdminRefreshError('USER_NOT_FOUND', 401, 'No user found for the refreshed identity');
+  }
+
+  if (deps.canAccessAdmin && !(await deps.canAccessAdmin(user))) {
+    throw new AdminRefreshError('FORBIDDEN', 403, 'User does not have admin access');
   }
 
   const minted = await deps.mintToken(user, tokenset);

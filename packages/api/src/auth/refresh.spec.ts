@@ -386,6 +386,56 @@ describe('applyAdminRefresh', () => {
     });
   });
 
+  describe('admin-access guard', () => {
+    it('throws FORBIDDEN and does not mint when canAccessAdmin returns false', async () => {
+      const user = makeUser();
+      const canAccessAdmin = jest.fn().mockResolvedValue(false);
+      const deps = makeDeps(user, { canAccessAdmin });
+
+      await expect(applyAdminRefresh(makeTokenset(), deps)).rejects.toMatchObject({
+        name: 'AdminRefreshError',
+        code: 'FORBIDDEN',
+        status: 403,
+      });
+
+      expect(canAccessAdmin).toHaveBeenCalledWith(user);
+      expect(deps.mintToken).not.toHaveBeenCalled();
+      expect(deps.onRefreshSuccess).not.toHaveBeenCalled();
+    });
+
+    it('mints when canAccessAdmin returns true', async () => {
+      const user = makeUser();
+      const canAccessAdmin = jest.fn().mockResolvedValue(true);
+      const deps = makeDeps(user, { canAccessAdmin });
+
+      const result = await applyAdminRefresh(makeTokenset(), deps);
+
+      expect(canAccessAdmin).toHaveBeenCalledWith(user);
+      expect(deps.mintToken).toHaveBeenCalledWith(user, expect.any(Object));
+      expect(result.token).toBe('minted-jwt');
+    });
+
+    it('skips the check when canAccessAdmin is not provided', async () => {
+      const user = makeUser();
+      const { canAccessAdmin: _omit, ...rest } = makeDeps(user);
+      const deps: AdminRefreshDeps = rest;
+
+      const result = await applyAdminRefresh(makeTokenset(), deps);
+      expect(result.token).toBe('minted-jwt');
+    });
+
+    it('propagates errors thrown by canAccessAdmin without minting', async () => {
+      const user = makeUser();
+      const boom = new Error('capability backend exploded');
+      const canAccessAdmin = jest.fn().mockRejectedValue(boom);
+      const deps = makeDeps(user, { canAccessAdmin });
+
+      await expect(applyAdminRefresh(makeTokenset(), deps)).rejects.toBe(boom);
+      expect(deps.mintToken).not.toHaveBeenCalled();
+      expect(deps.onRefreshSuccess).not.toHaveBeenCalled();
+    });
+  });
+
   describe('logging', () => {
     it('logs the refreshed user email at debug', async () => {
       const deps = makeDeps(makeUser());
