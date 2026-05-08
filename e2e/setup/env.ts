@@ -36,6 +36,14 @@ export function getE2EBaseURL() {
   return process.env.E2E_BASE_URL ?? DEFAULT_BASE_URL;
 }
 
+export function getE2EServerAddress(baseURL = getE2EBaseURL()) {
+  const url = new URL(baseURL);
+  const host = url.hostname.replace(/^\[(.*)\]$/, '$1');
+  const port = url.port || (url.protocol === 'https:' ? '443' : '80');
+
+  return { host, port };
+}
+
 export function getRuntimeEnvPath() {
   return process.env.E2E_RUNTIME_ENV_PATH ?? DEFAULT_RUNTIME_ENV_PATH;
 }
@@ -65,10 +73,13 @@ function getPassthroughEnv(): Record<string, string> {
 
 export function getBaseE2EEnv(): Record<string, string> {
   const baseURL = getE2EBaseURL();
+  const { host, port } = getE2EServerAddress(baseURL);
 
   return {
     ...getPassthroughEnv(),
     NODE_ENV: 'CI',
+    HOST: process.env.E2E_HOST ?? host,
+    PORT: process.env.E2E_PORT ?? port,
     MONGO_URI: process.env.MONGO_URI ?? DEFAULT_MONGO_URI,
     DOMAIN_CLIENT: process.env.E2E_DOMAIN_CLIENT ?? baseURL,
     DOMAIN_SERVER: process.env.E2E_DOMAIN_SERVER ?? baseURL,

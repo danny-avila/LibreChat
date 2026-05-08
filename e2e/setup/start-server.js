@@ -7,12 +7,86 @@ const DEFAULT_MONGO_URI = 'mongodb://127.0.0.1:27017/LibreChat-e2e';
 const DEFAULT_RUNTIME_ENV_PATH = path.resolve(__dirname, '../specs/.test-results/runtime-env.json');
 let mongoServer;
 
+function decodeMongoValue(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function getMongoScheme(uri) {
+  const schemeEnd = uri.indexOf('://');
+  return schemeEnd === -1 ? '' : uri.slice(0, schemeEnd).toLowerCase();
+}
+
+function getMongoAuthority(uri) {
+  const schemeEnd = uri.indexOf('://');
+  if (schemeEnd === -1) {
+    return '';
+  }
+
+  const withoutScheme = uri.slice(schemeEnd + 3);
+  return withoutScheme.split(/[/?#]/, 1)[0];
+}
+
+function getMongoDbName(uri) {
+  const schemeEnd = uri.indexOf('://');
+  if (schemeEnd === -1) {
+    return 'LibreChat-e2e';
+  }
+
+  const withoutScheme = uri.slice(schemeEnd + 3);
+  const pathStart = withoutScheme.indexOf('/');
+  if (pathStart === -1) {
+    return 'LibreChat-e2e';
+  }
+
+  const pathname = withoutScheme.slice(pathStart + 1).split(/[?#]/, 1)[0];
+  const dbName = pathname.split('/', 1)[0];
+  return dbName ? decodeMongoValue(dbName) : 'LibreChat-e2e';
+}
+
+function normalizeMongoPort(port) {
+  const parsed = Number(port);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : 27017;
+}
+
+function parseMongoHost(hostEntry) {
+  if (!hostEntry) {
+    return null;
+  }
+
+  if (hostEntry.startsWith('[')) {
+    const hostEnd = hostEntry.indexOf(']');
+    if (hostEnd === -1) {
+      return null;
+    }
+
+    const host = hostEntry.slice(1, hostEnd);
+    const port = hostEntry[hostEnd + 1] === ':' ? hostEntry.slice(hostEnd + 2) : '';
+    return { host, port: normalizeMongoPort(port) };
+  }
+
+  const [host, port] = hostEntry.split(':');
+  return host ? { host, port: normalizeMongoPort(port) } : null;
+}
+
 function parseMongoUri(uri) {
-  const parsed = new URL(uri);
+  const scheme = getMongoScheme(uri);
+  const authority = getMongoAuthority(uri);
+  const hosts = authority
+    .slice(authority.lastIndexOf('@') + 1)
+    .split(',')
+    .filter(Boolean);
+  const parsedHost =
+    scheme === 'mongodb+srv' || hosts.length !== 1 ? null : parseMongoHost(hosts[0]);
+
   return {
-    dbName: parsed.pathname.replace(/^\//, '') || 'LibreChat-e2e',
-    host: parsed.hostname || '127.0.0.1',
-    port: Number(parsed.port || 27017),
+    dbName: getMongoDbName(uri),
+    host: parsedHost?.host ?? '',
+    port: parsedHost?.port ?? 27017,
+    canProbe: Boolean(parsedHost),
   };
 }
 
@@ -57,8 +131,8 @@ async function maybeStartMemoryMongo() {
     return;
   }
 
-  const { dbName, host, port } = parseMongoUri(mongoUri);
-  if (mode === 'auto' && (!isLocalHost(host) || (await canConnect(host, port)))) {
+  const { dbName, host, port, canProbe } = parseMongoUri(mongoUri);
+  if (mode === 'auto' && (!canProbe || !isLocalHost(host) || (await canConnect(host, port)))) {
     process.env.MONGO_URI = mongoUri;
     writeRuntimeEnv();
     return;
@@ -92,11 +166,22 @@ process.once('SIGTERM', async () => {
   process.exit(143);
 });
 
-maybeStartMemoryMongo()
-  .then(() => {
-    require(path.resolve(__dirname, '../../api/server/index.js'));
-  })
-  .catch((error) => {
-    console.error('[e2e] Failed to start test server:', error);
-    process.exit(1);
-  });
+function startServer() {
+  return maybeStartMemoryMongo()
+    .then(() => {
+      require(path.resolve(__dirname, '../../api/server/index.js'));
+    })
+    .catch((error) => {
+      console.error('[e2e] Failed to start test server:', error);
+      process.exit(1);
+    });
+}
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = {
+  parseMongoUri,
+  startServer,
+};
