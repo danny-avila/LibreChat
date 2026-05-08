@@ -50,6 +50,39 @@ function inputTokensIncludesCache(provider?: string): boolean {
   return provider != null && SUBSET_PROVIDERS.has(provider);
 }
 
+/**
+ * Resolves `completionTokens` for billing, repairing providers whose
+ * `usage_metadata.output_tokens` undercounts by omitting reasoning.
+ *
+ * The documented `UsageMetadata` contract (`@langchain/core`) is
+ * `total_tokens === input_tokens + output_tokens` and `output_tokens` is
+ * "the sum of all output token types". Most providers honor this — their
+ * `output_token_details.reasoning` is a *subset* of `output_tokens`, so we
+ * must not double-count.
+ *
+ * Vertex AI Gemini through `@langchain/google-common`'s streaming path
+ * breaks the contract: `output_tokens = candidatesTokenCount` only,
+ * dropping `thoughtsTokenCount`. The gap shows up as
+ * `total_tokens - input_tokens > output_tokens`, with the missing amount
+ * surfaced in `output_token_details.reasoning`. We fold it back when —
+ * and only when — the gap is present, so all other providers are no-ops.
+ *
+ * Tracked in: https://github.com/danny-avila/LibreChat/issues/13006
+ */
+function resolveCompletionTokens(usage: UsageMetadata): number {
+  const output = Number(usage.output_tokens) || 0;
+  const reasoning = Number(usage.output_token_details?.reasoning) || 0;
+  if (reasoning <= 0) {
+    return output;
+  }
+  const input = Number(usage.input_tokens) || 0;
+  const total = Number(usage.total_tokens) || 0;
+  if (total - input > output) {
+    return output + reasoning;
+  }
+  return output;
+}
+
 interface SplitUsage {
   /** Non-cached input portion — what gets billed at the standard input rate */
   inputOnly: number;
@@ -57,6 +90,8 @@ interface SplitUsage {
   cacheRead: number;
   /** Total prompt tokens including cached portion */
   totalInput: number;
+  /** Output tokens for billing (includes reasoning when omitted from `output_tokens`) */
+  completion: number;
 }
 
 function splitUsage(usage: UsageMetadata): SplitUsage {
@@ -67,12 +102,14 @@ function splitUsage(usage: UsageMetadata): SplitUsage {
   const cacheRead =
     Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
   const rawInput = Number(usage.input_tokens) || 0;
+  const completion = resolveCompletionTokens(usage);
   if (inputTokensIncludesCache(usage.provider)) {
     return {
       inputOnly: Math.max(0, rawInput - cacheCreation - cacheRead),
       cacheCreation,
       cacheRead,
       totalInput: rawInput,
+      completion,
     };
   }
   return {
@@ -80,6 +117,7 @@ function splitUsage(usage: UsageMetadata): SplitUsage {
     cacheCreation,
     cacheRead,
     totalInput: rawInput + cacheCreation + cacheRead,
+    completion,
   };
 }
 
@@ -161,9 +199,9 @@ export async function recordCollectedUsage(
         continue;
       }
 
-      const { inputOnly, cacheCreation, cacheRead } = splitUsage(usage);
+      const { inputOnly, cacheCreation, cacheRead, completion } = splitUsage(usage);
 
-      total_output_tokens += Number(usage.output_tokens) || 0;
+      total_output_tokens += completion;
 
       const txMetadata: TxMetadata = {
         user,
@@ -187,7 +225,7 @@ export async function recordCollectedUsage(
                     write: cacheCreation,
                     read: cacheRead,
                   },
-                  completionTokens: usage.output_tokens,
+                  completionTokens: completion,
                 },
                 pricing,
               )
@@ -195,7 +233,7 @@ export async function recordCollectedUsage(
                 txMetadata,
                 {
                   promptTokens: inputOnly,
-                  completionTokens: usage.output_tokens,
+                  completionTokens: completion,
                 },
                 pricing,
               );
@@ -211,7 +249,7 @@ export async function recordCollectedUsage(
               write: cacheCreation,
               read: cacheRead,
             },
-            completionTokens: usage.output_tokens,
+            completionTokens: completion,
           })
           .catch((err) => {
             logger.error(
@@ -225,7 +263,7 @@ export async function recordCollectedUsage(
       deps
         .spendTokens(txMetadata, {
           promptTokens: inputOnly,
-          completionTokens: usage.output_tokens,
+          completionTokens: completion,
         })
         .catch((err) => {
           logger.error(
