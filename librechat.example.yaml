@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.9
+version: 1.3.10
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -238,38 +238,41 @@ actions:
     - 'google.com'
     # - 'http://10.225.26.25:7894'  # Internal IP with protocol/port (uncomment if needed)
   # `allowedAddresses` is an SSRF exemption list, NOT a strict whitelist.
-  # Hostnames or IPs listed here bypass the default-deny block on private/loopback/
-  # link-local destinations. Public domains continue to work normally — listing
-  # private targets here does not restrict access to anything else.
+  # Hostname/IP + port pairs listed here bypass the default-deny block for that
+  # one private/loopback/link-local service. Public domains continue to work
+  # normally — listing private targets here does not restrict access to anything else.
   #
-  # Entries must be bare hostnames or private IP literals only — no URLs, paths,
-  # CIDR ranges, ports, or public IPs. Public IP literals are rejected at config
-  # load (the field is scoped to private IP space; public IPs aren't SSRF targets).
+  # Entries must include a port: `host:port`, `private.ip:port`, or `[ipv6]:port`.
+  # Do not use URLs, paths, CIDR ranges, bare hosts/IPs, or public IP literals.
+  # Public IP literals are rejected at config load (the field is scoped to
+  # private IP space; public IPs aren't SSRF targets).
   #
-  # NOTE on hostnames: a hostname entry trusts whatever IP that name resolves to.
-  # If DNS for that name is hijacked or rotated to a different private IP, the
-  # exemption follows. Only list hostnames whose DNS you control. Prefer literal
-  # IPs when you can.
+  # NOTE on hostnames: a hostname entry trusts whatever IP that name resolves to
+  # on the listed port. If DNS for that name is hijacked or rotated to a different
+  # private IP, the exemption follows. Only list hostnames whose DNS you control.
+  # Prefer literal IPs when you can.
   # allowedAddresses:
-  #   - 'host.docker.internal'
-  #   - '127.0.0.1'
-  #   - '10.0.0.5'
+  #   - 'host.docker.internal:11434'
+  #   - '127.0.0.1:11434'
+  #   - '10.0.0.5:8080'
 
 # Custom endpoint baseURL exemption list
 # SECURITY: User-provided baseURLs (`baseURL: 'user_provided'`) are validated against
 # the same SSRF block as Actions and MCP. If your users legitimately point at private
-# services (self-hosted Ollama, internal LLM gateway, etc.), list those hostnames or
-# IPs here so the validator allows them through. Public destinations are unaffected.
+# services (self-hosted Ollama, internal LLM gateway, etc.), list those hostname/IP
+# + port pairs here so the validator allows them through. Public destinations are
+# unaffected.
 #
-# Entries must be bare hostnames or private IP literals (no URLs, paths, CIDR,
-# ports, or public IPs). Hostname entries trust whatever IP they resolve to —
-# only list names whose DNS you control.
+# Entries must include a port: `host:port`, `private.ip:port`, or `[ipv6]:port`.
+# Do not use URLs, paths, CIDR ranges, bare hosts/IPs, or public IP literals.
+# Hostname entries trust whatever IP they resolve to on the listed port — only
+# list names whose DNS you control.
 # endpoints:
 #   allowedAddresses:
-#     - 'localhost'
-#     - '127.0.0.1'
-#     - 'ollama'
-#     - '10.0.0.5'
+#     - 'localhost:11434'
+#     - '127.0.0.1:11434'
+#     - 'ollama:11434'
+#     - '10.0.0.5:8080'
 
 # MCP Server domain restrictions for remote transports (SSE, WebSocket, HTTP)
 # SECURITY: If not configured, SSRF targets are blocked (localhost, private IPs, .internal/.local TLDs).
@@ -286,14 +289,15 @@ actions:
 #     - 'https://secure.api.com'  # Protocol-restricted
 #     - 'http://internal:8080'    # Protocol and port restricted
 #   # allowedAddresses is an SSRF exemption list (private-IP-space only).
-#   # Hostnames/IPs listed here bypass the default-deny block; public destinations
-#   # remain reachable. Useful when you want default SSRF protection AND specific
-#   # internal MCP servers. Entries must be bare hostnames or private IP literals
-#   # (no URLs, paths, CIDR, ports, or public IPs). Hostname entries trust
-#   # whatever IP they resolve to — only list names whose DNS you control.
+#   # Hostname/IP + port pairs listed here bypass the default-deny block for that
+#   # one private service; public destinations remain reachable. Useful when you
+#   # want default SSRF protection AND specific internal MCP servers. Entries must
+#   # include a port (`host:port`, `private.ip:port`, or `[ipv6]:port`) and must
+#   # not be URLs, paths, CIDR ranges, bare hosts/IPs, or public IP literals.
+#   # Hostname entries trust whatever IP they resolve to on the listed port.
 #   allowedAddresses:
-#     - 'host.docker.internal'
-#     - '127.0.0.1'
+#     - 'host.docker.internal:8080'
+#     - '127.0.0.1:8080'
 
 # Example MCP Servers Object Structure
 # mcpServers:

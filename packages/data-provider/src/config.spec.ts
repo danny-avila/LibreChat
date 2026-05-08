@@ -333,22 +333,21 @@ describe('any custom endpoint is document-supported regardless of name', () => {
 describe('allowedAddressesSchema', () => {
   describe('accepts valid entries', () => {
     it.each([
-      ['localhost', 'lowercase hostname'],
-      ['LOCALHOST', 'uppercase hostname (preserved as-is by Zod)'],
-      ['ollama.internal', 'private-tld hostname'],
-      ['host.docker.internal', 'multi-segment hostname'],
-      ['10.0.0.5', 'RFC 1918 10.x'],
-      ['192.168.1.1', 'RFC 1918 192.168.x'],
-      ['172.16.0.1', 'RFC 1918 172.16.x'],
-      ['127.0.0.1', 'loopback IPv4'],
-      ['169.254.169.254', 'link-local / cloud metadata'],
-      ['192.0.0.1', 'RFC 5736 IETF protocol assignments'],
-      ['100.64.0.1', 'CGNAT'],
-      ['::1', 'IPv6 loopback'],
-      ['[::1]', 'bracketed IPv6 loopback'],
-      ['fc00::1', 'IPv6 unique-local'],
-      ['fd00::1', 'IPv6 unique-local'],
-      ['fe80::1', 'IPv6 link-local'],
+      ['localhost:11434', 'lowercase hostname with port'],
+      ['LOCALHOST:11434', 'uppercase hostname with port (preserved as-is by Zod)'],
+      ['ollama.internal:11434', 'private-tld hostname with port'],
+      ['host.docker.internal:11434', 'multi-segment hostname with port'],
+      ['10.0.0.5:11434', 'RFC 1918 10.x with port'],
+      ['192.168.1.1:8080', 'RFC 1918 192.168.x with port'],
+      ['172.16.0.1:443', 'RFC 1918 172.16.x with port'],
+      ['127.0.0.1:11434', 'loopback IPv4 with port'],
+      ['169.254.169.254:80', 'link-local / cloud metadata with port'],
+      ['192.0.0.1:80', 'RFC 5736 IETF protocol assignments with port'],
+      ['100.64.0.1:8080', 'CGNAT with port'],
+      ['[::1]:11434', 'bracketed IPv6 loopback with port'],
+      ['[fc00::1]:8080', 'IPv6 unique-local with port'],
+      ['[fd00::1]:8080', 'IPv6 unique-local with port'],
+      ['[fe80::1]:8080', 'IPv6 link-local with port'],
     ])('accepts "%s" (%s)', (entry) => {
       expect(allowedAddressesSchema.parse([entry])).toEqual([entry]);
     });
@@ -372,35 +371,39 @@ describe('allowedAddressesSchema', () => {
       ['10.0.0.0/24', 'CIDR range'],
       ['/path', 'leading slash / path'],
       ['10.0.0.5/api', 'embedded path'],
+      ['localhost', 'bare hostname'],
+      ['10.0.0.5', 'bare IPv4'],
+      ['::1', 'bare IPv6'],
+      ['[::1]', 'bracketed IPv6 without port'],
+      ['localhost:0', 'port 0'],
+      ['localhost:65536', 'port above range'],
+      ['localhost:http', 'non-numeric port'],
+      [':11434', 'missing host'],
     ])('rejects "%s" (%s)', (entry) => {
       expect(() => allowedAddressesSchema.parse([entry])).toThrow();
     });
 
     it.each([['localhost:8080'], ['10.0.0.5:11434'], ['ollama.internal:443'], ['[::1]:8080']])(
-      'rejects host:port shape "%s"',
+      'accepts host:port shape "%s"',
       (entry) => {
-        const result = allowedAddressesSchema.safeParse([entry]);
-        expect(result.success).toBe(false);
-        if (!result.success) {
-          expect(result.error.issues[0]?.message).toMatch(/must not include a port/);
-        }
+        expect(allowedAddressesSchema.parse([entry])).toEqual([entry]);
       },
     );
   });
 
   describe('private-IP scoping', () => {
     it.each([
-      ['8.8.8.8', 'public DNS'],
-      ['1.1.1.1', 'public DNS'],
-      ['93.184.216.34', 'public web (example.com)'],
-      ['172.32.0.1', 'just outside RFC 1918'],
-      ['172.15.255.255', 'just outside RFC 1918 lower'],
-      ['169.253.255.255', 'just outside link-local'],
-      ['100.63.255.255', 'just outside CGNAT'],
-      ['100.128.0.1', 'just outside CGNAT upper'],
-      ['198.20.0.1', 'just outside benchmarking range'],
-      ['2001:4860:4860::8888', 'public IPv6 (Google DNS)'],
-      ['2606:4700:4700::1111', 'public IPv6 (Cloudflare DNS)'],
+      ['8.8.8.8:53', 'public DNS'],
+      ['1.1.1.1:53', 'public DNS'],
+      ['93.184.216.34:443', 'public web (example.com)'],
+      ['172.32.0.1:8080', 'just outside RFC 1918'],
+      ['172.15.255.255:8080', 'just outside RFC 1918 lower'],
+      ['169.253.255.255:8080', 'just outside link-local'],
+      ['100.63.255.255:8080', 'just outside CGNAT'],
+      ['100.128.0.1:8080', 'just outside CGNAT upper'],
+      ['198.20.0.1:8080', 'just outside benchmarking range'],
+      ['[2001:4860:4860::8888]:443', 'public IPv6 (Google DNS)'],
+      ['[2606:4700:4700::1111]:443', 'public IPv6 (Cloudflare DNS)'],
     ])('rejects public IP literal "%s" (%s)', (entry) => {
       const result = allowedAddressesSchema.safeParse([entry]);
       expect(result.success).toBe(false);
@@ -414,7 +417,9 @@ describe('allowedAddressesSchema', () => {
     it('accepts the field on endpoints', () => {
       const result = configSchema.safeParse({
         version: '1.0',
-        endpoints: { allowedAddresses: ['10.0.0.5', 'ollama.internal'] },
+        endpoints: {
+          allowedAddresses: ['10.0.0.5:11434', 'ollama.internal:11434'],
+        },
       });
       expect(result.success).toBe(true);
     });
@@ -422,7 +427,7 @@ describe('allowedAddressesSchema', () => {
     it('accepts the field on mcpSettings', () => {
       const result = configSchema.safeParse({
         version: '1.0',
-        mcpSettings: { allowedAddresses: ['127.0.0.1'] },
+        mcpSettings: { allowedAddresses: ['127.0.0.1:8080'] },
       });
       expect(result.success).toBe(true);
     });
@@ -430,7 +435,7 @@ describe('allowedAddressesSchema', () => {
     it('accepts the field on actions', () => {
       const result = configSchema.safeParse({
         version: '1.0',
-        actions: { allowedAddresses: ['host.docker.internal'] },
+        actions: { allowedAddresses: ['host.docker.internal:8080'] },
       });
       expect(result.success).toBe(true);
     });
@@ -438,7 +443,7 @@ describe('allowedAddressesSchema', () => {
     it('rejects a public IP at the endpoints location', () => {
       const result = configSchema.safeParse({
         version: '1.0',
-        endpoints: { allowedAddresses: ['8.8.8.8'] },
+        endpoints: { allowedAddresses: ['8.8.8.8:53'] },
       });
       expect(result.success).toBe(false);
     });
@@ -451,10 +456,10 @@ describe('allowedAddressesSchema', () => {
       expect(result.success).toBe(false);
     });
 
-    it('rejects a host:port at the actions location', () => {
+    it('rejects a bare host at the actions location', () => {
       const result = configSchema.safeParse({
         version: '1.0',
-        actions: { allowedAddresses: ['localhost:8080'] },
+        actions: { allowedAddresses: ['localhost'] },
       });
       expect(result.success).toBe(false);
     });
