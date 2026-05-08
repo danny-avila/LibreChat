@@ -1,8 +1,9 @@
+import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { TooltipAnchor, Button, NewChatIcon } from '@librechat/client';
-import { useLocalize, useNewConvo } from '~/hooks';
+import { useLocalize, useNewConvo, useKeyboardShortcut } from '~/hooks';
 import { clearMessagesCache, cn } from '~/utils';
 import store from '~/store';
 
@@ -12,15 +13,22 @@ export default function NewChat({ className }: { className?: string }) {
   const { newConversation } = useNewConvo();
   const conversation = useRecoilValue(store.conversationByIndex(0));
 
+  const startNewChat = useCallback(() => {
+    clearMessagesCache(queryClient, conversation?.conversationId);
+    queryClient.invalidateQueries([QueryKeys.messages]);
+    newConversation();
+  }, [queryClient, conversation?.conversationId, newConversation]);
+
   const clickHandler: React.MouseEventHandler<HTMLButtonElement> = (e) => {
     if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
       window.open('/c/new', '_blank');
       return;
     }
-    clearMessagesCache(queryClient, conversation?.conversationId);
-    queryClient.invalidateQueries([QueryKeys.messages]);
-    newConversation();
+    startNewChat();
   };
+
+  // Cmd/Ctrl+Shift+O — start a new chat (matches ChatGPT, Claude, and Gemini)
+  useKeyboardShortcut({ key: 'o', modifiers: ['mod', 'shift'] }, startNewChat, [startNewChat]);
 
   return (
     <TooltipAnchor
