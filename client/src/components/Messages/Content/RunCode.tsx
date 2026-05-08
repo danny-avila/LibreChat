@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import debounce from 'lodash/debounce';
+import { useRecoilValue } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import { TerminalSquareIcon, Check, X } from 'lucide-react';
 import { Spinner, TooltipAnchor, useToastContext } from '@librechat/client';
@@ -8,6 +9,7 @@ import { useToolCallMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn, normalizeLanguage } from '~/utils';
 import { useMessageContext } from '~/Providers';
+import store from '~/store';
 
 type RunState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -23,6 +25,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
 
     const { messageId, conversationId, partIndex } = useMessageContext();
     const normalizedLang = useMemo(() => normalizeLanguage(lang), [lang]);
+    const isTemporary = useRecoilValue(store.isTemporary);
 
     const handleExecute = useCallback(async () => {
       const codeString: string = codeRef.current?.textContent ?? '';
@@ -42,8 +45,18 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
         conversationId: conversationId ?? '',
         lang: normalizedLang,
         code: codeString,
+        isTemporary,
       });
-    }, [codeRef, execute, partIndex, messageId, blockIndex, conversationId, normalizedLang]);
+    }, [
+      codeRef,
+      execute,
+      partIndex,
+      messageId,
+      blockIndex,
+      conversationId,
+      normalizedLang,
+      isTemporary,
+    ]);
 
     const debouncedExecute = useMemo(
       () => debounce(handleExecute, 1000, { leading: true }),
