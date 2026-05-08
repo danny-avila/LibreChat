@@ -197,5 +197,21 @@ export async function initializeCustom({
     llmConfig.modelKwargs = { ...existingKwargs, web_search: true };
   }
 
+  const ephemeralCollection = (req.body as { ephemeralAgent?: { bkl_collection?: unknown } })
+    ?.ephemeralAgent?.bkl_collection;
+  if (typeof ephemeralCollection === 'string' && ephemeralCollection.trim() && options?.llmConfig) {
+    const llmConfig = options.llmConfig as Record<string, unknown>;
+    const existingKwargs = (llmConfig.modelKwargs as Record<string, unknown> | undefined) ?? {};
+    const collection = ephemeralCollection.trim();
+    llmConfig.modelKwargs = {
+      ...existingKwargs,
+      collection,
+      metadata: {
+        ...((existingKwargs.metadata as Record<string, unknown> | undefined) ?? {}),
+        bkl_collection: collection,
+      },
+    };
+  }
+
   return options;
 }
