@@ -19,6 +19,7 @@ import { useChatBadges } from '~/hooks';
 import ToolDialogs from './ToolDialogs';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
+import BklCollectionSelect from './BklCollectionSelect';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
 import store from '~/store';
@@ -371,6 +372,7 @@ function BadgeRow({
         {showEphemeralBadges === true && (
           <>
             <WebSearch />
+            <BklCollectionSelect />
             <CodeInterpreter />
             <FileSearch />
             <Artifacts />
