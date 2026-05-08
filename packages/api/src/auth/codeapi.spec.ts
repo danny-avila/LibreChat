@@ -194,6 +194,18 @@ describe('CodeAPI JWT minting', () => {
     expect(claims.principal_source).toBe('librechat_jwt');
   });
 
+  it('includes optional plan context when present without trusting caller input', async () => {
+    const token = await mintCodeApiToken(
+      baseRequest({
+        subscription: { planId: 'prod_plan_123' },
+      }),
+    );
+    const { claims } = decodeToken(token);
+
+    expect(claims.plan_id).toBe('prod_plan_123');
+    expect(claims).not.toHaveProperty('planId');
+  });
+
   it('rejects minting without tenant context in managed mode', async () => {
     mockGetTenantId.mockReturnValue(undefined);
 

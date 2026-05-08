@@ -17,6 +17,10 @@ interface CodeApiUserContext {
   serviceId?: string;
   chcUserId?: string;
   idOnTheSource?: string;
+  planId?: string;
+  subscription?: {
+    planId?: string;
+  };
 }
 
 interface CodeApiClaims {
@@ -33,6 +37,7 @@ interface CodeApiClaims {
   org_id?: string;
   service_id?: string;
   chc_user_id?: string;
+  plan_id?: string;
   auth_context_hash: string;
 }
 
@@ -242,6 +247,7 @@ function buildClaims(req: ServerRequest, config: SigningConfig, now: number): Co
   const orgId = stringifyClaimValue(user.orgId);
   const serviceId = stringifyClaimValue(user.serviceId);
   const chcUserId = stringifyClaimValue(user.chcUserId) ?? stringifyClaimValue(user.idOnTheSource);
+  const planId = stringifyClaimValue(user.planId) ?? stringifyClaimValue(user.subscription?.planId);
   const authContextHash = canonicalContextHash({
     userId,
     tenantId,
@@ -266,6 +272,7 @@ function buildClaims(req: ServerRequest, config: SigningConfig, now: number): Co
     ...(orgId ? { org_id: orgId } : {}),
     ...(serviceId ? { service_id: serviceId } : {}),
     ...(chcUserId ? { chc_user_id: chcUserId } : {}),
+    ...(planId ? { plan_id: planId } : {}),
     auth_context_hash: authContextHash,
   };
 }
@@ -296,6 +303,7 @@ function cacheKey(config: SigningConfig, claims: CodeApiClaims): string {
     claims.org_id ?? '',
     claims.service_id ?? '',
     claims.chc_user_id ?? '',
+    claims.plan_id ?? '',
     claims.auth_context_hash,
   ].join(':');
 }
