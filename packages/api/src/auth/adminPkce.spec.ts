@@ -12,7 +12,7 @@ jest.mock(
   { virtual: true },
 );
 
-import { stripCodeChallenge, storeAndStripChallenge } from './exchange';
+import { stripCodeChallenge, storeAndStripChallenge, isAdminPanelRedirect } from './exchange';
 import type { PkceStrippableRequest } from './exchange';
 
 function makeReq(overrides: Partial<PkceStrippableRequest> = {}): PkceStrippableRequest {
@@ -207,5 +207,64 @@ describe('storeAndStripChallenge', () => {
 
     const storedValue = setSpy.mock.calls[0][1];
     expect(storedValue).toBe(challenge);
+  });
+});
+
+describe('isAdminPanelRedirect', () => {
+  const crossOriginAdmin = 'http://localhost:3000';
+  const crossOriginClient = 'http://localhost:3080';
+  const sameOriginAdmin = 'https://example.com/admin';
+  const sameOriginClient = 'https://example.com';
+
+  describe('same-origin deployment (admin behind path prefix)', () => {
+    it('returns true for a redirect to the admin callback path', () => {
+      expect(
+        isAdminPanelRedirect(
+          'https://example.com/admin/auth/openid/callback',
+          sameOriginAdmin,
+          sameOriginClient,
+        ),
+      ).toBe(true);
+    });
+
+    it('returns false for a redirect to the main client', () => {
+      expect(
+        isAdminPanelRedirect('https://example.com/oauth/openid/callback', sameOriginAdmin, sameOriginClient),
+      ).toBe(false);
+    });
+
+    it('returns false for a redirect to a path that merely starts with the domain but not /admin', () => {
+      expect(
+        isAdminPanelRedirect('https://example.com/other', sameOriginAdmin, sameOriginClient),
+      ).toBe(false);
+    });
+  });
+
+  describe('cross-origin deployment (admin on different origin)', () => {
+    it('returns true when redirect origin matches admin origin but not client origin', () => {
+      expect(
+        isAdminPanelRedirect(
+          'http://localhost:3000/auth/openid/callback',
+          crossOriginAdmin,
+          crossOriginClient,
+        ),
+      ).toBe(true);
+    });
+
+    it('returns false when redirect origin matches client origin', () => {
+      expect(
+        isAdminPanelRedirect(
+          'http://localhost:3080/oauth/openid/callback',
+          crossOriginAdmin,
+          crossOriginClient,
+        ),
+      ).toBe(false);
+    });
+
+    it('returns false when redirect origin matches neither', () => {
+      expect(
+        isAdminPanelRedirect('https://other.com/callback', crossOriginAdmin, crossOriginClient),
+      ).toBe(false);
+    });
   });
 });

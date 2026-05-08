@@ -251,14 +251,19 @@ export function isAdminPanelRedirect(
   domainClient: string,
 ): boolean {
   try {
-    const redirectOrigin = new URL(redirectUri).origin;
-    const adminOrigin = new URL(adminPanelUrl).origin;
-    const clientOrigin = new URL(domainClient).origin;
+    const adminUrl = new URL(adminPanelUrl);
+    const adminHasPath = adminUrl.pathname !== '/';
 
-    /** Redirect is for admin panel if it matches admin origin but not main client origin */
-    return redirectOrigin === adminOrigin && redirectOrigin !== clientOrigin;
+    if (adminHasPath) {
+      /** Same-origin deployment: admin is distinguished by path prefix */
+      return redirectUri.startsWith(adminPanelUrl);
+    }
+
+    /** Cross-origin deployment: compare origins */
+    const redirectOrigin = new URL(redirectUri).origin;
+    const clientOrigin = new URL(domainClient).origin;
+    return redirectOrigin === adminUrl.origin && redirectOrigin !== clientOrigin;
   } catch {
-    /** If URL parsing fails, fall back to simple string comparison */
     return redirectUri.startsWith(adminPanelUrl) && !redirectUri.startsWith(domainClient);
   }
 }
