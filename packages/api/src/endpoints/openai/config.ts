@@ -61,11 +61,13 @@ export function getOpenAIConfig(
   let tools: t.LLMConfigResult['tools'];
   const isAnthropic = options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic;
   const isGoogle = options.customParams?.defaultParamsEndpoint === EModelEndpoint.google;
+  const isOpenRouter = options.customParams?.defaultParamsEndpoint === KnownEndpoints.openrouter;
 
   const useOpenRouter =
     !isAnthropic &&
     !isGoogle &&
-    ((baseURL && baseURL.includes(KnownEndpoints.openrouter)) ||
+    (isOpenRouter ||
+      (baseURL && baseURL.includes(KnownEndpoints.openrouter)) ||
       (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.openrouter)));
   const isVercel =
     !isAnthropic &&

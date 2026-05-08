@@ -1501,6 +1501,47 @@ describe('getOpenAIConfig', () => {
         });
         expect(result.provider).toBe('openrouter');
       });
+
+      it('should honor OpenRouter defaults for proxied custom endpoint names', () => {
+        const endpoint = 'company-gateway';
+        const apiKey = 'sk-proxy-key';
+        const baseURL = 'https://llm-proxy.example.com/v1';
+
+        const result = getOpenAIConfig(
+          apiKey,
+          {
+            reverseProxyUrl: baseURL,
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+            },
+            customParams: {
+              defaultParamsEndpoint: 'openrouter',
+              paramDefinitions: [{ key: 'promptCache', default: true }],
+            },
+            modelOptions: {
+              model: 'anthropic/claude-sonnet-4.6',
+              reasoning_effort: ReasoningEffort.high,
+            },
+          },
+          endpoint,
+        );
+
+        expect(result.llmConfig).toMatchObject({
+          model: 'anthropic/claude-sonnet-4.6',
+          apiKey,
+          promptCache: true,
+        });
+        expect(result.llmConfig.include_reasoning).toBeUndefined();
+        expect(result.llmConfig.modelKwargs).toMatchObject({
+          reasoning: { effort: ReasoningEffort.high },
+        });
+        expect(result.configOptions?.baseURL).toBe(baseURL);
+        expect(result.configOptions?.defaultHeaders).toMatchObject({
+          'X-OpenRouter-Title': 'LibreChat',
+          Authorization: `Bearer ${apiKey}`,
+        });
+        expect(result.provider).toBe('openrouter');
+      });
     });
 
     describe('Production-like Azure Scenarios', () => {
