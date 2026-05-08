@@ -45,29 +45,41 @@ describe('resolveOboToken', () => {
     jest.clearAllMocks();
   });
 
-  it('should return null when user has no valid OpenID token info', async () => {
+  it('should throw when user has no valid OpenID token info', async () => {
     mockExtractOpenIDTokenInfo.mockReturnValue(null);
 
-    const result = await resolveOboToken(mockUser as IUser, oboConfig, mockResolver);
-    expect(result).toBeNull();
+    await expect(resolveOboToken(mockUser as IUser, oboConfig, mockResolver)).rejects.toMatchObject(
+      {
+        reason: 'missing_upstream_token',
+        retryable: false,
+      },
+    );
     expect(mockResolver).not.toHaveBeenCalled();
   });
 
-  it('should return null when OpenID token is not valid (expired)', async () => {
+  it('should throw when OpenID token is not valid (expired)', async () => {
     mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'some-token' });
     mockIsOpenIDTokenValid.mockReturnValue(false);
 
-    const result = await resolveOboToken(mockUser as IUser, oboConfig, mockResolver);
-    expect(result).toBeNull();
+    await expect(resolveOboToken(mockUser as IUser, oboConfig, mockResolver)).rejects.toMatchObject(
+      {
+        reason: 'missing_upstream_token',
+        retryable: false,
+      },
+    );
     expect(mockResolver).not.toHaveBeenCalled();
   });
 
-  it('should return null when access token is missing from token info', async () => {
+  it('should throw when access token is missing from token info', async () => {
     mockExtractOpenIDTokenInfo.mockReturnValue({ userId: 'user-123' });
     mockIsOpenIDTokenValid.mockReturnValue(true);
 
-    const result = await resolveOboToken(mockUser as IUser, oboConfig, mockResolver);
-    expect(result).toBeNull();
+    await expect(resolveOboToken(mockUser as IUser, oboConfig, mockResolver)).rejects.toMatchObject(
+      {
+        reason: 'missing_upstream_access_token',
+        retryable: false,
+      },
+    );
     expect(mockResolver).not.toHaveBeenCalled();
   });
 
@@ -108,25 +120,51 @@ describe('resolveOboToken', () => {
     expect(result!.expires_at).toBe(result!.obtained_at + 3600 * 1000);
   });
 
-  it('should return null when resolver returns no access_token', async () => {
+  it('should throw when resolver returns no access_token', async () => {
     mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
     mockIsOpenIDTokenValid.mockReturnValue(true);
 
     const emptyResolver: OboTokenResolver = jest.fn().mockResolvedValue({});
-    const result = await resolveOboToken(mockUser as IUser, oboConfig, emptyResolver);
-    expect(result).toBeNull();
+    await expect(resolveOboToken(mockUser as IUser, oboConfig, emptyResolver)).rejects.toMatchObject(
+      {
+        reason: 'empty_exchange_response',
+        retryable: false,
+      },
+    );
   });
 
-  it('should return null when resolver throws an error', async () => {
+  it('should throw a retryable error when resolver reports a transient failure', async () => {
     mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
     mockIsOpenIDTokenValid.mockReturnValue(true);
 
     const failingResolver: OboTokenResolver = jest
       .fn()
-      .mockRejectedValue(new Error('OBO exchange failed'));
+      .mockRejectedValue(Object.assign(new Error('temporary timeout'), { retryable: true }));
 
-    const result = await resolveOboToken(mockUser as IUser, oboConfig, failingResolver);
-    expect(result).toBeNull();
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, failingResolver),
+    ).rejects.toMatchObject({
+        reason: 'exchange_failed',
+        retryable: true,
+        userMessage: 'Temporary OBO token exchange failure.',
+      });
+  });
+
+  it('should throw a non-retryable error when resolver reports a permanent failure', async () => {
+    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
+    mockIsOpenIDTokenValid.mockReturnValue(true);
+
+    const failingResolver: OboTokenResolver = jest
+      .fn()
+      .mockRejectedValue(new Error('invalid_grant: assertion invalid'));
+
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, failingResolver),
+    ).rejects.toMatchObject({
+        reason: 'exchange_failed',
+        retryable: false,
+        userMessage: 'The identity provider rejected the OBO token exchange.',
+      });
   });
 
   it('should use the correct scopes from oboConfig', async () => {

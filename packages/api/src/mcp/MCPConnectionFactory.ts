@@ -9,6 +9,7 @@ import type * as t from './types';
 import {
   MCPTokenStorage,
   MCPOAuthHandler,
+  OboTokenResolutionError,
   ReauthenticationRequiredError,
   resolveOboToken,
 } from '~/mcp/oauth';
@@ -254,17 +255,33 @@ export class MCPConnectionFactory {
     return !!this.serverConfig.obo && !!this.oboTokenResolver && !!this.user;
   }
 
+  protected createOboConnectionError(error: OboTokenResolutionError): Error {
+    const recoveryHint = error.retryable
+      ? 'Please retry.'
+      : error.reason === 'exchange_failed'
+        ? 'Re-authenticate the user or verify the configured OBO scopes and retry.'
+        : 'Re-authenticate the user and retry.';
+
+    return new Error(
+      `${error.userMessage} Unable to connect to OBO server "${this.serverName}". ${recoveryHint}`,
+    );
+  }
+
   /** Creates the base MCP connection with OAuth tokens */
   protected async createConnection(): Promise<MCPConnection> {
     let oauthTokens: MCPOAuthTokens | null = null;
 
     if (this.usesObo) {
-      oauthTokens = await this.getOboTokens();
+      try {
+        oauthTokens = await this.getOboTokens();
+      } catch (error) {
+        if (error instanceof OboTokenResolutionError) {
+          throw this.createOboConnectionError(error);
+        }
+        throw error;
+      }
       if (!oauthTokens) {
-        throw new Error(
-          `OBO token exchange failed for "${this.serverName}". ` +
-            'Ensure the user is authenticated via OpenID Connect and the federated access token is available.',
-        );
+        throw new Error(`OBO token exchange failed for "${this.serverName}".`);
       }
     } else if (this.useOAuth) {
       oauthTokens = await this.getOAuthTokens();
