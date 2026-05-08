@@ -227,6 +227,76 @@ describe('applyAdminRefresh', () => {
     });
   });
 
+  describe('issuer-bound user lookup', () => {
+    it('binds findUsers to (openidId, openidIssuer) when expectedIssuer is provided', async () => {
+      const user = makeUser();
+      const deps = makeDeps(user);
+      const tokenset = makeTokenset({
+        claims: () => ({ sub: SUB, iss: 'https://issuer.example.com' }),
+      });
+
+      await applyAdminRefresh(tokenset, deps, {
+        expectedIssuer: 'https://issuer.example.com',
+      });
+
+      const [filter] = (deps.findUsers as jest.Mock).mock.calls[0];
+      expect(filter).toMatchObject({
+        $or: expect.arrayContaining([
+          { openidId: SUB, openidIssuer: 'https://issuer.example.com' },
+        ]),
+      });
+    });
+
+    it('falls back to openidId-only lookup when expectedIssuer is not provided', async () => {
+      const user = makeUser();
+      const deps = makeDeps(user);
+
+      await applyAdminRefresh(makeTokenset(), deps);
+
+      expect(deps.findUsers).toHaveBeenCalledWith(
+        { openidId: SUB },
+        '-password -__v -totpSecret -backupCodes',
+        { sort: { updatedAt: -1 }, limit: 1 },
+      );
+    });
+
+    it('throws USER_ID_MISMATCH when direct user_id resolves but issuer differs', async () => {
+      const id = new Types.ObjectId();
+      const user = makeUser({ _id: id, openidIssuer: 'https://other-issuer.example.com' });
+      const deps = makeDeps(user, {
+        getUserById: jest.fn().mockResolvedValue(user),
+        findUsers: jest.fn(),
+      });
+      const tokenset = makeTokenset({
+        claims: () => ({ sub: SUB, iss: 'https://issuer.example.com' }),
+      });
+
+      await expect(
+        applyAdminRefresh(tokenset, deps, {
+          userId: id.toString(),
+          expectedIssuer: 'https://issuer.example.com',
+        }),
+      ).rejects.toMatchObject({ code: 'USER_ID_MISMATCH', status: 401 });
+      expect(deps.findUsers).not.toHaveBeenCalled();
+    });
+
+    it('accepts direct user_id when stored openidIssuer matches the expected issuer', async () => {
+      const id = new Types.ObjectId();
+      const user = makeUser({ _id: id, openidIssuer: 'https://issuer.example.com' });
+      const deps = makeDeps(user, { getUserById: jest.fn().mockResolvedValue(user) });
+      const tokenset = makeTokenset({
+        claims: () => ({ sub: SUB, iss: 'https://issuer.example.com' }),
+      });
+
+      await expect(
+        applyAdminRefresh(tokenset, deps, {
+          userId: id.toString(),
+          expectedIssuer: 'https://issuer.example.com',
+        }),
+      ).resolves.toBeDefined();
+    });
+  });
+
   describe('issuer guard', () => {
     it('passes when expected and actual issuers match', async () => {
       const deps = makeDeps(makeUser());

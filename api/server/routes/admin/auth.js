@@ -507,8 +507,10 @@ router.post('/oauth/refresh', middleware.loginLimiter, async (req, res) => {
       });
     }
 
-    const openIdConfig = getOpenIdConfig();
-    if (!openIdConfig) {
+    let openIdConfig;
+    try {
+      openIdConfig = getOpenIdConfig();
+    } catch {
       return res.status(503).json({
         error: 'OpenID is not configured',
         error_code: 'OPENID_NOT_CONFIGURED',

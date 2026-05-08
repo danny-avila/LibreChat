@@ -5,7 +5,11 @@ import type { IUser } from '@librechat/data-schemas';
 import type { FilterQuery } from 'mongoose';
 import type { AdminExchangeResponse } from '~/auth/exchange';
 
-import { normalizeOpenIdIssuer } from '~/auth/openid';
+import {
+  isUserIssuerAllowed,
+  normalizeOpenIdIssuer,
+  getIssuerBoundConditions,
+} from '~/auth/openid';
 import { serializeUserForExchange } from '~/auth/exchange';
 
 const SAFE_USER_PROJECTION = '-password -__v -totpSecret -backupCodes';
@@ -94,6 +98,7 @@ export class AdminRefreshError extends Error {
 async function resolveAdminUser(
   deps: AdminRefreshDeps,
   openidId: string,
+  normalizedIssuer: string | undefined,
   options: AdminRefreshOptions,
 ): Promise<IUser | undefined> {
   if (options.userId && Types.ObjectId.isValid(options.userId)) {
@@ -108,6 +113,13 @@ async function resolveAdminUser(
           'Provided user_id does not match the refreshed identity',
         );
       }
+      if (!isUserIssuerAllowed(direct, normalizedIssuer)) {
+        throw new AdminRefreshError(
+          'USER_ID_MISMATCH',
+          401,
+          'Provided user_id matches sub but issuer differs from the refreshed identity',
+        );
+      }
       return direct;
     }
     logger.debug(
@@ -115,8 +127,12 @@ async function resolveAdminUser(
     );
   }
 
+  const issuerBound = getIssuerBoundConditions('openidId', openidId, normalizedIssuer);
+  const filter: FilterQuery<IUser> =
+    issuerBound.length > 0 ? { $or: issuerBound } : ({ openidId } as FilterQuery<IUser>);
+
   const [user] = await runAsSystem(() =>
-    deps.findUsers({ openidId } as FilterQuery<IUser>, SAFE_USER_PROJECTION, {
+    deps.findUsers(filter, SAFE_USER_PROJECTION, {
       sort: { updatedAt: -1 },
       limit: 1,
     }),
@@ -183,7 +199,7 @@ export async function applyAdminRefresh(
     );
   }
 
-  const user = await resolveAdminUser(deps, openidId, options);
+  const user = await resolveAdminUser(deps, openidId, expected, options);
   if (!user) {
     throw new AdminRefreshError('USER_NOT_FOUND', 401, 'No user found for the refreshed identity');
   }
