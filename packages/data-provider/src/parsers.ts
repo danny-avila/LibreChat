@@ -30,8 +30,9 @@ type EndpointSchema =
   | typeof bedrockInputSchema;
 
 export type EndpointSchemaKey = EModelEndpoint;
+type EndpointSchemaLookupKey = EModelEndpoint | Providers.OPENROUTER;
 
-const endpointSchemas: Record<string, EndpointSchema> = {
+const endpointSchemas: Record<EndpointSchemaLookupKey, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
@@ -43,6 +44,9 @@ const endpointSchemas: Record<string, EndpointSchema> = {
   [EModelEndpoint.agents]: compactAgentsSchema,
   [EModelEndpoint.bedrock]: bedrockInputSchema,
 };
+
+const isEndpointSchemaLookupKey = (value?: string | null): value is EndpointSchemaLookupKey =>
+  value != null && Object.prototype.hasOwnProperty.call(endpointSchemas, value);
 
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
 //   [EModelEndpoint.google]: createGoogleSchema,
@@ -161,8 +165,8 @@ export const parseConvo = ({
   if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
   } else if (!schema) {
-    const overrideSchema = defaultParamsEndpoint
-      ? endpointSchemas[defaultParamsEndpoint as EndpointSchemaKey]
+    const overrideSchema = isEndpointSchemaLookupKey(defaultParamsEndpoint)
+      ? endpointSchemas[defaultParamsEndpoint]
       : undefined;
     schema = overrideSchema ?? (endpointType ? endpointSchemas[endpointType] : undefined);
   }
@@ -297,7 +301,7 @@ type CompactEndpointSchema =
   | typeof anthropicSchema
   | typeof bedrockInputSchema;
 
-const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
+const compactEndpointSchemas: Record<EndpointSchemaLookupKey, CompactEndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
@@ -332,8 +336,8 @@ export const parseCompactConvo = ({
   if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
   } else if (!schema) {
-    const overrideSchema = defaultParamsEndpoint
-      ? compactEndpointSchemas[defaultParamsEndpoint as EndpointSchemaKey]
+    const overrideSchema = isEndpointSchemaLookupKey(defaultParamsEndpoint)
+      ? compactEndpointSchemas[defaultParamsEndpoint]
       : undefined;
     schema = overrideSchema ?? (endpointType ? compactEndpointSchemas[endpointType] : undefined);
   }
