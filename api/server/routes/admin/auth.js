@@ -491,6 +491,7 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
  *   401 REFRESH_FAILED         — IdP rejected the refresh grant
  *   401 USER_NOT_FOUND         — no LibreChat user matches the refreshed sub
  *   401 USER_ID_MISMATCH       — supplied user_id resolves to a user with a different openidId
+ *   401 ISSUER_MISMATCH        — refreshed tokenset was issued by an unexpected issuer
  *   502 IDP_INCOMPLETE         — IdP returned a tokenset missing access_token
  *   502 CLAIMS_INCOMPLETE      — IdP tokenset has no readable claims or no sub
  *   503 OPENID_NOT_CONFIGURED  — OpenID is not configured on this server
@@ -530,6 +531,7 @@ router.post('/oauth/refresh', middleware.loginLimiter, async (req, res) => {
     }
 
     const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
+    const expectedIssuer = openIdConfig.serverMetadata?.()?.issuer;
 
     try {
       const result = await applyAdminRefresh(
@@ -545,6 +547,7 @@ router.post('/oauth/refresh', middleware.loginLimiter, async (req, res) => {
         {
           userId: typeof userId === 'string' && userId.length > 0 ? userId : undefined,
           previousRefreshToken: refreshToken,
+          expectedIssuer,
         },
       );
       return res.json(result);

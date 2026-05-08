@@ -5,12 +5,14 @@ import type { IUser } from '@librechat/data-schemas';
 import type { FilterQuery } from 'mongoose';
 import type { AdminExchangeResponse } from '~/auth/exchange';
 
+import { normalizeOpenIdIssuer } from '~/auth/openid';
 import { serializeUserForExchange } from '~/auth/exchange';
 
 const SAFE_USER_PROJECTION = '-password -__v -totpSecret -backupCodes';
 
 interface AdminRefreshClaims {
   sub?: string;
+  iss?: string;
 }
 
 /**
@@ -68,6 +70,14 @@ export interface AdminRefreshOptions {
    * admin panel would receive `undefined` and lose its refresh capability.
    */
   previousRefreshToken?: string;
+  /**
+   * Issuer URL of the OpenID provider this server trusts. When provided
+   * alongside an `iss` claim on the refreshed tokenset, the helper rejects
+   * the refresh if the two don't match. Defends against tokensets emitted
+   * by an unexpected issuer, even though `IUser` lookup is still keyed by
+   * `openidId` alone.
+   */
+  expectedIssuer?: string;
 }
 
 export class AdminRefreshError extends Error {
@@ -160,6 +170,16 @@ export async function applyAdminRefresh(
       'CLAIMS_INCOMPLETE',
       502,
       'IdP returned a tokenset missing the required `sub` claim',
+    );
+  }
+
+  const expected = normalizeOpenIdIssuer(options.expectedIssuer);
+  const actual = normalizeOpenIdIssuer(claims.iss);
+  if (expected && actual && expected !== actual) {
+    throw new AdminRefreshError(
+      'ISSUER_MISMATCH',
+      401,
+      'Refreshed tokenset was issued by an unexpected issuer',
     );
   }
 

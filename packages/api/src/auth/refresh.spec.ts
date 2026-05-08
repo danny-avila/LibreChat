@@ -227,6 +227,62 @@ describe('applyAdminRefresh', () => {
     });
   });
 
+  describe('issuer guard', () => {
+    it('passes when expected and actual issuers match', async () => {
+      const deps = makeDeps(makeUser());
+      const tokenset = makeTokenset({
+        claims: () => ({ sub: SUB, iss: 'https://issuer.example.com' }),
+      });
+
+      await expect(
+        applyAdminRefresh(tokenset, deps, { expectedIssuer: 'https://issuer.example.com' }),
+      ).resolves.toBeDefined();
+    });
+
+    it('passes when expected and actual issuers match modulo trailing slash', async () => {
+      const deps = makeDeps(makeUser());
+      const tokenset = makeTokenset({
+        claims: () => ({ sub: SUB, iss: 'https://issuer.example.com/' }),
+      });
+
+      await expect(
+        applyAdminRefresh(tokenset, deps, { expectedIssuer: 'https://issuer.example.com' }),
+      ).resolves.toBeDefined();
+    });
+
+    it('throws ISSUER_MISMATCH when issuers differ', async () => {
+      const deps = makeDeps(makeUser());
+      const tokenset = makeTokenset({
+        claims: () => ({ sub: SUB, iss: 'https://attacker.example.com' }),
+      });
+
+      await expect(
+        applyAdminRefresh(tokenset, deps, { expectedIssuer: 'https://issuer.example.com' }),
+      ).rejects.toMatchObject({ code: 'ISSUER_MISMATCH', status: 401 });
+      expect(deps.findUsers).not.toHaveBeenCalled();
+      expect(deps.mintToken).not.toHaveBeenCalled();
+    });
+
+    it('skips the check when expectedIssuer is not provided', async () => {
+      const deps = makeDeps(makeUser());
+      const tokenset = makeTokenset({
+        claims: () => ({ sub: SUB, iss: 'https://attacker.example.com' }),
+      });
+
+      await expect(applyAdminRefresh(tokenset, deps)).resolves.toBeDefined();
+    });
+
+    it('skips the check when the tokenset has no iss claim', async () => {
+      const deps = makeDeps(makeUser());
+
+      await expect(
+        applyAdminRefresh(makeTokenset(), deps, {
+          expectedIssuer: 'https://issuer.example.com',
+        }),
+      ).resolves.toBeDefined();
+    });
+  });
+
   describe('refresh-token preservation', () => {
     it('preserves the inbound refresh token when the IdP does not rotate', async () => {
       const deps = makeDeps(makeUser());
