@@ -22,7 +22,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     }
     return await Config.findOne(filter)
       .session(session ?? null)
-      .lean();
+      .lean<IConfig>();
   }
 
   async function listAllConfigs(
@@ -37,7 +37,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     return await Config.find(where)
       .sort({ priority: 1 })
       .session(session ?? null)
-      .lean();
+      .lean<IConfig[]>();
   }
 
   async function getApplicableConfigs(
@@ -70,7 +70,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     })
       .sort({ priority: 1 })
       .session(session ?? null)
-      .lean();
+      .lean<IConfig[]>();
   }
 
   async function upsertConfig(
