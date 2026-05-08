@@ -365,7 +365,7 @@ describe('recordCollectedUsage', () => {
   });
 
   describe('reasoning token handling - issue #13006', () => {
-    it('adds reasoning to completionTokens when Vertex omits it from output_tokens', async () => {
+    it('uses total - input when output_tokens undercounts (Vertex stream undercount with details present)', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 80657,
@@ -389,7 +389,30 @@ describe('recordCollectedUsage', () => {
       expect(result?.output_tokens).toBe(2608);
     });
 
-    it('does not double-count when reasoning is already a subset of output_tokens (OpenAI o-series)', async () => {
+    it('uses total - input even when output_token_details is missing (raw langchain google-common path)', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 12,
+          output_tokens: 135,
+          total_tokens: 309,
+          model: 'gemini-3-flash-preview',
+          provider: 'vertexai',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-3-flash-preview' }),
+        { promptTokens: 12, completionTokens: 297 },
+      );
+      expect(result?.output_tokens).toBe(297);
+    });
+
+    it('does not change output when invariant already holds (OpenAI o-series, reasoning already a subset)', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 100,
@@ -413,7 +436,7 @@ describe('recordCollectedUsage', () => {
       expect(result?.output_tokens).toBe(500);
     });
 
-    it('routes reasoning correction through structured spend when cache tokens are present', async () => {
+    it('routes correction through structured spend when cache tokens are present', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 80657,
@@ -440,12 +463,11 @@ describe('recordCollectedUsage', () => {
       );
     });
 
-    it('no-op when output_token_details is absent', async () => {
+    it('no-op when total_tokens is absent or zero', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 100,
           output_tokens: 50,
-          total_tokens: 150,
           model: 'gpt-4',
           provider: 'openAI',
         },

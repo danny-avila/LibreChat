@@ -52,33 +52,28 @@ function inputTokensIncludesCache(provider?: string): boolean {
 
 /**
  * Resolves `completionTokens` for billing, repairing providers whose
- * `usage_metadata.output_tokens` undercounts by omitting reasoning.
+ * `usage_metadata.output_tokens` undercounts.
  *
  * The documented `UsageMetadata` contract (`@langchain/core`) is
- * `total_tokens === input_tokens + output_tokens` and `output_tokens` is
- * "the sum of all output token types". Most providers honor this — their
- * `output_token_details.reasoning` is a *subset* of `output_tokens`, so we
- * must not double-count.
+ * `total_tokens === input_tokens + output_tokens`. Compliant providers
+ * (OpenAI, Anthropic, Google API via agents' `CustomChatGoogleGenerativeAI`)
+ * include any reasoning/thinking tokens inside `output_tokens` already,
+ * so the invariant holds.
  *
  * Vertex AI Gemini through `@langchain/google-common`'s streaming path
- * breaks the contract: `output_tokens = candidatesTokenCount` only,
- * dropping `thoughtsTokenCount`. The gap shows up as
- * `total_tokens - input_tokens > output_tokens`, with the missing amount
- * surfaced in `output_token_details.reasoning`. We fold it back when —
- * and only when — the gap is present, so all other providers are no-ops.
+ * emits `output_tokens = candidatesTokenCount` and drops `thoughtsTokenCount`,
+ * leaving `total - input > output`. When that gap shows up we use the
+ * invariant to recover the correct billable output (`total - input`).
+ * Compliant providers have a zero gap, so this is a no-op for them.
  *
  * Tracked in: https://github.com/danny-avila/LibreChat/issues/13006
  */
 function resolveCompletionTokens(usage: UsageMetadata): number {
   const output = Number(usage.output_tokens) || 0;
-  const reasoning = Number(usage.output_token_details?.reasoning) || 0;
-  if (reasoning <= 0) {
-    return output;
-  }
-  const input = Number(usage.input_tokens) || 0;
   const total = Number(usage.total_tokens) || 0;
-  if (total - input > output) {
-    return output + reasoning;
+  const input = Number(usage.input_tokens) || 0;
+  if (total > input + output) {
+    return total - input;
   }
   return output;
 }
