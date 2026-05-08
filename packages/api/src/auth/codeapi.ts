@@ -1,9 +1,4 @@
-import {
-  createHash,
-  createPrivateKey,
-  randomUUID,
-  sign as cryptoSign,
-} from 'crypto';
+import { createHash, createPrivateKey, randomUUID, sign as cryptoSign } from 'crypto';
 import { getTenantId } from '@librechat/data-schemas';
 import type { KeyObject, JsonWebKey } from 'crypto';
 import type { ServerRequest } from '~/types';
@@ -65,9 +60,12 @@ const DEFAULT_TTL_SECONDS = 300;
 const DEFAULT_CACHE_SECONDS = 30;
 const MAX_TTL_SECONDS = 300;
 const MAX_CACHE_SECONDS = 30;
+const TOKEN_REUSE_SAFETY_WINDOW_SECONDS = 30;
+const TOKEN_CACHE_PRUNE_INTERVAL_SECONDS = 30;
 
 let signingConfigCache: SigningConfig | null = null;
 const tokenCache = new Map<string, CachedToken>();
+let tokenCacheLastPrunedAt = 0;
 
 function base64Url(value: Buffer | string): string {
   return Buffer.from(value).toString('base64url');
@@ -159,6 +157,7 @@ function getSigningConfig(): SigningConfig {
     key: createSigningKey(rawKey),
   };
   tokenCache.clear();
+  tokenCacheLastPrunedAt = 0;
   return signingConfigCache;
 }
 
@@ -304,6 +303,22 @@ function cacheKey(config: SigningConfig, claims: CodeApiClaims): string {
   ].join(':');
 }
 
+function pruneTokenCache(now: number): void {
+  if (tokenCache.size === 0) {
+    return;
+  }
+  if (now - tokenCacheLastPrunedAt < TOKEN_CACHE_PRUNE_INTERVAL_SECONDS) {
+    return;
+  }
+
+  tokenCacheLastPrunedAt = now;
+  for (const [key, cached] of tokenCache) {
+    if (cached.cachedUntil <= now || cached.expiresAt <= now + TOKEN_REUSE_SAFETY_WINDOW_SECONDS) {
+      tokenCache.delete(key);
+    }
+  }
+}
+
 export async function mintCodeApiToken(req: ServerRequest): Promise<string> {
   if (!isCodeApiJwtAuthEnabled()) {
     return '';
@@ -311,10 +326,15 @@ export async function mintCodeApiToken(req: ServerRequest): Promise<string> {
 
   const config = getSigningConfig();
   const now = Math.floor(Date.now() / 1000);
+  pruneTokenCache(now);
   const claims = buildClaims(req, config, now);
   const key = cacheKey(config, claims);
   const cached = tokenCache.get(key);
-  if (cached && cached.cachedUntil > now && cached.expiresAt > now + 30) {
+  if (
+    cached &&
+    cached.cachedUntil > now &&
+    cached.expiresAt > now + TOKEN_REUSE_SAFETY_WINDOW_SECONDS
+  ) {
     return cached.token;
   }
 
@@ -322,7 +342,10 @@ export async function mintCodeApiToken(req: ServerRequest): Promise<string> {
   tokenCache.set(key, {
     token,
     expiresAt: claims.exp,
-    cachedUntil: Math.min(now + config.cacheSeconds, claims.exp - 30),
+    cachedUntil: Math.min(
+      now + config.cacheSeconds,
+      claims.exp - TOKEN_REUSE_SAFETY_WINDOW_SECONDS,
+    ),
   });
   return token;
 }
