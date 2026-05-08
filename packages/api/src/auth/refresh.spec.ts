@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
-import type { IUser } from '@librechat/data-schemas';
 
+import type { IUser } from '@librechat/data-schemas';
 import type { AdminRefreshDeps, RefreshTokenset } from './refresh';
 
 import { applyAdminRefresh, AdminRefreshError } from './refresh';
@@ -99,7 +99,9 @@ describe('applyAdminRefresh', () => {
       const { onRefreshSuccess: _omit, ...rest } = makeDeps(user);
       const deps: AdminRefreshDeps = rest;
 
-      await expect(applyAdminRefresh(makeTokenset(), deps)).resolves.toBeDefined();
+      const result = await applyAdminRefresh(makeTokenset(), deps);
+      expect(result.token).toBe('minted-jwt');
+      expect(result.user.email).toBe('admin@example.com');
     });
   });
 
@@ -135,8 +137,12 @@ describe('applyAdminRefresh', () => {
 
       await applyAdminRefresh(makeTokenset(), deps, { userId: id });
 
-      expect(deps.getUserById).toHaveBeenCalled();
-      expect(deps.findUsers).toHaveBeenCalled();
+      expect(deps.getUserById).toHaveBeenCalledWith(id, '-password -__v -totpSecret -backupCodes');
+      expect(deps.findUsers).toHaveBeenCalledWith(
+        { openidId: SUB },
+        '-password -__v -totpSecret -backupCodes',
+        { sort: { updatedAt: -1 }, limit: 1 },
+      );
     });
 
     it('throws USER_ID_MISMATCH when the resolved user has a different openidId', async () => {

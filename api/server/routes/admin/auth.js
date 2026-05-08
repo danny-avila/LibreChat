@@ -485,6 +485,16 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
  * POST /api/admin/oauth/refresh
  * Body:     { refresh_token: string, user_id?: string }
  * Response: { token: string, refreshToken?: string, user: object, expiresAt: number }
+ *
+ * Errors (all responses are `{ error: string, error_code: string }`):
+ *   400 MISSING_REFRESH_TOKEN  — refresh_token absent or empty
+ *   401 REFRESH_FAILED         — IdP rejected the refresh grant
+ *   401 USER_NOT_FOUND         — no LibreChat user matches the refreshed sub
+ *   401 USER_ID_MISMATCH       — supplied user_id resolves to a user with a different openidId
+ *   502 IDP_INCOMPLETE         — IdP returned a tokenset missing access_token
+ *   502 CLAIMS_INCOMPLETE      — IdP tokenset has no readable claims or no sub
+ *   503 OPENID_NOT_CONFIGURED  — OpenID is not configured on this server
+ *   500 INTERNAL_ERROR         — anything else (logged server-side)
  */
 router.post('/oauth/refresh', middleware.loginLimiter, async (req, res) => {
   try {

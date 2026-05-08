@@ -11,7 +11,6 @@ const SAFE_USER_PROJECTION = '-password -__v -totpSecret -backupCodes';
 
 interface AdminRefreshClaims {
   sub?: string;
-  exp?: number;
 }
 
 /**
@@ -34,7 +33,7 @@ export interface MintedToken {
 export interface AdminRefreshDeps {
   findUsers: (
     filter: FilterQuery<IUser>,
-    projection: string | null,
+    projection: string,
     options: { sort: Record<string, 1 | -1>; limit: number },
   ) => Promise<IUser[]>;
   getUserById: (id: string, projection: string) => Promise<IUser | null>;
@@ -118,7 +117,12 @@ async function resolveAdminUser(
 function readClaims(tokenset: RefreshTokenset): AdminRefreshClaims {
   try {
     return tokenset.claims();
-  } catch (_err) {
+  } catch (err) {
+    const error = err as { name?: string; message?: string };
+    logger.warn('[adminRefresh] tokenset.claims() threw', {
+      name: error?.name,
+      message: error?.message,
+    });
     throw new AdminRefreshError(
       'CLAIMS_INCOMPLETE',
       502,
