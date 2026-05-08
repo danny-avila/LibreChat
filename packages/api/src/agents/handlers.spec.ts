@@ -72,8 +72,20 @@ describe('createToolExecuteHandler', () => {
           codeSessionContext: {
             session_id: 'prev-session-abc',
             files: [
-              { session_id: 'prev-session-abc', id: 'f1', name: 'data.parquet' },
-              { session_id: 'prev-session-abc', id: 'f2', name: 'chart.png' },
+              {
+                storage_session_id: 'prev-session-abc',
+                id: 'f1',
+                resource_id: 'user_alice',
+                name: 'data.parquet',
+                kind: 'user',
+              },
+              {
+                storage_session_id: 'prev-session-abc',
+                id: 'f2',
+                resource_id: 'user_alice',
+                name: 'chart.png',
+                kind: 'user',
+              },
             ],
           },
         },
@@ -84,8 +96,20 @@ describe('createToolExecuteHandler', () => {
       expect(capturedConfigs).toHaveLength(1);
       expect(capturedConfigs[0].session_id).toBe('prev-session-abc');
       expect(capturedConfigs[0]._injected_files).toEqual([
-        { session_id: 'prev-session-abc', id: 'f1', name: 'data.parquet' },
-        { session_id: 'prev-session-abc', id: 'f2', name: 'chart.png' },
+        {
+          storage_session_id: 'prev-session-abc',
+          id: 'f1',
+          resource_id: 'user_alice',
+          name: 'data.parquet',
+          kind: 'user',
+        },
+        {
+          storage_session_id: 'prev-session-abc',
+          id: 'f2',
+          resource_id: 'user_alice',
+          name: 'chart.png',
+          kind: 'user',
+        },
       ]);
     });
 
@@ -141,7 +165,15 @@ describe('createToolExecuteHandler', () => {
           args: { lang: 'python', code: 'step_1()' },
           codeSessionContext: {
             session_id: 'session-A',
-            files: [{ session_id: 'session-A', id: 'fa', name: 'a.csv' }],
+            files: [
+              {
+                storage_session_id: 'session-A',
+                id: 'fa',
+                resource_id: 'user_alice',
+                name: 'a.csv',
+                kind: 'user',
+              },
+            ],
           },
         },
         {
@@ -150,7 +182,15 @@ describe('createToolExecuteHandler', () => {
           args: { lang: 'python', code: 'step_2()' },
           codeSessionContext: {
             session_id: 'session-A',
-            files: [{ session_id: 'session-A', id: 'fa', name: 'a.csv' }],
+            files: [
+              {
+                storage_session_id: 'session-A',
+                id: 'fa',
+                resource_id: 'user_alice',
+                name: 'a.csv',
+                kind: 'user',
+              },
+            ],
           },
         },
       ];
@@ -161,7 +201,13 @@ describe('createToolExecuteHandler', () => {
       for (const config of capturedConfigs) {
         expect(config.session_id).toBe('session-A');
         expect(config._injected_files).toEqual([
-          { session_id: 'session-A', id: 'fa', name: 'a.csv' },
+          {
+            storage_session_id: 'session-A',
+            id: 'fa',
+            resource_id: 'user_alice',
+            name: 'a.csv',
+            kind: 'user',
+          },
         ]);
       }
     });
@@ -177,7 +223,15 @@ describe('createToolExecuteHandler', () => {
           args: { query: 'test' },
           codeSessionContext: {
             session_id: 'should-be-ignored',
-            files: [{ session_id: 'x', id: 'y', name: 'z' }],
+            files: [
+              {
+                storage_session_id: 'x',
+                id: 'y',
+                resource_id: 'user_alice',
+                name: 'z',
+                kind: 'user',
+              },
+            ],
           },
         },
       ];
@@ -205,6 +259,7 @@ describe('createToolExecuteHandler', () => {
         name: 'pii-redactor',
         body: 'restricted body',
         fileCount: 0,
+        version: 1,
         disableModelInvocation: true,
       }));
       const handler = createSkillHandler(getSkillByName);
@@ -247,6 +302,7 @@ describe('createToolExecuteHandler', () => {
         name: 'normal-skill',
         body: 'body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createSkillHandler(getSkillByName);
 
@@ -276,6 +332,7 @@ describe('createToolExecuteHandler', () => {
         name: 'maybe-disabled',
         body: 'body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createSkillHandler(getSkillByName);
 
@@ -302,6 +359,7 @@ describe('createToolExecuteHandler', () => {
         name: 'maybe-disabled-read',
         body: '# Body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createToolExecuteHandler({
         loadTools: jest.fn(async () => ({
@@ -342,6 +400,7 @@ describe('createToolExecuteHandler', () => {
         name: 'manually-primed',
         body: '# Body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createToolExecuteHandler({
         loadTools: jest.fn(async () => ({
@@ -391,6 +450,7 @@ describe('createToolExecuteHandler', () => {
         name: 'pii-redactor',
         body: 'restricted body',
         fileCount: 0,
+        version: 1,
         disableModelInvocation: true,
       }));
       const handler = createToolExecuteHandler({
@@ -421,6 +481,7 @@ describe('createToolExecuteHandler', () => {
         name: 'normal-skill',
         body: '# Body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createToolExecuteHandler({
         loadTools: jest.fn(async () => ({
@@ -454,6 +515,7 @@ describe('createToolExecuteHandler', () => {
         name: 'manual-only-skill',
         body: '# Use references/docs.md for details',
         fileCount: 0,
+        version: 1,
         disableModelInvocation: true,
       }));
       const handler = createToolExecuteHandler({
@@ -489,6 +551,7 @@ describe('createToolExecuteHandler', () => {
         name: 'other-disabled-skill',
         body: 'restricted',
         fileCount: 0,
+        version: 1,
         disableModelInvocation: true,
       }));
       const handler = createToolExecuteHandler({
@@ -526,6 +589,7 @@ describe('createToolExecuteHandler', () => {
         name: 'always-applied-legal',
         body: '# Cite references/policy.md when advising',
         fileCount: 0,
+        version: 1,
         disableModelInvocation: true,
       }));
       const handler = createToolExecuteHandler({
@@ -566,6 +630,7 @@ describe('createToolExecuteHandler', () => {
         name: 'collides',
         body: '# primed body',
         fileCount: 0,
+        version: 1,
       }));
       const handler = createToolExecuteHandler({
         loadTools: jest.fn(async () => ({
@@ -615,6 +680,7 @@ describe('createToolExecuteHandler', () => {
         name: 'brand-guidelines',
         body: 'skill body',
         fileCount: 2,
+        version: 1,
       }));
       /* `loadTools` injects `codeEnvAvailable` into the returned
          `configurable`, which mirrors production flow through
@@ -789,6 +855,7 @@ describe('createToolExecuteHandler', () => {
         name: 'primed-only-skill',
         body: '# Primed skill body',
         fileCount: 1,
+        version: 1,
       }));
       const readSandboxFile = jest.fn();
       const getSkillFileByPath = jest.fn(async () => ({
@@ -888,6 +955,7 @@ describe('createToolExecuteHandler', () => {
         name: 'real-skill',
         body: '# Real Body',
         fileCount: 0,
+        version: 1,
       }));
       const readSandboxFile = jest.fn();
       const handler = makeReadFileHandler({

@@ -569,13 +569,44 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     }
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
     const stream = fs.createReadStream(file.path);
-    const fileIdentifier = await uploadCodeEnvFile({
+    /* Resource identity for codeapi's sessionKey:
+     * - chat attachments (messageAttachment=true): `kind: 'user'`, codeapi
+     *   buckets under `<tenant>:user:<authContext.userId>` regardless of `id`.
+     * - agent setup files (messageAttachment=false): `kind: 'agent'`, shared
+     *   per agent identity. `id` carries the agent id. */
+    const codeKind = messageAttachment === true ? 'user' : 'agent';
+    const codeId = messageAttachment === true ? req.user.id : agent_id;
+    /* Upload under the same sanitized filename LC stores in its DB
+     * (`fileInfo.filename` below uses `sanitizeFilename(originalname)`).
+     * Codeapi/file_server use this as the on-disk name in the sandbox
+     * — `/mnt/data/<filename>` — and `primeFiles`'s `toolContext` text
+     * + `_injected_files.name` both reference `file.filename`. Sending
+     * the unsanitized `file.originalname` here makes the sandbox path
+     * (with spaces / special chars) drift from what LC tells the model
+     * is available, causing FileNotFoundError on the first reference. */
+    const sandboxFilename = sanitizeFilename(file.originalname);
+    const uploaded = await uploadCodeEnvFile({
       req,
       stream,
-      filename: file.originalname,
-      entity_id,
+      filename: sandboxFilename,
+      kind: codeKind,
+      id: codeId,
     });
-    fileInfoMetadata = { fileIdentifier };
+    /* Persist under the structured `codeEnvRef` shape — the only key the
+     * post-cutover schema (`metadata.codeEnvRef`) and downstream readers
+     * (`primeFiles`, `getCodeFilesByIds`, `categorizeFileForToolResources`,
+     * controller filtering) accept. Storing under the legacy
+     * `fileIdentifier` key would be silently dropped by mongoose strict
+     * mode and the file would lose its sandbox reference on subsequent
+     * priming turns. */
+    fileInfoMetadata = {
+      codeEnvRef: {
+        kind: codeKind,
+        id: codeId,
+        storage_session_id: uploaded.storage_session_id,
+        file_id: uploaded.file_id,
+      },
+    };
   } else if (tool_resource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
     if (!isFileSearchEnabled) {

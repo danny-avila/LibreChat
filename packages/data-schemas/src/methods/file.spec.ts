@@ -299,7 +299,14 @@ describe('File Methods', () => {
         type: 'text/x-python',
         bytes: 100,
         context: FileContext.execute_code,
-        metadata: { fileIdentifier: 'some-identifier' },
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'session-x',
+            file_id: codeFileId,
+          },
+        },
       });
 
       // execute_code files are explicitly excluded from getToolFilesByIds

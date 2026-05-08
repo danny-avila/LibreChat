@@ -1,4 +1,5 @@
 import { EToolResources } from './assistants';
+import type { CodeEnvRef } from '../codeEnvRef';
 
 export enum FileSources {
   local = 'local',
@@ -144,7 +145,15 @@ export type TFile = {
    * Suitable for tooltip text but not user-facing prose.
    */
   previewError?: string;
-  metadata?: { fileIdentifier?: string };
+  metadata?: {
+    fileIdentifier?: string;
+    /**
+     * Structured form of `fileIdentifier`. Persisted alongside the
+     * legacy string during the dual-write transition; readers should
+     * resolve via `resolveCodeEnvRef`.
+     */
+    codeEnvRef?: CodeEnvRef;
+  };
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };
