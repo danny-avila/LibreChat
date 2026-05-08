@@ -77,6 +77,7 @@ const FarmerProfileModal = ({
   const selectedState = watch('state');
   const selectedDistrict = watch('district');
   const selectedBlock = watch('blockName');
+  const selectedVillage = watch('villageName');
   const selectedCrops = watch('cropsCultivated');
 
   const handleStateChange = (val: string) => {
@@ -85,6 +86,7 @@ const FarmerProfileModal = ({
     setValue('customDistrict', '', { shouldValidate: false });
     setValue('blockName', '', { shouldValidate: false });
     setValue('villageName', '', { shouldValidate: false });
+    setValue('nearestKVK', '', { shouldValidate: false });
   };
 
   const handleDistrictChange = (val: string) => {
@@ -94,6 +96,7 @@ const FarmerProfileModal = ({
     }
     setValue('blockName', '', { shouldValidate: false });
     setValue('villageName', '', { shouldValidate: false });
+    setValue('nearestKVK', '', { shouldValidate: false });
   };
 
   const handleBlockChange = (val: string) => {
@@ -424,7 +427,7 @@ const FarmerProfileModal = ({
                 {errors.villageName && <p className={errorClass}>{errors.villageName.message}</p>}
               </div>
 
-              {selectedBlock === 'Other' || watch('villageName') === 'Other' ? (
+              {selectedBlock === 'Other' || selectedVillage === 'Other' ? (
                 <div className={fieldClass}>
                   <Label htmlFor="customVillage">Enter Your Village Name</Label>
                   <Input
@@ -544,15 +547,16 @@ const FarmerProfileModal = ({
                 <Label htmlFor="landhold">Total Agricultural Landholding (Specify your total farm size in Acres)</Label>
                 <Input
                   id="landhold"
-                  type="number"
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="e.g. 5"
                   className={inputClass}
                   {...register('landhold', {
                     required: 'Landholding is required',
-                    validate: (value) =>
-                      decimalRegex.test(String(value).trim()) ||
-                      'Landholding must be a valid number.',
+                    validate: (value) => {
+                      const normalized = String(value ?? '').trim();
+                      return decimalRegex.test(normalized) || 'Landholding must be a valid number.';
+                    },
                   })}
                 />
                 {errors.landhold && (
@@ -703,8 +707,8 @@ const FarmerProfileModal = ({
                   id="numberOfSmartphones"
                   type="number"
                   placeholder="Number of smartphones"
-                  defaultValue={1}
-                  min={1}
+                  defaultValue={0}
+                  min={0}
                   max={20}
                   step={1}
                   className={inputClass}
@@ -715,8 +719,8 @@ const FarmerProfileModal = ({
                       isInteger: (value) =>
                         Number.isInteger(value) || 'Number of smartphones must be an integer',
                       inRange: (value) =>
-                        (value >= 1 && value <= 20) ||
-                        'Number of smartphones must be between 1 and 20',
+                        (value >= 0 && value <= 20) ||
+                        'Number of smartphones must be between 0 and 20',
                     },
                   })}
                 />

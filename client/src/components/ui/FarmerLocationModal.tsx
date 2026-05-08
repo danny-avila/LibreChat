@@ -75,6 +75,7 @@ const FarmerLocationModal = ({
     setValue('state', val, { shouldValidate: true });
     setValue('district', '', { shouldValidate: false });
     setValue('customDistrict', '', { shouldValidate: false });
+    setValue('nearestKVK' as any, '', { shouldValidate: false });
   };
 
   const handleDistrictChange = (val: string) => {
@@ -82,6 +83,7 @@ const FarmerLocationModal = ({
     if (val !== 'Other') {
       setValue('customDistrict', '', { shouldValidate: false });
     }
+    setValue('nearestKVK' as any, '', { shouldValidate: false });
   };
 
   const { isLocating, locationError, getLocation } = useGeolocation({
@@ -161,7 +163,7 @@ const FarmerLocationModal = ({
     primaryCrop: { label: 'Primary Crop', type: 'text', placeholder: 'e.g. Wheat' },
     secondaryCrop: { label: 'Secondary Crop', type: 'text', placeholder: 'e.g. Rice' },
     cropsCultivated: { label: 'Crops Cultivated (comma separated)', type: 'text', placeholder: 'e.g. Wheat, Rice' },
-    landhold: { label: 'Total Agricultural Landholding (Acres)', type: 'number', placeholder: 'e.g. 5' },
+    landhold: { label: 'Total Agricultural Landholding (Acres)', type: 'text', placeholder: 'e.g. 5' },
     awarenessOfKCC: { label: 'Awareness of Kisan Call Centre (KCC)', type: 'radio' },
     usesAgriApps: { label: 'Usage of Any Agricultural Mobile Applications', type: 'radio' },
   };
@@ -220,8 +222,8 @@ const FarmerLocationModal = ({
             return 'Number of smartphones must be an integer';
           }
           const numeric = Number(normalized);
-          if (numeric < 1 || numeric > 20) {
-            return 'Number of smartphones must be between 1 and 20';
+          if (numeric < 0 || numeric > 20) {
+            return 'Number of smartphones must be between 0 and 20';
           }
           return true;
         },
@@ -231,25 +233,51 @@ const FarmerLocationModal = ({
     if (field === 'landhold') {
       return {
         required: `${label} is required`,
-        validate: (value: string) =>
-          decimalRegex.test(String(value ?? '').trim()) ||
-          'Landholding must be a valid number (decimals allowed)',
+        validate: (value: string) => {
+          const normalized = String(value ?? '').trim();
+          return decimalRegex.test(normalized) || 'Landholding must be a valid number';
+        },
       };
     }
 
     return { required: `${label} is required` };
   };
 
+  const getFieldLabel = (field: string) => {
+    if (field === 'location') {
+      return 'Current Location';
+    }
+    return fieldConfig[field]?.label ?? field;
+  };
+
+  const missingOrInvalidFields = missingFields.flatMap((field) => {
+    if (field === 'location') {
+      const hasLocation = !!watch('location.latitude' as any) && !!watch('location.longitude' as any);
+      return hasLocation ? [] : [getFieldLabel(field)];
+    }
+
+    if (field === 'district' && String(watch('district' as any) ?? '') === 'Other') {
+      const districtMissing = !watch('district' as any);
+      const customDistrictMissing = !String(watch('customDistrict' as any) ?? '').trim();
+      const districtInvalid = !!errors.district || !!errors.customDistrict;
+      return districtMissing || customDistrictMissing || districtInvalid
+        ? ['District', 'Custom District']
+        : [];
+    }
+
+    const value = watch(field as any);
+    const isMissing =
+      typeof value === 'string'
+        ? value.trim() === ''
+        : value === undefined || value === null || value === '';
+    const isInvalid = !!errors[field as keyof FarmerLocationForm];
+    return isMissing || isInvalid ? [getFieldLabel(field)] : [];
+  });
+
+  const uniqueMissingOrInvalidFields = [...new Set(missingOrInvalidFields)];
+
   const isFormValid = () => {
-    return missingFields.every(field => {
-       if (field === 'location') {
-          return !!watch('location.latitude') && !!watch('location.longitude');
-       }
-       if (field === 'district' && watch('district') === 'Other') {
-          return !!watch('customDistrict');
-       }
-       return !!watch(field as any);
-    });
+    return uniqueMissingOrInvalidFields.length === 0;
   };
 
   return (
@@ -348,11 +376,11 @@ const FarmerLocationModal = ({
                 <Input
                   id={field}
                   type={field === 'phoneNo' ? 'tel' : config.type}
-                  inputMode={field === 'phoneNo' ? 'numeric' : undefined}
+                  inputMode={field === 'phoneNo' ? 'numeric' : field === 'landhold' ? 'decimal' : undefined}
                   maxLength={field === 'phoneNo' ? 10 : undefined}
-                  min={field === 'age' ? 16 : field === 'yearsOfExperience' ? 0 : field === 'numberOfSmartphones' ? 1 : undefined}
+                  min={field === 'age' ? 16 : field === 'yearsOfExperience' ? 0 : field === 'numberOfSmartphones' ? 0 : undefined}
                   max={field === 'age' ? 100 : field === 'yearsOfExperience' ? 70 : field === 'numberOfSmartphones' ? 20 : undefined}
-                  step={field === 'landhold' ? 'any' : field === 'age' || field === 'yearsOfExperience' || field === 'numberOfSmartphones' ? 1 : undefined}
+                  step={field === 'age' || field === 'yearsOfExperience' || field === 'numberOfSmartphones' ? 1 : undefined}
                   placeholder={config.placeholder}
                   className={inputClass}
                   {...register(field as any, getValidationRules(field, config.label))}
@@ -417,11 +445,6 @@ const FarmerLocationModal = ({
             </>
           )}
 
-          {Object.keys(errors).length > 0 && (
-            <div className="mt-2 text-sm text-red-500">
-              Please fix the errors before submitting.
-            </div>
-          )}
           {submitError && (
             <div className="mt-2 text-sm text-red-500">{submitError}</div>
           )}
