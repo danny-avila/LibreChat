@@ -415,12 +415,7 @@ function isSeparatorRow(line?: string): boolean {
 }
 
 function convertTableRowToTSV(row: string): string {
-  const trimmed = row.trim();
-  const noBoundaryPipes = trimmed.replace(/^\|/, '').replace(/\|$/, '');
-  return noBoundaryPipes
-    .split('|')
-    .map((cell) => cell.trim())
-    .join('\t');
+  return parseTableCells(row).join('\t');
 }
 
 function normalizeClipboardPlainText(text: string): string {
@@ -468,7 +463,9 @@ function buildClipboardHTML(markdownText: string): string {
 function parseTableCells(row: string): string[] {
   const trimmed = row.trim();
   const noBoundaryPipes = trimmed.replace(/^\|/, '').replace(/\|$/, '');
-  return noBoundaryPipes.split('|').map((cell) => cell.trim());
+  return noBoundaryPipes
+    .split(/(?<!\\)\|/)
+    .map((cell) => cell.replace(/\\\|/g, '|').trim());
 }
 
 function inlineMarkdownToHTML(text: string): string {
