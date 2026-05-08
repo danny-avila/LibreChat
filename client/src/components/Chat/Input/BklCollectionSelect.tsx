@@ -1,8 +1,13 @@
 import React, { memo, useEffect, useMemo, useState } from 'react';
+import * as Ariakit from '@ariakit/react';
+import { Check, ChevronDown, FolderSearch } from 'lucide-react';
+import { DropdownPopup } from '@librechat/client';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilState } from 'recoil';
 import { useBadgeRowContext } from '~/Providers';
 import { ephemeralAgentByConvoId } from '~/store';
+import { MenuItemProps } from '~/common';
+import { cn } from '~/utils';
 
 type BklCollection = {
   name: string;
@@ -20,6 +25,7 @@ function BklCollectionSelect() {
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
   const [collections, setCollections] = useState<BklCollection[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,34 +72,65 @@ function BklCollectionSelect() {
   }, [ephemeralAgent?.bkl_collection, options, setEphemeralAgent]);
 
   const selected = ephemeralAgent?.bkl_collection ?? '';
+  const selectedOption = options.find((item) => item.name === selected);
+  const selectedLabel = selectedOption?.display_name || selectedOption?.name || '선택';
+  const title = selectedOption?.warnings?.join('\n') || undefined;
+
   if (!isLoading && options.length === 0) {
     return null;
   }
 
+  const dropdownItems = options.map((item): MenuItemProps => {
+    const value = item.name;
+    const label = item.display_name || item.name;
+    const isSelected = value === selected;
+    return {
+      id: `bkl-db-${value}`,
+      label: item.searchable === false ? `${label} · 준비 중` : label,
+      icon: isSelected ? <Check className="icon-md" /> : <span className="icon-md" />,
+      className: isSelected ? 'font-medium text-text-primary' : 'text-text-secondary',
+      onClick: () => {
+        localStorage.setItem(STORAGE_KEY, value);
+        setEphemeralAgent((prev) => ({ ...(prev || {}), bkl_collection: value }));
+      },
+    };
+  });
+
+  const trigger = (
+    <Ariakit.MenuButton
+      type="button"
+      disabled={isLoading || options.length === 0}
+      aria-label="DB 선택"
+      className={cn(
+        'group inline-flex h-9 max-w-fit items-center justify-center gap-1.5 rounded-full border border-border-medium bg-transparent px-3 text-sm font-medium text-text-primary shadow-sm transition-all hover:bg-surface-hover hover:shadow-md active:shadow-inner',
+        isOpen && 'bg-surface-hover',
+      )}
+    >
+      <FolderSearch className="icon-md shrink-0 text-text-primary" aria-hidden="true" />
+      <span className="hidden whitespace-nowrap md:block">DB</span>
+      <span className="max-w-[116px] truncate text-xs font-normal text-text-secondary">
+        {isLoading ? '불러오는 중' : selectedLabel}
+      </span>
+      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-text-secondary" aria-hidden="true" />
+    </Ariakit.MenuButton>
+  );
+
   return (
-    <label className="flex max-w-[260px] items-center gap-2 rounded-full border border-border-light bg-surface-secondary px-3 py-1 text-xs text-text-primary">
-      {/* eslint-disable-next-line i18next/no-literal-string */}
-      <span className="whitespace-nowrap text-text-secondary">Collection</span>
-      <select
-        className="min-w-0 flex-1 bg-transparent text-xs outline-none"
-        value={selected}
-        disabled={isLoading || options.length === 0}
-        onChange={(event) => {
-          const value = event.target.value;
-          localStorage.setItem(STORAGE_KEY, value);
-          setEphemeralAgent((prev) => ({ ...(prev || {}), bkl_collection: value }));
-        }}
-        title={options.find((item) => item.name === selected)?.warnings?.join('\n') || undefined}
-      >
-        {isLoading && <option value="">Loading...</option>}
-        {options.map((item) => (
-          <option key={item.name} value={item.name}>
-            {item.display_name || item.name}
-            {item.searchable === false ? ' (partial)' : ''}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div title={title}>
+      <DropdownPopup
+        menuId="bkl-db-menu"
+        className="z-[9999] overflow-visible"
+        itemClassName="whitespace-nowrap"
+        iconClassName="mr-0"
+        isOpen={isOpen}
+        setIsOpen={setIsOpen}
+        modal={true}
+        portal={true}
+        unmountOnHide={true}
+        trigger={trigger}
+        items={dropdownItems}
+      />
+    </div>
   );
 }
 
