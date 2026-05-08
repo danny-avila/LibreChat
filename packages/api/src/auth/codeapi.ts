@@ -201,11 +201,8 @@ export function isCodeApiJwtAuthEnabled(): boolean {
   return isManagedCodeApiJwtMode() || isEnabled(process.env.CODEAPI_JWT_ENABLED);
 }
 
-function resolvePrincipalSource(req: ServerRequest, user: CodeApiUserContext): PrincipalSource {
-  if (
-    req.authStrategy === 'openidJwt' ||
-    (user.provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS))
-  ) {
+function resolvePrincipalSource(req: ServerRequest): PrincipalSource {
+  if (req.authStrategy === 'openidJwt') {
     return 'openid_reuse';
   }
   return 'librechat_jwt';
@@ -241,7 +238,7 @@ function buildClaims(req: ServerRequest, config: SigningConfig, now: number): Co
   }
 
   const role = user.role ?? 'USER';
-  const principalSource = resolvePrincipalSource(req, user);
+  const principalSource = resolvePrincipalSource(req);
   const orgId = stringifyClaimValue(user.orgId);
   const serviceId = stringifyClaimValue(user.serviceId);
   const chcUserId = stringifyClaimValue(user.chcUserId) ?? stringifyClaimValue(user.idOnTheSource);

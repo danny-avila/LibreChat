@@ -15,15 +15,21 @@ const { getTenantId } = require('@librechat/data-schemas');
 let mockPassportError = null;
 
 jest.mock('passport', () => ({
-  authenticate: jest.fn(() => {
-    return (req, _res, done) => {
+  authenticate: jest.fn((strategy, _options, callback) => {
+    return (req, _res, _done) => {
       if (mockPassportError) {
-        return done(mockPassportError);
+        return callback(mockPassportError);
       }
-      if (req._mockUser) {
-        req.user = req._mockUser;
+      const strategyResult = req._mockStrategies?.[strategy];
+      if (strategyResult) {
+        return callback(
+          strategyResult.err ?? null,
+          strategyResult.user ?? false,
+          strategyResult.info,
+          strategyResult.status,
+        );
       }
-      done();
+      return callback(null, req._mockUser ?? false, { message: 'Unauthorized' }, 401);
     };
   }),
 }));
@@ -49,9 +55,10 @@ jest.mock('@librechat/api', () => {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 const requireJwtAuth = require('../requireJwtAuth');
+const { isEnabled } = require('@librechat/api');
 
-function mockReq(user) {
-  return { headers: {}, _mockUser: user };
+function mockReq(user, extra = {}) {
+  return { headers: {}, _mockUser: user, ...extra };
 }
 
 function mockRes() {
@@ -74,6 +81,7 @@ function runAuth(user) {
 describe('requireJwtAuth tenant context chaining', () => {
   afterEach(() => {
     mockPassportError = null;
+    isEnabled.mockReturnValue(false);
   });
 
   it('forwards passport errors to next() without entering tenant middleware', async () => {
@@ -98,9 +106,36 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(tenantId).toBeUndefined();
   });
 
-  it('ALS tenant context is NOT set when user is undefined', async () => {
-    const tenantId = await runAuth(undefined);
-    expect(tenantId).toBeUndefined();
+  it('returns 401 when no strategy authenticates a user', async () => {
+    const req = mockReq(undefined);
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(getTenantId()).toBeUndefined();
+  });
+
+  it('falls back to OpenID JWT for bearer-only reuse requests', async () => {
+    isEnabled.mockReturnValue(true);
+    const req = mockReq(undefined, {
+      _mockStrategies: {
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
+        openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const tenantId = await new Promise((resolve) => {
+      requireJwtAuth(req, res, () => {
+        resolve(getTenantId());
+      });
+    });
+
+    expect(tenantId).toBe('tenant-openid');
+    expect(req.authStrategy).toBe('openidJwt');
+    expect(res.status).not.toHaveBeenCalled();
   });
 
   it('concurrent requests get isolated tenant contexts', async () => {

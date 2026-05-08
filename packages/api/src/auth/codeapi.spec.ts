@@ -1,8 +1,4 @@
-import {
-  createHash,
-  generateKeyPairSync,
-  verify as cryptoVerify,
-} from 'crypto';
+import { createHash, generateKeyPairSync, verify as cryptoVerify } from 'crypto';
 import type { KeyObject } from 'crypto';
 import type { ServerRequest } from '~/types';
 import { getCodeApiAuthHeaders, mintCodeApiToken } from './codeapi';
@@ -53,7 +49,12 @@ function baseRequest(overrides: Record<string, unknown> = {}): ServerRequest {
   } as unknown as ServerRequest;
 }
 
-function decodeToken(token: string): { header: Claims; claims: Claims; signingInput: string; signature: Buffer } {
+function decodeToken(token: string): {
+  header: Claims;
+  claims: Claims;
+  signingInput: string;
+  signature: Buffer;
+} {
   const [header, payload, signature] = token.split('.') as [string, string, string];
   return {
     header: JSON.parse(Buffer.from(header, 'base64url').toString('utf8')) as Claims,
@@ -166,15 +167,15 @@ describe('CodeAPI JWT minting', () => {
 
   it('marks OpenID reuse callers without forwarding upstream credentials', async () => {
     process.env.OPENID_REUSE_TOKENS = 'true';
+    const req = baseRequest({
+      provider: 'openid',
+      idOnTheSource: 'chc_user_123',
+      refreshToken: 'do-not-forward',
+      accessToken: 'do-not-forward',
+    });
+    req.authStrategy = 'openidJwt';
 
-    const token = await mintCodeApiToken(
-      baseRequest({
-        provider: 'openid',
-        idOnTheSource: 'chc_user_123',
-        refreshToken: 'do-not-forward',
-        accessToken: 'do-not-forward',
-      }),
-    );
+    const token = await mintCodeApiToken(req);
     const { claims } = decodeToken(token);
 
     expect(claims).toMatchObject({
@@ -182,6 +183,15 @@ describe('CodeAPI JWT minting', () => {
       chc_user_id: 'chc_user_123',
     });
     expect(JSON.stringify(claims)).not.toContain('do-not-forward');
+  });
+
+  it('marks OpenID users authenticated by LibreChat JWT as LibreChat JWT callers', async () => {
+    process.env.OPENID_REUSE_TOKENS = 'true';
+
+    const token = await mintCodeApiToken(baseRequest({ provider: 'openid' }));
+    const { claims } = decodeToken(token);
+
+    expect(claims.principal_source).toBe('librechat_jwt');
   });
 
   it('rejects minting without tenant context in managed mode', async () => {

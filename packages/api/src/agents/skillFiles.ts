@@ -51,7 +51,7 @@ export interface PrimeSkillFilesParams {
     files: Array<{ fileId: string; filename: string }>;
   }>;
   /** Checks if a code env file is still active. Returns lastModified timestamp or null. */
-  getSessionInfo?: (ref: CodeEnvRef) => Promise<string | null>;
+  getSessionInfo?: (ref: CodeEnvRef, req?: ServerRequest) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
   /** Persists `codeEnvRef` on skill files after upload. Implementations
@@ -128,7 +128,7 @@ export async function primeSkillFiles(
       try {
         const checkResults = await Promise.all(
           Array.from(refsBySession.values()).map(async (ref) => {
-            const lastModified = await getSessionInfo(ref);
+            const lastModified = await getSessionInfo(ref, req);
             return !!(lastModified && checkIfActive(lastModified));
           }),
         );
