@@ -1281,8 +1281,8 @@ async function loadToolsForExecution({
     configurable.toolRegistry = toolRegistry;
     try {
       /**
-       * PTC auth is handled by the agents library / sandbox service
-       * directly; LibreChat no longer threads a per-run credential.
+       * LibreChat threads per-request CodeAPI auth through the agents
+       * library so PTC calls share the same managed auth context.
        */
       const ptcTool = createProgrammaticToolCallingTool({
         authHeaders: () => getCodeApiAuthHeaders(req),
