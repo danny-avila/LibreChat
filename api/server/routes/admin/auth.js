@@ -10,6 +10,7 @@ const {
   getTenantId,
 } = require('@librechat/data-schemas');
 const {
+  isEnabled,
   getAdminPanelUrl,
   exchangeAdminCode,
   createSetBalanceConfig,
@@ -500,6 +501,7 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
  *   401 ISSUER_MISMATCH        — refreshed tokenset was issued by an unexpected issuer
  *   401 TENANT_MISMATCH        — resolved user belongs to a different tenant than the request
  *   403 FORBIDDEN              — resolved user no longer holds ACCESS_ADMIN
+ *   403 TOKEN_REUSE_DISABLED   — OPENID_REUSE_TOKENS is not enabled on the server
  *   502 IDP_INCOMPLETE         — IdP returned a tokenset missing access_token
  *   502 CLAIMS_INCOMPLETE      — IdP tokenset has no readable claims or no sub
  *   503 OPENID_NOT_CONFIGURED  — OpenID is not configured on this server
@@ -516,6 +518,13 @@ router.post(
         return res.status(400).json({
           error: 'Missing refresh_token',
           error_code: 'MISSING_REFRESH_TOKEN',
+        });
+      }
+
+      if (!isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+        return res.status(403).json({
+          error: 'OpenID token reuse is not enabled',
+          error_code: 'TOKEN_REUSE_DISABLED',
         });
       }
 
