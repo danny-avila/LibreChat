@@ -39,10 +39,17 @@ const SearchableMultiSelect = ({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleOpen = () => {
+  const handleToggle = () => {
     if (disabled) return;
-    setOpen(true);
-    setTimeout(() => inputRef.current?.focus(), 0);
+    setOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        setTimeout(() => inputRef.current?.focus(), 0);
+      } else {
+        setSearch('');
+      }
+      return next;
+    });
   };
 
   const toggleOption = (opt: string) => {
@@ -61,7 +68,7 @@ const SearchableMultiSelect = ({
     <div ref={ref} className="relative mt-1">
       <button
         type="button"
-        onClick={handleOpen}
+        onClick={handleToggle}
         disabled={disabled}
         className={`flex w-full items-center justify-between rounded-md border border-border-heavy bg-surface-secondary px-3 py-2 text-left text-sm focus:outline-none focus:ring-1 focus:ring-green-500 disabled:cursor-not-allowed disabled:opacity-50 ${
           selectedDisplay ? 'text-text-primary' : 'text-text-secondary'
