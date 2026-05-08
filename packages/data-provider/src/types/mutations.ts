@@ -40,6 +40,7 @@ export interface IFarmerProfile {
   blockName: string;
   district: string;
   state: string;
+  nearestKVK: string;
   phoneNo: string;
   languagePreference: string;
   yearsOfExperience: number;

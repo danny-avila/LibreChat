@@ -1,6 +1,6 @@
 import { useForm, Controller } from 'react-hook-form';
 import useGeolocation from '~/hooks/useGeolocation';
-import { SearchableSelect } from '~/components/ui';
+import { SearchableSelect, SearchableMultiSelect } from '~/components/ui';
 import {
   OGDialog,
   OGDialogContent,
@@ -11,7 +11,7 @@ import {
 } from '@librechat/client';
 import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
-import { STATES, DISTRICTS, BLOCKS, VILLAGES, CROPS, INDIAN_LANGUAGES } from '~/utils/metaData';
+import { STATES, DISTRICTS, BLOCKS, VILLAGES, CROPS, INDIAN_LANGUAGES, KVKS } from '~/utils/metaData';
 
 // ── Form Types ───────────────────────────────────────────────────────────────
 
@@ -26,6 +26,7 @@ type FarmerProfileForm = {
   customBlock: string;
   villageName: string;
   customVillage: string;
+  nearestKVK: string;
   phoneNo: string;
   languagePreference: string;
   yearsOfExperience: number;
@@ -114,11 +115,16 @@ const FarmerProfileModal = ({
       ? [...(VILLAGES[selectedBlock] ?? []), 'Other']
       : ['Other'];
 
+  const kvkOptions =
+    selectedDistrict && selectedDistrict !== 'Other'
+      ? KVKS[selectedDistrict] ?? KVKS.Other
+      : [];
+
   const selectedCropsList = selectedCrops
     ? selectedCrops
-        .split(',')
-        .map((c: string) => c.trim())
-        .filter(Boolean)
+      .split(',')
+      .map((c: string) => c.trim())
+      .filter(Boolean)
     : [];
 
   const saveMutation = useSaveFarmerProfileMutation({
@@ -165,9 +171,9 @@ const FarmerProfileModal = ({
       location:
         data.location?.latitude && data.location?.longitude
           ? {
-              latitude: Number(data.location.latitude),
-              longitude: Number(data.location.longitude),
-            }
+            latitude: Number(data.location.latitude),
+            longitude: Number(data.location.longitude),
+          }
           : undefined,
     };
     saveMutation.mutate(profile);
@@ -436,6 +442,35 @@ const FarmerProfileModal = ({
               ) : null}
 
               <div className={fieldClass}>
+                <Label>Nearest KVK</Label>
+
+                <Controller
+                  name="nearestKVK"
+                  control={control}
+                  rules={{ required: 'Nearest KVK is required' }}
+                  render={({ field }) => (
+                    <SearchableSelect
+                      options={kvkOptions}
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      placeholder={
+                        selectedDistrict
+                          ? 'Select nearest KVK'
+                          : 'Select district first'
+                      }
+                      disabled={!selectedDistrict}
+                    />
+                  )}
+                />
+
+                {errors.nearestKVK && (
+                  <p className={errorClass}>
+                    {errors.nearestKVK.message}
+                  </p>
+                )}
+              </div>
+
+              <div className={fieldClass}>
                 <Label htmlFor="phoneNo">Phone No.</Label>
                 <Input
                   id="phoneNo"
@@ -527,11 +562,15 @@ const FarmerProfileModal = ({
 
               <div className={fieldClass}>
                 <Label htmlFor="cropsCultivated">Crops Cultivated</Label>
-                <Input
-                  id="cropsCultivated"
-                  placeholder="e.g. Wheat, Rice, Maize (comma separated)"
-                  className={inputClass}
-                  {...register('cropsCultivated', { required: 'Crops cultivated is required' })}
+                <SearchableMultiSelect
+                  options={CROPS}
+                  value={selectedCropsList}
+                  onChange={(selected) => setValue('cropsCultivated', selected.join(', '), { shouldValidate: true })}
+                  placeholder="Select crops..."
+                />
+                <input
+                  type="hidden"
+                  {...register('cropsCultivated', { required: 'Please select at least one crop' })}
                 />
                 {errors.cropsCultivated && (
                   <p className={errorClass}>{errors.cropsCultivated.message}</p>
