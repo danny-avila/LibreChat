@@ -1555,5 +1555,16 @@
   "com_farmer_option_under_graduate": "Under Graduate",
   "com_farmer_option_graduate": "Graduate",
   "com_farmer_option_post_graduate": "Post Graduate",
+  "com_farmer_label_nearest_kvk": "Nearest KVK",
+  "com_farmer_placeholder_select_nearest_kvk": "Select nearest KVK",
+  "com_farmer_validation_nearest_kvk_required": "Nearest KVK is required",
+  "com_farmer_validation_phone_exact_10": "Phone number must be exactly 10 digits",
+  "com_farmer_validation_age_integer": "Age must be an integer",
+  "com_farmer_validation_age_range": "Age must be between 16 and 100",
+  "com_farmer_validation_experience_integer": "Years of experience must be an integer",
+  "com_farmer_validation_experience_range": "Years of experience must be between 0 and 70",
+  "com_farmer_validation_landholding_valid": "Landholding must be a valid number.",
+  "com_farmer_validation_smartphones_integer": "Number of smartphones must be an integer",
+  "com_farmer_validation_smartphones_range": "Number of smartphones must be between 0 and 20",
   "com_user_message": "You"
 }
