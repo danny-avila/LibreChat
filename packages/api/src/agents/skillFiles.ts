@@ -421,7 +421,7 @@ export async function primeInvokedSkills(
         const checkResults = await Promise.all(
           Array.from(refsBySession.values()).map(async (ref) => {
             try {
-              const lastModified = await deps.getSessionInfo?.(ref);
+              const lastModified = await deps.getSessionInfo?.(ref, deps.req);
               return !!(lastModified && deps.checkIfActive?.(lastModified));
             } catch {
               return false;
