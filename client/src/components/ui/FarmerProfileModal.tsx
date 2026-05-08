@@ -180,6 +180,7 @@ const FarmerProfileModal = ({
   const sectionTitleClass =
     'mb-3 text-base font-semibold text-text-primary border-b border-border-heavy pb-1';
   const fieldClass = 'mb-4';
+  const decimalRegex = /^\d+(\.\d+)?$/;
 
   return (
     <OGDialog open={open} onOpenChange={handleOpenChange}>
@@ -227,14 +228,19 @@ const FarmerProfileModal = ({
                     id="age"
                     type="number"
                     placeholder="Age"
-                    defaultValue={18}
-                    min={18}
-                    max={120}
+                    defaultValue={16}
+                    min={16}
+                    max={100}
+                    step={1}
                     className={inputClass}
                     {...register('age', {
                       required: 'Age is required',
-                      min: { value: 18, message: 'Must be at least 18' },
                       valueAsNumber: true,
+                      validate: {
+                        isInteger: (value) => Number.isInteger(value) || 'Age must be an integer',
+                        inRange: (value) =>
+                          (value >= 16 && value <= 100) || 'Age must be between 16 and 100',
+                      },
                     })}
                   />
                   {errors.age && <p className={errorClass}>{errors.age.message}</p>}
@@ -433,11 +439,14 @@ const FarmerProfileModal = ({
                 <Label htmlFor="phoneNo">Phone No.</Label>
                 <Input
                   id="phoneNo"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
                   placeholder="Enter phone number"
                   className={inputClass}
                   {...register('phoneNo', {
                     required: 'Phone number is required',
-                    pattern: { value: /^[0-9+\- ]{7,15}$/, message: 'Invalid phone number' },
+                    pattern: { value: /^\d{10}$/, message: 'Phone number must be exactly 10 digits', },
                   })}
                 />
                 {errors.phoneNo && <p className={errorClass}>{errors.phoneNo.message}</p>}
@@ -476,11 +485,19 @@ const FarmerProfileModal = ({
                   placeholder="Years"
                   defaultValue={0}
                   min={0}
+                  max={70}
+                  step={1}
                   className={inputClass}
                   {...register('yearsOfExperience', {
                     required: 'Years of experience is required',
-                    min: { value: 0, message: 'Cannot be negative' },
                     valueAsNumber: true,
+                    validate: {
+                      isInteger: (value) =>
+                        Number.isInteger(value) || 'Years of experience must be an integer',
+                      inRange: (value) =>
+                        (value >= 0 && value <= 70) ||
+                        'Years of experience must be between 0 and 70',
+                    },
                   })}
                 />
                 {errors.yearsOfExperience && (
@@ -492,9 +509,16 @@ const FarmerProfileModal = ({
                 <Label htmlFor="landhold">Total Agricultural Landholding (Specify your total farm size in Acres)</Label>
                 <Input
                   id="landhold"
+                  type="number"
+                  step="any"
                   placeholder="e.g. 5"
                   className={inputClass}
-                  {...register('landhold', { required: 'Landholding is required' })}
+                  {...register('landhold', {
+                    required: 'Landholding is required',
+                    validate: (value) =>
+                      decimalRegex.test(String(value).trim()) ||
+                      'Landholding must be a valid number.',
+                  })}
                 />
                 {errors.landhold && (
                   <p className={errorClass}>{errors.landhold.message}</p>
@@ -640,13 +664,21 @@ const FarmerProfileModal = ({
                   id="numberOfSmartphones"
                   type="number"
                   placeholder="Number of smartphones"
-                  defaultValue={0}
-                  min={0}
+                  defaultValue={1}
+                  min={1}
+                  max={20}
+                  step={1}
                   className={inputClass}
                   {...register('numberOfSmartphones', {
                     required: 'This field is required',
-                    min: { value: 0, message: 'Cannot be negative' },
                     valueAsNumber: true,
+                    validate: {
+                      isInteger: (value) =>
+                        Number.isInteger(value) || 'Number of smartphones must be an integer',
+                      inRange: (value) =>
+                        (value >= 1 && value <= 20) ||
+                        'Number of smartphones must be between 1 and 20',
+                    },
                   })}
                 />
                 {errors.numberOfSmartphones && (

@@ -5,7 +5,6 @@ import { useState, useEffect } from 'react';
 import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle, Label, Input } from '@librechat/client';
 import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
-import { useAuthContext } from '~/hooks/AuthContext';
 import useGeolocation from '~/hooks/useGeolocation';
 import { STATES, DISTRICTS, INDIAN_LANGUAGES } from '~/utils/metaData';
 import SearchableSelect from './SearchableSelect';
@@ -29,7 +28,6 @@ const FarmerLocationModal = ({
   onComplete: () => void;
   missingFields?: string[];
 }) => {
-  const { user } = useAuthContext();
   const [submitError, setSubmitError] = useState('');
 
   const {
@@ -62,7 +60,7 @@ const FarmerLocationModal = ({
   }, [missingFields, unregister, clearErrors]);
 
   const watchedState = watch('state');
-  const selectedState = watchedState || user?.farmerProfile?.state;
+  const selectedState = watchedState;
   const selectedDistrict = watch('district');
 
   const matchedStateKey = selectedState 
@@ -141,6 +139,8 @@ const FarmerLocationModal = ({
 
   const fieldClass = 'mb-4';
   const inputClass = 'mt-1 block w-full rounded-md border border-border-heavy bg-surface-secondary px-3 py-2 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-green-500';
+  const integerRegex = /^\d+$/;
+  const decimalRegex = /^\d+(\.\d+)?$/;
 
   const isLocationMissing = missingFields.includes('location');
   const otherMissingFields = missingFields.filter(f => f !== 'location');
@@ -164,6 +164,80 @@ const FarmerLocationModal = ({
     landhold: { label: 'Total Agricultural Landholding (Acres)', type: 'number', placeholder: 'e.g. 5' },
     awarenessOfKCC: { label: 'Awareness of Kisan Call Centre (KCC)', type: 'radio' },
     usesAgriApps: { label: 'Usage of Any Agricultural Mobile Applications', type: 'radio' },
+  };
+
+  const getValidationRules = (field: string, label: string) => {
+    if (field === 'phoneNo') {
+      return {
+        required: `${label} is required`,
+        pattern: {
+          value: /^\d{10}$/,
+          message: 'Phone number must be exactly 10 digits',
+        },
+      };
+    }
+
+    if (field === 'age') {
+      return {
+        required: `${label} is required`,
+        validate: (value: string) => {
+          const normalized = String(value ?? '').trim();
+          if (!integerRegex.test(normalized)) {
+            return 'Age must be an integer';
+          }
+          const numeric = Number(normalized);
+          if (numeric < 16 || numeric > 100) {
+            return 'Age must be between 16 and 100';
+          }
+          return true;
+        },
+      };
+    }
+
+    if (field === 'yearsOfExperience') {
+      return {
+        required: `${label} is required`,
+        validate: (value: string) => {
+          const normalized = String(value ?? '').trim();
+          if (!integerRegex.test(normalized)) {
+            return 'Years of experience must be an integer';
+          }
+          const numeric = Number(normalized);
+          if (numeric < 0 || numeric > 70) {
+            return 'Years of experience must be between 0 and 70';
+          }
+          return true;
+        },
+      };
+    }
+
+    if (field === 'numberOfSmartphones') {
+      return {
+        required: `${label} is required`,
+        validate: (value: string) => {
+          const normalized = String(value ?? '').trim();
+          if (!integerRegex.test(normalized)) {
+            return 'Number of smartphones must be an integer';
+          }
+          const numeric = Number(normalized);
+          if (numeric < 1 || numeric > 20) {
+            return 'Number of smartphones must be between 1 and 20';
+          }
+          return true;
+        },
+      };
+    }
+
+    if (field === 'landhold') {
+      return {
+        required: `${label} is required`,
+        validate: (value: string) =>
+          decimalRegex.test(String(value ?? '').trim()) ||
+          'Landholding must be a valid number (decimals allowed)',
+      };
+    }
+
+    return { required: `${label} is required` };
   };
 
   const isFormValid = () => {
@@ -273,10 +347,15 @@ const FarmerLocationModal = ({
                 <Label htmlFor={field}>{config.label}</Label>
                 <Input
                   id={field}
-                  type={config.type}
+                  type={field === 'phoneNo' ? 'tel' : config.type}
+                  inputMode={field === 'phoneNo' ? 'numeric' : undefined}
+                  maxLength={field === 'phoneNo' ? 10 : undefined}
+                  min={field === 'age' ? 16 : field === 'yearsOfExperience' ? 0 : field === 'numberOfSmartphones' ? 1 : undefined}
+                  max={field === 'age' ? 100 : field === 'yearsOfExperience' ? 70 : field === 'numberOfSmartphones' ? 20 : undefined}
+                  step={field === 'landhold' ? 'any' : field === 'age' || field === 'yearsOfExperience' || field === 'numberOfSmartphones' ? 1 : undefined}
                   placeholder={config.placeholder}
                   className={inputClass}
-                  {...register(field as any, { required: `${config.label} is required` })}
+                  {...register(field as any, getValidationRules(field, config.label))}
                 />
                 {errors[field as keyof FarmerLocationForm] && (
                   <p className="mt-1 text-xs text-red-500">{(errors[field as keyof FarmerLocationForm] as any)?.message}</p>
