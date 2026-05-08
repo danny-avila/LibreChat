@@ -576,10 +576,19 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
      *   per agent identity. `id` carries the agent id. */
     const codeKind = messageAttachment === true ? 'user' : 'agent';
     const codeId = messageAttachment === true ? req.user.id : agent_id;
+    /* Upload under the same sanitized filename LC stores in its DB
+     * (`fileInfo.filename` below uses `sanitizeFilename(originalname)`).
+     * Codeapi/file_server use this as the on-disk name in the sandbox
+     * — `/mnt/data/<filename>` — and `primeFiles`'s `toolContext` text
+     * + `_injected_files.name` both reference `file.filename`. Sending
+     * the unsanitized `file.originalname` here makes the sandbox path
+     * (with spaces / special chars) drift from what LC tells the model
+     * is available, causing FileNotFoundError on the first reference. */
+    const sandboxFilename = sanitizeFilename(file.originalname);
     const uploaded = await uploadCodeEnvFile({
       req,
       stream,
-      filename: file.originalname,
+      filename: sandboxFilename,
       kind: codeKind,
       id: codeId,
     });
