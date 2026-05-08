@@ -328,9 +328,15 @@ describe('initializeClient — subagent loading', () => {
     const subagentConfig = makeSubagentConfig(SUBAGENT_ID);
 
     let call = 0;
-    mockInitializeAgent.mockImplementation(() =>
-      Promise.resolve(++call === 1 ? primaryConfig : subagentConfig),
-    );
+    let subagentConvoFileIds;
+    mockInitializeAgent.mockImplementation(async (params, dbDeps) => {
+      call += 1;
+      if (call === 1) {
+        return primaryConfig;
+      }
+      subagentConvoFileIds = await dbDeps.getConvoFiles(params.conversationId);
+      return subagentConfig;
+    });
 
     await initializeClient({
       req: makeSubagentReq(),
@@ -340,6 +346,10 @@ describe('initializeClient — subagent loading', () => {
     });
 
     expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
+    const subagentDbDeps = mockInitializeAgent.mock.calls[1][1];
+    expect(subagentDbDeps.getConvoFiles).toBeInstanceOf(Function);
+    expect(subagentDbDeps.db).toBeUndefined();
+    expect(subagentConvoFileIds).toEqual([]);
 
     /** The subagent's AgentConfig is attached to the primary for run.ts to
      *  turn into `SubagentConfig[]` on the parent's `AgentInputs`. */
