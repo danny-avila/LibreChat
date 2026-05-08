@@ -364,6 +364,128 @@ describe('recordCollectedUsage', () => {
     });
   });
 
+  describe('reasoning token handling - issue #13006', () => {
+    it('uses total - input when output_tokens undercounts (Vertex stream undercount with details present)', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 80657,
+          output_tokens: 766,
+          total_tokens: 83265,
+          output_token_details: { reasoning: 1842 },
+          model: 'gemini-3-flash-preview',
+          provider: 'vertexai',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-3-flash-preview' }),
+        { promptTokens: 80657, completionTokens: 2608 },
+      );
+      expect(result?.output_tokens).toBe(2608);
+    });
+
+    it('uses total - input even when output_token_details is missing (raw langchain google-common path)', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 12,
+          output_tokens: 135,
+          total_tokens: 309,
+          model: 'gemini-3-flash-preview',
+          provider: 'vertexai',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-3-flash-preview' }),
+        { promptTokens: 12, completionTokens: 297 },
+      );
+      expect(result?.output_tokens).toBe(297);
+    });
+
+    it('does not change output when invariant already holds (OpenAI o-series, reasoning already a subset)', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 100,
+          output_tokens: 500,
+          total_tokens: 600,
+          output_token_details: { reasoning: 200 },
+          model: 'o1-preview',
+          provider: 'openAI',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'o1-preview' }),
+        { promptTokens: 100, completionTokens: 500 },
+      );
+      expect(result?.output_tokens).toBe(500);
+    });
+
+    it('routes correction through structured spend when cache tokens are present', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 80657,
+          output_tokens: 766,
+          total_tokens: 83265,
+          output_token_details: { reasoning: 1842 },
+          input_token_details: { cache_read: 30000 },
+          model: 'gemini-3-flash-preview',
+          provider: 'vertexai',
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-3-flash-preview' }),
+        {
+          promptTokens: { input: 50657, write: 0, read: 30000 },
+          completionTokens: 2608,
+        },
+      );
+    });
+
+    it('no-op when total_tokens is absent or zero', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 100,
+          output_tokens: 50,
+          model: 'gpt-4',
+          provider: 'openAI',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.anything(),
+        { promptTokens: 100, completionTokens: 50 },
+      );
+      expect(result?.output_tokens).toBe(50);
+    });
+  });
+
   describe('mixed cache and non-cache entries', () => {
     it('should handle mixed entries correctly', async () => {
       const collectedUsage: UsageMetadata[] = [
