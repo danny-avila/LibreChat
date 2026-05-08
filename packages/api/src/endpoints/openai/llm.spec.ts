@@ -675,6 +675,68 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).toHaveProperty('include_reasoning', true);
       expect(result.llmConfig).not.toHaveProperty('reasoning');
     });
+
+    it('should pass promptCache only for OpenRouter', () => {
+      const openRouterResult = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+          promptCache: true,
+        } as Partial<t.OpenAIParameters & { promptCache?: boolean }>,
+      });
+      const openAIResult = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: false,
+        modelOptions: {
+          model: 'gpt-4o',
+          promptCache: true,
+        } as Partial<t.OpenAIParameters & { promptCache?: boolean }>,
+      });
+
+      expect(openRouterResult.llmConfig).toHaveProperty('promptCache', true);
+      expect(openRouterResult.llmConfig.modelKwargs).toBeUndefined();
+      expect(openAIResult.llmConfig).not.toHaveProperty('promptCache');
+      expect(openAIResult.llmConfig.modelKwargs).toBeUndefined();
+    });
+
+    it('should resolve OpenRouter promptCache default/add/drop params', () => {
+      const enabled = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        defaultParams: { promptCache: true },
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+        },
+      });
+      const disabled = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        defaultParams: { promptCache: true },
+        addParams: { promptCache: false },
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+        },
+      });
+      const dropped = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        defaultParams: { promptCache: true },
+        dropParams: ['promptCache'],
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+        },
+      });
+
+      expect(enabled.llmConfig).toHaveProperty('promptCache', true);
+      expect(disabled.llmConfig).not.toHaveProperty('promptCache');
+      expect(dropped.llmConfig).not.toHaveProperty('promptCache');
+    });
   });
 
   describe('Verbosity Handling', () => {

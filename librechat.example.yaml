@@ -493,6 +493,13 @@ endpoints:
       titleModel: 'meta-llama/llama-3-70b-instruct'
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ['stop']
+      # Enable OpenRouter-specific parameters. The promptCache toggle adds explicit
+      # cache_control breakpoints for providers/models that support prompt caching.
+      customParams:
+        defaultParamsEndpoint: openrouter
+        paramDefinitions:
+          - key: promptCache
+            default: true
       modelDisplayLabel: 'OpenRouter'
 
     # Helicone Example

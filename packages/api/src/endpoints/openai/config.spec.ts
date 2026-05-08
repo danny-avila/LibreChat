@@ -1464,6 +1464,10 @@ describe('getOpenAIConfig', () => {
             top_k: 50,
             repetition_penalty: 1.1,
           },
+          customParams: {
+            defaultParamsEndpoint: 'openrouter',
+            paramDefinitions: [{ key: 'promptCache', default: true }],
+          },
           modelOptions: {
             model: 'anthropic/claude-3-sonnet',
             user: 'openrouter-user',
@@ -1482,6 +1486,7 @@ describe('getOpenAIConfig', () => {
           temperature: 0.7,
           maxTokens: 4000,
           apiKey: apiKey,
+          promptCache: true,
         });
         expect(result.llmConfig.include_reasoning).toBeUndefined();
         expect(result.llmConfig.modelKwargs).toMatchObject({
