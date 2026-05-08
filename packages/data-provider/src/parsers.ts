@@ -48,6 +48,21 @@ const endpointSchemas: Record<EndpointSchemaLookupKey, EndpointSchema> = {
 const isEndpointSchemaLookupKey = (value?: string | null): value is EndpointSchemaLookupKey =>
   value != null && Object.prototype.hasOwnProperty.call(endpointSchemas, value);
 
+const getFallbackEndpointSchema = <TSchema>(
+  schemas: Record<EndpointSchemaLookupKey, TSchema>,
+  endpointType?: EndpointSchemaKey | null,
+  defaultParamsEndpoint?: string | null,
+): TSchema | undefined => {
+  if (!endpointType) {
+    return undefined;
+  }
+
+  const overrideSchema = isEndpointSchemaLookupKey(defaultParamsEndpoint)
+    ? schemas[defaultParamsEndpoint]
+    : undefined;
+  return overrideSchema ?? schemas[endpointType];
+};
+
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
 //   [EModelEndpoint.google]: createGoogleSchema,
 // };
@@ -160,17 +175,15 @@ export const parseConvo = ({
   possibleValues?: TPossibleValues;
   defaultParamsEndpoint?: string | null;
 }) => {
-  let schema = endpointSchemas[endpoint] as EndpointSchema | undefined;
+  const primarySchema = endpointSchemas[endpoint] as EndpointSchema | undefined;
 
-  if (!schema && !endpointType) {
+  if (!primarySchema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema) {
-    const overrideSchema = isEndpointSchemaLookupKey(defaultParamsEndpoint)
-      ? endpointSchemas[defaultParamsEndpoint]
-      : undefined;
-    schema = overrideSchema ?? (endpointType ? endpointSchemas[endpointType] : undefined);
   }
 
+  const schema =
+    primarySchema ??
+    getFallbackEndpointSchema(endpointSchemas, endpointType, defaultParamsEndpoint);
   const convo = schema?.parse(conversation) as s.TConversation | undefined;
   const { models } = possibleValues ?? {};
 
@@ -331,16 +344,15 @@ export const parseCompactConvo = ({
     throw new Error(`undefined endpoint: ${endpoint}`);
   }
 
-  let schema = compactEndpointSchemas[endpoint] as CompactEndpointSchema | undefined;
+  const primarySchema = compactEndpointSchemas[endpoint] as CompactEndpointSchema | undefined;
 
-  if (!schema && !endpointType) {
+  if (!primarySchema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema) {
-    const overrideSchema = isEndpointSchemaLookupKey(defaultParamsEndpoint)
-      ? compactEndpointSchemas[defaultParamsEndpoint]
-      : undefined;
-    schema = overrideSchema ?? (endpointType ? compactEndpointSchemas[endpointType] : undefined);
   }
+
+  const schema =
+    primarySchema ??
+    getFallbackEndpointSchema(compactEndpointSchemas, endpointType, defaultParamsEndpoint);
 
   if (!schema) {
     throw new Error(`Unknown endpointType: ${endpointType}`);
