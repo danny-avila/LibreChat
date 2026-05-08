@@ -1,17 +1,18 @@
-import { Page, FullConfig, chromium } from '@playwright/test';
+import { chromium } from '@playwright/test';
+import type { FullConfig, Page } from '@playwright/test';
 import type { User } from '../types';
 import cleanupUser from './cleanupUser';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const timeout = 6000;
+const timeout = Number(process.env.E2E_AUTH_TIMEOUT ?? 15000);
 
 async function register(page: Page, user: User) {
   await page.getByRole('link', { name: 'Sign up' }).click();
   await page.getByLabel('Full name').click();
-  await page.getByLabel('Full name').fill('test');
+  await page.getByLabel('Full name').fill(user.name);
   await page.getByText('Username (optional)').click();
-  await page.getByLabel('Username (optional)').fill('test');
+  await page.getByLabel('Username (optional)').fill(user.name);
   await page.getByLabel('Email').click();
   await page.getByLabel('Email').fill(user.email);
   await page.getByLabel('Email').press('Tab');
@@ -22,15 +23,17 @@ async function register(page: Page, user: User) {
   await page.getByLabel('Submit registration').click();
 }
 
-async function logout(page: Page) {
-  await page.getByTestId('nav-user').click();
-  await page.getByRole('button', { name: 'Log out' }).click();
+async function registrationErrorIsVisible(page: Page) {
+  return page
+    .getByTestId('registration-error')
+    .isVisible({ timeout: 500 })
+    .catch(() => false);
 }
 
 async function login(page: Page, user: User) {
-  await page.locator('input[name="email"]').fill(user.email);
-  await page.locator('input[name="password"]').fill(user.password);
-  await page.locator('input[name="password"]').press('Enter');
+  await page.getByLabel('Email').fill(user.email);
+  await page.getByLabel('Password').fill(user.password);
+  await page.getByTestId('login-button').click();
 }
 
 async function authenticate(config: FullConfig, user: User) {
@@ -38,8 +41,12 @@ async function authenticate(config: FullConfig, user: User) {
   const { baseURL, storageState } = config.projects[0].use;
   console.log('🤖: using baseURL', baseURL);
   console.dir(user, { depth: null });
+  if (typeof storageState !== 'string') {
+    throw new Error('🤖: storageState must be a file path');
+  }
+
   const browser = await chromium.launch({
-    headless: false,
+    headless: config.projects[0].use.headless ?? true,
   });
   try {
     const page = await browser.newPage();
@@ -61,28 +68,24 @@ async function authenticate(config: FullConfig, user: User) {
       await page.waitForURL(`${baseURL}/c/new`, { timeout });
     } catch (error) {
       console.error('Error:', error);
-      const userExists = page.getByTestId('registration-error');
-      if (userExists) {
+      if (await registrationErrorIsVisible(page)) {
         console.log('🤖: 🚨  user already exists');
         await cleanupUser(user);
         await page.goto(baseURL, { timeout });
         await register(page, user);
+        await page.waitForURL(`${baseURL}/c/new`, { timeout });
       } else {
         throw new Error('🤖: 🚨  user failed to register');
       }
     }
     console.log('🤖: ✔️  user successfully registered');
 
-    // Logout
-    // await logout(page);
-    // await page.waitForURL(`${baseURL}/login`, { timeout });
-    // console.log('🤖: ✔️  user successfully logged out');
-
+    await page.goto(`${baseURL}/login`, { timeout });
     await login(page, user);
     await page.waitForURL(`${baseURL}/c/new`, { timeout });
     console.log('🤖: ✔️  user successfully authenticated');
 
-    await page.context().storageState({ path: storageState as string });
+    await page.context().storageState({ path: storageState });
     console.log('🤖: ✔️  authentication state successfully saved in', storageState);
     // await browser.close();
     // console.log('🤖: global setup has been finished');

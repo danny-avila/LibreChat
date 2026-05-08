@@ -1,0 +1,69 @@
+const DEFAULT_BASE_URL = 'http://localhost:3080';
+const DEFAULT_MONGO_URI = 'mongodb://127.0.0.1:27017/LibreChat-e2e';
+const DEFAULT_CREDS_KEY = 'f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0';
+const DEFAULT_CREDS_IV = 'e2341419ec3dd3d19b13a1a87fafcbfb';
+const DEFAULT_JWT_SECRET = '16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef';
+const DEFAULT_JWT_REFRESH_SECRET =
+  'eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418';
+
+export function getE2EBaseURL() {
+  return process.env.E2E_BASE_URL ?? process.env.DOMAIN_CLIENT ?? DEFAULT_BASE_URL;
+}
+
+export function getBaseE2EEnv(): Record<string, string> {
+  const baseURL = getE2EBaseURL();
+
+  return {
+    ...process.env,
+    NODE_ENV: 'CI',
+    MONGO_URI: process.env.MONGO_URI ?? DEFAULT_MONGO_URI,
+    DOMAIN_CLIENT: process.env.DOMAIN_CLIENT ?? baseURL,
+    DOMAIN_SERVER: process.env.DOMAIN_SERVER ?? baseURL,
+    E2E_USE_MEMORY_MONGO: process.env.E2E_USE_MEMORY_MONGO ?? 'auto',
+    NO_INDEX: process.env.NO_INDEX ?? 'true',
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? 'user_provided',
+    CREDS_KEY: process.env.CREDS_KEY ?? DEFAULT_CREDS_KEY,
+    CREDS_IV: process.env.CREDS_IV ?? DEFAULT_CREDS_IV,
+    JWT_SECRET: process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET,
+    JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? DEFAULT_JWT_REFRESH_SECRET,
+    EMAIL_HOST: '',
+    SEARCH: 'false',
+    SESSION_EXPIRY: '60000',
+    ALLOW_REGISTRATION: 'true',
+    REFRESH_TOKEN_EXPIRY: '300000',
+  };
+}
+
+export function getLocalE2EEnv(): Record<string, string> {
+  return {
+    ...getBaseE2EEnv(),
+    TITLE_CONVO: 'false',
+    LOGIN_VIOLATION_SCORE: '0',
+    REGISTRATION_VIOLATION_SCORE: '0',
+    CONCURRENT_VIOLATION_SCORE: '0',
+    MESSAGE_VIOLATION_SCORE: '0',
+    NON_BROWSER_VIOLATION_SCORE: '0',
+    FORK_VIOLATION_SCORE: '0',
+    IMPORT_VIOLATION_SCORE: '0',
+    TTS_VIOLATION_SCORE: '0',
+    STT_VIOLATION_SCORE: '0',
+    FILE_UPLOAD_VIOLATION_SCORE: '0',
+    RESET_PASSWORD_VIOLATION_SCORE: '0',
+    VERIFY_EMAIL_VIOLATION_SCORE: '0',
+    TOOL_CALL_VIOLATION_SCORE: '0',
+    CONVO_ACCESS_VIOLATION_SCORE: '0',
+    ILLEGAL_MODEL_REQ_SCORE: '0',
+    LOGIN_MAX: '20',
+    LOGIN_WINDOW: '1',
+    REGISTER_MAX: '20',
+    REGISTER_WINDOW: '1',
+    LIMIT_CONCURRENT_MESSAGES: 'false',
+    CONCURRENT_MESSAGE_MAX: '20',
+    LIMIT_MESSAGE_IP: 'false',
+    MESSAGE_IP_MAX: '100',
+    MESSAGE_IP_WINDOW: '1',
+    LIMIT_MESSAGE_USER: 'false',
+    MESSAGE_USER_MAX: '100',
+    MESSAGE_USER_WINDOW: '1',
+  };
+}
