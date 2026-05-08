@@ -14,6 +14,9 @@ import { createSSRFSafeAgents, createSSRFSafeUndiciConnect } from './agent';
 type LookupCallback = (err: NodeJS.ErrnoException | null, address: string, family: number) => void;
 
 const mockedDnsLookup = dns.lookup as jest.MockedFunction<typeof dns.lookup>;
+const httpAgentPrototype = http.Agent.prototype as unknown as {
+  createConnection: (options: Record<string, unknown>) => unknown;
+};
 
 function mockDnsResult(address: string, family: number): void {
   mockedDnsLookup.mockImplementation(((
@@ -58,7 +61,7 @@ describe('createSSRFSafeAgents', () => {
   it('should scope allowedAddresses by the request port in the HTTP agent lookup', async () => {
     mockDnsResult('10.0.0.5', 4);
     let lookupError: NodeJS.ErrnoException | null = null;
-    jest.spyOn(http.Agent.prototype, 'createConnection').mockImplementation(((
+    jest.spyOn(httpAgentPrototype, 'createConnection').mockImplementation(((
       options: Record<string, unknown>,
     ) => {
       const lookup = options.lookup as LookupFunction;
