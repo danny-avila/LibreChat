@@ -1,4 +1,5 @@
 import { Document, Types } from 'mongoose';
+import type { CodeEnvRef } from 'librechat-data-provider';
 
 export interface IMongoFile extends Omit<Document, 'model'> {
   user: Types.ObjectId;
@@ -62,7 +63,13 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   width?: number;
   height?: number;
   metadata?: {
-    fileIdentifier?: string;
+    /**
+     * Code-environment cache pointer for files re-uploadable to
+     * codeapi (chat attachments, agent tool resources, code-output
+     * files). Carries the resource kind + identity so codeapi can
+     * derive the sessionKey explicitly.
+     */
+    codeEnvRef?: CodeEnvRef;
   };
   expiresAt?: Date;
   createdAt?: Date;
