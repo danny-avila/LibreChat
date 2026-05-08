@@ -428,17 +428,22 @@ export async function initializeAgent(
       let threadFileIds: string[] | undefined;
 
       if (parentMessageId && parentMessageId !== Constants.NO_PARENT && db.getMessages) {
-        /** Only select fields needed for thread traversal */
+        /** Only select fields needed for thread traversal. Both
+         *  `files` (user uploads) and `attachments` (code-execution
+         *  outputs from `processCodeOutput`) carry the `file_id`
+         *  refs the next turn must prime — selecting only `files`
+         *  silently drops every code-output ref. */
         const messages = await db.getMessages(
           { conversationId },
-          'messageId parentMessageId files',
+          'messageId parentMessageId files attachments',
         );
         if (messages && messages.length > 0) {
           /** Walk the parent chain and collect file_ids referenced by
-           *  any message in the thread (`messages.files[].file_id`).
-           *  Used as the primary anchor for both
-           *  `getCodeGeneratedFiles` and `getUserCodeFiles` —
-           *  message ids no longer needed at this layer. */
+           *  any message in the thread (`messages.files[].file_id` +
+           *  `messages.attachments[].file_id`). Used as the primary
+           *  anchor for both `getCodeGeneratedFiles` and
+           *  `getUserCodeFiles` — message ids no longer needed at
+           *  this layer. */
           threadFileIds = getThreadData(messages, parentMessageId).fileIds;
         }
       }

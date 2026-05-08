@@ -1318,6 +1318,58 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     expect(getUserCodeFiles).toHaveBeenCalledWith(['file-pptx-skill', 'file-output-csv']);
   });
 
+  it('selects messages.attachments alongside messages.files (regression)', async () => {
+    /* Code-execution outputs land on `messages.attachments` via
+     * `processCodeOutput`; user uploads land on `messages.files`.
+     * Selecting only `files` silently dropped every code-output
+     * file_id from the thread walk, so the next turn's
+     * `tool_resources.execute_code.file_ids` came up empty and the
+     * sandbox saw `_injected_files: []`. The visible symptom: "the
+     * previous file isn't persisted between executions" on a single
+     * linear thread. Lock the select string so a future field
+     * trim doesn't silently re-introduce the bug. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    mockGetThreadData.mockReturnValue({ messageIds: [], fileIds: [] });
+
+    const getCodeGeneratedFiles = jest.fn().mockResolvedValue([]);
+    const getUserCodeFiles = jest.fn().mockResolvedValue([]);
+    const getMessages = jest.fn().mockResolvedValue([]);
+
+    const dbWithThreadCalls: InitializeAgentDbMethods = {
+      ...db,
+      getMessages,
+      getCodeGeneratedFiles,
+      getUserCodeFiles,
+    };
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      dbWithThreadCalls,
+    );
+
+    expect(getMessages).toHaveBeenCalledTimes(1);
+    const [, selectFields] = getMessages.mock.calls[0];
+    /* Asserting on a substring instead of exact equality keeps the
+     * test resilient to future ordering / new fields, while still
+     * catching a regression where `attachments` is dropped. */
+    expect(selectFields).toMatch(/\battachments\b/);
+    expect(selectFields).toMatch(/\bfiles\b/);
+    expect(selectFields).toMatch(/\bmessageId\b/);
+    expect(selectFields).toMatch(/\bparentMessageId\b/);
+  });
+
   it('skips the code-generated fetch entirely when threadFileIds is empty', async () => {
     /* Empty `messages.files[]` across the thread — nothing to look up.
      * The function returns early without hitting Mongo, mirroring the
