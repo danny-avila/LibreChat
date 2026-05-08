@@ -1,12 +1,16 @@
+import { Types } from 'mongoose';
 import { runAsSystem, logger } from '@librechat/data-schemas';
-import type { FilterQuery } from 'mongoose';
+
 import type { IUser } from '@librechat/data-schemas';
+import type { FilterQuery } from 'mongoose';
 import type { AdminExchangeResponse } from '~/auth/exchange';
+
 import { serializeUserForExchange } from '~/auth/exchange';
+
+const SAFE_USER_PROJECTION = '-password -__v -totpSecret -backupCodes';
 
 interface AdminRefreshClaims {
   sub?: string;
-  email?: string;
   exp?: number;
 }
 
@@ -16,9 +20,15 @@ interface AdminRefreshClaims {
  */
 export interface RefreshTokenset {
   access_token?: string;
-  id_token?: string;
   refresh_token?: string;
   claims: () => AdminRefreshClaims;
+}
+
+export interface MintedToken {
+  /** Bearer the admin panel will send on subsequent requests. */
+  token: string;
+  /** Absolute expiry of `token` (ms epoch). Drives the admin panel's proactive refresh. */
+  expiresAt: number;
 }
 
 export interface AdminRefreshDeps {
@@ -29,12 +39,13 @@ export interface AdminRefreshDeps {
   ) => Promise<IUser[]>;
   getUserById: (id: string, projection: string) => Promise<IUser | null>;
   /**
-   * Mints the bearer token returned to the admin panel. The default OSS path
-   * is to call `generateToken(user, expiresInMs)` which signs an HS256
-   * LibreChat JWT — pass that here. Forks that prefer to hand back a
-   * different bearer (e.g. an IdP-signed id_token) override this hook.
+   * Mints the bearer the admin panel will send on subsequent requests, and
+   * reports its absolute expiry. The minter is authoritative for the bearer's
+   * lifetime — the helper does not attempt to derive expiry from the IdP's
+   * `exp` claim. Default OSS callers pass `generateToken(user, sessionExpiry)`
+   * and `Date.now() + sessionExpiry`.
    */
-  mintToken: (user: IUser, tokenset: RefreshTokenset) => Promise<string>;
+  mintToken: (user: IUser, tokenset: RefreshTokenset) => Promise<MintedToken>;
   /**
    * Optional post-success hook for forks that need to do additional work
    * with the refreshed tokenset and resolved user (e.g. update a server-side
@@ -47,11 +58,17 @@ export interface AdminRefreshDeps {
 export interface AdminRefreshOptions {
   /**
    * Optional user `_id` from the previous admin-panel session. When provided,
-   * disambiguates the lookup if multiple user docs share `openidId` (e.g.
-   * multi-tenant deployments). Falls back to the most-recently-updated doc
-   * if absent.
+   * the resolved user must have a matching `openidId` — otherwise the refresh
+   * is rejected as a possible identity-swap attempt.
    */
   userId?: string;
+  /**
+   * The refresh token the admin panel sent in. Preserved as the response
+   * `refreshToken` when the IdP doesn't rotate (Auth0 with rotation off,
+   * Microsoft personal accounts in some flows). Without this fallback, the
+   * admin panel would receive `undefined` and lose its refresh capability.
+   */
+  previousRefreshToken?: string;
 }
 
 export class AdminRefreshError extends Error {
@@ -65,36 +82,49 @@ export class AdminRefreshError extends Error {
   }
 }
 
-const DEFAULT_TOKEN_LIFETIME_MS = 15 * 60 * 1000;
-
-function resolveExpiresAt(claimExp: number | undefined): number {
-  if (typeof claimExp === 'number') {
-    return claimExp * 1000;
-  }
-  return Date.now() + DEFAULT_TOKEN_LIFETIME_MS;
-}
-
 async function resolveAdminUser(
   deps: AdminRefreshDeps,
   openidId: string,
   options: AdminRefreshOptions,
 ): Promise<IUser | undefined> {
-  if (options.userId) {
+  if (options.userId && Types.ObjectId.isValid(options.userId)) {
     const direct = await runAsSystem(() =>
-      deps.getUserById(options.userId as string, '-password -__v -totpSecret -backupCodes'),
+      deps.getUserById(options.userId as string, SAFE_USER_PROJECTION),
     );
-    if (direct && direct.openidId === openidId) {
+    if (direct) {
+      if (direct.openidId !== openidId) {
+        throw new AdminRefreshError(
+          'USER_ID_MISMATCH',
+          401,
+          'Provided user_id does not match the refreshed identity',
+        );
+      }
       return direct;
     }
+    logger.debug(
+      `[adminRefresh] user_id ${options.userId} not found; falling through to openidId lookup`,
+    );
   }
 
   const [user] = await runAsSystem(() =>
-    deps.findUsers({ openidId } as FilterQuery<IUser>, null, {
+    deps.findUsers({ openidId } as FilterQuery<IUser>, SAFE_USER_PROJECTION, {
       sort: { updatedAt: -1 },
       limit: 1,
     }),
   );
   return user;
+}
+
+function readClaims(tokenset: RefreshTokenset): AdminRefreshClaims {
+  try {
+    return tokenset.claims();
+  } catch (_err) {
+    throw new AdminRefreshError(
+      'CLAIMS_INCOMPLETE',
+      502,
+      'IdP returned a tokenset whose claims could not be read (no id_token?)',
+    );
+  }
 }
 
 /**
@@ -119,7 +149,7 @@ export async function applyAdminRefresh(
     );
   }
 
-  const claims = tokenset.claims();
+  const claims = readClaims(tokenset);
   const openidId = claims.sub;
   if (!openidId) {
     throw new AdminRefreshError(
@@ -129,14 +159,12 @@ export async function applyAdminRefresh(
     );
   }
 
-  const expiresAt = resolveExpiresAt(claims.exp);
-
   const user = await resolveAdminUser(deps, openidId, options);
   if (!user) {
     throw new AdminRefreshError('USER_NOT_FOUND', 401, 'No user found for the refreshed identity');
   }
 
-  const token = await deps.mintToken(user, tokenset);
+  const minted = await deps.mintToken(user, tokenset);
 
   if (deps.onRefreshSuccess) {
     await deps.onRefreshSuccess(user, tokenset);
@@ -147,9 +175,9 @@ export async function applyAdminRefresh(
   logger.debug(`[adminRefresh] Refreshed tokens for user: ${responseUser.email}`);
 
   return {
-    token,
-    refreshToken: tokenset.refresh_token,
+    token: minted.token,
+    refreshToken: tokenset.refresh_token ?? options.previousRefreshToken,
     user: responseUser,
-    expiresAt,
+    expiresAt: minted.expiresAt,
   };
 }

@@ -527,9 +527,15 @@ router.post('/oauth/refresh', middleware.loginLimiter, async (req, res) => {
         {
           findUsers,
           getUserById,
-          mintToken: (user) => generateToken(user, sessionExpiry),
+          mintToken: async (user) => ({
+            token: await generateToken(user, sessionExpiry),
+            expiresAt: Date.now() + sessionExpiry,
+          }),
         },
-        { userId: typeof userId === 'string' && userId.length > 0 ? userId : undefined },
+        {
+          userId: typeof userId === 'string' && userId.length > 0 ? userId : undefined,
+          previousRefreshToken: refreshToken,
+        },
       );
       return res.json(result);
     } catch (err) {
