@@ -198,7 +198,7 @@ export class MonitoringStack extends cdk.Stack {
     bedrockServerErrorsAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
 
     for (const [id, metricName, stat, alarmName] of [
-      ['BedrockInvocationLatency', 'InvocationLatency', 'p95', 'ai-assistant-bedrock-invocation-latency-p95'],
+      ['BedrockInvocationLatency', 'InvocationLatency', 'p50', 'ai-assistant-bedrock-invocation-latency-p50'],
       ['BedrockModelInvocations', 'ModelInvocations', 'Sum', 'ai-assistant-bedrock-model-invocations'],
     ] as const) {
       new cloudwatch.CfnAlarm(this, id, {
