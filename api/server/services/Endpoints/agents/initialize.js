@@ -109,6 +109,18 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   /** @type {Array<UsageMetadata>} */
   const collectedUsage = [];
+  /**
+   * Vertex Gemini 3 thought signatures captured from `chat_model_end` events,
+   * keyed by `tool_call_id`. Persisted on
+   * `responseMessage.metadata.thoughtSignatures` so subsequent conversation
+   * turns can restore each signature onto the right reconstructed AIMessage's
+   * `additional_kwargs.signatures` and avoid 400s when resuming after a tool
+   * round-trip without a final text reply. Always allocated; capture path
+   * is a no-op for providers that don't emit signatures (OpenAI, Anthropic,
+   * Bedrock, etc.).
+   * @type {Record<string, string>}
+   */
+  const collectedThoughtSignatures = {};
   /** @type {ArtifactPromises} */
   const artifactPromises = [];
   const { contentParts, aggregateContent } = createContentAggregator();
@@ -215,6 +227,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     aggregateContent,
     toolEndCallback,
     collectedUsage,
+    collectedThoughtSignatures,
     streamId,
     subagentAggregatorsByToolCallId,
   });
@@ -780,6 +793,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     agentConfigs,
     eventHandlers,
     collectedUsage,
+    collectedThoughtSignatures,
     aggregateContent,
     artifactPromises,
     primeInvokedSkills: handlePrimeInvokedSkills,

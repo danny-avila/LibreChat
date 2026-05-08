@@ -156,6 +156,17 @@ const formatAgentMessages = (payload) => {
 
     let currentContent = [];
     let lastAIMessage = null;
+    /**
+     * Every AIMessage produced from this TMessage that received `tool_calls`,
+     * in order. Multi-step tool turns (where the agent loop cycles the LLM
+     * multiple times with intervening tool results) produce one AIMessage per
+     * cycle, each owning a different `tool_call_id`. We attach persisted
+     * Vertex Gemini 3 thought signatures (`metadata.thoughtSignatures`,
+     * keyed by `tool_call_id`) onto each one so every step has its right
+     * signature on resume — Vertex validates per-step, not per-turn
+     * (issue #13006 follow-up).
+     */
+    const toolBearingAIMessages = [];
 
     let hasReasoning = false;
     for (const part of message.content) {
@@ -203,6 +214,9 @@ const formatAgentMessages = (payload) => {
 
         tool_call.args = args;
         lastAIMessage.tool_calls.push(tool_call);
+        if (toolBearingAIMessages[toolBearingAIMessages.length - 1] !== lastAIMessage) {
+          toolBearingAIMessages.push(lastAIMessage);
+        }
 
         // Add the corresponding ToolMessage
         messages.push(
@@ -235,6 +249,26 @@ const formatAgentMessages = (payload) => {
 
     if (currentContent.length > 0) {
       messages.push(new AIMessage({ content: currentContent }));
+    }
+
+    /**
+     * Restore signatures per-step. The persisted shape is
+     * `{ [tool_call_id]: signature }`; for each tool-bearing AIMessage we
+     * build a position-aligned `additional_kwargs.signatures` array (empty
+     * placeholders for tool_calls without a stored signature). Agents'
+     * `fixThoughtSignatures` then dispatches the non-empty entries to
+     * functionCall parts in order — order matches because non-empty
+     * signatures and tool_calls share their original parts ordering.
+     */
+    const sigsByCallId = message.metadata?.thoughtSignatures;
+    if (sigsByCallId && typeof sigsByCallId === 'object' && toolBearingAIMessages.length > 0) {
+      for (const aiMsg of toolBearingAIMessages) {
+        const sigs = aiMsg.tool_calls.map((tc) => sigsByCallId[tc.id] ?? '');
+        if (sigs.some((s) => typeof s === 'string' && s.length > 0)) {
+          aiMsg.additional_kwargs ??= {};
+          aiMsg.additional_kwargs.signatures = sigs;
+        }
+      }
     }
   }
 

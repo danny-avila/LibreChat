@@ -21,12 +21,24 @@ const { saveBase64Image } = require('~/server/services/Files/process');
 class ModelEndHandler {
   /**
    * @param {Array<UsageMetadata>} collectedUsage
+   * @param {Record<string, string> | null} [collectedThoughtSignatures] Map of
+   *   `tool_call_id → thoughtSignature` accumulated across `chat_model_end`
+   *   events. Used to persist Vertex Gemini 3 thought signatures across DB
+   *   round-trips so resumed conversations don't 400 on the next API call.
+   *   Each `model_end` may emit multiple tool calls (one per LLM cycle in a
+   *   tool-using turn); per-id storage preserves the mapping so each tool
+   *   call's signature can be restored onto the right reconstructed
+   *   AIMessage rather than being concentrated on the last one.
+   *   Optional; when `null`, the handler is a no-op for signatures. Non-Vertex
+   *   providers don't emit `additional_kwargs.signatures`, so capture is also
+   *   a no-op for them even when the map is provided.
    */
-  constructor(collectedUsage) {
+  constructor(collectedUsage, collectedThoughtSignatures = null) {
     if (!Array.isArray(collectedUsage)) {
       throw new Error('collectedUsage must be an array');
     }
     this.collectedUsage = collectedUsage;
+    this.collectedThoughtSignatures = collectedThoughtSignatures;
   }
 
   finalize(errorMessage) {
@@ -82,6 +94,30 @@ class ModelEndHandler {
       const taggedUsage = markSummarizationUsage(usage, metadata);
 
       this.collectedUsage.push(taggedUsage);
+
+      /**
+       * `additional_kwargs.signatures` is a flat array indexed by response
+       * part position (text + functionCall interleaved). `tool_calls` is
+       * just the function calls in their original order. Non-empty
+       * signatures correspond 1:1 with `tool_calls` in order — see
+       * `partsToSignatures` in `@langchain/google-common`. Walk both in a
+       * single pass to map each signature onto the right `tool_call.id`.
+       */
+      const signatures = data?.output?.additional_kwargs?.signatures;
+      const toolCalls = data?.output?.tool_calls;
+      if (
+        this.collectedThoughtSignatures &&
+        Array.isArray(signatures) &&
+        Array.isArray(toolCalls)
+      ) {
+        let toolIdx = 0;
+        for (const sig of signatures) {
+          if (typeof sig !== 'string' || sig.length === 0) continue;
+          if (toolIdx >= toolCalls.length) break;
+          const id = toolCalls[toolIdx++]?.id;
+          if (id) this.collectedThoughtSignatures[id] = sig;
+        }
+      }
     } catch (error) {
       logger.error('Error handling model end event:', error);
       return this.finalize(errorMessage);
@@ -183,6 +219,7 @@ function getDefaultHandlers({
   aggregateContent,
   toolEndCallback,
   collectedUsage,
+  collectedThoughtSignatures = null,
   streamId = null,
   toolExecuteOptions = null,
   summarizationOptions = null,
@@ -194,7 +231,7 @@ function getDefaultHandlers({
     );
   }
   const handlers = {
-    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage),
+    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage, collectedThoughtSignatures),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {
       /**
@@ -1023,6 +1060,7 @@ function buildSummarizationHandlers({ isStreaming, res }) {
 }
 
 module.exports = {
+  ModelEndHandler,
   agentLogHandler,
   agentLogHandlerObj,
   getDefaultHandlers,
