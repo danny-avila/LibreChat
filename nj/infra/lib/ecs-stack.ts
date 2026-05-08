@@ -201,6 +201,7 @@ export class EcsStack extends cdk.Stack {
       NODE_ENV: 'production',
       PORT: '3080',
       HOST: '0.0.0.0',
+      ADMIN_PANEL_URL: `https://${props.envVars.domainName}/admin`,
       LOG_LEVEL: 'info',
       MEILI_HOST: 'http://rag_api.internal:7700',
       RAG_API_URL: 'http://rag_api.internal:8000',
