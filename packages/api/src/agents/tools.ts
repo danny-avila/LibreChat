@@ -104,10 +104,8 @@ const CODE_READ_FILE_DESCRIPTION = `Read the contents of a file from the code-ex
 
 BEHAVIOR:
 - Text files: returned with numbered lines.
-- Images (png, jpeg, gif, webp): returned as visual content the model can see.
-- PDFs: returned as document content.
-- Other binary files: metadata returned with a note to use bash for processing.
-- Large files (>256KB text, >10MB binary): metadata only.
+- Large text files are truncated around 256KB with a note to use bash_tool for the full content.
+- Binary files and formats that are not safe to serialize as text may return an error. Use bash_tool to inspect or process them.
 
 CONSTRAINTS:
 - Only files produced by code execution or attached to the code-execution sandbox are accessible.

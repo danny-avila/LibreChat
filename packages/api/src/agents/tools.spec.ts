@@ -211,6 +211,8 @@ describe('registerCodeExecutionTools', () => {
       const readFile = result.toolDefinitions.find((d) => d.name === 'read_file');
       expect(readFile?.description).toContain('code-execution sandbox');
       expect(readFile?.description).toContain('/mnt/data/');
+      expect(readFile?.description).toContain('truncated around 256KB');
+      expect(readFile?.description).toContain('may return an error');
       expect(readFile?.description).not.toContain('{skillName}');
       expect(readFile?.description).not.toContain('SKILL.md');
       expect(JSON.stringify(readFile?.parameters)).not.toContain('{skillName}');
