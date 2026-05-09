@@ -33,7 +33,9 @@ function isOpenRouterEndpoint(endpoint) {
 
 function shouldPreserveCustomParams(customParams) {
   const defaultEndpoint = customParams?.defaultParamsEndpoint;
-  return defaultEndpoint && defaultEndpoint !== 'custom' && defaultEndpoint !== Providers.OPENROUTER;
+  return (
+    defaultEndpoint && defaultEndpoint !== 'custom' && defaultEndpoint !== Providers.OPENROUTER
+  );
 }
 
 function addOpenRouterDefaults(endpoint) {
