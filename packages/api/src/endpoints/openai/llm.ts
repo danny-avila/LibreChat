@@ -155,11 +155,11 @@ function normalizeOpenRouterModel(model: string): string {
   return model.toLowerCase().replace(/^~/, '');
 }
 
-function isOpenRouterClaude47OpusModel(model: string): boolean {
+function isOpenRouterClaude46Model(model: string): boolean {
   const normalizedModel = normalizeOpenRouterModel(model);
   return (
-    /claude[-.]opus[-.]4[-.]7/.test(normalizedModel) ||
-    /claude[-.]4[-.]7[-.]opus/.test(normalizedModel)
+    /claude[-.](?:opus|sonnet)[-.]4[-.]6/.test(normalizedModel) ||
+    /claude[-.]4[-.]6[-.](?:opus|sonnet)/.test(normalizedModel)
   );
 }
 
@@ -174,7 +174,7 @@ function getOpenRouterAnthropicVerbosity(
   if (verbosity !== 'xhigh' || typeof model !== 'string') {
     return verbosity;
   }
-  return isOpenRouterClaude47OpusModel(model) ? 'xhigh' : 'max';
+  return isOpenRouterClaude46Model(model) ? 'max' : 'xhigh';
 }
 
 function applyOpenRouterReasoningConfig({

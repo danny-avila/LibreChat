@@ -696,6 +696,23 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).toHaveProperty('verbosity', 'max');
     });
 
+    it('should preserve extra-high OpenRouter verbosity for future adaptive Claude models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-5',
+          reasoning_effort: ReasoningEffort.xhigh,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        enabled: true,
+      });
+      expect(result.llmConfig).toHaveProperty('verbosity', ReasoningEffort.xhigh);
+    });
+
     it('should pass OpenRouter verbosity as a top-level parameter', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
