@@ -8,8 +8,16 @@ jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),
   ReadFileToolDefinition: {
     name: 'read_file',
-    description: 'read file',
-    parameters: { type: 'object', properties: {} },
+    description: 'read skill files using {skillName}/{filePath} and SKILL.md',
+    parameters: {
+      type: 'object',
+      properties: {
+        file_path: {
+          type: 'string',
+          description: 'For skill files: "{skillName}/{path}".',
+        },
+      },
+    },
     responseFormat: 'content',
   },
   BashExecutionToolDefinition: {
@@ -189,6 +197,47 @@ describe('registerCodeExecutionTools', () => {
       expect(result.registered).toEqual(['read_file']);
       expect(toolRegistry.has('read_file')).toBe(true);
       expect(toolRegistry.has('bash_tool')).toBe(false);
+    });
+
+    it('uses a code-only read_file description when skill instructions are disabled', () => {
+      const toolRegistry = makeRegistry();
+      const result = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+      });
+
+      const readFile = result.toolDefinitions.find((d) => d.name === 'read_file');
+      expect(readFile?.description).toContain('code-execution sandbox');
+      expect(readFile?.description).toContain('/mnt/data/');
+      expect(readFile?.description).toContain('truncated around 256KB');
+      expect(readFile?.description).toContain('may return an error');
+      expect(readFile?.description).not.toContain('{skillName}');
+      expect(readFile?.description).not.toContain('SKILL.md');
+      expect(JSON.stringify(readFile?.parameters)).not.toContain('{skillName}');
+    });
+
+    it('upgrades a code-only read_file definition when skills are enabled later in the run', () => {
+      const toolRegistry = makeRegistry();
+      const codeOnly = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+      });
+      const upgraded = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: codeOnly.toolDefinitions,
+        includeBash: false,
+        includeSkillFileInstructions: true,
+      });
+
+      const readFile = upgraded.toolDefinitions.find((d) => d.name === 'read_file');
+      expect(upgraded.registered).toEqual([]);
+      expect(readFile?.description).toContain('{skillName}/{filePath}');
+      expect(readFile?.description).toContain('SKILL.md');
+      expect(toolRegistry.get('read_file')?.description).toBe(readFile?.description);
     });
 
     it('preserves pre-existing unrelated tool definitions', () => {

@@ -426,10 +426,11 @@ export async function injectSkillCatalog(
    * `skill` tool is conditional on having anything for the model to invoke.
    * `read_file` + `bash_tool` go through `registerCodeExecutionTools` so
    * a prior registration from `initializeAgent` (for the `execute_code`
-   * capability) doesn't produce a duplicate copy. `read_file` is always
-   * included — manually-primed `disable-model-invocation: true` skills
-   * still need it to load their `references/*` from storage. `bash_tool`
-   * follows `codeEnvAvailable` as before.
+   * capability) upgrades to the skill-aware `read_file` definition without
+   * producing a duplicate copy. `read_file` is always included —
+   * manually-primed `disable-model-invocation: true` skills still need it
+   * to load their `references/*` from storage. `bash_tool` follows
+   * `codeEnvAvailable` as before.
    */
   let workingDefs: LCTool[] = [...(inputDefs ?? [])];
   if (catalogVisibleSkills.length > 0) {
@@ -440,9 +441,9 @@ export async function injectSkillCatalog(
   /**
    * Forward `enableToolOutputReferences` to keep the skills caller
    * symmetric with `initializeAgent`'s call. Today `initializeAgent`
-   * registers `bash_tool` first and the registry `.has()` check makes
-   * this call a no-op — but if call order ever flips (skills-first),
-   * a missing flag here would silently produce a `bash_tool`
+   * registers `bash_tool` first and this call only keeps the existing
+   * bash definition — but if call order ever flips (skills-first), a
+   * missing flag here would silently produce a `bash_tool`
    * description without the `{{tool<idx>turn<turn>}}` guide, and the
    * `initializeAgent` pass would become the no-op. Mirror the gate
    * `initializeAgent` uses (`effectiveCodeEnvAvailable`, which here

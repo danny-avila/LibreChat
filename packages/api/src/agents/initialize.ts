@@ -777,7 +777,9 @@ export async function initializeAgent(
    * (backed by `CodeExecutionToolDefinition` + `primeCodeFiles`) is no
    * longer registered; the string `execute_code` on the agent document
    * stays as the capability-trigger marker but expands into the
-   * skill-flavored tool pair here.
+   * `bash_tool` + `read_file` pair here. The initial `read_file`
+   * definition is code-only; `injectSkillCatalog` upgrades it later in
+   * this initializer when skill files are actually available.
    *
    * `effectiveCodeEnvAvailable` is the per-agent truth: the admin-level
    * `params.codeEnvAvailable` AND the agent actually asking for code
@@ -792,8 +794,9 @@ export async function initializeAgent(
    * execute-code-only agents on Google/Vertex still trip the conflict
    * guard when provider-specific tools are also configured. Also before
    * `injectSkillCatalog` so the skill path's own
-   * `registerCodeExecutionTools` call becomes a no-op via the registry
-   * `.has()` dedupe — exactly one copy of each tool reaches the LLM.
+   * `registerCodeExecutionTools` call upgrades `read_file` from the
+   * code-only description to the skill-aware description without adding a
+   * duplicate — exactly one copy of each tool reaches the LLM.
    */
   const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
   const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
@@ -802,6 +805,7 @@ export async function initializeAgent(
       toolRegistry,
       toolDefinitions,
       includeBash: true,
+      includeSkillFileInstructions: false,
       enableToolOutputReferences: effectiveCodeEnvAvailable,
     });
     toolDefinitions = codeExecResult.toolDefinitions;
