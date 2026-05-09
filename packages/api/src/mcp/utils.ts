@@ -9,6 +9,16 @@ export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVa
 }
 
 /**
+ * Returns true when a server requires a per-user connection instead of an
+ * app-shared connection.
+ */
+export function requiresUserScopedConnection(
+  config: Pick<ParsedServerConfig, 'requiresOAuth' | 'customUserVars' | 'obo'>,
+): boolean {
+  return config.requiresOAuth === true || config.obo != null || hasCustomUserVars(config);
+}
+
+/**
  * Determines whether a server config is user-sourced (sandboxed placeholder resolution).
  * When `source` is set, it is authoritative. When absent (pre-upgrade cached configs),
  * falls back to the legacy `dbId` heuristic for backward compatibility.
