@@ -789,6 +789,16 @@ describe('getOpenAIConfig', () => {
       expect(result.provider).toBe('openrouter');
     });
 
+    it('should detect OpenRouter from baseURL case-insensitively', () => {
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://gateway.example/v1/OpenRouter',
+      });
+
+      expect(result.llmConfig.include_reasoning).toBe(true);
+      expect(result.llmConfig.promptCache).toBe(true);
+      expect(result.provider).toBe('openrouter');
+    });
+
     it('should preserve explicit promptCache false for OpenRouter', () => {
       const result = getOpenAIConfig(
         mockApiKey,

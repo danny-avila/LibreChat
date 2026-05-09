@@ -13,6 +13,10 @@ type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Resp
 
 const OPENROUTER_DEFAULT_PARAMS = { promptCache: true };
 
+function includesOpenRouter(value?: string | null): boolean {
+  return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
+}
+
 function getDefaultParams({
   customDefaultParams,
   useOpenRouter,
@@ -82,9 +86,7 @@ export function getOpenAIConfig(
   const useOpenRouter =
     !isAnthropic &&
     !isGoogle &&
-    (isOpenRouter ||
-      (baseURL && baseURL.includes(KnownEndpoints.openrouter)) ||
-      (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.openrouter)));
+    (isOpenRouter || includesOpenRouter(baseURL) || includesOpenRouter(endpoint));
   const isVercel =
     !isAnthropic &&
     !isGoogle &&

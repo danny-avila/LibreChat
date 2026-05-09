@@ -210,6 +210,10 @@ const customProviders = new Set([
   KnownEndpoints.ollama,
 ]);
 
+function includesOpenRouter(value?: string | null): boolean {
+  return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
+}
+
 export function getReasoningKey(
   provider: Providers,
   llmConfig: t.RunLLMConfig,
@@ -219,8 +223,8 @@ export function getReasoningKey(
   if (provider === Providers.GOOGLE) {
     reasoningKey = 'reasoning';
   } else if (
-    llmConfig.configuration?.baseURL?.includes(KnownEndpoints.openrouter) ||
-    (agentEndpoint && agentEndpoint.toLowerCase().includes(KnownEndpoints.openrouter))
+    includesOpenRouter(llmConfig.configuration?.baseURL) ||
+    includesOpenRouter(agentEndpoint)
   ) {
     reasoningKey = 'reasoning';
   } else if (
