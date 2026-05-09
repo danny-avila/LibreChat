@@ -212,6 +212,48 @@ function applyOpenRouterReasoningConfig({
   return true;
 }
 
+function getModelKwargsText(modelKwargs: Record<string, unknown>): Record<string, unknown> {
+  const { text } = modelKwargs;
+  if (text == null || typeof text !== 'object' || Array.isArray(text)) {
+    return {};
+  }
+  return text as Record<string, unknown>;
+}
+
+function applyResponsesVerbosity({
+  llmConfig,
+  modelKwargs,
+  useOpenRouter,
+}: {
+  llmConfig: OpenAILLMConfig;
+  modelKwargs: Record<string, unknown>;
+  useOpenRouter?: boolean;
+}): boolean {
+  if (llmConfig.useResponsesApi !== true) {
+    return false;
+  }
+
+  if (useOpenRouter && llmConfig.verbosity) {
+    modelKwargs.text = {
+      ...getModelKwargsText(modelKwargs),
+      verbosity: llmConfig.verbosity,
+    };
+    delete llmConfig.verbosity;
+    return true;
+  }
+
+  if (!useOpenRouter && modelKwargs.verbosity) {
+    modelKwargs.text = {
+      ...getModelKwargsText(modelKwargs),
+      verbosity: modelKwargs.verbosity,
+    };
+    delete modelKwargs.verbosity;
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Extracts default parameters from customParams.paramDefinitions
  * @param paramDefinitions - Array of parameter definitions with key and default values
@@ -515,10 +557,12 @@ export function getOpenAILLMConfig({
     });
   }
 
-  if (modelKwargs.verbosity && llmConfig.useResponsesApi === true) {
-    modelKwargs.text = { verbosity: modelKwargs.verbosity };
-    delete modelKwargs.verbosity;
-  }
+  hasModelKwargs =
+    applyResponsesVerbosity({
+      llmConfig,
+      modelKwargs,
+      useOpenRouter,
+    }) || hasModelKwargs;
 
   if (
     llmConfig.model &&

@@ -762,6 +762,43 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig.modelKwargs).toBeUndefined();
     });
 
+    it('should pass OpenRouter Responses API verbosity under text', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-opus-4.7',
+          useResponsesApi: true,
+          verbosity: 'xhigh',
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('verbosity');
+      expect(result.llmConfig.modelKwargs).toHaveProperty('text', {
+        verbosity: 'xhigh',
+      });
+    });
+
+    it('should pass adaptive OpenRouter Responses API effort verbosity under text', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: '~anthropic/claude-4.7-opus-20260416',
+          useResponsesApi: true,
+          reasoning_effort: ReasoningEffort.xhigh,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('verbosity');
+      expect(result.llmConfig.modelKwargs).toMatchObject({
+        reasoning: { enabled: true },
+        text: { verbosity: ReasoningEffort.xhigh },
+      });
+    });
+
     it('should let OpenRouter added verbosity override model verbosity', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
