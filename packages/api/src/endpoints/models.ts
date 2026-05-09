@@ -224,8 +224,6 @@ export interface GetOpenAIModelsOptions {
   assistants?: boolean;
   /** OpenAI API key (if not using environment variable) */
   openAIApiKey?: string;
-  /** Whether user provides their own API key */
-  userProvidedOpenAI?: boolean;
   /** Skip MODEL_QUERIES cache (e.g., for user-provided keys) */
   skipCache?: boolean;
 }
