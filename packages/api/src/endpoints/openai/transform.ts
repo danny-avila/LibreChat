@@ -93,8 +93,8 @@ export function transformToOpenAIConfig({
 
   if (addParams && typeof addParams === 'object') {
     for (const [key, value] of Object.entries(addParams)) {
-      /** Skip web_search - it's handled separately as a tool */
-      if (key === 'web_search') {
+      /** Skip web_search and builtInTools - handled separately as tools */
+      if (key === 'web_search' || key === 'builtInTools') {
         continue;
       }
 
@@ -113,8 +113,8 @@ export function transformToOpenAIConfig({
 
   if (dropParams && Array.isArray(dropParams)) {
     dropParams.forEach((param) => {
-      /** Skip web_search - handled separately */
-      if (param === 'web_search') {
+      /** Skip web_search and builtInTools - handled separately */
+      if (param === 'web_search' || param === 'builtInTools') {
         return;
       }
 
