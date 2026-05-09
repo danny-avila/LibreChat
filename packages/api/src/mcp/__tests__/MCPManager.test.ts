@@ -842,6 +842,79 @@ describe('MCPManager', () => {
       mockResolveOboToken.mockReset();
     });
 
+    it('should bypass shared app connections for OBO servers and use a user-scoped connection', async () => {
+      const sharedAppConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        timeout: 30000,
+        client: {
+          request: jest.fn().mockResolvedValue({
+            content: [{ type: 'text', text: 'Shared tool result' }],
+            isError: false,
+          }),
+        },
+      } as unknown as MCPConnection;
+
+      const userConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        timeout: 30000,
+        client: {
+          request: jest.fn().mockResolvedValue({
+            content: [{ type: 'text', text: 'User tool result' }],
+            isError: false,
+          }),
+        },
+      } as unknown as MCPConnection;
+
+      const appConnections = {
+        get: jest.fn().mockResolvedValue(sharedAppConnection),
+      };
+
+      mockResolveOboToken.mockResolvedValue({
+        access_token: 'fresh-obo-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        expires_at: Date.now() + 3600_000,
+      });
+
+      mockAppConnections(appConnections);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getUserConnectionSpy = jest
+        .spyOn(manager, 'getUserConnection')
+        .mockResolvedValue(userConnection);
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        oboTokenResolver: mockOboTokenResolver,
+      });
+
+      expect(appConnections.get).not.toHaveBeenCalled();
+      expect(getUserConnectionSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName,
+          serverConfig,
+          user: mockUser,
+        }),
+      );
+      expect(userConnection.setRequestHeaders as jest.Mock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Authorization: 'Bearer fresh-obo-token',
+        }),
+      );
+      expect(sharedAppConnection.setRequestHeaders as jest.Mock).not.toHaveBeenCalled();
+      expect(userConnection.client.request as jest.Mock).toHaveBeenCalled();
+      expect(sharedAppConnection.client.request as jest.Mock).not.toHaveBeenCalled();
+    });
+
     it('should replace Authorization with the refreshed OBO token on each tool call', async () => {
       mockResolveOboToken.mockResolvedValue({
         access_token: 'fresh-obo-token',
@@ -850,13 +923,18 @@ describe('MCPManager', () => {
         expires_at: Date.now() + 3600_000,
       });
 
-      mockAppConnections({
+      const appConnections = {
         get: jest.fn().mockResolvedValue(mockConnection),
-      });
+      };
+
+      mockAppConnections(appConnections);
 
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getUserConnectionSpy = jest
+        .spyOn(manager, 'getUserConnection')
+        .mockResolvedValue(mockConnection);
 
       await manager.callTool({
         user: mockUser as IUser,
@@ -874,6 +952,8 @@ describe('MCPManager', () => {
         serverConfig.obo,
         mockOboTokenResolver,
       );
+      expect(appConnections.get).not.toHaveBeenCalled();
+      expect(getUserConnectionSpy).toHaveBeenCalled();
       expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
         expect.objectContaining({
           Authorization: 'Bearer fresh-obo-token',
@@ -891,13 +971,18 @@ describe('MCPManager', () => {
         ),
       );
 
-      mockAppConnections({
+      const appConnections = {
         get: jest.fn().mockResolvedValue(mockConnection),
-      });
+      };
+
+      mockAppConnections(appConnections);
 
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getUserConnectionSpy = jest
+        .spyOn(manager, 'getUserConnection')
+        .mockResolvedValue(mockConnection);
 
       await expect(
         manager.callTool({
@@ -914,6 +999,8 @@ describe('MCPManager', () => {
         message: expect.stringContaining('Temporary OBO token exchange failure.'),
       });
 
+      expect(appConnections.get).not.toHaveBeenCalled();
+      expect(getUserConnectionSpy).toHaveBeenCalled();
       expect(mockConnection.setRequestHeaders).not.toHaveBeenCalled();
       expect(mockConnection.client.request).not.toHaveBeenCalled();
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -930,13 +1017,18 @@ describe('MCPManager', () => {
         ),
       );
 
-      mockAppConnections({
+      const appConnections = {
         get: jest.fn().mockResolvedValue(mockConnection),
-      });
+      };
+
+      mockAppConnections(appConnections);
 
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getUserConnectionSpy = jest
+        .spyOn(manager, 'getUserConnection')
+        .mockResolvedValue(mockConnection);
 
       await expect(
         manager.callTool({
@@ -953,8 +1045,48 @@ describe('MCPManager', () => {
         message: expect.stringContaining('verify the configured OBO scopes'),
       });
 
+      expect(appConnections.get).not.toHaveBeenCalled();
+      expect(getUserConnectionSpy).toHaveBeenCalled();
       expect(mockConnection.setRequestHeaders).not.toHaveBeenCalled();
       expect(mockConnection.client.request).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getConnection', () => {
+    const mockUser: Partial<IUser> = {
+      id: 'user-123',
+      provider: 'openid',
+      openidId: 'oidc-sub-456',
+    };
+
+    it('should continue using shared app connections for non-OBO servers', async () => {
+      const appConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+
+      const appConnections = {
+        get: jest.fn().mockResolvedValue(appConnection),
+      };
+
+      const nonOboConfig: t.SSEOptions = {
+        type: 'sse',
+        url: 'https://api.example.com',
+      };
+
+      mockAppConnections(appConnections);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(nonOboConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getUserConnectionSpy = jest.spyOn(manager, 'getUserConnection');
+
+      const connection = await manager.getConnection({
+        serverName,
+        user: mockUser as IUser,
+      });
+
+      expect(connection).toBe(appConnection);
+      expect(appConnections.get).toHaveBeenCalledWith(serverName);
+      expect(getUserConnectionSpy).not.toHaveBeenCalled();
     });
   });
 

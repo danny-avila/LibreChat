@@ -76,12 +76,29 @@ export class MCPManager extends UserConnectionManager {
       serverConfig?: t.ParsedServerConfig;
     } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
   ): Promise<MCPConnection> {
+    const userId = args.user?.id;
+    const effectiveConfig =
+      args.serverConfig ??
+      (userId
+        ? await MCPServersRegistry.getInstance().getServerConfig(args.serverName, userId)
+        : undefined);
+
+    if (effectiveConfig?.obo && userId) {
+      return this.getUserConnection({
+        ...args,
+        serverConfig: effectiveConfig,
+      } as Parameters<typeof this.getUserConnection>[0]);
+    }
+
     //the get method checks if the config is still valid as app level
     const existingAppConnection = await this.appConnections!.get(args.serverName);
     if (existingAppConnection) {
       return existingAppConnection;
-    } else if (args.user?.id) {
-      return this.getUserConnection(args as Parameters<typeof this.getUserConnection>[0]);
+    } else if (userId) {
+      return this.getUserConnection({
+        ...args,
+        serverConfig: effectiveConfig,
+      } as Parameters<typeof this.getUserConnection>[0]);
     } else {
       throw new McpError(
         ErrorCode.InvalidRequest,
