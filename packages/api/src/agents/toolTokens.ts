@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { SystemMessage } from '@langchain/core/messages';
+import { SystemMessage } from '@librechat/agents/langchain/messages';
 import { CacheKeys, Time } from 'librechat-data-provider';
 import {
   Providers,
