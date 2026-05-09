@@ -19,6 +19,11 @@ const googleThinkingLevels = new Set<GoogleThinkingLevel>([
   'HIGH',
 ]);
 
+const vertexMultiRegionEndpoints = new Map([
+  ['eu', 'aiplatform.eu.rep.googleapis.com'],
+  ['us', 'aiplatform.us.rep.googleapis.com'],
+]);
+
 /** Known Google/Vertex AI parameters that map directly to the client config */
 export const knownGoogleParams = new Set([
   'model',
@@ -42,6 +47,7 @@ export const knownGoogleParams = new Set([
   'streamUsage',
   'apiKey',
   'baseUrl',
+  'endpoint',
   'location',
   'authOptions',
 ]);
@@ -93,6 +99,10 @@ function normalizeGoogleThinkingLevel(value: unknown): GoogleThinkingLevel | und
     return undefined;
   }
   return normalized;
+}
+
+function getVertexMultiRegionEndpoint(location: string): string | undefined {
+  return vertexMultiRegionEndpoints.get(location);
 }
 
 export function getSafetySettings(
@@ -213,7 +223,12 @@ export function getGoogleConfig(
       credentials: { ...serviceKey },
       projectId: project_id,
     };
-    (llmConfig as VertexAIClientOptions).location = process.env.GOOGLE_LOC || 'us-central1';
+    const location = process.env.GOOGLE_LOC || 'us-central1';
+    const multiRegionEndpoint = getVertexMultiRegionEndpoint(location);
+    (llmConfig as VertexAIClientOptions).location = location;
+    if (multiRegionEndpoint) {
+      (llmConfig as VertexAIClientOptions & { endpoint?: string }).endpoint = multiRegionEndpoint;
+    }
   } else if (apiKey && provider === Providers.GOOGLE) {
     llmConfig.apiKey = apiKey;
   } else {
