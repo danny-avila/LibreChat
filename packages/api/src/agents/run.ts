@@ -650,7 +650,12 @@ async function buildSubagentConfigs(
      * `subagentConfigs`, and that only runs for the outer agents in
      * `agents[]`. Cycle-safe via `nextAncestors`.
      */
-    const grandchildConfigs = await buildSubagentConfigs(child, childInputs, toInput, nextAncestors);
+    const grandchildConfigs = await buildSubagentConfigs(
+      child,
+      childInputs,
+      toInput,
+      nextAncestors,
+    );
     if (grandchildConfigs.length > 0) {
       childInputs.subagentConfigs = grandchildConfigs;
     }
@@ -865,14 +870,23 @@ export async function createRun({
 
     let toolSchemaTokens: number | undefined;
     if (tokenCounter) {
-      toolSchemaTokens = await getOrComputeToolTokens({
-        tools: agent.tools,
-        toolDefinitions,
-        provider,
-        clientOptions: llmConfig,
-        tokenCounter,
-        tenantId: user?.tenantId,
-      });
+      try {
+        toolSchemaTokens = await getOrComputeToolTokens({
+          tools: agent.tools,
+          toolDefinitions,
+          provider,
+          clientOptions: llmConfig,
+          tokenCounter,
+          tenantId: user?.tenantId,
+          toolRegistry,
+          discoveredTools: isSubagent ? undefined : discoveredTools,
+        });
+      } catch (err) {
+        logger.warn(
+          `[createRun] Failed to precompute tool schema tokens for agent ${agent.id}; falling back to AgentContext calculation`,
+          err,
+        );
+      }
     }
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
@@ -909,33 +923,7 @@ export async function createRun({
     return agentInput;
   };
 
-  const settled = await Promise.allSettled(agents.map(buildRootAgentInput));
-  const agentInputs: AgentInputs[] = [];
-  for (let i = 0; i < settled.length; i++) {
-    const result = settled[i];
-    if (result.status === 'fulfilled') {
-      agentInputs.push(result.value);
-    } else {
-      logger.error(`[createRun] buildAgentInput failed for agent ${agents[i].id}`, result.reason);
-    }
-  }
-
-  if (agentInputs.length === 0) {
-    throw new Error(
-      `[createRun] All ${agents.length} agent(s) failed to initialize; cannot create run`,
-    );
-  }
-
-  const hasEdges = (agents[0].edges?.length ?? 0) > 0;
-  if (agentInputs.length < agents.length && hasEdges) {
-    const failedIds = agents
-      .filter((_, i) => settled[i].status === 'rejected')
-      .map((agent) => agent.id)
-      .join(', ');
-    throw new Error(
-      `[createRun] Agent(s) [${failedIds}] failed in a routed multi-agent run; cannot proceed with partial graph`,
-    );
-  }
+  const agentInputs = await Promise.all(agents.map(buildRootAgentInput));
 
   const graphConfig: RunConfig['graphConfig'] = {
     signal,

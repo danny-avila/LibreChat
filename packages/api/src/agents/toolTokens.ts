@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import { SystemMessage } from '@librechat/agents/langchain/messages';
 import { CacheKeys, Time } from 'librechat-data-provider';
@@ -8,7 +9,13 @@ import {
   DEFAULT_TOOL_TOKEN_MULTIPLIER,
 } from '@librechat/agents';
 
-import type { GenericTool, LCTool, TokenCounter, ClientOptions } from '@librechat/agents';
+import type {
+  GenericTool,
+  LCTool,
+  TokenCounter,
+  ClientOptions,
+  LCToolRegistry,
+} from '@librechat/agents';
 import type { Keyv } from 'keyv';
 
 import { standardCache } from '~/cache';
@@ -16,6 +23,11 @@ import { standardCache } from '~/cache';
 interface ToolEntry {
   cacheKey: string;
   json: string;
+}
+
+interface CollectToolSchemasOptions {
+  toolRegistry?: LCToolRegistry;
+  discoveredTools?: ReadonlySet<string>;
 }
 
 /** Module-level cache instance, lazily initialized. */
@@ -36,6 +48,51 @@ export function getToolTokenMultiplier(provider: Providers, clientOptions?: Clie
         String((clientOptions as { model?: string } | undefined)?.model ?? ''),
       ));
   return isAnthropic ? ANTHROPIC_TOOL_TOKEN_MULTIPLIER : DEFAULT_TOOL_TOKEN_MULTIPLIER;
+}
+
+function hashForCache(value: string): string {
+  return createHash('sha256').update(value).digest('base64url').slice(0, 16);
+}
+
+function getCounterNamespace(provider: Providers, clientOptions?: ClientOptions): string {
+  const model = String((clientOptions as { model?: string } | undefined)?.model ?? '');
+  return hashForCache(`${provider}:${model}`);
+}
+
+function isDirectToolDefinition(def: LCTool, discoveredTools?: ReadonlySet<string>): boolean {
+  const allowedCallers = def.allowed_callers ?? ['direct'];
+  if (!allowedCallers.includes('direct')) {
+    return false;
+  }
+  return def.defer_loading !== true || discoveredTools?.has(def.name) === true;
+}
+
+function isDirectInstanceTool(
+  tool: GenericTool,
+  hasToolDefinitions: boolean,
+  toolRegistry?: LCToolRegistry,
+  discoveredTools?: ReadonlySet<string>,
+): boolean {
+  if (hasToolDefinitions || !toolRegistry || !('name' in tool)) {
+    return true;
+  }
+
+  const toolName = (tool as unknown as { name?: unknown }).name;
+  if (typeof toolName !== 'string') {
+    return true;
+  }
+
+  const def = toolRegistry.get(toolName);
+  if (!def) {
+    return true;
+  }
+
+  const allowedCallers = def.allowed_callers ?? ['direct'];
+  if (!allowedCallers.includes('direct')) {
+    return false;
+  }
+
+  return def.defer_loading !== true || discoveredTools?.has(toolName) === true;
 }
 
 /** Serializes a GenericTool to a JSON string for token counting. Returns null if no schema. */
@@ -74,12 +131,21 @@ function serializeToolDef(def: LCTool): string {
  * builtin/mcp/action tools that may share a name.
  * GenericTool entries use the `mcp` flag when present.
  */
-export function collectToolSchemas(tools?: GenericTool[], toolDefinitions?: LCTool[]): ToolEntry[] {
+export function collectToolSchemas(
+  tools?: GenericTool[],
+  toolDefinitions?: LCTool[],
+  options: CollectToolSchemasOptions = {},
+): ToolEntry[] {
   const seen = new Set<string>();
   const entries: ToolEntry[] = [];
+  const hasToolDefinitions = (toolDefinitions?.length ?? 0) > 0;
+  const { toolRegistry, discoveredTools } = options;
 
   if (tools) {
     for (const tool of tools) {
+      if (!isDirectInstanceTool(tool, hasToolDefinitions, toolRegistry, discoveredTools)) {
+        continue;
+      }
       const result = serializeGenericTool(tool);
       if (!result || !result.name) {
         continue;
@@ -93,7 +159,7 @@ export function collectToolSchemas(tools?: GenericTool[], toolDefinitions?: LCTo
 
   if (toolDefinitions) {
     for (const def of toolDefinitions) {
-      if (!def.name || seen.has(def.name)) {
+      if (!def.name || seen.has(def.name) || !isDirectToolDefinition(def, discoveredTools)) {
         continue;
       }
       seen.add(def.name);
@@ -115,8 +181,9 @@ export function computeToolSchemaTokens(
   provider: Providers,
   clientOptions: ClientOptions | undefined,
   tokenCounter: TokenCounter,
+  options?: CollectToolSchemasOptions,
 ): number {
-  const entries = collectToolSchemas(tools, toolDefinitions);
+  const entries = collectToolSchemas(tools, toolDefinitions, options);
   let rawTokens = 0;
   for (const { json } of entries) {
     rawTokens += tokenCounter(new SystemMessage(json));
@@ -128,8 +195,8 @@ export function computeToolSchemaTokens(
 /**
  * Returns tool schema tokens, using per-tool caching to avoid redundant
  * token counting. Each tool's raw (pre-multiplier) token count is cached
- * individually, keyed by `{tenantId}:{name}:{toolType}` (or `{name}:{toolType}`
- * without tenant). The provider-specific multiplier is applied to the sum.
+ * individually, keyed by tenant, provider/model namespace, tool name/type, and
+ * schema fingerprint. The provider-specific multiplier is applied to the sum.
  *
  * Returns 0 if there are no tools.
  */
@@ -140,6 +207,8 @@ export async function getOrComputeToolTokens({
   clientOptions,
   tokenCounter,
   tenantId,
+  toolRegistry,
+  discoveredTools,
 }: {
   tools?: GenericTool[];
   toolDefinitions?: LCTool[];
@@ -147,13 +216,16 @@ export async function getOrComputeToolTokens({
   clientOptions?: ClientOptions;
   tokenCounter: TokenCounter;
   tenantId?: string;
+  toolRegistry?: LCToolRegistry;
+  discoveredTools?: ReadonlySet<string>;
 }): Promise<number> {
-  const entries = collectToolSchemas(tools, toolDefinitions);
+  const entries = collectToolSchemas(tools, toolDefinitions, { toolRegistry, discoveredTools });
   if (entries.length === 0) {
     return 0;
   }
 
   const keyPrefix = tenantId ? `${tenantId}:` : '';
+  const counterNamespace = getCounterNamespace(provider, clientOptions);
 
   let cache: Keyv | undefined;
   try {
@@ -166,7 +238,7 @@ export async function getOrComputeToolTokens({
   const toWrite: Array<{ key: string; value: number }> = [];
 
   for (const { cacheKey, json } of entries) {
-    const fullKey = `${keyPrefix}${cacheKey}`;
+    const fullKey = `${keyPrefix}${counterNamespace}:${cacheKey}:${hashForCache(json)}`;
     let rawCount: number | undefined;
 
     if (cache) {

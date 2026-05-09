@@ -1839,7 +1839,7 @@ export enum CacheKeys {
   ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
   /**
    * Key for cached tool schema token counts.
-   * Keyed by provider + tool fingerprint to avoid redundant token counting.
+   * Entries are keyed by tenant, provider/model namespace, tool name/type, and schema fingerprint.
    */
   TOOL_TOKENS = 'TOOL_TOKENS',
 }

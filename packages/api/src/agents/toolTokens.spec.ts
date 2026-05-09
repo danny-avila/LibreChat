@@ -6,7 +6,7 @@ import {
   DEFAULT_TOOL_TOKEN_MULTIPLIER,
 } from '@librechat/agents';
 
-import type { GenericTool, LCTool, TokenCounter } from '@librechat/agents';
+import type { GenericTool, LCTool, LCToolRegistry, TokenCounter } from '@librechat/agents';
 
 import { collectToolSchemas, computeToolSchemaTokens, getOrComputeToolTokens } from './toolTokens';
 
@@ -57,6 +57,14 @@ const fakeTokenCounter: TokenCounter = (msg) => {
   const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
   return content.length;
 };
+
+function cacheKeys(): string[] {
+  return Array.from(mockCacheStore.keys());
+}
+
+function hasCacheKey(fragment: string): boolean {
+  return cacheKeys().some((key) => key.includes(fragment));
+}
 
 beforeEach(() => {
   mockCacheStore.clear();
@@ -111,6 +119,52 @@ describe('collectToolSchemas', () => {
     const keys = entries.map((e) => e.cacheKey);
     expect(keys).toContain('shared:builtin');
     expect(keys).toContain('only_def:builtin');
+  });
+
+  it('excludes tool definitions that AgentContext would not bind directly', () => {
+    const defs = [
+      makeToolDef('active'),
+      makeToolDef('deferred', { defer_loading: true }),
+      makeToolDef('programmatic', { allowed_callers: ['code_execution'] }),
+    ];
+
+    const entries = collectToolSchemas(undefined, defs);
+
+    expect(entries.map((entry) => entry.cacheKey)).toEqual(['active:builtin']);
+  });
+
+  it('includes deferred tool definitions once discovered', () => {
+    const defs = [makeToolDef('deferred', { defer_loading: true })];
+
+    const entries = collectToolSchemas(undefined, defs, {
+      discoveredTools: new Set(['deferred']),
+    });
+
+    expect(entries.map((entry) => entry.cacheKey)).toEqual(['deferred:builtin']);
+  });
+
+  it('filters instance tools in non-event-driven mode using toolRegistry', () => {
+    const tools = [makeTool('active'), makeTool('deferred'), makeTool('programmatic')];
+    const toolRegistry: LCToolRegistry = new Map([
+      ['active', makeToolDef('active')],
+      ['deferred', makeToolDef('deferred', { defer_loading: true })],
+      ['programmatic', makeToolDef('programmatic', { allowed_callers: ['code_execution'] })],
+    ]);
+
+    const entries = collectToolSchemas(tools, undefined, { toolRegistry });
+
+    expect(entries.map((entry) => entry.cacheKey)).toEqual(['active:builtin']);
+  });
+
+  it('does not filter instance tools when event-driven tool definitions are present', () => {
+    const tools = [makeTool('native')];
+    const toolRegistry: LCToolRegistry = new Map([
+      ['native', makeToolDef('native', { defer_loading: true })],
+    ]);
+
+    const entries = collectToolSchemas(tools, [makeToolDef('defined')], { toolRegistry });
+
+    expect(entries.map((entry) => entry.cacheKey)).toEqual(['native:builtin', 'defined:builtin']);
   });
 });
 
@@ -250,8 +304,8 @@ describe('getOrComputeToolTokens', () => {
     });
 
     expect(result).toBeGreaterThan(0);
-    expect(mockCacheStore.has('tool_a:builtin')).toBe(true);
-    expect(mockCacheStore.has('tool_b:builtin')).toBe(true);
+    expect(hasCacheKey('tool_a:builtin')).toBe(true);
+    expect(hasCacheKey('tool_b:builtin')).toBe(true);
     expect(mockCacheStore.size).toBe(2);
   });
 
@@ -277,7 +331,7 @@ describe('getOrComputeToolTokens', () => {
     expect(counter.mock.calls.length).toBe(callCountAfterFirst);
   });
 
-  it('applies different multipliers for different providers on same cached raw counts', async () => {
+  it('applies different multipliers while separating provider namespaces', async () => {
     const defs = [makeToolDef('tool')];
 
     const openai = await getOrComputeToolTokens({
@@ -293,7 +347,7 @@ describe('getOrComputeToolTokens', () => {
     });
 
     expect(openai).not.toBe(anthropic);
-    expect(mockCacheStore.size).toBe(1);
+    expect(mockCacheStore.size).toBe(2);
   });
 
   it('only computes new tools when tool set grows', async () => {
@@ -316,6 +370,77 @@ describe('getOrComputeToolTokens', () => {
     expect(mockCacheStore.size).toBe(2);
   });
 
+  it('recomputes when a same-name tool schema changes', async () => {
+    const counter = jest.fn(fakeTokenCounter);
+    const shortSchema = [
+      makeToolDef('tool', {
+        parameters: { type: 'object', properties: { input: { type: 'string' } } },
+      }),
+    ];
+    const longSchema = [
+      makeToolDef('tool', {
+        parameters: {
+          type: 'object',
+          properties: {
+            input: { type: 'string' },
+            detail: {
+              type: 'string',
+              description: 'A detailed field that makes the serialized schema longer',
+            },
+          },
+        },
+      }),
+    ];
+
+    const first = await getOrComputeToolTokens({
+      toolDefinitions: shortSchema,
+      provider: Providers.OPENAI,
+      tokenCounter: counter,
+    });
+    const callsAfterFirst = counter.mock.calls.length;
+
+    const second = await getOrComputeToolTokens({
+      toolDefinitions: longSchema,
+      provider: Providers.OPENAI,
+      tokenCounter: counter,
+    });
+
+    expect(second).toBeGreaterThan(first);
+    expect(counter.mock.calls.length).toBe(callsAfterFirst + 1);
+    expect(mockCacheStore.size).toBe(2);
+  });
+
+  it('separates cache namespaces when provider or model changes', async () => {
+    const counter = jest.fn(fakeTokenCounter);
+    const defs = [makeToolDef('tool')];
+
+    await getOrComputeToolTokens({
+      toolDefinitions: defs,
+      provider: Providers.OPENAI,
+      clientOptions: { model: 'gpt-4o' },
+      tokenCounter: counter,
+    });
+    const callsAfterFirst = counter.mock.calls.length;
+
+    await getOrComputeToolTokens({
+      toolDefinitions: defs,
+      provider: Providers.OPENAI,
+      clientOptions: { model: 'gpt-4o' },
+      tokenCounter: counter,
+    });
+    expect(counter.mock.calls.length).toBe(callsAfterFirst);
+
+    await getOrComputeToolTokens({
+      toolDefinitions: defs,
+      provider: Providers.OPENAI,
+      clientOptions: { model: 'claude-3-opus' },
+      tokenCounter: counter,
+    });
+
+    expect(counter.mock.calls.length).toBe(callsAfterFirst + 1);
+    expect(mockCacheStore.size).toBe(2);
+  });
+
   it('scopes cache keys by tenantId when provided', async () => {
     const defs = [makeToolDef('tool')];
 
@@ -326,7 +451,9 @@ describe('getOrComputeToolTokens', () => {
       tenantId: 'tenant_123',
     });
 
-    expect(mockCacheStore.has('tenant_123:tool:builtin')).toBe(true);
+    expect(
+      cacheKeys().some((key) => key.startsWith('tenant_123:') && key.includes('tool:builtin')),
+    ).toBe(true);
   });
 
   it('separates cache entries for different tenants', async () => {
@@ -347,8 +474,12 @@ describe('getOrComputeToolTokens', () => {
     });
 
     expect(t1).toBe(t2);
-    expect(mockCacheStore.has('tenant_1:tool:builtin')).toBe(true);
-    expect(mockCacheStore.has('tenant_2:tool:builtin')).toBe(true);
+    expect(
+      cacheKeys().some((key) => key.startsWith('tenant_1:') && key.includes('tool:builtin')),
+    ).toBe(true);
+    expect(
+      cacheKeys().some((key) => key.startsWith('tenant_2:') && key.includes('tool:builtin')),
+    ).toBe(true);
     expect(mockCacheStore.size).toBe(2);
   });
 
@@ -361,7 +492,7 @@ describe('getOrComputeToolTokens', () => {
       tokenCounter: fakeTokenCounter,
     });
 
-    expect(mockCacheStore.has('search:mcp')).toBe(true);
+    expect(hasCacheKey('search:mcp')).toBe(true);
   });
 
   it('falls back to compute when cache read throws', async () => {
