@@ -30,6 +30,8 @@ const ENV_KEYS = [
   'CODEAPI_JWT_AUDIENCE',
   'CODEAPI_JWT_TTL_SECONDS',
   'CODEAPI_JWT_MINT_CACHE_SECONDS',
+  'CODEAPI_JWT_SINGLE_TENANT_ID',
+  'TENANT_ISOLATION_STRICT',
   'OPENID_REUSE_TOKENS',
 ] as const;
 
@@ -113,6 +115,8 @@ describe('CodeAPI JWT minting', () => {
     process.env.CODEAPI_JWT_MINT_CACHE_SECONDS = '30';
     delete process.env.CODEAPI_JWT_PRIVATE_KEY;
     delete process.env.CODEAPI_JWT_PRIVATE_KEY_BASE64;
+    delete process.env.CODEAPI_JWT_SINGLE_TENANT_ID;
+    delete process.env.TENANT_ISOLATION_STRICT;
     delete process.env.OPENID_REUSE_TOKENS;
     mockGetTenantId.mockReset();
   });
@@ -206,7 +210,35 @@ describe('CodeAPI JWT minting', () => {
     expect(claims).not.toHaveProperty('planId');
   });
 
-  it('rejects minting without tenant context in managed mode', async () => {
+  it('uses the single-tenant namespace when tenant context is absent outside strict mode', async () => {
+    mockGetTenantId.mockReturnValue(undefined);
+
+    const token = await mintCodeApiToken(baseRequest({ tenantId: undefined }));
+    const { claims } = decodeToken(token);
+
+    expect(claims.tenant_id).toBe('legacy');
+    expect(claims.auth_context_hash).toBe(
+      expectedContextHash({
+        userId: 'user_123',
+        tenantId: 'legacy',
+        role: 'USER',
+        principalSource: 'librechat_jwt',
+      }),
+    );
+  });
+
+  it('supports overriding the single-tenant namespace for local deployments', async () => {
+    process.env.CODEAPI_JWT_SINGLE_TENANT_ID = 'local-single-tenant';
+    mockGetTenantId.mockReturnValue(undefined);
+
+    const token = await mintCodeApiToken(baseRequest({ tenantId: undefined }));
+    const { claims } = decodeToken(token);
+
+    expect(claims.tenant_id).toBe('local-single-tenant');
+  });
+
+  it('rejects minting without tenant context in strict tenant mode', async () => {
+    process.env.TENANT_ISOLATION_STRICT = 'true';
     mockGetTenantId.mockReturnValue(undefined);
 
     await expect(mintCodeApiToken(baseRequest({ tenantId: undefined }))).rejects.toThrow(

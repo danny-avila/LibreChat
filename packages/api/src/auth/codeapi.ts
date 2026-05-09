@@ -61,6 +61,7 @@ interface CachedToken {
 const DEFAULT_ISSUER = 'librechat';
 const DEFAULT_AUDIENCE = 'codeapi';
 const DEFAULT_KID = 'lc-codeapi-2026-05';
+const DEFAULT_SINGLE_TENANT_ID = 'legacy';
 const DEFAULT_TTL_SECONDS = 300;
 const DEFAULT_CACHE_SECONDS = 30;
 const MAX_TTL_SECONDS = 300;
@@ -193,8 +194,23 @@ function resolveUserId(user: CodeApiUserContext): string {
   return userId;
 }
 
+function resolveSingleTenantId(): string {
+  const configured = process.env.CODEAPI_JWT_SINGLE_TENANT_ID;
+  if (configured != null && configured.trim() !== '') {
+    return configured.trim();
+  }
+  return DEFAULT_SINGLE_TENANT_ID;
+}
+
 function resolveTenantId(user: CodeApiUserContext): string | undefined {
-  return stringifyClaimValue(user.tenantId) ?? getTenantId();
+  const tenantId = stringifyClaimValue(user.tenantId) ?? getTenantId();
+  if (tenantId) {
+    return tenantId;
+  }
+  if (isEnabled(process.env.TENANT_ISOLATION_STRICT)) {
+    return undefined;
+  }
+  return resolveSingleTenantId();
 }
 
 function isManagedCodeApiJwtMode(): boolean {
