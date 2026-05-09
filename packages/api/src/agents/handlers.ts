@@ -10,6 +10,7 @@ import type {
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
 import { Types } from 'mongoose';
+import type { CodeEnvRef } from 'librechat-data-provider';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
@@ -67,6 +68,11 @@ export interface ToolExecuteOptions {
     body: string;
     name: string;
     _id: Types.ObjectId;
+    /** Monotonic counter on the skill record. Threaded into
+     *  `codeEnvRef.version` so codeapi's sessionKey scopes the cache
+     *  per-revision; bumping the version on edit invalidates the
+     *  prior cache entry. */
+    version: number;
     fileCount: number;
     /**
      * Set when the skill author opted out of model invocation. The handler
@@ -83,22 +89,30 @@ export interface ToolExecuteOptions {
     getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
     [key: string]: unknown;
   };
-  /** Batch uploads files to the code execution environment */
+  /** Batch uploads files to the code execution environment. `kind`/`id`/
+   *  `version?` carry the resource identity codeapi uses to derive the
+   *  sessionKey for the batch's storage bucket. */
   batchUploadCodeEnvFiles?: (params: {
     req: ServerRequest;
     files: Array<{ stream: NodeJS.ReadableStream; filename: string }>;
-    entity_id?: string;
-  }) => Promise<{ session_id: string; files: Array<{ fileId: string; filename: string }> }>;
+    kind: 'skill' | 'agent' | 'user';
+    id: string;
+    version?: number;
+    read_only?: boolean;
+  }) => Promise<{
+    storage_session_id: string;
+    files: Array<{ fileId: string; filename: string }>;
+  }>;
   /** Checks if a code env file is still active. Returns lastModified or null. */
-  getSessionInfo?: (fileIdentifier: string) => Promise<string | null>;
+  getSessionInfo?: (ref: CodeEnvRef) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
-  /** Persists codeEnvIdentifiers on skill files after upload */
+  /** Persists `codeEnvRef` on skill files after upload */
   updateSkillFileCodeEnvIds?: (
     updates: Array<{
       skillId: Types.ObjectId | string;
       relativePath: string;
-      codeEnvIdentifier: string;
+      codeEnvRef: CodeEnvRef;
     }>,
   ) => Promise<void>;
   /** Loads a skill file by path (for read_file tool) */
@@ -888,7 +902,19 @@ async function handleSkillToolCall(
 
   const contentText = `Skill "${args.skillName}" loaded. Follow the instructions below.`;
   let artifact:
-    | { session_id: string; files: Array<{ id: string; session_id: string; name: string }> }
+    | {
+        session_id: string;
+        files: Array<{
+          id: string;
+          /** Resource id (skill `_id`). codeapi requires this distinct
+           *  from the storage `id` to scope sessionKey by resource. */
+          resource_id: string;
+          name: string;
+          storage_session_id: string;
+          kind?: 'skill' | 'agent' | 'user';
+          version?: number;
+        }>;
+      }
     | undefined;
 
   // Prime skill files to code env — only when the `execute_code` capability
@@ -916,7 +942,26 @@ async function handleSkillToolCall(
         updateSkillFileCodeEnvIds,
       });
       if (primeResult) {
-        artifact = primeResult;
+        /* `session_id` at the top of the artifact is the (representative)
+         * execution session — ToolNode reads it for CodeSessionContext
+         * continuity. Per-file storage lives on each file's
+         * `storage_session_id`. Skill files carry `kind: 'skill'` and
+         * the skill's version so codeapi's sessionKey scopes the
+         * cache per-revision. */
+        artifact = {
+          session_id: primeResult.storage_session_id,
+          files: primeResult.files.map((f) => ({
+            id: f.id,
+            /* `resource_id` (skill `_id`) is what codeapi feeds into
+             * `<tenant>:skill:<id>:v:<version>` — without it the next
+             * /exec authorizer sees `resource_id: undefined` and 400s. */
+            resource_id: f.resource_id,
+            name: f.name,
+            storage_session_id: f.storage_session_id,
+            kind: 'skill',
+            version: skill.version,
+          })),
+        };
       }
     } catch (error) {
       logger.error(
@@ -1015,6 +1060,56 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     toolCallConfig.session_id = tc.codeSessionContext.session_id;
                     if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
                       toolCallConfig._injected_files = tc.codeSessionContext.files;
+                      /* Last LC-controlled point before the wire. Mirrors
+                       * codeapi's validator context so the two log sides
+                       * correlate on a single grep. */
+                      const refs = tc.codeSessionContext.files as Array<{
+                        id?: unknown;
+                        resource_id?: unknown;
+                        storage_session_id?: unknown;
+                        kind?: unknown;
+                        version?: unknown;
+                        name?: unknown;
+                      }>;
+                      const summary = refs.map((f) => ({
+                        kind: f.kind,
+                        hasResourceId: typeof f.resource_id === 'string' && !!f.resource_id,
+                        hasStorageSessionId:
+                          typeof f.storage_session_id === 'string' && !!f.storage_session_id,
+                        hasVersion: typeof f.version === 'number',
+                      }));
+                      const missingResourceId = summary.filter((s) => !s.hasResourceId).length;
+                      logger.debug(
+                        `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
+                          `missingResourceId=${missingResourceId}`,
+                        { summary },
+                      );
+                      if (missingResourceId > 0) {
+                        logger.warn(
+                          `[code-env:inject] ${missingResourceId}/${refs.length} files missing resource_id ` +
+                            `for tool=${tc.name} — codeapi will reject with 400`,
+                          { summary },
+                        );
+                      }
+                    } else {
+                      /* Empty `_injected_files` on a code-execution tool
+                       * call. Almost always means the seeding chain
+                       * (primeCodeFiles → initialSessions →
+                       * CodeSessionContext) dropped the file upstream.
+                       * `session_id` is still emitted; agents falls
+                       * through to the `/files/<sid>` legacy fetch
+                       * which is post-cutover broken (returns 400).
+                       * Pair with `[primeCodeFiles]` traces below to
+                       * locate the layer that lost the ref. */
+                      logger.warn(
+                        `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
+                        {
+                          tool: tc.name,
+                          session_id: tc.codeSessionContext.session_id,
+                          codeSessionContextHasFiles: tc.codeSessionContext.files !== undefined,
+                          codeSessionContextFileCount: tc.codeSessionContext.files?.length ?? 0,
+                        },
+                      );
                     }
                   }
 

@@ -56,7 +56,7 @@ function isLegacyOpenIdIssuer(openidIssuer: string | undefined): boolean {
   return openidIssuer != null && loginIssuer != null && openidIssuer === loginIssuer;
 }
 
-function getIssuerBoundConditions(
+export function getIssuerBoundConditions(
   field: OpenIdLookupField,
   value: string | undefined,
   openidIssuer: string | undefined,
@@ -76,7 +76,7 @@ function getIssuerBoundConditions(
   return conditions;
 }
 
-function isUserIssuerAllowed(user: IUser, openidIssuer: string | undefined): boolean {
+export function isUserIssuerAllowed(user: IUser, openidIssuer: string | undefined): boolean {
   if (!openidIssuer) return true;
 
   const userIssuer = normalizeOpenIdIssuer(user.openidIssuer);

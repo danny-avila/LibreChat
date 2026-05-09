@@ -120,7 +120,7 @@
   },
   "devDependencies": {
     "@babel/plugin-transform-runtime": "^7.22.15",
-    "@babel/preset-env": "^7.22.15",
+    "@babel/preset-env": "^7.29.5",
     "@babel/preset-react": "^7.22.15",
     "@babel/preset-typescript": "^7.28.5",
     "@happy-dom/jest-environment": "^20.8.9",

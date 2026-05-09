@@ -6,10 +6,19 @@ import {
   type CodeFilesAgent,
 } from './codeFilesSession';
 
-const file = (id: string, session_id: string, name: string): CodeEnvFile => ({
+const file = (id: string, storage_session_id: string, name: string): CodeEnvFile => ({
   id,
-  session_id,
+  /* `resource_id` is informational for `kind: 'user'` (codeapi derives
+   * the sessionKey from the auth-context user, not this field) but
+   * still required by the type for shape uniformity. The id stand-in
+   * is fine here because no test asserts on its value. */
+  resource_id: id,
+  storage_session_id,
   name,
+  /* `kind` drives codeapi's sessionKey shape; defaults to `'user'` for
+   * primed code-execution attachments at the test boundary (most are
+   * chat uploads). Tests that need shared kinds set it explicitly. */
+  kind: 'user',
 });
 
 describe('seedCodeFilesIntoSessions', () => {
@@ -75,13 +84,18 @@ describe('seedCodeFilesIntoSessions', () => {
     expect(entry.session_id).toBe('skill-sess');
   });
 
-  it('skips seeding when incoming files have no session_id (defensive)', () => {
-    const fileWithoutSession = { id: 'x', session_id: '', name: 'orphan.csv' } as CodeEnvFile;
+  it('skips seeding when incoming files have no storage_session_id (defensive)', () => {
+    const fileWithoutSession = {
+      id: 'x',
+      storage_session_id: '',
+      name: 'orphan.csv',
+      kind: 'user',
+    } as CodeEnvFile;
     const result = seedCodeFilesIntoSessions([fileWithoutSession], undefined);
     expect(result).toBeUndefined();
   });
 
-  it('dedupes incoming files that share session_id + id with existing entries', () => {
+  it('dedupes incoming files that share storage_session_id + id with existing entries', () => {
     /**
      * Regression for Codex review #2: shared conversation files commonly
      * appear in multiple agents' `primedCodeFiles`. Without dedupe,
@@ -128,7 +142,7 @@ describe('seedCodeFilesIntoSessions', () => {
     const result = seedCodeFilesIntoSessions([a, a, b], undefined);
     const entry = result!.get(Constants.EXECUTE_CODE) as CodeSessionContext;
     expect(entry.files).toHaveLength(2);
-    expect(entry.files!.map((f) => f.session_id).sort()).toEqual(['sess-A', 'sess-B']);
+    expect(entry.files!.map((f) => f.storage_session_id).sort()).toEqual(['sess-A', 'sess-B']);
   });
 });
 
@@ -267,8 +281,8 @@ describe('buildInitialToolSessions', () => {
     expect(entry.session_id).toBe('sess-PRIMARY');
     /* All three agents still contributed their files into the merged set. */
     expect(entry.files!.map((f) => f.name).sort()).toEqual(['a.txt', 'b.txt', 'top.txt']);
-    /* And the per-file session_ids are preserved (ToolNode injects per-file). */
-    const byName = new Map(entry.files!.map((f) => [f.name, f.session_id]));
+    /* And the per-file storage_session_ids are preserved (ToolNode injects per-file). */
+    const byName = new Map(entry.files!.map((f) => [f.name, f.storage_session_id]));
     expect(byName.get('top.txt')).toBe('sess-PRIMARY');
     expect(byName.get('a.txt')).toBe('sess-A');
     expect(byName.get('b.txt')).toBe('sess-B');

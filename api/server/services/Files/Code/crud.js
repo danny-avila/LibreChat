@@ -7,6 +7,8 @@ const {
   createAxiosInstance,
   codeServerHttpAgent,
   codeServerHttpsAgent,
+  appendCodeEnvFileIdentity,
+  buildCodeEnvDownloadQuery,
 } = require('@librechat/api');
 
 const axios = createAxiosInstance();
@@ -16,16 +18,22 @@ const MAX_FILE_SIZE = 150 * 1024 * 1024;
 /**
  * Retrieves a download stream for a specified file.
  * @param {string} fileIdentifier - The identifier for the file (e.g., "session_id/fileId").
+ * @param {{ kind: 'skill' | 'agent' | 'user'; id: string; version?: number }} identity
+ *   Resource identity required by codeapi's `sessionAuth` to derive the
+ *   matching sessionKey. For code-output downloads this is always
+ *   `kind: 'user', id: <userId>`; for skill/agent re-downloads pass
+ *   the kind+id (+version for skill) from the file's `metadata.codeEnvRef`.
  * @returns {Promise<AxiosResponse>} A promise that resolves to a readable stream of the file content.
  * @throws {Error} If there's an error during the download process.
  */
-async function getCodeOutputDownloadStream(fileIdentifier) {
+async function getCodeOutputDownloadStream(fileIdentifier, identity) {
   try {
     const baseURL = getCodeBaseURL();
+    const query = buildCodeEnvDownloadQuery(identity);
     /** @type {import('axios').AxiosRequestConfig} */
     const options = {
       method: 'get',
-      url: `${baseURL}/download/${fileIdentifier}`,
+      url: `${baseURL}/download/${fileIdentifier}${query}`,
       responseType: 'stream',
       headers: {
         'User-Agent': 'LibreChat/1.0',
@@ -49,20 +57,31 @@ async function getCodeOutputDownloadStream(fileIdentifier) {
 
 /**
  * Uploads a file to the Code Environment server.
+ *
+ * `kind`/`id`/`version?` are required so codeapi can route the upload to
+ * the correct sessionKey bucket — `<tenant>:<kind>:<id>[:v:<version>]`
+ * for shared kinds, `<tenant>:user:<authContext.userId>` for `user`.
+ * Without these, codeapi falls back to user-scoped bucketing regardless
+ * of the resource the file belongs to, so skill-cache invalidation
+ * (driven by the version bump on edit) never fires. See codeapi #1455.
+ *
  * @param {Object} params - The params object.
  * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id` representing the user
  * @param {import('fs').ReadStream | import('stream').Readable} params.stream - The read stream for the file.
  * @param {string} params.filename - The name of the file.
- * @param {string} [params.entity_id] - Optional entity ID for the file.
- * @returns {Promise<string>}
+ * @param {'skill' | 'agent' | 'user'} params.kind - Resource kind that owns this file's storage session.
+ * @param {string} params.id - Resource id (skillId / agentId / userId). Codeapi
+ *   ignores this for `kind: 'user'` (auth context provides userId), but it's
+ *   sent uniformly for shape symmetry with the discriminated union.
+ * @param {number} [params.version] - Required when `kind === 'skill'`; absent otherwise.
+ * @returns {Promise<{ storage_session_id: string; file_id: string }>}
+ *   The codeapi storage location of the uploaded file.
  * @throws {Error} If there's an error during the upload process.
  */
-async function uploadCodeEnvFile({ req, stream, filename, entity_id = '' }) {
+async function uploadCodeEnvFile({ req, stream, filename, kind, id, version }) {
   try {
     const form = new FormData();
-    if (entity_id.length > 0) {
-      form.append('entity_id', entity_id);
-    }
+    appendCodeEnvFileIdentity(form, { kind, id, version });
     appendCodeEnvFile(form, stream, filename);
 
     const baseURL = getCodeBaseURL();
@@ -83,18 +102,16 @@ async function uploadCodeEnvFile({ req, stream, filename, entity_id = '' }) {
 
     const response = await axios.post(`${baseURL}/upload`, form, options);
 
-    /** @type {{ message: string; session_id: string; files: Array<{ fileId: string; filename: string }> }} */
+    /** @type {{ message: string; storage_session_id: string; files: Array<{ fileId: string; filename: string }> }} */
     const result = response.data;
     if (result.message !== 'success') {
       throw new Error(`Error uploading file: ${result.message}`);
     }
 
-    const fileIdentifier = `${result.session_id}/${result.files[0].fileId}`;
-    if (entity_id.length === 0) {
-      return fileIdentifier;
-    }
-
-    return `${fileIdentifier}?entity_id=${entity_id}`;
+    return {
+      storage_session_id: result.storage_session_id,
+      file_id: result.files[0].fileId,
+    };
   } catch (error) {
     throw new Error(
       logAxiosError({
@@ -109,25 +126,28 @@ async function uploadCodeEnvFile({ req, stream, filename, entity_id = '' }) {
  * Uploads multiple files to the code execution environment in a single request.
  * Uses the /upload/batch endpoint which shares one session_id across all files.
  *
+ * `kind`/`id`/`version?` carry the resource identity for codeapi's sessionKey
+ * derivation — see `uploadCodeEnvFile` for the full motivation.
+ *
  * @param {object} params
  * @param {import('express').Request & { user: { id: string } }} params.req - The request object.
  * @param {Array<{ stream: NodeJS.ReadableStream; filename: string }>} params.files - Files to upload.
- * @param {string} [params.entity_id] - Optional entity ID.
+ * @param {'skill' | 'agent' | 'user'} params.kind - Resource kind that owns the batch's storage session.
+ * @param {string} params.id - Resource id (skillId / agentId / userId).
+ * @param {number} [params.version] - Required when `kind === 'skill'`; absent otherwise.
  * @param {boolean} [params.read_only] - When true, codeapi tags every file in
  *   the batch as infrastructure (e.g. skill files). The flag is persisted as
  *   MinIO object metadata (`X-Amz-Meta-Read-Only`) and travels with the file
  *   through subsequent download/walk passes — sandboxed-code modifications
  *   are dropped on the floor and the original ref is echoed back as
  *   `inherited: true`, never as a generated artifact.
- * @returns {Promise<{ session_id: string; files: Array<{ fileId: string; filename: string }> }>}
+ * @returns {Promise<{ storage_session_id: string; files: Array<{ fileId: string; filename: string }> }>}
  * @throws {Error} If the batch upload fails entirely.
  */
-async function batchUploadCodeEnvFiles({ req, files, entity_id = '', read_only = false }) {
+async function batchUploadCodeEnvFiles({ req, files, kind, id, version, read_only = false }) {
   try {
     const form = new FormData();
-    if (entity_id.length > 0) {
-      form.append('entity_id', entity_id);
-    }
+    appendCodeEnvFileIdentity(form, { kind, id, version });
     if (read_only) {
       form.append('read_only', 'true');
     }
@@ -153,12 +173,12 @@ async function batchUploadCodeEnvFiles({ req, files, entity_id = '', read_only =
 
     const response = await axios.post(`${baseURL}/upload/batch`, form, options);
 
-    /** @type {{ message: string; session_id: string; files: Array<{ status: string; fileId?: string; filename: string; error?: string }>; succeeded: number; failed: number }} */
+    /** @type {{ message: string; storage_session_id: string; files: Array<{ status: string; fileId?: string; filename: string; error?: string }>; succeeded: number; failed: number }} */
     const result = response.data;
     if (
       !result ||
       typeof result !== 'object' ||
-      !result.session_id ||
+      !result.storage_session_id ||
       !Array.isArray(result.files)
     ) {
       throw new Error(`Unexpected batch upload response: ${JSON.stringify(result).slice(0, 200)}`);
@@ -179,7 +199,7 @@ async function batchUploadCodeEnvFiles({ req, files, entity_id = '', read_only =
       .filter((f) => f.status === 'success' && f.fileId)
       .map((f) => ({ fileId: f.fileId, filename: f.filename }));
 
-    return { session_id: result.session_id, files: successFiles };
+    return { storage_session_id: result.storage_session_id, files: successFiles };
   } catch (error) {
     throw new Error(
       logAxiosError({
@@ -190,4 +210,8 @@ async function batchUploadCodeEnvFiles({ req, files, entity_id = '', read_only =
   }
 }
 
-module.exports = { getCodeOutputDownloadStream, uploadCodeEnvFile, batchUploadCodeEnvFiles };
+module.exports = {
+  getCodeOutputDownloadStream,
+  uploadCodeEnvFile,
+  batchUploadCodeEnvFiles,
+};

@@ -15,12 +15,14 @@ export default function SkillCall({
   args,
   output = '',
   attachments,
+  hideAttachments = false,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
+  hideAttachments?: boolean;
 }) {
   const localize = useLocalize();
   const skillName = useMemo(() => parseJsonField(args, 'skillName'), [args]);
@@ -71,7 +73,9 @@ export default function SkillCall({
           )}
         </div>
       </div>
-      {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
+      {!hideAttachments && attachments && attachments.length > 0 && (
+        <AttachmentGroup attachments={attachments} />
+      )}
     </>
   );
 }

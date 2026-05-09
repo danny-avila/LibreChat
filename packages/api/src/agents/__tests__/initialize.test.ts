@@ -1231,3 +1231,182 @@ describe('initializeAgent — execute_code capability expansion', () => {
     ).rejects.toThrow(/google_tool_conflict/);
   });
 });
+
+describe('initializeAgent — code-generated file thread filter (regression)', () => {
+  /* Sibling-branched conversation regression. Pre-fix the priming chain
+   * filtered code-generated files by `messageId IN threadMessageIds`,
+   * which excluded files whose creator messageId lived on a sibling
+   * branch (preserved on the File record by `processCodeOutput` for
+   * provenance). The fix anchors `getCodeGeneratedFiles` on
+   * `threadFileIds` instead — file_ids referenced by the thread's
+   * `messages.files[]` arrays. This block locks the new contract at
+   * the integration boundary: assert the right call shape, not the
+   * underlying Mongo query (covered separately by
+   * `data-schemas/methods/file.spec`). */
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockExtractLibreChatParams.mockReset();
+    mockGetThreadData.mockReset();
+  });
+
+  function setupExecuteCodeAgent() {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.OPENAI,
+    });
+    agent.tools = ['execute_code'];
+
+    /* `resendFiles: true` is the gate that opens the thread-file
+     * priming block in initialize.ts. Without it the whole
+     * codeGeneratedFiles fetch is skipped. */
+    mockExtractLibreChatParams.mockReturnValue({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: 'test-model' },
+    });
+
+    return { agent, req, res, loadTools, db };
+  }
+
+  it('passes threadFileIds (not threadMessageIds) to getCodeGeneratedFiles', async () => {
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    /* Simulate the branched scenario: parent message N is a sibling
+     * regeneration. `getThreadData` walks back from N and collects
+     * messageIds [N, root] plus fileIds referenced by N.files[]. */
+    mockGetThreadData.mockReturnValue({
+      messageIds: ['msgN', 'msgRoot'],
+      fileIds: ['file-pptx-skill', 'file-output-csv'],
+    });
+
+    const getCodeGeneratedFiles = jest.fn().mockResolvedValue([]);
+    const getUserCodeFiles = jest.fn().mockResolvedValue([]);
+    const getMessages = jest
+      .fn()
+      .mockResolvedValue([{ messageId: 'msgN', parentMessageId: 'msgRoot', files: [] }]);
+
+    const dbWithThreadCalls: InitializeAgentDbMethods = {
+      ...db,
+      getMessages,
+      getCodeGeneratedFiles,
+      getUserCodeFiles,
+    };
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      dbWithThreadCalls,
+    );
+
+    expect(getCodeGeneratedFiles).toHaveBeenCalledTimes(1);
+    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', [
+      'file-pptx-skill',
+      'file-output-csv',
+    ]);
+    /* Both functions now share the same primary anchor — symmetric
+     * design that closes the sibling-branch hole. */
+    expect(getUserCodeFiles).toHaveBeenCalledWith(['file-pptx-skill', 'file-output-csv']);
+  });
+
+  it('selects messages.attachments alongside messages.files (regression)', async () => {
+    /* Code-execution outputs land on `messages.attachments` via
+     * `processCodeOutput`; user uploads land on `messages.files`.
+     * Selecting only `files` silently dropped every code-output
+     * file_id from the thread walk, so the next turn's
+     * `tool_resources.execute_code.file_ids` came up empty and the
+     * sandbox saw `_injected_files: []`. The visible symptom: "the
+     * previous file isn't persisted between executions" on a single
+     * linear thread. Lock the select string so a future field
+     * trim doesn't silently re-introduce the bug. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    mockGetThreadData.mockReturnValue({ messageIds: [], fileIds: [] });
+
+    const getCodeGeneratedFiles = jest.fn().mockResolvedValue([]);
+    const getUserCodeFiles = jest.fn().mockResolvedValue([]);
+    const getMessages = jest.fn().mockResolvedValue([]);
+
+    const dbWithThreadCalls: InitializeAgentDbMethods = {
+      ...db,
+      getMessages,
+      getCodeGeneratedFiles,
+      getUserCodeFiles,
+    };
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      dbWithThreadCalls,
+    );
+
+    expect(getMessages).toHaveBeenCalledTimes(1);
+    const [, selectFields] = getMessages.mock.calls[0];
+    /* Asserting on a substring instead of exact equality keeps the
+     * test resilient to future ordering / new fields, while still
+     * catching a regression where `attachments` is dropped. */
+    expect(selectFields).toMatch(/\battachments\b/);
+    expect(selectFields).toMatch(/\bfiles\b/);
+    expect(selectFields).toMatch(/\bmessageId\b/);
+    expect(selectFields).toMatch(/\bparentMessageId\b/);
+  });
+
+  it('skips the code-generated fetch entirely when threadFileIds is empty', async () => {
+    /* Empty `messages.files[]` across the thread — nothing to look up.
+     * The function returns early without hitting Mongo, mirroring the
+     * pre-fix behavior for empty-thread cases. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    mockGetThreadData.mockReturnValue({
+      messageIds: ['msgN', 'msgRoot'],
+      fileIds: [],
+    });
+
+    const getCodeGeneratedFiles = jest.fn().mockResolvedValue([]);
+    const getUserCodeFiles = jest.fn().mockResolvedValue([]);
+    const getMessages = jest
+      .fn()
+      .mockResolvedValue([{ messageId: 'msgN', parentMessageId: 'msgRoot', files: [] }]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getCodeGeneratedFiles, getUserCodeFiles },
+    );
+
+    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', []);
+    /* `getUserCodeFiles` is gated on a non-empty array at the call site,
+     * so it shouldn't be invoked at all. `getCodeGeneratedFiles`'s own
+     * empty-guard is exercised by data-schemas tests. */
+    expect(getUserCodeFiles).not.toHaveBeenCalled();
+  });
+});

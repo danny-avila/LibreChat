@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { EModelEndpoint, Providers } from 'librechat-data-provider';
+import { EModelEndpoint, EToolResources, Providers } from 'librechat-data-provider';
 import AttachFileMenu from '../AttachFileMenu';
 
 jest.mock('~/hooks', () => ({
@@ -31,7 +31,20 @@ jest.mock('@librechat/client', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const R = require('react');
   return {
-    FileUpload: (props) => R.createElement('div', { 'data-testid': 'file-upload' }, props.children),
+    FileUpload: R.forwardRef((props, ref) =>
+      R.createElement(
+        'div',
+        { 'data-testid': 'file-upload' },
+        props.children,
+        R.createElement('input', {
+          ref,
+          multiple: true,
+          type: 'file',
+          'data-testid': 'file-input',
+          onChange: props.handleFileChange,
+        }),
+      ),
+    ),
     TooltipAnchor: (props) => props.render,
     DropdownPopup: (props) =>
       R.createElement(
@@ -317,6 +330,50 @@ describe('AttachFileMenu', () => {
       expect(screen.getByText('Upload as Text')).toBeInTheDocument();
       expect(screen.getByText('Upload for File Search')).toBeInTheDocument();
       expect(screen.getByText('Upload Code Files')).toBeInTheDocument();
+    });
+
+    it('passes File Search resource when the file input changes before React state commits', () => {
+      setupMocks();
+      const handleFileChange = jest.fn();
+      mockUseFileHandlingNoChatContext.mockReturnValue({ handleFileChange });
+      mockUseAgentCapabilities.mockReturnValue({
+        contextEnabled: false,
+        fileSearchEnabled: true,
+        codeEnabled: false,
+      });
+      mockUseAgentToolPermissions.mockReturnValue({
+        fileSearchAllowedByAgent: true,
+        codeAllowedByAgent: false,
+        provider: undefined,
+      });
+      const originalClick = HTMLInputElement.prototype.click;
+      const file = new File(['data'], 'sheet.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+
+      HTMLInputElement.prototype.click = function click() {
+        Object.defineProperty(this, 'files', {
+          configurable: true,
+          value: [file],
+        });
+        fireEvent.change(this);
+      };
+
+      try {
+        renderMenu({ endpointType: EModelEndpoint.openAI });
+        openMenu();
+        fireEvent.click(screen.getByText('Upload to Provider'));
+        fireEvent.click(screen.getByText('Upload for File Search'));
+      } finally {
+        HTMLInputElement.prototype.click = originalClick;
+      }
+
+      expect(handleFileChange).toHaveBeenNthCalledWith(1, expect.any(Object), undefined);
+      expect(handleFileChange).toHaveBeenNthCalledWith(
+        2,
+        expect.any(Object),
+        EToolResources.file_search,
+      );
     });
   });
 

@@ -2,12 +2,18 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown, Users } from 'lucide-react';
 import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
-import type { TMessageContentParts, Agents, FunctionToolCall } from 'librechat-data-provider';
+import type {
+  TAttachment,
+  TMessageContentParts,
+  Agents,
+  FunctionToolCall,
+} from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
-import { StackedToolIcons } from './ToolOutput';
 import { useLocalize, useExpandCollapse } from '~/hooks';
-import { useMCPIconMap } from '~/hooks/MCP';
 import { cn, getToolDisplayLabel } from '~/utils';
+import { StackedToolIcons } from './ToolOutput';
+import { useMCPIconMap } from '~/hooks/MCP';
+import { AttachmentGroup } from './Parts';
 import store from '~/store';
 
 interface ToolMeta {
@@ -59,6 +65,7 @@ interface ToolCallGroupProps {
   isLast: boolean;
   renderPart: (part: TMessageContentParts, idx: number, isLastPart: boolean) => React.ReactNode;
   lastContentIdx: number;
+  groupAttachments?: TAttachment[];
 }
 
 export default function ToolCallGroup({
@@ -67,6 +74,7 @@ export default function ToolCallGroup({
   isLast,
   renderPart,
   lastContentIdx,
+  groupAttachments,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
@@ -130,6 +138,14 @@ export default function ToolCallGroup({
     setIsExpanded((prev) => !prev);
   }, []);
 
+  const getSubagentLabel = () =>
+    subagentsDone
+      ? localize('com_ui_ran_n_agents', { 0: String(count) })
+      : localize('com_ui_running_n_agents', { 0: String(count) });
+  const groupLabel = allSubagents
+    ? getSubagentLabel()
+    : localize('com_ui_used_n_tools', { 0: String(count) });
+
   const hasActiveToolCall = useMemo(
     () => isSubmitting && toolMetadata.some((m) => m && !m.hasOutput),
     [toolMetadata, isSubmitting],
@@ -148,13 +164,7 @@ export default function ToolCallGroup({
         className="inline-flex w-full items-center gap-2 py-1 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
         onClick={handleToggle}
         aria-expanded={isExpanded}
-        aria-label={
-          allSubagents
-            ? subagentsDone
-              ? localize('com_ui_ran_n_agents', { 0: String(count) })
-              : localize('com_ui_running_n_agents', { 0: String(count) })
-            : localize('com_ui_used_n_tools', { 0: String(count) })
-        }
+        aria-label={groupLabel}
       >
         {allSubagents ? (
           /** Subagent groups don't have per-tool icons — StackedToolIcons
@@ -178,13 +188,7 @@ export default function ToolCallGroup({
             isAnimating={!allCompleted && isSubmitting}
           />
         )}
-        <span className="tool-status-text font-medium">
-          {allSubagents
-            ? subagentsDone
-              ? localize('com_ui_ran_n_agents', { 0: String(count) })
-              : localize('com_ui_running_n_agents', { 0: String(count) })
-            : localize('com_ui_used_n_tools', { 0: String(count) })}
-        </span>
+        <span className="tool-status-text font-medium">{groupLabel}</span>
         {/** Hide the tool-name summary for pure-subagent groups — every
          *   entry deduplicates to the same "subagent" token, which adds
          *   noise without info. Mixed groups keep the summary. */}
@@ -206,6 +210,9 @@ export default function ToolCallGroup({
           </div>
         </div>
       </div>
+      {groupAttachments && groupAttachments.length > 0 && (
+        <AttachmentGroup attachments={groupAttachments} />
+      )}
     </div>
   );
 }

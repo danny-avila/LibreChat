@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
+  logAxiosError,
   refreshS3FileUrls,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
@@ -309,12 +310,26 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
       return res.status(501).send('Not Implemented');
     }
 
+    /* Code-output downloads are always user-private — `processCodeOutput`
+     * persists every code-execution artifact under
+     * `metadata.codeEnvRef.kind === 'user'` regardless of which skill
+     * the run invoked. Pass `kind: 'user'` + `id: <userId>` so codeapi's
+     * `sessionAuth` resolves the matching `<tenant>:user:<userId>`
+     * sessionKey; without these query params it 400s with
+     * "kind must be one of: skill, agent, user". */
     /** @type {AxiosResponse<ReadableStream> | undefined} */
-    const response = await getDownloadStream(`${session_id}/${fileId}`);
+    const response = await getDownloadStream(`${session_id}/${fileId}`, {
+      kind: 'user',
+      id: req.user.id,
+    });
     res.set(response.headers);
     response.data.pipe(res);
   } catch (error) {
-    logger.error('Error downloading file:', error);
+    /* `logAxiosError` redacts buffer/stream response bodies — without
+     * it, a stream-typed axios failure dumps the entire `Readable`'s
+     * internal state (megabytes of socket + readableState) into the
+     * log line. Plain `logger.error(error)` would do that here. */
+    logAxiosError({ message: 'Error downloading code-output file', error });
     res.status(500).send('Error downloading file');
   }
 });
