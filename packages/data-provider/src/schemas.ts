@@ -1250,6 +1250,11 @@ export const openAISchema = openAIBaseSchema
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
   .catch(() => ({}));
 
+export const openRouterSchema = openAIBaseSchema
+  .merge(tConversationSchema.pick({ promptCache: true }))
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
+  .catch(() => ({}));
+
 export const compactGoogleSchema = googleBaseSchema
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };

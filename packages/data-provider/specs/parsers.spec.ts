@@ -1,6 +1,6 @@
 import { replaceSpecialVars, parseConvo, parseCompactConvo, parseTextParts } from '../src/parsers';
 import { specialVariables } from '../src/config';
-import { EModelEndpoint } from '../src/schemas';
+import { EModelEndpoint, Providers } from '../src/schemas';
 import { ContentTypes } from '../src/types/runs';
 import type { TMessageContentParts } from '../src/types/assistants';
 import type { TUser, TConversation } from '../src/types';
@@ -409,6 +409,26 @@ describe('parseConvo - defaultParamsEndpoint', () => {
     expect(result?.topK).toBe(40);
   });
 
+  test('should preserve promptCache when defaultParamsEndpoint is openrouter', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-sonnet-4.6',
+      temperature: 0.7,
+      max_tokens: 8192,
+      promptCache: true,
+    };
+
+    const result = parseConvo({
+      endpoint: 'OpenRouter' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: Providers.OPENROUTER,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.max_tokens).toBe(8192);
+    expect(result?.promptCache).toBe(true);
+  });
+
   test('should not strip fields from non-custom endpoints that already have a schema', () => {
     const conversation: Partial<TConversation> = {
       model: 'gpt-4o',
@@ -525,6 +545,25 @@ describe('parseCompactConvo - defaultParamsEndpoint', () => {
     expect(result).not.toBeNull();
     expect(result?.['iconURL']).toBeUndefined();
     expect(result?.maxOutputTokens).toBe(8192);
+  });
+
+  test('should preserve promptCache when compacting OpenRouter custom endpoints', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-sonnet-4.6',
+      promptCache: true,
+      iconURL: 'https://example.com/icon.png',
+    };
+
+    const result = parseCompactConvo({
+      endpoint: 'OpenRouter' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: Providers.OPENROUTER,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.promptCache).toBe(true);
+    expect(result?.['iconURL']).toBeUndefined();
   });
 
   test('should fall back to endpointType when defaultParamsEndpoint is null', () => {

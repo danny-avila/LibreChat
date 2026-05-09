@@ -30,6 +30,7 @@ export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
 
 export type OAIClientOptions = OpenAIClientOptions & {
   include_reasoning?: boolean;
+  promptCache?: boolean;
   _lc_stream_delay?: number;
 };
 

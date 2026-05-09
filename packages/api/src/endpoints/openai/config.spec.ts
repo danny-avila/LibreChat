@@ -201,6 +201,7 @@ describe('getOpenAIConfig', () => {
       'X-OpenRouter-Categories': 'general-chat,personal-agent',
     });
     expect(result.llmConfig.include_reasoning).toBe(true);
+    expect(result.llmConfig.promptCache).toBe(true);
     expect(result.provider).toBe('openrouter');
   });
 
@@ -784,6 +785,46 @@ describe('getOpenAIConfig', () => {
       const result = getOpenAIConfig(mockApiKey, {}, 'openrouter');
 
       expect(result.llmConfig.include_reasoning).toBe(true);
+      expect(result.llmConfig.promptCache).toBe(true);
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should detect OpenRouter from baseURL case-insensitively', () => {
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://gateway.example/v1/OpenRouter',
+      });
+
+      expect(result.llmConfig.include_reasoning).toBe(true);
+      expect(result.llmConfig.promptCache).toBe(true);
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should preserve explicit promptCache false for OpenRouter', () => {
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          customParams: {
+            defaultParamsEndpoint: 'openrouter',
+            paramDefinitions: [{ key: 'promptCache', default: false }],
+          },
+        },
+        'openrouter',
+      );
+
+      expect(result.llmConfig.promptCache).toBeUndefined();
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should honor dropParams for the OpenRouter promptCache default', () => {
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          dropParams: ['promptCache'],
+        },
+        'openrouter',
+      );
+
+      expect(result.llmConfig.promptCache).toBeUndefined();
       expect(result.provider).toBe('openrouter');
     });
 
@@ -1464,6 +1505,10 @@ describe('getOpenAIConfig', () => {
             top_k: 50,
             repetition_penalty: 1.1,
           },
+          customParams: {
+            defaultParamsEndpoint: 'openrouter',
+            paramDefinitions: [{ key: 'promptCache', default: true }],
+          },
           modelOptions: {
             model: 'anthropic/claude-3-sonnet',
             user: 'openrouter-user',
@@ -1482,6 +1527,7 @@ describe('getOpenAIConfig', () => {
           temperature: 0.7,
           maxTokens: 4000,
           apiKey: apiKey,
+          promptCache: true,
         });
         expect(result.llmConfig.include_reasoning).toBeUndefined();
         expect(result.llmConfig.modelKwargs).toMatchObject({
@@ -1492,6 +1538,47 @@ describe('getOpenAIConfig', () => {
         expect(result.configOptions?.defaultHeaders).toMatchObject({
           'HTTP-Referer': 'https://librechat.ai',
           'X-Title': 'LibreChat',
+          Authorization: `Bearer ${apiKey}`,
+        });
+        expect(result.provider).toBe('openrouter');
+      });
+
+      it('should honor OpenRouter defaults for proxied custom endpoint names', () => {
+        const endpoint = 'company-gateway';
+        const apiKey = 'sk-proxy-key';
+        const baseURL = 'https://llm-proxy.example.com/v1';
+
+        const result = getOpenAIConfig(
+          apiKey,
+          {
+            reverseProxyUrl: baseURL,
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+            },
+            customParams: {
+              defaultParamsEndpoint: 'openrouter',
+              paramDefinitions: [{ key: 'promptCache', default: true }],
+            },
+            modelOptions: {
+              model: 'anthropic/claude-sonnet-4.6',
+              reasoning_effort: ReasoningEffort.high,
+            },
+          },
+          endpoint,
+        );
+
+        expect(result.llmConfig).toMatchObject({
+          model: 'anthropic/claude-sonnet-4.6',
+          apiKey,
+          promptCache: true,
+        });
+        expect(result.llmConfig.include_reasoning).toBeUndefined();
+        expect(result.llmConfig.modelKwargs).toMatchObject({
+          reasoning: { effort: ReasoningEffort.high },
+        });
+        expect(result.configOptions?.baseURL).toBe(baseURL);
+        expect(result.configOptions?.defaultHeaders).toMatchObject({
+          'X-OpenRouter-Title': 'LibreChat',
           Authorization: `Bearer ${apiKey}`,
         });
         expect(result.provider).toBe('openrouter');

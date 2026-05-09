@@ -11,6 +11,7 @@ import {
   summarizationConfigSchema,
 } from '../src/config';
 import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
+import { specsConfigSchema } from '../src/models';
 import { FileSources } from '../src/types/files';
 
 describe('paramDefinitionSchema', () => {
@@ -716,5 +717,44 @@ describe('summarizationTriggerSchema', () => {
       trigger: { type: 'token_ratio', value: 0.8 },
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('specsConfigSchema', () => {
+  it('accepts an empty list (defaults applied)', () => {
+    const result = specsConfigSchema.safeParse({ list: [] });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list).toEqual([]);
+      expect(result.data.enforce).toBe(false);
+      expect(result.data.prioritize).toBe(true);
+    }
+  });
+
+  it('defaults list to [] when omitted', () => {
+    const result = specsConfigSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list).toEqual([]);
+    }
+  });
+
+  it('accepts a populated list', () => {
+    const result = specsConfigSchema.safeParse({
+      enforce: true,
+      list: [
+        {
+          name: 'spec-1',
+          label: 'Spec 1',
+          preset: { endpoint: EModelEndpoint.openAI },
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('still rejects null list', () => {
+    const result = specsConfigSchema.safeParse({ list: null });
+    expect(result.success).toBe(false);
   });
 });
