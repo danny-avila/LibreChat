@@ -13,8 +13,9 @@ import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
 import useGeolocation from '~/hooks/useGeolocation';
 import { useLocalize } from '~/hooks';
-import { STATES, DISTRICTS, INDIAN_LANGUAGES } from '~/utils/metaData';
+import { STATES, DISTRICTS, INDIAN_LANGUAGES, CROPS } from '~/utils/metaData';
 import SearchableSelect from './SearchableSelect';
+import SearchableMultiSelect from './SearchableMultiSelect';
 
 type FarmerLocationForm = Partial<IFarmerProfile> & {
   landhold?: string;
@@ -42,6 +43,7 @@ const FarmerLocationModal = ({
     register,
     handleSubmit,
     watch,
+    getValues,
     setValue,
     control,
     unregister,
@@ -86,6 +88,31 @@ const FarmerLocationModal = ({
   const watchedState = watch('state');
   const selectedState = watchedState;
   const selectedDistrict = watch('district');
+  const selectedCropsRaw = watch('cropsCultivated');
+  const selectedCropsList = selectedCropsRaw
+    ? String(selectedCropsRaw)
+      .split(',')
+      .map((crop) => crop.trim())
+      .filter(Boolean)
+    : [];
+
+  const updateCropsCultivated = (selected: string[]) => {
+    setValue('cropsCultivated', selected.join(', '), { shouldValidate: true });
+
+    const primaryCrop = getValues('primaryCrop');
+    const secondaryCrop = getValues('secondaryCrop');
+
+    if (primaryCrop && !selected.includes(primaryCrop)) {
+      setValue('primaryCrop', '', { shouldValidate: true });
+    }
+    if (secondaryCrop && !selected.includes(secondaryCrop)) {
+      setValue('secondaryCrop', '', { shouldValidate: true });
+    }
+  };
+
+  const removeSelectedCrop = (cropToRemove: string) => {
+    updateCropsCultivated(selectedCropsList.filter((crop) => crop !== cropToRemove));
+  };
 
   const matchedStateKey = selectedState
     ? Object.keys(DISTRICTS).find((k) => k.toLowerCase() === selectedState.toLowerCase())
@@ -281,8 +308,7 @@ const FarmerLocationModal = ({
     },
     cropsCultivated: {
       label: localize('com_farmer_label_crops_cultivated'),
-      type: 'text',
-      placeholder: localize('com_farmer_placeholder_crops_example'),
+      type: 'searchable-multi-select',
     },
     landhold: {
       label: localize('com_farmer_label_landholding_short'),
@@ -515,6 +541,53 @@ const FarmerLocationModal = ({
                       </label>
                     ))}
                   </div>
+                  {errors[field as keyof FarmerLocationForm] && (
+                    <p className="mt-1 text-xs text-red-500">
+                      {(errors[field as keyof FarmerLocationForm] as any)?.message}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+
+            if (config.type === 'searchable-multi-select') {
+              return (
+                <div key={field} className={fieldClass}>
+                  <Label htmlFor={field}>{config.label}</Label>
+                  <SearchableMultiSelect
+                    options={CROPS}
+                    value={selectedCropsList}
+                    onChange={updateCropsCultivated}
+                    placeholder={localize('com_ui_select_options')}
+                  />
+                  {selectedCropsList.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {selectedCropsList.map((crop) => (
+                        <span
+                          key={crop}
+                          className="inline-flex items-center gap-2 rounded-full bg-surface-active px-3 py-1 text-xs text-text-primary"
+                        >
+                          {crop}
+                          <button
+                            type="button"
+                            onClick={() => removeSelectedCrop(crop)}
+                            className="rounded-full px-1 leading-none text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                            aria-label={`Remove ${crop}`}
+                          >
+                            x
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    type="hidden"
+                    {...register(field as any, {
+                      required: localize('com_farmer_validation_required_generic', {
+                        0: config.label,
+                      }),
+                    })}
+                  />
                   {errors[field as keyof FarmerLocationForm] && (
                     <p className="mt-1 text-xs text-red-500">
                       {(errors[field as keyof FarmerLocationForm] as any)?.message}

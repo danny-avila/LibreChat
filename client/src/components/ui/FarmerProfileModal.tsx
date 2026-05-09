@@ -71,6 +71,7 @@ const FarmerProfileModal = ({
     control,
     reset,
     watch,
+    getValues,
     setValue,
     formState: { errors, isValid },
   } = useForm<FarmerProfileForm>({ mode: 'onChange' });
@@ -162,6 +163,24 @@ const FarmerProfileModal = ({
       .map((c: string) => c.trim())
       .filter(Boolean)
     : [];
+
+  const updateCropsCultivated = (selected: string[]) => {
+    setValue('cropsCultivated', selected.join(', '), { shouldValidate: true });
+
+    const primaryCrop = getValues('primaryCrop');
+    const secondaryCrop = getValues('secondaryCrop');
+
+    if (primaryCrop && !selected.includes(primaryCrop)) {
+      setValue('primaryCrop', '', { shouldValidate: true });
+    }
+    if (secondaryCrop && !selected.includes(secondaryCrop)) {
+      setValue('secondaryCrop', '', { shouldValidate: true });
+    }
+  };
+
+  const removeSelectedCrop = (cropToRemove: string) => {
+    updateCropsCultivated(selectedCropsList.filter((crop) => crop !== cropToRemove));
+  };
 
   const saveMutation = useSaveFarmerProfileMutation({
     onSuccess: () => {
@@ -641,9 +660,29 @@ const FarmerProfileModal = ({
                 <SearchableMultiSelect
                   options={CROPS}
                   value={selectedCropsList}
-                  onChange={(selected) => setValue('cropsCultivated', selected.join(', '), { shouldValidate: true })}
+                  onChange={updateCropsCultivated}
                   placeholder={localize('com_ui_select_options')}
                 />
+                {selectedCropsList.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {selectedCropsList.map((crop) => (
+                      <span
+                        key={crop}
+                        className="inline-flex items-center gap-2 rounded-full bg-surface-active px-3 py-1 text-xs text-text-primary"
+                      >
+                        {crop}
+                        <button
+                          type="button"
+                          onClick={() => removeSelectedCrop(crop)}
+                          className="rounded-full px-1 leading-none text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                          aria-label={`Remove ${crop}`}
+                        >
+                          x
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <input
                   type="hidden"
                   {...register('cropsCultivated', {
