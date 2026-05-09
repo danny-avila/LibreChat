@@ -150,10 +150,11 @@ export function getOpenAILLMConfig({
     reasoning_summary,
     verbosity,
     web_search,
+    promptCache,
     frequency_penalty,
     presence_penalty,
     ...modelOptions
-  } = cleanedModelOptions;
+  } = cleanedModelOptions as Partial<t.OpenAIParameters & { promptCache?: boolean }>;
 
   const llmConfig = Object.assign(
     {
@@ -179,14 +180,20 @@ export function getOpenAILLMConfig({
   }
 
   let enableWebSearch = web_search;
+  let enablePromptCache = promptCache;
 
   /** Apply defaultParams first - only if fields are undefined */
   if (defaultParams && typeof defaultParams === 'object') {
     for (const [key, value] of Object.entries(defaultParams)) {
-      /** Handle web_search separately - don't add to config */
       if (key === 'web_search') {
         if (enableWebSearch === undefined && typeof value === 'boolean') {
           enableWebSearch = value;
+        }
+        continue;
+      }
+      if (key === 'promptCache') {
+        if (enablePromptCache === undefined && typeof value === 'boolean') {
+          enablePromptCache = value;
         }
         continue;
       }
@@ -206,10 +213,15 @@ export function getOpenAILLMConfig({
   /** Apply addParams - can override defaultParams */
   if (addParams && typeof addParams === 'object') {
     for (const [key, value] of Object.entries(addParams)) {
-      /** Handle web_search directly here instead of adding to modelKwargs or llmConfig */
       if (key === 'web_search') {
         if (typeof value === 'boolean') {
           enableWebSearch = value;
+        }
+        continue;
+      }
+      if (key === 'promptCache') {
+        if (typeof value === 'boolean') {
+          enablePromptCache = value;
         }
         continue;
       }
@@ -263,6 +275,9 @@ export function getOpenAILLMConfig({
   if (dropParams && dropParams.includes('web_search')) {
     enableWebSearch = false;
   }
+  if (dropParams && dropParams.includes('promptCache')) {
+    enablePromptCache = false;
+  }
 
   if (useOpenRouter && enableWebSearch) {
     /** OpenRouter expects web search as a plugins parameter */
@@ -272,6 +287,9 @@ export function getOpenAILLMConfig({
     /** Standard OpenAI web search uses tools API */
     llmConfig.useResponsesApi = true;
     tools.push({ type: 'web_search' });
+  }
+  if (useOpenRouter && enablePromptCache === true) {
+    llmConfig.promptCache = true;
   }
 
   /**
