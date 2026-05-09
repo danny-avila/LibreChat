@@ -17,6 +17,47 @@ const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
 
 let i = 0;
 
+const OPENROUTER_ENDPOINT = 'openrouter';
+const OPENROUTER_PROMPT_CACHE_DEFAULT = {
+  key: 'promptCache',
+  default: true,
+};
+
+function includesOpenRouter(value) {
+  return typeof value === 'string' && value.toLowerCase().includes(OPENROUTER_ENDPOINT);
+}
+
+function isOpenRouterEndpoint(endpoint) {
+  return includesOpenRouter(endpoint.name) || includesOpenRouter(endpoint.baseURL);
+}
+
+function shouldPreserveCustomParams(customParams) {
+  const defaultEndpoint = customParams?.defaultParamsEndpoint;
+  return defaultEndpoint && defaultEndpoint !== 'custom' && defaultEndpoint !== OPENROUTER_ENDPOINT;
+}
+
+function addOpenRouterDefaults(endpoint) {
+  if (!isOpenRouterEndpoint(endpoint)) {
+    return;
+  }
+
+  if (shouldPreserveCustomParams(endpoint.customParams)) {
+    return;
+  }
+
+  const customParams = endpoint.customParams ?? {};
+  const paramDefinitions = customParams.paramDefinitions ?? [];
+  const hasPromptCache = paramDefinitions.some((param) => param.key === 'promptCache');
+
+  endpoint.customParams = {
+    ...customParams,
+    defaultParamsEndpoint: OPENROUTER_ENDPOINT,
+    paramDefinitions: hasPromptCache
+      ? paramDefinitions
+      : [...paramDefinitions, OPENROUTER_PROMPT_CACHE_DEFAULT],
+  };
+}
+
 /**
  * Load custom configuration files and caches the object if the `cache` field at root is true.
  * Validation via parsing the config file with the config schema.
@@ -118,6 +159,8 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
       logger.debug('Custom config:', customConfig);
     }
   }
+
+  (customConfig.endpoints?.custom ?? []).forEach(addOpenRouterDefaults);
 
   (customConfig.endpoints?.custom ?? [])
     .filter((endpoint) => endpoint.customParams)

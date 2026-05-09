@@ -11,6 +11,25 @@ import { createFetch } from '~/utils/generators';
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+const OPENROUTER_DEFAULT_PARAMS = { promptCache: true };
+
+function getDefaultParams({
+  customDefaultParams,
+  useOpenRouter,
+}: {
+  customDefaultParams?: Record<string, unknown>;
+  useOpenRouter: boolean;
+}): Record<string, unknown> | undefined {
+  if (!useOpenRouter) {
+    return customDefaultParams;
+  }
+
+  return {
+    ...OPENROUTER_DEFAULT_PARAMS,
+    ...customDefaultParams,
+  };
+}
+
 function mergeHeadersPreservingAnthropicBeta(
   headers: Record<string, string> | undefined,
   defaultHeaders: Record<string, string>,
@@ -54,9 +73,6 @@ export function getOpenAIConfig(
     reverseProxyUrl: baseURL,
   } = options;
 
-  /** Extract default params from customParams.paramDefinitions */
-  const defaultParams = extractDefaultParams(options.customParams?.paramDefinitions);
-
   let llmConfig: t.OAIClientOptions;
   let tools: t.LLMConfigResult['tools'];
   const isAnthropic = options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic;
@@ -74,6 +90,10 @@ export function getOpenAIConfig(
     !isGoogle &&
     ((baseURL && baseURL.includes('ai-gateway.vercel.sh')) ||
       (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.vercel)));
+  const defaultParams = getDefaultParams({
+    customDefaultParams: extractDefaultParams(options.customParams?.paramDefinitions),
+    useOpenRouter: Boolean(useOpenRouter),
+  });
 
   let azure = options.azure;
   let headers = options.headers;

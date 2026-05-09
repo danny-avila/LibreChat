@@ -201,6 +201,7 @@ describe('getOpenAIConfig', () => {
       'X-OpenRouter-Categories': 'general-chat,personal-agent',
     });
     expect(result.llmConfig.include_reasoning).toBe(true);
+    expect(result.llmConfig.promptCache).toBe(true);
     expect(result.provider).toBe('openrouter');
   });
 
@@ -784,6 +785,36 @@ describe('getOpenAIConfig', () => {
       const result = getOpenAIConfig(mockApiKey, {}, 'openrouter');
 
       expect(result.llmConfig.include_reasoning).toBe(true);
+      expect(result.llmConfig.promptCache).toBe(true);
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should preserve explicit promptCache false for OpenRouter', () => {
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          customParams: {
+            defaultParamsEndpoint: 'openrouter',
+            paramDefinitions: [{ key: 'promptCache', default: false }],
+          },
+        },
+        'openrouter',
+      );
+
+      expect(result.llmConfig.promptCache).toBeUndefined();
+      expect(result.provider).toBe('openrouter');
+    });
+
+    it('should honor dropParams for the OpenRouter promptCache default', () => {
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          dropParams: ['promptCache'],
+        },
+        'openrouter',
+      );
+
+      expect(result.llmConfig.promptCache).toBeUndefined();
       expect(result.provider).toBe('openrouter');
     });
 
