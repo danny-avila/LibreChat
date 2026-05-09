@@ -378,9 +378,11 @@ describe('loadCustomConfig', () => {
         defaultParamsEndpoint: 'openrouter',
         paramDefinitions: [
           {
+            columnSpan: 1,
             component: 'switch',
             default: true,
             key: 'promptCache',
+            label: 'promptCache',
             optionType: 'custom',
             type: 'boolean',
           },
@@ -445,9 +447,11 @@ describe('loadCustomConfig', () => {
       const parsedConfig = await loadCustomConfig();
       expect(parsedConfig.endpoints.custom[0].customParams.paramDefinitions).toEqual([
         {
+          columnSpan: 1,
           component: 'switch',
           default: false,
           key: 'promptCache',
+          label: 'promptCache',
           optionType: 'custom',
           type: 'boolean',
         },
