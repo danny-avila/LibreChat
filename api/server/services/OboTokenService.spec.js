@@ -203,12 +203,10 @@ describe('OboTokenService', () => {
       });
 
       try {
-        client.genericGrantRequest
-          .mockRejectedValueOnce(transientError)
-          .mockResolvedValueOnce({
-            access_token: 'retried-obo-token',
-            expires_in: 1800,
-          });
+        client.genericGrantRequest.mockRejectedValueOnce(transientError).mockResolvedValueOnce({
+          access_token: 'retried-obo-token',
+          expires_in: 1800,
+        });
 
         const result = await exchangeOboToken(mockUser, 'access-token', 'api://scope');
 

@@ -125,12 +125,12 @@ describe('resolveOboToken', () => {
     mockIsOpenIDTokenValid.mockReturnValue(true);
 
     const emptyResolver: OboTokenResolver = jest.fn().mockResolvedValue({});
-    await expect(resolveOboToken(mockUser as IUser, oboConfig, emptyResolver)).rejects.toMatchObject(
-      {
-        reason: 'empty_exchange_response',
-        retryable: false,
-      },
-    );
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, emptyResolver),
+    ).rejects.toMatchObject({
+      reason: 'empty_exchange_response',
+      retryable: false,
+    });
   });
 
   it('should throw a retryable error when resolver reports a transient failure', async () => {
@@ -144,10 +144,10 @@ describe('resolveOboToken', () => {
     await expect(
       resolveOboToken(mockUser as IUser, oboConfig, failingResolver),
     ).rejects.toMatchObject({
-        reason: 'exchange_failed',
-        retryable: true,
-        userMessage: 'Temporary OBO token exchange failure.',
-      });
+      reason: 'exchange_failed',
+      retryable: true,
+      userMessage: 'Temporary OBO token exchange failure.',
+    });
   });
 
   it('should throw a non-retryable error when resolver reports a permanent failure', async () => {
@@ -161,10 +161,10 @@ describe('resolveOboToken', () => {
     await expect(
       resolveOboToken(mockUser as IUser, oboConfig, failingResolver),
     ).rejects.toMatchObject({
-        reason: 'exchange_failed',
-        retryable: false,
-        userMessage: 'The identity provider rejected the OBO token exchange.',
-      });
+      reason: 'exchange_failed',
+      retryable: false,
+      userMessage: 'The identity provider rejected the OBO token exchange.',
+    });
   });
 
   it('should use the correct scopes from oboConfig', async () => {
