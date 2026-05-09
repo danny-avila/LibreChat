@@ -223,6 +223,23 @@ describe('getOpenAIModels', () => {
     expect(models).toContain('gpt-4');
   });
 
+  it('fetches models when OpenAI API key is provided through options', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'gpt-runtime-key' }] } });
+    process.env.OPENAI_API_KEY = AuthType.USER_PROVIDED;
+
+    const models = await getOpenAIModels({ user: 'user456', openAIApiKey: 'sk-runtime' });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.openai.com/v1/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer sk-runtime',
+        }),
+      }),
+    );
+    expect(models).toEqual(['gpt-runtime-key']);
+  });
+
   it('returns `AZURE_OPENAI_MODELS` with `azure` flag (and fetch fails)', async () => {
     process.env.AZURE_OPENAI_MODELS = 'azure-model,azure-model-2';
     const models = await getOpenAIModels({ azure: true });
