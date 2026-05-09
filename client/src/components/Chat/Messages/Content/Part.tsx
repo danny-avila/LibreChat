@@ -135,7 +135,8 @@ const Part = memo(function Part({
     if (
       isToolCall &&
       (toolCall.name === Tools.execute_code ||
-        toolCall.name === Constants.PROGRAMMATIC_TOOL_CALLING)
+        toolCall.name === Constants.PROGRAMMATIC_TOOL_CALLING ||
+        toolCall.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING)
     ) {
       return (
         <ExecuteCode

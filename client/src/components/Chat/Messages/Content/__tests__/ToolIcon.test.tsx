@@ -25,6 +25,7 @@ describe('getToolIconType - ACTN-01: Action delimiter detection', () => {
   it('returns correct types for existing tool names', () => {
     expect(getToolIconType('execute_code')).toBe('execute_code');
     expect(getToolIconType(Constants.PROGRAMMATIC_TOOL_CALLING)).toBe('execute_code');
+    expect(getToolIconType(Constants.BASH_PROGRAMMATIC_TOOL_CALLING)).toBe('execute_code');
     expect(getToolIconType('web_search')).toBe('web_search');
     expect(getToolIconType('image_gen_oai')).toBe('image_gen');
     expect(getToolIconType('image_edit_oai')).toBe('image_gen');
