@@ -15,6 +15,7 @@ const {
   codeServerHttpsAgent,
   extractCodeArtifactText,
   getExtractedTextFormat,
+  getStorageMetadata,
 } = require('@librechat/api');
 const {
   Tools,
@@ -396,6 +397,7 @@ const processCodeOutput = async ({
       conversationId,
       file_id: newFileId,
       user: req.user.id,
+      tenantId: req.user.tenantId,
     });
     const file_id = claimed.file_id;
     const isUpdate = file_id !== newFileId;
@@ -420,15 +422,23 @@ const processCodeOutput = async ({
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
       const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
       const filepath = usage > 1 ? `${_file.filepath}?v=${Date.now()}` : _file.filepath;
+      const storageMetadata = getStorageMetadata({
+        filepath: _file.filepath,
+        source: appConfig.fileStrategy,
+        storageKey: _file.storageKey,
+        storageRegion: _file.storageRegion,
+      });
       const file = {
         ..._file,
         filepath,
+        ...storageMetadata,
         file_id,
         messageId: persistedMessageId,
         usage,
         filename: safeName,
         conversationId,
         user: req.user.id,
+        tenantId: req.user.tenantId,
         type: `image/${appConfig.imageOutputType}`,
         createdAt: isUpdate ? claimed.createdAt : formattedDate,
         updatedAt: formattedDate,
@@ -490,6 +500,11 @@ const processCodeOutput = async ({
       buffer,
       fileName,
       basePath: 'uploads',
+      tenantId: req.user.tenantId,
+    });
+    const storageMetadata = getStorageMetadata({
+      filepath,
+      source: appConfig.fileStrategy,
     });
 
     /* `classifyCodeArtifact` and `extractCodeArtifactText` make
@@ -517,12 +532,14 @@ const processCodeOutput = async ({
     const baseFile = {
       file_id,
       filepath,
+      ...storageMetadata,
       messageId: persistedMessageId,
       object: 'file',
       filename: safeName,
       type: mimeType,
       conversationId,
       user: req.user.id,
+      tenantId: req.user.tenantId,
       bytes: buffer.length,
       updatedAt: formattedDate,
       metadata: { fileIdentifier },
@@ -604,6 +621,9 @@ const processCodeOutput = async ({
       message: 'Error downloading/processing code environment file',
       error,
     });
+    logger.warn(
+      `[processCodeOutput] Falling back to Code API download URL for strategy ${appConfig.fileStrategy}`,
+    );
 
     // Fallback for download errors - return download URL so user can still manually download
     return {

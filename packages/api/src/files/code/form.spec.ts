@@ -38,6 +38,13 @@ describe('code env FormData filenames', () => {
     });
   });
 
+  it('uses filepath for nested Unicode filenames', () => {
+    expect(getCodeEnvFileOptions('分析/結果📊.csv')).toEqual({
+      filename: '結果📊.csv',
+      filepath: '分析/結果📊.csv',
+    });
+  });
+
   it('documents the form-data string overload regression', async () => {
     const disposition = await renderMultipartDisposition((form) => {
       form.append('file', Readable.from(['x']), 'pptx/pptx.py');

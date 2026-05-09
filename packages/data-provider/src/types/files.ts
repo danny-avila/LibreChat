@@ -99,6 +99,9 @@ export type TFile = {
   _id?: string;
   __v?: number;
   user: string;
+  tenantId?: string;
+  storageRegion?: string;
+  storageKey?: string;
   conversationId?: string;
   message?: string;
   file_id: string;
@@ -176,6 +179,13 @@ export type AvatarUploadResponse = {
   url: string;
 };
 
+export type FileDownloadURLResponse = {
+  url: string;
+  filename: string;
+  type: string;
+  metadata: Partial<TFile>;
+};
+
 export type SpeechToTextResponse = {
   text: string;
 };
@@ -220,6 +230,8 @@ export type DeleteFilesResponse = {
 export type BatchFile = {
   file_id: string;
   filepath: string;
+  storageRegion?: string;
+  storageKey?: string;
   embedded: boolean;
   source: FileSources;
   temp_file_id?: string;

@@ -11,7 +11,7 @@ import type {
   ImageUploadResult,
   ProcessAvatarParams,
 } from '~/storage/types';
-import { DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
+import { AVATAR_BASE_PATH, DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
 
 export interface ImageServiceDeps {
   resizeImageBuffer: (
@@ -97,6 +97,7 @@ export class ImageService {
         buffer: processedBuffer,
         fileName,
         basePath,
+        tenantId: req.user.tenantId ?? null,
       });
       const bytes = processedBuffer.length;
       return { filepath: downloadURL, bytes, width, height };
@@ -137,7 +138,8 @@ export class ImageService {
     userId,
     manual,
     agentId,
-    basePath = defaultBasePath,
+    basePath = AVATAR_BASE_PATH,
+    tenantId = null,
   }: ProcessAvatarParams): Promise<string> {
     try {
       const metadata = await sharp(buffer).metadata();
@@ -148,7 +150,7 @@ export class ImageService {
         ? `agent-${agentId}-avatar-${timestamp}.${extension}`
         : `avatar-${timestamp}.${extension}`;
 
-      const downloadURL = await this.saveBuffer({ userId, buffer, fileName, basePath });
+      const downloadURL = await this.saveBuffer({ userId, buffer, fileName, basePath, tenantId });
 
       const finalURL = this.config.appendManualParam
         ? `${downloadURL}?manual=${manual === 'true'}`

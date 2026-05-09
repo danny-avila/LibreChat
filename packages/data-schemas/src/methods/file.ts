@@ -17,7 +17,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     options: Record<string, unknown> = {},
   ): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOne({ file_id, ...options }).lean();
+    return File.findOne({ file_id, ...options }).lean<IMongoFile>();
   }
 
   /** Select fields for query projection - 0 to exclude, 1 to include */
@@ -44,7 +44,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     } else {
       query.select({ text: 0 });
     }
-    return await query.sort(sortOptions).lean();
+    return await query.sort(sortOptions).lean<IMongoFile[]>();
   }
 
   /**
@@ -182,23 +182,29 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     conversationId: string;
     file_id: string;
     user: string;
+    tenantId?: string | null;
   }): Promise<IMongoFile> {
     const File = mongoose.models.File as Model<IMongoFile>;
+    const tenantFilter = data.tenantId ? { tenantId: data.tenantId } : { tenantId: null };
+    const insertData = data.tenantId
+      ? { file_id: data.file_id, user: data.user, tenantId: data.tenantId }
+      : { file_id: data.file_id, user: data.user };
     const result = await File.findOneAndUpdate(
       {
         filename: data.filename,
         conversationId: data.conversationId,
         context: FileContext.execute_code,
+        ...tenantFilter,
       },
-      { $setOnInsert: { file_id: data.file_id, user: data.user } },
+      { $setOnInsert: insertData },
       { upsert: true, new: true },
-    ).lean();
+    ).lean<IMongoFile>();
     if (!result) {
       throw new Error(
         `[claimCodeFile] Failed to claim file "${data.filename}" for conversation ${data.conversationId}`,
       );
     }
-    return result as IMongoFile;
+    return result;
   }
 
   /**
@@ -224,7 +230,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     return File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
       new: true,
       upsert: true,
-    }).lean();
+    }).lean<IMongoFile>();
   }
 
   /**
@@ -257,7 +263,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     const query: FilterQuery<IMongoFile> = extraFilter ? { file_id, ...extraFilter } : { file_id };
     return File.findOneAndUpdate(query, updateOperation, {
       new: true,
-    }).lean();
+    }).lean<IMongoFile>();
   }
 
   /**
@@ -277,7 +283,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     };
     return File.findOneAndUpdate({ file_id }, updateOperation, {
       new: true,
-    }).lean();
+    }).lean<IMongoFile>();
   }
 
   /**
@@ -287,7 +293,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    */
   async function deleteFile(file_id: string): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndDelete({ file_id }).lean();
+    return File.findOneAndDelete({ file_id }).lean<IMongoFile>();
   }
 
   /**
@@ -297,7 +303,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    */
   async function deleteFileByFilter(filter: FilterQuery<IMongoFile>): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndDelete(filter).lean();
+    return File.findOneAndDelete(filter).lean<IMongoFile>();
   }
 
   /**
@@ -320,10 +326,15 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Batch updates files with new signed URLs in MongoDB
-   * @param updates - Array of updates in the format { file_id, filepath }
+   * @param updates - Array of updates in the format { file_id, filepath, storageKey?, storageRegion? }
    */
   async function batchUpdateFiles(
-    updates: Array<{ file_id: string; filepath: string }>,
+    updates: Array<{
+      file_id: string;
+      filepath: string;
+      storageKey?: string;
+      storageRegion?: string;
+    }>,
   ): Promise<void> {
     if (!updates || updates.length === 0) {
       return;
@@ -333,7 +344,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     const bulkOperations = updates.map((update) => ({
       updateOne: {
         filter: { file_id: update.file_id },
-        update: { $set: { filepath: update.filepath } },
+        update: {
+          $set: {
+            filepath: update.filepath,
+            ...(update.storageKey ? { storageKey: update.storageKey } : {}),
+            ...(update.storageRegion ? { storageRegion: update.storageRegion } : {}),
+          },
+        },
       },
     }));
 

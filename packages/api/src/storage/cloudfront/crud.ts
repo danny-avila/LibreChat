@@ -1,7 +1,7 @@
 import crypto from 'crypto';
-import { logger } from '@librechat/data-schemas';
 import { getSignedUrl } from '@aws-sdk/cloudfront-signer';
 import { CloudFrontClient, CreateInvalidationCommand } from '@aws-sdk/client-cloudfront';
+import { logger } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
 import type { Readable } from 'stream';
 import type { ServerRequest } from '~/types';
@@ -10,19 +10,22 @@ import type {
   GetURLParams,
   SaveURLParams,
   UploadFileParams,
+  DownloadURLParams,
+  SaveURLResult,
   UploadResult,
 } from '~/storage/types';
 import { getCloudFrontConfig } from '~/cdn/cloudfront';
 import { s3Config } from '~/storage/s3/s3Config';
-import { DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
+import { AVATAR_BASE_PATH, DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
+import { sanitizeContentDispositionFilename } from '~/storage/validation';
 import {
   getS3Key,
   saveBufferToS3,
-  saveURLToS3,
+  saveURLToS3WithMetadata,
   uploadFileToS3,
   deleteFileFromS3,
   getS3FileStream,
-  extractKeyFromS3Url,
+  resolveStoredS3Key,
 } from '~/storage/s3/crud';
 
 let _cloudFrontClient: CloudFrontClient | null = null;
@@ -42,6 +45,38 @@ export interface CloudFrontURLParams extends GetURLParams {
   sign?: boolean;
 }
 
+function getRegionPathOptions({
+  basePath = defaultBasePath,
+  storageRegion = null,
+  includeRegionInPath,
+  useInlinePath,
+}: {
+  basePath?: string;
+  storageRegion?: string | null;
+  includeRegionInPath?: boolean;
+  useInlinePath?: boolean;
+}): Pick<GetURLParams, 'storageRegion' | 'includeRegionInPath' | 'useInlinePath'> {
+  const config = getCloudFrontConfig();
+  const shouldIncludeRegion = includeRegionInPath ?? config?.includeRegionInPath ?? false;
+  return {
+    includeRegionInPath: shouldIncludeRegion,
+    storageRegion: shouldIncludeRegion
+      ? (storageRegion ?? config?.storageRegion ?? s3Config.AWS_REGION ?? process.env.AWS_REGION)
+      : (storageRegion ?? config?.storageRegion),
+    useInlinePath: useInlinePath ?? (basePath === defaultBasePath || basePath === AVATAR_BASE_PATH),
+  };
+}
+
+function isInlineFileUpload({ basePath, file, useInlinePath }: UploadFileParams): boolean {
+  if (useInlinePath != null) {
+    return useInlinePath;
+  }
+  if (basePath === AVATAR_BASE_PATH) {
+    return true;
+  }
+  return (basePath ?? defaultBasePath) === defaultBasePath && file.mimetype?.startsWith('image/');
+}
+
 function buildCloudFrontUrl(s3Key: string): string {
   const config = getCloudFrontConfig();
   if (!config?.domain) {
@@ -52,21 +87,67 @@ function buildCloudFrontUrl(s3Key: string): string {
   return `${cleanDomain}/${cleanKey}`;
 }
 
-function signUrl(url: string): string {
+function signUrl(url: string | URL): string {
   const config = getCloudFrontConfig();
   if (!config?.privateKey || !config?.keyPairId) {
     throw new Error('[signUrl] Signing keys not configured.');
   }
 
   const expiry = config.urlExpiry ?? s3Config.S3_URL_EXPIRY_SECONDS;
-  const dateLessThan = new Date(Date.now() + expiry * 1000).toISOString();
+  const expiresAtMs = Date.now() + expiry * 1000;
+  const expiresAtEpoch = Math.floor(expiresAtMs / 1000);
+
+  const urlString = url.toString();
+  const parsedUrl = url instanceof URL ? url : new URL(urlString);
+  if (parsedUrl.search) {
+    const policy = JSON.stringify({
+      Statement: [
+        {
+          Resource: `${parsedUrl.origin}${parsedUrl.pathname}?*`,
+          Condition: {
+            DateLessThan: {
+              'AWS:EpochTime': expiresAtEpoch,
+            },
+          },
+        },
+      ],
+    });
+
+    return getSignedUrl({
+      url: urlString,
+      keyPairId: config.keyPairId,
+      privateKey: config.privateKey,
+      policy,
+    });
+  }
 
   return getSignedUrl({
-    url,
+    url: urlString,
     keyPairId: config.keyPairId,
     privateKey: config.privateKey,
-    dateLessThan,
+    dateLessThan: new Date(expiresAtMs).toISOString(),
   });
+}
+
+function appendDownloadOverrides(
+  url: string,
+  customFilename: string | null,
+  contentType: string | null,
+): URL {
+  const downloadUrl = new URL(url);
+
+  if (customFilename) {
+    const safeFilename = sanitizeContentDispositionFilename(customFilename);
+    downloadUrl.searchParams.set(
+      'response-content-disposition',
+      `attachment; filename="${safeFilename}"`,
+    );
+  }
+  if (contentType) {
+    downloadUrl.searchParams.set('response-content-type', contentType);
+  }
+
+  return downloadUrl;
 }
 
 /**
@@ -77,9 +158,19 @@ export async function getCloudFrontURL({
   userId,
   fileName,
   basePath = defaultBasePath,
+  tenantId = null,
+  storageRegion = null,
+  includeRegionInPath,
+  useInlinePath,
   sign = false,
 }: CloudFrontURLParams): Promise<string> {
-  const key = getS3Key(basePath, userId, fileName);
+  const key = getS3Key({
+    basePath,
+    userId,
+    fileName,
+    tenantId,
+    ...getRegionPathOptions({ basePath, storageRegion, includeRegionInPath, useInlinePath }),
+  });
   const url = buildCloudFrontUrl(key);
   return sign ? signUrl(url) : url;
 }
@@ -89,15 +180,33 @@ export async function saveBufferToCloudFront(
   params: SaveBufferParams & { sign?: boolean },
 ): Promise<string> {
   const { sign = false, ...rest } = params;
-  return saveBufferToS3({ ...rest, urlBuilder: (p) => getCloudFrontURL({ ...p, sign }) });
+  const regionOptions = getRegionPathOptions(rest);
+  return saveBufferToS3({
+    ...rest,
+    ...regionOptions,
+    urlBuilder: (p) => getCloudFrontURL({ ...p, ...regionOptions, sign }),
+  });
 }
 
 /** Save file from URL to S3 and return CloudFront URL. */
 export async function saveURLToCloudFront(
   params: SaveURLParams & { sign?: boolean },
 ): Promise<string> {
+  const { filepath } = await saveURLToCloudFrontWithMetadata(params);
+  return filepath;
+}
+
+/** Save file from URL to S3 and return CloudFront URL with fetched metadata. */
+export async function saveURLToCloudFrontWithMetadata(
+  params: SaveURLParams & { sign?: boolean },
+): Promise<SaveURLResult> {
   const { sign = false, ...rest } = params;
-  return saveURLToS3({ ...rest, urlBuilder: (p) => getCloudFrontURL({ ...p, sign }) });
+  const regionOptions = getRegionPathOptions(rest);
+  return saveURLToS3WithMetadata({
+    ...rest,
+    ...regionOptions,
+    urlBuilder: (p) => getCloudFrontURL({ ...p, ...regionOptions, sign }),
+  });
 }
 
 /** Upload file to S3 and return CloudFront URL. */
@@ -105,7 +214,15 @@ export async function uploadFileToCloudFront(
   params: UploadFileParams & { sign?: boolean },
 ): Promise<UploadResult> {
   const { sign = false, ...rest } = params;
-  return uploadFileToS3({ ...rest, urlBuilder: (p) => getCloudFrontURL({ ...p, sign }) });
+  const regionOptions = getRegionPathOptions({
+    ...rest,
+    useInlinePath: isInlineFileUpload(rest),
+  });
+  return uploadFileToS3({
+    ...rest,
+    ...regionOptions,
+    urlBuilder: (p) => getCloudFrontURL({ ...p, ...regionOptions, sign }),
+  });
 }
 
 /** Delete file from S3 and optionally invalidate CloudFront cache. */
@@ -118,7 +235,7 @@ export async function deleteFileFromCloudFront(req: ServerRequest, file: TFile):
     try {
       const client = getOrCreateCloudFrontClient();
       // CloudFront URL pathname matches S3 key when no origin path prefix is configured
-      const key = extractKeyFromS3Url(file.filepath);
+      const key = resolveStoredS3Key(file);
       const path = key.startsWith('/') ? key : `/${key}`;
 
       await client.send(
@@ -146,4 +263,18 @@ export async function getCloudFrontFileStream(
   filePath: string,
 ): Promise<Readable> {
   return getS3FileStream(req, filePath);
+}
+
+/** Get a signed CloudFront URL for an authorized file download. */
+export async function getCloudFrontDownloadURL({
+  file,
+  customFilename = null,
+  contentType = null,
+}: DownloadURLParams): Promise<string> {
+  const key = resolveStoredS3Key(file);
+  if (!key) {
+    throw new Error('[getCloudFrontDownloadURL] Unable to extract S3 key from file path');
+  }
+  const url = appendDownloadOverrides(buildCloudFrontUrl(key), customFilename, contentType);
+  return signUrl(url);
 }
