@@ -20,7 +20,7 @@ import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
-import { isUserSourced } from './utils';
+import { isUserSourced, requiresUserScopedConnection } from './utils';
 
 function createOboToolCallErrorMessage(
   logPrefix: string,
@@ -83,7 +83,7 @@ export class MCPManager extends UserConnectionManager {
         ? await MCPServersRegistry.getInstance().getServerConfig(args.serverName, userId)
         : undefined);
 
-    if (effectiveConfig?.obo && userId) {
+    if (effectiveConfig && userId && requiresUserScopedConnection(effectiveConfig)) {
       return this.getUserConnection({
         ...args,
         serverConfig: effectiveConfig,

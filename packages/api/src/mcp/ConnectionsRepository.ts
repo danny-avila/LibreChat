@@ -2,7 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { hasCustomUserVars, isUserSourced } from './utils';
+import { isUserSourced, requiresUserScopedConnection } from './utils';
 import { MCPConnection } from './connection';
 
 const CONNECT_CONCURRENCY = 3;
@@ -156,10 +156,7 @@ export class ConnectionsRepository {
     }
     if (
       this.ownerId === undefined &&
-      (config.startup === false ||
-        config.requiresOAuth ||
-        config.obo != null ||
-        hasCustomUserVars(config))
+      (config.startup === false || requiresUserScopedConnection(config))
     ) {
       return false;
     }

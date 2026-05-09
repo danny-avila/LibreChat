@@ -3,6 +3,7 @@ import {
   normalizeServerName,
   redactAllServerSecrets,
   redactServerSecrets,
+  requiresUserScopedConnection,
   isInvalidClientMessage,
   isClientRejectionMessage,
   isUserSourced,
@@ -349,5 +350,38 @@ describe('isUserSourced', () => {
 
   it('returns false when both source and dbId are absent (pre-upgrade YAML server)', () => {
     expect(isUserSourced({})).toBe(false);
+  });
+});
+
+describe('requiresUserScopedConnection', () => {
+  it('returns true for OAuth servers', () => {
+    expect(requiresUserScopedConnection({ requiresOAuth: true })).toBe(true);
+  });
+
+  it('returns true for OBO servers', () => {
+    expect(
+      requiresUserScopedConnection({
+        obo: { scopes: 'api://client-id/.default' },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true for servers with customUserVars', () => {
+    expect(
+      requiresUserScopedConnection({
+        customUserVars: {
+          API_KEY: { title: 'API Key', description: 'Your key' },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false for app-shareable servers', () => {
+    expect(
+      requiresUserScopedConnection({
+        requiresOAuth: false,
+        customUserVars: {},
+      }),
+    ).toBe(false);
   });
 });
