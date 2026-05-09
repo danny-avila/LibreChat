@@ -1255,9 +1255,9 @@ describe('getOpenAIConfig', () => {
       // Should NOT have useResponsesApi for OpenRouter
       expect(result.llmConfig.useResponsesApi).toBeUndefined();
       expect(result.llmConfig.maxTokens).toBe(2000);
+      expect(result.llmConfig.verbosity).toBe(Verbosity.medium);
       expect(result.llmConfig.modelKwargs).toEqual({
         reasoning: { effort: ReasoningEffort.high },
-        verbosity: Verbosity.medium,
         customParam: 'custom-value',
         plugins: [{ id: 'web' }], // OpenRouter web search format
       });
@@ -1573,8 +1573,9 @@ describe('getOpenAIConfig', () => {
           promptCache: true,
         });
         expect(result.llmConfig.include_reasoning).toBeUndefined();
+        expect(result.llmConfig.verbosity).toBe(ReasoningEffort.high);
         expect(result.llmConfig.modelKwargs).toMatchObject({
-          reasoning: { effort: ReasoningEffort.high },
+          reasoning: { enabled: true },
         });
         expect(result.configOptions?.baseURL).toBe(baseURL);
         expect(result.configOptions?.defaultHeaders).toMatchObject({
