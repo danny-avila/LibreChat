@@ -1,4 +1,8 @@
-import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  removeNullishValues,
+  supportsAdaptiveThinking,
+} from 'librechat-data-provider';
 import type { BindToolsInput } from '@librechat/agents/langchain/language_models/chat_models';
 import type { AzureOpenAIInput } from '@librechat/agents/langchain/openai';
 import type { SettingDefinition } from 'librechat-data-provider';
@@ -6,6 +10,14 @@ import type { OpenAI } from 'openai';
 import type * as t from '~/types';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
 import { isEnabled } from '~/utils/common';
+
+type OpenRouterVerbosity = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+type OpenAILLMConfig = Omit<Partial<t.OAIClientOptions>, 'verbosity'> &
+  Omit<Partial<t.OpenAIParameters>, 'verbosity'> &
+  Omit<Partial<AzureOpenAIInput>, 'verbosity'> & {
+    verbosity?: OpenRouterVerbosity | null;
+  };
 
 export const knownOpenAIParams = new Set([
   // Constructor/Instance Parameters
@@ -74,6 +86,130 @@ function hasReasoningParams({
     (reasoning_effort != null && reasoning_effort !== '') ||
     (reasoning_summary != null && reasoning_summary !== '')
   );
+}
+
+const openRouterAnthropicVerbosityByEffort: Record<
+  string,
+  NonNullable<OpenAILLMConfig['verbosity']>
+> = {
+  minimal: 'low',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+};
+
+function isOpenRouterVerbosity(value: unknown): value is OpenRouterVerbosity {
+  return (
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh' ||
+    value === 'max'
+  );
+}
+
+function applyVerbosityParam({
+  value,
+  override,
+  llmConfig,
+  modelKwargs,
+  useOpenRouter,
+}: {
+  value: unknown;
+  override: boolean;
+  llmConfig: OpenAILLMConfig;
+  modelKwargs: Record<string, unknown>;
+  useOpenRouter?: boolean;
+}): boolean {
+  if (!isOpenRouterVerbosity(value)) {
+    return false;
+  }
+
+  if (useOpenRouter && (override || llmConfig.verbosity === undefined)) {
+    llmConfig.verbosity = value;
+    return false;
+  }
+
+  if (useOpenRouter) {
+    return false;
+  }
+
+  if (!override && modelKwargs.verbosity !== undefined) {
+    return true;
+  }
+
+  modelKwargs.verbosity = value;
+  return true;
+}
+
+function isOpenRouterAnthropicAdaptiveModel(model?: string | null): boolean {
+  if (typeof model !== 'string') {
+    return false;
+  }
+  const normalizedModel = normalizeOpenRouterModel(model);
+  return normalizedModel.startsWith('anthropic/') && supportsAdaptiveThinking(model);
+}
+
+function normalizeOpenRouterModel(model: string): string {
+  return model.toLowerCase().replace(/^~/, '');
+}
+
+function isOpenRouterClaude47OpusModel(model: string): boolean {
+  const normalizedModel = normalizeOpenRouterModel(model);
+  return (
+    /claude[-.]opus[-.]4[-.]7/.test(normalizedModel) ||
+    /claude[-.]4[-.]7[-.]opus/.test(normalizedModel)
+  );
+}
+
+function getOpenRouterAnthropicVerbosity(
+  reasoningEffort?: string | null,
+  model?: string | null,
+): OpenAILLMConfig['verbosity'] | undefined {
+  if (!reasoningEffort) {
+    return undefined;
+  }
+  const verbosity = openRouterAnthropicVerbosityByEffort[reasoningEffort];
+  if (verbosity !== 'xhigh' || typeof model !== 'string') {
+    return verbosity;
+  }
+  return isOpenRouterClaude47OpusModel(model) ? 'xhigh' : 'max';
+}
+
+function applyOpenRouterReasoningConfig({
+  model,
+  llmConfig,
+  modelKwargs,
+  reasoningEffort,
+}: {
+  model?: string | null;
+  llmConfig: OpenAILLMConfig;
+  modelKwargs: Record<string, unknown>;
+  reasoningEffort?: string | null;
+}): boolean {
+  if (!hasReasoningParams({ reasoning_effort: reasoningEffort })) {
+    llmConfig.include_reasoning = true;
+    return false;
+  }
+
+  if (!isOpenRouterAnthropicAdaptiveModel(model)) {
+    modelKwargs.reasoning = { effort: reasoningEffort };
+    return true;
+  }
+
+  const adaptiveVerbosity = getOpenRouterAnthropicVerbosity(reasoningEffort, model);
+  if (adaptiveVerbosity != null && llmConfig.verbosity == null) {
+    llmConfig.verbosity = adaptiveVerbosity;
+  }
+
+  if (reasoningEffort === 'none') {
+    llmConfig.include_reasoning = false;
+    return false;
+  }
+
+  modelKwargs.reasoning = { enabled: true };
+  return true;
 }
 
 /**
@@ -162,7 +298,7 @@ export function getOpenAILLMConfig({
       model: modelOptions.model ?? '',
     },
     modelOptions,
-  ) as Partial<t.OAIClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>;
+  ) as OpenAILLMConfig;
 
   if (frequency_penalty != null) {
     llmConfig.frequencyPenalty = frequency_penalty;
@@ -174,7 +310,9 @@ export function getOpenAILLMConfig({
   const modelKwargs: Record<string, unknown> = {};
   let hasModelKwargs = false;
 
-  if (verbosity != null && verbosity !== '') {
+  if (verbosity != null && verbosity !== '' && useOpenRouter) {
+    llmConfig.verbosity = verbosity;
+  } else if (verbosity != null && verbosity !== '') {
     modelKwargs.verbosity = verbosity;
     hasModelKwargs = true;
   }
@@ -195,6 +333,17 @@ export function getOpenAILLMConfig({
         if (enablePromptCache === undefined && typeof value === 'boolean') {
           enablePromptCache = value;
         }
+        continue;
+      }
+      if (key === 'verbosity') {
+        hasModelKwargs =
+          applyVerbosityParam({
+            value,
+            override: false,
+            llmConfig,
+            modelKwargs,
+            useOpenRouter,
+          }) || hasModelKwargs;
         continue;
       }
 
@@ -225,6 +374,17 @@ export function getOpenAILLMConfig({
         }
         continue;
       }
+      if (key === 'verbosity') {
+        hasModelKwargs =
+          applyVerbosityParam({
+            value,
+            override: true,
+            llmConfig,
+            modelKwargs,
+            useOpenRouter,
+          }) || hasModelKwargs;
+        continue;
+      }
       if (knownOpenAIParams.has(key)) {
         (llmConfig as Record<string, unknown>)[key] = value;
       } else {
@@ -235,19 +395,19 @@ export function getOpenAILLMConfig({
   }
 
   if (useOpenRouter) {
-    if (hasReasoningParams({ reasoning_effort })) {
-      /**
-       * OpenRouter uses a `reasoning` object — `summary` is not supported.
-       * ChatOpenRouter treats `reasoning` and `include_reasoning` as mutually exclusive:
-       * `include_reasoning` is legacy compat that maps to `{ enabled: true }` only when
-       * no `reasoning` object is present, so we intentionally omit it here.
-       */
-      modelKwargs.reasoning = { effort: reasoning_effort };
-      hasModelKwargs = true;
-    } else {
-      /** No explicit effort; fall back to legacy `include_reasoning` for reasoning token inclusion */
-      llmConfig.include_reasoning = true;
-    }
+    /**
+     * OpenRouter uses a `reasoning` object — `summary` is not supported.
+     * ChatOpenRouter treats `reasoning` and `include_reasoning` as mutually exclusive:
+     * `include_reasoning` is legacy compat that maps to `{ enabled: true }` only when
+     * no `reasoning` object is present, so we intentionally omit it here.
+     */
+    hasModelKwargs =
+      applyOpenRouterReasoningConfig({
+        reasoningEffort: reasoning_effort,
+        model: modelOptions.model,
+        modelKwargs,
+        llmConfig,
+      }) || hasModelKwargs;
   } else if (
     hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
     (llmConfig.useResponsesApi === true ||

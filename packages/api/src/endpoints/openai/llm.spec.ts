@@ -626,6 +626,158 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
     });
 
+    it('should map OpenRouter adaptive Claude reasoning effort to enabled reasoning and verbosity', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        enabled: true,
+      });
+      expect(result.llmConfig).toHaveProperty('verbosity', ReasoningEffort.high);
+      expect(result.llmConfig).not.toHaveProperty('include_reasoning');
+    });
+
+    it('should not override explicit OpenRouter verbosity for adaptive Claude models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-opus-4.7',
+          verbosity: Verbosity.low,
+          reasoning_effort: ReasoningEffort.xhigh,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        enabled: true,
+      });
+      expect(result.llmConfig).toHaveProperty('verbosity', Verbosity.low);
+    });
+
+    it('should handle OpenRouter adaptive Claude model ids with latest routing prefix', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: '~anthropic/claude-4.7-opus-20260416',
+          reasoning_effort: ReasoningEffort.xhigh,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        enabled: true,
+      });
+      expect(result.llmConfig).toHaveProperty('verbosity', ReasoningEffort.xhigh);
+    });
+
+    it('should map extra-high OpenRouter Claude 4.6 effort to max verbosity', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+          reasoning_effort: ReasoningEffort.xhigh,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        enabled: true,
+      });
+      expect(result.llmConfig).toHaveProperty('verbosity', 'max');
+    });
+
+    it('should pass OpenRouter verbosity as a top-level parameter', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+          verbosity: Verbosity.high,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('verbosity', Verbosity.high);
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+    });
+
+    it('should pass OpenRouter default verbosity as a top-level parameter', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        defaultParams: {
+          verbosity: Verbosity.high,
+        },
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('verbosity', Verbosity.high);
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+    });
+
+    it('should pass OpenRouter max verbosity as a top-level parameter', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        addParams: {
+          verbosity: 'max',
+        },
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('verbosity', 'max');
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+    });
+
+    it('should let OpenRouter added verbosity override model verbosity', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        addParams: {
+          verbosity: Verbosity.high,
+        },
+        modelOptions: {
+          model: 'anthropic/claude-sonnet-4.6',
+          verbosity: Verbosity.low,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('verbosity', Verbosity.high);
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+    });
+
+    it('should disable adaptive Claude reasoning when OpenRouter reasoning_effort is none', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-opus-4.7',
+          reasoning_effort: ReasoningEffort.none,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('include_reasoning', false);
+      expect(result.llmConfig).not.toHaveProperty('modelKwargs');
+    });
+
     it('should exclude reasoning_summary from OpenRouter reasoning object', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
