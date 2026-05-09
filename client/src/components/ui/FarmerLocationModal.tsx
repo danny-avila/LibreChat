@@ -210,6 +210,7 @@ const FarmerLocationModal = ({
 
   const isLocationMissing = missingFields.includes('location');
   const otherMissingFields = missingFields.filter((f) => f !== 'location');
+  const shouldShowCloseButton = isLocationMissing && otherMissingFields.length === 0;
 
   const fieldConfig: Record<
     string,
@@ -440,7 +441,7 @@ const FarmerLocationModal = ({
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
       <OGDialogContent
-        showCloseButton={true}
+        showCloseButton={shouldShowCloseButton}
         className="flex max-h-[90vh] w-11/12 max-w-md flex-col overflow-y-auto sm:w-full"
       >
         <OGDialogHeader>
