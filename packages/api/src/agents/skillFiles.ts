@@ -470,7 +470,7 @@ export async function primeInvokedSkills(
     // Per-skill upload: each skill gets its own storage session keyed
     // by `(kind: 'skill', id: skillId, version: skill.version)`.
     // primeSkillFiles handles freshness caching per-skill, so only
-    // expired skills re-upload. CodeAPI handles mixed
+    // expired skills re-upload. Code API handles mixed
     // storage_session_ids natively.
     const allPrimedFiles: Array<{
       id: string;

@@ -107,7 +107,7 @@ describe('Code CRUD', () => {
       expect(callConfig.timeout).toBe(15000);
     });
 
-    it('forwards CodeAPI auth headers when a request is provided', async () => {
+    it('forwards Code API auth headers when a request is provided', async () => {
       const req = { user: { id: 'user-123' } };
       getCodeApiAuthHeaders.mockResolvedValue({ Authorization: 'Bearer codeapi-token' });
       mockAxios.mockResolvedValue({ data: Readable.from(['chunk']) });
@@ -212,7 +212,7 @@ describe('Code CRUD', () => {
       expect(result).toEqual({ storage_session_id: 'sess-1', file_id: 'fid-1' });
     });
 
-    it('forwards CodeAPI auth headers on upload requests', async () => {
+    it('forwards Code API auth headers on upload requests', async () => {
       getCodeApiAuthHeaders.mockResolvedValue({ Authorization: 'Bearer codeapi-token' });
       mockAxios.post.mockResolvedValue({
         data: {

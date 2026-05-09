@@ -672,7 +672,7 @@ function checkIfActive(dateString) {
  * @param {import('librechat-data-provider').CodeEnvRef} ref - Typed pointer
  *   into codeapi storage. Carries kind/id/storage_session_id/file_id;
  *   codeapi resolves the sessionKey from the request's auth context.
- * @param {ServerRequest} [req] - Current authenticated request, used to mint CodeAPI auth.
+ * @param {ServerRequest} [req] - Current authenticated request, used to mint Code API auth.
  *
  * @returns {Promise<string|null>}
  *          A promise that resolves to the `lastModified` time string of the file if successful, or null if there is an
@@ -985,7 +985,7 @@ const primeFiles = async (options) => {
  * @param {string} params.file_path - Absolute path inside the sandbox (e.g. `/mnt/data/foo.txt`).
  * @param {string} [params.session_id] - Sandbox session id from the seeded context.
  * @param {Array<{id: string, name: string, session_id?: string}>} [params.files] - File refs to mount.
- * @param {ServerRequest} [params.req] - Current authenticated request, used to mint CodeAPI auth.
+ * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
  * @returns {Promise<{content: string} | null>}
  */
 async function readSandboxFile({ file_path, session_id, files, req }) {

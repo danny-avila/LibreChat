@@ -187,7 +187,7 @@ export interface BuildToolClassificationParams {
   deferredToolsEnabled?: boolean;
   /** When true, skip creating tool instances (for event-driven mode) */
   definitionsOnly?: boolean;
-  /** Optional host-supplied CodeAPI auth headers for remote programmatic execution. */
+  /** Optional host-supplied Code API auth headers for remote programmatic execution. */
   authHeaders?: () => Promise<Record<string, string>> | Record<string, string>;
 }
 

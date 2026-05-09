@@ -94,7 +94,7 @@ function getPrivateKeyRaw(): string {
   if (jwkJson != null && jwkJson.trim() !== '') {
     return jwkJson.trim();
   }
-  throw new Error('CodeAPI JWT signing key is not configured');
+  throw new Error('Code API JWT signing key is not configured');
 }
 
 function parseAlg(value: string | undefined): CodeApiJwtAlg {
@@ -104,7 +104,7 @@ function parseAlg(value: string | undefined): CodeApiJwtAlg {
   if (value === undefined || value === '' || value === 'EdDSA') {
     return 'EdDSA';
   }
-  throw new Error(`Unsupported CodeAPI JWT algorithm: ${value}`);
+  throw new Error(`Unsupported Code API JWT algorithm: ${value}`);
 }
 
 function parseCappedSeconds(value: string | undefined, fallback: number, max: number): number {
@@ -181,7 +181,7 @@ function stringifyClaimValue(value: unknown): string | undefined {
 function resolveUser(req: ServerRequest): CodeApiUserContext {
   const user = req.user as CodeApiUserContext | undefined;
   if (!user) {
-    throw new Error('CodeAPI token minting requires an authenticated user');
+    throw new Error('Code API token minting requires an authenticated user');
   }
   return user;
 }
@@ -189,7 +189,7 @@ function resolveUser(req: ServerRequest): CodeApiUserContext {
 function resolveUserId(user: CodeApiUserContext): string {
   const userId = stringifyClaimValue(user.id) ?? stringifyClaimValue(user._id);
   if (!userId) {
-    throw new Error('CodeAPI token minting requires a canonical user id');
+    throw new Error('Code API token minting requires a canonical user id');
   }
   return userId;
 }
@@ -255,7 +255,7 @@ function buildClaims(req: ServerRequest, config: SigningConfig, now: number): Co
   const userId = resolveUserId(user);
   const tenantId = resolveTenantId(user);
   if (!tenantId) {
-    throw new Error('CodeAPI JWT auth requires tenant context');
+    throw new Error('Code API JWT auth requires tenant context');
   }
 
   const role = user.role ?? 'USER';

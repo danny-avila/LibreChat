@@ -5,14 +5,14 @@
  * both at once.
  *
  * - `skill`: shared per skill identity. Cross-user-within-tenant
- *   sharing. CodeAPI sessionKey omits the user dimension.
+ *   sharing. Code API sessionKey omits the user dimension.
  *   `version` is required (the skill's monotonic counter scopes the
  *   cache per revision so any edit invalidates the prior cache
  *   entry naturally).
  * - `agent`: shared per agent identity. Same sharing semantic as
  *   skills (agents are addressable resources accessible to a
  *   permission-defined audience).
- * - `user`: user-private. CodeAPI sessionKey is keyed by the
+ * - `user`: user-private. Code API sessionKey is keyed by the
  *   requesting user from auth context. Used for chat attachments
  *   and code-output artifacts.
  */
@@ -30,7 +30,7 @@ export type CodeEnvKind = (typeof CODE_ENV_KINDS)[number];
  * sandbox-run session.
  *
  * `kind` and `id` together name the resource that owns this file's
- * storage session. CodeAPI uses them (plus the auth-context tenant
+ * storage session. Code API uses them (plus the auth-context tenant
  * id) to derive the sessionKey, which determines who shares the
  * cache. Cross-user sharing for shared resources (skills, agents) is
  * a designed property of the kind switch, not an emergent side

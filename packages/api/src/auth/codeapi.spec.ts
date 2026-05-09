@@ -90,7 +90,7 @@ function expectedContextHash(input: {
     .digest('hex');
 }
 
-describe('CodeAPI JWT minting', () => {
+describe('Code API JWT minting', () => {
   const originalEnv = new Map<string, string | undefined>();
   let publicKey: KeyObject;
 
@@ -132,7 +132,7 @@ describe('CodeAPI JWT minting', () => {
     }
   });
 
-  it('mints a CodeAPI-scoped token from canonical LibreChat JWT context', async () => {
+  it('mints a Code API-scoped token from canonical LibreChat JWT context', async () => {
     jest.spyOn(Date, 'now').mockReturnValue(1_778_250_000_000);
 
     const token = await mintCodeApiToken(baseRequest());
@@ -242,7 +242,7 @@ describe('CodeAPI JWT minting', () => {
     mockGetTenantId.mockReturnValue(undefined);
 
     await expect(mintCodeApiToken(baseRequest({ tenantId: undefined }))).rejects.toThrow(
-      'CodeAPI JWT auth requires tenant context',
+      'Code API JWT auth requires tenant context',
     );
   });
 

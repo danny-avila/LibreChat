@@ -1281,7 +1281,7 @@ async function loadToolsForExecution({
     configurable.toolRegistry = toolRegistry;
     try {
       /**
-       * LibreChat threads per-request CodeAPI auth through the agents
+       * LibreChat threads per-request Code API auth through the agents
        * library so PTC calls share the same managed auth context.
        */
       const ptcTool = createProgrammaticToolCallingTool({

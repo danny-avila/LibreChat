@@ -237,7 +237,7 @@ describe('Code Process', () => {
   });
 
   describe('processCodeOutput', () => {
-    it('forwards CodeAPI auth headers when downloading generated output', async () => {
+    it('forwards Code API auth headers when downloading generated output', async () => {
       getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer codeapi-token' });
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
 
@@ -1033,7 +1033,7 @@ describe('Code Process', () => {
         expect(callConfig.httpsAgent.keepAlive).toBe(false);
       });
 
-      it('forwards CodeAPI auth headers when checking session object freshness', async () => {
+      it('forwards Code API auth headers when checking session object freshness', async () => {
         getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer freshness-token' });
         mockAxios.mockResolvedValue({
           data: { lastModified: '2024-01-01T00:00:00Z' },
@@ -1518,7 +1518,7 @@ describe('Code Process', () => {
         expect(call.httpsAgent).toBe(codeServerHttpsAgent);
       });
 
-      it('forwards CodeAPI auth headers when reading from the sandbox', async () => {
+      it('forwards Code API auth headers when reading from the sandbox', async () => {
         getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer sandbox-token' });
         mockAxios.mockResolvedValueOnce({ data: { stdout: 'x', stderr: '' } });
 
