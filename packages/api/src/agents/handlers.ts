@@ -104,7 +104,7 @@ export interface ToolExecuteOptions {
     files: Array<{ fileId: string; filename: string }>;
   }>;
   /** Checks if a code env file is still active. Returns lastModified or null. */
-  getSessionInfo?: (ref: CodeEnvRef) => Promise<string | null>;
+  getSessionInfo?: (ref: CodeEnvRef, req?: ServerRequest) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
   /** Persists `codeEnvRef` on skill files after upload */
@@ -147,6 +147,7 @@ export interface ToolExecuteOptions {
     file_path: string;
     session_id?: string;
     files?: Array<{ id: string; name: string; session_id?: string }>;
+    req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
 }
 
@@ -332,6 +333,7 @@ async function handleSandboxFileFallback(
   tc: ToolCallRequest,
   filePath: string,
   options: ToolExecuteOptions,
+  req?: ServerRequest,
 ): Promise<ToolExecuteResult> {
   const ext = lowercaseExtension(filePath);
   if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
@@ -361,6 +363,7 @@ async function handleSandboxFileFallback(
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
       return {
@@ -450,7 +453,7 @@ async function handleReadFileCall(
    */
   if (args.file_path.startsWith('/mnt/data/')) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options);
+      return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
       toolCallId: tc.id,
@@ -463,7 +466,7 @@ async function handleReadFileCall(
   const slashIdx = args.file_path.indexOf('/');
   if (slashIdx < 1) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options);
+      return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
       toolCallId: tc.id,
@@ -483,7 +486,7 @@ async function handleReadFileCall(
      * dead-ending with a skill-centric error message.
      */
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options);
+      return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
       toolCallId: tc.id,
@@ -502,7 +505,7 @@ async function handleReadFileCall(
    */
   if (!skillsEffectivelyEnabled) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options);
+      return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
       toolCallId: tc.id,
@@ -544,7 +547,7 @@ async function handleReadFileCall(
   const activeSkillNames = mergedConfigurable?.activeSkillNames as Set<string> | undefined;
   if (activeSkillNames && !activeSkillNames.has(skillName) && !isPrimedThisTurn) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options);
+      return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
       toolCallId: tc.id,

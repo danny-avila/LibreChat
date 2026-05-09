@@ -187,6 +187,8 @@ export interface BuildToolClassificationParams {
   deferredToolsEnabled?: boolean;
   /** When true, skip creating tool instances (for event-driven mode) */
   definitionsOnly?: boolean;
+  /** Optional host-supplied Code API auth headers for remote programmatic execution. */
+  authHeaders?: () => Promise<Record<string, string>> | Record<string, string>;
 }
 
 /** Result from building tool classification */
@@ -251,6 +253,7 @@ export async function buildToolClassification(
     agentToolOptions,
     definitionsOnly = false,
     deferredToolsEnabled = true,
+    authHeaders,
   } = params;
   const additionalTools: GenericTool[] = [];
 
@@ -345,7 +348,9 @@ export async function buildToolClassification(
   }
 
   try {
-    const ptcTool = createProgrammaticToolCallingTool({});
+    const ptcTool = createProgrammaticToolCallingTool({ authHeaders } as Parameters<
+      typeof createProgrammaticToolCallingTool
+    >[0] & { authHeaders?: BuildToolClassificationParams['authHeaders'] });
     additionalTools.push(ptcTool);
 
     /** Add PTC definition for event-driven mode */

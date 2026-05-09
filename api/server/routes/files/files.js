@@ -318,10 +318,14 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
      * sessionKey; without these query params it 400s with
      * "kind must be one of: skill, agent, user". */
     /** @type {AxiosResponse<ReadableStream> | undefined} */
-    const response = await getDownloadStream(`${session_id}/${fileId}`, {
-      kind: 'user',
-      id: req.user.id,
-    });
+    const response = await getDownloadStream(
+      `${session_id}/${fileId}`,
+      {
+        kind: 'user',
+        id: req.user.id,
+      },
+      req,
+    );
     res.set(response.headers);
     response.data.pipe(res);
   } catch (error) {

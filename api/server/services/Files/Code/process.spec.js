@@ -62,6 +62,7 @@ jest.mock('@librechat/api', () => {
     sanitizeArtifactPath: jest.fn((name) => name),
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
+    getCodeApiAuthHeaders: jest.fn(async () => ({})),
     withTimeout: (...args) => passthroughWithTimeout(...args),
     hasOfficeHtmlPath: (...args) => mockHasOfficeHtmlPath(...args),
     /**
@@ -148,7 +149,12 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('@librechat/data-schemas');
-const { codeServerHttpAgent, codeServerHttpsAgent, getStorageMetadata } = require('@librechat/api');
+const {
+  codeServerHttpAgent,
+  codeServerHttpsAgent,
+  getCodeApiAuthHeaders,
+  getStorageMetadata,
+} = require('@librechat/api');
 
 const { processCodeOutput, getSessionInfo, readSandboxFile, primeFiles } = require('./process');
 
@@ -231,6 +237,24 @@ describe('Code Process', () => {
   });
 
   describe('processCodeOutput', () => {
+    it('forwards Code API auth headers when downloading generated output', async () => {
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer codeapi-token' });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      await processCodeOutput(baseParams);
+
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'get',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer codeapi-token',
+            'User-Agent': 'LibreChat/1.0',
+          }),
+        }),
+      );
+    });
+
     describe('image file processing', () => {
       it('should process image files using convertImage', async () => {
         const imageParams = { ...baseParams, name: 'chart.png' };
@@ -1008,6 +1032,34 @@ describe('Code Process', () => {
         expect(callConfig.httpAgent.keepAlive).toBe(false);
         expect(callConfig.httpsAgent.keepAlive).toBe(false);
       });
+
+      it('forwards Code API auth headers when checking session object freshness', async () => {
+        getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer freshness-token' });
+        mockAxios.mockResolvedValue({
+          data: { lastModified: '2024-01-01T00:00:00Z' },
+        });
+
+        await getSessionInfo(
+          {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'session-123',
+            file_id: 'file-123',
+          },
+          mockReq,
+        );
+
+        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            method: 'get',
+            headers: expect.objectContaining({
+              Authorization: 'Bearer freshness-token',
+              'User-Agent': 'LibreChat/1.0',
+            }),
+          }),
+        );
+      });
     });
 
     describe('deferred-preview flow (office-bucket files)', () => {
@@ -1464,6 +1516,24 @@ describe('Code Process', () => {
         const call = mockAxios.mock.calls[0][0];
         expect(call.httpAgent).toBe(codeServerHttpAgent);
         expect(call.httpsAgent).toBe(codeServerHttpsAgent);
+      });
+
+      it('forwards Code API auth headers when reading from the sandbox', async () => {
+        getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer sandbox-token' });
+        mockAxios.mockResolvedValueOnce({ data: { stdout: 'x', stderr: '' } });
+
+        await readSandboxFile({ file_path: '/mnt/data/x.txt', req: mockReq });
+
+        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            method: 'post',
+            headers: expect.objectContaining({
+              Authorization: 'Bearer sandbox-token',
+              'User-Agent': 'LibreChat/1.0',
+            }),
+          }),
+        );
       });
     });
 

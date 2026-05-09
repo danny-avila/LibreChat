@@ -21,6 +21,7 @@ const {
   buildOAuthToolCallName,
   buildToolClassification,
   buildWebSearchDynamicContext,
+  getCodeApiAuthHeaders,
 } = require('@librechat/api');
 const {
   Time,
@@ -1009,6 +1010,7 @@ async function loadAgentTools({
       agentId: agent.id,
       agentToolOptions: agent.tool_options,
       deferredToolsEnabled,
+      authHeaders: () => getCodeApiAuthHeaders(req),
     });
 
   const agentTools = [];
@@ -1279,10 +1281,12 @@ async function loadToolsForExecution({
     configurable.toolRegistry = toolRegistry;
     try {
       /**
-       * PTC auth is handled by the agents library / sandbox service
-       * directly; LibreChat no longer threads a per-run credential.
+       * LibreChat threads per-request Code API auth through the agents
+       * library so PTC calls share the same managed auth context.
        */
-      const ptcTool = createProgrammaticToolCallingTool({});
+      const ptcTool = createProgrammaticToolCallingTool({
+        authHeaders: () => getCodeApiAuthHeaders(req),
+      });
       allLoadedTools.push(ptcTool);
     } catch (error) {
       logger.error('[loadToolsForExecution] Error creating PTC tool:', error);
@@ -1292,7 +1296,9 @@ async function loadToolsForExecution({
   const isBashTool = toolNames.includes(AgentConstants.BASH_TOOL);
   if (isBashTool) {
     try {
-      const bashTool = createBashExecutionTool({});
+      const bashTool = createBashExecutionTool({
+        authHeaders: () => getCodeApiAuthHeaders(req),
+      });
       allLoadedTools.push(bashTool);
     } catch (error) {
       logger.error('[loadToolsForExecution] Failed to create bash_tool', error);
