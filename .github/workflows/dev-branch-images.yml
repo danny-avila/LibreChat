@@ -11,13 +11,13 @@ on:
       - 'packages/**'
 
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 130
     strategy:
       matrix:
         include:
