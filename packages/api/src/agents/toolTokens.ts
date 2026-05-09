@@ -54,9 +54,14 @@ function hashForCache(value: string): string {
   return createHash('sha256').update(value).digest('base64url').slice(0, 16);
 }
 
-function getCounterNamespace(provider: Providers, clientOptions?: ClientOptions): string {
+/** Mirrors @librechat/agents encodingForModel; raw cached counts are tokenizer-scoped. */
+function getCounterNamespace(clientOptions?: ClientOptions): string {
   const model = String((clientOptions as { model?: string } | undefined)?.model ?? '');
-  return hashForCache(`${provider}:${model}`);
+  return model.toLowerCase().includes('claude') ? 'claude' : 'o200k_base';
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
 function isDirectToolDefinition(def: LCTool, discoveredTools?: ReadonlySet<string>): boolean {
@@ -195,7 +200,7 @@ export function computeToolSchemaTokens(
 /**
  * Returns tool schema tokens, using per-tool caching to avoid redundant
  * token counting. Each tool's raw (pre-multiplier) token count is cached
- * individually, keyed by tenant, provider/model namespace, tool name/type, and
+ * individually, keyed by tenant, tokenizer namespace, tool name/type, and
  * schema fingerprint. The provider-specific multiplier is applied to the sum.
  *
  * Returns 0 if there are no tools.
@@ -225,7 +230,7 @@ export async function getOrComputeToolTokens({
   }
 
   const keyPrefix = tenantId ? `${tenantId}:` : '';
-  const counterNamespace = getCounterNamespace(provider, clientOptions);
+  const counterNamespace = getCounterNamespace(clientOptions);
 
   let cache: Keyv | undefined;
   try {
@@ -234,38 +239,47 @@ export async function getOrComputeToolTokens({
     logger.debug('[toolTokens] Cache init failed, computing fresh', err);
   }
 
+  const keyedEntries = entries.map(({ cacheKey, json }) => ({
+    key: `${keyPrefix}${counterNamespace}:${cacheKey}:${hashForCache(json)}`,
+    json,
+  }));
+  const cachedCounts: Array<number | undefined> = new Array(keyedEntries.length);
+
+  if (cache) {
+    const activeCache = cache;
+    try {
+      const readResults = await activeCache.getMany<number>(keyedEntries.map(({ key }) => key));
+      for (let i = 0; i < readResults.length; i++) {
+        if (isPositiveFiniteNumber(readResults[i])) {
+          cachedCounts[i] = readResults[i];
+        }
+      }
+    } catch (err) {
+      logger.debug('[toolTokens] Cache batch read failed, computing misses fresh', err);
+    }
+  }
+
   let rawTotal = 0;
   const toWrite: Array<{ key: string; value: number }> = [];
 
-  for (const { cacheKey, json } of entries) {
-    const fullKey = `${keyPrefix}${counterNamespace}:${cacheKey}:${hashForCache(json)}`;
-    let rawCount: number | undefined;
+  for (let i = 0; i < keyedEntries.length; i++) {
+    const { key, json } = keyedEntries[i];
+    let rawCount = cachedCounts[i];
 
-    if (cache) {
-      try {
-        rawCount = (await cache.get(fullKey)) as number | undefined;
-      } catch {
-        // Cache read failed for this tool — will compute fresh
-      }
-    }
-
-    if (rawCount == null || rawCount <= 0) {
+    if (rawCount == null) {
       rawCount = tokenCounter(new SystemMessage(json));
       if (rawCount > 0 && cache) {
-        toWrite.push({ key: fullKey, value: rawCount });
+        toWrite.push({ key, value: rawCount });
       }
     }
 
     rawTotal += rawCount;
   }
 
-  // Fire-and-forget cache writes for newly computed tools
   if (cache && toWrite.length > 0) {
-    for (const { key, value } of toWrite) {
-      cache.set(key, value).catch((err: unknown) => {
-        logger.debug(`[toolTokens] Cache write failed for ${key}`, err);
-      });
-    }
+    cache.setMany(toWrite).catch((err: unknown) => {
+      logger.debug('[toolTokens] Cache batch write failed', err);
+    });
   }
 
   const multiplier = getToolTokenMultiplier(provider, clientOptions);

@@ -10,16 +10,30 @@ import type { GenericTool, LCTool, LCToolRegistry, TokenCounter } from '@librech
 
 import { collectToolSchemas, computeToolSchemaTokens, getOrComputeToolTokens } from './toolTokens';
 
-/* ---------- Mock standardCache with hoisted get/set for per-test overrides ---------- */
+/* ---------- Mock standardCache with hoisted methods for per-test overrides ---------- */
 const mockCacheStore = new Map<string, unknown>();
 const mockGet = jest.fn((key: string) => Promise.resolve(mockCacheStore.get(key)));
+const mockGetMany = jest.fn((keys: string[]) =>
+  Promise.resolve(keys.map((key) => mockCacheStore.get(key))),
+);
 const mockSet = jest.fn((key: string, value: unknown) => {
   mockCacheStore.set(key, value);
   return Promise.resolve(true);
 });
+const mockSetMany = jest.fn((entries: Array<{ key: string; value: unknown }>) => {
+  for (const { key, value } of entries) {
+    mockCacheStore.set(key, value);
+  }
+  return Promise.resolve(entries.map(() => true));
+});
 
 jest.mock('~/cache', () => ({
-  standardCache: jest.fn(() => ({ get: mockGet, set: mockSet })),
+  standardCache: jest.fn(() => ({
+    get: mockGet,
+    getMany: mockGetMany,
+    set: mockSet,
+    setMany: mockSetMany,
+  })),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -68,10 +82,23 @@ function hasCacheKey(fragment: string): boolean {
 
 beforeEach(() => {
   mockCacheStore.clear();
+  mockGet.mockClear();
+  mockGetMany.mockClear();
+  mockSet.mockClear();
+  mockSetMany.mockClear();
   mockGet.mockImplementation((key: string) => Promise.resolve(mockCacheStore.get(key)));
+  mockGetMany.mockImplementation((keys: string[]) =>
+    Promise.resolve(keys.map((key) => mockCacheStore.get(key))),
+  );
   mockSet.mockImplementation((key: string, value: unknown) => {
     mockCacheStore.set(key, value);
     return Promise.resolve(true);
+  });
+  mockSetMany.mockImplementation((entries: Array<{ key: string; value: unknown }>) => {
+    for (const { key, value } of entries) {
+      mockCacheStore.set(key, value);
+    }
+    return Promise.resolve(entries.map(() => true));
   });
 });
 
@@ -331,23 +358,38 @@ describe('getOrComputeToolTokens', () => {
     expect(counter.mock.calls.length).toBe(callCountAfterFirst);
   });
 
-  it('applies different multipliers while separating provider namespaces', async () => {
+  it('applies different multipliers while reusing raw tokenizer counts', async () => {
     const defs = [makeToolDef('tool')];
+    const counter = jest.fn(fakeTokenCounter);
 
     const openai = await getOrComputeToolTokens({
       toolDefinitions: defs,
       provider: Providers.OPENAI,
-      tokenCounter: fakeTokenCounter,
+      tokenCounter: counter,
     });
+    const callsAfterOpenAI = counter.mock.calls.length;
 
     const anthropic = await getOrComputeToolTokens({
       toolDefinitions: defs,
       provider: Providers.ANTHROPIC,
-      tokenCounter: fakeTokenCounter,
+      tokenCounter: counter,
     });
 
     expect(openai).not.toBe(anthropic);
-    expect(mockCacheStore.size).toBe(2);
+    expect(counter.mock.calls.length).toBe(callsAfterOpenAI);
+    expect(mockCacheStore.size).toBe(1);
+  });
+
+  it('reads per-tool cache entries in one batch', async () => {
+    await getOrComputeToolTokens({
+      toolDefinitions: [makeToolDef('tool_a'), makeToolDef('tool_b')],
+      provider: Providers.OPENAI,
+      tokenCounter: fakeTokenCounter,
+    });
+
+    expect(mockGetMany).toHaveBeenCalledTimes(1);
+    expect(mockGetMany.mock.calls[0][0]).toHaveLength(2);
+    expect(mockGet).not.toHaveBeenCalled();
   });
 
   it('only computes new tools when tool set grows', async () => {
@@ -410,7 +452,7 @@ describe('getOrComputeToolTokens', () => {
     expect(mockCacheStore.size).toBe(2);
   });
 
-  it('separates cache namespaces when provider or model changes', async () => {
+  it('reuses cache across models with the same tokenizer namespace', async () => {
     const counter = jest.fn(fakeTokenCounter);
     const defs = [makeToolDef('tool')];
 
@@ -425,7 +467,7 @@ describe('getOrComputeToolTokens', () => {
     await getOrComputeToolTokens({
       toolDefinitions: defs,
       provider: Providers.OPENAI,
-      clientOptions: { model: 'gpt-4o' },
+      clientOptions: { model: 'gpt-4.1' },
       tokenCounter: counter,
     });
     expect(counter.mock.calls.length).toBe(callsAfterFirst);
@@ -439,6 +481,43 @@ describe('getOrComputeToolTokens', () => {
 
     expect(counter.mock.calls.length).toBe(callsAfterFirst + 1);
     expect(mockCacheStore.size).toBe(2);
+  });
+
+  it('separates raw cache entries across tokenizer namespaces', async () => {
+    const counter = jest.fn(fakeTokenCounter);
+    const defs = [makeToolDef('tool')];
+
+    await getOrComputeToolTokens({
+      toolDefinitions: defs,
+      provider: Providers.OPENAI,
+      clientOptions: { model: 'gpt-4o' },
+      tokenCounter: counter,
+    });
+    const callsAfterFirst = counter.mock.calls.length;
+
+    await getOrComputeToolTokens({
+      toolDefinitions: defs,
+      provider: Providers.BEDROCK,
+      clientOptions: { model: 'anthropic.claude-3-5-sonnet-20241022-v2:0' },
+      tokenCounter: counter,
+    });
+
+    expect(counter.mock.calls.length).toBe(callsAfterFirst + 1);
+    expect(mockCacheStore.size).toBe(2);
+  });
+
+  it('ignores invalid cached values and recomputes', async () => {
+    mockGetMany.mockResolvedValueOnce(['not-a-number']);
+    const counter = jest.fn(fakeTokenCounter);
+
+    const result = await getOrComputeToolTokens({
+      toolDefinitions: [makeToolDef('tool')],
+      provider: Providers.OPENAI,
+      tokenCounter: counter,
+    });
+
+    expect(result).toBeGreaterThan(0);
+    expect(counter).toHaveBeenCalledTimes(1);
   });
 
   it('scopes cache keys by tenantId when provided', async () => {
@@ -496,7 +575,7 @@ describe('getOrComputeToolTokens', () => {
   });
 
   it('falls back to compute when cache read throws', async () => {
-    mockGet.mockRejectedValueOnce(new Error('Redis down'));
+    mockGetMany.mockRejectedValueOnce(new Error('Redis down'));
 
     const result = await getOrComputeToolTokens({
       toolDefinitions: [makeToolDef('tool')],
@@ -505,11 +584,11 @@ describe('getOrComputeToolTokens', () => {
     });
 
     expect(result).toBeGreaterThan(0);
-    expect(mockGet).toHaveBeenCalled();
+    expect(mockGetMany).toHaveBeenCalled();
   });
 
   it('does not throw when cache write fails', async () => {
-    mockSet.mockRejectedValueOnce(new Error('Redis write error'));
+    mockSetMany.mockRejectedValueOnce(new Error('Redis write error'));
 
     const result = await getOrComputeToolTokens({
       toolDefinitions: [makeToolDef('tool_write_fail')],
@@ -518,7 +597,7 @@ describe('getOrComputeToolTokens', () => {
     });
 
     expect(result).toBeGreaterThan(0);
-    expect(mockSet).toHaveBeenCalled();
+    expect(mockSetMany).toHaveBeenCalled();
   });
 
   it('matches computeToolSchemaTokens output for same inputs', async () => {
