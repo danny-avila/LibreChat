@@ -240,6 +240,23 @@ describe('getOpenAIModels', () => {
     expect(models).toEqual(['gpt-runtime-key']);
   });
 
+  it('falls back to environment OpenAI API key when options key is empty', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'gpt-env-key' }] } });
+    process.env.OPENAI_API_KEY = 'sk-env';
+
+    const models = await getOpenAIModels({ user: 'user456', openAIApiKey: '' });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.openai.com/v1/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer sk-env',
+        }),
+      }),
+    );
+    expect(models).toEqual(['gpt-env-key']);
+  });
+
   it('returns `AZURE_OPENAI_MODELS` with `azure` flag (and fetch fails)', async () => {
     process.env.AZURE_OPENAI_MODELS = 'azure-model,azure-model-2';
     const models = await getOpenAIModels({ azure: true });

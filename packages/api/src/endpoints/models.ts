@@ -228,6 +228,10 @@ export interface GetOpenAIModelsOptions {
   skipCache?: boolean;
 }
 
+function resolveOpenAIApiKey(opts: GetOpenAIModelsOptions): string | undefined {
+  return opts.openAIApiKey || process.env.OPENAI_API_KEY;
+}
+
 /**
  * Fetches models from OpenAI or Azure based on the provided options.
  * @param opts - Options for fetching models
@@ -239,7 +243,7 @@ export async function fetchOpenAIModels(
   _models: string[] = [],
 ): Promise<string[]> {
   let models = _models.slice() ?? [];
-  const apiKey = opts.openAIApiKey ?? process.env.OPENAI_API_KEY;
+  const apiKey = resolveOpenAIApiKey(opts);
   const openaiBaseURL = 'https://api.openai.com/v1';
   let baseURL = openaiBaseURL;
   let reverseProxyUrl = process.env.OPENAI_REVERSE_PROXY;
@@ -308,7 +312,7 @@ export async function getOpenAIModels(opts: GetOpenAIModelsOptions = {}): Promis
     return splitAndTrim(process.env[key]);
   }
 
-  if (isUserProvided(opts.openAIApiKey ?? process.env.OPENAI_API_KEY)) {
+  if (isUserProvided(resolveOpenAIApiKey(opts))) {
     return models;
   }
 
