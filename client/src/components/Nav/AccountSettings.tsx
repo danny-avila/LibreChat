@@ -1,14 +1,98 @@
 import { useState, memo, useRef } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { useSetRecoilState } from 'recoil';
-import { FileText, LogOut, Keyboard } from 'lucide-react';
-import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
+import {
+  ChevronRight,
+  CircleHelp,
+  FileText,
+  Keyboard,
+  LifeBuoy,
+  LogOut,
+  Scale,
+  ShieldCheck,
+} from 'lucide-react';
+import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useShortcutDisplay } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
+
+function HelpSubmenu({
+  helpAndFaqURL,
+  termsOfServiceURL,
+  privacyPolicyURL,
+  onShowShortcuts,
+  showShortcutsDisplay,
+}: {
+  helpAndFaqURL?: string;
+  termsOfServiceURL?: string;
+  privacyPolicyURL?: string;
+  onShowShortcuts: () => void;
+  showShortcutsDisplay: string;
+}) {
+  const localize = useLocalize();
+  const hasHelpFaq = !!helpAndFaqURL && helpAndFaqURL !== '/';
+  const hasTos = !!termsOfServiceURL;
+  const hasPrivacy = !!privacyPolicyURL;
+  const showLegalDivider = (hasHelpFaq || true) && (hasTos || hasPrivacy);
+
+  return (
+    <Menu.MenuProvider placement="right-start">
+      <Menu.MenuItem
+        hideOnClick={false}
+        render={
+          <Menu.MenuButton className="select-item flex w-full cursor-pointer items-center gap-2 text-sm" />
+        }
+      >
+        <CircleHelp className="icon-md" aria-hidden="true" />
+        <span className="flex-1 text-left">{localize('com_nav_help')}</span>
+        <ChevronRight className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+      </Menu.MenuItem>
+      <Menu.Menu
+        portal
+        gutter={4}
+        className="account-settings-popover popover-ui popover-from-left z-[126] w-[244px] rounded-lg"
+      >
+        {hasHelpFaq && (
+          <Menu.MenuItem
+            onClick={() => window.open(helpAndFaqURL, '_blank', 'noopener,noreferrer')}
+            className="select-item text-sm"
+          >
+            <LifeBuoy className="icon-md" aria-hidden="true" />
+            {localize('com_nav_help_faq')}
+          </Menu.MenuItem>
+        )}
+        <Menu.MenuItem onClick={onShowShortcuts} className="select-item text-sm">
+          <Keyboard className="icon-md" aria-hidden="true" />
+          <span className="flex-1">{localize('com_shortcut_keyboard_shortcuts')}</span>
+          <span className="text-xs text-text-secondary">{showShortcutsDisplay}</span>
+        </Menu.MenuItem>
+        {showLegalDivider && (hasTos || hasPrivacy) && <DropdownMenuSeparator />}
+        {hasTos && (
+          <Menu.MenuItem
+            onClick={() => window.open(termsOfServiceURL, '_blank', 'noopener,noreferrer')}
+            className="select-item text-sm"
+          >
+            <Scale className="icon-md" aria-hidden="true" />
+            {localize('com_ui_terms_of_service')}
+          </Menu.MenuItem>
+        )}
+        {hasPrivacy && (
+          <Menu.MenuItem
+            onClick={() => window.open(privacyPolicyURL, '_blank', 'noopener,noreferrer')}
+            className="select-item text-sm"
+          >
+            <ShieldCheck className="icon-md" aria-hidden="true" />
+            {localize('com_ui_privacy_policy')}
+          </Menu.MenuItem>
+        )}
+      </Menu.Menu>
+    </Menu.MenuProvider>
+  );
+}
 
 function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const localize = useLocalize();
@@ -21,6 +105,8 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const [showFiles, setShowFiles] = useState(false);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
+  const showShortcutsDisplay = useShortcutDisplay('showShortcuts');
+  const openSettingsDisplay = useShortcutDisplay('openSettings');
 
   return (
     <Menu.MenuProvider placement={collapsed ? 'right-end' : undefined}>
@@ -75,27 +161,22 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           <FileText className="icon-md" aria-hidden="true" />
           {localize('com_nav_my_files')}
         </Menu.MenuItem>
-        {startupConfig?.helpAndFaqURL !== '/' && (
-          <Menu.MenuItem
-            onClick={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
-            className="select-item text-sm"
-          >
-            <LinkIcon aria-hidden="true" />
-            {localize('com_nav_help_faq')}
-          </Menu.MenuItem>
-        )}
-        <Menu.MenuItem onClick={() => setShowShortcutsDialog(true)} className="select-item text-sm">
-          <Keyboard className="icon-md" aria-hidden="true" />
-          {localize('com_shortcut_keyboard_shortcuts')}
-        </Menu.MenuItem>
         <Menu.MenuItem
           onClick={() => setShowSettings(true)}
           className="select-item text-sm"
           data-testid="nav-settings"
         >
           <GearIcon className="icon-md" aria-hidden="true" />
-          {localize('com_nav_settings')}
+          <span className="flex-1">{localize('com_nav_settings')}</span>
+          <span className="text-xs text-text-secondary">{openSettingsDisplay}</span>
         </Menu.MenuItem>
+        <HelpSubmenu
+          helpAndFaqURL={startupConfig?.helpAndFaqURL}
+          termsOfServiceURL={startupConfig?.interface?.termsOfService?.externalUrl}
+          privacyPolicyURL={startupConfig?.interface?.privacyPolicy?.externalUrl}
+          onShowShortcuts={() => setShowShortcutsDialog(true)}
+          showShortcutsDisplay={showShortcutsDisplay}
+        />
         <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
           <LogOut className="icon-md" aria-hidden="true" />

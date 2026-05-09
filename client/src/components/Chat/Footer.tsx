@@ -17,21 +17,6 @@ function Footer({ className, startupConfig }: FooterProps) {
   const config = shouldFetchConfig ? fetchedConfig : startupConfig;
   const localize = useLocalize();
 
-  const privacyPolicy = config?.interface?.privacyPolicy;
-  const termsOfService = config?.interface?.termsOfService;
-
-  const privacyPolicyRender = privacyPolicy?.externalUrl != null && (
-    <a className="text-text-secondary underline" href={privacyPolicy.externalUrl} rel="noreferrer">
-      {localize('com_ui_privacy_policy')}
-    </a>
-  );
-
-  const termsOfServiceRender = termsOfService?.externalUrl != null && (
-    <a className="text-text-secondary underline" href={termsOfService.externalUrl} rel="noreferrer">
-      {localize('com_ui_terms_of_service')}
-    </a>
-  );
-
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
@@ -75,9 +60,7 @@ function Footer({ className, startupConfig }: FooterProps) {
     </React.Fragment>
   ));
 
-  const footerElements = [...mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
-    Boolean,
-  );
+  const footerElements = mainContentRender.filter(Boolean);
 
   return (
     <div className="relative w-full">

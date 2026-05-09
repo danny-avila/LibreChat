@@ -8,6 +8,7 @@ import type { NavLink } from '~/common';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import { useActivePanel, resolveActivePanel, DEFAULT_PANEL } from '~/Providers';
 import { useLocalize, useNewConvo } from '~/hooks';
+import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { clearMessagesCache, cn } from '~/utils';
 import store from '~/store';
 
@@ -23,6 +24,8 @@ const NewChatButton = memo(function NewChatButton({
   const { newConversation } = useNewConvo();
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const switchToHistory = useRecoilValue(store.newChatSwitchToHistory);
+  const tooltipDescription = useShortcutHint('newChat', localize('com_ui_new_chat'));
+  const ariaKey = useShortcutAriaKey('newChat');
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -42,12 +45,13 @@ const NewChatButton = memo(function NewChatButton({
   return (
     <TooltipAnchor
       side="right"
-      description={localize('com_ui_new_chat')}
+      description={tooltipDescription}
       render={
         <a
           href="/c/new"
           data-testid="new-chat-button"
           aria-label={localize('com_ui_new_chat')}
+          aria-keyshortcuts={ariaKey}
           className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-surface-hover"
           onClick={handleClick}
         >
@@ -135,12 +139,14 @@ function ExpandedPanel({
 
   const toggleLabel = expanded ? 'com_nav_close_sidebar' : 'com_nav_open_sidebar';
   const toggleClick = expanded ? onCollapse : onExpand;
+  const toggleSidebarHint = useShortcutHint('toggleSidebar', localize(toggleLabel));
+  const toggleSidebarAriaKey = useShortcutAriaKey('toggleSidebar');
 
   return (
     <div className="flex h-full flex-shrink-0 flex-col gap-2 border-r border-border-light bg-surface-primary-alt px-2 py-2">
       <TooltipAnchor
         side="right"
-        description={localize(toggleLabel)}
+        description={toggleSidebarHint}
         render={
           <Button
             id={expanded ? CLOSE_SIDEBAR_ID : undefined}
@@ -149,6 +155,7 @@ function ExpandedPanel({
             variant="ghost"
             aria-label={localize(toggleLabel)}
             aria-expanded={expanded}
+            aria-keyshortcuts={toggleSidebarAriaKey}
             className="h-9 w-9 rounded-lg"
             onClick={toggleClick}
           >

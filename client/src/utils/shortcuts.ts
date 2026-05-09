@@ -1,0 +1,209 @@
+export type ShortcutBinding = {
+  meta: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  key: string;
+};
+
+export const isMacPlatform =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+
+const MODIFIER_KEYS = new Set(['Meta', 'Control', 'Alt', 'Shift']);
+
+const SPECIAL_KEY_MAP: Record<string, string> = {
+  ArrowUp: 'ArrowUp',
+  ArrowDown: 'ArrowDown',
+  ArrowLeft: 'ArrowLeft',
+  ArrowRight: 'ArrowRight',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  Enter: 'Enter',
+  Escape: 'Escape',
+  Tab: 'Tab',
+  Space: 'Space',
+  ' ': 'Space',
+};
+
+const SHIFT_TO_UNSHIFT: Record<string, string> = {
+  '?': '/',
+  ':': ';',
+  '<': ',',
+  '>': '.',
+  '"': "'",
+  '{': '[',
+  '}': ']',
+  '|': '\\',
+  _: '-',
+  '+': '=',
+  '~': '`',
+  '!': '1',
+  '@': '2',
+  '#': '3',
+  $: '4',
+  '%': '5',
+  '^': '6',
+  '&': '7',
+  '*': '8',
+  '(': '9',
+  ')': '0',
+};
+
+export function normalizeKey(key: string, shiftHeld?: boolean): string {
+  if (SPECIAL_KEY_MAP[key]) {
+    return SPECIAL_KEY_MAP[key];
+  }
+  if (key.length === 1) {
+    if (shiftHeld && SHIFT_TO_UNSHIFT[key]) {
+      return SHIFT_TO_UNSHIFT[key];
+    }
+    return key.toUpperCase();
+  }
+  return key;
+}
+
+export function isModifierKey(key: string): boolean {
+  return MODIFIER_KEYS.has(key);
+}
+
+export function bindingFromEvent(e: KeyboardEvent): ShortcutBinding | null {
+  if (isModifierKey(e.key)) {
+    return null;
+  }
+  return {
+    meta: e.metaKey,
+    ctrl: e.ctrlKey,
+    alt: e.altKey,
+    shift: e.shiftKey,
+    key: normalizeKey(e.key, e.shiftKey),
+  };
+}
+
+export function parseBinding(value: string | null | undefined): ShortcutBinding | null {
+  if (!value) {
+    return null;
+  }
+  const parts = value
+    .split('+')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) {
+    return null;
+  }
+  const binding: ShortcutBinding = {
+    meta: false,
+    ctrl: false,
+    alt: false,
+    shift: false,
+    key: '',
+  };
+  for (const part of parts) {
+    if (part === 'Meta' || part === 'Cmd' || part === 'Command') {
+      binding.meta = true;
+    } else if (part === 'Control' || part === 'Ctrl') {
+      binding.ctrl = true;
+    } else if (part === 'Alt' || part === 'Option') {
+      binding.alt = true;
+    } else if (part === 'Shift') {
+      binding.shift = true;
+    } else {
+      binding.key = normalizeKey(part);
+    }
+  }
+  if (!binding.key) {
+    return null;
+  }
+  return binding;
+}
+
+export function bindingToString(binding: ShortcutBinding | null): string | null {
+  if (!binding) {
+    return null;
+  }
+  const parts: string[] = [];
+  if (binding.meta) parts.push('Meta');
+  if (binding.ctrl) parts.push('Control');
+  if (binding.alt) parts.push('Alt');
+  if (binding.shift) parts.push('Shift');
+  parts.push(binding.key);
+  return parts.join('+');
+}
+
+export function bindingHash(binding: ShortcutBinding): string {
+  const flags = [
+    binding.meta ? 'M' : '',
+    binding.ctrl ? 'C' : '',
+    binding.alt ? 'A' : '',
+    binding.shift ? 'S' : '',
+  ].join('');
+  return `${flags}|${binding.key}`;
+}
+
+export function hasModifier(binding: ShortcutBinding): boolean {
+  return binding.meta || binding.ctrl || binding.alt;
+}
+
+export function isCancelKey(e: KeyboardEvent): boolean {
+  return e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+}
+
+const MAC_SYMBOLS: Record<string, string> = {
+  Meta: '⌘',
+  Control: '⌃',
+  Alt: '⌥',
+  Shift: '⇧',
+  Backspace: '⌫',
+  Delete: '⌦',
+  Enter: '↵',
+  Escape: 'Esc',
+  Tab: '⇥',
+  Space: 'Space',
+  ArrowUp: '↑',
+  ArrowDown: '↓',
+  ArrowLeft: '←',
+  ArrowRight: '→',
+};
+
+const OTHER_LABELS: Record<string, string> = {
+  Meta: 'Win',
+  Control: 'Ctrl',
+  Alt: 'Alt',
+  Shift: 'Shift',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  Enter: 'Enter',
+  Escape: 'Esc',
+  Tab: 'Tab',
+  Space: 'Space',
+  ArrowUp: '↑',
+  ArrowDown: '↓',
+  ArrowLeft: '←',
+  ArrowRight: '→',
+};
+
+function labelForToken(token: string, mac: boolean): string {
+  const map = mac ? MAC_SYMBOLS : OTHER_LABELS;
+  return map[token] ?? token;
+}
+
+export function bindingTokens(binding: ShortcutBinding): string[] {
+  const tokens: string[] = [];
+  if (binding.meta) tokens.push('Meta');
+  if (binding.ctrl) tokens.push('Control');
+  if (binding.alt) tokens.push('Alt');
+  if (binding.shift) tokens.push('Shift');
+  tokens.push(binding.key);
+  return tokens;
+}
+
+export function bindingDisplayKeys(binding: ShortcutBinding | null, mac: boolean): string[] {
+  if (!binding) {
+    return [];
+  }
+  return bindingTokens(binding).map((token) => labelForToken(token, mac));
+}
+
+export function bindingDisplayString(binding: ShortcutBinding | null, mac: boolean): string {
+  const keys = bindingDisplayKeys(binding, mac);
+  return mac ? keys.join(' ') : keys.join('+');
+}

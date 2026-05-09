@@ -1,144 +1,278 @@
-import { useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
+import type { ShortcutOverride } from '~/store/misc';
+import type { ShortcutBinding } from '~/utils/shortcuts';
 import { useArchiveConvoMutation, useDeleteConversationMutation } from '~/data-provider';
+import {
+  bindingDisplayString,
+  bindingFromEvent,
+  bindingHash,
+  bindingToString,
+  isMacPlatform,
+  parseBinding,
+} from '~/utils/shortcuts';
 import { mainTextareaId } from '~/common';
 import { clearMessagesCache } from '~/utils';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+const isMac = isMacPlatform;
+const CUSTOM_STORAGE_KEY = 'customKeyboardShortcuts';
 
 export type ShortcutDefinition = {
-  /** Translation key for the shortcut label */
   labelKey: string;
-  /** Translation key for the shortcut group/category */
   groupKey: string;
-  /** Human-readable key combo for display (Mac) */
   displayMac: string;
-  /** Human-readable key combo for display (non-Mac) */
   displayOther: string;
+  ariaMac: string;
+  ariaOther: string;
 };
 
-export const shortcutDefinitions: Record<string, ShortcutDefinition> = {
+export const shortcutDefinitions = {
+  showShortcuts: {
+    labelKey: 'com_shortcut_show_shortcuts',
+    groupKey: 'com_shortcut_group_general',
+    displayMac: '⌘ ⇧ /',
+    displayOther: 'Ctrl+Shift+/',
+    ariaMac: 'Meta+Shift+/',
+    ariaOther: 'Control+Shift+/',
+  },
   newChat: {
     labelKey: 'com_ui_new_chat',
     groupKey: 'com_shortcut_group_general',
     displayMac: '⌘ ⇧ O',
     displayOther: 'Ctrl+Shift+O',
+    ariaMac: 'Meta+Shift+O',
+    ariaOther: 'Control+Shift+O',
   },
   focusChat: {
     labelKey: 'com_shortcut_focus_chat_input',
     groupKey: 'com_shortcut_group_general',
     displayMac: '⇧ Esc',
     displayOther: 'Shift+Esc',
+    ariaMac: 'Shift+Escape',
+    ariaOther: 'Shift+Escape',
   },
   copyLastResponse: {
     labelKey: 'com_shortcut_copy_last_response',
     groupKey: 'com_shortcut_group_general',
     displayMac: '⌘ ⇧ ;',
     displayOther: 'Ctrl+Shift+;',
+    ariaMac: 'Meta+Shift+;',
+    ariaOther: 'Control+Shift+;',
   },
   uploadFile: {
     labelKey: 'com_shortcut_upload_file',
     groupKey: 'com_shortcut_group_general',
     displayMac: '⌘ ⇧ U',
     displayOther: 'Ctrl+Shift+U',
+    ariaMac: 'Meta+Shift+U',
+    ariaOther: 'Control+Shift+U',
   },
   toggleSidebar: {
     labelKey: 'com_shortcut_toggle_sidebar',
     groupKey: 'com_shortcut_group_navigation',
     displayMac: '⌘ ⇧ S',
     displayOther: 'Ctrl+Shift+S',
+    ariaMac: 'Meta+Shift+S',
+    ariaOther: 'Control+Shift+S',
   },
   toggleRightSidebar: {
     labelKey: 'com_shortcut_toggle_right_sidebar',
     groupKey: 'com_shortcut_group_navigation',
     displayMac: '⌘ ⇧ R',
     displayOther: 'Ctrl+Shift+R',
+    ariaMac: 'Meta+Shift+R',
+    ariaOther: 'Control+Shift+R',
   },
   openModelSelector: {
     labelKey: 'com_shortcut_open_model_selector',
     groupKey: 'com_shortcut_group_navigation',
     displayMac: '⌘ ⇧ M',
     displayOther: 'Ctrl+Shift+M',
+    ariaMac: 'Meta+Shift+M',
+    ariaOther: 'Control+Shift+M',
   },
   focusSearch: {
     labelKey: 'com_shortcut_focus_search',
     groupKey: 'com_shortcut_group_navigation',
     displayMac: '⌘ /',
     displayOther: 'Ctrl+/',
+    ariaMac: 'Meta+/',
+    ariaOther: 'Control+/',
   },
   openSettings: {
     labelKey: 'com_nav_settings',
     groupKey: 'com_shortcut_group_navigation',
     displayMac: '⌘ ⇧ ,',
     displayOther: 'Ctrl+Shift+,',
+    ariaMac: 'Meta+Shift+,',
+    ariaOther: 'Control+Shift+,',
   },
   stopGenerating: {
     labelKey: 'com_nav_stop_generating',
     groupKey: 'com_shortcut_group_chat',
     displayMac: '⌘ ⇧ X',
     displayOther: 'Ctrl+Shift+X',
+    ariaMac: 'Meta+Shift+X',
+    ariaOther: 'Control+Shift+X',
   },
   regenerateResponse: {
     labelKey: 'com_shortcut_regenerate_response',
     groupKey: 'com_shortcut_group_chat',
     displayMac: '⌘ ⇧ E',
     displayOther: 'Ctrl+Shift+E',
+    ariaMac: 'Meta+Shift+E',
+    ariaOther: 'Control+Shift+E',
   },
   editLastMessage: {
     labelKey: 'com_shortcut_edit_last_message',
     groupKey: 'com_shortcut_group_chat',
     displayMac: '⌘ ⇧ I',
     displayOther: 'Ctrl+Shift+I',
+    ariaMac: 'Meta+Shift+I',
+    ariaOther: 'Control+Shift+I',
   },
   copyLastCode: {
     labelKey: 'com_shortcut_copy_last_code',
     groupKey: 'com_shortcut_group_chat',
     displayMac: '⌘ ⇧ K',
     displayOther: 'Ctrl+Shift+K',
+    ariaMac: 'Meta+Shift+K',
+    ariaOther: 'Control+Shift+K',
   },
   scrollToTop: {
     labelKey: 'com_shortcut_scroll_to_top',
     groupKey: 'com_shortcut_group_chat',
     displayMac: '⌘ ⇧ ↑',
     displayOther: 'Ctrl+Shift+↑',
+    ariaMac: 'Meta+Shift+ArrowUp',
+    ariaOther: 'Control+Shift+ArrowUp',
   },
   scrollToBottom: {
     labelKey: 'com_shortcut_scroll_to_bottom',
     groupKey: 'com_shortcut_group_chat',
     displayMac: '⌘ ⇧ ↓',
     displayOther: 'Ctrl+Shift+↓',
+    ariaMac: 'Meta+Shift+ArrowDown',
+    ariaOther: 'Control+Shift+ArrowDown',
   },
   toggleTemporaryChat: {
     labelKey: 'com_ui_temporary',
     groupKey: 'com_shortcut_group_chat',
     displayMac: '⌘ ⇧ T',
     displayOther: 'Ctrl+Shift+T',
+    ariaMac: 'Meta+Shift+T',
+    ariaOther: 'Control+Shift+T',
   },
   archiveConversation: {
     labelKey: 'com_shortcut_archive_conversation',
     groupKey: 'com_shortcut_group_chat',
     displayMac: '⌘ ⇧ A',
     displayOther: 'Ctrl+Shift+A',
+    ariaMac: 'Meta+Shift+A',
+    ariaOther: 'Control+Shift+A',
   },
   deleteConversation: {
     labelKey: 'com_shortcut_delete_conversation',
     groupKey: 'com_shortcut_group_chat',
     displayMac: '⌘ ⇧ ⌫',
     displayOther: 'Ctrl+Shift+Backspace',
+    ariaMac: 'Meta+Shift+Backspace',
+    ariaOther: 'Control+Shift+Backspace',
   },
+} as const satisfies Record<string, ShortcutDefinition>;
+
+export type ShortcutActionId = keyof typeof shortcutDefinitions;
+export type ShortcutAction = ShortcutDefinition & {
+  id: ShortcutActionId;
+  run: () => void;
 };
+
+const shortcutActionIds = Object.keys(shortcutDefinitions) as ShortcutActionId[];
 
 function getMainScrollContainer(): Element | null {
   return document.querySelector('main[role="main"]');
 }
 
-export default function useKeyboardShortcuts() {
+function defaultAria(actionId: ShortcutActionId): string {
+  const def = shortcutDefinitions[actionId];
+  return isMac ? def.ariaMac : def.ariaOther;
+}
+
+function readOverridesFromStorage(): Record<string, ShortcutOverride> {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function effectiveBindingString(
+  actionId: ShortcutActionId,
+  overrides: Record<string, ShortcutOverride>,
+): string | null {
+  const override = overrides[actionId];
+  if (override) {
+    const platformValue = isMac ? override.mac : override.other;
+    if (platformValue === null) {
+      return null;
+    }
+    if (typeof platformValue === 'string') {
+      return platformValue;
+    }
+  }
+  return defaultAria(actionId);
+}
+
+export function effectiveBinding(
+  actionId: ShortcutActionId,
+  overrides?: Record<string, ShortcutOverride>,
+): ShortcutBinding | null {
+  const map = overrides ?? readOverridesFromStorage();
+  return parseBinding(effectiveBindingString(actionId, map));
+}
+
+export function getShortcutDisplay(actionId: ShortcutActionId): string {
+  const binding = effectiveBinding(actionId);
+  if (!binding) {
+    return '';
+  }
+  return bindingDisplayString(binding, isMac);
+}
+
+export function getShortcutAriaKey(actionId: ShortcutActionId): string {
+  const binding = effectiveBinding(actionId);
+  if (!binding) {
+    return '';
+  }
+  return bindingToString(binding) ?? '';
+}
+
+export function getShortcutHint(actionId: ShortcutActionId, label: string): string {
+  const display = getShortcutDisplay(actionId);
+  return display ? `${label} (${display})` : label;
+}
+
+export function isOverridden(actionId: ShortcutActionId, override?: ShortcutOverride): boolean {
+  if (!override) return false;
+  const platformValue = isMac ? override.mac : override.other;
+  if (platformValue === null) return true;
+  if (typeof platformValue !== 'string') return false;
+  return platformValue !== defaultAria(actionId);
+}
+
+export function useShortcutActions(): ShortcutAction[] {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
@@ -150,6 +284,10 @@ export default function useKeyboardShortcuts() {
 
   const archiveMutation = useArchiveConvoMutation();
   const deleteMutation = useDeleteConversationMutation();
+
+  const handleShowShortcuts = useCallback(() => {
+    setShowShortcutsDialog((prev) => !prev);
+  }, [setShowShortcutsDialog]);
 
   const handleNewChat = useCallback(() => {
     clearMessagesCache(queryClient, conversation?.conversationId);
@@ -177,25 +315,21 @@ export default function useKeyboardShortcuts() {
   }, []);
 
   const handleFocusSearch = useCallback(() => {
-    if (!sidebarExpanded) {
-      setSidebarExpanded(true);
-      setTimeout(() => {
-        const input = document.querySelector<HTMLInputElement>(
-          'input[aria-label][placeholder*="earch"]',
-        );
-        input?.focus();
-      }, 350);
-    } else {
+    const focusSearchInput = () => {
       const input = document.querySelector<HTMLInputElement>(
-        'input[aria-label][placeholder*="earch"]',
+        'input[data-testid="nav-search-input"]',
       );
       input?.focus();
-    }
-  }, [sidebarExpanded, setSidebarExpanded]);
+    };
 
-  const handleShowShortcuts = useCallback(() => {
-    setShowShortcutsDialog((prev) => !prev);
-  }, [setShowShortcutsDialog]);
+    if (!sidebarExpanded) {
+      setSidebarExpanded(true);
+      setTimeout(focusSearchInput, 350);
+      return;
+    }
+
+    focusSearchInput();
+  }, [sidebarExpanded, setSidebarExpanded]);
 
   const handleCopyLastResponse = useCallback(() => {
     const turns = document.querySelectorAll('.agent-turn');
@@ -335,140 +469,220 @@ export default function useKeyboardShortcuts() {
     navigate,
   ]);
 
+  const handlers = useMemo<Record<ShortcutActionId, () => void>>(
+    () => ({
+      showShortcuts: handleShowShortcuts,
+      newChat: handleNewChat,
+      focusChat: handleFocusChatInput,
+      copyLastResponse: handleCopyLastResponse,
+      uploadFile: handleUploadFile,
+      toggleSidebar: handleToggleSidebar,
+      toggleRightSidebar: handleToggleRightSidebar,
+      openModelSelector: handleOpenModelSelector,
+      focusSearch: handleFocusSearch,
+      openSettings: handleOpenSettings,
+      stopGenerating: handleStopGenerating,
+      regenerateResponse: handleRegenerateResponse,
+      editLastMessage: handleEditLastMessage,
+      copyLastCode: handleCopyLastCode,
+      scrollToTop: handleScrollToTop,
+      scrollToBottom: handleScrollToBottom,
+      toggleTemporaryChat: handleToggleTemporaryChat,
+      archiveConversation: handleArchiveConversation,
+      deleteConversation: handleDeleteConversation,
+    }),
+    [
+      handleShowShortcuts,
+      handleNewChat,
+      handleFocusChatInput,
+      handleCopyLastResponse,
+      handleUploadFile,
+      handleToggleSidebar,
+      handleToggleRightSidebar,
+      handleOpenModelSelector,
+      handleFocusSearch,
+      handleOpenSettings,
+      handleStopGenerating,
+      handleRegenerateResponse,
+      handleEditLastMessage,
+      handleCopyLastCode,
+      handleScrollToTop,
+      handleScrollToBottom,
+      handleToggleTemporaryChat,
+      handleArchiveConversation,
+      handleDeleteConversation,
+    ],
+  );
+
+  return useMemo(
+    () =>
+      shortcutActionIds.map((id) => ({
+        id,
+        ...shortcutDefinitions[id],
+        run: handlers[id],
+      })),
+    [handlers],
+  );
+}
+
+export function useShortcutDisplay(actionId?: ShortcutActionId): string {
+  const overrides = useRecoilValue(store.customShortcuts);
+  return useMemo(() => {
+    if (!actionId) return '';
+    const binding = parseBinding(effectiveBindingString(actionId, overrides));
+    return binding ? bindingDisplayString(binding, isMac) : '';
+  }, [actionId, overrides]);
+}
+
+export function useShortcutAriaKey(actionId?: ShortcutActionId): string | undefined {
+  const overrides = useRecoilValue(store.customShortcuts);
+  return useMemo(() => {
+    if (!actionId) return undefined;
+    const binding = parseBinding(effectiveBindingString(actionId, overrides));
+    return binding ? (bindingToString(binding) ?? undefined) : undefined;
+  }, [actionId, overrides]);
+}
+
+export function useShortcutHint(actionId: ShortcutActionId | undefined, label: string): string {
+  const display = useShortcutDisplay(actionId);
+  return display ? `${label} (${display})` : label;
+}
+
+export type ShortcutBindingInfo = {
+  id: ShortcutActionId;
+  binding: ShortcutBinding | null;
+  isCustom: boolean;
+  groupKey: string;
+  labelKey: string;
+};
+
+export function useShortcutBindings(): {
+  bindings: ShortcutBindingInfo[];
+  bindingMap: Map<string, ShortcutActionId>;
+  setBinding: (id: ShortcutActionId, binding: ShortcutBinding | null) => void;
+  resetBinding: (id: ShortcutActionId) => void;
+  resetAll: () => void;
+} {
+  const [overrides, setOverrides] = useRecoilState(store.customShortcuts);
+
+  const bindings = useMemo<ShortcutBindingInfo[]>(
+    () =>
+      shortcutActionIds.map((id) => {
+        const def = shortcutDefinitions[id];
+        const override = overrides[id];
+        const binding = parseBinding(effectiveBindingString(id, overrides));
+        return {
+          id,
+          binding,
+          isCustom: isOverridden(id, override),
+          groupKey: def.groupKey,
+          labelKey: def.labelKey,
+        };
+      }),
+    [overrides],
+  );
+
+  const bindingMap = useMemo<Map<string, ShortcutActionId>>(() => {
+    const map = new Map<string, ShortcutActionId>();
+    for (const info of bindings) {
+      if (info.binding) {
+        map.set(bindingHash(info.binding), info.id);
+      }
+    }
+    return map;
+  }, [bindings]);
+
+  const setBinding = useCallback(
+    (id: ShortcutActionId, binding: ShortcutBinding | null) => {
+      setOverrides((prev) => {
+        const next = { ...prev };
+        const platformKey: keyof ShortcutOverride = isMac ? 'mac' : 'other';
+        const existing = next[id] ?? { mac: null, other: null };
+        const updated: ShortcutOverride = { ...existing };
+        const value = binding ? bindingToString(binding) : null;
+        updated[platformKey] = value;
+
+        const def = shortcutDefinitions[id];
+        const matchesDefault = updated.mac === def.ariaMac && updated.other === def.ariaOther;
+
+        const otherKey: keyof ShortcutOverride = isMac ? 'other' : 'mac';
+        if (updated[otherKey] === undefined) {
+          updated[otherKey] = isMac ? def.ariaOther : def.ariaMac;
+        }
+
+        if (matchesDefault) {
+          delete next[id];
+        } else {
+          next[id] = updated;
+        }
+        return next;
+      });
+    },
+    [setOverrides],
+  );
+
+  const resetBinding = useCallback(
+    (id: ShortcutActionId) => {
+      setOverrides((prev) => {
+        if (!prev[id]) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    },
+    [setOverrides],
+  );
+
+  const resetAll = useCallback(() => {
+    setOverrides({});
+  }, [setOverrides]);
+
+  return { bindings, bindingMap, setBinding, resetBinding, resetAll };
+}
+
+export default function useKeyboardShortcuts() {
+  const actions = useShortcutActions();
+  const overrides = useRecoilValue(store.customShortcuts);
+
+  const actionMap = useMemo(() => new Map(actions.map((action) => [action.id, action])), [actions]);
+
+  const bindingMap = useMemo<Map<string, ShortcutActionId>>(() => {
+    const map = new Map<string, ShortcutActionId>();
+    for (const id of shortcutActionIds) {
+      const binding = parseBinding(effectiveBindingString(id, overrides));
+      if (binding) {
+        map.set(bindingHash(binding), id);
+      }
+    }
+    return map;
+  }, [overrides]);
+
   const handler = useCallback(
     (e: KeyboardEvent) => {
+      const binding = bindingFromEvent(e);
+      if (!binding) {
+        return;
+      }
+
+      const matchedId = bindingMap.get(bindingHash(binding));
+      if (!matchedId) {
+        return;
+      }
+
       const target = e.target as HTMLElement | null;
       const tagName = target?.tagName;
       const isEditing =
         tagName === 'INPUT' || tagName === 'TEXTAREA' || target?.isContentEditable === true;
 
-      const mod = isMac ? e.metaKey : e.ctrlKey;
-
-      // Shift + Escape → Focus Chat Input (works anywhere)
-      if (e.shiftKey && e.key === 'Escape') {
-        e.preventDefault();
-        handleFocusChatInput();
+      const allowedWhileEditing: ShortcutActionId[] = ['focusChat', 'focusSearch', 'showShortcuts'];
+      if (isEditing && !allowedWhileEditing.includes(matchedId)) {
         return;
       }
 
-      // All remaining shortcuts require mod key
-      if (!mod) {
-        return;
-      }
-
-      // Non-shift shortcuts
-      if (!e.shiftKey) {
-        // Cmd/Ctrl + / → Focus Search
-        if (e.key === '/') {
-          e.preventDefault();
-          handleFocusSearch();
-        }
-        return;
-      }
-
-      // Cmd/Ctrl + Shift + / (?) → Show Keyboard Shortcuts (works even when editing)
-      if (e.key === '?') {
-        e.preventDefault();
-        handleShowShortcuts();
-        return;
-      }
-
-      // Remaining Cmd/Ctrl+Shift shortcuts should not fire when editing text
-      if (isEditing) {
-        return;
-      }
-
-      switch (e.key) {
-        case 'O':
-          e.preventDefault();
-          handleNewChat();
-          break;
-        case 'S':
-        case 's':
-          e.preventDefault();
-          handleToggleSidebar();
-          break;
-        case 'R':
-          e.preventDefault();
-          handleToggleRightSidebar();
-          break;
-        case 'M':
-          e.preventDefault();
-          handleOpenModelSelector();
-          break;
-        case ':':
-        case ';':
-          e.preventDefault();
-          handleCopyLastResponse();
-          break;
-        case 'U':
-          e.preventDefault();
-          handleUploadFile();
-          break;
-        case 'X':
-          e.preventDefault();
-          handleStopGenerating();
-          break;
-        case 'E':
-          e.preventDefault();
-          handleRegenerateResponse();
-          break;
-        case 'I':
-          e.preventDefault();
-          handleEditLastMessage();
-          break;
-        case 'K':
-          e.preventDefault();
-          handleCopyLastCode();
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          handleScrollToTop();
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          handleScrollToBottom();
-          break;
-        case '<':
-        case ',':
-          e.preventDefault();
-          handleOpenSettings();
-          break;
-        case 'T':
-          e.preventDefault();
-          handleToggleTemporaryChat();
-          break;
-        case 'A':
-          e.preventDefault();
-          handleArchiveConversation();
-          break;
-        case 'Backspace':
-          e.preventDefault();
-          handleDeleteConversation();
-          break;
-      }
+      e.preventDefault();
+      actionMap.get(matchedId)?.run();
     },
-    [
-      handleNewChat,
-      handleFocusChatInput,
-      handleToggleSidebar,
-      handleToggleRightSidebar,
-      handleOpenModelSelector,
-      handleFocusSearch,
-      handleShowShortcuts,
-      handleCopyLastResponse,
-      handleCopyLastCode,
-      handleUploadFile,
-      handleStopGenerating,
-      handleRegenerateResponse,
-      handleEditLastMessage,
-      handleScrollToTop,
-      handleScrollToBottom,
-      handleOpenSettings,
-      handleToggleTemporaryChat,
-      handleArchiveConversation,
-      handleDeleteConversation,
-    ],
+    [actionMap, bindingMap],
   );
 
   useEffect(() => {
