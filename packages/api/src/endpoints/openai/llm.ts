@@ -11,12 +11,10 @@ import type * as t from '~/types';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
 import { isEnabled } from '~/utils/common';
 
-type OpenRouterVerbosity = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-
 type OpenAILLMConfig = Omit<Partial<t.OAIClientOptions>, 'verbosity'> &
   Omit<Partial<t.OpenAIParameters>, 'verbosity'> &
   Omit<Partial<AzureOpenAIInput>, 'verbosity'> & {
-    verbosity?: OpenRouterVerbosity | null;
+    verbosity?: string | null;
   };
 
 export const knownOpenAIParams = new Set([
@@ -99,14 +97,8 @@ const openRouterAnthropicVerbosityByEffort: Record<
   xhigh: 'xhigh',
 };
 
-function isOpenRouterVerbosity(value: unknown): value is OpenRouterVerbosity {
-  return (
-    value === 'low' ||
-    value === 'medium' ||
-    value === 'high' ||
-    value === 'xhigh' ||
-    value === 'max'
-  );
+function isStringVerbosity(value: unknown): value is string {
+  return typeof value === 'string' && value !== '';
 }
 
 function applyVerbosityParam({
@@ -122,7 +114,7 @@ function applyVerbosityParam({
   modelKwargs: Record<string, unknown>;
   useOpenRouter?: boolean;
 }): boolean {
-  if (!isOpenRouterVerbosity(value)) {
+  if (!isStringVerbosity(value)) {
     return false;
   }
 

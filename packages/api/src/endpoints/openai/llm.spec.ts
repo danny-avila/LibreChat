@@ -762,6 +762,23 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig.modelKwargs).toBeUndefined();
     });
 
+    it('should preserve provider-specific OpenRouter verbosity values', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        addParams: {
+          verbosity: 'ultra',
+        },
+        modelOptions: {
+          model: 'custom/openrouter-model',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('verbosity', 'ultra');
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+    });
+
     it('should pass OpenRouter Responses API verbosity under text', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
@@ -959,6 +976,21 @@ describe('getOpenAILLMConfig', () => {
       });
 
       expect(result.llmConfig.modelKwargs).toHaveProperty('verbosity', Verbosity.high);
+    });
+
+    it('should preserve provider-specific verbosity values in modelKwargs', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        defaultParams: {
+          verbosity: 'detailed',
+        },
+        modelOptions: {
+          model: 'custom-model',
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('verbosity', 'detailed');
     });
 
     it('should convert verbosity to text object with Responses API', () => {

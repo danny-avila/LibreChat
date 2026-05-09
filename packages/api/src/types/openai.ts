@@ -32,7 +32,7 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
   include_reasoning?: boolean;
   promptCache?: boolean;
   _lc_stream_delay?: number;
-  verbosity?: OpenAIClientOptions['verbosity'] | 'xhigh' | 'max';
+  verbosity?: string | null;
 };
 
 /**
