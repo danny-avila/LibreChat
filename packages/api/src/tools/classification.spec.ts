@@ -350,9 +350,28 @@ describe('classification.ts', () => {
         definitionsOnly: true,
       });
 
-      expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_code')).toBe(true);
-      expect(result.toolRegistry?.has('run_tools_with_code')).toBe(true);
+      expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(true);
+      expect(result.toolRegistry?.has('run_tools_with_bash')).toBe(true);
       expect(result.additionalTools.length).toBe(0);
+    });
+
+    it('should create bash PTC tool when agent has programmatic tools', async () => {
+      const loadedTools: GenericTool[] = [createMCPTool('tool1')];
+
+      const agentToolOptions: AgentToolOptions = {
+        tool1: { allowed_callers: ['code_execution'] },
+      };
+
+      const result = await buildToolClassification({
+        loadedTools,
+        userId: 'user1',
+        agentId: 'agent1',
+        agentToolOptions,
+      });
+
+      expect(result.additionalTools.some((t) => t.name === 'run_tools_with_bash')).toBe(true);
+      expect(result.additionalTools.some((t) => t.name === 'run_tools_with_code')).toBe(false);
+      expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(true);
     });
 
     it('should create tool instances when definitionsOnly=false (default)', async () => {

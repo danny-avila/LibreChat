@@ -7,7 +7,7 @@ const {
   createToolSearch,
   createBashExecutionTool,
   Constants: AgentConstants,
-  createProgrammaticToolCallingTool,
+  createBashProgrammaticToolCallingTool,
 } = require('@librechat/agents');
 const {
   sendEvent,
@@ -1262,7 +1262,11 @@ async function loadToolsForExecution({
   }
 
   const isToolSearch = toolNames.includes(AgentConstants.TOOL_SEARCH);
-  const isPTC = toolNames.includes(AgentConstants.PROGRAMMATIC_TOOL_CALLING);
+  const ptcToolNames = [
+    AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING,
+    AgentConstants.PROGRAMMATIC_TOOL_CALLING,
+  ].filter((name) => toolNames.includes(name));
+  const isPTC = ptcToolNames.length > 0;
 
   logger.debug(
     `[loadToolsForExecution] isToolSearch: ${isToolSearch}, toolRegistry: ${toolRegistry?.size ?? 'undefined'}`,
@@ -1284,10 +1288,13 @@ async function loadToolsForExecution({
        * LibreChat threads per-request Code API auth through the agents
        * library so PTC calls share the same managed auth context.
        */
-      const ptcTool = createProgrammaticToolCallingTool({
-        authHeaders: () => getCodeApiAuthHeaders(req),
-      });
-      allLoadedTools.push(ptcTool);
+      for (const name of ptcToolNames) {
+        const ptcTool = createBashProgrammaticToolCallingTool({
+          authHeaders: () => getCodeApiAuthHeaders(req),
+        });
+        ptcTool.name = name;
+        allLoadedTools.push(ptcTool);
+      }
     } catch (error) {
       logger.error('[loadToolsForExecution] Error creating PTC tool:', error);
     }
@@ -1308,6 +1315,7 @@ async function loadToolsForExecution({
   const specialToolNames = new Set([
     AgentConstants.TOOL_SEARCH,
     AgentConstants.PROGRAMMATIC_TOOL_CALLING,
+    AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING,
     AgentConstants.BASH_TOOL,
     AgentConstants.SKILL_TOOL,
     AgentConstants.READ_FILE,
@@ -1381,7 +1389,11 @@ async function loadToolsForExecution({
   if (isPTC && allLoadedTools.length > 0) {
     const ptcToolMap = new Map();
     for (const tool of allLoadedTools) {
-      if (tool.name && tool.name !== AgentConstants.PROGRAMMATIC_TOOL_CALLING) {
+      if (
+        tool.name &&
+        tool.name !== AgentConstants.PROGRAMMATIC_TOOL_CALLING &&
+        tool.name !== AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING
+      ) {
         ptcToolMap.set(tool.name, tool);
       }
     }

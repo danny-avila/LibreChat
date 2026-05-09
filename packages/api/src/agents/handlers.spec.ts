@@ -244,6 +244,40 @@ describe('createToolExecuteHandler', () => {
     });
   });
 
+  describe('programmatic tool config', () => {
+    it('injects tool definitions for the legacy PTC tool name', async () => {
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const legacyPtcTool = createMockTool(Constants.PROGRAMMATIC_TOOL_CALLING, capturedConfigs);
+      const toolRegistry = new Map([
+        ['custom_tool', { name: 'custom_tool' }],
+        [Constants.PROGRAMMATIC_TOOL_CALLING, { name: Constants.PROGRAMMATIC_TOOL_CALLING }],
+        [
+          Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
+          { name: Constants.BASH_PROGRAMMATIC_TOOL_CALLING },
+        ],
+        [Constants.TOOL_SEARCH, { name: Constants.TOOL_SEARCH }],
+      ]);
+      const ptcToolMap = new Map([['custom_tool', createMockTool('custom_tool', [])]]);
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [legacyPtcTool] as never[],
+        configurable: { toolRegistry, ptcToolMap },
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_1',
+          name: Constants.PROGRAMMATIC_TOOL_CALLING,
+          args: { code: 'custom_tool "{}"' },
+        },
+      ]);
+
+      expect(capturedConfigs).toHaveLength(1);
+      expect(capturedConfigs[0].toolDefs).toEqual([{ name: 'custom_tool' }]);
+      expect(capturedConfigs[0].toolMap).toBe(ptcToolMap);
+    });
+  });
+
   describe('skill tool model-invocation gate', () => {
     function createSkillHandler(getSkillByName: ToolExecuteOptions['getSkillByName']) {
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({

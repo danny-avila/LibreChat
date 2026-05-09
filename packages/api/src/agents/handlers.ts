@@ -1116,7 +1116,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     }
                   }
 
-                  if (tc.name === Constants.PROGRAMMATIC_TOOL_CALLING) {
+                  if (
+                    tc.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING ||
+                    tc.name === Constants.PROGRAMMATIC_TOOL_CALLING
+                  ) {
                     const toolRegistry = mergedConfigurable?.toolRegistry as
                       | LCToolRegistry
                       | undefined;
@@ -1127,6 +1130,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
                         (t) =>
                           t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
+                          t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
                           t.name !== Constants.TOOL_SEARCH,
                       );
                       toolCallConfig.toolDefs = toolDefs;
