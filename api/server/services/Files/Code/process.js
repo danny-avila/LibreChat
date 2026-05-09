@@ -709,6 +709,41 @@ async function getSessionInfo(ref) {
   }
 }
 
+const getPreviewContextSuffix = (file) => {
+  if (file.status === 'pending') {
+    return ' (preview not yet generated)';
+  }
+
+  if (file.status !== 'failed') {
+    return '';
+  }
+
+  return file.previewError
+    ? ` (preview unavailable: ${file.previewError})`
+    : ' (preview unavailable)';
+};
+
+const getVisibleCodeFileContextLine = (file, agentResourceIds) => {
+  if (file.context === FileContext.execute_code) {
+    return '';
+  }
+
+  const fileSuffix = agentResourceIds.has(file.file_id) ? '' : ' (attached by user)';
+  return `\n\t- /mnt/data/${file.filename}${fileSuffix}${getPreviewContextSuffix(file)}`;
+};
+
+const appendVisibleCodeFileContext = (toolContext, contextLine) => {
+  if (!contextLine) {
+    return toolContext;
+  }
+
+  if (toolContext) {
+    return `${toolContext}${contextLine}`;
+  }
+
+  return `- Note: The following files are available in the "${Tools.execute_code}" tool environment:${contextLine}`;
+};
+
 /**
  *
  * @param {Object} options
@@ -797,34 +832,10 @@ const primeFiles = async (options) => {
      * tenant prefix from auth context).
      */
     const pushFile = (overrideSessionId, overrideId) => {
-      if (!toolContext) {
-        toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
-      }
-
-      let fileSuffix = '';
-      if (!agentResourceIds.has(file.file_id)) {
-        fileSuffix =
-          file.context === FileContext.execute_code
-            ? ' (from previous code execution)'
-            : ' (attached by user)';
-      }
-
-      /* Surface the preview lifecycle so the LLM knows when a
-       * prior-turn artifact's rich preview didn't materialize. The
-       * file blob is always available (`processCodeOutput` persists
-       * it before returning), so the model can still tell the user
-       * "you can download it" even when the preview never resolved.
-       * Absent status means legacy or non-office — render normally. */
-      let previewSuffix = '';
-      if (file.status === 'pending') {
-        previewSuffix = ' (preview not yet generated)';
-      } else if (file.status === 'failed') {
-        previewSuffix = file.previewError
-          ? ` (preview unavailable: ${file.previewError})`
-          : ' (preview unavailable)';
-      }
-
-      toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}${previewSuffix}`;
+      toolContext = appendVisibleCodeFileContext(
+        toolContext,
+        getVisibleCodeFileContextLine(file, agentResourceIds),
+      );
       /* `id` is the storage file_id (drives codeapi's upload-key
        * existence check), `resource_id` is the entity that owns
        * the storage session (drives sessionKey re-derivation). For
