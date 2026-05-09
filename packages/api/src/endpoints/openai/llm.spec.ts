@@ -767,10 +767,12 @@ describe('getOpenAILLMConfig', () => {
         apiKey: 'test-api-key',
         streaming: true,
         useOpenRouter: true,
+        addParams: {
+          verbosity: 'xhigh',
+        },
         modelOptions: {
           model: 'anthropic/claude-opus-4.7',
           useResponsesApi: true,
-          verbosity: 'xhigh',
         },
       });
 
