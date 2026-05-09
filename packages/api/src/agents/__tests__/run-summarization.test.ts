@@ -1,19 +1,39 @@
 import type { AppConfig } from '@librechat/data-schemas';
+import { ToolMessage } from '@librechat/agents/langchain/messages';
+import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
 import { EModelEndpoint, FileSources } from 'librechat-data-provider';
 import { createRun } from '~/agents/run';
 
 // Mock winston logger
-jest.mock('winston', () => ({
-  createLogger: jest.fn(() => ({
-    debug: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    info: jest.fn(),
-  })),
-  format: { combine: jest.fn(), colorize: jest.fn(), simple: jest.fn() },
-  transports: { Console: jest.fn() },
-}));
+jest.mock('winston', () => {
+  const format = jest.fn(() => jest.fn(() => ({})));
+  Object.assign(format, {
+    colorize: jest.fn(() => ({})),
+    combine: jest.fn(() => ({})),
+    errors: jest.fn(() => ({})),
+    json: jest.fn(() => ({})),
+    printf: jest.fn(() => ({})),
+    simple: jest.fn(() => ({})),
+    splat: jest.fn(() => ({})),
+    timestamp: jest.fn(() => ({})),
+  });
+
+  return {
+    addColors: jest.fn(),
+    createLogger: jest.fn(() => ({
+      debug: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      info: jest.fn(),
+    })),
+    format,
+    transports: {
+      Console: jest.fn(),
+      DailyRotateFile: jest.fn(),
+    },
+  };
+});
 
 // Mock env utilities so header resolution doesn't fail
 jest.mock('~/utils/env', () => ({
@@ -60,6 +80,7 @@ async function callAndCapture(
     summarizationConfig?: SummarizationConfig;
     initialSummary?: { text: string; tokenCount: number };
     appConfig?: AppConfig;
+    messages?: BaseMessage[];
   } = {},
 ) {
   const agents = opts.agents ?? [makeAgent()];
@@ -71,6 +92,7 @@ async function callAndCapture(
     summarizationConfig: opts.summarizationConfig,
     initialSummary: opts.initialSummary,
     appConfig: opts.appConfig,
+    messages: opts.messages,
     streaming: true,
     streamUsage: true,
   });
@@ -939,6 +961,58 @@ describe('subagentConfigs', () => {
     };
     expect(childInputs.initialSummary).toBeUndefined();
     expect(childInputs.discoveredTools).toBeUndefined();
+  });
+
+  it('keeps discovered root tools from leaking into the same object used as a subagent', async () => {
+    const deferredTool = {
+      name: 'deferred_tool',
+      description: 'Deferred tool',
+      parameters: {},
+      defer_loading: true,
+      allowed_callers: ['direct'],
+    };
+    const child = makeAgent({
+      id: 'agent_child',
+      name: 'Child',
+      hasDeferredTools: true,
+      toolRegistry: new Map([['deferred_tool', deferredTool]]),
+      toolDefinitions: [deferredTool],
+    });
+    const parent = makeAgent({
+      id: 'agent_parent',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+      subagentAgentConfigs: [child],
+    });
+
+    const agents = await callAndCapture({
+      agents: [parent, child],
+      messages: [
+        new ToolMessage({
+          name: 'tool_search',
+          tool_call_id: 'call_1',
+          content: JSON.stringify({ tools: [{ name: 'deferred_tool' }] }),
+        }),
+      ],
+    });
+
+    const rootChild = agents.find((agent) => agent.agentId === 'agent_child');
+    expect((rootChild?.toolDefinitions as Array<Record<string, unknown>>)[0].defer_loading).toBe(
+      false,
+    );
+
+    const rootParent = agents.find((agent) => agent.agentId === 'agent_parent');
+    const childConfig = (rootParent?.subagentConfigs as Array<Record<string, unknown>>)[0];
+    const childInputs = childConfig.agentInputs as {
+      discoveredTools?: unknown;
+      toolDefinitions?: Array<Record<string, unknown>>;
+    };
+    expect(childInputs.discoveredTools).toBeUndefined();
+    expect(childInputs.toolDefinitions?.[0].defer_loading).toBe(true);
+    expect(deferredTool.defer_loading).toBe(true);
+    expect(
+      (child.toolRegistry as Map<string, Record<string, unknown>>).get('deferred_tool')
+        ?.defer_loading,
+    ).toBe(true);
   });
 });
 
