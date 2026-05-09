@@ -168,8 +168,9 @@ export interface ImportSkillDeps {
       fileName: string;
       basePath?: string;
       isImage?: boolean;
+      tenantId?: string;
     },
-  ) => Promise<{ filepath: string; source: string }>;
+  ) => Promise<{ filepath: string; source: string; storageKey?: string; storageRegion?: string }>;
   deleteFile?: (
     req: Request,
     file: { filepath: string; source: string; [key: string]: unknown },
@@ -518,12 +519,13 @@ async function handleZip(
       const mimeType = guessMimeType(filename);
 
       // Save to file storage (strategy-aware)
-      const { filepath, source } = await deps.saveBuffer(req, {
+      const { filepath, source, storageKey, storageRegion } = await deps.saveBuffer(req, {
         userId,
         buffer: fileBuffer,
         fileName: storageFileName,
         basePath: 'uploads',
         isImage: mimeType.startsWith('image/'),
+        tenantId,
       });
 
       // Upsert the SkillFile DB record (runs path validation internally).
@@ -535,6 +537,8 @@ async function handleZip(
           file_id: fileId,
           filename,
           filepath,
+          storageKey,
+          storageRegion,
           source,
           mimeType,
           bytes: fileBuffer.length,
@@ -545,7 +549,14 @@ async function handleZip(
       } catch (dbError) {
         if (deps.deleteFile) {
           await deps
-            .deleteFile(req, { filepath, source })
+            .deleteFile(req, {
+              filepath,
+              storageKey,
+              storageRegion,
+              source,
+              user: authorId,
+              tenantId,
+            })
             .catch((e) =>
               logger.error(`[importSkill] Orphan cleanup failed for ${relativePath}:`, e),
             );

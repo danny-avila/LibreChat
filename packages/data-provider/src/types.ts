@@ -8,6 +8,7 @@ import type {
   TMessage,
   TBanner,
 } from './schemas';
+import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
@@ -683,8 +684,8 @@ export type TBalanceResponse = {
   // Automatic refill settings
   autoRefillEnabled: boolean;
   refillIntervalValue?: number;
-  refillIntervalUnit?: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
-  lastRefill?: Date;
+  refillIntervalUnit?: RefillIntervalUnit;
+  lastRefill?: Date | string;
   refillAmount?: number;
 };
 

@@ -39,19 +39,31 @@ export interface PrimeSkillFilesParams {
   getSessionInfo?: (fileIdentifier: string) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
-  /** Persists codeEnvIdentifier on skill files after upload */
+  /** Persists codeEnvIdentifier on skill files after upload. Implementations
+   *  warn-log on partial writes (matchedCount/modifiedCount mismatch)
+   *  internally — caller can fire-and-forget without losing visibility. */
   updateSkillFileCodeEnvIds?: (
     updates: Array<{
       skillId: Types.ObjectId | string;
       relativePath: string;
       codeEnvIdentifier: string;
     }>,
-  ) => Promise<void>;
+  ) => Promise<{ matchedCount: number; modifiedCount: number } | void>;
 }
 
 export interface PrimeSkillFilesResult {
   session_id: string;
-  files: Array<{ id: string; session_id: string; name: string }>;
+  files: Array<{ id: string; session_id: string; name: string; entity_id?: string }>;
+}
+
+/** Parses `entity_id` out of a persisted `codeEnvIdentifier`'s query string.
+ *  Returns `undefined` when the identifier has no query string or no
+ *  `entity_id` (legacy user-attachment uploads). */
+function parseEntityIdFromCodeEnvIdentifier(identifier: string): string | undefined {
+  const queryString = identifier.split('?')[1];
+  if (!queryString) return undefined;
+  const value = new URLSearchParams(queryString).get('entity_id');
+  return value && value.length > 0 ? value : undefined;
 }
 
 /**
@@ -109,8 +121,15 @@ export async function primeSkillFiles(
         if (allActive) {
           const files: PrimeSkillFilesResult['files'] = [];
           for (const sf of skillFiles) {
-            const [sid, fid] = (sf.codeEnvIdentifier as string).split('?')[0].split('/');
-            files.push({ id: fid, session_id: sid, name: `${skill.name}/${sf.relativePath}` });
+            const identifier = sf.codeEnvIdentifier as string;
+            const [sid, fid] = identifier.split('?')[0].split('/');
+            const entity_id = parseEntityIdFromCodeEnvIdentifier(identifier);
+            files.push({
+              id: fid,
+              session_id: sid,
+              name: `${skill.name}/${sf.relativePath}`,
+              ...(entity_id != null ? { entity_id } : {}),
+            });
           }
 
           if (files.length > 0) {
@@ -183,6 +202,7 @@ export async function primeSkillFiles(
         id: f.fileId,
         session_id: result.session_id,
         name: f.filename,
+        entity_id: entityId,
       }));
 
     // Treat partial upload failures as a priming failure — missing bundled
@@ -199,7 +219,19 @@ export async function primeSkillFiles(
       return null;
     }
 
-    // Persist codeEnvIdentifiers on skill files (fire-and-forget)
+    /**
+     * Persist codeEnvIdentifiers on skill files. Awaited (not
+     * fire-and-forget) so the next prime — which can start within
+     * milliseconds when many users hit the same skill concurrently —
+     * sees the cache pointer instead of racing the read against an
+     * in-flight write. Without the await, a fire-and-forget under
+     * concurrency stays in cache-miss steady-state for the duration
+     * of the burst (each user's prime reads stale, re-uploads, then
+     * fires its own forget that the next user also misses). Latency
+     * cost is ~10–50ms on the prime that does the upload; subsequent
+     * primes save an entire batch upload. Failures don't fail the
+     * prime — the file refs returned to the caller are still valid.
+     */
     if (updateSkillFileCodeEnvIds) {
       const updates = result.files
         .filter((f) => !f.filename.endsWith('/SKILL.md'))
@@ -209,12 +241,14 @@ export async function primeSkillFiles(
           codeEnvIdentifier: `${result.session_id}/${f.fileId}?entity_id=${entityId}`,
         }));
       if (updates.length > 0) {
-        updateSkillFileCodeEnvIds(updates).catch((err: unknown) => {
+        try {
+          await updateSkillFileCodeEnvIds(updates);
+        } catch (err: unknown) {
           logger.warn(
             '[primeSkillFiles] Failed to persist codeEnvIdentifiers:',
             err instanceof Error ? err.message : err,
           );
-        });
+        }
       }
     }
 
@@ -349,8 +383,15 @@ export async function primeInvokedSkills(
             r.files
               .filter((f) => f.codeEnvIdentifier)
               .map((f) => {
-                const [sid, fid] = (f.codeEnvIdentifier as string).split('?')[0].split('/');
-                return { id: fid, name: `${r.skill.name}/${f.relativePath}`, session_id: sid };
+                const identifier = f.codeEnvIdentifier as string;
+                const [sid, fid] = identifier.split('?')[0].split('/');
+                const entity_id = parseEntityIdFromCodeEnvIdentifier(identifier);
+                return {
+                  id: fid,
+                  name: `${r.skill.name}/${f.relativePath}`,
+                  session_id: sid,
+                  ...(entity_id != null ? { entity_id } : {}),
+                };
               }),
           );
           if (cachedFiles.length > 0) {
@@ -374,7 +415,12 @@ export async function primeInvokedSkills(
     // Per-skill upload: each skill gets its own session with entity_id=skillId.
     // primeSkillFiles handles freshness caching per-skill, so only expired
     // skills re-upload. The code env handles mixed session_ids natively.
-    const allPrimedFiles: Array<{ id: string; name: string; session_id: string }> = [];
+    const allPrimedFiles: Array<{
+      id: string;
+      name: string;
+      session_id: string;
+      entity_id?: string;
+    }> = [];
     const primeResults = await Promise.allSettled(
       fileListResults.map(async ({ skill, files }) => {
         const result = await primeSkillFiles({
@@ -393,7 +439,12 @@ export async function primeInvokedSkills(
     for (const r of primeResults) {
       if (r.status === 'fulfilled' && r.value.result) {
         for (const f of r.value.result.files) {
-          allPrimedFiles.push({ id: f.id, name: f.name, session_id: f.session_id });
+          allPrimedFiles.push({
+            id: f.id,
+            name: f.name,
+            session_id: f.session_id,
+            ...(f.entity_id != null ? { entity_id: f.entity_id } : {}),
+          });
         }
       } else if (r.status === 'rejected') {
         logger.warn('[primeInvokedSkills] Failed to prime skill files:', r.reason);

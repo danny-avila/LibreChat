@@ -88,6 +88,32 @@ export const artifactByIdSelector = selectorFamily<Artifact | undefined, string>
     },
 });
 
+/**
+ * One-shot signal that an attachment's deferred preview just transitioned
+ * from `pending` to `ready` during the current session — keyed by
+ * `file_id` (raw, NOT the `tool-artifact-${file_id}` form).
+ *
+ * The preview-sync hook flips this to `true` on the pending→ready edge.
+ * `ToolArtifactCard` reads it on mount; if set, it auto-opens the panel
+ * (even when no submission is in flight) and then resets the flag, so
+ * subsequent re-mounts (panel close/reopen, re-render of the same card
+ * from history) do not steal focus a second time.
+ *
+ * Why a separate signal rather than reusing `mountedDuringStreamRef`:
+ * the deferred render can complete *after* the SSE stream has closed,
+ * so the card mounts with `isSubmitting === false` and the existing
+ * focus/open path skips. Without this signal, a freshly resolved
+ * artifact would render in place but not auto-open — which is exactly
+ * the bug the deferred-preview flow was designed to mask in the first
+ * place. Auto-open ONLY on the pending→ready edge means a user
+ * scrolling through history doesn't get the panel popping open every
+ * time a previously resolved chip enters the viewport.
+ */
+export const previewJustResolved = atomFamily<boolean, string>({
+  key: 'previewJustResolved',
+  default: false,
+});
+
 export const visibleArtifacts = atom<Record<string, Artifact | undefined> | null>({
   key: 'visibleArtifacts',
   default: null,

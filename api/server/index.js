@@ -25,7 +25,12 @@ const {
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
-const { getRoleByName, updateAccessPermissions, seedDatabase } = require('~/models');
+const {
+  getRoleByName,
+  updateAccessPermissions,
+  seedDatabase,
+  sweepOrphanedPreviews,
+} = require('~/models');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
@@ -69,6 +74,13 @@ const startServer = async () => {
   }
 
   await runAsSystem(seedDatabase);
+  /* Recover stuck `status: 'pending'` records from a crash mid-render.
+   * `runAsSystem` is required — `File` is tenant-isolated and strict
+   * mode rejects unscoped queries. Lazy sweep in the preview endpoint
+   * covers anything younger than the boot cutoff. */
+  runAsSystem(sweepOrphanedPreviews).catch((err) => {
+    logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
+  });
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
   await runAsSystem(async () => {

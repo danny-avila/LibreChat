@@ -8,6 +8,7 @@ import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+import { REFILL_INTERVAL_UNITS } from './balance';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -68,7 +69,9 @@ export const fileSourceSchema = z.nativeEnum(FileSources);
 /**
  * `allowedAddresses` is an SSRF exemption list scoped to private IP space.
  * Validate at config-load time:
- *  - Reject URLs, paths, CIDR ranges, host:port forms, and whitespace.
+ *  - Reject URLs, paths, CIDR ranges, bare host/IP forms, and whitespace.
+ *  - Require `host:port` or `[ipv6]:port` entries so an exemption is scoped
+ *    to one service port instead of every port on a private host.
  *  - Reject IPv4 literals that fall outside the private/loopback/link-local
  *    ranges. Public IPs are never SSRF targets, so listing one has no
  *    defensive purpose and must not silently grant trust.
@@ -113,20 +116,28 @@ function isPrivateIPv6Literal(value: string): boolean {
 }
 
 /**
- * Detects `host:port` and `[ipv6]:port` shapes — both are invalid as
- * allowedAddresses entries. Bare `::1`, `[::1]`, and other IPv6 literals
- * with no port are intentionally not matched.
- *
- * Mirrors `looksLikeHostPort` in `@librechat/api`'s `auth/allowedAddresses`.
+ * Mirrors the allowedAddresses parser in `@librechat/api`'s auth helpers.
  * Kept as a local copy because the data-provider package cannot import from
  * `@librechat/api` without creating a circular dependency. Keep the two
  * implementations in sync.
  */
-function looksLikeHostPort(entry: string): boolean {
-  if (/^\[[^\]]+\]:\d+$/.test(entry)) return true;
-  const colonCount = (entry.match(/:/g) ?? []).length;
-  if (colonCount !== 1) return false;
-  return /^[^:]+:\d+$/.test(entry);
+function normalizePort(port: unknown): string {
+  if (typeof port !== 'string' && typeof port !== 'number') return '';
+  const portString = String(port).trim();
+  if (!/^\d+$/.test(portString)) return '';
+  const parsed = Number(portString);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) return '';
+  return String(parsed);
+}
+
+function parseAllowedAddressEntry(entry: string): { address: string; port: string } | null {
+  const trimmed = entry.toLowerCase().trim();
+  const bracketedIPv6 = trimmed.match(/^\[([^\]]+)\]:(\d+)$/);
+  const hostPort = bracketedIPv6 ? null : trimmed.match(/^([^:]+):(\d+)$/);
+  const address = (bracketedIPv6?.[1] ?? hostPort?.[1] ?? '').replace(/^\[|\]$/g, '');
+  const port = normalizePort(bracketedIPv6?.[2] ?? hostPort?.[2] ?? '');
+  if (!address || !port) return null;
+  return { address, port };
 }
 
 const allowedAddressEntrySchema = z
@@ -136,17 +147,17 @@ const allowedAddressEntrySchema = z
   })
   .refine((entry) => !entry.includes('://') && !entry.includes('/') && !/\s/.test(entry), {
     message:
-      'allowedAddresses entries must be bare hostnames or IPs — no URLs, paths, CIDR ranges, or whitespace',
+      'allowedAddresses entries must be host:port pairs — no URLs, paths, CIDR ranges, or whitespace',
   })
-  .refine((entry) => !looksLikeHostPort(entry), {
-    message: 'allowedAddresses entries must not include a port — list the bare hostname or IP only',
+  .refine((entry) => parseAllowedAddressEntry(entry) != null, {
+    message:
+      'allowedAddresses entries must include a port, for example localhost:11434 or [::1]:11434',
   })
   .refine(
     (entry) => {
-      const stripped = entry
-        .toLowerCase()
-        .trim()
-        .replace(/^\[|\]$/g, '');
+      const parsed = parseAllowedAddressEntry(entry);
+      if (!parsed) return false;
+      const stripped = parsed.address;
       const isIPv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(stripped);
       const isIPv6 = !isIPv4 && stripped.includes(':');
       if (!isIPv4 && !isIPv6) {
@@ -156,7 +167,7 @@ const allowedAddressEntrySchema = z
     },
     {
       message:
-        'allowedAddresses is scoped to private IP space — public IP literals are not permitted (use a hostname if it resolves to a private IP)',
+        'allowedAddresses is scoped to private IP space — public IP literals are not permitted (use hostname:port if it resolves to a private IP)',
     },
   );
 
@@ -168,6 +179,7 @@ const FILE_STORAGE_BACKENDS = [
   FileSources.firebase,
   FileSources.s3,
   FileSources.azure_blob,
+  FileSources.cloudfront,
 ] as const satisfies ReadonlyArray<FileSources>;
 
 export const fileStorageSchema = z.enum(FILE_STORAGE_BACKENDS);
@@ -183,6 +195,39 @@ export const fileStrategiesSchema = z
     skills: fileStorageSchema.optional(),
   })
   .optional();
+
+const cloudfrontSigningSchema = z.enum(['none', 'cookies', 'url']);
+
+export const cloudfrontConfigSchema = z
+  .object({
+    domain: z.string().url(),
+    distributionId: z.string().optional(),
+    invalidateOnDelete: z.boolean().default(false),
+    imageSigning: cloudfrontSigningSchema.default('none'),
+    urlExpiry: z.number().positive().default(3600),
+    cookieExpiry: z.number().positive().max(604800).default(1800),
+    cookieDomain: z
+      .string()
+      .min(1)
+      .refine((d) => d.startsWith('.'), {
+        message: 'cookieDomain must start with a dot (e.g., ".example.com") to apply to subdomains',
+      })
+      .optional(),
+    storageRegion: z.string().min(1).optional(),
+    includeRegionInPath: z.boolean().default(false),
+  })
+  .refine((data) => !data.invalidateOnDelete || !!data.distributionId, {
+    message: 'distributionId is required when invalidateOnDelete is true',
+    path: ['distributionId'],
+  })
+  .refine((data) => data.imageSigning !== 'cookies' || !!data.cookieDomain, {
+    message:
+      'cookieDomain is required when imageSigning is "cookies" (e.g., ".example.com" for API at api.example.com and CDN at cdn.example.com)',
+    path: ['cookieDomain'],
+  })
+  .optional();
+
+export type CloudFrontConfig = z.infer<typeof cloudfrontConfigSchema>;
 
 // Helper type to extract the shape of the Zod object schema
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
@@ -420,6 +465,61 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.ocr,
 ];
 
+const LOCAL_REMOTE_OIDC_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+export function isRemoteOidcUrlAllowed(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:') return true;
+    if (url.protocol !== 'http:') return false;
+
+    const hostname = url.hostname.toLowerCase();
+    return LOCAL_REMOTE_OIDC_HOSTS.has(hostname) || hostname.endsWith('.localhost');
+  } catch {
+    return false;
+  }
+}
+
+const remoteApiOidcUrlSchema = z
+  .string()
+  .url()
+  .refine(isRemoteOidcUrlAllowed, { message: 'must use https:// unless targeting localhost' });
+
+const remoteApiOidcScopeSchema = z.string().refine((scope) => !scope.includes(','), {
+  message: 'scopes must be space-separated',
+});
+
+const remoteApiOidcSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    issuer: remoteApiOidcUrlSchema.optional(),
+    audience: z.string().optional(),
+    jwksUri: remoteApiOidcUrlSchema.optional(),
+    scope: remoteApiOidcScopeSchema.optional(),
+  })
+  .superRefine((oidc, ctx) => {
+    if (oidc.enabled === true && !oidc.issuer) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['issuer'],
+        message: 'issuer is required when OIDC auth is enabled',
+      });
+    }
+  });
+
+const remoteApiAuthSchema = z.object({
+  apiKey: z
+    .object({
+      enabled: z.boolean().default(true),
+    })
+    .optional(),
+  oidc: remoteApiOidcSchema.optional(),
+});
+
+const remoteApiSchema = z.object({
+  auth: remoteApiAuthSchema.optional(),
+});
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -436,6 +536,7 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      remoteApi: remoteApiSchema.optional(),
     }),
   )
   .default({
@@ -1141,10 +1242,7 @@ export const balanceSchema = z.object({
   startBalance: z.number().optional().default(20000),
   autoRefillEnabled: z.boolean().optional().default(false),
   refillIntervalValue: z.number().optional().default(30),
-  refillIntervalUnit: z
-    .enum(['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'])
-    .optional()
-    .default('days'),
+  refillIntervalUnit: z.enum(REFILL_INTERVAL_UNITS).optional().default('days'),
   refillAmount: z.number().optional().default(10000),
 });
 
@@ -1240,6 +1338,7 @@ export const configSchema = z.object({
   turnstile: turnstileSchema.optional(),
   fileStrategy: fileStorageSchema.default(FileSources.local),
   fileStrategies: fileStrategiesSchema,
+  cloudfront: cloudfrontConfigSchema,
   actions: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
@@ -2016,7 +2115,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.8.5',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.9',
+  CONFIG_VERSION = '1.3.10',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */

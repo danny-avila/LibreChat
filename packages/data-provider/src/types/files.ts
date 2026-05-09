@@ -7,6 +7,7 @@ export enum FileSources {
   azure_blob = 'azure_blob',
   openai = 'openai',
   s3 = 's3',
+  cloudfront = 'cloudfront',
   vectordb = 'vectordb',
   execute_code = 'execute_code',
   mistral_ocr = 'mistral_ocr',
@@ -98,6 +99,9 @@ export type TFile = {
   _id?: string;
   __v?: number;
   user: string;
+  tenantId?: string;
+  storageRegion?: string;
+  storageKey?: string;
   conversationId?: string;
   message?: string;
   file_id: string;
@@ -117,6 +121,29 @@ export type TFile = {
   expiresAt?: string | Date;
   preview?: string;
   text?: string;
+  /**
+   * Format of the `text` field. `'html'` means the backend produced
+   * a sanitized full-document HTML preview the client may inject as
+   * `index.html` inside the office artifact iframe. `'text'` (or
+   * `undefined` for legacy records) is plain text and MUST NOT be
+   * injected as HTML — render through the markdown/escaping path.
+   * See Codex P1 review on PR #12934.
+   */
+  textFormat?: 'html' | 'text' | null;
+  /**
+   * Lifecycle of the inline preview rendered from `text`. `'pending'`
+   * while background HTML extraction is in flight (deferred-preview
+   * code-execution flow), `'ready'` once `text`/`textFormat` are set,
+   * `'failed'` if extraction errored or hit the 60s ceiling. `undefined`
+   * for legacy records and for files that never expect a preview —
+   * clients MUST treat that as `'ready'`.
+   */
+  status?: 'pending' | 'ready' | 'failed';
+  /**
+   * Short machine-readable failure reason when `status === 'failed'`.
+   * Suitable for tooltip text but not user-facing prose.
+   */
+  previewError?: string;
   metadata?: { fileIdentifier?: string };
   createdAt?: string | Date;
   updatedAt?: string | Date;
@@ -126,8 +153,37 @@ export type TFileUpload = TFile & {
   temp_file_id: string;
 };
 
+/**
+ * Shape returned by `GET /api/files/:file_id/preview`. The deferred-
+ * preview code-execution flow polls this until status is terminal:
+ *   - `pending`: HTML extraction is still running. No `text`.
+ *   - `ready`: extraction succeeded; `text` + `textFormat` populated
+ *     iff the file produced inline preview content (binary/oversized
+ *     files reach `ready` with no text — render download-only).
+ *   - `failed`: extraction errored or hit the 60s ceiling;
+ *     `previewError` carries the short reason (`timeout`,
+ *     `parser-error`, `orphaned`, etc.).
+ *
+ * Legacy records pre-dating the field are surfaced as `'ready'` server-
+ * side so existing attachments keep rendering normally.
+ */
+export type TFilePreview = {
+  file_id: string;
+  status: 'pending' | 'ready' | 'failed';
+  text?: string;
+  textFormat?: 'html' | 'text' | null;
+  previewError?: string;
+};
+
 export type AvatarUploadResponse = {
   url: string;
+};
+
+export type FileDownloadURLResponse = {
+  url: string;
+  filename: string;
+  type: string;
+  metadata: Partial<TFile>;
 };
 
 export type SpeechToTextResponse = {
@@ -174,6 +230,8 @@ export type DeleteFilesResponse = {
 export type BatchFile = {
   file_id: string;
   filepath: string;
+  storageRegion?: string;
+  storageKey?: string;
   embedded: boolean;
   source: FileSources;
   temp_file_id?: string;

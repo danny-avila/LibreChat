@@ -1,9 +1,17 @@
+import type { RefillIntervalUnit, TUserFavorite } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
-import type { TUserFavorite } from 'librechat-data-provider';
 import { CursorPaginationParams } from '~/common';
 
 export interface IUser extends Document {
   _id: Types.ObjectId;
+  /**
+   * Mongoose's `Document.id` virtual is typed `id?: any`. At runtime it's
+   * always `_id.toString()` for a hydrated doc, so narrow to a required
+   * string. This also lets `IUser` satisfy Express.User augmentations
+   * (the OIDC remote-agent middleware assigns `req.user = IUser` where
+   * the project's local `Express.User` requires `id: string`).
+   */
+  id: string;
   name?: string;
   username?: string;
   email: string;
@@ -21,6 +29,7 @@ export interface IUser extends Document {
   discordId?: string;
   appleId?: string;
   plugins?: string[];
+  openidIssuer?: string;
   twoFactorEnabled?: boolean;
   totpSecret?: string;
   backupCodes?: Array<{
@@ -66,7 +75,7 @@ export interface BalanceConfig {
   startBalance?: number;
   autoRefillEnabled?: boolean;
   refillIntervalValue?: number;
-  refillIntervalUnit?: string;
+  refillIntervalUnit?: RefillIntervalUnit;
   refillAmount?: number;
 }
 

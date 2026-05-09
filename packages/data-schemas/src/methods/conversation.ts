@@ -71,7 +71,10 @@ export function createConversationMethods(
   async function searchConversation(conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne({ conversationId }, 'conversationId user').lean();
+      return await Conversation.findOne(
+        { conversationId },
+        'conversationId user',
+      ).lean<IConversation>();
     } catch (error) {
       logger.error('[searchConversation] Error searching conversation', error);
       throw new Error('Error searching conversation');
@@ -84,7 +87,7 @@ export function createConversationMethods(
   async function getConvo(user: string, conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne({ user, conversationId }).lean();
+      return await Conversation.findOne({ user, conversationId }).lean<IConversation>();
     } catch (error) {
       logger.error('[getConvo] Error getting single conversation', error);
       throw new Error('Error getting single conversation');
@@ -130,8 +133,7 @@ export function createConversationMethods(
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       return (
-        ((await Conversation.findOne({ conversationId }, 'files').lean()) as IConversation | null)
-          ?.files ?? []
+        (await Conversation.findOne({ conversationId }, 'files').lean<IConversation>())?.files ?? []
       );
     } catch (error) {
       logger.error('[getConvoFiles] Error getting conversation files', error);
@@ -381,16 +383,21 @@ export function createConversationMethods(
         )
         .sort(sortObj)
         .limit(limit + 1)
-        .lean();
+        .lean<IConversation[]>();
 
       let nextCursor: string | null = null;
       if (convos.length > limit) {
         convos.pop();
-        const lastReturned = convos[convos.length - 1] as Record<string, unknown>;
-        const primaryValue = lastReturned[finalSortBy];
+        const lastReturned = convos[convos.length - 1];
+        let primaryValue: string | Date | undefined = lastReturned.updatedAt;
+        if (finalSortBy === 'title') {
+          primaryValue = lastReturned.title;
+        } else if (finalSortBy === 'createdAt') {
+          primaryValue = lastReturned.createdAt;
+        }
         const primaryStr =
-          finalSortBy === 'title' ? primaryValue : (primaryValue as Date).toISOString();
-        const secondaryStr = (lastReturned.updatedAt as Date).toISOString();
+          finalSortBy === 'title' ? primaryValue : new Date(primaryValue ?? 0).toISOString();
+        const secondaryStr = new Date(lastReturned.updatedAt ?? 0).toISOString();
         const composite = { primary: primaryStr, secondary: secondaryStr };
         nextCursor = Buffer.from(JSON.stringify(composite)).toString('base64');
       }
@@ -423,7 +430,7 @@ export function createConversationMethods(
         user,
         conversationId: { $in: conversationIds },
         $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
-      }).lean();
+      }).lean<IConversation[]>();
 
       results.sort(
         (a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime(),

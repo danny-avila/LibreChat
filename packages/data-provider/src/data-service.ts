@@ -402,6 +402,22 @@ export const getFiles = (): Promise<f.TFile[]> => {
   return request.get(endpoints.files());
 };
 
+/**
+ * Poll the lifecycle of an inline file preview. Returns the smallest
+ * shape needed to drive the UI:
+ *   - `status` always present (defaults to `'ready'` server-side for
+ *     legacy records that pre-date the field).
+ *   - `text` and `textFormat` only when `status === 'ready'` and text
+ *     was extracted (preserves the HTML-or-null security contract).
+ *   - `previewError` only when `status === 'failed'`.
+ *
+ * Called from `useFilePreview`; React Query's `refetchInterval`
+ * polls while `status === 'pending'` and stops on terminal status.
+ */
+export const getFilePreview = (fileId: string): Promise<f.TFilePreview> => {
+  return request.get(endpoints.filePreview(fileId));
+};
+
 export const getAgentFiles = (agentId: string): Promise<f.TFile[]> => {
   return request.get(endpoints.agentFiles(agentId));
 };
@@ -679,6 +695,13 @@ export const getFileDownload = async (userId: string, file_id: string): Promise<
       Accept: 'application/octet-stream',
     },
   });
+};
+
+export const getFileDownloadURL = async (
+  userId: string,
+  file_id: string,
+): Promise<f.FileDownloadURLResponse> => {
+  return request.get(`${endpoints.files()}/download-url/${userId}/${file_id}`);
 };
 
 export const getCodeOutputDownload = async (url: string): Promise<AxiosResponse> => {

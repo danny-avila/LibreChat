@@ -109,6 +109,7 @@ class FluxAPI extends Tool {
     this.override = fields.override ?? false;
 
     this.userId = fields.userId;
+    this.tenantId = fields.req?.user?.tenantId;
     this.fileStrategy = fields.fileStrategy;
 
     /** @type {boolean} **/
@@ -341,6 +342,7 @@ class FluxAPI extends Tool {
         fileName: imageName,
         basePath: 'images',
         context: FileContext.image_generation,
+        tenantId: this.tenantId,
       });
 
       logger.debug('[FluxAPI] Image saved to path:', result.filepath);
@@ -571,6 +573,7 @@ class FluxAPI extends Tool {
         fileName: imageName,
         basePath: 'images',
         context: FileContext.image_generation,
+        tenantId: this.tenantId,
       });
 
       logger.debug('[FluxAPI] Finetuned image saved to path:', result.filepath);
