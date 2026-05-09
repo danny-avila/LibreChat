@@ -5,6 +5,25 @@
  */
 jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),
+  ReadFileToolDefinition: {
+    name: 'read_file',
+    description: 'read skill files using {skillName}/{filePath} and SKILL.md',
+    parameters: {
+      type: 'object',
+      properties: {
+        file_path: {
+          type: 'string',
+          description: 'For skill files: "{skillName}/{path}".',
+        },
+      },
+    },
+    responseFormat: 'content',
+  },
+  BashExecutionToolDefinition: {
+    name: 'bash_tool',
+    description: 'bash',
+    schema: { type: 'object', properties: {} },
+  },
   buildBashExecutionToolDescription: ({
     enableToolOutputReferences,
   }: {
@@ -1064,6 +1083,52 @@ describe('initializeAgent — execute_code capability expansion', () => {
        path — the string stays in `agent.tools` as the capability trigger
        but never appears in the tool definitions the LLM sees. */
     expect(names).not.toContain('execute_code');
+    const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
+    expect(readFile?.description).toContain('code-execution sandbox');
+    expect(readFile?.description).not.toContain('{skillName}');
+    expect(readFile?.description).not.toContain('SKILL.md');
+  });
+
+  it('upgrades read_file to the skill-aware description when active skills are in scope', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+        accessibleSkillIds: [skillId],
+      },
+      {
+        ...db,
+        listSkillsByAccess: jest.fn().mockResolvedValue({
+          skills: [
+            {
+              _id: skillId,
+              name: 'data-cleaner',
+              description: 'Clean tabular data.',
+              author,
+            },
+          ],
+          has_more: false,
+          after: null,
+        }),
+      },
+    );
+
+    const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
+    expect(readFile?.description).toContain('{skillName}/{filePath}');
+    expect(readFile?.description).toContain('SKILL.md');
+    expect(result.toolDefinitions?.map((d) => d.name)).toContain('skill');
   });
 
   it('does not register bash_tool + read_file when codeEnvAvailable=false', async () => {
