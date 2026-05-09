@@ -37,6 +37,13 @@ import { sanitizeUrlForLogging } from '~/mcp/utils';
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
 
+function getOAuthUrlPort(url: URL): string {
+  if (url.port) return url.port;
+  if (url.protocol === 'http:') return '80';
+  if (url.protocol === 'https:') return '443';
+  return '';
+}
+
 export class MCPOAuthHandler {
   private static readonly FLOW_TYPE = 'mcp_oauth';
   private static readonly FLOW_TTL = 10 * 60 * 1000; // 10 minutes
@@ -907,8 +914,11 @@ export class MCPOAuthHandler {
     }
 
     let hostname: string;
+    let port: string;
     try {
-      hostname = new URL(url).hostname;
+      const parsedUrl = new URL(url);
+      hostname = parsedUrl.hostname;
+      port = getOAuthUrlPort(parsedUrl);
     } catch {
       throw new Error(`Invalid OAuth ${fieldName}: ${sanitizeUrlForLogging(url)}`);
     }
@@ -916,11 +926,11 @@ export class MCPOAuthHandler {
     const allowedDomainsActive = Array.isArray(allowedDomains) && allowedDomains.length > 0;
     const effectiveAddresses = allowedDomainsActive ? null : allowedAddresses;
 
-    if (isSSRFTarget(hostname, effectiveAddresses)) {
+    if (isSSRFTarget(hostname, effectiveAddresses, port)) {
       throw new Error(`OAuth ${fieldName} targets a blocked address`);
     }
 
-    if (await resolveHostnameSSRF(hostname, effectiveAddresses)) {
+    if (await resolveHostnameSSRF(hostname, effectiveAddresses, port)) {
       throw new Error(`OAuth ${fieldName} resolves to a private IP address`);
     }
   }
