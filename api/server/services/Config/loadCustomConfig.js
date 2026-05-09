@@ -3,6 +3,7 @@ const axios = require('axios');
 const yaml = require('js-yaml');
 const keyBy = require('lodash/keyBy');
 const { loadYaml } = require('@librechat/api');
+const { Providers } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const {
   configSchema,
@@ -17,14 +18,13 @@ const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
 
 let i = 0;
 
-const OPENROUTER_ENDPOINT = 'openrouter';
 const OPENROUTER_PROMPT_CACHE_DEFAULT = {
   key: 'promptCache',
   default: true,
 };
 
 function includesOpenRouter(value) {
-  return typeof value === 'string' && value.toLowerCase().includes(OPENROUTER_ENDPOINT);
+  return typeof value === 'string' && value.toLowerCase().includes(Providers.OPENROUTER);
 }
 
 function isOpenRouterEndpoint(endpoint) {
@@ -33,7 +33,7 @@ function isOpenRouterEndpoint(endpoint) {
 
 function shouldPreserveCustomParams(customParams) {
   const defaultEndpoint = customParams?.defaultParamsEndpoint;
-  return defaultEndpoint && defaultEndpoint !== 'custom' && defaultEndpoint !== OPENROUTER_ENDPOINT;
+  return defaultEndpoint && defaultEndpoint !== 'custom' && defaultEndpoint !== Providers.OPENROUTER;
 }
 
 function addOpenRouterDefaults(endpoint) {
@@ -51,7 +51,7 @@ function addOpenRouterDefaults(endpoint) {
 
   endpoint.customParams = {
     ...customParams,
-    defaultParamsEndpoint: OPENROUTER_ENDPOINT,
+    defaultParamsEndpoint: Providers.OPENROUTER,
     paramDefinitions: hasPromptCache
       ? paramDefinitions
       : [...paramDefinitions, OPENROUTER_PROMPT_CACHE_DEFAULT],
