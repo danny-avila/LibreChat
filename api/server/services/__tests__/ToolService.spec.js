@@ -300,6 +300,26 @@ describe('ToolService - Action Capability Gating', () => {
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = Tools.web_search;
 
+    it('loads bash PTC under the legacy programmatic tool name for event-driven compatibility', async () => {
+      const req = createMockReq([]);
+      const toolRegistry = new Map([['custom_tool', { name: 'custom_tool' }]]);
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_ptc' },
+        toolNames: [Constants.PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry,
+        actionsEnabled: false,
+      });
+
+      expect(result.loadedTools.map((tool) => tool.name)).toEqual([
+        Constants.PROGRAMMATIC_TOOL_CALLING,
+      ]);
+      expect(result.configurable.toolRegistry).toBe(toolRegistry);
+      expect(result.configurable.ptcToolMap.size).toBe(0);
+    });
+
     it('should skip action tool loading when actionsEnabled=false', async () => {
       const req = createMockReq([]);
       req.config = {};
