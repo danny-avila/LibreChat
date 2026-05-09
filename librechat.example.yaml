@@ -493,8 +493,6 @@ endpoints:
       titleModel: 'meta-llama/llama-3-70b-instruct'
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ['stop']
-      # OpenRouter custom endpoints are detected by name/baseURL and automatically
-      # get the OpenRouter promptCache parameter defaulted on.
       modelDisplayLabel: 'OpenRouter'
 
     # Helicone Example
