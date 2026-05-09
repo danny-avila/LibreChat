@@ -256,11 +256,13 @@ export class MCPConnectionFactory {
   }
 
   protected createOboConnectionError(error: OboTokenResolutionError): Error {
-    const recoveryHint = error.retryable
-      ? 'Please retry.'
-      : error.reason === 'exchange_failed'
-        ? 'Re-authenticate the user or verify the configured OBO scopes and retry.'
-        : 'Re-authenticate the user and retry.';
+    let recoveryHint = 'Re-authenticate the user and retry.';
+
+    if (error.retryable) {
+      recoveryHint = 'Please retry.';
+    } else if (error.reason === 'exchange_failed') {
+      recoveryHint = 'Re-authenticate the user or verify the configured OBO scopes and retry.';
+    }
 
     return new Error(
       `${error.userMessage} Unable to connect to OBO server "${this.serverName}". ${recoveryHint}`,

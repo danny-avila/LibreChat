@@ -27,11 +27,13 @@ function createOboToolCallErrorMessage(
   toolName: string,
   error: OboTokenResolutionError,
 ): string {
-  const failureSuffix = error.retryable
-    ? 'Please retry.'
-    : error.reason === 'exchange_failed'
-      ? 'Re-authenticate the user or verify the configured OBO scopes and retry.'
-      : 'Re-authenticate the user and retry.';
+  let failureSuffix = 'Re-authenticate the user and retry.';
+
+  if (error.retryable) {
+    failureSuffix = 'Please retry.';
+  } else if (error.reason === 'exchange_failed') {
+    failureSuffix = 'Re-authenticate the user or verify the configured OBO scopes and retry.';
+  }
 
   return `${logPrefix} ${error.userMessage} Cannot execute tool ${toolName}. ${failureSuffix}`;
 }
