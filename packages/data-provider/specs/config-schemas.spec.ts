@@ -10,8 +10,8 @@ import {
   summarizationTriggerSchema,
   summarizationConfigSchema,
 } from '../src/config';
-import { specsConfigSchema } from '../src/models';
 import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
+import { specsConfigSchema } from '../src/models';
 import { FileSources } from '../src/types/files';
 
 describe('paramDefinitionSchema', () => {
