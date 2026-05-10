@@ -68,6 +68,12 @@ describe('getToolDisplayLabel', () => {
     );
   });
 
+  it('returns the code translation key for bash_tool calls', () => {
+    expect(getToolDisplayLabel('bash_tool', identityLocalize)).toBe(
+      TOOL_FRIENDLY_NAME_KEYS.bash_tool,
+    );
+  });
+
   it('returns the raw name for an unknown native tool', () => {
     expect(getToolDisplayLabel('custom_tool', identityLocalize)).toBe('custom_tool');
   });

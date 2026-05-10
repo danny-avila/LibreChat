@@ -51,11 +51,7 @@ export function getToolIconType(name: string): ToolIconType {
   if (name.includes(Constants.mcp_delimiter)) {
     return 'mcp';
   }
-  if (
-    name === 'execute_code' ||
-    name === Constants.PROGRAMMATIC_TOOL_CALLING ||
-    name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING
-  ) {
+  if (name === 'execute_code' || name === Constants.PROGRAMMATIC_TOOL_CALLING) {
     return 'execute_code';
   }
   if (name === 'web_search') {

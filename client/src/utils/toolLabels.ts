@@ -13,6 +13,7 @@ export const TOOL_FRIENDLY_NAME_KEYS: Record<string, TranslationKeys> = {
   execute_code: 'com_ui_tool_name_code',
   run_tools_with_code: 'com_ui_tool_name_code',
   run_tools_with_bash: 'com_ui_tool_name_code',
+  bash_tool: 'com_ui_tool_name_code',
   web_search: 'com_ui_tool_name_web_search',
   image_gen_oai: 'com_ui_tool_name_image_gen',
   image_edit_oai: 'com_ui_tool_name_image_edit',

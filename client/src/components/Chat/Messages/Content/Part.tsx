@@ -30,7 +30,7 @@ import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
 import Image from './Image';
-import parseJsonField from './Parts/parseJsonField';
+import { isBashProgrammaticToolCall } from './routing';
 
 type PartProps = {
   part?: TMessageContentParts;
@@ -41,27 +41,6 @@ type PartProps = {
   attachments?: TAttachment[];
   hideAttachments?: boolean;
 };
-
-const PYTHON_PROGRAMMATIC_LANGS = new Set(['py', 'python']);
-
-function isBashProgrammaticToolCall(
-  name: string | undefined,
-  args?: string | Record<string, unknown>,
-): boolean {
-  if (name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING) {
-    return true;
-  }
-  if (name !== Constants.PROGRAMMATIC_TOOL_CALLING) {
-    return false;
-  }
-
-  const lang =
-    parseJsonField(args, 'lang') ||
-    parseJsonField(args, 'runtime') ||
-    parseJsonField(args, 'language');
-
-  return !PYTHON_PROGRAMMATIC_LANGS.has(lang.toLowerCase());
-}
 
 const Part = memo(function Part({
   part,
