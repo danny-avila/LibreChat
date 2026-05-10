@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions, isAssistantsEndpoint } from 'librechat-data-provider';
+import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
+import useGetAgentsConfig from '~/hooks/Agents/useGetAgentsConfig';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import store from '~/store';
 
@@ -61,21 +63,30 @@ const useHandleKeyUp = ({
     permissionType: PermissionTypes.MULTI_CONVO,
     permission: Permissions.USE,
   });
+  const hasSkillsAccess = useHasAccess({
+    permissionType: PermissionTypes.SKILLS,
+    permission: Permissions.USE,
+  });
+  const { agentsConfig } = useGetAgentsConfig();
+  const { skillsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const endpoint = useRecoilValue(store.effectiveEndpointByIndex(index));
   const setShowMentionPopover = useSetRecoilState(store.showMentionPopoverFamily(index));
   const setShowPlusPopover = useSetRecoilState(store.showPlusPopoverFamily(index));
   const setShowPromptsPopover = useSetRecoilState(store.showPromptsPopoverFamily(index));
+  const setShowSkillsPopover = useSetRecoilState(store.showSkillsPopoverFamily(index));
 
   const atCommandEnabled = useRecoilValue(store.atCommand);
   const plusCommandEnabled = useRecoilValue(store.plusCommand);
   const slashCommandEnabled = useRecoilValue(store.slashCommand);
+  const dollarCommandEnabled = useRecoilValue(store.dollarCommand);
 
   useEffect(() => {
     if (isAssistantsEndpoint(endpoint)) {
       setShowPlusPopover(false);
+      setShowSkillsPopover(false);
     }
-  }, [endpoint, setShowPlusPopover]);
+  }, [endpoint, setShowPlusPopover, setShowSkillsPopover]);
 
   const handleAtCommand = useCallback(() => {
     if (atCommandEnabled && shouldTriggerCommand(textAreaRef, '@')) {
@@ -101,13 +112,35 @@ const useHandleKeyUp = ({
     }
   }, [textAreaRef, hasPromptsAccess, setShowPromptsPopover, slashCommandEnabled]);
 
+  const handleSkillsCommand = useCallback(() => {
+    if (
+      !hasSkillsAccess ||
+      !skillsEnabled ||
+      !dollarCommandEnabled ||
+      isAssistantsEndpoint(endpoint)
+    ) {
+      return;
+    }
+    if (shouldTriggerCommand(textAreaRef, '$')) {
+      setShowSkillsPopover(true);
+    }
+  }, [
+    textAreaRef,
+    hasSkillsAccess,
+    skillsEnabled,
+    setShowSkillsPopover,
+    dollarCommandEnabled,
+    endpoint,
+  ]);
+
   const commandHandlers = useMemo(
     () => ({
       '@': handleAtCommand,
       '+': handlePlusCommand,
       '/': handlePromptsCommand,
+      $: handleSkillsCommand,
     }),
-    [handleAtCommand, handlePlusCommand, handlePromptsCommand],
+    [handleAtCommand, handlePlusCommand, handlePromptsCommand, handleSkillsCommand],
   );
 
   const handleUpArrow = useCallback(

@@ -72,6 +72,152 @@ const DEFAULT_TIMEOUT = 60000;
 /** SSE connections through proxies may need longer initial handshake time */
 const SSE_CONNECT_TIMEOUT = 120000;
 const DEFAULT_INIT_TIMEOUT = 30000;
+/** Max 307/308 redirects to follow per request (prevents redirect loops) */
+const MAX_REDIRECTS = 5;
+
+/**
+ * Headers stripped before forwarding a request across an origin boundary on
+ * 307/308 redirects, mirroring browser/Fetch-spec behavior. These headers can
+ * carry credentials (OAuth bearer, MCP session, cookies) that an attacker
+ * controlling a redirecting MCP endpoint could otherwise exfiltrate by sending
+ * a `Location` to a host they own.
+ */
+const CROSS_ORIGIN_FORBIDDEN_HEADERS = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'mcp-session-id',
+]);
+
+/**
+ * Normalizes a fetch input + init pair so the redirect loop only ever has
+ * to deal with `(string, init)`. When `input` is a `Request`, its method,
+ * headers, and body are baked into the returned init — explicit init values
+ * win (matching Fetch-spec semantics) and the body is buffered with
+ * `arrayBuffer()` so 307/308 retries can replay it on the new URL. Without
+ * this, switching `url` to a `Location` string on redirect would silently
+ * drop the original POST method and request payload.
+ */
+async function resolveFetchInput(
+  input: UndiciRequestInfo,
+  init: UndiciRequestInit | undefined,
+): Promise<{ urlString: string; resolvedInit: UndiciRequestInit | undefined }> {
+  if (typeof input === 'string') {
+    return { urlString: input, resolvedInit: init };
+  }
+  if (input instanceof URL) {
+    return { urlString: input.href, resolvedInit: init };
+  }
+  /**
+   * Treat anything else as a `Request`. Duck-typed instead of
+   * `instanceof undici.Request` because requests handed to a generic fetch
+   * wrapper can come from a different undici realm and fail the prototype
+   * check while still implementing the same shape. The `as unknown as` cast
+   * is needed because undici's `Headers` and DOM's `Headers` have
+   * incompatible declared shapes even though they are interchangeable at
+   * runtime for the methods we use.
+   */
+  const req = input as unknown as {
+    url: string;
+    method: string;
+    headers: { entries: () => Iterable<[string, string]> };
+    body: unknown;
+    signal: AbortSignal | null;
+    arrayBuffer: () => Promise<ArrayBuffer>;
+  };
+  const reqHeaders = Object.fromEntries(req.headers.entries());
+  const initHeaders = normalizeInitHeaders(init);
+  const mergedHeaders = { ...reqHeaders, ...initHeaders };
+  /** Body must be buffered before we hand it off — the original stream is
+   * single-shot, so a redirect retry with the same stream would crash with
+   * `body has been read`. Empty/no-body Requests skip the read entirely. */
+  const reqBody = req.body ? await req.arrayBuffer() : undefined;
+  /** Forward the `Request`'s abort signal so callers that wired up an
+   * `AbortController` (for timeout / user-cancellation) keep working after
+   * we re-shape the input into `(string, init)`. Explicit `init.signal`
+   * still wins per Fetch-spec semantics. */
+  const signal = init?.signal ?? req.signal ?? undefined;
+  return {
+    urlString: req.url,
+    resolvedInit: {
+      ...init,
+      method: init?.method ?? req.method,
+      body: init?.body ?? (reqBody as unknown as UndiciRequestInit['body']),
+      headers: mergedHeaders,
+      signal,
+    },
+  };
+}
+
+function normalizeInitHeaders(init: UndiciRequestInit | undefined): Record<string, string> {
+  if (!init?.headers) {
+    return {};
+  }
+  if (init.headers instanceof Headers) {
+    return Object.fromEntries(init.headers.entries());
+  }
+  if (Array.isArray(init.headers)) {
+    return Object.fromEntries(init.headers);
+  }
+  return init.headers as Record<string, string>;
+}
+
+function buildFetchInit(
+  init: UndiciRequestInit | undefined,
+  dispatcher: Agent,
+  requestHeaders: Record<string, string> | null | undefined,
+): UndiciRequestInit {
+  const hasInitHeaders = init?.headers != null;
+  const hasRuntimeHeaders = requestHeaders != null && Object.keys(requestHeaders).length > 0;
+  /**
+   * If neither `init.headers` nor runtime headers contribute anything, leave
+   * `headers` off the returned init entirely. Setting `headers: {}` would
+   * blow away the headers carried on a `Request` input — auth/session tokens
+   * and protocol negotiation headers — even when no redirect is involved.
+   */
+  if (!hasInitHeaders && !hasRuntimeHeaders) {
+    return { ...init, redirect: 'manual', dispatcher };
+  }
+  const initHeaders = normalizeInitHeaders(init);
+  const headers = hasRuntimeHeaders ? { ...initHeaders, ...requestHeaders } : initHeaders;
+  return {
+    ...init,
+    redirect: 'manual',
+    headers,
+    dispatcher,
+  };
+}
+
+function getUrlPort(url: URL | string): string {
+  const parsed = typeof url === 'string' ? new URL(url) : url;
+  if (parsed.port) return parsed.port;
+  if (parsed.protocol === 'http:' || parsed.protocol === 'ws:') return '80';
+  if (parsed.protocol === 'https:' || parsed.protocol === 'wss:') return '443';
+  return '';
+}
+
+/**
+ * Drops credential-bearing headers when a 307/308 redirect crosses an origin
+ * boundary. Removes the always-forbidden set plus any caller-supplied secret
+ * headers (runtime `setRequestHeaders` values and config-level API keys).
+ */
+function stripCrossOriginHeaders(
+  headers: Record<string, string>,
+  secretHeaderKeys: ReadonlySet<string>,
+): Record<string, string> {
+  const stripped: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const lowered = key.toLowerCase();
+    if (CROSS_ORIGIN_FORBIDDEN_HEADERS.has(lowered)) {
+      continue;
+    }
+    if (secretHeaderKeys.has(lowered)) {
+      continue;
+    }
+    stripped[key] = value;
+  }
+  return stripped;
+}
 
 interface CircuitBreakerState {
   cycleCount: number;
@@ -252,6 +398,7 @@ interface MCPConnectionParams {
   userId?: string;
   oauthTokens?: MCPOAuthTokens | null;
   useSSRFProtection?: boolean;
+  allowedAddresses?: string[] | null;
 }
 
 export class MCPConnection extends EventEmitter {
@@ -275,6 +422,7 @@ export class MCPConnection extends EventEmitter {
   private oauthRequired = false;
   private oauthRecovery = false;
   private readonly useSSRFProtection: boolean;
+  private readonly allowedAddresses?: string[] | null;
   iconPath?: string;
   timeout?: number;
   sseReadTimeout?: number;
@@ -389,6 +537,7 @@ export class MCPConnection extends EventEmitter {
     this.serverName = params.serverName;
     this.userId = params.userId;
     this.useSSRFProtection = params.useSSRFProtection === true;
+    this.allowedAddresses = params.allowedAddresses ?? null;
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
     this.sseReadTimeout = params.serverConfig.sseReadTimeout;
@@ -428,9 +577,16 @@ export class MCPConnection extends EventEmitter {
     getHeaders: () => Record<string, string> | null | undefined,
     timeout?: number,
     sseBodyTimeout?: number,
+    configuredSecretHeaderKeys?: ReadonlySet<string>,
+    baseUrl?: string,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
-    const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
+    const basePort = baseUrl ? getUrlPort(baseUrl) : '';
+    const ssrfConnect = this.useSSRFProtection
+      ? createSSRFSafeUndiciConnect(this.allowedAddresses, basePort)
+      : undefined;
     const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
+    /** Capture only the fields needed by the fetch closure; see factory note above. */
+    const agents = this.agents;
     const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
     const postAgent = new Agent({
       bodyTimeout: effectiveTimeout,
@@ -449,38 +605,132 @@ export class MCPConnection extends EventEmitter {
       this.agents.push(getAgent);
     }
 
-    return function customFetch(
+    let safeRedirectPostAgent: Agent | undefined;
+    let safeRedirectGetAgent: Agent | undefined;
+    /**
+     * Allowlist mode keeps the original MCP URL admin-approved, but redirect
+     * targets are server-controlled. These agents add connect-time DNS checks
+     * for those cross-origin hops so DNS rebinding cannot beat the standalone
+     * resolveHostnameSSRF pre-check.
+     */
+    const createSafeRedirectAgent = (bodyTimeout: number): Agent => {
+      const redirectSSRFConnect = createSSRFSafeUndiciConnect();
+      const agent = new Agent({
+        bodyTimeout,
+        headersTimeout: effectiveTimeout,
+        connect: redirectSSRFConnect,
+      });
+      agents.push(agent);
+      return agent;
+    };
+    const getSafeRedirectDispatcher = (isGetRequest: boolean): Agent => {
+      if (!isGetRequest || sseBodyTimeout == null) {
+        safeRedirectPostAgent ??= createSafeRedirectAgent(effectiveTimeout);
+        return safeRedirectPostAgent;
+      }
+      safeRedirectGetAgent ??= createSafeRedirectAgent(sseBodyTimeout);
+      return safeRedirectGetAgent;
+    };
+
+    return async function customFetch(
       input: UndiciRequestInfo,
       init?: UndiciRequestInit,
     ): Promise<UndiciResponse> {
-      const isGet = (init?.method ?? 'GET').toUpperCase() === 'GET';
+      /**
+       * Resolve the input shape upfront so the redirect loop can work with a
+       * (string url, init) pair uniformly. When `input` is a `Request`, we
+       * pull its method, headers, and body into the init — the body is
+       * buffered because `Request.body` is a one-shot stream that can't be
+       * replayed across redirect hops, and switching `url` to the new
+       * `Location` would otherwise drop the original method/body and turn a
+       * redirected POST into a GET with no payload.
+       */
+      const { urlString, resolvedInit } = await resolveFetchInput(input, init);
+
+      const isGet = (resolvedInit?.method ?? 'GET').toUpperCase() === 'GET';
       const dispatcher = isGet && getAgent ? getAgent : postAgent;
-
       const requestHeaders = getHeaders();
-      if (!requestHeaders) {
-        return undiciFetch(input, { ...init, redirect: 'manual', dispatcher });
-      }
+      /**
+       * Headers that originated from user/server configuration — runtime
+       * `setRequestHeaders` plus any keys baked into the transport at
+       * construction time (e.g. `serverConfig.headers` API keys). All are
+       * treated as credentials and stripped on cross-origin redirect.
+       */
+      const secretHeaderKeys: ReadonlySet<string> = new Set([
+        ...Object.keys(requestHeaders ?? {}).map((key) => key.toLowerCase()),
+        ...(configuredSecretHeaderKeys ?? []),
+      ]);
 
-      let initHeaders: Record<string, string> = {};
-      if (init?.headers) {
-        if (init.headers instanceof Headers) {
-          initHeaders = Object.fromEntries(init.headers.entries());
-        } else if (Array.isArray(init.headers)) {
-          initHeaders = Object.fromEntries(init.headers);
-        } else {
-          initHeaders = init.headers as Record<string, string>;
+      let currentInit = buildFetchInit(resolvedInit, dispatcher, requestHeaders);
+      let currentUrlString = urlString;
+      const originalOrigin = new URL(currentUrlString).origin;
+
+      for (let redirects = 0; ; redirects++) {
+        const response = await undiciFetch(currentUrlString, currentInit);
+        const isMethodPreservingRedirect = response.status === 307 || response.status === 308;
+
+        if (!isMethodPreservingRedirect || redirects >= MAX_REDIRECTS) {
+          return response;
         }
-      }
 
-      return undiciFetch(input, {
-        ...init,
-        redirect: 'manual',
-        headers: {
-          ...initHeaders,
-          ...requestHeaders,
-        },
-        dispatcher,
-      });
+        const location = response.headers.get('location');
+        if (!location) {
+          return response;
+        }
+
+        const targetUrl = new URL(location, currentUrlString);
+        const isCrossOriginRedirect = targetUrl.origin !== originalOrigin;
+
+        /**
+         * Keep the standalone check for immediate literal/current-DNS blocks.
+         * Cross-origin allowlist redirects also switch to a connect-time
+         * SSRF-safe dispatcher below so DNS rebinding cannot change the
+         * address between this check and the socket connection.
+         *
+         * `allowedAddresses` is intentionally NOT consulted on either layer:
+         * redirect targets are server-controlled (the MCP server's response
+         * chooses where to send us), so they must not inherit the admin's
+         * exemption for the originally-configured URL. A legitimate self-
+         * redirect from a permitted private host is still blocked here, by
+         * design — letting redirect targets inherit the exemption would open
+         * an SSRF amplification primitive.
+         */
+        if (await resolveHostnameSSRF(targetUrl.hostname)) {
+          logger.warn(
+            `[MCP] Blocked redirect to private/reserved address: ${sanitizeUrlForLogging(targetUrl)}`,
+          );
+          return response;
+        }
+
+        await response.body?.cancel().catch(() => undefined);
+
+        if (isCrossOriginRedirect && currentInit.headers != null) {
+          currentInit = {
+            ...currentInit,
+            headers: stripCrossOriginHeaders(
+              currentInit.headers as Record<string, string>,
+              secretHeaderKeys,
+            ),
+          };
+        }
+
+        if (isCrossOriginRedirect) {
+          /**
+           * Once a server-controlled cross-origin hop is seen, keep the safe
+           * dispatcher for the rest of this redirect chain. Restoring the
+           * original dispatcher on a later hop back to the original origin
+           * would re-open the allowlist-mode rebinding gap. When the original
+           * dispatcher carries `allowedAddresses`, this also prevents a
+           * redirect from inheriting that port-scoped exemption.
+           */
+          currentInit = {
+            ...currentInit,
+            dispatcher: getSafeRedirectDispatcher(isGet),
+          };
+        }
+
+        currentUrlString = targetUrl.href;
+      }
     };
   }
 
@@ -534,8 +784,13 @@ export class MCPConnection extends EventEmitter {
            * small TOCTOU window. This is an SDK limitation — the transport accepts
            * only a URL with no custom DNS lookup hook.
            */
-          const wsHostname = new URL(options.url).hostname;
-          const isSSRF = await resolveHostnameSSRF(wsHostname);
+          const wsUrl = new URL(options.url);
+          const wsHostname = wsUrl.hostname;
+          const isSSRF = await resolveHostnameSSRF(
+            wsHostname,
+            this.allowedAddresses,
+            getUrlPort(wsUrl),
+          );
           if (isSSRF) {
             throw new Error(
               `SSRF protection: WebSocket host "${wsHostname}" resolved to a private/reserved IP address`,
@@ -566,7 +821,9 @@ export class MCPConnection extends EventEmitter {
            * The connect timeout is extended because proxies may delay initial response.
            */
           const sseTimeout = this.timeout || SSE_CONNECT_TIMEOUT;
-          const ssrfConnect = this.useSSRFProtection ? createSSRFSafeUndiciConnect() : undefined;
+          const ssrfConnect = this.useSSRFProtection
+            ? createSSRFSafeUndiciConnect(this.allowedAddresses, getUrlPort(url))
+            : undefined;
           const sseAgent = new Agent({
             bodyTimeout: sseTimeout,
             headersTimeout: sseTimeout,
@@ -575,6 +832,9 @@ export class MCPConnection extends EventEmitter {
             ...(ssrfConnect != null ? { connect: ssrfConnect } : {}),
           });
           this.agents.push(sseAgent);
+          const sseConfiguredSecretHeaderKeys: ReadonlySet<string> = new Set(
+            Object.keys(headers).map((key) => key.toLowerCase()),
+          );
           const transport = new SSEClientTransport(url, {
             requestInit: {
               /** User/OAuth headers override SSE defaults */
@@ -598,6 +858,9 @@ export class MCPConnection extends EventEmitter {
             fetch: this.createFetchFunction(
               this.getRequestHeaders.bind(this),
               sseTimeout,
+              undefined,
+              sseConfiguredSecretHeaderKeys,
+              options.url,
             ) as unknown as FetchLike,
           });
 
@@ -627,6 +890,9 @@ export class MCPConnection extends EventEmitter {
             headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
           }
 
+          const httpConfiguredSecretHeaderKeys: ReadonlySet<string> = new Set(
+            Object.keys(headers).map((key) => key.toLowerCase()),
+          );
           const transport = new StreamableHTTPClientTransport(url, {
             requestInit: {
               headers,
@@ -636,6 +902,8 @@ export class MCPConnection extends EventEmitter {
               this.getRequestHeaders.bind(this),
               this.timeout,
               this.sseReadTimeout || DEFAULT_SSE_READ_TIMEOUT,
+              httpConfiguredSecretHeaderKeys,
+              options.url,
             ) as unknown as FetchLike,
           });
 

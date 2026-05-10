@@ -435,6 +435,128 @@ describe('getThreadData', () => {
     });
   });
 
+  describe('attachment ID collection (code-execution outputs)', () => {
+    /* Code-execution outputs land on `messages.attachments`, not
+     * `messages.files` — `processCodeOutput` writes the artifact
+     * there. Walking only `files` silently dropped every code-output
+     * file_id, so the next turn's `tool_resources.execute_code.file_ids`
+     * came up empty and the sandbox saw `_injected_files: []`. The
+     * user-visible symptom: "the previous file isn't persisted
+     * between executions" on a single linear thread (no branching
+     * needed). Lock the contract that both fields are walked. */
+    it('collects file_ids from message.attachments (code-execution outputs)', () => {
+      const messages = [
+        { messageId: 'msg-user', parentMessageId: NO_PARENT },
+        {
+          messageId: 'msg-assistant',
+          parentMessageId: 'msg-user',
+          attachments: [{ file_id: 'attach-1' }, { file_id: 'attach-2' }],
+        },
+      ];
+
+      const result = getThreadData(messages, 'msg-assistant');
+
+      expect(result.fileIds).toContain('attach-1');
+      expect(result.fileIds).toContain('attach-2');
+      expect(result.fileIds).toHaveLength(2);
+    });
+
+    it('walks both files (user uploads) and attachments (code outputs) on the same message', () => {
+      /* In practice they land on different roles by convention, but
+       * the walk shouldn't depend on that — it should be honest about
+       * collecting from both arrays regardless of where they appear. */
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: NO_PARENT,
+          files: [{ file_id: 'user-uploaded' }],
+          attachments: [{ file_id: 'code-generated' }],
+        },
+      ];
+
+      const result = getThreadData(messages, 'msg-1');
+
+      expect(result.fileIds).toContain('user-uploaded');
+      expect(result.fileIds).toContain('code-generated');
+      expect(result.fileIds).toHaveLength(2);
+    });
+
+    it('regression: collects code-output across user→assistant→user→assistant chain', () => {
+      /* Mirrors the exact failure mode from the field report — two
+       * sequential turns producing the same xlsx, both attachments
+       * on assistant messages. With only `files` walked, turn 2's
+       * priming ran with `file_ids=0` and the sandbox FileNotFound'd. */
+      const messages = [
+        { messageId: 'user-1', parentMessageId: NO_PARENT },
+        {
+          messageId: 'asst-1',
+          parentMessageId: 'user-1',
+          attachments: [{ file_id: 'sample-xlsx-v1' }],
+        },
+        { messageId: 'user-2', parentMessageId: 'asst-1' },
+        {
+          messageId: 'asst-2',
+          parentMessageId: 'user-2',
+          attachments: [{ file_id: 'sample-xlsx-v2' }],
+        },
+      ];
+
+      /* From parentMessageId = 'asst-2', walking back through the
+       * full chain. Both attachment file_ids must surface so
+       * primeFiles can resolve them via getCodeGeneratedFiles. */
+      const result = getThreadData(messages, 'asst-2');
+
+      expect(result.fileIds).toContain('sample-xlsx-v1');
+      expect(result.fileIds).toContain('sample-xlsx-v2');
+      expect(result.fileIds).toHaveLength(2);
+    });
+
+    it('dedupes file_ids that appear in both files and attachments arrays', () => {
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: NO_PARENT,
+          files: [{ file_id: 'shared-id' }],
+          attachments: [{ file_id: 'shared-id' }, { file_id: 'attach-only' }],
+        },
+      ];
+
+      const result = getThreadData(messages, 'msg-1');
+
+      expect(result.fileIds).toContain('shared-id');
+      expect(result.fileIds).toContain('attach-only');
+      expect(result.fileIds).toHaveLength(2);
+    });
+
+    it('skips attachments without file_id (mirrors files behavior)', () => {
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: NO_PARENT,
+          attachments: [{ file_id: 'attach-1' }, { file_id: undefined }, { file_id: '' }],
+        },
+      ];
+
+      const result = getThreadData(messages, 'msg-1');
+
+      expect(result.fileIds).toEqual(['attach-1']);
+    });
+
+    it('handles messages with empty attachments array', () => {
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: NO_PARENT,
+          attachments: [],
+        },
+      ];
+
+      const result = getThreadData(messages, 'msg-1');
+
+      expect(result.fileIds).toEqual([]);
+    });
+  });
+
   describe('performance - O(1) lookups', () => {
     it('should handle large message arrays efficiently', () => {
       // Create a linear thread of 1000 messages

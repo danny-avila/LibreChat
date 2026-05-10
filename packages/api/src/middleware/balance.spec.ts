@@ -15,15 +15,14 @@ jest.mock('@librechat/data-schemas', () => ({
 let mongoServer: MongoMemoryServer;
 let Balance: mongoose.Model<IBalance>;
 
-const findBalanceByUser = (userId: string) =>
-  Balance.findOne({ user: userId }).lean() as Promise<IBalance | null>;
+const findBalanceByUser = (userId: string) => Balance.findOne({ user: userId }).lean<IBalance>();
 
 const upsertBalanceFields = (userId: string, fields: IBalanceUpdate) =>
   Balance.findOneAndUpdate(
     { user: userId },
     { $set: fields },
     { upsert: true, new: true },
-  ).lean() as Promise<IBalance | null>;
+  ).lean<IBalance>();
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();

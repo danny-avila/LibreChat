@@ -8,6 +8,7 @@ import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+import { REFILL_INTERVAL_UNITS } from './balance';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -65,12 +66,120 @@ export enum SettingsViews {
 /** Validates any FileSources value — use for file metadata, DB records, and upload routing. */
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
+/**
+ * `allowedAddresses` is an SSRF exemption list scoped to private IP space.
+ * Validate at config-load time:
+ *  - Reject URLs, paths, CIDR ranges, bare host/IP forms, and whitespace.
+ *  - Require `host:port` or `[ipv6]:port` entries so an exemption is scoped
+ *    to one service port instead of every port on a private host.
+ *  - Reject IPv4 literals that fall outside the private/loopback/link-local
+ *    ranges. Public IPs are never SSRF targets, so listing one has no
+ *    defensive purpose and must not silently grant trust.
+ *  - Hostnames pass through; their resolved IP is checked at runtime by
+ *    `resolveHostnameSSRF` and only a private resolved IP is meaningful.
+ *
+ * Mirrors a minimal subset of `isPrivateIP` from `@librechat/api` to avoid a
+ * circular package dependency. The runtime helper is the authoritative check;
+ * this refinement is a UX guardrail.
+ */
+function isPrivateIPv4Literal(value: string): boolean {
+  const match = value.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!match) {
+    return false;
+  }
+  const [a, b, c] = match.slice(1).map(Number) as [number, number, number, number];
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 0) return true; // RFC 5736 IETF protocol assignments
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a >= 224) return true; // multicast/reserved
+  return false;
+}
+
+function isPrivateIPv6Literal(value: string): boolean {
+  if (!value.includes(':')) return false;
+  if (value === '::1' || value === '::') return true;
+  if (value.startsWith('fc') || value.startsWith('fd')) return true; // fc00::/7
+  // fe80::/10 — first hextet 0xfe80–0xfebf
+  const firstHextet = value.split(':', 1)[0];
+  if (/^[0-9a-f]{1,4}$/.test(firstHextet ?? '')) {
+    const hextet = parseInt(firstHextet, 16);
+    if ((hextet & 0xffc0) === 0xfe80) return true;
+  }
+  // 4-in-6: ::ffff:A.B.C.D
+  const mappedMatch = value.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (mappedMatch) return isPrivateIPv4Literal(mappedMatch[1]);
+  return false;
+}
+
+/**
+ * Mirrors the allowedAddresses parser in `@librechat/api`'s auth helpers.
+ * Kept as a local copy because the data-provider package cannot import from
+ * `@librechat/api` without creating a circular dependency. Keep the two
+ * implementations in sync.
+ */
+function normalizePort(port: unknown): string {
+  if (typeof port !== 'string' && typeof port !== 'number') return '';
+  const portString = String(port).trim();
+  if (!/^\d+$/.test(portString)) return '';
+  const parsed = Number(portString);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) return '';
+  return String(parsed);
+}
+
+function parseAllowedAddressEntry(entry: string): { address: string; port: string } | null {
+  const trimmed = entry.toLowerCase().trim();
+  const bracketedIPv6 = trimmed.match(/^\[([^\]]+)\]:(\d+)$/);
+  const hostPort = bracketedIPv6 ? null : trimmed.match(/^([^:]+):(\d+)$/);
+  const address = (bracketedIPv6?.[1] ?? hostPort?.[1] ?? '').replace(/^\[|\]$/g, '');
+  const port = normalizePort(bracketedIPv6?.[2] ?? hostPort?.[2] ?? '');
+  if (!address || !port) return null;
+  return { address, port };
+}
+
+const allowedAddressEntrySchema = z
+  .string()
+  .refine((entry) => entry.length > 0 && entry.trim().length > 0, {
+    message: 'allowedAddresses entries must be non-empty',
+  })
+  .refine((entry) => !entry.includes('://') && !entry.includes('/') && !/\s/.test(entry), {
+    message:
+      'allowedAddresses entries must be host:port pairs — no URLs, paths, CIDR ranges, or whitespace',
+  })
+  .refine((entry) => parseAllowedAddressEntry(entry) != null, {
+    message:
+      'allowedAddresses entries must include a port, for example localhost:11434 or [::1]:11434',
+  })
+  .refine(
+    (entry) => {
+      const parsed = parseAllowedAddressEntry(entry);
+      if (!parsed) return false;
+      const stripped = parsed.address;
+      const isIPv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(stripped);
+      const isIPv6 = !isIPv4 && stripped.includes(':');
+      if (!isIPv4 && !isIPv6) {
+        return true; // hostname — checked at runtime via DNS
+      }
+      return isIPv4 ? isPrivateIPv4Literal(stripped) : isPrivateIPv6Literal(stripped);
+    },
+    {
+      message:
+        'allowedAddresses is scoped to private IP space — public IP literals are not permitted (use hostname:port if it resolves to a private IP)',
+    },
+  );
+
+export const allowedAddressesSchema = z.array(allowedAddressEntrySchema).optional();
+
 /** Storage backend strategies only — use for config fields that set where files are stored. */
 const FILE_STORAGE_BACKENDS = [
   FileSources.local,
   FileSources.firebase,
   FileSources.s3,
   FileSources.azure_blob,
+  FileSources.cloudfront,
 ] as const satisfies ReadonlyArray<FileSources>;
 
 export const fileStorageSchema = z.enum(FILE_STORAGE_BACKENDS);
@@ -83,8 +192,42 @@ export const fileStrategiesSchema = z
     avatar: fileStorageSchema.optional(),
     image: fileStorageSchema.optional(),
     document: fileStorageSchema.optional(),
+    skills: fileStorageSchema.optional(),
   })
   .optional();
+
+const cloudfrontSigningSchema = z.enum(['none', 'cookies', 'url']);
+
+export const cloudfrontConfigSchema = z
+  .object({
+    domain: z.string().url(),
+    distributionId: z.string().optional(),
+    invalidateOnDelete: z.boolean().default(false),
+    imageSigning: cloudfrontSigningSchema.default('none'),
+    urlExpiry: z.number().positive().default(3600),
+    cookieExpiry: z.number().positive().max(604800).default(1800),
+    cookieDomain: z
+      .string()
+      .min(1)
+      .refine((d) => d.startsWith('.'), {
+        message: 'cookieDomain must start with a dot (e.g., ".example.com") to apply to subdomains',
+      })
+      .optional(),
+    storageRegion: z.string().min(1).optional(),
+    includeRegionInPath: z.boolean().default(false),
+  })
+  .refine((data) => !data.invalidateOnDelete || !!data.distributionId, {
+    message: 'distributionId is required when invalidateOnDelete is true',
+    path: ['distributionId'],
+  })
+  .refine((data) => data.imageSigning !== 'cookies' || !!data.cookieDomain, {
+    message:
+      'cookieDomain is required when imageSigning is "cookies" (e.g., ".example.com" for API at api.example.com and CDN at cdn.example.com)',
+    path: ['cookieDomain'],
+  })
+  .optional();
+
+export type CloudFrontConfig = z.infer<typeof cloudfrontConfigSchema>;
 
 // Helper type to extract the shape of the Zod object schema
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
@@ -222,8 +365,10 @@ export enum AgentCapabilities {
   file_search = 'file_search',
   web_search = 'web_search',
   artifacts = 'artifacts',
+  subagents = 'subagents',
   actions = 'actions',
   context = 'context',
+  skills = 'skills',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -311,12 +456,69 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.file_search,
   AgentCapabilities.web_search,
   AgentCapabilities.artifacts,
+  AgentCapabilities.subagents,
   AgentCapabilities.actions,
   AgentCapabilities.context,
+  AgentCapabilities.skills,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
 ];
+
+const LOCAL_REMOTE_OIDC_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+export function isRemoteOidcUrlAllowed(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:') return true;
+    if (url.protocol !== 'http:') return false;
+
+    const hostname = url.hostname.toLowerCase();
+    return LOCAL_REMOTE_OIDC_HOSTS.has(hostname) || hostname.endsWith('.localhost');
+  } catch {
+    return false;
+  }
+}
+
+const remoteApiOidcUrlSchema = z
+  .string()
+  .url()
+  .refine(isRemoteOidcUrlAllowed, { message: 'must use https:// unless targeting localhost' });
+
+const remoteApiOidcScopeSchema = z.string().refine((scope) => !scope.includes(','), {
+  message: 'scopes must be space-separated',
+});
+
+const remoteApiOidcSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    issuer: remoteApiOidcUrlSchema.optional(),
+    audience: z.string().optional(),
+    jwksUri: remoteApiOidcUrlSchema.optional(),
+    scope: remoteApiOidcScopeSchema.optional(),
+  })
+  .superRefine((oidc, ctx) => {
+    if (oidc.enabled === true && !oidc.issuer) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['issuer'],
+        message: 'issuer is required when OIDC auth is enabled',
+      });
+    }
+  });
+
+const remoteApiAuthSchema = z.object({
+  apiKey: z
+    .object({
+      enabled: z.boolean().default(true),
+    })
+    .optional(),
+  oidc: remoteApiOidcSchema.optional(),
+});
+
+const remoteApiSchema = z.object({
+  auth: remoteApiAuthSchema.optional(),
+});
 
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
@@ -334,6 +536,7 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      remoteApi: remoteApiSchema.optional(),
     }),
   )
   .default({
@@ -720,6 +923,7 @@ export const interfaceSchema = z
       .optional(),
     temporaryChat: z.boolean().optional(),
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
+    autoSubmitFromUrl: z.boolean().optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     peoplePicker: z
@@ -744,6 +948,18 @@ export const interfaceSchema = z
         public: z.boolean().optional(),
       })
       .optional(),
+    skills: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+          defaultActiveOnShare: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
     modelSelect: true,
@@ -765,6 +981,7 @@ export const interfaceSchema = z
       public: false,
     },
     temporaryChat: true,
+    autoSubmitFromUrl: true,
     runCode: true,
     webSearch: true,
     peoplePicker: {
@@ -788,6 +1005,13 @@ export const interfaceSchema = z
       create: false,
       share: false,
       public: false,
+    },
+    skills: {
+      use: true,
+      create: true,
+      share: false,
+      public: false,
+      defaultActiveOnShare: false,
     },
   });
 
@@ -903,16 +1127,19 @@ export enum SearchCategories {
 export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
+  TAVILY = 'tavily',
 }
 
 export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
+  TAVILY = 'tavily',
 }
 
 export enum RerankerTypes {
   JINA = 'jina',
   COHERE = 'cohere',
+  NONE = 'none',
 }
 
 export enum SafeSearchTypes {
@@ -928,6 +1155,9 @@ export const webSearchSchema = z.object({
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
+  tavilyApiKey: z.string().optional().default('${TAVILY_API_KEY}'),
+  tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
+  tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
@@ -969,6 +1199,33 @@ export const webSearchSchema = z.object({
         .optional(),
     })
     .optional(),
+  tavilySearchOptions: z
+    .object({
+      searchDepth: z.enum(['basic', 'advanced', 'fast', 'ultra-fast']).optional(),
+      maxResults: z.number().int().min(1).max(20).optional(),
+      includeImages: z.boolean().optional(),
+      includeAnswer: z.union([z.boolean(), z.enum(['basic', 'advanced'])]).optional(),
+      includeRawContent: z.union([z.boolean(), z.enum(['markdown', 'text'])]).optional(),
+      includeDomains: z.array(z.string()).optional(),
+      excludeDomains: z.array(z.string()).optional(),
+      topic: z.enum(['general', 'news', 'finance']).optional(),
+      timeRange: z.enum(['day', 'week', 'month', 'year', 'd', 'w', 'm', 'y']).optional(),
+      includeImageDescriptions: z.boolean().optional(),
+      includeFavicon: z.boolean().optional(),
+      chunksPerSource: z.number().int().min(1).max(3).optional(),
+      safeSearch: z.boolean().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
+  tavilyScraperOptions: z
+    .object({
+      extractDepth: z.enum(['basic', 'advanced']).optional(),
+      includeImages: z.boolean().optional(),
+      includeFavicon: z.boolean().optional(),
+      format: z.enum(['markdown', 'text']).optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
 });
 
 export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
@@ -985,10 +1242,7 @@ export const balanceSchema = z.object({
   startBalance: z.number().optional().default(20000),
   autoRefillEnabled: z.boolean().optional().default(false),
   refillIntervalValue: z.number().optional().default(30),
-  refillIntervalUnit: z
-    .enum(['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'])
-    .optional()
-    .default('days'),
+  refillIntervalUnit: z.enum(REFILL_INTERVAL_UNITS).optional().default('days'),
   refillAmount: z.number().optional().default(10000),
 });
 
@@ -1006,9 +1260,11 @@ export const memorySchema = z.object({
   agent: z
     .union([
       z.object({
+        enabled: z.boolean().optional(),
         id: z.string(),
       }),
       z.object({
+        enabled: z.boolean().optional(),
         provider: z.string(),
         model: z.string(),
         instructions: z.string().optional(),
@@ -1075,15 +1331,18 @@ export const configSchema = z.object({
   mcpSettings: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
+      allowedAddresses: allowedAddressesSchema,
     })
     .optional(),
   interface: interfaceSchema,
   turnstile: turnstileSchema.optional(),
   fileStrategy: fileStorageSchema.default(FileSources.local),
   fileStrategies: fileStrategiesSchema,
+  cloudfront: cloudfrontConfigSchema,
   actions: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
+      allowedAddresses: allowedAddressesSchema,
     })
     .optional(),
   registration: z
@@ -1106,6 +1365,7 @@ export const configSchema = z.object({
   modelSpecs: specsConfigSchema.optional(),
   endpoints: z
     .object({
+      allowedAddresses: allowedAddressesSchema,
       all: baseEndpointSchema.omit({ baseURL: true }).optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),
@@ -1855,7 +2115,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.8.5',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.9',
+  CONFIG_VERSION = '1.3.10',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
@@ -1903,7 +2163,12 @@ export enum Constants {
   EPHEMERAL_AGENT_ID = 'ephemeral',
   /** Programmatic Tool Calling tool name */
   PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_code',
+  /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
+  SUBAGENT = 'subagent',
 }
+
+/** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
+export const MAX_SUBAGENTS = 10;
 
 export enum LocalStorageKeys {
   /** Key for the admin defined App Title */
@@ -1948,6 +2213,8 @@ export enum LocalStorageKeys {
   LAST_FILE_SEARCH_TOGGLE_ = 'LAST_FILE_SEARCH_TOGGLE_',
   /** Last checked toggle for Artifacts per conversation ID */
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
+  /** Last checked toggle for Skills per conversation ID */
+  LAST_SKILLS_TOGGLE_ = 'LAST_SKILLS_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */

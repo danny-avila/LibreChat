@@ -291,6 +291,10 @@ additionalConfigMaps: {}
 # MongoDB Parameters
 mongodb:
   enabled: true
+  # Bitnami moved versioned image tags to docker.io/bitnamilegacy on 2025-08-28.
+  # See https://github.com/bitnami/charts/issues/35164
+  image:
+    repository: bitnamilegacy/mongodb
   auth:
     enabled: false
   databases:

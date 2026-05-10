@@ -31,6 +31,7 @@ export default function OpenAIImageGen({
   args: _args = '',
   output,
   attachments,
+  hideAttachments = false,
 }: {
   initialProgress: number;
   isSubmitting?: boolean;
@@ -38,6 +39,7 @@ export default function OpenAIImageGen({
   args: string | Record<string, unknown>;
   output?: string | null;
   attachments?: TAttachment[];
+  hideAttachments?: boolean;
 }) {
   const localize = useLocalize();
   const isAgentStyle = toolName != null && AGENT_STYLE_TOOLS.has(toolName);
@@ -226,7 +228,7 @@ export default function OpenAIImageGen({
         <ToolIcon type="image_gen" isAnimating={isInProgress} />
         <ProgressText progress={progress} error={cancelled} toolName={toolName} />
       </div>
-      {isAgentStyle && (
+      {isAgentStyle && !hideAttachments && (
         <div className="relative mb-2 flex w-full justify-start">
           <div ref={containerRef} className="w-full max-w-lg">
             {dimensions.width !== 'auto' && progress < 1 && (
