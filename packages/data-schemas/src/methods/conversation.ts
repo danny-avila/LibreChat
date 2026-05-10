@@ -189,6 +189,12 @@ export function createConversationMethods(
       if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
+        } else {
+          const existingConversation = await Conversation.findOne(
+            { conversationId, user: userId },
+            'isTemporary',
+          ).lean<{ isTemporary?: boolean }>();
+          update.isTemporary = existingConversation?.isTemporary === true;
         }
         try {
           update.expiredAt = createTempChatExpirationDate(interfaceConfig);

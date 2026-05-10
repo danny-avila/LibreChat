@@ -487,6 +487,19 @@ describe('Message Operations', () => {
       expect(result?.expiredAt).toBeInstanceOf(Date);
     });
 
+    it('should mark retained message non-temporary when retentionMode is ALL and isTemporary is omitted', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.ALL,
+      };
+
+      const result = await saveMessage(mockCtx, mockMessageData);
+
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.isTemporary).toBe(false);
+    });
+
     it('should preserve existing temporary flag when retentionMode is ALL and isTemporary is omitted', async () => {
       mockCtx.isTemporary = true;
       mockCtx.interfaceConfig = {
