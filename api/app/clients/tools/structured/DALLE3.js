@@ -7,6 +7,28 @@ const { Tool } = require('@librechat/agents/langchain/tools');
 const { getImageBasename, extractBaseURL } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
+const getRetentionRequest = (req) => {
+  if (!req) {
+    return undefined;
+  }
+
+  return {
+    user: req.user
+      ? {
+          id: req.user.id,
+          tenantId: req.user.tenantId,
+        }
+      : undefined,
+    body: {
+      conversationId: req.body?.conversationId,
+      isTemporary: req.body?.isTemporary,
+    },
+    config: {
+      interfaceConfig: req.config?.interfaceConfig,
+    },
+  };
+};
+
 const dalle3JsonSchema = {
   type: 'object',
   properties: {
@@ -49,6 +71,7 @@ class DALLE3 extends Tool {
 
     this.userId = fields.userId;
     this.tenantId = fields.req?.user?.tenantId;
+    this.retentionRequest = getRetentionRequest(fields.req);
     this.fileStrategy = fields.fileStrategy;
     /** @type {boolean} */
     this.isAgent = fields.isAgent;
@@ -230,6 +253,7 @@ Error Message: ${error.message}`);
         fileStrategy: this.fileStrategy,
         context: FileContext.image_generation,
         tenantId: this.tenantId,
+        req: this.retentionRequest,
       });
 
       if (this.returnMetadata) {

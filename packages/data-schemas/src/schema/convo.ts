@@ -54,6 +54,6 @@ convoSchema.index({ conversationId: 1, user: 1, tenantId: 1 }, { unique: true })
 
 convoSchema.index({ user: 1, isTemporary: 1 });
 // index for MeiliSearch sync operations
-convoSchema.index({ _meiliIndex: 1, expiredAt: 1 });
+convoSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });
 
 export default convoSchema;

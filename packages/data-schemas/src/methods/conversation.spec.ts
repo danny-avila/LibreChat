@@ -263,7 +263,7 @@ describe('Conversation Operations', () => {
       const result = await saveConvo(mockCtx, mockConversationData);
 
       expect(result?.conversationId).toBe(mockConversationData.conversationId);
-      expect(result?.expiredAt).toBeNull();
+      expect(result?.expiredAt).toBeUndefined();
     });
 
     it('should use custom retention period from config', async () => {
@@ -399,6 +399,21 @@ describe('Conversation Operations', () => {
       expect(new Date(secondSave?.expiredAt ?? 0).getTime()).toBeGreaterThan(
         new Date(originalExpiredAt).getTime(),
       );
+    });
+
+    it('should preserve temporary retention when saving without isTemporary', async () => {
+      mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
+      mockCtx.isTemporary = true;
+      const firstSave = await saveConvo(mockCtx, mockConversationData);
+      const originalExpiredAt = firstSave?.expiredAt;
+
+      mockCtx.isTemporary = undefined;
+      const updatedData = { ...mockConversationData, title: 'Updated Title' };
+      const secondSave = await saveConvo(mockCtx, updatedData);
+
+      expect(secondSave?.title).toBe('Updated Title');
+      expect(secondSave?.isTemporary).toBe(true);
+      expect(secondSave?.expiredAt).toEqual(originalExpiredAt);
     });
 
     it('should not set expiredAt when updating non-temporary conversation', async () => {

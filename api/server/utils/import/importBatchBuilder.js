@@ -1,16 +1,22 @@
 const { v4: uuidv4 } = require('uuid');
-const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
+const { logger, createTempChatExpirationDate } = require('@librechat/data-schemas');
+const {
+  EModelEndpoint,
+  Constants,
+  RetentionMode,
+  openAISettings,
+} = require('librechat-data-provider');
 const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages } = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
 /**
  * Factory function for creating an instance of ImportBatchBuilder.
  * @param {string} requestUserId - The ID of the user making the request.
+ * @param {object} [interfaceConfig] - Runtime interface config for import retention.
  * @returns {ImportBatchBuilder} - The newly created ImportBatchBuilder instance.
  */
-function createImportBatchBuilder(requestUserId) {
-  return new ImportBatchBuilder(requestUserId);
+function createImportBatchBuilder(requestUserId, interfaceConfig) {
+  return new ImportBatchBuilder(requestUserId, interfaceConfig);
 }
 
 /**
@@ -20,11 +26,29 @@ class ImportBatchBuilder {
   /**
    * Creates an instance of ImportBatchBuilder.
    * @param {string} requestUserId - The ID of the user making the import request.
+   * @param {object} [interfaceConfig] - Runtime interface config for import retention.
    */
-  constructor(requestUserId) {
+  constructor(requestUserId, interfaceConfig) {
     this.requestUserId = requestUserId;
+    this.interfaceConfig = interfaceConfig;
     this.conversations = [];
     this.messages = [];
+  }
+
+  getRetentionFields() {
+    if (this.interfaceConfig?.retentionMode !== RetentionMode.ALL) {
+      return {};
+    }
+
+    try {
+      return {
+        isTemporary: false,
+        expiredAt: createTempChatExpirationDate(this.interfaceConfig),
+      };
+    } catch (error) {
+      logger.error('[ImportBatchBuilder] Error creating import expiration date:', error);
+      return { isTemporary: false, expiredAt: null };
+    }
   }
 
   /**
@@ -89,6 +113,7 @@ class ImportBatchBuilder {
       overrideTimestamp: true,
       endpoint: this.endpoint,
       model: originalConvo.model ?? fallbackModel,
+      ...this.getRetentionFields(),
     };
     convo._id && delete convo._id;
     this.conversations.push(convo);
@@ -161,6 +186,7 @@ class ImportBatchBuilder {
       error: false,
       sender,
       text,
+      ...this.getRetentionFields(),
     };
     message._id && delete message._id;
     this.lastMessageId = newMessageId;

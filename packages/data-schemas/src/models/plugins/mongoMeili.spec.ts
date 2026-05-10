@@ -90,12 +90,25 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(mockAddDocuments).toHaveBeenCalled();
   });
 
-  test('saving TTL conversation does NOT index w/ meilisearch', async () => {
+  test('saving retained non-temporary conversation indexes w/ meilisearch', async () => {
     await createConversationModel(mongoose).create({
       conversationId: new mongoose.Types.ObjectId(),
       user: new mongoose.Types.ObjectId(),
       title: 'Test Conversation',
       endpoint: EModelEndpoint.openAI,
+      isTemporary: false,
+      expiredAt: new Date(),
+    });
+    expect(mockAddDocuments).toHaveBeenCalled();
+  });
+
+  test('saving temporary conversation does NOT index w/ meilisearch', async () => {
+    await createConversationModel(mongoose).create({
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      title: 'Test Conversation',
+      endpoint: EModelEndpoint.openAI,
+      isTemporary: true,
       expiredAt: new Date(),
     });
     expect(mockAddDocuments).not.toHaveBeenCalled();
@@ -125,12 +138,25 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(mockAddDocuments).toHaveBeenCalled();
   });
 
-  test('saving TTL messages does NOT index w/ meilisearch', async () => {
+  test('saving retained non-temporary messages indexes w/ meilisearch', async () => {
     await createMessageModel(mongoose).create({
       messageId: new mongoose.Types.ObjectId(),
       conversationId: new mongoose.Types.ObjectId(),
       user: new mongoose.Types.ObjectId(),
       isCreatedByUser: true,
+      isTemporary: false,
+      expiredAt: new Date(),
+    });
+    expect(mockAddDocuments).toHaveBeenCalled();
+  });
+
+  test('saving temporary messages does NOT index w/ meilisearch', async () => {
+    await createMessageModel(mongoose).create({
+      messageId: new mongoose.Types.ObjectId(),
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      isCreatedByUser: true,
+      isTemporary: true,
       expiredAt: new Date(),
     });
     expect(mockAddDocuments).not.toHaveBeenCalled();
@@ -224,6 +250,7 @@ describe('Meilisearch Mongoose plugin', () => {
       user: new mongoose.Types.ObjectId(),
       title: 'Test Conversation',
       endpoint: EModelEndpoint.openAI,
+      isTemporary: true,
       expiredAt: new Date(),
     });
 
@@ -335,6 +362,7 @@ describe('Meilisearch Mongoose plugin', () => {
         conversationId: new mongoose.Types.ObjectId(),
         user: new mongoose.Types.ObjectId(),
         isCreatedByUser: true,
+        isTemporary: true,
         expiredAt: new Date(),
       });
 
@@ -343,6 +371,7 @@ describe('Meilisearch Mongoose plugin', () => {
         conversationId: new mongoose.Types.ObjectId(),
         user: new mongoose.Types.ObjectId(),
         isCreatedByUser: false,
+        isTemporary: true,
         expiredAt: new Date(),
       });
 

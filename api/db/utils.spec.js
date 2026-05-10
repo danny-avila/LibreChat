@@ -83,6 +83,33 @@ describe('batchResetMeiliFlags', () => {
       expect(expiredDoc._meiliIndex).toBe(true);
     });
 
+    it('should reset non-temporary documents with expiredAt set for all-data retention', async () => {
+      const retentionDate = new Date();
+      await testCollection.insertMany([
+        {
+          _id: new mongoose.Types.ObjectId(),
+          isTemporary: false,
+          expiredAt: retentionDate,
+          _meiliIndex: true,
+        },
+        {
+          _id: new mongoose.Types.ObjectId(),
+          isTemporary: true,
+          expiredAt: retentionDate,
+          _meiliIndex: true,
+        },
+      ]);
+
+      const result = await batchResetMeiliFlags(testCollection);
+
+      expect(result).toBe(1);
+
+      const retainedDoc = await testCollection.findOne({ isTemporary: false });
+      const temporaryDoc = await testCollection.findOne({ isTemporary: true });
+      expect(retainedDoc._meiliIndex).toBe(false);
+      expect(temporaryDoc._meiliIndex).toBe(true);
+    });
+
     it('should not modify documents with _meiliIndex: false', async () => {
       await testCollection.insertMany([
         { _id: new mongoose.Types.ObjectId(), expiredAt: null, _meiliIndex: false },

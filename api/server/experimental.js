@@ -24,6 +24,7 @@ const {
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
+const { startExpiredFileSweep } = require('./services/Files/process');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
 const {
@@ -233,6 +234,7 @@ if (cluster.isMaster) {
     /** Initialize app configuration */
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
+    startExpiredFileSweep({ appConfig });
     await performStartupChecks(appConfig);
     await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
 

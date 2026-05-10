@@ -404,7 +404,7 @@ describe('Message Operations', () => {
       const result = await saveMessage(mockCtx, mockMessageData);
 
       expect(result?.messageId).toBe('msg123');
-      expect(result?.expiredAt).toBeNull();
+      expect(result?.expiredAt).toBeUndefined();
     });
 
     it('should use custom retention period from config', async () => {
@@ -591,6 +591,22 @@ describe('Message Operations', () => {
       expect(new Date(secondSave?.expiredAt ?? 0).getTime()).toBeGreaterThan(
         new Date(originalExpiredAt ?? 0).getTime(),
       );
+    });
+
+    it('should preserve temporary retention when saving without isTemporary', async () => {
+      mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
+
+      mockCtx.isTemporary = true;
+      const firstSave = await saveMessage(mockCtx, mockMessageData);
+      const originalExpiredAt = firstSave?.expiredAt;
+
+      mockCtx.isTemporary = undefined;
+      const updatedData = { ...mockMessageData, text: 'Updated text' };
+      const secondSave = await saveMessage(mockCtx, updatedData);
+
+      expect(secondSave?.text).toBe('Updated text');
+      expect(secondSave?.isTemporary).toBe(true);
+      expect(secondSave?.expiredAt).toEqual(originalExpiredAt);
     });
 
     it('should handle bulk operations with temporary messages', async () => {

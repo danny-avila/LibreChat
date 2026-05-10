@@ -6,6 +6,28 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
+const getRetentionRequest = (req) => {
+  if (!req) {
+    return undefined;
+  }
+
+  return {
+    user: req.user
+      ? {
+          id: req.user.id,
+          tenantId: req.user.tenantId,
+        }
+      : undefined,
+    body: {
+      conversationId: req.body?.conversationId,
+      isTemporary: req.body?.isTemporary,
+    },
+    config: {
+      interfaceConfig: req.config?.interfaceConfig,
+    },
+  };
+};
+
 const fluxApiJsonSchema = {
   type: 'object',
   properties: {
@@ -110,6 +132,7 @@ class FluxAPI extends Tool {
 
     this.userId = fields.userId;
     this.tenantId = fields.req?.user?.tenantId;
+    this.retentionRequest = getRetentionRequest(fields.req);
     this.fileStrategy = fields.fileStrategy;
 
     /** @type {boolean} **/
@@ -343,6 +366,7 @@ class FluxAPI extends Tool {
         basePath: 'images',
         context: FileContext.image_generation,
         tenantId: this.tenantId,
+        req: this.retentionRequest,
       });
 
       logger.debug('[FluxAPI] Image saved to path:', result.filepath);
@@ -574,6 +598,7 @@ class FluxAPI extends Tool {
         basePath: 'images',
         context: FileContext.image_generation,
         tenantId: this.tenantId,
+        req: this.retentionRequest,
       });
 
       logger.debug('[FluxAPI] Finetuned image saved to path:', result.filepath);

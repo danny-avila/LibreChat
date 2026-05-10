@@ -212,6 +212,7 @@ describe('useFileHandling', () => {
       const formData: FormData = mockMutate.mock.calls[0][0];
       expect(formData.get('endpoint')).toBe(EModelEndpoint.agents);
       expect(formData.get('endpointType')).toBe(EModelEndpoint.agents);
+      expect(formData.get('conversationId')).toBe('convo-1');
     });
 
     it('does not enter assistants upload path when override is agents', async () => {
@@ -287,6 +288,7 @@ describe('useFileHandling', () => {
       expect(mockMutate).toHaveBeenCalledTimes(1);
       const formData: FormData = mockMutate.mock.calls[0][0];
       expect(formData.get('endpoint')).toBe('default');
+      expect(formData.get('conversationId')).toBeNull();
     });
   });
 });

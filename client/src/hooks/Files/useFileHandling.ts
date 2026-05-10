@@ -193,6 +193,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     formData.append('endpointType', endpointType ?? '');
     formData.append('file', extendedFile.file as File, encodeURIComponent(filename));
     formData.append('file_id', extendedFile.file_id);
+    if (conversation?.conversationId && conversation.conversationId !== Constants.NEW_CONVO) {
+      formData.append('conversationId', conversation.conversationId);
+    }
     if (isTemporary) {
       formData.append('isTemporary', 'true');
     }

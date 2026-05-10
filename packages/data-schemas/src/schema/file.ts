@@ -153,7 +153,7 @@ const file: Schema<IMongoFile> = new Schema(
   },
 );
 
-file.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
+file.index({ expiredAt: 1 });
 file.index({ createdAt: 1, updatedAt: 1 });
 file.index(
   { filename: 1, conversationId: 1, context: 1, tenantId: 1 },

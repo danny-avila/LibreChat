@@ -2,6 +2,16 @@ const { logger } = require('@librechat/data-schemas');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const meiliIndexableFilter = {
+  $or: [
+    { isTemporary: false },
+    {
+      isTemporary: { $exists: false },
+      $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
+    },
+  ],
+};
+
 /**
  * Batch update documents in chunks to avoid timeouts on weak instances
  * @param {mongoose.Collection} collection - MongoDB collection
@@ -26,7 +36,7 @@ async function batchResetMeiliFlags(collection) {
   try {
     while (hasMore) {
       const docs = await collection
-        .find({ expiredAt: null, _meiliIndex: { $ne: false } }, { projection: { _id: 1 } })
+        .find({ ...meiliIndexableFilter, _meiliIndex: { $ne: false } }, { projection: { _id: 1 } })
         .limit(BATCH_SIZE)
         .toArray();
 

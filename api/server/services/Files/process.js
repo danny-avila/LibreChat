@@ -19,12 +19,11 @@ const {
   getEndpointFileConfig,
   documentParserMimeTypes,
 } = require('librechat-data-provider');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem, createTempChatExpirationDate } = require('@librechat/data-schemas');
 const {
   sanitizeFilename,
   parseText,
   processAudioFile,
-  createTempChatExpirationDate,
   getStorageMetadata,
 } = require('@librechat/api');
 const {
@@ -47,18 +46,41 @@ const db = require('~/models');
  * Returns `{ expiredAt }` when the request indicates data retention applies, otherwise `{}`.
  * Spread into file data objects before calling createFile.
  * @param {ServerRequest} req
- * @returns {{ expiredAt?: Date }}
+ * @returns {Promise<{ expiredAt?: Date | null }>}
  */
-function getRetentionExpiry(req) {
-  if (req?.body?.isTemporary || req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
+async function getRetentionExpiry(req) {
+  if (!(await shouldApplyRetention(req))) {
+    return {};
+  }
+
+  try {
+    return { expiredAt: createTempChatExpirationDate(req.config?.interfaceConfig) };
+  } catch (err) {
+    logger.error('[getRetentionExpiry] Error creating file expiration date:', err);
+    return { expiredAt: null };
+  }
+}
+
+const isTruthy = (value) => value === true || value === 'true';
+
+async function shouldApplyRetention(req) {
+  if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
+    return true;
+  }
+
+  const conversationId = req?.body?.conversationId;
+  if (conversationId && req?.user?.id) {
     try {
-      return { expiredAt: createTempChatExpirationDate(req.config?.interfaceConfig) };
+      const convo = await db.getConvo(req.user.id, conversationId);
+      if (convo) {
+        return convo.isTemporary === true || (convo.isTemporary == null && convo.expiredAt != null);
+      }
     } catch (err) {
-      logger.error('[getRetentionExpiry] Error creating file expiration date:', err);
-      return { expiredAt: null };
+      logger.error('[shouldApplyRetention] Error checking conversation retention:', err);
     }
   }
-  return {};
+
+  return isTruthy(req?.body?.isTemporary);
 }
 
 /**
@@ -253,6 +275,88 @@ const processDeleteRequest = async ({ req, files }) => {
   }
 };
 
+function getFileRetentionSweepInterval() {
+  const value = Number(process.env.FILE_RETENTION_SWEEP_INTERVAL_MS);
+  if (!Number.isFinite(value) || value < 0) {
+    return 60 * 60 * 1000;
+  }
+  return value;
+}
+
+/**
+ * Deletes expired file storage before removing the corresponding File records.
+ *
+ * Mongo TTL indexes delete only the metadata document, so file retention uses
+ * this application sweep for records with `expiredAt` instead.
+ *
+ * @param {object} params
+ * @param {AppConfig} params.appConfig
+ * @param {number} [params.limit]
+ * @returns {Promise<{ scanned: number, deleted: number, failed: number }>}
+ */
+async function sweepExpiredFiles({ appConfig, limit = 100 } = {}) {
+  const files = (await db.getExpiredFiles(limit)) ?? [];
+  let deleted = 0;
+  let failed = 0;
+
+  for (const file of files) {
+    const userId = file.user?.toString?.() ?? file.user;
+    if (!userId) {
+      logger.warn(`[sweepExpiredFiles] Skipping expired file without user: ${file.file_id}`);
+      failed++;
+      continue;
+    }
+
+    const req = {
+      config: appConfig,
+      body: {},
+      user: {
+        id: userId,
+        tenantId: file.tenantId,
+      },
+    };
+
+    try {
+      await processDeleteRequest({ req, files: [file] });
+      const remaining = await db.findFileById(file.file_id);
+      if (remaining) {
+        failed++;
+      } else {
+        deleted++;
+      }
+    } catch (error) {
+      failed++;
+      logger.error(`[sweepExpiredFiles] Error deleting expired file ${file.file_id}:`, error);
+    }
+  }
+
+  if (deleted > 0 || failed > 0) {
+    logger.info(
+      `[sweepExpiredFiles] Processed ${files.length} expired files: ${deleted} deleted, ${failed} failed`,
+    );
+  }
+
+  return { scanned: files.length, deleted, failed };
+}
+
+function startExpiredFileSweep({ appConfig } = {}) {
+  const intervalMs = getFileRetentionSweepInterval();
+  if (intervalMs === 0) {
+    logger.info('[sweepExpiredFiles] Disabled by FILE_RETENTION_SWEEP_INTERVAL_MS=0');
+    return null;
+  }
+
+  const runSweep = () =>
+    runAsSystem(() => sweepExpiredFiles({ appConfig })).catch((error) => {
+      logger.error('[sweepExpiredFiles] Background sweep failed:', error);
+    });
+
+  runSweep();
+  const interval = setInterval(runSweep, intervalMs);
+  interval.unref?.();
+  return interval;
+}
+
 /**
  * Processes a file URL using a specified file handling strategy. This function accepts a strategy name,
  * fetches the corresponding file processing functions (for saving and retrieving file URLs), and then
@@ -271,6 +375,7 @@ const processDeleteRequest = async ({ req, files }) => {
  * @param {string} params.basePath - The base path or directory where the file will be saved or retrieved from.
  * @param {FileContext} params.context - The context of the file (e.g., 'avatar', 'image_generation', etc.)
  * @param {string} [params.tenantId] - Optional tenant identifier for tenant-prefixed storage paths.
+ * @param {ServerRequest} [params.req] - Request context used to apply data retention metadata.
  * @returns {Promise<MongoFile>} A promise that resolves to the DB representation (MongoFile)
  *  of the processed file. It throws an error if the file processing fails at any stage.
  */
@@ -282,6 +387,7 @@ const processFileURL = async ({
   basePath,
   context,
   tenantId,
+  req,
 }) => {
   const { saveURL, getFileURL } = getStrategyFunctions(fileStrategy);
   try {
@@ -325,6 +431,7 @@ const processFileURL = async ({
         source: fileStrategy,
         type,
         context,
+        ...(await getRetentionExpiry(req)),
         tenantId,
         width: dimensions.width,
         height: dimensions.height,
@@ -375,7 +482,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
       context: FileContext.message_attachment,
       source,
       type: `image/${appConfig.imageOutputType}`,
-      ...getRetentionExpiry(req),
+      ...(await getRetentionExpiry(req)),
       width,
       height,
       tenantId: req.user.tenantId,
@@ -436,7 +543,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
       source,
       type,
       width,
-      ...getRetentionExpiry(req),
+      ...(await getRetentionExpiry(req)),
       height,
       tenantId: req.user.tenantId,
     },
@@ -539,7 +646,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       model: isAssistantUpload ? req.body.model : undefined,
       type: file.mimetype,
-      ...getRetentionExpiry(req),
+      ...(await getRetentionExpiry(req)),
       embedded,
       source,
       height,
@@ -666,7 +773,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         filename: file.originalname,
         model: messageAttachment ? undefined : req.body.model,
         context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-        ...getRetentionExpiry(req),
+        ...(await getRetentionExpiry(req)),
         tenantId: req.user.tenantId,
       });
 
@@ -865,7 +972,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     source,
     height,
     width,
-    ...getRetentionExpiry(req),
+    ...(await getRetentionExpiry(req)),
     tenantId: req.user.tenantId,
   });
 
@@ -912,7 +1019,7 @@ const processOpenAIFile = async ({
     source,
     model: openai.req.body.model,
     filename: originalName ?? file_id,
-    ...getRetentionExpiry(openai.req),
+    ...(await getRetentionExpiry(openai.req)),
     tenantId: openai.req?.user?.tenantId,
   };
 
@@ -957,7 +1064,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     context: FileContext.assistants_output,
     file_id,
     filename,
-    ...getRetentionExpiry(req),
+    ...(await getRetentionExpiry(req)),
     tenantId: req.user.tenantId,
   };
   db.createFile(file, true);
@@ -1118,7 +1225,7 @@ async function saveBase64Image(
       user: req.user.id,
       bytes: image.bytes,
       width: image.width,
-      ...getRetentionExpiry(req),
+      ...(await getRetentionExpiry(req)),
       height: image.height,
       tenantId: req.user.tenantId,
     },
@@ -1211,6 +1318,8 @@ module.exports = {
   saveBase64Image,
   processImageFile,
   uploadImageBuffer,
+  sweepExpiredFiles,
+  startExpiredFileSweep,
   processFileUpload,
   processDeleteRequest,
   processAgentFileUpload,

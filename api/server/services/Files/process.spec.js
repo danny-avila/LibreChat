@@ -1,7 +1,8 @@
 jest.mock('uuid', () => ({ v4: jest.fn(() => 'mock-uuid') }));
 
 jest.mock('@librechat/data-schemas', () => ({
-  logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+  logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn(), info: jest.fn() },
+  createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
 }));
 
 jest.mock('@librechat/agents', () => ({}));
@@ -41,8 +42,12 @@ jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({ file_id: 'created-file-id' }),
   updateFileUsage: jest.fn(),
   deleteFiles: jest.fn(),
+  findFileById: jest.fn(),
+  getConvo: jest.fn(),
+  getExpiredFiles: jest.fn(),
   addAgentResourceFile: jest.fn().mockResolvedValue({}),
   removeAgentResourceFiles: jest.fn(),
+  removeAgentResourceFilesFromAllAgents: jest.fn(),
 }));
 
 jest.mock('~/server/utils/getFileStrategy', () => ({
@@ -79,7 +84,7 @@ const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const db = require('~/models');
-const { processAgentFileUpload, processFileURL } = require('./process');
+const { processAgentFileUpload, processFileURL, sweepExpiredFiles } = require('./process');
 
 const PDF_MIME = 'application/pdf';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -534,6 +539,38 @@ describe('processFileURL', () => {
     );
   });
 
+  it('applies retention metadata for generated images when retention mode is all', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+    });
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+      req: {
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+        body: {},
+        config: { interfaceConfig: { retentionMode: 'all' } },
+      },
+    });
+
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expiredAt: new Date('2030-01-01T00:00:00.000Z'),
+      }),
+      true,
+    );
+  });
+
   it('falls back to getFileURL with user and tenant context when metadata lacks filepath', async () => {
     const saveURL = jest.fn().mockResolvedValue({
       bytes: 256,
@@ -600,5 +637,41 @@ describe('processFileURL', () => {
       }),
       true,
     );
+  });
+});
+
+describe('sweepExpiredFiles', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('deletes expired file storage before removing file records', async () => {
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    db.getExpiredFiles.mockResolvedValue([
+      {
+        file_id: 'expired-file',
+        filepath: '/images/user-123/expired.png',
+        source: FileSources.local,
+        user: 'user-123',
+        tenantId: 'tenant-a',
+      },
+    ]);
+    db.findFileById.mockResolvedValue(null);
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+
+    const result = await sweepExpiredFiles({
+      appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
+      limit: 1,
+    });
+
+    expect(deleteFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+      }),
+      expect.objectContaining({ file_id: 'expired-file' }),
+    );
+    expect(db.deleteFiles).toHaveBeenCalledWith(['expired-file']);
+    expect(result).toEqual({ scanned: 1, deleted: 1, failed: 0 });
   });
 });

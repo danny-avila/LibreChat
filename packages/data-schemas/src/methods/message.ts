@@ -92,7 +92,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         messageId: params.newMessageId || params.messageId,
       };
 
-      if (isTemporary || interfaceConfig?.retentionMode === RetentionMode.ALL) {
+      if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
+        update.isTemporary = isTemporary === true;
         try {
           update.expiredAt = createTempChatExpirationDate(interfaceConfig);
         } catch (err) {
@@ -100,7 +101,17 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
           update.expiredAt = null;
         }
-      } else {
+      } else if (isTemporary === true) {
+        update.isTemporary = true;
+        try {
+          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
+        } catch (err) {
+          logger.error('Error creating temporary chat expiration date:', err);
+          logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+          update.expiredAt = null;
+        }
+      } else if (isTemporary === false) {
+        update.isTemporary = false;
         update.expiredAt = null;
       }
 

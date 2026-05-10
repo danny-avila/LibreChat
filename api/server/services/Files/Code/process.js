@@ -464,7 +464,7 @@ const processCodeOutput = async ({
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
         metadata: { codeEnvRef },
-        ...getRetentionExpiry(req),
+        ...(await getRetentionExpiry(req)),
       };
       await createFile(file, true);
       return { file: Object.assign(file, { messageId, toolCallId }) };
@@ -567,7 +567,7 @@ const processCodeOutput = async ({
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
       createdAt: isUpdate ? claimed.createdAt : formattedDate,
-      ...getRetentionExpiry(req),
+      ...(await getRetentionExpiry(req)),
     };
 
     if (expectsPreview) {
