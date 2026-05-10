@@ -30,6 +30,7 @@ import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
 import Image from './Image';
+import { isBashProgrammaticToolCall } from './routing';
 
 type PartProps = {
   part?: TMessageContentParts;
@@ -132,7 +133,19 @@ const Part = memo(function Part({
 
     const isToolCall =
       'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
-    if (
+    if (isToolCall && isBashProgrammaticToolCall(toolCall.name, toolCall.args)) {
+      return (
+        <BashCall
+          args={toolCall.args}
+          output={toolCall.output ?? ''}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          attachments={attachments}
+          commandField="code"
+          hideAttachments={hideAttachments}
+        />
+      );
+    } else if (
       isToolCall &&
       (toolCall.name === Tools.execute_code ||
         toolCall.name === Constants.PROGRAMMATIC_TOOL_CALLING ||
@@ -211,7 +224,7 @@ const Part = memo(function Part({
           hideAttachments={hideAttachments}
         />
       );
-    } else if (isToolCall && toolCall.name === 'bash_tool') {
+    } else if (isToolCall && toolCall.name === Tools.bash_tool) {
       return (
         <BashCall
           args={toolCall.args}
