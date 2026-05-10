@@ -331,6 +331,63 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(mockAddDocuments).not.toHaveBeenCalled();
   });
 
+  test('sync w/ meili includes legacy retained conversations without isTemporary', async () => {
+    const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    mockAddDocumentsInBatches.mockClear();
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Legacy Retained Conversation',
+      endpoint: EModelEndpoint.openAI,
+      expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+      _meiliIndex: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await conversationModel.syncWithMeili();
+    const storedDoc = await conversationModel.collection.findOne({ conversationId });
+
+    expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(
+      [expect.objectContaining({ conversationId })],
+      undefined,
+      { primaryKey: 'conversationId' },
+    );
+    expect(storedDoc?._meiliIndex).toBe(true);
+  });
+
+  test('sync w/ meili includes legacy retained messages without isTemporary', async () => {
+    const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+    await messageModel.deleteMany({});
+    mockAddDocumentsInBatches.mockClear();
+    const messageId = new mongoose.Types.ObjectId().toString();
+
+    await messageModel.collection.insertOne({
+      messageId,
+      conversationId: new mongoose.Types.ObjectId().toString(),
+      user: new mongoose.Types.ObjectId().toString(),
+      isCreatedByUser: true,
+      text: 'Legacy retained message',
+      expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+      _meiliIndex: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await messageModel.syncWithMeili();
+    const storedDoc = await messageModel.collection.findOne({ messageId });
+
+    expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(
+      [expect.objectContaining({ messageId })],
+      undefined,
+      { primaryKey: 'messageId' },
+    );
+    expect(storedDoc?._meiliIndex).toBe(true);
+  });
+
   test('sync queries use a fresh expiration cutoff after plugin initialization', async () => {
     const modelName = `DynamicMeiliCutoff${new mongoose.Types.ObjectId().toString()}`;
     const dynamicModel = createDynamicMeiliModel(modelName);
