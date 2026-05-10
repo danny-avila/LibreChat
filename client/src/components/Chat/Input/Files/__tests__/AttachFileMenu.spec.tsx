@@ -203,6 +203,17 @@ describe('AttachFileMenu', () => {
       expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
     });
 
+    it('shows "Upload to Provider" for azureOpenAI endpointType with useResponsesApi', () => {
+      setupMocks();
+      renderMenu({
+        endpoint: EModelEndpoint.agents,
+        endpointType: EModelEndpoint.azureOpenAI,
+        useResponsesApi: true,
+      });
+      openMenu();
+      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+    });
+
     it('shows "Upload Image" for azureOpenAI without useResponsesApi', () => {
       setupMocks({ provider: EModelEndpoint.azureOpenAI });
       renderMenu({ endpointType: EModelEndpoint.azureOpenAI, useResponsesApi: false });

@@ -38,8 +38,7 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
     if (!isAgents || !conversation?.agent_id) {
       return undefined;
     }
-    const agent = agentData || agentsMap?.[conversation.agent_id];
-    return agent?.provider;
+    return agentData?.provider ?? agentsMap?.[conversation.agent_id]?.provider;
   }, [conversation?.endpoint, conversation?.agent_id, agentData, agentsMap]);
 
   const endpointType = useMemo(
@@ -49,11 +48,13 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
 
   const useResponsesApi = useMemo(() => {
     const isAgents = isAgentsEndpoint(conversation?.endpoint);
-    if (!isAgents || !conversation?.agent_id || conversation?.useResponsesApi) {
+    if (!isAgents || !conversation?.agent_id || conversation?.useResponsesApi !== undefined) {
       return conversation?.useResponsesApi;
     }
-    const agent = agentData || agentsMap?.[conversation.agent_id];
-    return agent?.model_parameters?.useResponsesApi;
+    return (
+      agentData?.model_parameters?.useResponsesApi ??
+      agentsMap?.[conversation.agent_id]?.model_parameters?.useResponsesApi
+    );
   }, [
     conversation?.endpoint,
     conversation?.agent_id,

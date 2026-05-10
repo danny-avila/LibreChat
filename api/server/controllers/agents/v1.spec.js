@@ -72,6 +72,7 @@ jest.mock('~/cache', () => ({
 
 const {
   createAgent: createAgentHandler,
+  getAgent: getAgentHandler,
   duplicateAgent: duplicateAgentHandler,
   revertAgentVersion: revertAgentVersionHandler,
   updateAgent: updateAgentHandler,
@@ -480,6 +481,34 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           error: 'Invalid request data',
         }),
       );
+    });
+  });
+
+  describe('getAgentHandler', () => {
+    test('should return the safe Responses API flag in the basic VIEW response', async () => {
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Azure Agent',
+        description: 'Uses Responses API',
+        provider: 'azureOpenAI',
+        model: 'gpt-5.5',
+        author: mockReq.user.id,
+        model_parameters: {
+          useResponsesApi: true,
+          temperature: 0.7,
+          apiKey: 'secret-value',
+        },
+      });
+
+      mockReq.params = { id: agent.id };
+
+      await getAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.model_parameters).toEqual({ useResponsesApi: true });
+      expect(response.model_parameters.temperature).toBeUndefined();
+      expect(response.model_parameters.apiKey).toBeUndefined();
     });
   });
 
