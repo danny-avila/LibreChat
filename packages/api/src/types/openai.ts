@@ -28,10 +28,11 @@ export interface OpenAIConfigOptions {
 
 export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
 
-export type OAIClientOptions = OpenAIClientOptions & {
+export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
   include_reasoning?: boolean;
   promptCache?: boolean;
   _lc_stream_delay?: number;
+  verbosity?: string | null;
 };
 
 /**
