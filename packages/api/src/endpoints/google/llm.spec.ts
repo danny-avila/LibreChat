@@ -255,6 +255,84 @@ describe('getGoogleConfig', () => {
       expect(result.llmConfig).toHaveProperty('location', 'europe-west1');
     });
 
+    it('should use Vertex AI multi-region endpoints for eu and us locations', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const locations = [
+        { location: 'eu', endpoint: 'aiplatform.eu.rep.googleapis.com' },
+        { location: 'us', endpoint: 'aiplatform.us.rep.googleapis.com' },
+        { location: 'global', endpoint: 'aiplatform.googleapis.com' },
+      ];
+
+      locations.forEach(({ location, endpoint }) => {
+        process.env.GOOGLE_LOC = location;
+
+        const result = getGoogleConfig(credentials, {
+          modelOptions: {
+            model: 'gemini-3.1-flash-lite-preview',
+          },
+        });
+
+        expect(result.llmConfig).toMatchObject({
+          location,
+          endpoint,
+        });
+      });
+    });
+
+    it('should derive Vertex AI endpoint from the final location value', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          location: 'eu',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'eu',
+        endpoint: 'aiplatform.eu.rep.googleapis.com',
+      });
+    });
+
+    it('should preserve explicit Vertex AI endpoint overrides', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          location: 'eu',
+          endpoint: 'custom-aiplatform.example.com',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'eu',
+        endpoint: 'custom-aiplatform.example.com',
+      });
+    });
+
     it('should handle service key as JSON string', () => {
       const credentials = {
         [AuthKeys.GOOGLE_SERVICE_KEY]: JSON.stringify({
@@ -972,6 +1050,7 @@ describe('knownGoogleParams', () => {
     expect(knownGoogleParams.has('topP')).toBe(true);
     expect(knownGoogleParams.has('topK')).toBe(true);
     expect(knownGoogleParams.has('apiKey')).toBe(true);
+    expect(knownGoogleParams.has('endpoint')).toBe(true);
     expect(knownGoogleParams.has('safetySettings')).toBe(true);
   });
 
