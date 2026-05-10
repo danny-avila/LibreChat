@@ -679,12 +679,20 @@ describe('sweepExpiredFiles', () => {
   });
 
   test.each([
-    [FileSources.openai, EModelEndpoint.assistants, { [EModelEndpoint.assistants]: {} }, '2'],
+    [
+      FileSources.openai,
+      EModelEndpoint.assistants,
+      { [EModelEndpoint.assistants]: { version: 'v3' } },
+      '3',
+    ],
     [
       FileSources.azure,
       EModelEndpoint.azureAssistants,
-      { [EModelEndpoint.azureOpenAI]: { assistants: true } },
-      '1',
+      {
+        [EModelEndpoint.azureOpenAI]: { assistants: true },
+        [EModelEndpoint.azureAssistants]: { version: 4 },
+      },
+      '4',
     ],
   ])(
     'passes assistant request context when deleting %s expired files',

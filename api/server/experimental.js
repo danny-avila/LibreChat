@@ -140,7 +140,26 @@ if (cluster.isMaster) {
   logger.info(`Spawning ${workers} workers to simulate multi-pod environment`);
 
   let activeWorkers = 0;
+  let retentionSweepWorkerId = null;
   const startTime = Date.now();
+
+  const assignRetentionSweepWorker = () => {
+    if (retentionSweepWorkerId && cluster.workers[retentionSweepWorkerId]) {
+      return;
+    }
+
+    const availableWorkers = Object.values(cluster.workers).filter(Boolean);
+    const retentionSweepWorker = availableWorkers[availableWorkers.length - 1];
+    if (!retentionSweepWorker) {
+      return;
+    }
+
+    retentionSweepWorkerId = retentionSweepWorker.id;
+    logger.info(
+      wrapLogMessage(`Worker ${retentionSweepWorker.process.pid} assigned to file-retention sweep`),
+    );
+    retentionSweepWorker.send({ type: 'file-retention-sweep-worker' });
+  };
 
   /** Flush Redis cache before starting workers */
   flushRedisCache()
@@ -163,19 +182,23 @@ if (cluster.isMaster) {
       `Worker ${worker.process.pid} is online (${activeWorkers}/${workers}) after ${uptime}s`,
     );
 
-    /** Notify the last worker to perform one-time initialization tasks */
+    /** Assign one worker for process-wide background jobs */
     if (activeWorkers === workers) {
-      const allWorkers = Object.values(cluster.workers);
-      const lastWorker = allWorkers[allWorkers.length - 1];
-      if (lastWorker) {
-        logger.info(wrapLogMessage(`All ${workers} workers are online`));
-        lastWorker.send({ type: 'last-worker' });
-      }
+      logger.info(wrapLogMessage(`All ${workers} workers are online`));
+    }
+  });
+
+  cluster.on('listening', () => {
+    if (activeWorkers === workers) {
+      assignRetentionSweepWorker();
     }
   });
 
   cluster.on('exit', (worker, code, signal) => {
     activeWorkers--;
+    if (worker.id === retentionSweepWorkerId) {
+      retentionSweepWorkerId = null;
+    }
     logger.error(
       `Worker ${worker.process.pid} died (${activeWorkers}/${workers}). Code: ${code}, Signal: ${signal}`,
     );
@@ -203,6 +226,27 @@ if (cluster.isMaster) {
    * Each worker runs a full Express server instance
    */
   const app = express();
+  let shouldStartExpiredFileSweep = false;
+  let expiredFileSweepOptions = null;
+  let expiredFileSweepStarted = false;
+
+  const startExpiredFileSweepOnce = () => {
+    if (!shouldStartExpiredFileSweep || expiredFileSweepStarted || !expiredFileSweepOptions) {
+      return;
+    }
+
+    expiredFileSweepStarted = true;
+    startExpiredFileSweep(expiredFileSweepOptions);
+  };
+
+  /** Handle inter-process messages from master */
+  process.on('message', (msg) => {
+    if (msg.type === 'file-retention-sweep-worker') {
+      shouldStartExpiredFileSweep = true;
+      logger.info(wrapLogMessage(`Worker ${process.pid} is assigned file-retention sweep`));
+      startExpiredFileSweepOnce();
+    }
+  });
 
   const startServer = async () => {
     logger.info(`Worker ${process.pid} initializing...`);
@@ -234,7 +278,8 @@ if (cluster.isMaster) {
     /** Initialize app configuration */
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
-    startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
+    expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
+    startExpiredFileSweepOnce();
     await performStartupChecks(appConfig);
     await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
 
@@ -390,19 +435,6 @@ if (cluster.isMaster) {
       } catch (initErr) {
         logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
         process.exit(1);
-      }
-    });
-
-    /** Handle inter-process messages from master */
-    process.on('message', async (msg) => {
-      if (msg.type === 'last-worker') {
-        logger.info(
-          wrapLogMessage(
-            `Worker ${process.pid} is the last worker and can perform special initialization tasks`,
-          ),
-        );
-        /** Add any one-time initialization tasks here */
-        /** For example: scheduled jobs, cleanup tasks, etc. */
       }
     });
   };

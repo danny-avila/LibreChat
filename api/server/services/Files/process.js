@@ -296,16 +296,38 @@ function hasExpiredFileEndpointConfig(appConfig, source) {
   return Boolean(appConfig?.endpoints?.[EModelEndpoint.assistants]);
 }
 
-function getExpiredFileAssistantVersion(endpoint) {
-  return String(
-    defaultAssistantsVersion[endpoint] ?? defaultAssistantsVersion.assistants ?? 2,
-  ).replace(/^v/, '');
+function getConfiguredExpiredFileAssistantVersion({ appConfig, source, endpoint }) {
+  const endpointVersion = appConfig?.endpoints?.[endpoint]?.version;
+  if (endpointVersion != null) {
+    return endpointVersion;
+  }
+
+  if (source === FileSources.azure) {
+    const azureAssistantsConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants;
+    if (typeof azureAssistantsConfig === 'object' && azureAssistantsConfig?.version != null) {
+      return azureAssistantsConfig.version;
+    }
+  }
+
+  return undefined;
+}
+
+function getExpiredFileAssistantVersion({ appConfig, source, endpoint }) {
+  const configuredVersion = getConfiguredExpiredFileAssistantVersion({
+    appConfig,
+    source,
+    endpoint,
+  });
+  const fallbackVersion =
+    defaultAssistantsVersion[endpoint] ?? defaultAssistantsVersion.assistants ?? 2;
+
+  return String(configuredVersion ?? fallbackVersion).replace(/^v/, '');
 }
 
 function createExpiredFileSweepRequest({ appConfig, file, userId }) {
   const source = file.source ?? FileSources.local;
   const endpoint = getExpiredFileEndpoint(source);
-  const version = getExpiredFileAssistantVersion(endpoint);
+  const version = getExpiredFileAssistantVersion({ appConfig, source, endpoint });
   const baseUrl = `/api/assistants/v${version}`;
 
   return {
