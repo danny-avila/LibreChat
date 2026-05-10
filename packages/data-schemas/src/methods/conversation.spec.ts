@@ -509,6 +509,16 @@ describe('Conversation Operations', () => {
         updatedAt: new Date(),
       });
 
+      const expiredRetainedConvo = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Expired Retained Conversation',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: false,
+        expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+        updatedAt: new Date(),
+      });
+
       await Conversation.create({
         conversationId: uuidv4(),
         user: 'user123',
@@ -529,6 +539,7 @@ describe('Conversation Operations', () => {
       const convoIds = result?.conversations.map((c) => c.conversationId);
       expect(convoIds).toContain(newNonTemporaryConvo.conversationId);
       expect(convoIds).toContain(oldNonTemporaryConvo.conversationId);
+      expect(convoIds).not.toContain(expiredRetainedConvo.conversationId);
     });
 
     it('should filter out temporary conversations in getConvosQueried', async () => {
@@ -552,6 +563,16 @@ describe('Conversation Operations', () => {
         updatedAt: new Date(),
       });
 
+      const expiredRetainedConvo = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Expired Retained Conversation',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: false,
+        expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+        updatedAt: new Date(),
+      });
+
       const tempConvo = await Conversation.create({
         conversationId: uuidv4(),
         user: 'user123',
@@ -565,6 +586,7 @@ describe('Conversation Operations', () => {
       const convoIds = [
         { conversationId: newNonTemporaryConvo.conversationId },
         { conversationId: oldNonTemporaryConvo.conversationId },
+        { conversationId: expiredRetainedConvo.conversationId },
         { conversationId: tempConvo.conversationId },
       ];
 
@@ -578,6 +600,7 @@ describe('Conversation Operations', () => {
       expect(resultIds).toContain(oldNonTemporaryConvo.conversationId);
       expect(result?.convoMap[newNonTemporaryConvo.conversationId]).toBeDefined();
       expect(result?.convoMap[oldNonTemporaryConvo.conversationId]).toBeDefined();
+      expect(result?.convoMap[expiredRetainedConvo.conversationId]).toBeUndefined();
       expect(result?.convoMap[tempConvo.conversationId]).toBeUndefined();
     });
   });

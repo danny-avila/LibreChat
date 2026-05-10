@@ -95,6 +95,10 @@ const getSyncConfig = () => ({
 const hasSchemaPath = (schema: Schema, path: string): boolean =>
   Object.prototype.hasOwnProperty.call(schema.obj, path);
 
+const activeExpirationQuery = () => ({
+  $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }, { expiredAt: { $gt: new Date() } }],
+});
+
 const buildIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
   if (!hasSchemaPath(schema, 'isTemporary')) {
     return hasSchemaPath(schema, 'expiredAt')
@@ -104,7 +108,10 @@ const buildIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
 
   return {
     $or: [
-      { isTemporary: false },
+      {
+        isTemporary: false,
+        ...activeExpirationQuery(),
+      },
       {
         isTemporary: { $exists: false },
         $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
@@ -113,8 +120,12 @@ const buildIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
   };
 };
 
+const hasActiveExpiration = (expiredAt?: Date | null): boolean =>
+  _.isNil(expiredAt) || new Date(expiredAt).getTime() > Date.now();
+
 const isIndexableDocument = (doc: DocumentWithMeiliIndex): boolean =>
-  doc.isTemporary === false || (doc.isTemporary == null && _.isNil(doc.expiredAt));
+  (doc.isTemporary === false && hasActiveExpiration(doc.expiredAt)) ||
+  (doc.isTemporary == null && _.isNil(doc.expiredAt));
 
 /**
  * Validates the required options for configuring the mongoMeili plugin.
@@ -491,7 +502,8 @@ const createMeiliMongooseModel = ({
       try {
         if (!isIndexableDocument(this)) {
           await index.deleteDocument(String(this[primaryKey as keyof DocumentWithMeiliIndex]));
-          await this.collection.updateOne(
+          const model = this.constructor as Model<DocumentWithMeiliIndex>;
+          await model.updateOne(
             { _id: this._id as Types.ObjectId },
             { $set: { _meiliIndex: false } },
           );

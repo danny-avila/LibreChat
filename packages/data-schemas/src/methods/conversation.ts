@@ -66,6 +66,25 @@ export function createConversationMethods(
     return messageMethods;
   }
 
+  function getVisibleConversationRetentionFilter(): FilterQuery<IConversation> {
+    return {
+      $or: [
+        {
+          isTemporary: false,
+          $or: [
+            { expiredAt: null },
+            { expiredAt: { $exists: false } },
+            { expiredAt: { $gt: new Date() } },
+          ],
+        },
+        {
+          isTemporary: { $exists: false },
+          $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
+        },
+      ],
+    } as FilterQuery<IConversation>;
+  }
+
   /**
    * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
    */
@@ -322,15 +341,7 @@ export function createConversationMethods(
       filters.push({ tags: { $in: tags } } as FilterQuery<IConversation>);
     }
 
-    filters.push({
-      $or: [
-        { isTemporary: false },
-        {
-          isTemporary: { $exists: false },
-          $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
-        },
-      ],
-    } as FilterQuery<IConversation>);
+    filters.push(getVisibleConversationRetentionFilter());
 
     if (search) {
       try {
@@ -455,13 +466,7 @@ export function createConversationMethods(
       const results = await Conversation.find({
         user,
         conversationId: { $in: conversationIds },
-        $or: [
-          { isTemporary: false },
-          {
-            isTemporary: { $exists: false },
-            $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
-          },
-        ],
+        ...getVisibleConversationRetentionFilter(),
       }).lean<IConversation[]>();
 
       results.sort(
