@@ -4,9 +4,10 @@ import type { TPreset } from 'librechat-data-provider';
 type UIPreset = Partial<TPreset> & { presetOverride?: Partial<TPreset> };
 type TCleanupPreset = {
   preset?: UIPreset;
+  defaultParamsEndpoint?: string | null;
 };
 
-const cleanupPreset = ({ preset: _preset }: TCleanupPreset): TPreset => {
+const cleanupPreset = ({ preset: _preset, defaultParamsEndpoint }: TCleanupPreset): TPreset => {
   const { endpoint, endpointType } = _preset ?? ({} as UIPreset);
   if (endpoint == null || endpoint === '') {
     console.error(`Unknown endpoint ${endpoint}`, _preset);
@@ -35,8 +36,13 @@ const cleanupPreset = ({ preset: _preset }: TCleanupPreset): TPreset => {
     delete preset.chatGptLabel;
   }
 
-  /* @ts-ignore: endpoint can be a custom defined name */
-  const parsedPreset = parseConvo({ endpoint, endpointType, conversation: preset });
+  const parsedPreset = parseConvo({
+    /* @ts-ignore: endpoint can be a custom defined name */
+    endpoint,
+    endpointType,
+    conversation: preset,
+    defaultParamsEndpoint,
+  });
 
   return {
     presetId: _preset?.presetId ?? null,

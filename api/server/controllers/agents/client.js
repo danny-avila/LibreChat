@@ -1,24 +1,45 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
-const { DynamicStructuredTool } = require('@langchain/core/tools');
-const { getBufferString, HumanMessage } = require('@langchain/core/messages');
+const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
-  sendEvent,
   createRun,
-  Tokenizer,
+  isEnabled,
   checkAccess,
+  buildToolSet,
+  logToolError,
+  sanitizeTitle,
+  payloadParser,
+  resolveHeaders,
+  createSafeUser,
+  initializeAgent,
+  getBalanceConfig,
+  omitTitleOptions,
+  getProviderConfig,
   memoryInstructions,
-  formatContentStrings,
+  createTokenCounter,
+  applyContextToAgent,
+  isMemoryAgentEnabled,
+  recordCollectedUsage,
+  GenerationJobManager,
+  getTransactionsConfig,
+  resolveRecursionLimit,
   createMemoryProcessor,
+  loadAgent: loadAgentFn,
+  createMultiAgentMapper,
+  filterMalformedContentParts,
+  countFormattedMessageTokens,
+  hydrateMissingIndexTokenCounts,
+  injectSkillPrimes,
+  isSkillPrimeMessage,
+  buildSkillPrimeContentParts,
+  buildInitialToolSessions,
 } = require('@librechat/api');
 const {
   Callback,
   Providers,
-  GraphEvents,
   TitleMethod,
   formatMessage,
   formatAgentMessages,
-  getTokenCountForMessage,
   createMetadataAggregator,
 } = require('@librechat/agents');
 const {
@@ -28,69 +49,21 @@ const {
   ContentTypes,
   EModelEndpoint,
   PermissionTypes,
-  isAgentsEndpoint,
   AgentCapabilities,
-  bedrockInputSchema,
+  isAgentsEndpoint,
+  isEphemeralAgentId,
   removeNullishValues,
 } = require('librechat-data-provider');
-const { addCacheControl, createContextHandlers } = require('~/app/clients/prompts');
-const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { getProviderConfig } = require('~/server/services/Endpoints');
-const { checkCapability } = require('~/server/services/Config');
+const { createContextHandlers } = require('~/app/clients/prompts');
+const { resolveConfigServers } = require('~/server/services/MCP');
+const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
-const { getRoleByName } = require('~/models/Role');
-const { loadAgent } = require('~/models/Agent');
 const { getMCPManager } = require('~/config');
+const db = require('~/models');
 
-const omitTitleOptions = new Set([
-  'stream',
-  'thinking',
-  'streaming',
-  'clientOptions',
-  'thinkingConfig',
-  'thinkingBudget',
-  'includeThoughts',
-  'maxOutputTokens',
-  'additionalModelRequestFields',
-]);
-
-/**
- * @param {ServerRequest} req
- * @param {Agent} agent
- * @param {string} endpoint
- */
-const payloadParser = ({ req, agent, endpoint }) => {
-  if (isAgentsEndpoint(endpoint)) {
-    return { model: undefined };
-  } else if (endpoint === EModelEndpoint.bedrock) {
-    const parsedValues = bedrockInputSchema.parse(agent.model_parameters);
-    if (parsedValues.thinking == null) {
-      parsedValues.thinking = false;
-    }
-    return parsedValues;
-  }
-  return req.body.endpointOption.model_parameters;
-};
-
-const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
-
-function createTokenCounter(encoding) {
-  return function (message) {
-    const countTokens = (text) => Tokenizer.getTokenCount(text, encoding);
-    return getTokenCountForMessage(message, countTokens);
-  };
-}
-
-function logToolError(graph, error, toolId) {
-  logger.error(
-    '[api/server/controllers/agents/client.js #chatCompletion] Tool Error',
-    error,
-    toolId,
-  );
-}
+const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -98,9 +71,6 @@ class AgentClient extends BaseClient {
     /** The current client class
      * @type {string} */
     this.clientName = EModelEndpoint.agents;
-
-    /** @type {'discard' | 'summarize'} */
-    this.contextStrategy = 'discard';
 
     /** @deprecated @type {true} - Is a Chat Completion Request */
     this.isChatCompletion = true;
@@ -112,8 +82,10 @@ class AgentClient extends BaseClient {
       agentConfigs,
       contentParts,
       collectedUsage,
+      collectedThoughtSignatures,
       artifactPromises,
       maxContextTokens,
+      subagentAggregatorsByToolCallId,
       ...clientOptions
     } = options;
 
@@ -123,8 +95,20 @@ class AgentClient extends BaseClient {
     this.contentParts = contentParts;
     /** @type {Array<UsageMetadata>} */
     this.collectedUsage = collectedUsage;
+    /** Vertex Gemini 3 thought signatures captured during the run, keyed by
+     *  `tool_call_id`. Persisted on `responseMessage.metadata.thoughtSignatures`
+     *  and restored as `additional_kwargs.signatures` on subsequent turns to
+     *  keep tool round-trips valid across DB reconstruction.
+     *  @type {Record<string, string> | undefined} */
+    this.collectedThoughtSignatures = collectedThoughtSignatures;
     /** @type {ArtifactPromises} */
     this.artifactPromises = artifactPromises;
+    /** Per-request map of `createContentAggregator` instances keyed by
+     *  the parent's `tool_call_id`. `ON_SUBAGENT_UPDATE` events stream
+     *  into each aggregator as they arrive; `finalizeSubagentContent`
+     *  harvests `contentParts` onto the matching `subagent` tool_call
+     *  so the child's full activity survives a page refresh. */
+    this.subagentAggregatorsByToolCallId = subagentAggregatorsByToolCallId ?? new Map();
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
     /** @type {string} */
@@ -150,9 +134,46 @@ class AgentClient extends BaseClient {
     return this.contentParts;
   }
 
-  setOptions(options) {
-    logger.info('[api/server/controllers/agents/client.js] setOptions', options);
+  /**
+   * Harvest the `contentParts` from each per-subagent `createContentAggregator`
+   * instance and attach them onto the matching parent `subagent` tool_call
+   * as `subagent_content`. Runs once per message save (from
+   * `sendCompletion`'s `finally`) so the child's full reasoning / tool
+   * calls / final text survive a page refresh — the client-side Recoil
+   * atom is session-only. Aggregators keyed by a tool_call_id that never
+   * appeared in `contentParts` are discarded (no home to attach to).
+   */
+  finalizeSubagentContent() {
+    const buffer = this.subagentAggregatorsByToolCallId;
+    if (!buffer || buffer.size === 0 || !Array.isArray(this.contentParts)) {
+      return;
+    }
+    for (const part of this.contentParts) {
+      if (part?.type !== ContentTypes.TOOL_CALL) continue;
+      const toolCall = part[ContentTypes.TOOL_CALL];
+      if (!toolCall || toolCall.name !== Constants.SUBAGENT || !toolCall.id) continue;
+      const aggregator = buffer.get(toolCall.id);
+      if (!aggregator) continue;
+      try {
+        /** `createContentAggregator` returns a sparse array (undefined
+         *  slots for indices that never received content). Strip those
+         *  so the persisted shape is a clean `TMessageContentParts[]`. */
+        const parts = Array.isArray(aggregator.contentParts)
+          ? aggregator.contentParts.filter((p) => p != null)
+          : [];
+        if (parts.length > 0) {
+          toolCall.subagent_content = parts;
+        }
+      } catch (err) {
+        logger.warn(
+          `[AgentClient] Failed to attach subagent content for tool_call ${toolCall.id}: ${err?.message ?? err}`,
+        );
+      }
+    }
+    buffer.clear();
   }
+
+  setOptions(_options) {}
 
   /**
    * `AgentClient` is not opinionated about vision requests, so we don't do anything here
@@ -161,14 +182,9 @@ class AgentClient extends BaseClient {
   checkVisionRequest() {}
 
   getSaveOptions() {
-    // TODO:
-    // would need to be override settings; otherwise, model needs to be undefined
-    // model: this.override.model,
-    // instructions: this.override.instructions,
-    // additional_instructions: this.override.additional_instructions,
     let runOptions = {};
     try {
-      runOptions = payloadParser(this.options);
+      runOptions = payloadParser(this.options) ?? {};
     } catch (error) {
       logger.error(
         '[api/server/controllers/agents/client.js #getSaveOptions] Error parsing options',
@@ -179,14 +195,14 @@ class AgentClient extends BaseClient {
     return removeNullishValues(
       Object.assign(
         {
+          spec: this.options.spec,
+          iconURL: this.options.iconURL,
           endpoint: this.options.endpoint,
           agent_id: this.options.agent.id,
           modelLabel: this.options.modelLabel,
-          maxContextTokens: this.options.maxContextTokens,
           resendFiles: this.options.resendFiles,
           imageDetail: this.options.imageDetail,
-          spec: this.options.spec,
-          iconURL: this.options.iconURL,
+          maxContextTokens: this.maxContextTokens,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
@@ -194,11 +210,13 @@ class AgentClient extends BaseClient {
     );
   }
 
+  /**
+   * Returns build message options. For AgentClient, agent-specific instructions
+   * are retrieved directly from agent objects in buildMessages, so this returns empty.
+   * @returns {Object} Empty options object
+   */
   getBuildMessagesOptions() {
-    return {
-      instructions: this.options.agent.instructions,
-      additional_instructions: this.options.agent.additional_instructions,
-    };
+    return {};
   }
 
   /**
@@ -208,56 +226,64 @@ class AgentClient extends BaseClient {
    * @returns {Promise<Array<Partial<MongoFile>>>}
    */
   async addImageURLs(message, attachments) {
-    const { files, text, image_urls } = await encodeAndFormat(
+    const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
-      this.options.agent.provider,
+      {
+        provider: this.options.agent.provider,
+        endpoint: this.options.endpoint,
+      },
       VisionModes.agents,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
-    if (text && text.length) {
-      message.ocr = text;
-    }
     return files;
   }
 
-  async buildMessages(
-    messages,
-    parentMessageId,
-    { instructions = null, additional_instructions = null },
-    opts,
-  ) {
-    let orderedMessages = this.constructor.getMessagesForConversation({
+  async buildMessages(messages, parentMessageId, _buildOptions, opts) {
+    /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
+    const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       summary: this.shouldSummarize,
+      mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
+      mapCondition: (message) => message.addedConvo === true,
     });
 
     let payload;
     /** @type {number | undefined} */
     let promptTokens;
 
-    /** @type {string} */
-    let systemContent = [instructions ?? '', additional_instructions ?? '']
-      .filter(Boolean)
-      .join('\n')
-      .trim();
+    /** Normalize instruction fields before applying per-run context. */
+    const normalizeInstructions = (agent) => {
+      agent.instructions = agent.instructions?.trim() || undefined;
+      agent.additional_instructions = agent.additional_instructions?.trim() || undefined;
+      return agent;
+    };
 
+    /** Collect all agents for unified processing while preserving stable/dynamic instruction fields. */
+    const allAgents = [
+      { agent: normalizeInstructions(this.options.agent), agentId: this.options.agent.id },
+      ...(this.agentConfigs?.size > 0
+        ? Array.from(this.agentConfigs.entries()).map(([agentId, agent]) => ({
+            agent: normalizeInstructions(agent),
+            agentId,
+          }))
+        : []),
+    ];
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
+      const latestMessage = orderedMessages[orderedMessages.length - 1];
 
       if (this.message_file_map) {
-        this.message_file_map[orderedMessages[orderedMessages.length - 1].messageId] = attachments;
+        this.message_file_map[latestMessage.messageId] = attachments;
       } else {
         this.message_file_map = {
-          [orderedMessages[orderedMessages.length - 1].messageId]: attachments,
+          [latestMessage.messageId]: attachments,
         };
       }
 
-      const files = await this.addImageURLs(
-        orderedMessages[orderedMessages.length - 1],
-        attachments,
-      );
+      await this.addFileContextToMessage(latestMessage, attachments);
+      const files = await this.processAttachments(latestMessage, attachments);
 
       this.options.attachments = files;
     }
@@ -270,6 +296,11 @@ class AgentClient extends BaseClient {
       );
     }
 
+    /** @type {Record<number, number>} */
+    const canonicalTokenCountMap = {};
+    /** @type {Record<string, number>} */
+    const tokenCountMap = {};
+    let promptTokenTotal = 0;
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
         message,
@@ -277,25 +308,26 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
-      if (message.ocr && i !== orderedMessages.length - 1) {
+      /** For non-latest messages, prepend file context directly to message content */
+      if (message.fileContext && i !== orderedMessages.length - 1) {
         if (typeof formattedMessage.content === 'string') {
-          formattedMessage.content = message.ocr + '\n' + formattedMessage.content;
+          formattedMessage.content = message.fileContext + '\n' + formattedMessage.content;
         } else {
           const textPart = formattedMessage.content.find((part) => part.type === 'text');
           textPart
-            ? (textPart.text = message.ocr + '\n' + textPart.text)
-            : formattedMessage.content.unshift({ type: 'text', text: message.ocr });
+            ? (textPart.text = message.fileContext + '\n' + textPart.text)
+            : formattedMessage.content.unshift({ type: 'text', text: message.fileContext });
         }
-      } else if (message.ocr && i === orderedMessages.length - 1) {
-        systemContent = [systemContent, message.ocr].join('\n');
       }
 
-      const needsTokenCount =
-        (this.contextStrategy && !orderedMessages[i].tokenCount) || message.ocr;
+      const dbTokenCount = orderedMessages[i].tokenCount;
+      const needsTokenCount = !dbTokenCount || message.fileContext;
 
-      /* If tokens were never counted, or, is a Vision request and the message has files, count again */
       if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
-        orderedMessages[i].tokenCount = this.getTokenCountForMessage(formattedMessage);
+        orderedMessages[i].tokenCount = countFormattedMessageTokens(
+          formattedMessage,
+          this.getEncoding(),
+        );
       }
 
       /* If message has files, calculate image token cost */
@@ -306,77 +338,84 @@ class AgentClient extends BaseClient {
             this.contextHandlers?.processFile(file);
             continue;
           }
-          if (file.metadata?.fileIdentifier) {
+          if (file.metadata?.codeEnvRef) {
             continue;
           }
-          // orderedMessages[i].tokenCount += this.calculateImageTokenCost({
-          //   width: file.width,
-          //   height: file.height,
-          //   detail: this.options.imageDetail ?? ImageDetail.auto,
-          // });
         }
+      }
+
+      const tokenCount = Number(orderedMessages[i].tokenCount);
+      const normalizedTokenCount = Number.isFinite(tokenCount) && tokenCount > 0 ? tokenCount : 0;
+      canonicalTokenCountMap[i] = normalizedTokenCount;
+      promptTokenTotal += normalizedTokenCount;
+
+      if (message.messageId) {
+        tokenCountMap[message.messageId] = normalizedTokenCount;
+      }
+
+      if (isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
+        const role = message.isCreatedByUser ? 'user' : 'assistant';
+        const hasSummary =
+          Array.isArray(message.content) && message.content.some((p) => p && p.type === 'summary');
+        const suffix = hasSummary ? '[S]' : '';
+        const id = (message.messageId ?? message.id ?? '').slice(-8);
+        const recalced = needsTokenCount ? orderedMessages[i].tokenCount : null;
+        logger.debug(
+          `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} db=${dbTokenCount} needsRecount=${needsTokenCount} recalced=${recalced} tokens=${normalizedTokenCount}`,
+        );
       }
 
       return formattedMessage;
     });
 
+    payload = formattedMessages;
+    messages = orderedMessages;
+    promptTokens = promptTokenTotal;
+
+    /**
+     * Build shared run context - applies to ALL agents in the run.
+     * This includes file context from the latest message and augmented prompt (RAG).
+     * Memory context is handled separately and applied per-agent based on config.
+     */
+    const sharedRunContextParts = [];
+
+    /** File context from the latest message (attachments) */
+    const latestMessage = orderedMessages[orderedMessages.length - 1];
+    if (latestMessage?.fileContext) {
+      sharedRunContextParts.push(latestMessage.fileContext);
+    }
+
+    /** Augmented prompt from RAG/context handlers */
     if (this.contextHandlers) {
       this.augmentedPrompt = await this.contextHandlers.createContext();
-      systemContent = this.augmentedPrompt + systemContent;
-    }
-
-    // Inject MCP server instructions if available
-    const ephemeralAgent = this.options.req.body.ephemeralAgent;
-    let mcpServers = [];
-
-    // Check for ephemeral agent MCP servers
-    if (ephemeralAgent && ephemeralAgent.mcp && ephemeralAgent.mcp.length > 0) {
-      mcpServers = ephemeralAgent.mcp;
-    }
-    // Check for regular agent MCP tools
-    else if (this.options.agent && this.options.agent.tools) {
-      mcpServers = this.options.agent.tools
-        .filter(
-          (tool) =>
-            tool instanceof DynamicStructuredTool && tool.name.includes(Constants.mcp_delimiter),
-        )
-        .map((tool) => tool.name.split(Constants.mcp_delimiter).pop())
-        .filter(Boolean);
-    }
-
-    if (mcpServers.length > 0) {
-      try {
-        const mcpInstructions = getMCPManager().formatInstructionsForContext(mcpServers);
-        if (mcpInstructions) {
-          systemContent = [systemContent, mcpInstructions].filter(Boolean).join('\n\n');
-          logger.debug('[AgentClient] Injected MCP instructions for servers:', mcpServers);
-        }
-      } catch (error) {
-        logger.error('[AgentClient] Failed to inject MCP instructions:', error);
+      if (this.augmentedPrompt) {
+        sharedRunContextParts.push(this.augmentedPrompt);
       }
     }
 
-    if (systemContent) {
-      this.options.agent.instructions = systemContent;
-    }
+    /** Memory context (user preferences/memories) */
+    const withoutKeys = await this.useMemory();
+    const memoryContext = withoutKeys
+      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
+      : undefined;
 
-    /** @type {Record<string, number> | undefined} */
-    let tokenCountMap;
+    const sharedRunContext = sharedRunContextParts.join('\n\n');
+    const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
-    if (this.contextStrategy) {
-      ({ payload, promptTokens, tokenCountMap, messages } = await this.handleContextStrategy({
-        orderedMessages,
-        formattedMessages,
-      }));
-    }
+    /** Preserve canonical pre-format token counts for all history entering graph formatting */
+    this.indexTokenCountMap = canonicalTokenCountMap;
 
-    for (let i = 0; i < messages.length; i++) {
-      this.indexTokenCountMap[i] = messages[i].tokenCount;
+    /** Extract contextMeta from the parent response (second-to-last in ordered chain;
+     *  last is the current user message). Seeds the pruner's calibration EMA for this run. */
+    const parentResponse =
+      orderedMessages.length >= 2 ? orderedMessages[orderedMessages.length - 2] : undefined;
+    if (parentResponse?.contextMeta && !parentResponse.isCreatedByUser) {
+      this.contextMeta = parentResponse.contextMeta;
     }
 
     const result = {
-      tokenCountMap,
       prompt: payload,
+      tokenCountMap,
       promptTokens,
       messages,
     };
@@ -385,14 +424,37 @@ class AgentClient extends BaseClient {
       opts.getReqData({ promptTokens });
     }
 
-    const withoutKeys = await this.useMemory();
-    if (withoutKeys) {
-      systemContent += `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
-    }
+    /**
+     * Apply context to all agents.
+     * Stable agent/MCP instructions stay on `instructions`; shared runtime context
+     * is appended to `additional_instructions` as the dynamic system tail.
+     *
+     * NOTE: This intentionally mutates agent objects in place. The agentConfigs Map
+     * holds references to config objects that will be passed to the graph runtime.
+     */
+    const ephemeralAgent = this.options.req.body.ephemeralAgent;
+    const mcpManager = getMCPManager();
 
-    if (systemContent) {
-      this.options.agent.instructions = systemContent;
-    }
+    const configServers = await resolveConfigServers(this.options.req);
+
+    await Promise.all(
+      allAgents.map(({ agent, agentId }) => {
+        const agentRunContext =
+          memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)
+            ? [sharedRunContext, memoryContext].filter(Boolean).join('\n\n')
+            : sharedRunContext;
+
+        return applyContextToAgent({
+          agent,
+          agentId,
+          logger,
+          mcpManager,
+          configServers,
+          sharedRunContext: agentRunContext,
+          ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
+        });
+      }),
+    );
 
     return result;
   }
@@ -437,7 +499,7 @@ class AgentClient extends BaseClient {
       user,
       permissionType: PermissionTypes.MEMORIES,
       permissions: [Permissions.USE],
-      getRoleByName,
+      getRoleByName: db.getRoleByName,
     });
 
     if (!hasAccess) {
@@ -446,16 +508,32 @@ class AgentClient extends BaseClient {
       );
       return;
     }
-    /** @type {TCustomConfig['memory']} */
-    const memoryConfig = this.options.req?.app?.locals?.memory;
+    const appConfig = this.options.req.config;
+    const memoryConfig = appConfig.memory;
     if (!memoryConfig || memoryConfig.disabled === true) {
       return;
+    }
+
+    const userId = this.options.req.user.id + '';
+    this.processMemory = undefined;
+
+    if (!isMemoryAgentEnabled(memoryConfig)) {
+      try {
+        const { withoutKeys } = await db.getFormattedMemories({ userId });
+        return withoutKeys;
+      } catch (error) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
+          error,
+        );
+        return;
+      }
     }
 
     /** @type {Agent} */
     let prelimAgent;
     const allowedProviders = new Set(
-      this.options.req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders,
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
     );
     try {
       if (memoryConfig.agent?.id != null && memoryConfig.agent.id !== this.options.agent.id) {
@@ -464,6 +542,8 @@ class AgentClient extends BaseClient {
           agent_id: memoryConfig.agent.id,
           endpoint: EModelEndpoint.agents,
         });
+      } else if (memoryConfig.agent?.id != null) {
+        prelimAgent = this.options.agent;
       } else if (
         memoryConfig.agent?.id == null &&
         memoryConfig.agent?.model != null &&
@@ -478,18 +558,41 @@ class AgentClient extends BaseClient {
       );
     }
 
-    const agent = await initializeAgent({
-      req: this.options.req,
-      res: this.options.res,
-      agent: prelimAgent,
-      allowedProviders,
-      endpointOption: {
-        endpoint:
-          prelimAgent.id !== Constants.EPHEMERAL_AGENT_ID
+    if (!prelimAgent) {
+      return;
+    }
+
+    /** Forward the same `execute_code` capability gate the chat flow uses —
+     *  memory agents are unlikely to list `execute_code`, but if one does,
+     *  Phase 8 relies on this flag to expand the string into
+     *  `bash_tool` + `read_file` (pre-Phase 8 the legacy `execute_code`
+     *  tool registered unconditionally; without this passthrough the
+     *  memory path would silently lose code-execution tooling). */
+    const memoryCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
+    const agent = await initializeAgent(
+      {
+        req: this.options.req,
+        res: this.options.res,
+        agent: prelimAgent,
+        allowedProviders,
+        endpointOption: {
+          endpoint: !isEphemeralAgentId(prelimAgent.id)
             ? EModelEndpoint.agents
             : memoryConfig.agent?.provider,
+        },
+        codeEnvAvailable: memoryCapabilities.has(AgentCapabilities.execute_code),
       },
-    });
+      {
+        getFiles: db.getFiles,
+        getUserKey: db.getUserKey,
+        getConvoFiles: db.getConvoFiles,
+        updateFilesUsage: db.updateFilesUsage,
+        getUserKeyValues: db.getUserKeyValues,
+        getToolFilesByIds: db.getToolFilesByIds,
+        getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+        filterFilesByAgentAccess,
+      },
+    );
 
     if (!agent) {
       logger.warn(
@@ -515,20 +618,22 @@ class AgentClient extends BaseClient {
       tokenLimit: memoryConfig.tokenLimit,
     };
 
-    const userId = this.options.req.user.id + '';
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
+    const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
       config,
       messageId,
+      streamId,
       conversationId,
       memoryMethods: {
-        setMemory,
-        deleteMemory,
-        getFormattedMemories,
+        setMemory: db.setMemory,
+        deleteMemory: db.deleteMemory,
+        getFormattedMemories: db.getFormattedMemories,
       },
       res: this.options.res,
+      user: createSafeUser(this.options.req.user),
     });
 
     this.processMemory = processMemory;
@@ -577,22 +682,31 @@ class AgentClient extends BaseClient {
       if (this.processMemory == null) {
         return;
       }
-      /** @type {TCustomConfig['memory']} */
-      const memoryConfig = this.options.req?.app?.locals?.memory;
+      const appConfig = this.options.req.config;
+      const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
 
-      let messagesToProcess = [...messages];
-      if (messages.length > messageWindowSize) {
-        for (let i = messages.length - messageWindowSize; i >= 0; i--) {
-          const potentialWindow = messages.slice(i, i + messageWindowSize);
+      /**
+       * Strip skill-primed meta messages before memory extraction. The primes
+       * sit next to the latest user message and carry large SKILL.md bodies,
+       * so letting them into the window would crowd out real chat turns and
+       * pollute extracted memories with synthetic instruction content the
+       * user never typed.
+       */
+      const chatMessages = messages.filter((m) => !isSkillPrimeMessage(m));
+
+      let messagesToProcess = [...chatMessages];
+      if (chatMessages.length > messageWindowSize) {
+        for (let i = chatMessages.length - messageWindowSize; i >= 0; i--) {
+          const potentialWindow = chatMessages.slice(i, i + messageWindowSize);
           if (potentialWindow[0]?.role === 'user') {
             messagesToProcess = [...potentialWindow];
             break;
           }
         }
 
-        if (messagesToProcess.length === messages.length) {
-          messagesToProcess = [...messages.slice(-messageWindowSize)];
+        if (messagesToProcess.length === chatMessages.length) {
+          messagesToProcess = [...chatMessages.slice(-messageWindowSize)];
         }
       }
 
@@ -613,86 +727,53 @@ class AgentClient extends BaseClient {
       userMCPAuthMap: opts.userMCPAuthMap,
       abortController: opts.abortController,
     });
-    return this.contentParts;
+
+    const completion = filterMalformedContentParts(this.contentParts);
+    const signatures = this.collectedThoughtSignatures;
+    if (!signatures || Object.keys(signatures).length === 0) {
+      return { completion };
+    }
+    return { completion, metadata: { thoughtSignatures: signatures } };
   }
 
   /**
    * @param {Object} params
    * @param {string} [params.model]
    * @param {string} [params.context='message']
+   * @param {AppConfig['balance']} [params.balance]
+   * @param {AppConfig['transactions']} [params.transactions]
    * @param {UsageMetadata[]} [params.collectedUsage=this.collectedUsage]
    */
-  async recordCollectedUsage({ model, context = 'message', collectedUsage = this.collectedUsage }) {
-    if (!collectedUsage || !collectedUsage.length) {
-      return;
-    }
-    const input_tokens =
-      (collectedUsage[0]?.input_tokens || 0) +
-      (Number(collectedUsage[0]?.input_token_details?.cache_creation) || 0) +
-      (Number(collectedUsage[0]?.input_token_details?.cache_read) || 0);
-
-    let output_tokens = 0;
-    let previousTokens = input_tokens; // Start with original input
-    for (let i = 0; i < collectedUsage.length; i++) {
-      const usage = collectedUsage[i];
-      if (!usage) {
-        continue;
-      }
-
-      const cache_creation = Number(usage.input_token_details?.cache_creation) || 0;
-      const cache_read = Number(usage.input_token_details?.cache_read) || 0;
-
-      const txMetadata = {
-        context,
-        conversationId: this.conversationId,
+  async recordCollectedUsage({
+    model,
+    balance,
+    transactions,
+    context = 'message',
+    collectedUsage = this.collectedUsage,
+  }) {
+    const result = await recordCollectedUsage(
+      {
+        spendTokens: db.spendTokens,
+        spendStructuredTokens: db.spendStructuredTokens,
+        pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+        bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+      },
+      {
         user: this.user ?? this.options.req.user?.id,
+        conversationId: this.conversationId,
+        collectedUsage,
+        model: model ?? this.model ?? this.options.agent.model_parameters.model,
+        context,
+        messageId: this.responseMessageId,
+        balance,
+        transactions,
         endpointTokenConfig: this.options.endpointTokenConfig,
-        model: usage.model ?? model ?? this.model ?? this.options.agent.model_parameters.model,
-      };
+      },
+    );
 
-      if (i > 0) {
-        // Count new tokens generated (input_tokens minus previous accumulated tokens)
-        output_tokens +=
-          (Number(usage.input_tokens) || 0) + cache_creation + cache_read - previousTokens;
-      }
-
-      // Add this message's output tokens
-      output_tokens += Number(usage.output_tokens) || 0;
-
-      // Update previousTokens to include this message's output
-      previousTokens += Number(usage.output_tokens) || 0;
-
-      if (cache_creation > 0 || cache_read > 0) {
-        spendStructuredTokens(txMetadata, {
-          promptTokens: {
-            input: usage.input_tokens,
-            write: cache_creation,
-            read: cache_read,
-          },
-          completionTokens: usage.output_tokens,
-        }).catch((err) => {
-          logger.error(
-            '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending structured tokens',
-            err,
-          );
-        });
-        continue;
-      }
-      spendTokens(txMetadata, {
-        promptTokens: usage.input_tokens,
-        completionTokens: usage.output_tokens,
-      }).catch((err) => {
-        logger.error(
-          '[api/server/controllers/agents/client.js #recordCollectedUsage] Error spending tokens',
-          err,
-        );
-      });
+    if (result) {
+      this.usage = result;
     }
-
-    this.usage = {
-      input_tokens,
-      output_tokens,
-    };
   }
 
   /**
@@ -708,39 +789,7 @@ class AgentClient extends BaseClient {
    * @returns {number}
    */
   getTokenCountForResponse({ content }) {
-    return this.getTokenCountForMessage({
-      role: 'assistant',
-      content,
-    });
-  }
-
-  /**
-   * Calculates the correct token count for the current user message based on the token count map and API usage.
-   * Edge case: If the calculation results in a negative value, it returns the original estimate.
-   * If revisiting a conversation with a chat history entirely composed of token estimates,
-   * the cumulative token count going forward should become more accurate as the conversation progresses.
-   * @param {Object} params - The parameters for the calculation.
-   * @param {Record<string, number>} params.tokenCountMap - A map of message IDs to their token counts.
-   * @param {string} params.currentMessageId - The ID of the current message to calculate.
-   * @param {OpenAIUsageMetadata} params.usage - The usage object returned by the API.
-   * @returns {number} The correct token count for the current user message.
-   */
-  calculateCurrentTokenCount({ tokenCountMap, currentMessageId, usage }) {
-    const originalEstimate = tokenCountMap[currentMessageId] || 0;
-
-    if (!usage || typeof usage[this.inputTokensKey] !== 'number') {
-      return originalEstimate;
-    }
-
-    tokenCountMap[currentMessageId] = 0;
-    const totalTokensFromMap = Object.values(tokenCountMap).reduce((sum, count) => {
-      const numCount = Number(count);
-      return sum + (isNaN(numCount) ? 0 : numCount);
-    }, 0);
-    const totalInputTokens = usage[this.inputTokensKey] ?? 0;
-
-    const currentMessageTokens = totalInputTokens - totalTokensFromMap;
-    return currentMessageTokens > 0 ? currentMessageTokens : originalEstimate;
+    return countFormattedMessageTokens({ role: 'assistant', content }, this.getEncoding());
   }
 
   /**
@@ -756,15 +805,19 @@ class AgentClient extends BaseClient {
     let run;
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
+    const appConfig = this.options.req.config;
+    const balanceConfig = getBalanceConfig(appConfig);
+    const transactionsConfig = getTransactionsConfig(appConfig);
     try {
       if (!abortController) {
         abortController = new AbortController();
       }
 
-      /** @type {TCustomConfig['endpoints']['agents']} */
-      const agentsEConfig = this.options.req.app.locals[EModelEndpoint.agents];
+      /** @type {AppConfig['endpoints']['agents']} */
+      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
       config = {
+        runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
           last_agent_index: this.agentConfigs?.size ?? 0,
@@ -775,144 +828,194 @@ class AgentClient extends BaseClient {
             conversationId: this.conversationId,
             parentMessageId: this.parentMessageId,
           },
-          user: this.options.req.user,
+          user: createSafeUser(this.options.req.user),
         },
-        recursionLimit: agentsEConfig?.recursionLimit ?? 25,
+        recursionLimit: resolveRecursionLimit(agentsEConfig, this.options.agent),
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
       };
 
-      const toolSet = new Set((this.options.agent.tools ?? []).map((tool) => tool && tool.name));
-      let { messages: initialMessages, indexTokenCountMap } = formatAgentMessages(
-        payload,
-        this.indexTokenCountMap,
-        toolSet,
-      );
+      const toolSet = buildToolSet(this.options.agent);
+      const tokenCounter = createTokenCounter(this.getEncoding());
+
+      /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
+      const skillPrimeResult = this.options.primeInvokedSkills
+        ? await this.options.primeInvokedSkills(payload)
+        : undefined;
 
       /**
-       *
-       * @param {Agent} agent
-       * @param {BaseMessage[]} messages
-       * @param {number} [i]
-       * @param {TMessageContentParts[]} [contentData]
-       * @param {Record<string, number>} [currentIndexCountMap]
+       * Seed `Graph.sessions` with code-env files primed across every
+       * reachable agent (primary, handoff/addedConvo, and nested
+       * subagents) plus skill-priming output. The merge logic and its
+       * run-wide semantics live in `buildInitialToolSessions`; see that
+       * helper's doc for why this is intentionally NOT per-agent.
        */
-      const runAgent = async (agent, _messages, i = 0, contentData = [], _currentIndexCountMap) => {
-        config.configurable.model = agent.model_parameters.model;
-        const currentIndexCountMap = _currentIndexCountMap ?? indexTokenCountMap;
-        if (i > 0) {
-          this.model = agent.model_parameters.model;
-        }
-        if (i > 0 && config.signal == null) {
-          config.signal = abortController.signal;
-        }
-        if (agent.recursion_limit && typeof agent.recursion_limit === 'number') {
-          config.recursionLimit = agent.recursion_limit;
-        }
-        if (
-          agentsEConfig?.maxRecursionLimit &&
-          config.recursionLimit > agentsEConfig?.maxRecursionLimit
-        ) {
-          config.recursionLimit = agentsEConfig?.maxRecursionLimit;
-        }
-        config.configurable.agent_id = agent.id;
-        config.configurable.name = agent.name;
-        config.configurable.agent_index = i;
-        const noSystemMessages = noSystemModelRegex.some((regex) =>
-          agent.model_parameters.model.match(regex),
+      const initialSessions = buildInitialToolSessions({
+        skillSessions: skillPrimeResult?.initialSessions,
+        agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
+      });
+
+      let {
+        messages: initialMessages,
+        indexTokenCountMap,
+        summary: initialSummary,
+        boundaryTokenAdjustment,
+      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet, skillPrimeResult?.skills);
+      if (boundaryTokenAdjustment) {
+        logger.debug(
+          `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
         );
+      }
 
-        const systemMessage = Object.values(agent.toolContextMap ?? {})
-          .join('\n')
-          .trim();
+      /**
+       * Skill priming — both manual ($ popover) and always-apply (frontmatter).
+       *
+       * Splice + index-shift logic lives in `injectSkillPrimes`
+       * (packages/api/src/agents/skills.ts) so the delicate position math
+       * can be unit-tested in TS without standing up AgentClient. The
+       * resolver enforces a combined ceiling (manual-first, always-apply
+       * truncated first when over cap) before reaching here; the splice
+       * re-applies the cap as defense-in-depth. Runs for both single-
+       * agent and multi-agent runs; how primes interact with handoff /
+       * added-convo agents' per-agent state is an agents-SDK concern,
+       * not this layer's to gate.
+       */
+      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
+      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      if (
+        (manualSkillPrimes && manualSkillPrimes.length > 0) ||
+        (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0)
+      ) {
+        const primeResult = injectSkillPrimes({
+          initialMessages,
+          indexTokenCountMap,
+          manualSkillPrimes,
+          alwaysApplySkillPrimes,
+        });
+        indexTokenCountMap = primeResult.indexTokenCountMap;
+        if (primeResult.inserted > 0) {
+          const manualNames = (manualSkillPrimes ?? []).map((p) => p.name);
+          const alwaysApplyNames = (alwaysApplySkillPrimes ?? []).map((p) => p.name);
+          logger.debug(
+            `[AgentClient] Primed ${primeResult.inserted} skill(s) at message index ${primeResult.insertIdx} — manual: [${manualNames.join(', ')}], always-apply: [${alwaysApplyNames.join(', ')}]`,
+          );
+        }
+        if (primeResult.alwaysApplyDropped > 0) {
+          logger.warn(
+            `[AgentClient] Dropped ${primeResult.alwaysApplyDropped} always-apply prime(s) to stay within MAX_PRIMED_SKILLS_PER_TURN.`,
+          );
+        }
+      }
 
-        let systemContent = [
-          systemMessage,
-          agent.instructions ?? '',
-          i !== 0 ? (agent.additional_instructions ?? '') : '',
-        ]
-          .join('\n')
-          .trim();
+      if (indexTokenCountMap && isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
+        const entries = Object.entries(indexTokenCountMap);
+        const perMsg = entries.map(([idx, count]) => {
+          const msg = initialMessages[Number(idx)];
+          const type = msg ? msg._getType() : '?';
+          return `${idx}:${type}=${count}`;
+        });
+        logger.debug(
+          `[AgentClient] Token map after format: [${perMsg.join(', ')}] (payload=${payload.length}, formatted=${initialMessages.length})`,
+        );
+      }
+      indexTokenCountMap = hydrateMissingIndexTokenCounts({
+        messages: initialMessages,
+        indexTokenCountMap,
+        tokenCounter,
+      });
 
-        if (noSystemMessages === true) {
-          agent.instructions = undefined;
-          agent.additional_instructions = undefined;
-        } else {
-          agent.instructions = systemContent;
-          agent.additional_instructions = undefined;
+      /**
+       * @param {BaseMessage[]} messages
+       */
+      const runAgents = async (messages) => {
+        const agents = [this.options.agent];
+        // Include additional agents when:
+        // - agentConfigs has agents (from addedConvo parallel execution or agent handoffs)
+        // - Agents without incoming edges become start nodes and run in parallel automatically
+        if (this.agentConfigs && this.agentConfigs.size > 0) {
+          agents.push(...this.agentConfigs.values());
         }
 
-        if (noSystemMessages === true && systemContent?.length) {
-          const latestMessageContent = _messages.pop().content;
-          if (typeof latestMessageContent !== 'string') {
-            latestMessageContent[0].text = [systemContent, latestMessageContent[0].text].join('\n');
-            _messages.push(new HumanMessage({ content: latestMessageContent }));
-          } else {
-            const text = [systemContent, latestMessageContent].join('\n');
-            _messages.push(new HumanMessage(text));
-          }
-        }
+        // TODO: needs to be added as part of AgentContext initialization
+        // const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];
+        // const noSystemMessages = noSystemModelRegex.some((regex) =>
+        //   agent.model_parameters.model.match(regex),
+        // );
+        // if (noSystemMessages === true && systemContent?.length) {
+        //   const latestMessageContent = _messages.pop().content;
+        //   if (typeof latestMessageContent !== 'string') {
+        //     latestMessageContent[0].text = [systemContent, latestMessageContent[0].text].join('\n');
+        //     _messages.push(new HumanMessage({ content: latestMessageContent }));
+        //   } else {
+        //     const text = [systemContent, latestMessageContent].join('\n');
+        //     _messages.push(new HumanMessage(text));
+        //   }
+        // }
+        // let messages = _messages;
+        // if (agent.useLegacyContent === true) {
+        //   messages = formatContentStrings(messages);
+        // }
+        // if (
+        //   agent.model_parameters?.clientOptions?.defaultHeaders?.['anthropic-beta']?.includes(
+        //     'prompt-caching',
+        //   )
+        // ) {
+        //   messages = addCacheControl(messages);
+        // }
 
-        let messages = _messages;
-        if (agent.useLegacyContent === true) {
-          messages = formatContentStrings(messages);
-        }
-        if (
-          agent.model_parameters?.clientOptions?.defaultHeaders?.['anthropic-beta']?.includes(
-            'prompt-caching',
-          )
-        ) {
-          messages = addCacheControl(messages);
-        }
-
-        if (i === 0) {
+        if (this.processMemory) {
           memoryPromise = this.runMemory(messages);
         }
 
+        /** Seed calibration state from previous run if encoding matches */
+        const currentEncoding = this.getEncoding();
+        const prevMeta = this.contextMeta;
+        const encodingMatch = prevMeta?.encoding === currentEncoding;
+        const calibrationRatio =
+          encodingMatch && prevMeta?.calibrationRatio > 0 ? prevMeta.calibrationRatio : undefined;
+
+        if (prevMeta) {
+          logger.debug(
+            `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}`,
+          );
+        }
+
         run = await createRun({
-          agent,
-          req: this.options.req,
+          agents,
+          messages,
+          indexTokenCountMap,
+          initialSummary,
+          initialSessions,
+          calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,
           customHandlers: this.options.eventHandlers,
+          requestBody: config.configurable.requestBody,
+          user: createSafeUser(this.options.req?.user),
+          summarizationConfig: appConfig?.summarization,
+          appConfig,
+          tokenCounter,
         });
 
         if (!run) {
           throw new Error('Failed to create run');
         }
 
-        if (i === 0) {
-          this.run = run;
-        }
+        this.run = run;
 
-        if (contentData.length) {
-          const agentUpdate = {
-            type: ContentTypes.AGENT_UPDATE,
-            [ContentTypes.AGENT_UPDATE]: {
-              index: contentData.length,
-              runId: this.responseMessageId,
-              agentId: agent.id,
-            },
-          };
-          const streamData = {
-            event: GraphEvents.ON_AGENT_UPDATE,
-            data: agentUpdate,
-          };
-          this.options.aggregateContent(streamData);
-          sendEvent(this.options.res, streamData);
-          contentData.push(agentUpdate);
-          run.Graph.contentData = contentData;
+        const streamId = this.options.req?._resumableStreamId;
+        if (streamId && run.Graph) {
+          GenerationJobManager.setGraph(streamId, run.Graph);
         }
 
         if (userMCPAuthMap != null) {
           config.configurable.userMCPAuthMap = userMCPAuthMap;
         }
+
+        /** @deprecated Agent Chain */
+        config.configurable.last_agent_id = agents[agents.length - 1].id;
         await run.processStream({ messages }, config, {
-          keepContent: i !== 0,
-          tokenCounter: createTokenCounter(this.getEncoding()),
-          indexTokenCountMap: currentIndexCountMap,
-          maxContextTokens: agent.maxContextTokens,
           callbacks: {
             [Callback.TOOL_ERROR]: logToolError,
           },
@@ -921,127 +1024,61 @@ class AgentClient extends BaseClient {
         config.signal = null;
       };
 
-      await runAgent(this.options.agent, initialMessages);
-      let finalContentStart = 0;
-      if (
-        this.agentConfigs &&
-        this.agentConfigs.size > 0 &&
-        (await checkCapability(this.options.req, AgentCapabilities.chain))
-      ) {
-        const windowSize = 5;
-        let latestMessage = initialMessages.pop().content;
-        if (typeof latestMessage !== 'string') {
-          latestMessage = latestMessage[0].text;
-        }
-        let i = 1;
-        let runMessages = [];
+      const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
+      await runAgents(initialMessages);
 
-        const windowIndexCountMap = {};
-        const windowMessages = initialMessages.slice(-windowSize);
-        let currentIndex = 4;
-        for (let i = initialMessages.length - 1; i >= 0; i--) {
-          windowIndexCountMap[currentIndex] = indexTokenCountMap[i];
-          currentIndex--;
-          if (currentIndex < 0) {
-            break;
-          }
-        }
-        const encoding = this.getEncoding();
-        const tokenCounter = createTokenCounter(encoding);
-        for (const [agentId, agent] of this.agentConfigs) {
-          if (abortController.signal.aborted === true) {
-            break;
-          }
-          const currentRun = await run;
-
-          if (
-            i === this.agentConfigs.size &&
-            config.configurable.hide_sequential_outputs === true
-          ) {
-            const content = this.contentParts.filter(
-              (part) => part.type === ContentTypes.TOOL_CALL,
-            );
-
-            this.options.res.write(
-              `event: message\ndata: ${JSON.stringify({
-                event: 'on_content_update',
-                data: {
-                  runId: this.responseMessageId,
-                  content,
-                },
-              })}\n\n`,
-            );
-          }
-          const _runMessages = currentRun.Graph.getRunMessages();
-          finalContentStart = this.contentParts.length;
-          runMessages = runMessages.concat(_runMessages);
-          const contentData = currentRun.Graph.contentData.slice();
-          const bufferString = getBufferString([new HumanMessage(latestMessage), ...runMessages]);
-          if (i === this.agentConfigs.size) {
-            logger.debug(`SEQUENTIAL AGENTS: Last buffer string:\n${bufferString}`);
-          }
-          try {
-            const contextMessages = [];
-            const runIndexCountMap = {};
-            for (let i = 0; i < windowMessages.length; i++) {
-              const message = windowMessages[i];
-              const messageType = message._getType();
-              if (
-                (!agent.tools || agent.tools.length === 0) &&
-                (messageType === 'tool' || (message.tool_calls?.length ?? 0) > 0)
-              ) {
-                continue;
-              }
-              runIndexCountMap[contextMessages.length] = windowIndexCountMap[i];
-              contextMessages.push(message);
-            }
-            const bufferMessage = new HumanMessage(bufferString);
-            runIndexCountMap[contextMessages.length] = tokenCounter(bufferMessage);
-            const currentMessages = [...contextMessages, bufferMessage];
-            await runAgent(agent, currentMessages, i, contentData, runIndexCountMap);
-          } catch (err) {
-            logger.error(
-              `[api/server/controllers/agents/client.js #chatCompletion] Error running agent ${agentId} (${i})`,
-              err,
-            );
-          }
-          i++;
-        }
+      /**
+       * Surface a completed `skill` tool_call content part per *manually*-
+       * primed skill so the existing `SkillCall` frontend renderer shows
+       * a "Skill X loaded" card on the assistant response. Applied after
+       * the graph finishes to avoid clashing with the aggregator's own
+       * per-step content indexing. Prepended (not appended) so cards sit
+       * above the model's output — priming ran before the turn, the
+       * reply follows.
+       *
+       * Always-apply primes intentionally do NOT emit assistant-side
+       * cards. `extractInvokedSkillsFromPayload` scans history for
+       * `skill` tool_calls and feeds `primeInvokedSkills`, which is
+       * Phase 3's sticky-re-prime path — that's the right behavior for
+       * manual (user picked `$skill` once; re-prime on every subsequent
+       * turn from history). For always-apply, `resolveAlwaysApplySkills`
+       * already re-primes every turn from fresh DB state, so persisting
+       * the card would cause the skill body to get primed twice per
+       * turn starting on turn 2. The user-facing acknowledgement for
+       * always-apply lives on the user bubble as the pinned
+       * `SkillPills` row (`message.alwaysAppliedSkills`), which
+       * is the durable signal the user wants: "this skill auto-primes".
+       *
+       * Live streaming display of manual user-bubble pills is handled
+       * by `SkillPills` reading `message.manualSkills`. No
+       * separate SSE emit is needed here; trying to stream a mid-run
+       * tool_call at index 0 collided with the LLM's first text
+       * content, while emitting at a sparse offset pushed the card
+       * below the reply on finalize. Post-run unshift keeps the final
+       * responseMessage.content in the right order.
+       */
+      const manualPrimed = this.options.agent?.manualSkillPrimes ?? [];
+      if (manualPrimed.length > 0) {
+        const runId = this.responseMessageId ?? 'skill-prime';
+        const manualParts = buildSkillPrimeContentParts(manualPrimed, { runId });
+        this.contentParts.unshift(...manualParts);
       }
 
-      /** Note: not implemented */
-      if (config.configurable.hide_sequential_outputs !== true) {
-        finalContentStart = 0;
-      }
-
-      this.contentParts = this.contentParts.filter((part, index) => {
-        // Include parts that are either:
-        // 1. At or after the finalContentStart index
-        // 2. Of type tool_call
-        // 3. Have tool_call_ids property
-        return (
-          index >= finalContentStart || part.type === ContentTypes.TOOL_CALL || part.tool_call_ids
-        );
-      });
-
-      try {
-        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
-        if (attachments && attachments.length > 0) {
-          this.artifactPromises.push(...attachments);
-        }
-
-        await this.recordCollectedUsage({ context: 'message' });
-      } catch (err) {
-        logger.error(
-          '[api/server/controllers/agents/client.js #chatCompletion] Error recording collected usage',
-          err,
-        );
+      /** @deprecated Agent Chain */
+      if (hideSequentialOutputs) {
+        this.contentParts = this.contentParts.filter((part, index) => {
+          // Include parts that are either:
+          // 1. At or after the finalContentStart index
+          // 2. Of type tool_call
+          // 3. Have tool_call_ids property
+          return (
+            index >= this.contentParts.length - 1 ||
+            part.type === ContentTypes.TOOL_CALL ||
+            part.tool_call_ids
+          );
+        });
       }
     } catch (err) {
-      const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
-      if (attachments && attachments.length > 0) {
-        this.artifactPromises.push(...attachments);
-      }
       logger.error(
         '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
         err,
@@ -1056,6 +1093,50 @@ class AgentClient extends BaseClient {
           [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
         });
       }
+    } finally {
+      /** Capture calibration state from the run for persistence on the response message.
+       *  Runs in finally so values are captured even on abort. */
+      const ratio = this.run?.getCalibrationRatio() ?? 0;
+      if (ratio > 0 && ratio !== 1) {
+        this.contextMeta = {
+          calibrationRatio: Math.round(ratio * 1000) / 1000,
+          encoding: this.getEncoding(),
+        };
+      } else {
+        this.contextMeta = undefined;
+      }
+
+      this.finalizeSubagentContent();
+
+      try {
+        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+        if (attachments && attachments.length > 0) {
+          this.artifactPromises.push(...attachments);
+        }
+
+        /** Skip token spending if aborted - the abort handler (abortMiddleware.js) handles it
+        This prevents double-spending when user aborts via `/api/agents/chat/abort` */
+        const wasAborted = abortController?.signal?.aborted;
+        if (!wasAborted) {
+          await this.recordCollectedUsage({
+            context: 'message',
+            balance: balanceConfig,
+            transactions: transactionsConfig,
+          });
+        } else {
+          logger.debug(
+            '[api/server/controllers/agents/client.js #chatCompletion] Skipping token spending - handled by abort middleware',
+          );
+        }
+      } catch (err) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #chatCompletion] Error in cleanup phase',
+          err,
+        );
+      }
+      run = null;
+      config = null;
+      memoryPromise = null;
     }
   }
 
@@ -1070,7 +1151,16 @@ class AgentClient extends BaseClient {
       throw new Error('Run not initialized');
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
-    const { req, res, agent } = this.options;
+    const { req, agent } = this.options;
+
+    if (req?.body?.isTemporary) {
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] Skipping title generation for temporary conversation`,
+      );
+      return;
+    }
+
+    const appConfig = req.config;
     let endpoint = agent.endpoint;
 
     /** @type {import('@librechat/agents').ClientOptions} */
@@ -1078,29 +1168,41 @@ class AgentClient extends BaseClient {
       model: agent.model || agent.model_parameters.model,
     };
 
-    let titleProviderConfig = await getProviderConfig(endpoint);
+    let titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
 
     /** @type {TEndpoint | undefined} */
     const endpointConfig =
-      req.app.locals.all ?? req.app.locals[endpoint] ?? titleProviderConfig.customEndpointConfig;
+      appConfig.endpoints?.all ??
+      appConfig.endpoints?.[endpoint] ??
+      titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
-      logger.warn(
-        '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] No endpoint config for "${endpoint}"`,
       );
+    }
+
+    if (endpointConfig?.titleConvo === false) {
+      logger.debug(
+        `[api/server/controllers/agents/client.js #titleConvo] Title generation disabled for endpoint "${endpoint}"`,
+      );
+      return;
     }
 
     if (endpointConfig?.titleEndpoint && endpointConfig.titleEndpoint !== endpoint) {
       try {
-        titleProviderConfig = await getProviderConfig(endpointConfig.titleEndpoint);
+        titleProviderConfig = getProviderConfig({
+          provider: endpointConfig.titleEndpoint,
+          appConfig,
+        });
         endpoint = endpointConfig.titleEndpoint;
       } catch (error) {
         logger.warn(
-          `[api/server/controllers/agents/client.js #titleConvo] Error getting title endpoint config for ${endpointConfig.titleEndpoint}, falling back to default`,
+          `[api/server/controllers/agents/client.js #titleConvo] Error getting title endpoint config for "${endpointConfig.titleEndpoint}", falling back to default`,
           error,
         );
         // Fall back to original provider config
         endpoint = agent.endpoint;
-        titleProviderConfig = await getProviderConfig(endpoint);
+        titleProviderConfig = getProviderConfig({ provider: endpoint, appConfig });
       }
     }
 
@@ -1114,11 +1216,12 @@ class AgentClient extends BaseClient {
 
     const options = await titleProviderConfig.getOptions({
       req,
-      res,
-      optionsOnly: true,
-      overrideEndpoint: endpoint,
-      overrideModel: clientOptions.model,
-      endpointOption: { model_parameters: clientOptions },
+      endpoint,
+      model_parameters: clientOptions,
+      db: {
+        getUserKey: db.getUserKey,
+        getUserKeyValues: db.getUserKeyValues,
+      },
     });
 
     let provider = options.provider ?? titleProviderConfig.overrideProvider ?? agent.provider;
@@ -1165,6 +1268,21 @@ class AgentClient extends BaseClient {
       clientOptions.json = true;
     }
 
+    /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
+     *  non-custom endpoints, needs consideration of varying provider header configs.
+     */
+    if (clientOptions?.configuration?.defaultHeaders != null) {
+      clientOptions.configuration.defaultHeaders = resolveHeaders({
+        headers: clientOptions.configuration.defaultHeaders,
+        user: createSafeUser(this.options.req?.user),
+        body: {
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          parentMessageId: this.parentMessageId,
+        },
+      });
+    }
+
     try {
       const titleResult = await this.run.generateTitle({
         provider,
@@ -1175,12 +1293,17 @@ class AgentClient extends BaseClient {
         titlePrompt: endpointConfig?.titlePrompt,
         titlePromptTemplate: endpointConfig?.titlePromptTemplate,
         chainOptions: {
+          runName: 'TitleRun',
           signal: abortController.signal,
           callbacks: [
             {
               handleLLMEnd,
             },
           ],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req.user?.id,
+          },
         },
       });
 
@@ -1195,6 +1318,9 @@ class AgentClient extends BaseClient {
         } else if (item.tokenUsage) {
           input_tokens = item.tokenUsage.promptTokens;
           output_tokens = item.tokenUsage.completionTokens;
+        } else if (item.usage_metadata) {
+          input_tokens = item.usage_metadata.input_tokens;
+          output_tokens = item.usage_metadata.output_tokens;
         }
 
         return {
@@ -1203,10 +1329,15 @@ class AgentClient extends BaseClient {
         };
       });
 
+      const balanceConfig = getBalanceConfig(appConfig);
+      const transactionsConfig = getTransactionsConfig(appConfig);
       await this.recordCollectedUsage({
-        model: clientOptions.model,
-        context: 'title',
         collectedUsage,
+        context: 'title',
+        model: clientOptions.model,
+        balance: balanceConfig,
+        transactions: transactionsConfig,
+        messageId: this.responseMessageId,
       }).catch((err) => {
         logger.error(
           '[api/server/controllers/agents/client.js #titleConvo] Error recording collected usage',
@@ -1214,7 +1345,7 @@ class AgentClient extends BaseClient {
         );
       });
 
-      return titleResult.title;
+      return sanitizeTitle(titleResult.title);
     } catch (err) {
       logger.error('[api/server/controllers/agents/client.js #titleConvo] Error', err);
       return;
@@ -1225,17 +1356,27 @@ class AgentClient extends BaseClient {
    * @param {object} params
    * @param {number} params.promptTokens
    * @param {number} params.completionTokens
-   * @param {OpenAIUsageMetadata} [params.usage]
    * @param {string} [params.model]
+   * @param {OpenAIUsageMetadata} [params.usage]
+   * @param {AppConfig['balance']} [params.balance]
    * @param {string} [params.context='message']
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, promptTokens, completionTokens, usage, context = 'message' }) {
+  async recordTokenUsage({
+    model,
+    usage,
+    balance,
+    promptTokens,
+    completionTokens,
+    context = 'message',
+  }) {
     try {
-      await spendTokens(
+      await db.spendTokens(
         {
           model,
           context,
+          balance,
+          messageId: this.responseMessageId,
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
           endpointTokenConfig: this.options.endpointTokenConfig,
@@ -1249,10 +1390,12 @@ class AgentClient extends BaseClient {
         'reasoning_tokens' in usage &&
         typeof usage.reasoning_tokens === 'number'
       ) {
-        await spendTokens(
+        await db.spendTokens(
           {
             model,
+            balance,
             context: 'reasoning',
+            messageId: this.responseMessageId,
             conversationId: this.conversationId,
             user: this.user ?? this.options.req.user?.id,
             endpointTokenConfig: this.options.endpointTokenConfig,
@@ -1268,18 +1411,12 @@ class AgentClient extends BaseClient {
     }
   }
 
+  /** Anthropic Claude models use a distinct BPE tokenizer; all others default to o200k_base. */
   getEncoding() {
+    if (this.model && this.model.toLowerCase().includes('claude')) {
+      return 'claude';
+    }
     return 'o200k_base';
-  }
-
-  /**
-   * Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
-   * @param {string} text - The text to get the token count for.
-   * @returns {number} The token count of the given text.
-   */
-  getTokenCount(text) {
-    const encoding = this.getEncoding();
-    return Tokenizer.getTokenCount(text, encoding);
   }
 }
 

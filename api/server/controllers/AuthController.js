@@ -1,8 +1,8 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
-const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { isEnabled, findOpenIDUser, getOpenIdIssuer } = require('@librechat/api');
 const {
   requestPasswordReset,
   setOpenIDAuthTokens,
@@ -10,9 +10,15 @@ const {
   setAuthTokens,
   registerUser,
 } = require('~/server/services/AuthService');
-const { findUser, getUserById, deleteAllUserSessions, findSession } = require('~/models');
-const { getOpenIdConfig } = require('~/strategies');
+const {
+  deleteAllUserSessions,
+  getUserById,
+  findSession,
+  updateUser,
+  findUser,
+} = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
+const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
 const registrationController = async (req, res) => {
   try {
@@ -59,29 +65,81 @@ const resetPasswordController = async (req, res) => {
 };
 
 const refreshController = async (req, res) => {
-  const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
-  const token_provider = req.headers.cookie
-    ? cookies.parse(req.headers.cookie).token_provider
-    : null;
-  if (!refreshToken) {
-    return res.status(200).send('Refresh token not provided');
-  }
-  if (token_provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS) === true) {
+  const parsedCookies = req.headers.cookie ? cookies.parse(req.headers.cookie) : {};
+  const token_provider = parsedCookies.token_provider;
+
+  if (token_provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+    /** For OpenID users, read refresh token from session to avoid large cookie issues */
+    const refreshToken = req.session?.openidTokens?.refreshToken || parsedCookies.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(200).send('Refresh token not provided');
+    }
+
     try {
       const openIdConfig = getOpenIdConfig();
-      const tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken);
+      const refreshParams = process.env.OPENID_SCOPE ? { scope: process.env.OPENID_SCOPE } : {};
+      const tokenset = await openIdClient.refreshTokenGrant(
+        openIdConfig,
+        refreshToken,
+        refreshParams,
+      );
       const claims = tokenset.claims();
-      const user = await findUser({ email: claims.email });
-      if (!user) {
+      const openidIssuer = getOpenIdIssuer(claims, openIdConfig);
+      const { user, error, migration } = await findOpenIDUser({
+        findUser,
+        email: getOpenIdEmail(claims),
+        openidId: claims.sub,
+        openidIssuer,
+        idOnTheSource: claims.oid,
+        strategyName: 'refreshController',
+      });
+
+      logger.debug(
+        `[refreshController] findOpenIDUser result: user=${user?.email ?? 'null'}, error=${error ?? 'null'}, migration=${migration}, userOpenidId=${user?.openidId ?? 'null'}, claimsSub=${claims.sub}`,
+      );
+
+      if (error || !user) {
+        logger.warn(
+          `[refreshController] Redirecting to /login: error=${error ?? 'null'}, user=${user ? 'exists' : 'null'}`,
+        );
         return res.status(401).redirect('/login');
       }
-      const token = setOpenIDAuthTokens(tokenset, res);
-      return res.status(200).send({ token, user });
+
+      // Handle migration: update user with openidId if found by email without openidId
+      // Also handle case where user has mismatched openidId (e.g., after database switch)
+      if (migration || user.openidId !== claims.sub) {
+        const reason = migration ? 'migration' : 'openidId mismatch';
+        await updateUser(user._id.toString(), {
+          provider: 'openid',
+          openidId: claims.sub,
+          ...(openidIssuer ? { openidIssuer } : {}),
+        });
+        logger.info(
+          `[refreshController] Updated user ${user.email} openidId (${reason}): ${user.openidId ?? 'null'} -> ${claims.sub}`,
+        );
+      }
+
+      const token = setOpenIDAuthTokens(tokenset, req, res, {
+        userId: user._id.toString(),
+        existingRefreshToken: refreshToken,
+        tenantId: user.tenantId,
+      });
+
+      const { password: _pw, __v: _v, totpSecret: _ts, backupCodes: _bc, ...safeUser } = user;
+      return res.status(200).send({ token, user: safeUser });
     } catch (error) {
       logger.error('[refreshController] OpenID token refresh error', error);
       return res.status(403).send('Invalid OpenID refresh token');
     }
   }
+
+  /** For non-OpenID users, read refresh token from cookies */
+  const refreshToken = parsedCookies.refreshToken;
+  if (!refreshToken) {
+    return res.status(200).send('Refresh token not provided');
+  }
+
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
     const user = await getUserById(payload.id, '-password -__v -totpSecret -backupCodes');
@@ -92,18 +150,22 @@ const refreshController = async (req, res) => {
     const userId = payload.id;
 
     if (process.env.NODE_ENV === 'CI') {
-      const token = await setAuthTokens(userId, res);
+      const token = await setAuthTokens(userId, res, null, req);
       return res.status(200).send({ token, user });
     }
 
-    // Find the session with the hashed refresh token
-    const session = await findSession({
-      userId: userId,
-      refreshToken: refreshToken,
-    });
+    /** Session with the hashed refresh token */
+    const session = await findSession(
+      {
+        userId: userId,
+        refreshToken: refreshToken,
+      },
+      { lean: false },
+    );
 
     if (session && session.expiration > new Date()) {
-      const token = await setAuthTokens(userId, res, session._id);
+      const token = await setAuthTokens(userId, res, session, req);
+
       res.status(200).send({ token, user });
     } else if (req?.query?.retry) {
       // Retrying from a refresh token request that failed (401)
@@ -114,7 +176,7 @@ const refreshController = async (req, res) => {
       res.status(401).send('Refresh token expired or not found for this user');
     }
   } catch (err) {
-    logger.error(`[refreshController] Refresh token: ${refreshToken}`, err);
+    logger.error(`[refreshController] Invalid refresh token:`, err);
     res.status(403).send('Invalid refresh token');
   }
 };
@@ -135,15 +197,6 @@ const graphTokenController = async (req, res) => {
       });
     }
 
-    // Extract access token from Authorization header
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        message: 'Valid authorization token required',
-      });
-    }
-
-    // Get scopes from query parameters
     const scopes = req.query.scopes;
     if (!scopes) {
       return res.status(400).json({
@@ -151,7 +204,13 @@ const graphTokenController = async (req, res) => {
       });
     }
 
-    const accessToken = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const accessToken = req.user.federatedTokens?.access_token;
+    if (!accessToken) {
+      return res.status(401).json({
+        message: 'No federated access token available for token exchange',
+      });
+    }
+
     const tokenResponse = await getGraphApiToken(req.user, accessToken, scopes);
 
     res.json(tokenResponse);

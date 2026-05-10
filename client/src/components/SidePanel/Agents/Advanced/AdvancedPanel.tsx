@@ -4,7 +4,9 @@ import { AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import { useAgentPanelContext } from '~/Providers';
+import AgentSubagents from './AgentSubagents';
 import MaxAgentSteps from './MaxAgentSteps';
+import AgentHandoffs from './AgentHandoffs';
 import { useLocalize } from '~/hooks';
 import AgentChain from './AgentChain';
 import { Panel } from '~/common';
@@ -20,10 +22,14 @@ export default function AdvancedPanel() {
     () => agentsConfig?.capabilities.includes(AgentCapabilities.chain) ?? false,
     [agentsConfig],
   );
+  const subagentsEnabled = useMemo(
+    () => agentsConfig?.capabilities.includes(AgentCapabilities.subagents) ?? false,
+    [agentsConfig],
+  );
 
   return (
-    <div className="scrollbar-gutter-stable h-full min-h-[40vh] overflow-auto pb-12 text-sm">
-      <div className="advanced-panel relative flex flex-col items-center px-16 py-4 text-center">
+    <div className="mb-1 flex w-full flex-col gap-2 text-sm">
+      <div className="advanced-panel relative flex flex-col items-center px-16 pt-2 text-center">
         <div className="absolute left-0 top-4">
           <button
             type="button"
@@ -31,16 +37,30 @@ export default function AdvancedPanel() {
             onClick={() => {
               setActivePanel(Panel.builder);
             }}
+            aria-label={localize('com_ui_back_to_builder')}
           >
             <div className="advanced-panel-content flex w-full items-center justify-center gap-2">
-              <ChevronLeft />
+              <ChevronLeft aria-hidden="true" />
             </div>
           </button>
         </div>
         <div className="mb-2 mt-2 text-xl font-medium">{localize('com_ui_advanced_settings')}</div>
       </div>
-      <div className="flex flex-col gap-4 px-2">
+      <div className="flex flex-col gap-4 px-2 pb-2">
         <MaxAgentSteps />
+        {subagentsEnabled && (
+          <Controller
+            name="subagents"
+            control={control}
+            render={({ field }) => <AgentSubagents field={field} currentAgentId={currentAgentId} />}
+          />
+        )}
+        <Controller
+          name="edges"
+          control={control}
+          defaultValue={[]}
+          render={({ field }) => <AgentHandoffs field={field} currentAgentId={currentAgentId} />}
+        />
         {chainEnabled && (
           <Controller
             name="agent_ids"

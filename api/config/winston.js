@@ -1,9 +1,42 @@
 const path = require('path');
+const fs = require('fs');
 const winston = require('winston');
 require('winston-daily-rotate-file');
-const { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat } = require('./parsers');
+const {
+  redactFormat,
+  redactMessage,
+  debugTraverse,
+  jsonTruncateFormat,
+  formatConsoleMeta,
+} = require('./parsers');
 
-const logDir = path.join(__dirname, '..', 'logs');
+/**
+ * Determine the log directory.
+ * Priority:
+ * 1. LIBRECHAT_LOG_DIR environment variable (allows user override)
+ * 2. /app/logs if running in Docker (bind-mounted with correct permissions)
+ * 3. api/logs relative to this file (local development)
+ */
+const getLogDir = () => {
+  if (process.env.LIBRECHAT_LOG_DIR) {
+    return process.env.LIBRECHAT_LOG_DIR;
+  }
+
+  // Check if running in Docker container (cwd is /app)
+  if (process.cwd() === '/app') {
+    const dockerLogDir = '/app/logs';
+    // Ensure the directory exists
+    if (!fs.existsSync(dockerLogDir)) {
+      fs.mkdirSync(dockerLogDir, { recursive: true });
+    }
+    return dockerLogDir;
+  }
+
+  // Local development: use api/logs relative to this file
+  return path.join(__dirname, '..', 'logs');
+};
+
+const logDir = getLogDir();
 
 const { NODE_ENV, DEBUG_LOGGING = true, CONSOLE_JSON = false, DEBUG_CONSOLE = false } = process.env;
 
@@ -83,12 +116,16 @@ const consoleFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   // redactErrors(),
   winston.format.printf((info) => {
-    const message = `${info.timestamp} ${info.level}: ${info.message}`;
-    if (info.level.includes('error')) {
-      return redactMessage(message);
+    const base = `${info.timestamp} ${info.level}: ${info.message}`;
+    const isErrorOrWarn = info.level.includes('error') || info.level.includes('warn');
+
+    if (isErrorOrWarn) {
+      const metaTrailer = formatConsoleMeta(info);
+      const line = metaTrailer ? `${base} ${metaTrailer}` : base;
+      return redactMessage(line);
     }
 
-    return message;
+    return base;
   }),
 );
 

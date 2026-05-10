@@ -1,9 +1,19 @@
-const { fetchModels } = require('~/server/services/ModelService');
-const { getCustomConfig } = require('./getCustomConfig');
+const { fetchModels } = require('@librechat/api');
 const loadConfigModels = require('./loadConfigModels');
+const { getAppConfig } = require('./app');
 
-jest.mock('~/server/services/ModelService');
-jest.mock('./getCustomConfig');
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  fetchModels: jest.fn(),
+}));
+jest.mock('./app');
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  logger: { debug: jest.fn(), error: jest.fn(), warn: jest.fn() },
+}));
+jest.mock('~/models', () => ({
+  getUserKeyValues: jest.fn(),
+}));
 
 const exampleConfig = {
   endpoints: {
@@ -60,14 +70,17 @@ const exampleConfig = {
 };
 
 describe('loadConfigModels', () => {
-  const mockRequest = { app: { locals: {} }, user: { id: 'testUserId' } };
+  const mockRequest = { user: { id: 'testUserId' } };
 
   const originalEnv = process.env;
 
   beforeEach(() => {
-    jest.resetAllMocks();
-    jest.resetModules();
+    jest.clearAllMocks();
+    fetchModels.mockReset();
+    require('~/models').getUserKeyValues.mockReset();
     process.env = { ...originalEnv };
+
+    getAppConfig.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -75,18 +88,15 @@ describe('loadConfigModels', () => {
   });
 
   it('should return an empty object if customConfig is null', async () => {
-    getCustomConfig.mockResolvedValue(null);
+    getAppConfig.mockResolvedValue(null);
     const result = await loadConfigModels(mockRequest);
     expect(result).toEqual({});
   });
 
   it('handles azure models and endpoint correctly', async () => {
-    mockRequest.app.locals.azureOpenAI = { modelNames: ['model1', 'model2'] };
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
-        azureOpenAI: {
-          models: ['model1', 'model2'],
-        },
+        azureOpenAI: { modelNames: ['model1', 'model2'] },
       },
     });
 
@@ -97,18 +107,16 @@ describe('loadConfigModels', () => {
   it('fetches custom models based on the unique key', async () => {
     process.env.BASE_URL = 'http://example.com';
     process.env.API_KEY = 'some-api-key';
-    const customEndpoints = {
-      custom: [
-        {
-          baseURL: '${BASE_URL}',
-          apiKey: '${API_KEY}',
-          name: 'CustomModel',
-          models: { fetch: true },
-        },
-      ],
-    };
+    const customEndpoints = [
+      {
+        baseURL: '${BASE_URL}',
+        apiKey: '${API_KEY}',
+        name: 'CustomModel',
+        models: { fetch: true },
+      },
+    ];
 
-    getCustomConfig.mockResolvedValue({ endpoints: customEndpoints });
+    getAppConfig.mockResolvedValue({ endpoints: { custom: customEndpoints } });
     fetchModels.mockResolvedValue(['customModel1', 'customModel2']);
 
     const result = await loadConfigModels(mockRequest);
@@ -117,7 +125,7 @@ describe('loadConfigModels', () => {
   });
 
   it('correctly associates models to names using unique keys', async () => {
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
         custom: [
           {
@@ -146,7 +154,7 @@ describe('loadConfigModels', () => {
 
   it('correctly handles multiple endpoints with the same baseURL but different apiKeys', async () => {
     // Mock the custom configuration to simulate the user's scenario
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
         custom: [
           {
@@ -210,7 +218,7 @@ describe('loadConfigModels', () => {
     process.env.MY_OPENROUTER_API_KEY = 'actual_openrouter_api_key';
     // Setup custom configuration with specific API keys for Mistral and OpenRouter
     // and "user_provided" for groq and Ollama, indicating no fetch for the latter two
-    getCustomConfig.mockResolvedValue(exampleConfig);
+    getAppConfig.mockResolvedValue(exampleConfig);
 
     // Assuming fetchModels would be called only for Mistral and OpenRouter
     fetchModels.mockImplementation(({ name }) => {
@@ -256,8 +264,8 @@ describe('loadConfigModels', () => {
     // For groq and ollama, since the apiKey is "user_provided", models should not be fetched
     // Depending on your implementation's behavior regarding "default" models without fetching,
     // you may need to adjust the following assertions:
-    expect(result.groq).toBe(exampleConfig.endpoints.custom[2].models.default);
-    expect(result.ollama).toBe(exampleConfig.endpoints.custom[3].models.default);
+    expect(result.groq).toEqual(exampleConfig.endpoints.custom[2].models.default);
+    expect(result.ollama).toEqual(exampleConfig.endpoints.custom[3].models.default);
 
     // Verifying fetchModels was not called for groq and ollama
     expect(fetchModels).not.toHaveBeenCalledWith(
@@ -273,7 +281,7 @@ describe('loadConfigModels', () => {
   });
 
   it('falls back to default models if fetching returns an empty array', async () => {
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
         custom: [
           {
@@ -306,7 +314,7 @@ describe('loadConfigModels', () => {
   });
 
   it('falls back to default models if fetching returns a falsy value', async () => {
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
         custom: [
           {
@@ -334,6 +342,168 @@ describe('loadConfigModels', () => {
     );
 
     expect(result.FalsyFetchModel).toEqual(['defaultModel1', 'defaultModel2']);
+  });
+
+  describe('user-provided API key model fetching', () => {
+    it('fetches models using user-provided API key when key is stored', async () => {
+      const { getUserKeyValues } = require('~/models');
+      getUserKeyValues.mockResolvedValueOnce({
+        apiKey: 'sk-user-key',
+        baseURL: 'https://api.x.com/v1',
+      });
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'UserEndpoint',
+              apiKey: 'user_provided',
+              baseURL: 'user_provided',
+              models: { fetch: true, default: ['fallback-model'] },
+            },
+          ],
+        },
+      });
+      fetchModels.mockResolvedValue(['fetched-model-a', 'fetched-model-b']);
+
+      const result = await loadConfigModels(mockRequest);
+
+      expect(getUserKeyValues).toHaveBeenCalledWith({ userId: 'testUserId', name: 'UserEndpoint' });
+      expect(fetchModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiKey: 'sk-user-key',
+          baseURL: 'https://api.x.com/v1',
+          skipCache: true,
+        }),
+      );
+      expect(result.UserEndpoint).toEqual(['fetched-model-a', 'fetched-model-b']);
+    });
+
+    it('falls back to defaults when getUserKeyValues returns no apiKey', async () => {
+      const { getUserKeyValues } = require('~/models');
+      getUserKeyValues.mockResolvedValueOnce({ baseURL: 'https://api.x.com/v1' });
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'NoKeyEndpoint',
+              apiKey: 'user_provided',
+              baseURL: 'https://api.x.com/v1',
+              models: { fetch: true, default: ['default-model'] },
+            },
+          ],
+        },
+      });
+
+      const result = await loadConfigModels(mockRequest);
+
+      expect(fetchModels).not.toHaveBeenCalled();
+      expect(result.NoKeyEndpoint).toEqual(['default-model']);
+    });
+
+    it('falls back to defaults and logs warn when getUserKeyValues throws infra error', async () => {
+      const { getUserKeyValues } = require('~/models');
+      const { logger } = require('@librechat/data-schemas');
+      getUserKeyValues.mockRejectedValueOnce(new Error('DB connection timeout'));
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'ErrorEndpoint',
+              apiKey: 'user_provided',
+              baseURL: 'https://api.example.com/v1',
+              models: { fetch: true, default: ['fallback'] },
+            },
+          ],
+        },
+      });
+
+      const result = await loadConfigModels(mockRequest);
+
+      expect(fetchModels).not.toHaveBeenCalled();
+      expect(result.ErrorEndpoint).toEqual(['fallback']);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Failed to retrieve user key for "ErrorEndpoint": DB connection timeout',
+        ),
+      );
+      expect(logger.debug).not.toHaveBeenCalledWith(expect.stringContaining('No user key stored'));
+    });
+
+    it('logs debug (not warn) for NO_USER_KEY errors', async () => {
+      const { getUserKeyValues } = require('~/models');
+      const { logger } = require('@librechat/data-schemas');
+      getUserKeyValues.mockRejectedValueOnce(new Error(JSON.stringify({ type: 'no_user_key' })));
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'MissingKeyEndpoint',
+              apiKey: 'user_provided',
+              baseURL: 'https://api.example.com/v1',
+              models: { fetch: true, default: ['default-model'] },
+            },
+          ],
+        },
+      });
+
+      const result = await loadConfigModels(mockRequest);
+
+      expect(result.MissingKeyEndpoint).toEqual(['default-model']);
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('No user key stored'));
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('Failed to retrieve user key'),
+      );
+    });
+
+    it('skips user key lookup when req.user.id is undefined', async () => {
+      const { getUserKeyValues } = require('~/models');
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'NoUserEndpoint',
+              apiKey: 'user_provided',
+              baseURL: 'https://api.x.com/v1',
+              models: { fetch: true, default: ['anon-model'] },
+            },
+          ],
+        },
+      });
+
+      const result = await loadConfigModels({ user: {} });
+
+      expect(getUserKeyValues).not.toHaveBeenCalled();
+      expect(result.NoUserEndpoint).toEqual(['anon-model']);
+    });
+
+    it('uses stored baseURL only when baseURL is user_provided', async () => {
+      const { getUserKeyValues } = require('~/models');
+      getUserKeyValues.mockResolvedValueOnce({ apiKey: 'sk-key' });
+      getAppConfig.mockResolvedValue({
+        endpoints: {
+          custom: [
+            {
+              name: 'KeyOnly',
+              apiKey: 'user_provided',
+              baseURL: 'https://fixed-base.com/v1',
+              models: { fetch: true, default: ['default'] },
+            },
+          ],
+        },
+      });
+      fetchModels.mockResolvedValue(['model-from-fixed-base']);
+
+      const result = await loadConfigModels(mockRequest);
+
+      expect(fetchModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiKey: 'sk-key',
+          baseURL: 'https://fixed-base.com/v1',
+          skipCache: true,
+        }),
+      );
+      expect(result.KeyOnly).toEqual(['model-from-fixed-base']);
+    });
   });
 
   it('normalizes Ollama endpoint name to lowercase', async () => {
@@ -367,7 +537,7 @@ describe('loadConfigModels', () => {
       },
     ];
 
-    getCustomConfig.mockResolvedValue({
+    getAppConfig.mockResolvedValue({
       endpoints: {
         custom: testCases,
       },

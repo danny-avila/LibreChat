@@ -7,6 +7,7 @@ export default function PersonalizationIcon({ className = '' }: { className?: st
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={`icon-sm ${className}`}
+      aria-hidden="true"
     >
       <path
         fillRule="evenodd"

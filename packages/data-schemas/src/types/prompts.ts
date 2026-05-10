@@ -7,6 +7,7 @@ export interface IPrompt extends Document {
   type: 'text' | 'chat';
   createdAt?: Date;
   updatedAt?: Date;
+  tenantId?: string;
 }
 
 export interface IPromptGroup {
@@ -14,7 +15,6 @@ export interface IPromptGroup {
   numberOfGenerations: number;
   oneliner: string;
   category: string;
-  projectIds: Types.ObjectId[];
   productionId: Types.ObjectId;
   author: Types.ObjectId;
   authorName: string;
@@ -22,6 +22,7 @@ export interface IPromptGroup {
   createdAt?: Date;
   updatedAt?: Date;
   isPublic?: boolean;
+  tenantId?: string;
 }
 
 export interface IPromptGroupDocument extends IPromptGroup, Document {}

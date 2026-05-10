@@ -4,7 +4,7 @@ import type { TMessage, Assistant, Agent } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import MessageEndpointIcon from '../Endpoints/MessageEndpointIcon';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
-import { getIconEndpoint } from '~/utils';
+import { getIconEndpoint, logger } from '~/utils';
 
 export default function MessageIcon(
   props: Pick<TMessageProps, 'message' | 'conversation'> & {
@@ -41,7 +41,7 @@ export default function MessageIcon(
     }
     return result;
   }, [assistant, agent, assistantAvatar, agentAvatar]);
-  console.log('MessageIcon', {
+  logger.log('MessageIcon', {
     endpoint,
     iconURL,
     assistantName,

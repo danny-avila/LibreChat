@@ -18,10 +18,37 @@ const fs = require('fs');
 // Set up environment
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-const { USE_REDIS, REDIS_URI, REDIS_KEY_PREFIX } = process.env;
+const {
+  USE_REDIS,
+  REDIS_URI,
+  REDIS_USERNAME,
+  REDIS_PASSWORD,
+  REDIS_CA,
+  REDIS_KEY_PREFIX,
+  USE_REDIS_CLUSTER,
+  REDIS_USE_ALTERNATIVE_DNS_LOOKUP,
+} = process.env;
 
 // Simple utility function
 const isEnabled = (value) => value === 'true' || value === true;
+
+// Helper function to read Redis CA certificate
+const getRedisCA = () => {
+  if (!REDIS_CA) {
+    return null;
+  }
+  try {
+    if (fs.existsSync(REDIS_CA)) {
+      return fs.readFileSync(REDIS_CA, 'utf8');
+    } else {
+      console.warn(`⚠️  Redis CA certificate file not found: ${REDIS_CA}`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`❌ Failed to read Redis CA certificate file '${REDIS_CA}':`, error.message);
+    return null;
+  }
+};
 
 async function showHelp() {
   console.log(`
@@ -67,30 +94,86 @@ async function flushRedisCache(dryRun = false, verbose = false) {
       console.log(`   Prefix: ${REDIS_KEY_PREFIX || 'None'}`);
     }
 
-    // Create Redis client directly
-    const Redis = require('ioredis');
+    // Create Redis client using same pattern as main app
+    const IoRedis = require('ioredis');
     let redis;
 
-    // Handle cluster vs single Redis
-    if (process.env.USE_REDIS_CLUSTER === 'true') {
-      const hosts = REDIS_URI.split(',').map((uri) => {
-        const [host, port] = uri.split(':');
-        return { host, port: parseInt(port) || 6379 };
-      });
-      redis = new Redis.Cluster(hosts);
+    // Parse credentials from URI or use environment variables (same as redisClients.ts)
+    const urls = (REDIS_URI || '').split(',').map((uri) => new URL(uri));
+    const username = urls[0]?.username || REDIS_USERNAME;
+    const password = urls[0]?.password || REDIS_PASSWORD;
+    const ca = getRedisCA();
+
+    // Redis options (matching redisClients.ts configuration)
+    const redisOptions = {
+      username: username,
+      password: password,
+      tls: ca ? { ca } : undefined,
+      connectTimeout: 10000,
+      maxRetriesPerRequest: 3,
+      enableOfflineQueue: true,
+      lazyConnect: false,
+    };
+
+    // Handle cluster vs single Redis (same logic as redisClients.ts)
+    const useCluster = urls.length > 1 || isEnabled(USE_REDIS_CLUSTER);
+
+    if (useCluster) {
+      const clusterOptions = {
+        redisOptions,
+        enableOfflineQueue: true,
+      };
+
+      // Add DNS lookup for AWS ElastiCache if needed (same as redisClients.ts)
+      if (isEnabled(REDIS_USE_ALTERNATIVE_DNS_LOOKUP)) {
+        clusterOptions.dnsLookup = (address, callback) => callback(null, address);
+      }
+
+      redis = new IoRedis.Cluster(
+        urls.map((url) => ({ host: url.hostname, port: parseInt(url.port, 10) || 6379 })),
+        clusterOptions,
+      );
     } else {
-      redis = new Redis(REDIS_URI);
+      // @ts-ignore - ioredis default export is constructable despite linter warning
+      redis = new IoRedis(REDIS_URI, redisOptions);
     }
+
+    // Wait for connection
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Connection timeout'));
+      }, 10000);
+
+      redis.once('ready', () => {
+        clearTimeout(timeout);
+        resolve(undefined);
+      });
+
+      redis.once('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
 
     if (dryRun) {
       console.log('🔍 [DRY RUN] Would flush Redis cache');
       try {
-        const keys = await redis.keys('*');
-        console.log(`   Would delete ${keys.length} keys`);
-        if (verbose && keys.length > 0) {
+        let allKeys = [];
+        if (useCluster) {
+          const nodes = redis.nodes('master');
+          console.log(`   Cluster detected: ${nodes.length} master nodes`);
+          for (const node of nodes) {
+            const keys = await node.keys('*');
+            allKeys = allKeys.concat(keys);
+          }
+        } else {
+          allKeys = await redis.keys('*');
+        }
+        console.log(`   Would delete ${allKeys.length} keys`);
+        if (verbose && allKeys.length > 0) {
           console.log(
             '   Sample keys:',
-            keys.slice(0, 10).join(', ') + (keys.length > 10 ? '...' : ''),
+            allKeys.slice(0, 10).join(', ') + (allKeys.length > 10 ? '...' : ''),
           );
         }
       } catch (error) {
@@ -103,15 +186,29 @@ async function flushRedisCache(dryRun = false, verbose = false) {
     // Get key count before flushing
     let keyCount = 0;
     try {
-      const keys = await redis.keys('*');
-      keyCount = keys.length;
-    } catch (error) {
+      if (useCluster) {
+        const nodes = redis.nodes('master');
+        for (const node of nodes) {
+          const keys = await node.keys('*');
+          keyCount += keys.length;
+        }
+      } else {
+        const keys = await redis.keys('*');
+        keyCount = keys.length;
+      }
+    } catch (_error) {
       // Continue with flush even if we can't count keys
     }
 
     // Flush the Redis cache
-    await redis.flushdb();
-    console.log('✅ Redis cache flushed successfully');
+    if (useCluster) {
+      const nodes = redis.nodes('master');
+      await Promise.all(nodes.map((node) => node.flushdb()));
+      console.log(`✅ Redis cluster cache flushed successfully (${nodes.length} master nodes)`);
+    } else {
+      await redis.flushdb();
+      console.log('✅ Redis cache flushed successfully');
+    }
 
     if (keyCount > 0) {
       console.log(`   Deleted ${keyCount} keys`);
@@ -209,7 +306,7 @@ async function main() {
   }
 
   let success = true;
-  const isRedisEnabled = isEnabled(USE_REDIS) && REDIS_URI;
+  const isRedisEnabled = isEnabled(USE_REDIS) || (REDIS_URI != null && REDIS_URI !== '');
 
   // Flush the appropriate cache type
   if (isRedisEnabled) {

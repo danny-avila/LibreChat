@@ -30,6 +30,7 @@ export default function SaveBadgesState({
         onCheckedChange={handleCheckedChange}
         className="ml-4"
         data-testid="saveBadgesState"
+        aria-label={localize('com_nav_save_badges_state')}
       />
     </div>
   );

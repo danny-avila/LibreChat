@@ -1,8 +1,7 @@
 import shareSchema, { ISharedLink } from '~/schema/share';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
 
-/**
- * Creates or returns the SharedLink model using the provided mongoose instance and schema
- */
 export function createSharedLinkModel(mongoose: typeof import('mongoose')) {
+  applyTenantIsolation(shareSchema);
   return mongoose.models.SharedLink || mongoose.model<ISharedLink>('SharedLink', shareSchema);
 }

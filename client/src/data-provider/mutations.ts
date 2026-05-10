@@ -18,31 +18,6 @@ import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
 import { useConversationTagsQuery } from './queries';
 
-export type TGenTitleMutation = UseMutationResult<
-  t.TGenTitleResponse,
-  unknown,
-  t.TGenTitleRequest,
-  unknown
->;
-
-export const useGenTitleMutation = (): TGenTitleMutation => {
-  const queryClient = useQueryClient();
-  return useMutation((payload: t.TGenTitleRequest) => dataService.genTitle(payload), {
-    onSuccess: (response, vars) => {
-      queryClient.setQueryData(
-        [QueryKeys.conversation, vars.conversationId],
-        (convo: t.TConversation | undefined) =>
-          convo ? { ...convo, title: response.title } : convo,
-      );
-      updateConvoInAllQueries(queryClient, vars.conversationId, (c) => ({
-        ...c,
-        title: response.title,
-      }));
-      document.title = response.title;
-    },
-  });
-};
-
 export const useUpdateConversationMutation = (
   id: string,
 ): UseMutationResult<
@@ -96,7 +71,7 @@ export const useArchiveConvoMutation = (
   const queryClient = useQueryClient();
   const convoQueryKey = [QueryKeys.allConversations];
   const archivedConvoQueryKey = [QueryKeys.archivedConversations];
-  const { onMutate, onError, onSettled, onSuccess, ..._options } = options || {};
+  const { onMutate, onError, onSuccess, ..._options } = options || {};
 
   return useMutation(
     (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
@@ -168,18 +143,26 @@ export const useArchiveConvoMutation = (
 };
 
 export const useCreateSharedLinkMutation = (
-  options?: t.MutationOptions<t.TCreateShareLinkRequest, { conversationId: string }>,
-): UseMutationResult<t.TSharedLinkResponse, unknown, { conversationId: string }, unknown> => {
+  options?: t.MutationOptions<
+    t.TCreateShareLinkRequest,
+    { conversationId: string; targetMessageId?: string }
+  >,
+): UseMutationResult<
+  t.TSharedLinkResponse,
+  unknown,
+  { conversationId: string; targetMessageId?: string },
+  unknown
+> => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ conversationId }: { conversationId: string }) => {
+    ({ conversationId, targetMessageId }: { conversationId: string; targetMessageId?: string }) => {
       if (!conversationId) {
         throw new Error('Conversation ID is required');
       }
 
-      return dataService.createSharedLink(conversationId);
+      return dataService.createSharedLink(conversationId, targetMessageId);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
@@ -567,6 +550,19 @@ export const useDuplicateConversationMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+
+      if (duplicatedConversation.tags && duplicatedConversation.tags.length > 0) {
+        queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
+          if (!oldTags) return oldTags;
+          return oldTags.map((tag) => {
+            if (duplicatedConversation.tags?.includes(tag.tag)) {
+              return { ...tag, count: tag.count + 1 };
+            }
+            return tag;
+          });
+        });
+      }
+
       onSuccess?.(data, vars, context);
     },
     ..._options,
@@ -597,6 +593,19 @@ export const useForkConvoMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+
+      if (forkedConversation.tags && forkedConversation.tags.length > 0) {
+        queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
+          if (!oldTags) return oldTags;
+          return oldTags.map((tag) => {
+            if (forkedConversation.tags?.includes(tag.tag)) {
+              return { ...tag, count: tag.count + 1 };
+            }
+            return tag;
+          });
+        });
+      }
+
       onSuccess?.(data, vars, context);
     },
     ..._options,
@@ -871,7 +880,7 @@ export const useUploadAssistantAvatarMutation = (
   unknown // context
 > => {
   return useMutation([MutationKeys.assistantAvatarUpload], {
-    mutationFn: ({ postCreation, ...variables }: t.AssistantAvatarVariables) =>
+    mutationFn: ({ postCreation: _postCreation, ...variables }: t.AssistantAvatarVariables) =>
       dataService.uploadAssistantAvatar(variables),
     ...(options || {}),
   });

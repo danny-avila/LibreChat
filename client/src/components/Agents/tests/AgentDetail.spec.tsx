@@ -20,6 +20,24 @@ jest.mock('react-router-dom', () => ({
 jest.mock('~/hooks', () => ({
   useMediaQuery: jest.fn(() => false), // Mock as desktop by default
   useLocalize: jest.fn(),
+  useDefaultConvo: jest.fn(),
+  useFavorites: jest.fn(() => ({
+    favorites: [],
+    isFavoriteAgent: jest.fn(() => false),
+    toggleFavoriteAgent: jest.fn(),
+    isFavoriteModel: jest.fn(() => false),
+    toggleFavoriteModel: jest.fn(),
+    addFavoriteAgent: jest.fn(),
+    removeFavoriteAgent: jest.fn(),
+    addFavoriteModel: jest.fn(),
+    removeFavoriteModel: jest.fn(),
+    reorderFavorites: jest.fn(),
+    isLoading: false,
+    isError: false,
+    isUpdating: false,
+    fetchError: null,
+    updateError: null,
+  })),
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -47,7 +65,12 @@ const mockWriteText = jest.fn();
 
 const mockNavigate = jest.fn();
 const mockShowToast = jest.fn();
-const mockLocalize = jest.fn((key: string) => key);
+const mockLocalize = jest.fn((key: string, values?: Record<string, any>) => {
+  if (key === 'com_agents_chat_with' && values?.name) {
+    return `Chat with ${values.name}`;
+  }
+  return key;
+});
 
 const mockAgent: t.Agent = {
   id: 'test-agent-id',
@@ -106,8 +129,12 @@ describe('AgentDetail', () => {
     (useNavigate as jest.Mock).mockReturnValue(mockNavigate);
     const { useToastContext } = require('@librechat/client');
     (useToastContext as jest.Mock).mockReturnValue({ showToast: mockShowToast });
-    const { useLocalize } = require('~/hooks');
+    const { useLocalize, useDefaultConvo } = require('~/hooks');
     (useLocalize as jest.Mock).mockReturnValue(mockLocalize);
+    (useDefaultConvo as jest.Mock).mockReturnValue(() => ({
+      conversationId: Constants.NEW_CONVO,
+      endpoint: EModelEndpoint.agents,
+    }));
 
     // Mock useChatContext
     const { useChatContext } = require('~/Providers');
@@ -227,6 +254,10 @@ describe('AgentDetail', () => {
         template: {
           conversationId: Constants.NEW_CONVO,
           endpoint: EModelEndpoint.agents,
+        },
+        preset: {
+          conversationId: Constants.NEW_CONVO,
+          endpoint: EModelEndpoint.agents,
           agent_id: 'test-agent-id',
           title: 'Chat with Test Agent',
         },
@@ -328,7 +359,7 @@ describe('AgentDetail', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
       const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
-      expect(copyLinkButton).toHaveClass('focus:outline-none', 'focus:ring-2');
+      expect(copyLinkButton).toHaveClass('focus-visible:outline-none', 'focus-visible:ring-2');
     });
   });
 

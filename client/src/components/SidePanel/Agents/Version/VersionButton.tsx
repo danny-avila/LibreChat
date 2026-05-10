@@ -16,6 +16,7 @@ const VersionButton = ({ setActivePanel }: VersionButtonProps) => {
       variant={'outline'}
       className="btn btn-neutral border-token-border-light relative h-9 w-full gap-1 rounded-lg font-medium"
       onClick={() => setActivePanel(Panel.version)}
+      aria-label={localize('com_ui_agent_version')}
     >
       <History className="h-4 w-4 cursor-pointer" aria-hidden="true" />
       {localize('com_ui_agent_version')}

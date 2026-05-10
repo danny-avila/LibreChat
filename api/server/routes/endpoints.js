@@ -1,9 +1,9 @@
 const express = require('express');
-const router = express.Router();
+const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const endpointController = require('~/server/controllers/EndpointController');
-const overrideController = require('~/server/controllers/OverrideController');
 
-router.get('/', endpointController);
-router.get('/config/override', overrideController);
+const router = express.Router();
+/** Auth required for role/tenant-scoped endpoint config resolution. */
+router.get('/', requireJwtAuth, endpointController);
 
 module.exports = router;

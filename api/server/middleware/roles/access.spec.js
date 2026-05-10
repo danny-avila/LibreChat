@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { checkAccess, generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
-const { getRoleByName } = require('~/models/Role');
+const { getRoleByName } = require('~/models');
 const { Role } = require('~/db/models');
 
 // Mock the logger from @librechat/data-schemas
@@ -51,9 +51,9 @@ describe('Access Middleware', () => {
       permissions: {
         [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
         [PermissionTypes.PROMPTS]: {
-          [Permissions.SHARED_GLOBAL]: false,
           [Permissions.USE]: true,
           [Permissions.CREATE]: true,
+          [Permissions.SHARE]: true,
         },
         [PermissionTypes.MEMORIES]: {
           [Permissions.USE]: true,
@@ -65,7 +65,7 @@ describe('Access Middleware', () => {
         [PermissionTypes.AGENTS]: {
           [Permissions.USE]: true,
           [Permissions.CREATE]: false,
-          [Permissions.SHARED_GLOBAL]: false,
+          [Permissions.SHARE]: false,
         },
         [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
         [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
@@ -79,9 +79,9 @@ describe('Access Middleware', () => {
       permissions: {
         [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
         [PermissionTypes.PROMPTS]: {
-          [Permissions.SHARED_GLOBAL]: true,
           [Permissions.USE]: true,
           [Permissions.CREATE]: true,
+          [Permissions.SHARE]: true,
         },
         [PermissionTypes.MEMORIES]: {
           [Permissions.USE]: true,
@@ -93,7 +93,7 @@ describe('Access Middleware', () => {
         [PermissionTypes.AGENTS]: {
           [Permissions.USE]: true,
           [Permissions.CREATE]: true,
-          [Permissions.SHARED_GLOBAL]: true,
+          [Permissions.SHARE]: true,
         },
         [PermissionTypes.MULTI_CONVO]: { [Permissions.USE]: true },
         [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
@@ -110,7 +110,7 @@ describe('Access Middleware', () => {
         [PermissionTypes.AGENTS]: {
           [Permissions.USE]: false,
           [Permissions.CREATE]: false,
-          [Permissions.SHARED_GLOBAL]: false,
+          [Permissions.SHARE]: false,
         },
         // Has permissions for other types
         [PermissionTypes.PROMPTS]: {
@@ -241,7 +241,7 @@ describe('Access Middleware', () => {
         req: {},
         user: { id: 'admin123', role: 'admin' },
         permissionType: PermissionTypes.AGENTS,
-        permissions: [Permissions.SHARED_GLOBAL],
+        permissions: [Permissions.SHARE],
         getRoleByName,
       });
       expect(shareResult).toBe(true);
@@ -318,7 +318,7 @@ describe('Access Middleware', () => {
 
       const middleware = generateCheckAccess({
         permissionType: PermissionTypes.AGENTS,
-        permissions: [Permissions.USE, Permissions.CREATE, Permissions.SHARED_GLOBAL],
+        permissions: [Permissions.USE, Permissions.CREATE, Permissions.SHARE],
         getRoleByName,
       });
       await middleware(req, res, next);
@@ -349,7 +349,7 @@ describe('Access Middleware', () => {
           [PermissionTypes.AGENTS]: {
             [Permissions.USE]: false,
             [Permissions.CREATE]: false,
-            [Permissions.SHARED_GLOBAL]: false,
+            [Permissions.SHARE]: false,
           },
         },
       });

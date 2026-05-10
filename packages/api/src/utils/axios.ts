@@ -1,6 +1,36 @@
+import { Buffer } from 'buffer';
 import axios from 'axios';
 import { logger } from '@librechat/data-schemas';
 import type { AxiosInstance, AxiosProxyConfig, AxiosError } from 'axios';
+
+/**
+ * Render `error.response.data` as a small, log-safe value. Axios surfaces
+ * the response body in whichever native shape the request asked for, so
+ * `responseType: 'arraybuffer'` yields a `Buffer` (raw bytes — JSON-
+ * serializes as `{type: 'Buffer', data: [123, 34, ...]}`, ~4 chars per
+ * byte) and `responseType: 'stream'` yields a `Readable` (whose internal
+ * state JSON-serializes the full readableState ring buffer + socket
+ * fields, easily megabytes per error). Both are useless for diagnostics
+ * and drown the log line. Decode small buffers as UTF-8 (truncated) and
+ * stub streams entirely.
+ */
+const renderResponseData = (data: unknown): unknown => {
+  if (data == null) return data;
+  if (Buffer.isBuffer(data)) {
+    const MAX = 2048;
+    const text = data.subarray(0, MAX).toString('utf8');
+    return data.length > MAX ? `${text}…[+${data.length - MAX} bytes]` : text;
+  }
+  // Readable streams (responseType: 'stream') and other piped sources.
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    typeof (data as { pipe?: unknown }).pipe === 'function'
+  ) {
+    return '[stream]';
+  }
+  return data;
+};
 
 /**
  * Logs Axios errors based on the error object and a custom message.
@@ -9,32 +39,45 @@ import type { AxiosInstance, AxiosProxyConfig, AxiosError } from 'axios';
  * @param options.error - The Axios error object.
  * @returns The log message.
  */
-export const logAxiosError = ({ message, error }: { message: string; error: AxiosError }) => {
+export const logAxiosError = ({
+  message,
+  error,
+}: {
+  message: string;
+  error: AxiosError | Error | unknown;
+}) => {
   let logMessage = message;
   try {
-    const stack = error.stack || 'No stack trace available';
+    const stack =
+      error != null
+        ? (error as Error | AxiosError)?.stack || 'No stack trace available'
+        : 'No stack trace available';
+    const errorMessage =
+      error != null
+        ? (error as Error | AxiosError)?.message || 'No error message available'
+        : 'No error message available';
 
-    if (error.response?.status) {
+    if (axios.isAxiosError(error) && error.response && error.response?.status) {
       const { status, headers, data } = error.response;
       logMessage = `${message} The server responded with status ${status}: ${error.message}`;
       logger.error(logMessage, {
         status,
         headers,
-        data,
+        data: renderResponseData(data),
         stack,
       });
-    } else if (error.request) {
+    } else if (axios.isAxiosError(error) && error.request) {
       const { method, url } = error.config || {};
       logMessage = `${message} No response received for ${method ? method.toUpperCase() : ''} ${url || ''}: ${error.message}`;
       logger.error(logMessage, {
         requestInfo: { method, url },
         stack,
       });
-    } else if (error?.message?.includes("Cannot read properties of undefined (reading 'status')")) {
-      logMessage = `${message} It appears the request timed out or was unsuccessful: ${error.message}`;
+    } else if (errorMessage?.includes("Cannot read properties of undefined (reading 'status')")) {
+      logMessage = `${message} It appears the request timed out or was unsuccessful: ${errorMessage}`;
       logger.error(logMessage, { stack });
     } else {
-      logMessage = `${message} An error occurred while setting up the request: ${error.message}`;
+      logMessage = `${message} An error occurred while setting up the request: ${errorMessage}`;
       logger.error(logMessage, { stack });
     }
   } catch (err: unknown) {

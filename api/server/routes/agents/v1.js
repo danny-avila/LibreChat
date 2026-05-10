@@ -1,9 +1,9 @@
 const express = require('express');
 const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
-const { requireJwtAuth, canAccessAgentResource } = require('~/server/middleware');
+const { requireJwtAuth, configMiddleware, canAccessAgentResource } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
-const { getRoleByName } = require('~/models/Role');
+const { getRoleByName } = require('~/models');
 const actions = require('./actions');
 const tools = require('./tools');
 
@@ -21,32 +21,23 @@ const checkAgentCreate = generateCheckAccess({
   getRoleByName,
 });
 
-const checkGlobalAgentShare = generateCheckAccess({
-  permissionType: PermissionTypes.AGENTS,
-  permissions: [Permissions.USE, Permissions.CREATE],
-  bodyProps: {
-    [Permissions.SHARED_GLOBAL]: ['projectIds', 'removeProjectIds'],
-  },
-  getRoleByName,
-});
-
 router.use(requireJwtAuth);
 
 /**
  * Agent actions route.
  * @route GET|POST /agents/actions
  */
-router.use('/actions', actions);
+router.use('/actions', configMiddleware, actions);
 
 /**
  * Get a list of available tools for agents.
  * @route GET /agents/tools
  */
-router.use('/tools', tools);
+router.use('/tools', configMiddleware, tools);
 
 /**
  * Get all agent categories with counts
- * @route GET /agents/marketplace/categories
+ * @route GET /agents/categories
  */
 router.get('/categories', v1.getAgentCategories);
 /**
@@ -99,7 +90,7 @@ router.get(
  */
 router.patch(
   '/:id',
-  checkGlobalAgentShare,
+  checkAgentCreate,
   canAccessAgentResource({
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',
@@ -117,7 +108,7 @@ router.post(
   '/:id/duplicate',
   checkAgentCreate,
   canAccessAgentResource({
-    requiredPermission: PermissionBits.VIEW,
+    requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',
   }),
   v1.duplicateAgent,
@@ -146,7 +137,15 @@ router.delete(
  * @param {number} req.body.version_index - Index of the version to revert to.
  * @returns {Agent} 200 - success response - application/json
  */
-router.post('/:id/revert', checkGlobalAgentShare, v1.revertAgentVersion);
+router.post(
+  '/:id/revert',
+  checkAgentCreate,
+  canAccessAgentResource({
+    requiredPermission: PermissionBits.EDIT,
+    resourceIdParam: 'id',
+  }),
+  v1.revertAgentVersion,
+);
 
 /**
  * Returns a list of agents.

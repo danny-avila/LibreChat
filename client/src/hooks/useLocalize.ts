@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { TOptions } from 'i18next';
 import { useRecoilValue } from 'recoil';
 import { useTranslation } from 'react-i18next';
@@ -17,5 +17,8 @@ export default function useLocalize() {
     }
   }, [lang, i18n]);
 
-  return (phraseKey: TranslationKeys, options?: TOptions) => t(phraseKey, options);
+  return useCallback(
+    (phraseKey: TranslationKeys, options?: TOptions) => t(phraseKey, options),
+    [t],
+  );
 }

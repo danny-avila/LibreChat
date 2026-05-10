@@ -1,3 +1,4 @@
+const partialRight = require('lodash/partialRight');
 const {
   Capabilities,
   EModelEndpoint,
@@ -7,17 +8,7 @@ const {
   defaultAssistantsVersion,
   defaultAgentCapabilities,
 } = require('librechat-data-provider');
-const { sendEvent } = require('@librechat/api');
-const { Providers } = require('@librechat/agents');
-const partialRight = require('lodash/partialRight');
-
-/** Helper function to escape special characters in regex
- * @param {string} string - The string to escape.
- * @returns {string} The escaped string.
- */
-function escapeRegExp(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+const { sendEvent, isUserProvided } = require('@librechat/api');
 
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
 
@@ -127,42 +118,6 @@ function formatAction(action) {
 }
 
 /**
- * Checks if the given value is truthy by being either the boolean `true` or a string
- * that case-insensitively matches 'true'.
- *
- * @function
- * @param {string|boolean|null|undefined} value - The value to check.
- * @returns {boolean} Returns `true` if the value is the boolean `true` or a case-insensitive
- *                    match for the string 'true', otherwise returns `false`.
- * @example
- *
- * isEnabled("True");  // returns true
- * isEnabled("TRUE");  // returns true
- * isEnabled(true);    // returns true
- * isEnabled("false"); // returns false
- * isEnabled(false);   // returns false
- * isEnabled(null);    // returns false
- * isEnabled();        // returns false
- */
-function isEnabled(value) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    return value.toLowerCase().trim() === 'true';
-  }
-  return false;
-}
-
-/**
- * Checks if the provided value is 'user_provided'.
- *
- * @param {string} value - The value to check.
- * @returns {boolean} - Returns true if the value is 'user_provided', otherwise false.
- */
-const isUserProvided = (value) => value === 'user_provided';
-
-/**
  * Generate the configuration for a given key and base URL.
  * @param {string} key
  * @param {string} [baseURL]
@@ -207,24 +162,11 @@ function generateConfig(key, baseURL, endpoint) {
   return config;
 }
 
-/**
- * Normalize the endpoint name to system-expected value.
- * @param {string} name
- * @returns {string}
- */
-function normalizeEndpointName(name = '') {
-  return name.toLowerCase() === Providers.OLLAMA ? Providers.OLLAMA : name;
-}
-
 module.exports = {
-  isEnabled,
   handleText,
   formatSteps,
-  escapeRegExp,
   formatAction,
-  isUserProvided,
   generateConfig,
   addSpaceIfNeeded,
   createOnProgress,
-  normalizeEndpointName,
 };

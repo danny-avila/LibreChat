@@ -31,12 +31,12 @@ export const ClearChats = () => {
 
   return (
     <div className="flex items-center justify-between">
-      <Label className="font-light">{localize('com_nav_clear_all_chats')}</Label>
+      <Label id="clear-all-chats-label">{localize('com_nav_clear_all_chats')}</Label>
       <OGDialog open={open} onOpenChange={setOpen}>
         <OGDialogTrigger asChild>
           <Button
+            aria-labelledby="clear-all-chats-label"
             variant="destructive"
-            className="flex items-center justify-center rounded-lg transition-colors duration-200"
             onClick={() => setOpen(true)}
           >
             {localize('com_ui_delete')}
@@ -47,7 +47,7 @@ export const ClearChats = () => {
           title={localize('com_nav_confirm_clear')}
           className="max-w-[450px]"
           main={
-            <Label className="text-left text-sm font-medium">
+            <Label className="break-words">
               {localize('com_nav_clear_conversation_confirm_message')}
             </Label>
           }

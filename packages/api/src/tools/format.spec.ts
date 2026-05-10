@@ -1,11 +1,6 @@
-import { AuthType, Constants, EToolResources } from 'librechat-data-provider';
-import type { TPlugin, FunctionTool, TCustomConfig } from 'librechat-data-provider';
-import {
-  convertMCPToolsToPlugins,
-  filterUniquePlugins,
-  checkPluginAuth,
-  getToolkitKey,
-} from './format';
+import { AuthType, EToolResources } from 'librechat-data-provider';
+import type { TPlugin } from 'librechat-data-provider';
+import { filterUniquePlugins, checkPluginAuth, getToolkitKey } from './format';
 
 describe('format.ts helper functions', () => {
   describe('filterUniquePlugins', () => {
@@ -194,182 +189,76 @@ describe('format.ts helper functions', () => {
       const result = checkPluginAuth(plugin);
       expect(result).toBe(true);
     });
-  });
 
-  describe('convertMCPToolsToPlugins', () => {
-    it('should return undefined when functionTools is undefined', () => {
-      const result = convertMCPToolsToPlugins({ functionTools: undefined });
-      expect(result).toBeUndefined();
-    });
-
-    it('should return undefined when functionTools is not an object', () => {
-      const result = convertMCPToolsToPlugins({
-        functionTools: 'not-an-object' as unknown as Record<string, FunctionTool>,
-      });
-      expect(result).toBeUndefined();
-    });
-
-    it('should return empty array when functionTools is empty object', () => {
-      const result = convertMCPToolsToPlugins({ functionTools: {} });
-      expect(result).toEqual([]);
-    });
-
-    it('should skip entries without function property', () => {
-      const functionTools: Record<string, FunctionTool> = {
-        tool1: { type: 'function' } as FunctionTool,
-        tool2: { function: { name: 'tool2', description: 'Tool 2' } } as FunctionTool,
+    it('should return true when auth field is marked as optional with no env vars', () => {
+      const plugin: TPlugin = {
+        name: 'Test',
+        pluginKey: 'test',
+        description: 'Test plugin',
+        authConfig: [
+          { authField: 'MISSING_KEY', label: 'API Key', description: 'API Key', optional: true },
+        ],
       };
 
-      const result = convertMCPToolsToPlugins({ functionTools });
-      expect(result).toHaveLength(0); // tool2 doesn't have mcp_delimiter in key
+      const result = checkPluginAuth(plugin);
+      expect(result).toBe(true);
     });
 
-    it('should skip entries without mcp_delimiter in key', () => {
-      const functionTools: Record<string, FunctionTool> = {
-        'regular-tool': {
-          type: 'function',
-          function: { name: 'regular-tool', description: 'Regular tool' },
-        } as FunctionTool,
+    it('should return true when all auth fields are optional', () => {
+      const plugin: TPlugin = {
+        name: 'Test',
+        pluginKey: 'test',
+        description: 'Test plugin',
+        authConfig: [
+          { authField: 'MISSING_KEY_A', label: 'Key A', description: 'Key A', optional: true },
+          { authField: 'MISSING_KEY_B', label: 'Key B', description: 'Key B', optional: true },
+        ],
       };
 
-      const result = convertMCPToolsToPlugins({ functionTools });
-      expect(result).toHaveLength(0);
+      const result = checkPluginAuth(plugin);
+      expect(result).toBe(true);
     });
 
-    it('should convert MCP tools to plugins correctly', () => {
-      const functionTools: Record<string, FunctionTool> = {
-        [`tool1${Constants.mcp_delimiter}server1`]: {
-          type: 'function',
-          function: { name: 'tool1', description: 'Tool 1 description' },
-        } as FunctionTool,
-      };
-
-      const result = convertMCPToolsToPlugins({ functionTools });
-      expect(result).toHaveLength(1);
-      expect(result![0]).toEqual({
-        name: 'tool1',
-        pluginKey: `tool1${Constants.mcp_delimiter}server1`,
-        description: 'Tool 1 description',
-        authenticated: true,
-        icon: undefined,
-        authConfig: [],
-      });
-    });
-
-    it('should handle missing description', () => {
-      const functionTools: Record<string, FunctionTool> = {
-        [`tool1${Constants.mcp_delimiter}server1`]: {
-          type: 'function',
-          function: { name: 'tool1' },
-        } as FunctionTool,
-      };
-
-      const result = convertMCPToolsToPlugins({ functionTools });
-      expect(result).toHaveLength(1);
-      expect(result![0].description).toBe('');
-    });
-
-    it('should add icon from server config', () => {
-      const functionTools: Record<string, FunctionTool> = {
-        [`tool1${Constants.mcp_delimiter}server1`]: {
-          type: 'function',
-          function: { name: 'tool1', description: 'Tool 1' },
-        } as FunctionTool,
-      };
-
-      const customConfig: Partial<TCustomConfig> = {
-        mcpServers: {
-          server1: {
-            command: 'test',
-            args: [],
-            iconPath: '/path/to/icon.png',
+    it('should return false when required field is missing even if optional field exists', () => {
+      const plugin: TPlugin = {
+        name: 'Test',
+        pluginKey: 'test',
+        description: 'Test plugin',
+        authConfig: [
+          { authField: 'MISSING_KEY', label: 'Required Key', description: 'Required' },
+          {
+            authField: 'OPTIONAL_KEY',
+            label: 'Optional Key',
+            description: 'Optional',
+            optional: true,
           },
-        },
+        ],
       };
 
-      const result = convertMCPToolsToPlugins({ functionTools, customConfig });
-      expect(result).toHaveLength(1);
-      expect(result![0].icon).toBe('/path/to/icon.png');
+      const result = checkPluginAuth(plugin);
+      expect(result).toBe(false);
     });
 
-    it('should handle customUserVars in server config', () => {
-      const functionTools: Record<string, FunctionTool> = {
-        [`tool1${Constants.mcp_delimiter}server1`]: {
-          type: 'function',
-          function: { name: 'tool1', description: 'Tool 1' },
-        } as FunctionTool,
-      };
+    it('should return true when optional field has no env var but required field is satisfied', () => {
+      process.env.REQUIRED_KEY = 'valid-key';
 
-      const customConfig: Partial<TCustomConfig> = {
-        mcpServers: {
-          server1: {
-            command: 'test',
-            args: [],
-            customUserVars: {
-              API_KEY: { title: 'API Key', description: 'Your API key' },
-              SECRET: { title: 'Secret', description: 'Your secret' },
-            },
+      const plugin: TPlugin = {
+        name: 'Test',
+        pluginKey: 'test',
+        description: 'Test plugin',
+        authConfig: [
+          { authField: 'REQUIRED_KEY', label: 'Required Key', description: 'Required' },
+          {
+            authField: 'OPTIONAL_KEY',
+            label: 'Optional Key',
+            description: 'Optional',
+            optional: true,
           },
-        },
+        ],
       };
 
-      const result = convertMCPToolsToPlugins({ functionTools, customConfig });
-      expect(result).toHaveLength(1);
-      expect(result![0].authConfig).toHaveLength(2);
-      expect(result![0].authConfig).toEqual([
-        { authField: 'API_KEY', label: 'API Key', description: 'Your API key' },
-        { authField: 'SECRET', label: 'Secret', description: 'Your secret' },
-      ]);
-    });
-
-    it('should use key as label when title is missing in customUserVars', () => {
-      const functionTools: Record<string, FunctionTool> = {
-        [`tool1${Constants.mcp_delimiter}server1`]: {
-          type: 'function',
-          function: { name: 'tool1', description: 'Tool 1' },
-        } as FunctionTool,
-      };
-
-      const customConfig: Partial<TCustomConfig> = {
-        mcpServers: {
-          server1: {
-            command: 'test',
-            args: [],
-            customUserVars: {
-              API_KEY: { title: 'API Key', description: 'Your API key' },
-            },
-          },
-        },
-      };
-
-      const result = convertMCPToolsToPlugins({ functionTools, customConfig });
-      expect(result).toHaveLength(1);
-      expect(result![0].authConfig).toEqual([
-        { authField: 'API_KEY', label: 'API Key', description: 'Your API key' },
-      ]);
-    });
-
-    it('should handle empty customUserVars', () => {
-      const functionTools: Record<string, FunctionTool> = {
-        [`tool1${Constants.mcp_delimiter}server1`]: {
-          type: 'function',
-          function: { name: 'tool1', description: 'Tool 1' },
-        } as FunctionTool,
-      };
-
-      const customConfig: Partial<TCustomConfig> = {
-        mcpServers: {
-          server1: {
-            command: 'test',
-            args: [],
-            customUserVars: {},
-          },
-        },
-      };
-
-      const result = convertMCPToolsToPlugins({ functionTools, customConfig });
-      expect(result).toHaveLength(1);
-      expect(result![0].authConfig).toEqual([]);
+      const result = checkPluginAuth(plugin);
+      expect(result).toBe(true);
     });
   });
 

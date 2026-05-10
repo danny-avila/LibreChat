@@ -4,7 +4,19 @@ import ReactTextareaAutosize from 'react-textarea-autosize';
 import type { TextareaAutosizeProps } from 'react-textarea-autosize';
 import { chatDirectionAtom } from '~/store';
 
-export const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
+type BaseTextareaAutosizeProps = Omit<TextareaAutosizeProps, 'aria-label' | 'aria-labelledby'>;
+
+export type TextareaAutosizePropsWithAria =
+  | (BaseTextareaAutosizeProps & {
+      'aria-label': string;
+      'aria-labelledby'?: never;
+    })
+  | (BaseTextareaAutosizeProps & {
+      'aria-labelledby': string;
+      'aria-label'?: never;
+    });
+
+export const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizePropsWithAria>(
   (props, ref) => {
     const [, setIsRerendered] = useState(false);
     const chatDirection = useAtomValue(chatDirectionAtom).toLowerCase();

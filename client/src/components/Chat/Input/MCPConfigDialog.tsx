@@ -1,12 +1,9 @@
-import React, { useEffect } from 'react';
+import DOMPurify from 'dompurify';
+import React, { useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Button, Input, Label, OGDialog, OGDialogTemplate } from '@librechat/client';
+import type { ConfigFieldDetail } from '~/common';
 import { useLocalize } from '~/hooks';
-
-export interface ConfigFieldDetail {
-  title: string;
-  description: string;
-}
 
 interface MCPConfigDialogProps {
   isOpen: boolean;
@@ -34,10 +31,29 @@ export default function MCPConfigDialog({
     control,
     handleSubmit,
     reset,
-    formState: { errors, _ },
+    formState: { errors },
   } = useForm<Record<string, string>>({
     defaultValues: initialValues,
   });
+
+  const sanitizer = useMemo(() => {
+    const instance = DOMPurify();
+    instance.addHook('afterSanitizeAttributes', (node) => {
+      if (node.tagName === 'A') {
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
+      }
+    });
+    return instance;
+  }, []);
+
+  const sanitize = (html: string) =>
+    sanitizer.sanitize(html, {
+      ALLOWED_TAGS: ['a', 'strong', 'b', 'em', 'i', 'br', 'code', 'span', 'p'],
+      ALLOWED_ATTR: ['href', 'class', 'target', 'rel'],
+      ALLOW_DATA_ATTR: false,
+      ALLOW_ARIA_ATTR: false,
+    });
 
   useEffect(() => {
     if (isOpen) {
@@ -56,14 +72,12 @@ export default function MCPConfigDialog({
   };
 
   const dialogTitle = localize('com_ui_configure_mcp_variables_for', { 0: serverName });
-  const dialogDescription = localize('com_ui_mcp_dialog_desc');
 
   return (
     <OGDialog open={isOpen} onOpenChange={onOpenChange}>
       <OGDialogTemplate
         className="sm:max-w-lg"
         title={dialogTitle}
-        description={dialogDescription}
         headerClassName="px-6 pt-6 pb-4"
         main={
           <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4 px-6 pb-2">
@@ -89,7 +103,7 @@ export default function MCPConfigDialog({
                 {details.description && (
                   <p
                     className="text-xs text-text-secondary [&_a]:text-blue-500 [&_a]:hover:text-blue-600 dark:[&_a]:text-blue-400 dark:[&_a]:hover:text-blue-300"
-                    dangerouslySetInnerHTML={{ __html: details.description }}
+                    dangerouslySetInnerHTML={{ __html: sanitize(details.description) }}
                   />
                 )}
                 {errors[key] && <p className="text-xs text-red-500">{errors[key]?.message}</p>}

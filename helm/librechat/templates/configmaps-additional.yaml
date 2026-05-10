@@ -1,0 +1,26 @@
+{{- range $key, $value := .Values.additionalConfigMaps }}
+{{- if or .data .binaryData }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "librechat.fullname" $ }}-{{ default "custom" $key }}
+  {{- with .labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- with .data }}
+data:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .binaryData }}
+binaryData:
+  {{- toYaml . | nindent 2 }}
+immutable: {{ default false .immutable }}
+{{- end }}
+{{- end }}
+{{- end }}

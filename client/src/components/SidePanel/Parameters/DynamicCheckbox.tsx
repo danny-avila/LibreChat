@@ -60,7 +60,7 @@ function DynamicCheckbox({
           <div className="flex justify-start gap-4">
             <Label
               htmlFor={`${settingKey}-dynamic-checkbox`}
-              className="text-left text-sm font-medium"
+              className="text-left text-xs font-medium"
             >
               {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
@@ -76,6 +76,7 @@ function DynamicCheckbox({
               checked={selectedValue}
               onCheckedChange={handleCheckedChange}
               className="mt-[2px] focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
+              aria-label={localize(label as TranslationKeys)}
             />
           </div>
         </HoverCardTrigger>

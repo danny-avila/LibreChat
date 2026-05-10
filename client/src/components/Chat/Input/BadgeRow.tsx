@@ -21,6 +21,7 @@ import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
+import Skills from './Skills';
 import store from '~/store';
 
 interface BadgeRowProps {
@@ -28,6 +29,7 @@ interface BadgeRowProps {
   onChange: (badges: Pick<BadgeItem, 'id'>[]) => void;
   onToggle?: (badgeId: string, currentActive: boolean) => void;
   conversationId?: string | null;
+  specName?: string | null;
   isSubmitting?: boolean;
   isInChat: boolean;
 }
@@ -142,6 +144,7 @@ const dragReducer = (state: DragState, action: DragAction): DragState => {
 function BadgeRow({
   showEphemeralBadges,
   conversationId,
+  specName,
   isSubmitting,
   onChange,
   onToggle,
@@ -320,7 +323,11 @@ function BadgeRow({
   }, [dragState.draggedBadge, handleMouseMove, handleMouseUp]);
 
   return (
-    <BadgeRowProvider conversationId={conversationId} isSubmitting={isSubmitting}>
+    <BadgeRowProvider
+      conversationId={conversationId}
+      specName={specName}
+      isSubmitting={isSubmitting}
+    >
       <div ref={containerRef} className="relative flex flex-wrap items-center gap-2">
         {showEphemeralBadges === true && <ToolsDropdown />}
         {tempBadges.map((badge, index) => (
@@ -367,6 +374,7 @@ function BadgeRow({
             <WebSearch />
             <CodeInterpreter />
             <FileSearch />
+            <Skills />
             <Artifacts />
             <MCPSelect />
           </>

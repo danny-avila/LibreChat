@@ -13,7 +13,7 @@ export default function DecibelSelector() {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center justify-between">
-        <div>{localize('com_nav_playback_rate')}</div>
+        <div id="playback-rate-label">{localize('com_nav_playback_rate')}</div>
         <div className="w-2" />
         <small className="opacity-40">
           ({localize('com_endpoint_default_with_num', { 0: '1' })})
@@ -29,6 +29,7 @@ export default function DecibelSelector() {
           step={0.1}
           className="ml-4 flex h-4 w-24"
           disabled={!textToSpeech}
+          aria-labelledby="playback-rate-label"
         />
         <div className="w-2" />
         <InputNumber
@@ -37,6 +38,7 @@ export default function DecibelSelector() {
           onChange={(value) => setPlaybackRate(value ? value[0] : 0)}
           min={0.1}
           max={2}
+          aria-labelledby="playback-rate-label"
           className={cn(
             defaultTextProps,
             cn(

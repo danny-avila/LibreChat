@@ -1,34 +1,42 @@
 import React from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Trash2 } from 'lucide-react';
 import { Button, Spinner } from '@librechat/client';
-import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useMCPServerManager, useMCPConnectionStatus } from '~/hooks';
 
 interface ServerInitializationSectionProps {
   sidePanel?: boolean;
   serverName: string;
   requiresOAuth: boolean;
   hasCustomUserVars?: boolean;
+  conversationId?: string | null;
+  storageContextKey?: string;
 }
 
 export default function ServerInitializationSection({
-  sidePanel = false,
   serverName,
   requiresOAuth,
+  conversationId,
+  storageContextKey,
+  sidePanel = false,
   hasCustomUserVars = false,
 }: ServerInitializationSectionProps) {
   const localize = useLocalize();
 
   const {
-    initializeServer,
-    connectionStatus,
-    cancelOAuthFlow,
-    isInitializing,
-    isCancellable,
     getOAuthUrl,
-  } = useMCPServerManager();
+    isCancellable,
+    isInitializing,
+    cancelOAuthFlow,
+    initializeServer,
+    availableMCPServers,
+    revokeOAuthForServer,
+  } = useMCPServerManager({ conversationId, storageContextKey });
 
-  const serverStatus = connectionStatus[serverName];
+  const { connectionStatus } = useMCPConnectionStatus({
+    enabled: !!availableMCPServers && availableMCPServers.length > 0,
+  });
+
+  const serverStatus = connectionStatus?.[serverName];
   const isConnected = serverStatus?.connectionState === 'connected';
   const canCancel = isCancellable(serverName);
   const isServerInitializing = isInitializing(serverName);
@@ -67,29 +75,44 @@ export default function ServerInitializationSection({
 
   // Unified button rendering
   const isReinit = shouldShowReinit;
-  const outerClass = isReinit ? 'flex justify-start' : 'flex justify-end';
   const buttonVariant = isReinit ? undefined : 'default';
-  const buttonText = isServerInitializing
-    ? localize('com_ui_loading')
-    : isReinit
-      ? localize('com_ui_reinitialize')
-      : requiresOAuth
-        ? localize('com_ui_authenticate')
-        : localize('com_ui_mcp_initialize');
+
+  let buttonText = '';
+  if (isServerInitializing) {
+    buttonText = localize('com_ui_loading');
+  } else if (isReinit) {
+    buttonText = localize('com_ui_reinitialize');
+  } else if (requiresOAuth) {
+    buttonText = localize('com_ui_authenticate');
+  } else {
+    buttonText = localize('com_ui_mcp_initialize');
+  }
+
   const icon = isServerInitializing ? (
     <Spinner className="h-4 w-4" />
   ) : (
-    <RefreshCw className="h-4 w-4" />
+    <RefreshCw className="h-4 w-4" aria-hidden="true" />
   );
 
   return (
-    <div className={outerClass}>
+    <div className="flex items-center gap-2">
+      {requiresOAuth && revokeOAuthForServer && (
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={() => revokeOAuthForServer(serverName)}
+          aria-label={localize('com_ui_revoke')}
+        >
+          <Trash2 className="h-4 w-4" />
+          {localize('com_ui_revoke')}
+        </Button>
+      )}
       <Button
         variant={buttonVariant}
         onClick={() => initializeServer(serverName, false)}
         disabled={isServerInitializing}
         size={sidePanel ? 'sm' : 'default'}
-        className="w-full"
+        className="flex-1"
       >
         {icon}
         {buttonText}

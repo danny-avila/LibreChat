@@ -1,17 +1,11 @@
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
 const { loadServiceKey, isUserProvided } = require('@librechat/api');
-const { EModelEndpoint } = require('librechat-data-provider');
 const { config } = require('./EndpointService');
 
-const { openAIApiKey, azureOpenAIApiKey, useAzurePlugins, userProvidedOpenAI, googleKey } = config;
-
-/**
- * Load async endpoints and return a configuration object
- * @param {Express.Request} req - The request object
- */
-async function loadAsyncEndpoints(req) {
+async function loadAsyncEndpoints() {
   let serviceKey, googleUserProvides;
+  const { googleKey } = config;
 
   /** Check if GOOGLE_KEY is provided at all(including 'user_provided') */
   const isGoogleKeyProvided = googleKey && googleKey.trim() !== '';
@@ -34,21 +28,7 @@ async function loadAsyncEndpoints(req) {
 
   const google = serviceKey || isGoogleKeyProvided ? { userProvide: googleUserProvides } : false;
 
-  const useAzure = req.app.locals[EModelEndpoint.azureOpenAI]?.plugins;
-  const gptPlugins =
-    useAzure || openAIApiKey || azureOpenAIApiKey
-      ? {
-          availableAgents: ['classic', 'functions'],
-          userProvide: useAzure ? false : userProvidedOpenAI,
-          userProvideURL: useAzure
-            ? false
-            : config[EModelEndpoint.openAI]?.userProvideURL ||
-              config[EModelEndpoint.azureOpenAI]?.userProvideURL,
-          azure: useAzurePlugins || useAzure,
-        }
-      : false;
-
-  return { google, gptPlugins };
+  return { google };
 }
 
 module.exports = loadAsyncEndpoints;

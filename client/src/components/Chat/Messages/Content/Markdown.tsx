@@ -9,12 +9,17 @@ import rehypeHighlight from 'rehype-highlight';
 import remarkDirective from 'remark-directive';
 import type { Pluggable } from 'unified';
 import { Citation, CompositeCitation, HighlightedText } from '~/components/Web/Citation';
+import {
+  mcpUIResourcePlugin,
+  MCPUIResource,
+  MCPUIResourceCarousel,
+} from '~/components/MCPUIResource';
 import { Artifact, artifactPlugin } from '~/components/Artifacts/Artifact';
 import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
 import { langSubset, preprocessLaTeX } from '~/utils';
 import { unicodeCitation } from '~/components/Web';
-import { code, a, p } from './MarkdownComponents';
+import { code, a, p, img } from './MarkdownComponents';
 import store from '~/store';
 
 type TContentProps = {
@@ -22,7 +27,7 @@ type TContentProps = {
   isLatestMessage: boolean;
 };
 
-const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
+const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TContentProps) {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
 
@@ -55,6 +60,7 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
     artifactPlugin,
     [remarkMath, { singleDollarTextMath: false }],
     unicodeCitation,
+    mcpUIResourcePlugin,
   ];
 
   if (isInitializing) {
@@ -81,10 +87,13 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
                 code,
                 a,
                 p,
+                img,
                 artifact: Artifact,
                 citation: Citation,
                 'highlighted-text': HighlightedText,
                 'composite-citation': CompositeCitation,
+                'mcp-ui-resource': MCPUIResource,
+                'mcp-ui-carousel': MCPUIResourceCarousel,
               } as {
                 [nodeType: string]: React.ElementType;
               }
@@ -97,5 +106,6 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
     </MarkdownErrorBoundary>
   );
 });
+Markdown.displayName = 'Markdown';
 
 export default Markdown;

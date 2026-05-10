@@ -20,13 +20,14 @@ export const ForkSettings = () => {
     <>
       <div className="pb-3">
         <div className="flex items-center justify-between">
-          <div> {localize('com_ui_fork_default')} </div>
+          <div id="remember-default-fork-label"> {localize('com_ui_fork_default')} </div>
           <Switch
             id="rememberDefaultFork"
             checked={remember}
             onCheckedChange={setRemember}
             className="ml-4"
             data-testid="rememberDefaultFork"
+            aria-labelledby="remember-default-fork-label"
           />
         </div>
       </div>
@@ -34,7 +35,7 @@ export const ForkSettings = () => {
         <div className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <div>{localize('com_ui_fork_change_default')}</div>
+              <div id="fork-change-default-label">{localize('com_ui_fork_change_default')}</div>
               <InfoHoverCard
                 side={ESide.Bottom}
                 text={localize('com_nav_info_fork_change_default')}
@@ -47,6 +48,7 @@ export const ForkSettings = () => {
               sizeClasses="w-[200px]"
               testId="fork-setting-dropdown"
               className="z-[50]"
+              aria-labelledby="fork-change-default-label"
             />
           </div>
         </div>
@@ -54,7 +56,7 @@ export const ForkSettings = () => {
       <div className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <div>{localize('com_ui_fork_split_target_setting')}</div>
+            <div id="split-at-target-label">{localize('com_ui_fork_split_target_setting')}</div>
             <InfoHoverCard
               side={ESide.Bottom}
               text={localize('com_nav_info_fork_split_target_setting')}
@@ -66,6 +68,7 @@ export const ForkSettings = () => {
             onCheckedChange={setSplitAtTarget}
             className="ml-4"
             data-testid="splitAtTarget"
+            aria-labelledby="split-at-target-label"
           />
         </div>
       </div>

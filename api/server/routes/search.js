@@ -1,7 +1,7 @@
 const express = require('express');
 const { MeiliSearch } = require('meilisearch');
+const { isEnabled } = require('@librechat/api');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
-const { isEnabled } = require('~/server/utils');
 
 const router = express.Router();
 

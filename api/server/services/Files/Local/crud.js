@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { deleteRagFile } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { generateShortLivedToken } = require('~/server/services/AuthService');
+const { resizeImageBuffer } = require('~/server/services/Files/images/resize');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
 
@@ -38,14 +39,15 @@ async function saveLocalFile(file, outputPath, outputFilename) {
 /**
  * Saves an uploaded image file to a specified directory based on the user's ID and a filename.
  *
- * @param {Express.Request} req - The Express request object, containing the user's information and app configuration.
+ * @param {ServerRequest} req - The Express request object, containing the user's information and app configuration.
  * @param {Express.Multer.File} file - The uploaded file object.
  * @param {string} filename - The new filename to assign to the saved image (without extension).
  * @returns {Promise<void>}
  * @throws Will throw an error if the image saving process fails.
  */
 const saveLocalImage = async (req, file, filename) => {
-  const imagePath = req.app.locals.paths.imageOutput;
+  const appConfig = req.config;
+  const imagePath = appConfig.paths.imageOutput;
   const outputPath = path.join(imagePath, req.user.id ?? '');
   await saveLocalFile(file, outputPath, filename);
 };
@@ -65,13 +67,24 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }
   try {
     const { publicPath, uploads } = paths;
 
-    const directoryPath = path.join(basePath === 'images' ? publicPath : uploads, basePath, userId);
+    /**
+     * For 'images': save to publicPath/images/userId (images are served statically)
+     * For 'uploads': save to uploads/userId (files downloaded via API)
+     * */
+    const directoryPath =
+      basePath === 'images' ? path.join(publicPath, basePath, userId) : path.join(uploads, userId);
 
     if (!fs.existsSync(directoryPath)) {
       fs.mkdirSync(directoryPath, { recursive: true });
     }
 
-    fs.writeFileSync(path.join(directoryPath, fileName), buffer);
+    const resolvedDir = path.resolve(directoryPath);
+    const resolvedPath = path.resolve(resolvedDir, fileName);
+    const rel = path.relative(resolvedDir, resolvedPath);
+    if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
+      throw new Error('Path traversal detected in filename');
+    }
+    fs.writeFileSync(resolvedPath, buffer);
 
     const filePath = path.posix.join('/', basePath, userId, fileName);
 
@@ -158,11 +171,10 @@ async function getLocalFileURL({ fileName, basePath = 'images' }) {
 }
 
 /**
- * Validates if a given filepath is within a specified subdirectory under a base path. This function constructs
- * the expected base path using the base, subfolder, and user id from the request, and then checks if the
- * provided filepath starts with this constructed base path.
+ * Validates that a filepath is strictly contained within a subdirectory under a base path,
+ * using path.relative to prevent prefix-collision bypasses.
  *
- * @param {Express.Request} req - The request object from Express. It should contain a `user` property with an `id`.
+ * @param {ServerRequest} req - The request object from Express. It should contain a `user` property with an `id`.
  * @param {string} base - The base directory path.
  * @param {string} subfolder - The subdirectory under the base path.
  * @param {string} filepath - The complete file path to be validated.
@@ -173,7 +185,8 @@ async function getLocalFileURL({ fileName, basePath = 'images' }) {
 const isValidPath = (req, base, subfolder, filepath) => {
   const normalizedBase = path.resolve(base, subfolder, req.user.id);
   const normalizedFilepath = path.resolve(filepath);
-  return normalizedFilepath.startsWith(normalizedBase);
+  const rel = path.relative(normalizedBase, normalizedFilepath);
+  return !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.includes(`..${path.sep}`);
 };
 
 /**
@@ -191,8 +204,7 @@ const unlinkFile = async (filepath) => {
  * Deletes a file from the filesystem. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
  *
- * @param {Express.Request} req - The request object from Express. It should have an `app.locals.paths` object with
- *                       a `publicPath` property.
+ * @param {ServerRequest} req - The request object from Express.
  * @param {MongoFile} file - The file object to be deleted. It should have a `filepath` property that is
  *                           a string representing the path of the file relative to the publicPath.
  *
@@ -201,22 +213,13 @@ const unlinkFile = async (filepath) => {
  *          file path is invalid or if there is an error in deletion.
  */
 const deleteLocalFile = async (req, file) => {
-  const { publicPath, uploads } = req.app.locals.paths;
+  const appConfig = req.config;
+  const { publicPath, uploads } = appConfig.paths;
 
   /** Filepath stripped of query parameters (e.g., ?manual=true) */
   const cleanFilepath = file.filepath.split('?')[0];
 
-  if (file.embedded && process.env.RAG_API_URL) {
-    const jwtToken = generateShortLivedToken(req.user.id);
-    axios.delete(`${process.env.RAG_API_URL}/documents`, {
-      headers: {
-        Authorization: `Bearer ${jwtToken}`,
-        'Content-Type': 'application/json',
-        accept: 'application/json',
-      },
-      data: [file.file_id],
-    });
-  }
+  await deleteRagFile({ userId: req.user.id, file });
 
   if (cleanFilepath.startsWith(`/uploads/${req.user.id}`)) {
     const userUploadDir = path.join(uploads, req.user.id);
@@ -256,8 +259,7 @@ const deleteLocalFile = async (req, file) => {
  * Uploads a file to the specified upload directory.
  *
  * @param {Object} params - The params object.
- * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id`
- *                       representing the user, and an `app.locals.paths` object with an `uploads` path.
+ * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id` representing the user
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
  * @param {string} params.file_id - The file ID.
@@ -268,11 +270,12 @@ const deleteLocalFile = async (req, file) => {
  *            - bytes: The size of the file in bytes.
  */
 async function uploadLocalFile({ req, file, file_id }) {
+  const appConfig = req.config;
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
   const bytes = Buffer.byteLength(inputBuffer);
 
-  const { uploads } = req.app.locals.paths;
+  const { uploads } = appConfig.paths;
   const userPath = path.join(uploads, req.user.id);
 
   if (!fs.existsSync(userPath)) {
@@ -285,7 +288,18 @@ async function uploadLocalFile({ req, file, file_id }) {
   await fs.promises.writeFile(newPath, inputBuffer);
   const filepath = path.posix.join('/', 'uploads', req.user.id, path.basename(newPath));
 
-  return { filepath, bytes };
+  let height, width;
+  if (file.mimetype && file.mimetype.startsWith('image/')) {
+    try {
+      const { width: imgWidth, height: imgHeight } = await resizeImageBuffer(inputBuffer, 'high');
+      height = imgHeight;
+      width = imgWidth;
+    } catch (error) {
+      logger.warn('[uploadLocalFile] Could not get image dimensions:', error.message);
+    }
+  }
+
+  return { filepath, bytes, height, width };
 }
 
 /**
@@ -295,8 +309,9 @@ async function uploadLocalFile({ req, file, file_id }) {
  * @param {string} filepath - The filepath.
  * @returns {ReadableStream} A readable stream of the file.
  */
-function getLocalFileStream(req, filepath) {
+async function getLocalFileStream(req, filepath) {
   try {
+    const appConfig = req.config;
     if (filepath.includes('/uploads/')) {
       const basePath = filepath.split('/uploads/')[1];
 
@@ -305,8 +320,8 @@ function getLocalFileStream(req, filepath) {
         throw new Error(`Invalid file path: ${filepath}`);
       }
 
-      const fullPath = path.join(req.app.locals.paths.uploads, basePath);
-      const uploadsDir = req.app.locals.paths.uploads;
+      const fullPath = path.join(appConfig.paths.uploads, basePath);
+      const uploadsDir = appConfig.paths.uploads;
 
       const rel = path.relative(uploadsDir, fullPath);
       if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
@@ -323,8 +338,8 @@ function getLocalFileStream(req, filepath) {
         throw new Error(`Invalid file path: ${filepath}`);
       }
 
-      const fullPath = path.join(req.app.locals.paths.imageOutput, basePath);
-      const publicDir = req.app.locals.paths.imageOutput;
+      const fullPath = path.join(appConfig.paths.imageOutput, basePath);
+      const publicDir = appConfig.paths.imageOutput;
 
       const rel = path.relative(publicDir, fullPath);
       if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {

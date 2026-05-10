@@ -5,6 +5,7 @@ import {
   deleteMessages,
   deleteAllUserSessions,
 } from '@librechat/backend/models';
+import { User, Balance, Transaction, AclEntry, Token, Group } from '@librechat/backend/db/models';
 
 type TUser = { email: string; password: string };
 
@@ -40,13 +41,14 @@ export default async function cleanupUser(user: TUser) {
     // Delete all user sessions
     await deleteAllUserSessions(userId.toString());
 
-    // Get models from the registered models
-    const { User, Balance, Transaction } = getModels();
-
-    // Delete user, balance, and transactions using the registered models
-    await User.deleteMany({ _id: userId });
+    // Delete user, balance, transactions, tokens, ACL entries, and remove from groups
     await Balance.deleteMany({ user: userId });
     await Transaction.deleteMany({ user: userId });
+    await Token.deleteMany({ userId: userId });
+    await AclEntry.deleteMany({ principalId: userId });
+    const userIdStr = userId.toString();
+    await Group.updateMany({ memberIds: userIdStr }, { $pullAll: { memberIds: [userIdStr] } });
+    await User.deleteMany({ _id: userId });
 
     console.log('🤖:  ✅  Deleted user from Database');
 

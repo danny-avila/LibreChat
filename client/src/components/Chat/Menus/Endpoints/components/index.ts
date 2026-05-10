@@ -3,3 +3,4 @@ export * from './ModelSpecFolder';
 export * from './EndpointModelItem';
 export * from './EndpointItem';
 export * from './SearchResults';
+export * from './CustomGroup';

@@ -1,16 +1,21 @@
 const passport = require('passport');
 const session = require('express-session');
-const { isEnabled } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
+const { isEnabled, shouldUseSecureCookie } = require('@librechat/api');
+const { logger, DEFAULT_SESSION_EXPIRY } = require('@librechat/data-schemas');
 const {
   openIdJwtLogin,
   facebookLogin,
+  facebookAdminLogin,
   discordLogin,
+  discordAdminLogin,
   setupOpenId,
   googleLogin,
+  googleAdminLogin,
   githubLogin,
+  githubAdminLogin,
   appleLogin,
+  appleAdminLogin,
   setupSaml,
 } = require('~/strategies');
 const { getLogStores } = require('~/cache');
@@ -22,11 +27,16 @@ const { getLogStores } = require('~/cache');
  */
 async function configureOpenId(app) {
   logger.info('Configuring OpenID Connect...');
+  const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
   const sessionOptions = {
     secret: process.env.OPENID_SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     store: getLogStores(CacheKeys.OPENID_SESSION),
+    cookie: {
+      maxAge: sessionExpiry,
+      secure: shouldUseSecureCookie(),
+    },
   };
   app.use(session(sessionOptions));
   app.use(passport.session());
@@ -53,18 +63,23 @@ const configureSocialLogins = async (app) => {
 
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     passport.use(googleLogin());
+    passport.use('googleAdmin', googleAdminLogin());
   }
   if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
     passport.use(facebookLogin());
+    passport.use('facebookAdmin', facebookAdminLogin());
   }
   if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
     passport.use(githubLogin());
+    passport.use('githubAdmin', githubAdminLogin());
   }
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     passport.use(discordLogin());
+    passport.use('discordAdmin', discordAdminLogin());
   }
   if (process.env.APPLE_CLIENT_ID && process.env.APPLE_PRIVATE_KEY_PATH) {
     passport.use(appleLogin());
+    passport.use('appleAdmin', appleAdminLogin());
   }
   if (
     process.env.OPENID_CLIENT_ID &&
@@ -82,11 +97,16 @@ const configureSocialLogins = async (app) => {
     process.env.SAML_SESSION_SECRET
   ) {
     logger.info('Configuring SAML Connect...');
+    const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
     const sessionOptions = {
       secret: process.env.SAML_SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
       store: getLogStores(CacheKeys.SAML_SESSION),
+      cookie: {
+        maxAge: sessionExpiry,
+        secure: shouldUseSecureCookie(),
+      },
     };
     app.use(session(sessionOptions));
     app.use(passport.session());

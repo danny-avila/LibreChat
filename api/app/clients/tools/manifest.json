@@ -16,7 +16,7 @@
     "name": "Google",
     "pluginKey": "google",
     "description": "Use Google Search to find information about the weather, news, sports, and more.",
-    "icon": "https://i.imgur.com/SMmVkNB.png",
+    "icon": "assets/google-search.svg",
     "authConfig": [
       {
         "authField": "GOOGLE_CSE_ID",
@@ -31,25 +31,11 @@
     ]
   },
   {
-    "name": "YouTube",
-    "pluginKey": "youtube",
-    "toolkit": true,
-    "description": "Get YouTube video information, retrieve comments, analyze transcripts and search for videos.",
-    "icon": "https://www.youtube.com/s/desktop/7449ebf7/img/favicon_144x144.png",
-    "authConfig": [
-      {
-        "authField": "YOUTUBE_API_KEY",
-        "label": "YouTube API Key",
-        "description": "Your YouTube Data API v3 key."
-      }
-    ]
-  },
-  {
     "name": "OpenAI Image Tools",
     "pluginKey": "image_gen_oai",
     "toolkit": true,
     "description": "Image Generation and Editing using OpenAI's latest state-of-the-art models",
-    "icon": "/assets/image_gen_oai.png",
+    "icon": "assets/image_gen_oai.png",
     "authConfig": [
       {
         "authField": "IMAGE_GEN_OAI_API_KEY",
@@ -72,36 +58,10 @@
     ]
   },
   {
-    "name": "Browser",
-    "pluginKey": "web-browser",
-    "description": "Scrape and summarize webpage data",
-    "icon": "/assets/web-browser.svg",
-    "authConfig": [
-      {
-        "authField": "OPENAI_API_KEY",
-        "label": "OpenAI API Key",
-        "description": "Browser makes use of OpenAI embeddings"
-      }
-    ]
-  },
-  {
-    "name": "Serpapi",
-    "pluginKey": "serpapi",
-    "description": "SerpApi is a real-time API to access search engine results.",
-    "icon": "https://i.imgur.com/5yQHUz4.png",
-    "authConfig": [
-      {
-        "authField": "SERPAPI_API_KEY",
-        "label": "Serpapi Private API Key",
-        "description": "Private Key for Serpapi. Register at <a href='https://serpapi.com/'>Serpapi</a> to obtain a private key."
-      }
-    ]
-  },
-  {
     "name": "DALL-E-3",
     "pluginKey": "dalle",
     "description": "[DALL-E-3] Create realistic images and art from a description in natural language",
-    "icon": "https://i.imgur.com/u2TzXzH.png",
+    "icon": "assets/openai.svg",
     "authConfig": [
       {
         "authField": "DALLE3_API_KEY||DALLE_API_KEY",
@@ -114,7 +74,7 @@
     "name": "Tavily Search",
     "pluginKey": "tavily_search_results_json",
     "description": "Tavily Search is a robust search API tailored for LLM Agents. It seamlessly integrates with diverse data sources to ensure a superior, relevant search experience.",
-    "icon": "https://tavily.com/favicon.ico",
+    "icon": "assets/tavily.svg",
     "authConfig": [
       {
         "authField": "TAVILY_API_KEY",
@@ -127,14 +87,14 @@
     "name": "Calculator",
     "pluginKey": "calculator",
     "description": "Perform simple and complex mathematical calculations.",
-    "icon": "https://i.imgur.com/RHsSG5h.png",
+    "icon": "assets/calculator.svg",
     "authConfig": []
   },
   {
     "name": "Stable Diffusion",
     "pluginKey": "stable-diffusion",
     "description": "Generate photo-realistic images given any text input.",
-    "icon": "https://i.imgur.com/Yr466dp.png",
+    "icon": "assets/stability-ai.svg",
     "authConfig": [
       {
         "authField": "SD_WEBUI_URL",
@@ -147,7 +107,7 @@
     "name": "Azure AI Search",
     "pluginKey": "azure-ai-search",
     "description": "Use Azure AI Search to find information",
-    "icon": "https://i.imgur.com/E7crPze.png",
+    "icon": "assets/azure-ai-search.svg",
     "authConfig": [
       {
         "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
@@ -170,7 +130,7 @@
     "name": "OpenWeather",
     "pluginKey": "open_weather",
     "description": "Get weather forecasts and historical data from the OpenWeather API",
-    "icon": "/assets/openweather.png",
+    "icon": "assets/openweather.png",
     "authConfig": [
       {
         "authField": "OPENWEATHER_API_KEY",
@@ -183,13 +143,27 @@
     "name": "Flux",
     "pluginKey": "flux",
     "description": "Generate images using text with the Flux API.",
-    "icon": "https://blackforestlabs.ai/wp-content/uploads/2024/07/bfl_logo_retraced_blk.png",
+    "icon": "assets/bfl-ai.svg",
     "isAuthRequired": "true",
     "authConfig": [
       {
         "authField": "FLUX_API_KEY",
         "label": "Your Flux API Key",
         "description": "Provide your Flux API key from your user profile."
+      }
+    ]
+  },
+  {
+    "name": "Gemini Image Tools",
+    "pluginKey": "gemini_image_gen",
+    "description": "Generate high-quality images using Google's Gemini Image Models. Supports Gemini API or Vertex AI.",
+    "icon": "assets/gemini_image_gen.svg",
+    "authConfig": [
+      {
+        "authField": "GEMINI_API_KEY||GOOGLE_KEY||GOOGLE_SERVICE_KEY_FILE",
+        "label": "Gemini API Key (optional)",
+        "description": "Your Google Gemini API Key from <a href='https://aistudio.google.com/app/apikey' target='_blank'>Google AI Studio</a>. Leave blank to use Vertex AI with a service account (GOOGLE_SERVICE_KEY_FILE or api/data/auth.json).",
+        "optional": true
       }
     ]
   }

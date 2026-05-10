@@ -22,15 +22,17 @@ const connect = require('./connect');
   let displayTo = '';
   let message = '';
   let isPublic = undefined;
+  let persistable = undefined;
   // If we have the right number of arguments, lets use them
   if (process.argv.length >= 3) {
     displayFrom = process.argv[2];
     displayTo = process.argv[3];
     message = process.argv[4];
     isPublic = process.argv[5] === undefined ? undefined : process.argv[5] === 'true';
+    persistable = process.argv[6] === undefined ? undefined : process.argv[6] === 'true';
   } else {
     console.orange(
-      'Usage: npm run update-banner <displayFrom(Format: yyyy-mm-ddTHH:MM:SSZ)> <displayTo(Format: yyyy-mm-ddTHH:MM:SSZ)> <message> <isPublic(true/false)>',
+      'Usage: npm run update-banner <displayFrom(Format: yyyy-mm-ddTHH:MM:SSZ)> <displayTo(Format: yyyy-mm-ddTHH:MM:SSZ)> <message> <isPublic(true/false)> <persistable(true/false)>',
     );
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.purple('--------------------------');
@@ -81,6 +83,11 @@ const connect = require('./connect');
     isPublic = isPublicInput.toLowerCase() === 'y' ? true : false;
   }
 
+  if (persistable === undefined) {
+    const persistableInput = await askQuestion('Is persistable (cannot be dismissed) (y/N):');
+    persistable = persistableInput.toLowerCase() === 'y' ? true : false;
+  }
+
   // Generate the same bannerId for the same message
   // This allows us to display only messages that haven't been shown yet
   const NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // Use an arbitrary namespace UUID
@@ -101,6 +108,7 @@ const connect = require('./connect');
           message,
           bannerId,
           isPublic,
+          persistable,
         },
         { new: true },
       );
@@ -111,6 +119,7 @@ const connect = require('./connect');
         message,
         bannerId,
         isPublic,
+        persistable,
       });
     }
   } catch (error) {
@@ -131,6 +140,7 @@ const connect = require('./connect');
   console.purple(`to: ${displayTo || 'not specified'}`);
   console.purple(`Banner: ${message}`);
   console.purple(`isPublic: ${isPublic}`);
+  console.purple(`persistable: ${persistable}`);
   silentExit(0);
 })();
 

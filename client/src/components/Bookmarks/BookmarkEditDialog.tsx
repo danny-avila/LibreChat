@@ -89,9 +89,9 @@ const BookmarkEditDialog = ({
     <OGDialog open={open} onOpenChange={setOpen} triggerRef={triggerRef}>
       {children}
       <OGDialogTemplate
-        title="Bookmark"
+        title={bookmark ? localize('com_ui_bookmarks_edit') : localize('com_ui_bookmarks_new')}
         showCloseButton={false}
-        className="w-11/12 md:max-w-2xl"
+        className="w-11/12 md:max-w-lg"
         main={
           <BookmarkForm
             tags={tags}

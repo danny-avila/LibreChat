@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const {
   logAgentMigrationWarning,
@@ -5,8 +6,6 @@ const {
   checkAgentPermissionsMigration,
   checkPromptPermissionsMigration,
 } = require('@librechat/api');
-const { getProjectByName } = require('~/models/Project');
-const { Agent, PromptGroup } = require('~/db/models');
 const { findRoleByIdentifier } = require('~/models');
 
 /**
@@ -16,11 +15,11 @@ const { findRoleByIdentifier } = require('~/models');
 async function checkMigrations() {
   try {
     const agentMigrationResult = await checkAgentPermissionsMigration({
-      db: {
+      mongoose,
+      methods: {
         findRoleByIdentifier,
-        getProjectByName,
       },
-      AgentModel: Agent,
+      AgentModel: mongoose.models.Agent,
     });
     logAgentMigrationWarning(agentMigrationResult);
   } catch (error) {
@@ -28,11 +27,11 @@ async function checkMigrations() {
   }
   try {
     const promptMigrationResult = await checkPromptPermissionsMigration({
-      db: {
+      mongoose,
+      methods: {
         findRoleByIdentifier,
-        getProjectByName,
       },
-      PromptGroupModel: PromptGroup,
+      PromptGroupModel: mongoose.models.PromptGroup,
     });
     logPromptMigrationWarning(promptMigrationResult);
   } catch (error) {

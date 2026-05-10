@@ -43,7 +43,11 @@ const denyRequest = async (req, res, errorMessage) => {
 
   if (shouldSaveMessage) {
     await saveMessage(
-      req,
+      {
+        userId: req?.user?.id,
+        isTemporary: req?.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
       { ...userMessage, user: req.user.id },
       { context: `api/server/middleware/denyRequest.js - ${responseText}` },
     );

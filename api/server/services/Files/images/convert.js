@@ -1,22 +1,24 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { resizeImageBuffer } = require('./resize');
+const { logger } = require('@librechat/data-schemas');
+const { getStorageMetadata } = require('@librechat/api');
 const { getStrategyFunctions } = require('../strategies');
-const { logger } = require('~/config');
+const { resizeImageBuffer } = require('./resize');
 
 /**
  * Converts an image file or buffer to target output type with specified resolution.
  *
- * @param {Express.Request} req - The request object, containing user and app configuration data.
+ * @param {ServerRequest} req - The request object, containing user and app configuration data.
  * @param {Buffer | Express.Multer.File} file - The file object, containing either a path or a buffer.
  * @param {'low' | 'high'} [resolution='high'] - The desired resolution for the output image.
  * @param {string} [basename=''] - The basename of the input file, if it is a buffer.
- * @returns {Promise<{filepath: string, bytes: number, width: number, height: number}>} An object containing the path, size, and dimensions of the converted image.
+ * @returns {Promise<{filepath: string, bytes: number, width: number, height: number, storageKey?: string, storageRegion?: string}>} An object containing the path, size, dimensions, and optional storage metadata of the converted image.
  * @throws Throws an error if there is an issue during the conversion process.
  */
 async function convertImage(req, file, resolution = 'high', basename = '') {
   try {
+    const appConfig = req.config;
     let inputBuffer;
     let outputBuffer;
     let extension = path.extname(file.path ?? basename).toLowerCase();
@@ -39,11 +41,11 @@ async function convertImage(req, file, resolution = 'high', basename = '') {
     } = await resizeImageBuffer(inputBuffer, resolution);
 
     // Check if the file is already in target format; if it isn't, convert it:
-    const targetExtension = `.${req.app.locals.imageOutputType}`;
+    const targetExtension = `.${appConfig.imageOutputType}`;
     if (extension === targetExtension) {
       outputBuffer = resizedBuffer;
     } else {
-      outputBuffer = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
+      outputBuffer = await sharp(resizedBuffer).toFormat(appConfig.imageOutputType).toBuffer();
       extension = targetExtension;
     }
 
@@ -51,16 +53,21 @@ async function convertImage(req, file, resolution = 'high', basename = '') {
     const newFileName =
       path.basename(file.path ?? basename, path.extname(file.path ?? basename)) + extension;
 
-    const { saveBuffer } = getStrategyFunctions(req.app.locals.fileStrategy);
+    const { saveBuffer } = getStrategyFunctions(appConfig.fileStrategy);
 
     const savedFilePath = await saveBuffer({
       userId: req.user.id,
       buffer: outputBuffer,
       fileName: newFileName,
+      tenantId: req.user.tenantId,
+    });
+    const storageMetadata = getStorageMetadata({
+      filepath: savedFilePath,
+      source: appConfig.fileStrategy,
     });
 
     const bytes = Buffer.byteLength(outputBuffer);
-    return { filepath: savedFilePath, bytes, width, height };
+    return { filepath: savedFilePath, ...storageMetadata, bytes, width, height };
   } catch (err) {
     logger.error(err);
     throw err;

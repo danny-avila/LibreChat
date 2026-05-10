@@ -25,7 +25,7 @@ describe('OAuth Detection Integration Tests', () => {
       name: 'GitHub Copilot MCP Server',
       url: 'https://api.githubcopilot.com/mcp',
       expectedOAuth: true,
-      expectedMethod: '401-challenge-metadata',
+      expectedMethod: 'protected-resource-metadata',
       withMeta: true,
     },
     {
@@ -41,6 +41,13 @@ describe('OAuth Detection Integration Tests', () => {
       expectedOAuth: true,
       expectedMethod: 'protected-resource-metadata',
       withMeta: true,
+    },
+    {
+      name: 'StackOverflow MCP (HEAD=405, POST=401+Bearer)',
+      url: 'https://mcp.stackoverflow.com',
+      expectedOAuth: true,
+      expectedMethod: '401-challenge-metadata',
+      withMeta: false,
     },
     {
       name: 'HTTPBin (Non-OAuth)',

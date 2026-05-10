@@ -10,19 +10,33 @@ const {
   PrincipalType,
   PermissionBits,
 } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 
 // Mock modules before importing
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
-  getCustomConfig: jest.fn(),
 }));
 
-jest.mock('~/models/Role', () => ({
-  getRoleByName: jest.fn(),
-}));
+jest.mock('~/models', () => {
+  const mongoose = require('mongoose');
+  const { createMethods } = require('@librechat/data-schemas');
+  const methods = createMethods(mongoose, {
+    removeAllPermissions: async ({ resourceType, resourceId }) => {
+      const AclEntry = mongoose.models.AclEntry;
+      if (AclEntry) {
+        await AclEntry.deleteMany({ resourceType, resourceId });
+      }
+    },
+  });
+  return {
+    ...methods,
+    getRoleByName: jest.fn(),
+  };
+});
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),
+  promptUsageLimiter: (req, res, next) => next(),
   canAccessPromptViaGroup: jest.requireActual('~/server/middleware').canAccessPromptViaGroup,
   canAccessPromptGroupResource:
     jest.requireActual('~/server/middleware').canAccessPromptGroupResource,
@@ -31,25 +45,14 @@ jest.mock('~/server/middleware', () => ({
 let app;
 let mongoServer;
 let promptRoutes;
-let Prompt, PromptGroup, AclEntry, AccessRole, User;
+let Prompt, PromptGroup, AclEntry, AccessRole, User, SystemGrant;
 let testUsers, testRoles;
 let grantPermission;
+let currentTestUser; // Track current user for middleware
 
 // Helper function to set user in middleware
 function setTestUser(app, user) {
-  app.use((req, res, next) => {
-    req.user = {
-      ...(user.toObject ? user.toObject() : user),
-      id: user.id || user._id.toString(),
-      _id: user._id,
-      name: user.name,
-      role: user.role,
-    };
-    if (user.role === SystemRoles.ADMIN) {
-      console.log('Setting admin user with role:', req.user.role);
-    }
-    next();
-  });
+  currentTestUser = user;
 }
 
 beforeAll(async () => {
@@ -64,6 +67,7 @@ beforeAll(async () => {
   AclEntry = dbModels.AclEntry;
   AccessRole = dbModels.AccessRole;
   User = dbModels.User;
+  SystemGrant = dbModels.SystemGrant;
 
   // Import permission service
   const permissionService = require('~/server/services/PermissionService');
@@ -76,12 +80,33 @@ beforeAll(async () => {
   app = express();
   app.use(express.json());
 
-  // Mock authentication middleware - default to owner
-  setTestUser(app, testUsers.owner);
+  // Add user middleware before routes
+  app.use((req, res, next) => {
+    if (currentTestUser) {
+      req.user = {
+        ...(currentTestUser.toObject ? currentTestUser.toObject() : currentTestUser),
+        id: currentTestUser._id.toString(),
+        _id: currentTestUser._id,
+        name: currentTestUser.name,
+        role: currentTestUser.role,
+      };
+    }
+    next();
+  });
 
-  // Import routes after mocks are set up
+  // Set default user
+  currentTestUser = testUsers.owner;
+
+  // Import routes after middleware is set up
   promptRoutes = require('./prompts');
   app.use('/api/prompts', promptRoutes);
+});
+
+afterEach(() => {
+  // Always reset to owner user after each test for isolation
+  if (currentTestUser !== testUsers.owner) {
+    currentTestUser = testUsers.owner;
+  }
 });
 
 afterAll(async () => {
@@ -117,50 +142,56 @@ async function setupTestData() {
   // Create test users
   testUsers = {
     owner: await User.create({
-      id: new ObjectId().toString(),
-      _id: new ObjectId(),
       name: 'Prompt Owner',
       email: 'owner@example.com',
       role: SystemRoles.USER,
     }),
     viewer: await User.create({
-      id: new ObjectId().toString(),
-      _id: new ObjectId(),
       name: 'Prompt Viewer',
       email: 'viewer@example.com',
       role: SystemRoles.USER,
     }),
     editor: await User.create({
-      id: new ObjectId().toString(),
-      _id: new ObjectId(),
       name: 'Prompt Editor',
       email: 'editor@example.com',
       role: SystemRoles.USER,
     }),
     noAccess: await User.create({
-      id: new ObjectId().toString(),
-      _id: new ObjectId(),
       name: 'No Access',
       email: 'noaccess@example.com',
       role: SystemRoles.USER,
     }),
     admin: await User.create({
-      id: new ObjectId().toString(),
-      _id: new ObjectId(),
       name: 'Admin',
       email: 'admin@example.com',
       role: SystemRoles.ADMIN,
     }),
   };
 
+  // Seed capabilities for the ADMIN role
+  await SystemGrant.create([
+    {
+      principalType: PrincipalType.ROLE,
+      principalId: SystemRoles.ADMIN,
+      capability: SystemCapabilities.MANAGE_PROMPTS,
+      grantedAt: new Date(),
+    },
+    {
+      principalType: PrincipalType.ROLE,
+      principalId: SystemRoles.ADMIN,
+      capability: SystemCapabilities.READ_PROMPTS,
+      grantedAt: new Date(),
+    },
+  ]);
+
   // Mock getRoleByName
-  const { getRoleByName } = require('~/models/Role');
+  const { getRoleByName } = require('~/models');
   getRoleByName.mockImplementation((roleName) => {
     switch (roleName) {
       case SystemRoles.USER:
         return { permissions: { PROMPTS: { USE: true, CREATE: true } } };
       case SystemRoles.ADMIN:
-        return { permissions: { PROMPTS: { USE: true, CREATE: true, SHARED_GLOBAL: true } } };
+        return { permissions: { PROMPTS: { USE: true, CREATE: true, SHARE: true } } };
       default:
         return null;
     }
@@ -182,8 +213,7 @@ describe('Prompt Routes - ACL Permissions', () => {
   it('should have routes loaded', async () => {
     // This should at least not crash
     const response = await request(app).get('/api/prompts/test-404');
-    console.log('Test 404 response status:', response.status);
-    console.log('Test 404 response body:', response.body);
+
     // We expect a 401 or 404, not 500
     expect(response.status).not.toBe(500);
   });
@@ -207,12 +237,6 @@ describe('Prompt Routes - ACL Permissions', () => {
       };
 
       const response = await request(app).post('/api/prompts').send(promptData);
-
-      if (response.status !== 200) {
-        console.log('POST /api/prompts error status:', response.status);
-        console.log('POST /api/prompts error body:', response.body);
-        console.log('Console errors:', consoleErrorSpy.mock.calls);
-      }
 
       expect(response.status).toBe(200);
       expect(response.body.prompt).toBeDefined();
@@ -319,29 +343,8 @@ describe('Prompt Routes - ACL Permissions', () => {
     });
 
     it('should allow admin access without explicit permissions', async () => {
-      // First, reset the app to remove previous middleware
-      app = express();
-      app.use(express.json());
-
-      // Set admin user BEFORE adding routes
-      app.use((req, res, next) => {
-        req.user = {
-          ...testUsers.admin.toObject(),
-          id: testUsers.admin._id.toString(),
-          _id: testUsers.admin._id,
-          name: testUsers.admin.name,
-          role: testUsers.admin.role,
-        };
-        next();
-      });
-
-      // Now add the routes
-      const promptRoutes = require('./prompts');
-      app.use('/api/prompts', promptRoutes);
-
-      console.log('Admin user:', testUsers.admin);
-      console.log('Admin role:', testUsers.admin.role);
-      console.log('SystemRoles.ADMIN:', SystemRoles.ADMIN);
+      // Set admin user
+      setTestUser(app, testUsers.admin);
 
       const response = await request(app).get(`/api/prompts/${testPrompt._id}`).expect(200);
 
@@ -433,21 +436,8 @@ describe('Prompt Routes - ACL Permissions', () => {
         grantedBy: testUsers.editor._id,
       });
 
-      // Recreate app with viewer user
-      app = express();
-      app.use(express.json());
-      app.use((req, res, next) => {
-        req.user = {
-          ...testUsers.viewer.toObject(),
-          id: testUsers.viewer._id.toString(),
-          _id: testUsers.viewer._id,
-          name: testUsers.viewer.name,
-          role: testUsers.viewer.role,
-        };
-        next();
-      });
-      const promptRoutes = require('./prompts');
-      app.use('/api/prompts', promptRoutes);
+      // Set viewer user
+      setTestUser(app, testUsers.viewer);
 
       await request(app)
         .delete(`/api/prompts/${authorPrompt._id}`)
@@ -500,21 +490,8 @@ describe('Prompt Routes - ACL Permissions', () => {
         grantedBy: testUsers.owner._id,
       });
 
-      // Recreate app to ensure fresh middleware
-      app = express();
-      app.use(express.json());
-      app.use((req, res, next) => {
-        req.user = {
-          ...testUsers.owner.toObject(),
-          id: testUsers.owner._id.toString(),
-          _id: testUsers.owner._id,
-          name: testUsers.owner.name,
-          role: testUsers.owner.role,
-        };
-        next();
-      });
-      const promptRoutes = require('./prompts');
-      app.use('/api/prompts', promptRoutes);
+      // Ensure owner user
+      setTestUser(app, testUsers.owner);
 
       const response = await request(app)
         .patch(`/api/prompts/${testPrompt._id}/tags/production`)
@@ -538,21 +515,8 @@ describe('Prompt Routes - ACL Permissions', () => {
         grantedBy: testUsers.owner._id,
       });
 
-      // Recreate app with viewer user
-      app = express();
-      app.use(express.json());
-      app.use((req, res, next) => {
-        req.user = {
-          ...testUsers.viewer.toObject(),
-          id: testUsers.viewer._id.toString(),
-          _id: testUsers.viewer._id,
-          name: testUsers.viewer.name,
-          role: testUsers.viewer.role,
-        };
-        next();
-      });
-      const promptRoutes = require('./prompts');
-      app.use('/api/prompts', promptRoutes);
+      // Set viewer user
+      setTestUser(app, testUsers.viewer);
 
       await request(app).patch(`/api/prompts/${testPrompt._id}/tags/production`).expect(403);
 
@@ -609,6 +573,470 @@ describe('Prompt Routes - ACL Permissions', () => {
       const response = await request(app).get(`/api/prompts/${publicPrompt._id}`).expect(200);
 
       expect(response.body._id).toBe(publicPrompt._id.toString());
+    });
+  });
+
+  describe('PATCH /api/prompts/groups/:groupId - Update Prompt Group Security', () => {
+    let testGroup;
+
+    beforeEach(async () => {
+      // Create a prompt group
+      testGroup = await PromptGroup.create({
+        name: 'Security Test Group',
+        category: 'security-test',
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+        productionId: new ObjectId(),
+      });
+
+      // Grant owner permissions
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: testUsers.owner._id,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: testGroup._id,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+        grantedBy: testUsers.owner._id,
+      });
+    });
+
+    afterEach(async () => {
+      await PromptGroup.deleteMany({});
+      await AclEntry.deleteMany({});
+    });
+
+    it('should allow updating allowed fields (name, category, oneliner)', async () => {
+      const updateData = {
+        name: 'Updated Group Name',
+        category: 'updated-category',
+        oneliner: 'Updated description',
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(updateData)
+        .expect(200);
+
+      expect(response.body.name).toBe(updateData.name);
+      expect(response.body.category).toBe(updateData.category);
+      expect(response.body.oneliner).toBe(updateData.oneliner);
+    });
+
+    it('should reject request with author field (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        author: testUsers.noAccess._id.toString(), // Try to change ownership
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+      expect(response.body.details).toBeDefined();
+    });
+
+    it('should reject request with authorName field (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        authorName: 'Malicious Author Name',
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with _id field (400 Bad Request)', async () => {
+      const newId = new ObjectId();
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        _id: newId.toString(),
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with productionId field (400 Bad Request)', async () => {
+      const newProductionId = new ObjectId();
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        productionId: newProductionId.toString(),
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with createdAt field (400 Bad Request)', async () => {
+      const maliciousDate = new Date('2020-01-01');
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        createdAt: maliciousDate.toISOString(),
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with __v field (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        __v: 999,
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with multiple sensitive fields (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        author: testUsers.noAccess._id.toString(),
+        authorName: 'Hacker',
+        _id: new ObjectId().toString(),
+        productionId: new ObjectId().toString(),
+        createdAt: new Date('2020-01-01').toISOString(),
+        __v: 999,
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected with validation errors
+      expect(response.body.error).toBe('Invalid request body');
+      expect(response.body.details).toBeDefined();
+      expect(Array.isArray(response.body.details)).toBe(true);
+    });
+  });
+
+  describe('Pagination', () => {
+    beforeEach(async () => {
+      // Create multiple prompt groups for pagination testing
+      const groups = [];
+      for (let i = 0; i < 15; i++) {
+        const group = await PromptGroup.create({
+          name: `Test Group ${i + 1}`,
+          category: 'pagination-test',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - i * 1000), // Stagger updatedAt for consistent ordering
+        });
+        groups.push(group);
+
+        // Grant owner permissions on each group
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+    });
+
+    afterEach(async () => {
+      await PromptGroup.deleteMany({});
+      await AclEntry.deleteMany({});
+    });
+
+    it('should correctly indicate hasMore when there are more pages', async () => {
+      const response = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '10' })
+        .expect(200);
+
+      expect(response.body.promptGroups).toHaveLength(10);
+      expect(response.body.has_more).toBe(true);
+      expect(response.body.after).toBeTruthy();
+      // Since has_more is true, pages should be a high number (9999 in our fix)
+      expect(parseInt(response.body.pages)).toBeGreaterThan(1);
+    });
+
+    it('should correctly indicate no more pages on the last page', async () => {
+      // First get the cursor for page 2
+      const firstPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '10' })
+        .expect(200);
+
+      expect(firstPage.body.has_more).toBe(true);
+      expect(firstPage.body.after).toBeTruthy();
+
+      // Now fetch the second page using the cursor
+      const response = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '10', cursor: firstPage.body.after })
+        .expect(200);
+
+      expect(response.body.promptGroups).toHaveLength(5); // 15 total, 10 on page 1, 5 on page 2
+      expect(response.body.has_more).toBe(false);
+    });
+
+    it('should support cursor-based pagination', async () => {
+      // First page
+      const firstPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5' })
+        .expect(200);
+
+      expect(firstPage.body.promptGroups).toHaveLength(5);
+      expect(firstPage.body.has_more).toBe(true);
+      expect(firstPage.body.after).toBeTruthy();
+
+      // Second page using cursor
+      const secondPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5', cursor: firstPage.body.after })
+        .expect(200);
+
+      expect(secondPage.body.promptGroups).toHaveLength(5);
+      expect(secondPage.body.has_more).toBe(true);
+      expect(secondPage.body.after).toBeTruthy();
+
+      // Verify different groups
+      const firstPageIds = firstPage.body.promptGroups.map((g) => g._id);
+      const secondPageIds = secondPage.body.promptGroups.map((g) => g._id);
+      expect(firstPageIds).not.toEqual(secondPageIds);
+    });
+
+    it('should paginate correctly with category filtering', async () => {
+      // Create groups with different categories
+      await PromptGroup.deleteMany({}); // Clear existing groups
+      await AclEntry.deleteMany({});
+
+      // Create 8 groups with category 'test-cat-1'
+      for (let i = 0; i < 8; i++) {
+        const group = await PromptGroup.create({
+          name: `Category 1 Group ${i + 1}`,
+          category: 'test-cat-1',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - i * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Create 7 groups with category 'test-cat-2'
+      for (let i = 0; i < 7; i++) {
+        const group = await PromptGroup.create({
+          name: `Category 2 Group ${i + 1}`,
+          category: 'test-cat-2',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - (i + 8) * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Test pagination with category filter
+      const firstPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5', category: 'test-cat-1' })
+        .expect(200);
+
+      expect(firstPage.body.promptGroups).toHaveLength(5);
+      expect(firstPage.body.promptGroups.every((g) => g.category === 'test-cat-1')).toBe(true);
+      expect(firstPage.body.has_more).toBe(true);
+      expect(firstPage.body.after).toBeTruthy();
+
+      const secondPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5', cursor: firstPage.body.after, category: 'test-cat-1' })
+        .expect(200);
+
+      expect(secondPage.body.promptGroups).toHaveLength(3); // 8 total, 5 on page 1, 3 on page 2
+      expect(secondPage.body.promptGroups.every((g) => g.category === 'test-cat-1')).toBe(true);
+      expect(secondPage.body.has_more).toBe(false);
+    });
+
+    it('should paginate correctly with name/keyword filtering', async () => {
+      // Create groups with specific names
+      await PromptGroup.deleteMany({}); // Clear existing groups
+      await AclEntry.deleteMany({});
+
+      // Create 12 groups with 'Search' in the name
+      for (let i = 0; i < 12; i++) {
+        const group = await PromptGroup.create({
+          name: `Search Test Group ${i + 1}`,
+          category: 'search-test',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - i * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Create 5 groups without 'Search' in the name
+      for (let i = 0; i < 5; i++) {
+        const group = await PromptGroup.create({
+          name: `Other Group ${i + 1}`,
+          category: 'other-test',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - (i + 12) * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Test pagination with name filter
+      const firstPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '10', name: 'Search' })
+        .expect(200);
+
+      expect(firstPage.body.promptGroups).toHaveLength(10);
+      expect(firstPage.body.promptGroups.every((g) => g.name.includes('Search'))).toBe(true);
+      expect(firstPage.body.has_more).toBe(true);
+      expect(firstPage.body.after).toBeTruthy();
+
+      const secondPage = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '10', cursor: firstPage.body.after, name: 'Search' })
+        .expect(200);
+
+      expect(secondPage.body.promptGroups).toHaveLength(2); // 12 total, 10 on page 1, 2 on page 2
+      expect(secondPage.body.promptGroups.every((g) => g.name.includes('Search'))).toBe(true);
+      expect(secondPage.body.has_more).toBe(false);
+    });
+
+    it('should paginate correctly with combined filters', async () => {
+      // Create groups with various combinations
+      await PromptGroup.deleteMany({}); // Clear existing groups
+      await AclEntry.deleteMany({});
+
+      // Create 6 groups matching both category and name filters
+      for (let i = 0; i < 6; i++) {
+        const group = await PromptGroup.create({
+          name: `API Test Group ${i + 1}`,
+          category: 'api-category',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - i * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Create groups that only match one filter
+      for (let i = 0; i < 4; i++) {
+        const group = await PromptGroup.create({
+          name: `API Other Group ${i + 1}`,
+          category: 'other-category',
+          author: testUsers.owner._id,
+          authorName: testUsers.owner.name,
+          productionId: new ObjectId(),
+          updatedAt: new Date(Date.now() - (i + 6) * 1000),
+        });
+
+        await grantPermission({
+          principalType: PrincipalType.USER,
+          principalId: testUsers.owner._id,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: group._id,
+          accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+          grantedBy: testUsers.owner._id,
+        });
+      }
+
+      // Test pagination with both filters
+      const response = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5', name: 'API', category: 'api-category' })
+        .expect(200);
+
+      expect(response.body.promptGroups).toHaveLength(5);
+      expect(
+        response.body.promptGroups.every(
+          (g) => g.name.includes('API') && g.category === 'api-category',
+        ),
+      ).toBe(true);
+      expect(response.body.has_more).toBe(true);
+      expect(response.body.after).toBeTruthy();
+
+      // Page 2
+      const page2 = await request(app)
+        .get('/api/prompts/groups')
+        .query({ limit: '5', cursor: response.body.after, name: 'API', category: 'api-category' })
+        .expect(200);
+
+      expect(page2.body.promptGroups).toHaveLength(1); // 6 total, 5 on page 1, 1 on page 2
+      expect(page2.body.has_more).toBe(false);
     });
   });
 });

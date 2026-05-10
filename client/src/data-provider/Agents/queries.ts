@@ -6,6 +6,7 @@ import type {
   UseInfiniteQueryOptions,
 } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
+import { isEphemeralAgent } from '~/common';
 
 /**
  * AGENTS
@@ -64,20 +65,23 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
  * Hook for retrieving basic details about a single agent (VIEW permission)
  */
 export const useGetAgentByIdQuery = (
-  agent_id: string,
+  agent_id: string | null | undefined,
   config?: UseQueryOptions<t.Agent>,
 ): QueryObserverResult<t.Agent> => {
+  const isValidAgentId = !!agent_id && !isEphemeralAgent(agent_id);
+
   return useQuery<t.Agent>(
     [QueryKeys.agent, agent_id],
     () =>
       dataService.getAgentById({
-        agent_id,
+        agent_id: agent_id as string,
       }),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
       retry: false,
+      enabled: isValidAgentId && (config?.enabled ?? true),
       ...config,
     },
   );

@@ -1,7 +1,23 @@
 const { FileSources } = require('librechat-data-provider');
 const {
+  getS3URL,
+  saveURLToS3WithMetadata,
+  ImageService,
+  parseDocument,
+  uploadFileToS3,
+  saveBufferToS3,
+  getS3FileStream,
+  getS3DownloadURL,
+  deleteFileFromS3,
+  getCloudFrontURL,
   uploadMistralOCR,
+  saveURLToCloudFrontWithMetadata,
   uploadAzureMistralOCR,
+  uploadFileToCloudFront,
+  saveBufferToCloudFront,
+  getCloudFrontFileStream,
+  getCloudFrontDownloadURL,
+  deleteFileFromCloudFront,
   uploadGoogleVertexMistralOCR,
 } = require('@librechat/api');
 const {
@@ -26,17 +42,24 @@ const {
   processLocalAvatar,
   getLocalFileStream,
 } = require('./Local');
-const {
-  getS3URL,
-  saveURLToS3,
-  saveBufferToS3,
-  getS3FileStream,
-  uploadImageToS3,
-  prepareImageURLS3,
-  deleteFileFromS3,
-  processS3Avatar,
-  uploadFileToS3,
-} = require('./S3');
+const { resizeImageBuffer } = require('./images/resize');
+const { updateUser, updateFile } = require('~/models');
+
+const imageServiceDeps = {
+  resizeImageBuffer,
+  updateUser,
+  updateFile,
+};
+
+const s3ImageService = new ImageService(saveBufferToS3, imageServiceDeps);
+const uploadImageToS3 = (params) => s3ImageService.uploadImage(params);
+const prepareImageURLS3 = (_req, file) => s3ImageService.prepareImageURL(file);
+const processS3Avatar = (params) => s3ImageService.processAvatar(params);
+
+const cloudFrontImageService = new ImageService(saveBufferToCloudFront, imageServiceDeps);
+const uploadImageToCloudFront = (params) => cloudFrontImageService.uploadImage(params);
+const prepareCloudFrontImageURL = (_req, file) => cloudFrontImageService.prepareImageURL(file);
+const processCloudFrontAvatar = (params) => cloudFrontImageService.processAvatar(params);
 const {
   saveBufferToAzure,
   saveURLToAzure,
@@ -90,7 +113,7 @@ const localStrategy = () => ({
  * */
 const s3Strategy = () => ({
   handleFileUpload: uploadFileToS3,
-  saveURL: saveURLToS3,
+  saveURL: saveURLToS3WithMetadata,
   getFileURL: getS3URL,
   deleteFile: deleteFileFromS3,
   saveBuffer: saveBufferToS3,
@@ -98,6 +121,24 @@ const s3Strategy = () => ({
   processAvatar: processS3Avatar,
   handleImageUpload: uploadImageToS3,
   getDownloadStream: getS3FileStream,
+  getDownloadURL: getS3DownloadURL,
+});
+
+/**
+ * CloudFront CDN Strategy Functions
+ * Uses S3 for storage, CloudFront for URL delivery
+ */
+const cloudfrontStrategy = () => ({
+  handleFileUpload: uploadFileToCloudFront,
+  saveURL: saveURLToCloudFrontWithMetadata,
+  getFileURL: getCloudFrontURL,
+  deleteFile: deleteFileFromCloudFront,
+  saveBuffer: saveBufferToCloudFront,
+  prepareImagePayload: prepareCloudFrontImageURL,
+  processAvatar: processCloudFrontAvatar,
+  handleImageUpload: uploadImageToCloudFront,
+  getDownloadStream: getCloudFrontFileStream,
+  getDownloadURL: getCloudFrontDownloadURL,
 });
 
 /**
@@ -246,6 +287,26 @@ const vertexMistralOCRStrategy = () => ({
   handleFileUpload: uploadGoogleVertexMistralOCR,
 });
 
+const documentParserStrategy = () => ({
+  /** @type {typeof saveFileFromURL | null} */
+  saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
+  getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
+  saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */
+  processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
+  handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
+  prepareImagePayload: null,
+  /** @type {typeof deleteLocalFile | null} */
+  deleteFile: null,
+  /** @type {typeof getLocalFileStream | null} */
+  getDownloadStream: null,
+  handleFileUpload: parseDocument,
+});
+
 // Strategy Selector
 const getStrategyFunctions = (fileSource) => {
   if (fileSource === FileSources.firebase) {
@@ -262,6 +323,8 @@ const getStrategyFunctions = (fileSource) => {
     return vectorStrategy();
   } else if (fileSource === FileSources.s3) {
     return s3Strategy();
+  } else if (fileSource === FileSources.cloudfront) {
+    return cloudfrontStrategy();
   } else if (fileSource === FileSources.execute_code) {
     return codeOutputStrategy();
   } else if (fileSource === FileSources.mistral_ocr) {
@@ -270,6 +333,8 @@ const getStrategyFunctions = (fileSource) => {
     return azureMistralOCRStrategy();
   } else if (fileSource === FileSources.vertexai_mistral_ocr) {
     return vertexMistralOCRStrategy();
+  } else if (fileSource === FileSources.document_parser) {
+    return documentParserStrategy();
   } else if (fileSource === FileSources.text) {
     return localStrategy(); // Text files use local strategy
   } else {

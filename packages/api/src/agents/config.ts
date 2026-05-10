@@ -1,24 +1,30 @@
-import { EModelEndpoint, agentsEndpointSchema } from 'librechat-data-provider';
-import type { TCustomConfig, TAgentsEndpoint } from 'librechat-data-provider';
+import type { TAgentsEndpoint } from 'librechat-data-provider';
+
+const DEFAULT_RECURSION_LIMIT = 50;
 
 /**
- * Sets up the Agents configuration from the config (`librechat.yaml`) file.
- * If no agents config is defined, uses the provided defaults or parses empty object.
- *
- * @param config - The loaded custom configuration.
- * @param [defaultConfig] - Default configuration from getConfigDefaults.
- * @returns The Agents endpoint configuration.
+ * Resolves the effective recursion limit for an agent run via a 3-step cascade:
+ * 1. YAML endpoint config default (falls back to 50)
+ * 2. Per-agent DB override (if set and positive)
+ * 3. Global max cap from YAML (if set and positive)
  */
-export function agentsConfigSetup(
-  config: TCustomConfig,
-  defaultConfig: Partial<TAgentsEndpoint>,
-): Partial<TAgentsEndpoint> {
-  const agentsConfig = config?.endpoints?.[EModelEndpoint.agents];
+export function resolveRecursionLimit(
+  agentsEConfig: TAgentsEndpoint | undefined,
+  agent: { recursion_limit?: number } | undefined,
+): number {
+  let limit = agentsEConfig?.recursionLimit ?? DEFAULT_RECURSION_LIMIT;
 
-  if (!agentsConfig) {
-    return defaultConfig || agentsEndpointSchema.parse({});
+  if (typeof agent?.recursion_limit === 'number' && agent.recursion_limit > 0) {
+    limit = agent.recursion_limit;
   }
 
-  const parsedConfig = agentsEndpointSchema.parse(agentsConfig);
-  return parsedConfig;
+  if (
+    typeof agentsEConfig?.maxRecursionLimit === 'number' &&
+    agentsEConfig.maxRecursionLimit > 0 &&
+    limit > agentsEConfig.maxRecursionLimit
+  ) {
+    limit = agentsEConfig.maxRecursionLimit;
+  }
+
+  return limit;
 }

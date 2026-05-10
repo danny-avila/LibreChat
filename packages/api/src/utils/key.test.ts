@@ -1,6 +1,6 @@
-import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+import { readFileAsString } from './files';
 import { loadServiceKey } from './key';
 
 jest.mock('fs');
@@ -9,6 +9,10 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: {
     error: jest.fn(),
   },
+}));
+
+jest.mock('./files', () => ({
+  readFileAsString: jest.fn(),
 }));
 
 describe('loadServiceKey', () => {
@@ -49,10 +53,13 @@ describe('loadServiceKey', () => {
 
   it('should load from file path', async () => {
     const filePath = '/path/to/service-key.json';
-    (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify(mockServiceKey));
+    (readFileAsString as jest.Mock).mockResolvedValue({
+      content: JSON.stringify(mockServiceKey),
+      bytes: JSON.stringify(mockServiceKey).length,
+    });
 
     const result = await loadServiceKey(filePath);
-    expect(fs.readFileSync).toHaveBeenCalledWith(path.resolve(filePath), 'utf8');
+    expect(readFileAsString).toHaveBeenCalledWith(path.resolve(filePath));
     expect(result).toEqual(mockServiceKey);
   });
 
@@ -73,9 +80,7 @@ describe('loadServiceKey', () => {
 
   it('should handle file read errors', async () => {
     const filePath = '/path/to/nonexistent.json';
-    (fs.readFileSync as jest.Mock).mockImplementation(() => {
-      throw new Error('File not found');
-    });
+    (readFileAsString as jest.Mock).mockRejectedValue(new Error('File not found'));
 
     const result = await loadServiceKey(filePath);
     expect(result).toBeNull();

@@ -11,9 +11,10 @@ const rolePermissionsSchema = new Schema(
       [Permissions.USE]: { type: Boolean },
     },
     [PermissionTypes.PROMPTS]: {
-      [Permissions.SHARED_GLOBAL]: { type: Boolean },
       [Permissions.USE]: { type: Boolean },
       [Permissions.CREATE]: { type: Boolean },
+      [Permissions.SHARE]: { type: Boolean },
+      [Permissions.SHARE_PUBLIC]: { type: Boolean },
     },
     [PermissionTypes.MEMORIES]: {
       [Permissions.USE]: { type: Boolean },
@@ -23,9 +24,10 @@ const rolePermissionsSchema = new Schema(
       [Permissions.OPT_OUT]: { type: Boolean },
     },
     [PermissionTypes.AGENTS]: {
-      [Permissions.SHARED_GLOBAL]: { type: Boolean },
       [Permissions.USE]: { type: Boolean },
       [Permissions.CREATE]: { type: Boolean },
+      [Permissions.SHARE]: { type: Boolean },
+      [Permissions.SHARE_PUBLIC]: { type: Boolean },
     },
     [PermissionTypes.MULTI_CONVO]: {
       [Permissions.USE]: { type: Boolean },
@@ -53,15 +55,40 @@ const rolePermissionsSchema = new Schema(
     [PermissionTypes.FILE_CITATIONS]: {
       [Permissions.USE]: { type: Boolean },
     },
+    [PermissionTypes.MCP_SERVERS]: {
+      [Permissions.USE]: { type: Boolean },
+      [Permissions.CREATE]: { type: Boolean },
+      [Permissions.SHARE]: { type: Boolean },
+      [Permissions.SHARE_PUBLIC]: { type: Boolean },
+    },
+    [PermissionTypes.REMOTE_AGENTS]: {
+      [Permissions.USE]: { type: Boolean },
+      [Permissions.CREATE]: { type: Boolean },
+      [Permissions.SHARE]: { type: Boolean },
+      [Permissions.SHARE_PUBLIC]: { type: Boolean },
+    },
+    [PermissionTypes.SKILLS]: {
+      [Permissions.USE]: { type: Boolean },
+      [Permissions.CREATE]: { type: Boolean },
+      [Permissions.SHARE]: { type: Boolean },
+      [Permissions.SHARE_PUBLIC]: { type: Boolean },
+    },
   },
   { _id: false },
 );
 
 const roleSchema: Schema<IRole> = new Schema({
-  name: { type: String, required: true, unique: true, index: true },
+  name: { type: String, required: true, index: true },
+  description: { type: String, default: '' },
   permissions: {
     type: rolePermissionsSchema,
   },
+  tenantId: {
+    type: String,
+    index: true,
+  },
 });
+
+roleSchema.index({ name: 1, tenantId: 1 }, { unique: true });
 
 export default roleSchema;

@@ -23,9 +23,11 @@ const EngineSTTDropdown: React.FC<EngineSTTDropdownProps> = ({ external }) => {
     setEngineSTT(value);
   };
 
+  const labelId = 'engine-stt-dropdown-label';
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_engine')}</div>
+      <div id={labelId}>{localize('com_nav_engine')}</div>
       <Dropdown
         value={engineSTT}
         onChange={handleSelect}
@@ -33,6 +35,7 @@ const EngineSTTDropdown: React.FC<EngineSTTDropdownProps> = ({ external }) => {
         sizeClasses="w-[180px]"
         testId="EngineSTTDropdown"
         className="z-50"
+        aria-labelledby={labelId}
       />
     </div>
   );

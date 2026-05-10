@@ -1,10 +1,64 @@
 import {
-  Constants,
+  EModelEndpoint,
   isAgentsEndpoint,
   tQueryParamsSchema,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { TConversation, TPreset } from 'librechat-data-provider';
+import type { TPreset, TConversation } from 'librechat-data-provider';
+import type { ZodAny } from 'zod';
+import { isEphemeralAgent } from '~/common';
+
+const parseQueryValue = (value: string) => {
+  if (value === 'true') {
+    return true;
+  }
+  if (value === 'false') {
+    return false;
+  }
+  if (!isNaN(Number(value))) {
+    return Number(value);
+  }
+  return value;
+};
+
+/**
+ * Processes and validates URL query parameters using schema definitions.
+ * Extracts valid settings based on tQueryParamsSchema and handles special endpoint cases
+ * for assistants and agents.
+ */
+export function processValidSettings(queryParams: Record<string, string>) {
+  const validSettings = {} as TPreset;
+
+  for (const [key, value] of Object.entries(queryParams)) {
+    try {
+      const schema = tQueryParamsSchema.shape[key] as ZodAny | undefined;
+      if (schema) {
+        const parsedValue = parseQueryValue(value);
+        const validValue = schema.parse(parsedValue);
+        validSettings[key] = validValue;
+      }
+    } catch (error) {
+      console.warn(`Invalid value for setting ${key}:`, error);
+    }
+  }
+
+  if (
+    validSettings.assistant_id != null &&
+    validSettings.assistant_id &&
+    !isAssistantsEndpoint(validSettings.endpoint)
+  ) {
+    validSettings.endpoint = EModelEndpoint.assistants;
+  }
+  if (
+    validSettings.agent_id != null &&
+    validSettings.agent_id &&
+    !isAgentsEndpoint(validSettings.endpoint)
+  ) {
+    validSettings.endpoint = EModelEndpoint.agents;
+  }
+
+  return validSettings;
+}
 
 const allowedParams = Object.keys(tQueryParamsSchema.shape);
 export default function createChatSearchParams(
@@ -33,7 +87,7 @@ export default function createChatSearchParams(
   if (
     isAgentsEndpoint(endpoint) &&
     conversation.agent_id &&
-    conversation.agent_id !== Constants.EPHEMERAL_AGENT_ID
+    !isEphemeralAgent(conversation.agent_id)
   ) {
     return new URLSearchParams({ agent_id: String(conversation.agent_id) });
   } else if (isAssistantsEndpoint(endpoint) && conversation.assistant_id) {
@@ -53,7 +107,7 @@ export default function createChatSearchParams(
 
   const paramMap: Record<string, any> = {};
   allowedParams.forEach((key) => {
-    if (key === 'agent_id' && conversation.agent_id === Constants.EPHEMERAL_AGENT_ID) {
+    if (key === 'agent_id' && isEphemeralAgent(conversation.agent_id)) {
       return;
     }
     if (key !== 'endpoint' && key !== 'model') {

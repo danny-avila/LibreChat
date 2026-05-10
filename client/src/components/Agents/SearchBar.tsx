@@ -99,6 +99,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
           <X
             className="size-5 text-text-secondary transition-colors duration-200 group-hover:text-text-primary"
             strokeWidth={2.5}
+            aria-hidden="true"
           />
         </button>
       )}

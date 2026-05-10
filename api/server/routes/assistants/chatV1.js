@@ -5,7 +5,6 @@ const {
   setHeaders,
   handleAbort,
   validateModel,
-  // validateEndpoint,
   buildEndpointOption,
 } = require('~/server/middleware');
 const validateConvoAccess = require('~/server/middleware/validate/convoAccess');

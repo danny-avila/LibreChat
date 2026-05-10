@@ -1,10 +1,12 @@
 import {
   parseConvo,
   EModelEndpoint,
-  isAssistantsEndpoint,
   isAgentsEndpoint,
+  isEphemeralAgentId,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TConversation, EndpointSchemaKey } from 'librechat-data-provider';
+import { clearModelForNonEphemeralAgent } from './endpoints';
 import { getLocalStorageItems } from './localStorage';
 
 const buildDefaultConvo = ({
@@ -12,11 +14,13 @@ const buildDefaultConvo = ({
   conversation,
   endpoint = null,
   lastConversationSetup,
+  defaultParamsEndpoint,
 }: {
   models: string[];
   conversation: TConversation;
   endpoint?: EModelEndpoint | null;
   lastConversationSetup: TConversation | null;
+  defaultParamsEndpoint?: string | null;
 }): TConversation => {
   const { lastSelectedModel, lastSelectedTools } = getLocalStorageItems();
   const endpointType = lastConversationSetup?.endpointType ?? conversation.endpointType;
@@ -31,23 +35,13 @@ const buildDefaultConvo = ({
 
   const availableModels = models;
   const model = lastConversationSetup?.model ?? lastSelectedModel?.[endpoint] ?? '';
-  const secondaryModel: string | null =
-    endpoint === EModelEndpoint.gptPlugins
-      ? (lastConversationSetup?.agentOptions?.model ?? lastSelectedModel?.secondaryModel ?? null)
-      : null;
 
-  let possibleModels: string[], secondaryModels: string[];
+  let possibleModels: string[];
 
   if (availableModels.includes(model)) {
     possibleModels = [model, ...availableModels];
   } else {
     possibleModels = [...availableModels];
-  }
-
-  if (secondaryModel != null && secondaryModel !== '' && availableModels.includes(secondaryModel)) {
-    secondaryModels = [secondaryModel, ...availableModels];
-  } else {
-    secondaryModels = [...availableModels];
   }
 
   const convo = parseConvo({
@@ -56,8 +50,8 @@ const buildDefaultConvo = ({
     conversation: lastConversationSetup,
     possibleValues: {
       models: possibleModels,
-      secondaryModels,
     },
+    defaultParamsEndpoint,
   });
 
   const defaultConvo = {
@@ -77,9 +71,16 @@ const buildDefaultConvo = ({
   // Ensures agent_id is always defined
   const agentId = convo?.agent_id ?? '';
   const defaultAgentId = lastConversationSetup?.agent_id ?? '';
-  if (isAgentsEndpoint(endpoint) && !defaultAgentId && agentId) {
+  if (
+    isAgentsEndpoint(endpoint) &&
+    agentId &&
+    (!defaultAgentId || isEphemeralAgentId(defaultAgentId))
+  ) {
     defaultConvo.agent_id = agentId;
   }
+
+  // Clear model for non-ephemeral agents - agents use their configured model internally
+  clearModelForNonEphemeralAgent(defaultConvo);
 
   defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
 

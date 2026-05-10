@@ -36,11 +36,6 @@ const types = {
   },
   openAI,
   azureOpenAI: openAI,
-  gptPlugins: {
-    func: 'com_endpoint_func_hover',
-    skip: 'com_endpoint_skip_hover',
-    ...openAI,
-  },
 };
 
 function OptionHover({ endpoint, type, side }: TOptionHoverProps) {

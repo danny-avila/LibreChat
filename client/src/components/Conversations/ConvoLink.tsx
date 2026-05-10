@@ -3,6 +3,7 @@ import { cn } from '~/utils';
 
 interface ConvoLinkProps {
   isActiveConvo: boolean;
+  isPopoverActive: boolean;
   title: string | null;
   onRename: () => void;
   isSmallScreen: boolean;
@@ -12,6 +13,7 @@ interface ConvoLinkProps {
 
 const ConvoLink: React.FC<ConvoLinkProps> = ({
   isActiveConvo,
+  isPopoverActive,
   title,
   onRename,
   isSmallScreen,
@@ -22,7 +24,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
     <div
       className={cn(
         'flex grow items-center gap-2 overflow-hidden rounded-lg px-2',
-        isActiveConvo ? 'bg-surface-active-alt' : '',
+        isActiveConvo || isPopoverActive ? 'bg-surface-active-alt' : '',
       )}
       title={title ?? undefined}
       aria-current={isActiveConvo ? 'page' : undefined}
@@ -40,15 +42,14 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
           e.stopPropagation();
           onRename();
         }}
-        role="button"
-        aria-label={isSmallScreen ? undefined : title || localize('com_ui_untitled')}
+        aria-label={title || localize('com_ui_untitled')}
       >
         {title || localize('com_ui_untitled')}
       </div>
       <div
         className={cn(
-          'absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l',
-          isActiveConvo
+          'pointer-events-none absolute bottom-0.5 right-0.5 top-0.5 w-20 rounded-r-md bg-gradient-to-l',
+          isActiveConvo || isPopoverActive
             ? 'from-surface-active-alt'
             : 'from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-40%',
         )}

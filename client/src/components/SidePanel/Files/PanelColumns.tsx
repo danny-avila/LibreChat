@@ -17,9 +17,10 @@ export const columns: ColumnDef<TFile | undefined>[] = [
           variant="ghost"
           className="hover:bg-surface-hover"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          aria-label={localize('com_ui_name')}
         >
           {localize('com_ui_name')}
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          <ArrowUpDown className="ml-2 h-4 w-4" aria-hidden="true" />
         </Button>
       );
     },
@@ -38,11 +39,13 @@ export const columns: ColumnDef<TFile | undefined>[] = [
       return (
         <Button
           variant="ghost"
-          className="hover:bg-surface-hover"
+          size="sm"
+          className="h-auto px-1 py-0.5 hover:bg-surface-hover"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          aria-label={localize('com_ui_date')}
         >
           {localize('com_ui_date')}
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          <ArrowUpDown className="ml-1 h-3 w-3" />
         </Button>
       );
     },

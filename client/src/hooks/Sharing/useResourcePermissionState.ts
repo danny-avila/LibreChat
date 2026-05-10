@@ -8,7 +8,7 @@ import { getResourceConfig } from '~/utils';
 
 /**
  * Hook to manage resource permission state including current shares, public access, and mutations
- * @param resourceType - Type of resource (e.g., ResourceType.AGENT, ResourceType.PROMPTGROUP)
+ * @param resourceType - Type of resource (e.g., ResourceType.AGENT, ResourceType.PROMPTGROUP, ResourceType.MCPSERVER)
  * @param resourceDbId - Database ID of the resource
  * @param isModalOpen - Whether the modal is open (for effect dependencies)
  * @returns Object with permission state and update mutation

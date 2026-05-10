@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
-import { useChatContext } from './ChatContext';
 import { getLatestText } from '~/utils';
+import store from '~/store';
 
-interface ArtifactsContextValue {
+export interface ArtifactsContextValue {
   isSubmitting: boolean;
   latestMessageId: string | null;
   latestMessageText: string;
@@ -12,26 +13,37 @@ interface ArtifactsContextValue {
 
 const ArtifactsContext = createContext<ArtifactsContextValue | undefined>(undefined);
 
-export function ArtifactsProvider({ children }: { children: React.ReactNode }) {
-  const { isSubmitting, latestMessage, conversation } = useChatContext();
+interface ArtifactsProviderProps {
+  children: React.ReactNode;
+  value?: Partial<ArtifactsContextValue>;
+}
 
-  const latestMessageText = useMemo(() => {
+export function ArtifactsProvider({ children, value }: ArtifactsProviderProps) {
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
+  const latestMessage = useRecoilValue(store.latestMessageFamily(0));
+  const conversationId = useRecoilValue(store.conversationIdByIndex(0));
+
+  const chatLatestMessageText = useMemo(() => {
     return getLatestText({
-      messageId: latestMessage?.messageId ?? null,
       text: latestMessage?.text ?? null,
       content: latestMessage?.content ?? null,
+      messageId: latestMessage?.messageId ?? null,
     } as TMessage);
   }, [latestMessage?.messageId, latestMessage?.text, latestMessage?.content]);
 
-  /** Context value only created when relevant values change */
-  const contextValue = useMemo<ArtifactsContextValue>(
+  const defaultContextValue = useMemo<ArtifactsContextValue>(
     () => ({
       isSubmitting,
-      latestMessageText,
+      conversationId: conversationId ?? null,
+      latestMessageText: chatLatestMessageText,
       latestMessageId: latestMessage?.messageId ?? null,
-      conversationId: conversation?.conversationId ?? null,
     }),
-    [isSubmitting, latestMessage?.messageId, latestMessageText, conversation?.conversationId],
+    [isSubmitting, chatLatestMessageText, latestMessage?.messageId, conversationId],
+  );
+
+  const contextValue = useMemo<ArtifactsContextValue>(
+    () => (value ? { ...defaultContextValue, ...value } : defaultContextValue),
+    [defaultContextValue, value],
   );
 
   return <ArtifactsContext.Provider value={contextValue}>{children}</ArtifactsContext.Provider>;

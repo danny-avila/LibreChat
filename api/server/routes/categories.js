@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireJwtAuth } = require('~/server/middleware');
-const { getCategories } = require('~/models/Categories');
+const { getCategories } = require('~/models');
 
 router.get('/', requireJwtAuth, async (req, res) => {
   try {
