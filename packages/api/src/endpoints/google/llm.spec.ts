@@ -265,6 +265,7 @@ describe('getGoogleConfig', () => {
       const locations = [
         { location: 'eu', endpoint: 'aiplatform.eu.rep.googleapis.com' },
         { location: 'us', endpoint: 'aiplatform.us.rep.googleapis.com' },
+        { location: 'global', endpoint: 'aiplatform.googleapis.com' },
       ];
 
       locations.forEach(({ location, endpoint }) => {
@@ -280,6 +281,55 @@ describe('getGoogleConfig', () => {
           location,
           endpoint,
         });
+      });
+    });
+
+    it('should derive Vertex AI endpoint from the final location value', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          location: 'eu',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'eu',
+        endpoint: 'aiplatform.eu.rep.googleapis.com',
+      });
+    });
+
+    it('should preserve explicit Vertex AI endpoint overrides', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          location: 'eu',
+          endpoint: 'custom-aiplatform.example.com',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'eu',
+        endpoint: 'custom-aiplatform.example.com',
       });
     });
 
