@@ -280,7 +280,12 @@ const processDeleteRequest = async ({ req, files }) => {
 };
 
 function getFileRetentionSweepInterval() {
-  const value = Number(process.env.FILE_RETENTION_SWEEP_INTERVAL_MS);
+  const interval = process.env.FILE_RETENTION_SWEEP_INTERVAL_MS;
+  if (interval == null || interval.trim() === '') {
+    return 60 * 60 * 1000;
+  }
+
+  const value = Number(interval);
   if (!Number.isFinite(value) || value < 0) {
     return 60 * 60 * 1000;
   }

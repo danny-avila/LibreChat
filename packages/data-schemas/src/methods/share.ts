@@ -488,10 +488,13 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
 
       const newShareId = nanoid();
       const update = {
-        messages: updatedMessages,
-        user,
-        shareId: newShareId,
-        ...(expiredAt && { expiredAt }),
+        $set: {
+          messages: updatedMessages,
+          user,
+          shareId: newShareId,
+          ...(expiredAt && { expiredAt }),
+        },
+        ...(expiredAt ? {} : { $unset: { expiredAt: 1 } }),
       };
 
       const updatedShare = (await SharedLink.findOneAndUpdate({ shareId, user }, update, {
