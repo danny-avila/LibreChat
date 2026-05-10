@@ -428,10 +428,21 @@ function startExpiredFileSweep({ appConfig, loadAppConfig } = {}) {
     return null;
   }
 
-  const runSweep = () =>
-    runAsSystem(() => sweepExpiredFiles({ appConfig, loadAppConfig })).catch((error) => {
+  let isSweeping = false;
+  const runSweep = async () => {
+    if (isSweeping) {
+      return;
+    }
+
+    isSweeping = true;
+    try {
+      await runAsSystem(() => sweepExpiredFiles({ appConfig, loadAppConfig }));
+    } catch (error) {
       logger.error('[sweepExpiredFiles] Background sweep failed:', error);
-    });
+    } finally {
+      isSweeping = false;
+    }
+  };
 
   runSweep();
   const interval = setInterval(runSweep, intervalMs);

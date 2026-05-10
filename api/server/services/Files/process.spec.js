@@ -2,6 +2,7 @@ jest.mock('uuid', () => ({ v4: jest.fn(() => 'mock-uuid') }));
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn(), info: jest.fn() },
+  runAsSystem: jest.fn((fn) => fn()),
   createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
 }));
 
@@ -88,7 +89,12 @@ const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const db = require('~/models');
-const { processAgentFileUpload, processFileURL, sweepExpiredFiles } = require('./process');
+const {
+  processAgentFileUpload,
+  processFileURL,
+  sweepExpiredFiles,
+  startExpiredFileSweep,
+} = require('./process');
 
 const PDF_MIME = 'application/pdf';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -789,4 +795,46 @@ describe('sweepExpiredFiles', () => {
       expect(result).toEqual({ scanned: 1, deleted: 1, failed: 0 });
     },
   );
+});
+
+describe('startExpiredFileSweep', () => {
+  const originalInterval = process.env.FILE_RETENTION_SWEEP_INTERVAL_MS;
+
+  afterEach(() => {
+    jest.useRealTimers();
+    process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = originalInterval;
+  });
+
+  it('does not start another sweep while one is in progress', async () => {
+    jest.useFakeTimers();
+    process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = '10';
+    let resolveSweep;
+    db.getExpiredFiles.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSweep = () => resolve([]);
+        }),
+    );
+
+    const interval = startExpiredFileSweep({
+      appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
+    });
+
+    await Promise.resolve();
+    expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
+
+    jest.advanceTimersByTime(30);
+    await Promise.resolve();
+    expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
+
+    resolveSweep();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    jest.advanceTimersByTime(10);
+    await Promise.resolve();
+    expect(db.getExpiredFiles).toHaveBeenCalledTimes(2);
+
+    clearInterval(interval);
+  });
 });
