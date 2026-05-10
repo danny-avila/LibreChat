@@ -16,6 +16,7 @@ const {
   checkOpenAIStorage,
   removeNullishValues,
   isAssistantsEndpoint,
+  defaultAssistantsVersion,
   getEndpointFileConfig,
   documentParserMimeTypes,
 } = require('librechat-data-provider');
@@ -283,6 +284,63 @@ function getFileRetentionSweepInterval() {
   return value;
 }
 
+function getExpiredFileEndpoint(source) {
+  return source === FileSources.azure ? EModelEndpoint.azureAssistants : EModelEndpoint.assistants;
+}
+
+function hasExpiredFileEndpointConfig(appConfig, source) {
+  if (source === FileSources.azure) {
+    return Boolean(appConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants);
+  }
+
+  return Boolean(appConfig?.endpoints?.[EModelEndpoint.assistants]);
+}
+
+function getExpiredFileAssistantVersion(endpoint) {
+  return String(
+    defaultAssistantsVersion[endpoint] ?? defaultAssistantsVersion.assistants ?? 2,
+  ).replace(/^v/, '');
+}
+
+function createExpiredFileSweepRequest({ appConfig, file, userId }) {
+  const source = file.source ?? FileSources.local;
+  const endpoint = getExpiredFileEndpoint(source);
+  const version = getExpiredFileAssistantVersion(endpoint);
+  const baseUrl = `/api/assistants/v${version}`;
+
+  return {
+    baseUrl,
+    originalUrl: `${baseUrl}/files`,
+    path: '/files',
+    method: 'DELETE',
+    headers: {},
+    query: {},
+    params: {},
+    config: appConfig,
+    body: {
+      endpoint,
+      version,
+    },
+    user: {
+      id: userId,
+      tenantId: file.tenantId,
+    },
+  };
+}
+
+async function resolveExpiredFileSweepConfig({ appConfig, file, loadAppConfig }) {
+  const source = file.source ?? FileSources.local;
+  if (
+    !checkOpenAIStorage(source) ||
+    hasExpiredFileEndpointConfig(appConfig, source) ||
+    typeof loadAppConfig !== 'function'
+  ) {
+    return appConfig;
+  }
+
+  return (await loadAppConfig()) ?? appConfig;
+}
+
 /**
  * Deletes expired file storage before removing the corresponding File records.
  *
@@ -292,10 +350,12 @@ function getFileRetentionSweepInterval() {
  * @param {object} params
  * @param {AppConfig} params.appConfig
  * @param {number} [params.limit]
+ * @param {() => Promise<AppConfig>} [params.loadAppConfig]
  * @returns {Promise<{ scanned: number, deleted: number, failed: number }>}
  */
-async function sweepExpiredFiles({ appConfig, limit = 100 } = {}) {
+async function sweepExpiredFiles({ appConfig, limit = 100, loadAppConfig } = {}) {
   const files = (await db.getExpiredFiles(limit)) ?? [];
+  let resolvedAppConfig = appConfig;
   let deleted = 0;
   let failed = 0;
 
@@ -307,16 +367,13 @@ async function sweepExpiredFiles({ appConfig, limit = 100 } = {}) {
       continue;
     }
 
-    const req = {
-      config: appConfig,
-      body: {},
-      user: {
-        id: userId,
-        tenantId: file.tenantId,
-      },
-    };
-
     try {
+      resolvedAppConfig = await resolveExpiredFileSweepConfig({
+        appConfig: resolvedAppConfig,
+        file,
+        loadAppConfig,
+      });
+      const req = createExpiredFileSweepRequest({ appConfig: resolvedAppConfig, file, userId });
       await processDeleteRequest({ req, files: [file] });
       const remaining = await db.findFileById(file.file_id);
       if (remaining) {
@@ -339,7 +396,7 @@ async function sweepExpiredFiles({ appConfig, limit = 100 } = {}) {
   return { scanned: files.length, deleted, failed };
 }
 
-function startExpiredFileSweep({ appConfig } = {}) {
+function startExpiredFileSweep({ appConfig, loadAppConfig } = {}) {
   const intervalMs = getFileRetentionSweepInterval();
   if (intervalMs === 0) {
     logger.info('[sweepExpiredFiles] Disabled by FILE_RETENTION_SWEEP_INTERVAL_MS=0');
@@ -347,7 +404,7 @@ function startExpiredFileSweep({ appConfig } = {}) {
   }
 
   const runSweep = () =>
-    runAsSystem(() => sweepExpiredFiles({ appConfig })).catch((error) => {
+    runAsSystem(() => sweepExpiredFiles({ appConfig, loadAppConfig })).catch((error) => {
       logger.error('[sweepExpiredFiles] Background sweep failed:', error);
     });
 

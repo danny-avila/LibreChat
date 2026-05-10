@@ -78,10 +78,13 @@ const {
   EToolResources,
   FileSources,
   FileContext,
+  EModelEndpoint,
   AgentCapabilities,
 } = require('librechat-data-provider');
 const { mergeFileConfig } = require('librechat-data-provider');
+const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { checkCapability } = require('~/server/services/Config');
+const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const db = require('~/models');
 const { processAgentFileUpload, processFileURL, sweepExpiredFiles } = require('./process');
@@ -674,4 +677,70 @@ describe('sweepExpiredFiles', () => {
     expect(db.deleteFiles).toHaveBeenCalledWith(['expired-file']);
     expect(result).toEqual({ scanned: 1, deleted: 1, failed: 0 });
   });
+
+  test.each([
+    [FileSources.openai, EModelEndpoint.assistants, { [EModelEndpoint.assistants]: {} }, '2'],
+    [
+      FileSources.azure,
+      EModelEndpoint.azureAssistants,
+      { [EModelEndpoint.azureOpenAI]: { assistants: true } },
+      '1',
+    ],
+  ])(
+    'passes assistant request context when deleting %s expired files',
+    async (source, endpoint, endpoints, version) => {
+      const openaiClient = { files: {} };
+      const deleteFile = jest.fn().mockResolvedValue(undefined);
+      const loadAppConfig = jest.fn().mockResolvedValue({ endpoints });
+
+      getOpenAIClient.mockResolvedValue({ openai: openaiClient });
+      getStrategyFunctions.mockReturnValue({ deleteFile });
+      LB_QueueAsyncCall.mockImplementation(async (fn, args, callback) => {
+        try {
+          callback(null, await fn(...args));
+        } catch (error) {
+          callback(error);
+        }
+      });
+      db.getExpiredFiles.mockResolvedValue([
+        {
+          file_id: `expired-${source}-file`,
+          source,
+          user: 'user-123',
+          tenantId: 'tenant-a',
+        },
+      ]);
+      db.findFileById.mockResolvedValue(null);
+      db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+
+      const result = await sweepExpiredFiles({
+        appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
+        loadAppConfig,
+        limit: 1,
+      });
+
+      expect(loadAppConfig).toHaveBeenCalledTimes(1);
+      expect(getOpenAIClient).toHaveBeenCalledWith(
+        expect.objectContaining({
+          overrideEndpoint: endpoint,
+          req: expect.objectContaining({
+            baseUrl: `/api/assistants/v${version}`,
+            originalUrl: `/api/assistants/v${version}/files`,
+            body: expect.objectContaining({ endpoint, version }),
+            config: expect.objectContaining({ endpoints }),
+            user: { id: 'user-123', tenantId: 'tenant-a' },
+          }),
+        }),
+      );
+      expect(deleteFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: `/api/assistants/v${version}`,
+          config: expect.objectContaining({ endpoints }),
+        }),
+        expect.objectContaining({ file_id: `expired-${source}-file` }),
+        openaiClient,
+      );
+      expect(result).toEqual({ scanned: 1, deleted: 1, failed: 0 });
+    },
+  );
 });

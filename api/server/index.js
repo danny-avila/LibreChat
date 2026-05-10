@@ -84,7 +84,7 @@ const startServer = async () => {
   });
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
-  startExpiredFileSweep({ appConfig });
+  startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });

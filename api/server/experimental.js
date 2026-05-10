@@ -234,7 +234,7 @@ if (cluster.isMaster) {
     /** Initialize app configuration */
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
-    startExpiredFileSweep({ appConfig });
+    startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
     await performStartupChecks(appConfig);
     await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
 
