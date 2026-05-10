@@ -157,7 +157,9 @@ const AttachFileMenu = ({
       }
 
       const isAzureWithResponsesApi =
-        currentProvider === EModelEndpoint.azureOpenAI && useResponsesApi;
+        (currentProvider === EModelEndpoint.azureOpenAI ||
+          endpointType === EModelEndpoint.azureOpenAI) &&
+        useResponsesApi === true;
 
       if (
         isDocumentSupportedProvider(endpointType) ||

@@ -55,6 +55,10 @@ const systemTools = {
 
 const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const getSafeModelParameters = (modelParameters) => {
+  const { useResponsesApi } = modelParameters ?? {};
+  return typeof useResponsesApi === 'boolean' ? { useResponsesApi } : {};
+};
 
 /**
  * Looks up each referenced agent id in Mongo, splits them into three
@@ -458,6 +462,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         author: agent.author,
         provider: agent.provider,
         model: agent.model,
+        model_parameters: getSafeModelParameters(agent.model_parameters),
         isPublic: agent.isPublic,
         version: agent.version,
         // Safe metadata
