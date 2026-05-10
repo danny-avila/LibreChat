@@ -173,13 +173,13 @@ const processBatch = async <T>(
  */
 const createMeiliMongooseModel = ({
   index,
-  indexableQuery,
+  getIndexableQuery,
   attributesToIndex,
   primaryKey,
   syncOptions,
 }: {
   index: Index<MeiliIndexable>;
-  indexableQuery: FilterQuery<unknown>;
+  getIndexableQuery: () => FilterQuery<unknown>;
   attributesToIndex: string[];
   primaryKey: string;
   syncOptions: { batchSize: number; delayMs: number };
@@ -191,6 +191,7 @@ const createMeiliMongooseModel = ({
      * Get the current sync progress
      */
     static async getSyncProgress(this: SchemaWithMeiliMethods): Promise<SyncProgress> {
+      const indexableQuery = getIndexableQuery();
       const totalDocuments = await this.countDocuments(indexableQuery);
       const indexedDocuments = await this.countDocuments({
         ...indexableQuery,
@@ -237,6 +238,7 @@ const createMeiliMongooseModel = ({
       let hasMore = true;
 
       while (hasMore) {
+        const indexableQuery = getIndexableQuery();
         const query: FilterQuery<unknown> = {
           ...indexableQuery,
           _meiliIndex: { $ne: true },
@@ -340,7 +342,7 @@ const createMeiliMongooseModel = ({
           const query: Record<string, unknown> = {};
           query[primaryKey] = { $in: meiliIds };
 
-          const existingDocs = await this.find({ ...query, ...indexableQuery })
+          const existingDocs = await this.find({ ...query, ...getIndexableQuery() })
             .select(primaryKey)
             .lean();
 
@@ -698,7 +700,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   schema.loadClass(
     createMeiliMongooseModel({
       index,
-      indexableQuery: buildIndexableQuery(schema),
+      getIndexableQuery: () => buildIndexableQuery(schema),
       attributesToIndex,
       primaryKey,
       syncOptions,

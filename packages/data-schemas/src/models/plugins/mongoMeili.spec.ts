@@ -3,7 +3,55 @@ import mongoose from 'mongoose';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { createConversationModel } from '~/models/convo';
 import { createMessageModel } from '~/models/message';
-import { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import mongoMeili, { type SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+
+interface DynamicMeiliDocument extends mongoose.Document {
+  docId: string;
+  user: string;
+  title: string;
+  isTemporary?: boolean;
+  expiredAt?: Date | null;
+  _meiliIndex?: boolean;
+}
+
+type DynamicMeiliModel = mongoose.Model<DynamicMeiliDocument> & SchemaWithMeiliMethods;
+
+const createDynamicMeiliModel = (modelName: string): DynamicMeiliModel => {
+  const schema = new mongoose.Schema<DynamicMeiliDocument>({
+    docId: {
+      type: String,
+      required: true,
+      meiliIndex: true,
+    },
+    title: {
+      type: String,
+      meiliIndex: true,
+    },
+    user: {
+      type: String,
+      meiliIndex: true,
+    },
+    isTemporary: {
+      type: Boolean,
+      default: false,
+    },
+    expiredAt: {
+      type: Date,
+    },
+  });
+
+  schema.plugin(mongoMeili, {
+    mongoose,
+    host: 'foo',
+    apiKey: 'bar',
+    indexName: modelName.toLowerCase(),
+    primaryKey: 'docId',
+  });
+
+  return mongoose.model<DynamicMeiliDocument>(modelName, schema) as unknown as DynamicMeiliModel;
+};
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const mockAddDocuments = jest.fn();
 const mockAddDocumentsInBatches = jest.fn();
@@ -281,6 +329,36 @@ describe('Meilisearch Mongoose plugin', () => {
     await conversationModel.syncWithMeili();
 
     expect(mockAddDocuments).not.toHaveBeenCalled();
+  });
+
+  test('sync queries use a fresh expiration cutoff after plugin initialization', async () => {
+    const modelName = `DynamicMeiliCutoff${new mongoose.Types.ObjectId().toString()}`;
+    const dynamicModel = createDynamicMeiliModel(modelName);
+    mockAddDocumentsInBatches.mockClear();
+
+    try {
+      await dynamicModel.collection.insertOne({
+        docId: 'expires-soon',
+        user: 'user-123',
+        title: 'Expires Soon',
+        isTemporary: false,
+        expiredAt: new Date(Date.now() + 25),
+        _meiliIndex: false,
+      });
+
+      await wait(100);
+
+      const progress = await dynamicModel.getSyncProgress();
+      await dynamicModel.syncWithMeili();
+      const storedDoc = await dynamicModel.collection.findOne({ docId: 'expires-soon' });
+
+      expect(progress.totalDocuments).toBe(0);
+      expect(mockAddDocumentsInBatches).not.toHaveBeenCalled();
+      expect(storedDoc?._meiliIndex).toBe(false);
+    } finally {
+      await dynamicModel.deleteMany({});
+      mongoose.deleteModel(modelName);
+    }
   });
 
   describe('estimatedDocumentCount usage in syncWithMeili', () => {
