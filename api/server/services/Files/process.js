@@ -64,6 +64,9 @@ async function getRetentionExpiry(req) {
 
 const isTruthy = (value) => value === true || value === 'true';
 
+const hasRetainedConversationExpiry = (convo) =>
+  convo?.isTemporary === true || convo?.expiredAt != null;
+
 async function shouldApplyRetention(req) {
   if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
     return true;
@@ -74,7 +77,7 @@ async function shouldApplyRetention(req) {
     try {
       const convo = await db.getConvo(req.user.id, conversationId);
       if (convo) {
-        return convo.isTemporary === true || (convo.isTemporary == null && convo.expiredAt != null);
+        return hasRetainedConversationExpiry(convo);
       }
     } catch (err) {
       logger.error('[shouldApplyRetention] Error checking conversation retention:', err);

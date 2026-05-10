@@ -14,6 +14,35 @@ const {
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const router = express.Router();
 
+const hasRetainedConversationExpiry = (convo) =>
+  convo?.isTemporary === true || convo?.expiredAt != null;
+
+async function getSharedLinkExpiration(req, conversationId) {
+  const isRetentionAll = req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL;
+
+  if (!isRetentionAll) {
+    if (!conversationId) {
+      return;
+    }
+
+    const Conversation = mongoose.models.Conversation;
+    const convo = await Conversation.findOne(
+      { conversationId, user: req.user.id },
+      'isTemporary expiredAt',
+    ).lean();
+
+    if (!hasRetainedConversationExpiry(convo)) {
+      return;
+    }
+  }
+
+  try {
+    return createTempChatExpirationDate(req.config?.interfaceConfig);
+  } catch (err) {
+    logger.error('Error creating shared link expiration date:', err);
+  }
+}
+
 /**
  * Shared messages
  */
@@ -100,25 +129,7 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
 router.post('/:conversationId', requireJwtAuth, async (req, res) => {
   try {
     const { targetMessageId } = req.body;
-    let expiredAt;
-    const isRetentionAll = req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL;
-    let isConvoTemporary = false;
-    if (!isRetentionAll) {
-      const Conversation = mongoose.models.Conversation;
-      const convo = await Conversation.findOne(
-        { conversationId: req.params.conversationId, user: req.user.id },
-        'isTemporary expiredAt',
-      ).lean();
-      isConvoTemporary =
-        convo?.isTemporary === true || (convo?.isTemporary == null && convo?.expiredAt != null);
-    }
-    if (isRetentionAll || isConvoTemporary) {
-      try {
-        expiredAt = createTempChatExpirationDate(req.config?.interfaceConfig);
-      } catch (err) {
-        logger.error('Error creating shared link expiration date:', err);
-      }
-    }
+    const expiredAt = await getSharedLinkExpiration(req, req.params.conversationId);
     const created = await createSharedLink(
       req.user.id,
       req.params.conversationId,
@@ -138,35 +149,15 @@ router.post('/:conversationId', requireJwtAuth, async (req, res) => {
 
 router.patch('/:shareId', requireJwtAuth, async (req, res) => {
   try {
-    let expiredAt;
-    const isRetentionAll = req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL;
-    if (isRetentionAll) {
-      try {
-        expiredAt = createTempChatExpirationDate(req.config?.interfaceConfig);
-      } catch (err) {
-        logger.error('Error creating shared link expiration date:', err);
-      }
-    } else {
+    let expiredAt = await getSharedLinkExpiration(req);
+    if (expiredAt == null) {
       const SharedLink = mongoose.models.SharedLink;
       const existing = await SharedLink.findOne(
         { shareId: req.params.shareId, user: req.user.id },
         'conversationId',
       ).lean();
-      if (existing) {
-        const Conversation = mongoose.models.Conversation;
-        const convo = await Conversation.findOne(
-          { conversationId: existing.conversationId, user: req.user.id },
-          'isTemporary expiredAt',
-        ).lean();
-        const isConvoTemporary =
-          convo?.isTemporary === true || (convo?.isTemporary == null && convo?.expiredAt != null);
-        if (isConvoTemporary) {
-          try {
-            expiredAt = createTempChatExpirationDate(req.config?.interfaceConfig);
-          } catch (err) {
-            logger.error('Error creating shared link expiration date:', err);
-          }
-        }
+      if (existing?.conversationId) {
+        expiredAt = await getSharedLinkExpiration(req, existing.conversationId);
       }
     }
     const updatedShare = await updateSharedLink(req.user.id, req.params.shareId, expiredAt);

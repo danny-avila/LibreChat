@@ -79,6 +79,7 @@ const {
   FileSources,
   FileContext,
   EModelEndpoint,
+  RetentionMode,
   AgentCapabilities,
 } = require('librechat-data-provider');
 const { mergeFileConfig } = require('librechat-data-provider');
@@ -566,6 +567,43 @@ describe('processFileURL', () => {
       },
     });
 
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expiredAt: new Date('2030-01-01T00:00:00.000Z'),
+      }),
+      true,
+    );
+  });
+
+  it('applies retention metadata for retained non-temporary conversations', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+    });
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+    db.getConvo.mockResolvedValue({
+      isTemporary: false,
+      expiredAt: new Date('2029-01-01T00:00:00.000Z'),
+    });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+      req: {
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-123' },
+        config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY } },
+      },
+    });
+
+    expect(db.getConvo).toHaveBeenCalledWith('user-123', 'convo-123');
     expect(db.createFile).toHaveBeenCalledWith(
       expect.objectContaining({
         expiredAt: new Date('2030-01-01T00:00:00.000Z'),
