@@ -79,7 +79,11 @@ export function createConversationMethods(
         },
         {
           isTemporary: { $exists: false },
-          $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
+          $or: [
+            { expiredAt: null },
+            { expiredAt: { $exists: false } },
+            { expiredAt: { $gt: new Date() } },
+          ],
         },
       ],
     } as FilterQuery<IConversation>;
