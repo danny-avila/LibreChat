@@ -442,6 +442,27 @@ describe('Conversation Operations', () => {
       expect(result?.isTemporary).toBe(false);
     });
 
+    it('should preserve existing temporary flag when retentionMode is ALL and isTemporary is omitted', async () => {
+      mockCtx.isTemporary = true;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.ALL,
+      };
+
+      const firstSave = await saveConvo(mockCtx, mockConversationData);
+
+      mockCtx.isTemporary = undefined;
+      const secondSave = await saveConvo(mockCtx, {
+        ...mockConversationData,
+        title: 'Updated Title',
+      });
+
+      expect(firstSave?.isTemporary).toBe(true);
+      expect(secondSave?.title).toBe('Updated Title');
+      expect(secondSave?.isTemporary).toBe(true);
+      expect(secondSave?.expiredAt).toBeDefined();
+    });
+
     it('should not set expiredAt when retentionMode is temporary and not isTemporary', async () => {
       mockCtx.isTemporary = false;
       mockCtx.interfaceConfig = {
