@@ -49,18 +49,24 @@ jest.mock('@librechat/api', () => {
       return `?${params.toString()}`;
     }),
     logAxiosError: jest.fn(({ message }) => message),
+    getCodeApiAuthHeaders: jest.fn(async () => ({})),
     createAxiosInstance: jest.fn(() => mockAxios),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
   };
 });
 
-const { codeServerHttpAgent, codeServerHttpsAgent } = require('@librechat/api');
+const {
+  codeServerHttpAgent,
+  codeServerHttpsAgent,
+  getCodeApiAuthHeaders,
+} = require('@librechat/api');
 const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./crud');
 
 describe('Code CRUD', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    getCodeApiAuthHeaders.mockResolvedValue({});
   });
 
   describe('getCodeOutputDownloadStream', () => {
@@ -99,6 +105,18 @@ describe('Code CRUD', () => {
       );
       expect(callConfig.responseType).toBe('stream');
       expect(callConfig.timeout).toBe(15000);
+    });
+
+    it('forwards Code API auth headers when a request is provided', async () => {
+      const req = { user: { id: 'user-123' } };
+      getCodeApiAuthHeaders.mockResolvedValue({ Authorization: 'Bearer codeapi-token' });
+      mockAxios.mockResolvedValue({ data: Readable.from(['chunk']) });
+
+      await getCodeOutputDownloadStream('session-1/file-1', userIdentity, req);
+
+      const callConfig = mockAxios.mock.calls[0][0];
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(req);
+      expect(callConfig.headers.Authorization).toBe('Bearer codeapi-token');
     });
 
     it('forwards skill identity (kind/id/version) when re-downloading a primed skill file', async () => {
@@ -192,6 +210,23 @@ describe('Code CRUD', () => {
 
       const result = await uploadCodeEnvFile(baseUploadParams);
       expect(result).toEqual({ storage_session_id: 'sess-1', file_id: 'fid-1' });
+    });
+
+    it('forwards Code API auth headers on upload requests', async () => {
+      getCodeApiAuthHeaders.mockResolvedValue({ Authorization: 'Bearer codeapi-token' });
+      mockAxios.post.mockResolvedValue({
+        data: {
+          message: 'success',
+          storage_session_id: 'sess-1',
+          files: [{ fileId: 'fid-1', filename: 'data.csv' }],
+        },
+      });
+
+      await uploadCodeEnvFile(baseUploadParams);
+
+      const callConfig = mockAxios.post.mock.calls[0][2];
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(baseUploadParams.req);
+      expect(callConfig.headers.Authorization).toBe('Bearer codeapi-token');
     });
 
     /* Phase C / option α (codeapi #1455): the upload wire carries the

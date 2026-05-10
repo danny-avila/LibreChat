@@ -373,6 +373,7 @@ endpoints:
   #   vertex:
   #     # Vertex AI region (optional, defaults to 'us-east5')
   #     # Available regions: us-east5, us-central1, europe-west1, europe-west4, asia-southeast1
+  #     # Multi-region endpoints: us, eu, global
   #     region: "us-east5"
   #     # Path to Google service account key file (optional)
   #     # If not specified, uses GOOGLE_SERVICE_KEY_FILE env var or default path (api/data/auth.json)
