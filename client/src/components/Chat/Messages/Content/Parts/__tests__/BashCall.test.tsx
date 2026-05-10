@@ -65,10 +65,16 @@ jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
 }));
 
-const renderBashCall = (args?: string | Record<string, unknown>) =>
+const renderBashCall = (args?: string | Record<string, unknown>, commandField?: string) =>
   render(
     <RecoilRoot>
-      <BashCall initialProgress={0.1} isSubmitting={true} args={args} output="" />
+      <BashCall
+        initialProgress={0.1}
+        isSubmitting={true}
+        args={args}
+        output=""
+        commandField={commandField}
+      />
     </RecoilRoot>,
   );
 
@@ -93,6 +99,15 @@ describe('BashCall status text', () => {
     (args) => {
       renderBashCall(args);
       expect(screen.getByTestId('progress-text')).toHaveTextContent('Running command');
+    },
+  );
+
+  it.each(['{"code":"echo hi"}', { code: 'echo hi' }])(
+    'can read bash PTC code args as the command: %s',
+    (args) => {
+      renderBashCall(args, 'code');
+      expect(screen.getByTestId('progress-text')).toHaveTextContent('Running command');
+      expect(screen.getByText(/echo hi/)).toBeInTheDocument();
     },
   );
 });

@@ -30,6 +30,7 @@ import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
 import Image from './Image';
+import parseJsonField from './Parts/parseJsonField';
 
 type PartProps = {
   part?: TMessageContentParts;
@@ -40,6 +41,27 @@ type PartProps = {
   attachments?: TAttachment[];
   hideAttachments?: boolean;
 };
+
+const PYTHON_PROGRAMMATIC_LANGS = new Set(['py', 'python']);
+
+function isBashProgrammaticToolCall(
+  name: string | undefined,
+  args?: string | Record<string, unknown>,
+): boolean {
+  if (name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING) {
+    return true;
+  }
+  if (name !== Constants.PROGRAMMATIC_TOOL_CALLING) {
+    return false;
+  }
+
+  const lang =
+    parseJsonField(args, 'lang') ||
+    parseJsonField(args, 'runtime') ||
+    parseJsonField(args, 'language');
+
+  return !PYTHON_PROGRAMMATIC_LANGS.has(lang.toLowerCase());
+}
 
 const Part = memo(function Part({
   part,
@@ -132,7 +154,19 @@ const Part = memo(function Part({
 
     const isToolCall =
       'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
-    if (
+    if (isToolCall && isBashProgrammaticToolCall(toolCall.name, toolCall.args)) {
+      return (
+        <BashCall
+          args={toolCall.args}
+          output={toolCall.output ?? ''}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          attachments={attachments}
+          commandField="code"
+          hideAttachments={hideAttachments}
+        />
+      );
+    } else if (
       isToolCall &&
       (toolCall.name === Tools.execute_code ||
         toolCall.name === Constants.PROGRAMMATIC_TOOL_CALLING ||
@@ -211,7 +245,7 @@ const Part = memo(function Part({
           hideAttachments={hideAttachments}
         />
       );
-    } else if (isToolCall && toolCall.name === 'bash_tool') {
+    } else if (isToolCall && toolCall.name === Tools.bash_tool) {
       return (
         <BashCall
           args={toolCall.args}
