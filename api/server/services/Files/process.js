@@ -118,10 +118,19 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
  * @param {MongoFile} params.file - The file object to delete.
  * @param {Function} params.deleteFile - The delete file function.
  * @param {Promise[]} params.promises - The array of promises to await.
- * @param {string[]} params.resolvedFileIds - The array of promises to await.
+ * @param {string[]} params.resolvedFileIds - File IDs whose storage delete succeeded.
+ * @param {Set<string>} params.failedFileIds - File IDs whose storage delete failed.
  * @param {OpenAI | undefined} [params.openai] - If an OpenAI file, the initialized OpenAI client.
  */
-function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileIds, openai }) {
+function enqueueDeleteOperation({
+  req,
+  file,
+  deleteFile,
+  promises,
+  resolvedFileIds,
+  failedFileIds,
+  openai,
+}) {
   if (checkOpenAIStorage(file.source)) {
     // Enqueue to leaky bucket
     promises.push(
@@ -131,6 +140,7 @@ function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileI
           [],
           (err, result) => {
             if (err) {
+              failedFileIds.add(file.file_id);
               logger.error('Error deleting file from OpenAI source', err);
               reject(err);
             } else {
@@ -147,6 +157,7 @@ function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileI
       deleteFile(req, file)
         .then(() => resolvedFileIds.push(file.file_id))
         .catch((err) => {
+          failedFileIds.add(file.file_id);
           logger.error('Error deleting file', err);
           return Promise.reject(err);
         }),
@@ -167,11 +178,12 @@ function enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileI
  * @param {string} [params.req.body.assistant_id] - The assistant ID if file uploaded is associated to an assistant.
  * @param {string} [params.req.body.tool_resource] - The tool resource if assistant file uploaded is associated to a tool resource.
  *
- * @returns {Promise<void>}
+ * @returns {Promise<{ deletedFileIds: string[], failedFileIds: string[] }>}
  */
 const processDeleteRequest = async ({ req, files }) => {
   const appConfig = req.config;
   const resolvedFileIds = [];
+  const failedFileIds = new Set();
   const deletionMethods = {};
   const promises = [];
 
@@ -244,6 +256,7 @@ const processDeleteRequest = async ({ req, files }) => {
         deleteFile: deletionMethods[source],
         promises,
         resolvedFileIds,
+        failedFileIds,
         openai,
       });
       continue;
@@ -255,7 +268,15 @@ const processDeleteRequest = async ({ req, files }) => {
     }
 
     deletionMethods[source] = deleteFile;
-    enqueueDeleteOperation({ req, file, deleteFile, promises, resolvedFileIds, openai });
+    enqueueDeleteOperation({
+      req,
+      file,
+      deleteFile,
+      promises,
+      resolvedFileIds,
+      failedFileIds,
+      openai,
+    });
   }
 
   if (agentFiles.length > 0) {
@@ -277,6 +298,11 @@ const processDeleteRequest = async ({ req, files }) => {
       logger.error('Error cleaning up orphaned agent file references', error);
     }
   }
+
+  return {
+    deletedFileIds: resolvedFileIds,
+    failedFileIds: [...failedFileIds],
+  };
 };
 
 function getFileRetentionSweepInterval() {
@@ -404,7 +430,12 @@ async function sweepExpiredFiles({ appConfig, limit = 100, loadAppConfig } = {})
         loadAppConfig,
       });
       const req = createExpiredFileSweepRequest({ appConfig: resolvedAppConfig, file, userId });
-      await processDeleteRequest({ req, files: [file] });
+      const { failedFileIds } = await processDeleteRequest({ req, files: [file] });
+      if (failedFileIds.includes(file.file_id)) {
+        failed++;
+        continue;
+      }
+
       const remaining = await db.findFileById(file.file_id);
       if (remaining) {
         failed++;

@@ -722,6 +722,36 @@ describe('sweepExpiredFiles', () => {
     expect(result).toEqual({ scanned: 1, deleted: 1, failed: 0 });
   });
 
+  it('counts storage delete failures as failed even when metadata is already gone', async () => {
+    const deleteFile = jest.fn().mockRejectedValue(new Error('storage unavailable'));
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    db.getExpiredFiles.mockResolvedValue([
+      {
+        file_id: 'expired-file',
+        filepath: '/images/user-123/expired.png',
+        source: FileSources.local,
+        user: 'user-123',
+        tenantId: 'tenant-a',
+      },
+    ]);
+    db.findFileById.mockResolvedValue(null);
+    db.deleteFiles.mockResolvedValue({ deletedCount: 0 });
+
+    const result = await sweepExpiredFiles({
+      appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
+      limit: 1,
+    });
+
+    expect(deleteFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+      }),
+      expect.objectContaining({ file_id: 'expired-file' }),
+    );
+    expect(db.deleteFiles).not.toHaveBeenCalledWith(['expired-file']);
+    expect(result).toEqual({ scanned: 1, deleted: 0, failed: 1 });
+  });
+
   test.each([
     [
       FileSources.openai,
