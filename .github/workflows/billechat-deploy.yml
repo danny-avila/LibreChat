@@ -108,7 +108,7 @@ jobs:
             --values deploy/azure/billechat-values.yaml \
             --set image.registry=${{ secrets.ACR_LOGIN_SERVER }} \
             --set image.repository=${{ env.IMAGE_NAME }} \
-            --set image.tag=${{ github.sha }} \
+            --set image.tag=${{ needs.build.outputs.image_tag }} \
             --set librechat.configEnv.AZURE_AI_FOUNDRY_API_KEY=${{ secrets.AZURE_AI_FOUNDRY_API_KEY }} \
             --set librechat.configEnv.JWT_SECRET=${{ secrets.JWT_SECRET }} \
             --set librechat.configEnv.JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }} \
