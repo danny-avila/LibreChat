@@ -258,6 +258,7 @@ export default function AgentPanel() {
     formState: { dirtyFields },
   } = methods;
   const [isAvatarUploadInFlight, setIsAvatarUploadInFlight] = useState(false);
+  const [showAgentList, setShowAgentList] = useState(false);
   const uploadAvatarMutation = useUploadAgentAvatarMutation({
     onSuccess: (updatedAgent) => {
       showToast({ message: localize('com_ui_upload_agent_avatar') });
@@ -491,30 +492,45 @@ export default function AgentPanel() {
       >
         <div className="flex-1">
           <div className="flex w-full flex-wrap gap-2">
-            <div className="w-full">
-              <AgentSelect
-                createMutation={create}
-                agentQuery={agentQuery}
-                setCurrentAgentId={setCurrentAgentId}
-                selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
-              />
+            <div className="flex w-full gap-2">
+              <Button
+                type="button"
+                variant="submit"
+                className="w-full justify-center"
+                onClick={() => {
+                  reset(getDefaultAgentFormValues());
+                  setCurrentAgentId(undefined);
+                  setShowAgentList(false);
+                }}
+                disabled={agentQuery.isInitialLoading}
+                aria-label={localize('com_ui_create_new_agent')}
+              >
+                <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+                {localize('com_ui_create_new_agent')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-center"
+                onClick={() => setShowAgentList((v) => !v)}
+                disabled={agentQuery.isInitialLoading}
+                aria-label={localize('com_ui_my_agents')}
+              >
+                {localize('com_ui_my_agents')}
+              </Button>
             </div>
+            {showAgentList && (
+              <div className="w-full">
+                <AgentSelect
+                  createMutation={create}
+                  agentQuery={agentQuery}
+                  setCurrentAgentId={setCurrentAgentId}
+                  selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
+                />
+              </div>
+            )}
             {agent_id && (
-              <div className="flex w-full gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full justify-center"
-                  onClick={() => {
-                    reset(getDefaultAgentFormValues());
-                    setCurrentAgentId(undefined);
-                  }}
-                  disabled={agentQuery.isInitialLoading}
-                  aria-label={localize('com_ui_create_new_agent')}
-                >
-                  <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
-                  {localize('com_ui_create_new_agent')}
-                </Button>
+              <div className="flex w-full justify-end">
                 <Button
                   variant="submit"
                   disabled={isEphemeralAgent(agent_id) || agentQuery.isInitialLoading}

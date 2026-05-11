@@ -38,7 +38,6 @@ import { Panel, isEphemeralAgent } from '~/common';
 import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
-import AgentAvatar from './AgentAvatar';
 import AdminSettings from './AdminSettings';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
@@ -229,9 +228,8 @@ export default function AgentConfig() {
   return (
     <>
       <div className="h-auto pt-1">
-        {/* Avatar & Name */}
+        {/* Name */}
         <div className="mb-4">
-          <AgentAvatar avatar={agent?.['avatar'] ?? null} />
           <label className={labelClass} htmlFor="name">
             {localize('com_ui_name')}
             <span className="text-red-500">*</span>

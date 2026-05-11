@@ -25,6 +25,12 @@ const variableOptions: VariableOption[] = Object.keys(specialVariables).map((key
   value: `{{${key}}}`,
 }));
 
+// V1 UX (POP/BETC) : bouton « Variables » masqué du builder d'agent —
+// feature jugée non pertinente pour les users V1. Réactiver en passant
+// à `true` ; le DropdownPopup et toute la logique de variables spéciales
+// sont préservés.
+const SHOW_AGENT_VARIABLES_BUTTON = false;
+
 export default function Instructions() {
   const menuId = useId();
   const localize = useLocalize();
@@ -50,32 +56,34 @@ export default function Instructions() {
         >
           {localize('com_ui_instructions')}
         </label>
-        <div className="ml-auto" title="Add variables to instructions">
-          <DropdownPopup
-            portal={true}
-            mountByState={true}
-            unmountOnHide={true}
-            preserveTabOrder={true}
-            isOpen={isMenuOpen}
-            setIsOpen={setIsMenuOpen}
-            trigger={
-              <Menu.MenuButton
-                id="variables-menu-button"
-                aria-label="Add variable to instructions"
-                className="flex h-7 items-center gap-1 rounded-md border border-border-medium bg-surface-secondary px-2 py-0 text-sm text-text-primary transition-colors duration-200 hover:bg-surface-tertiary"
-              >
-                <PlusCircle className="mr-1 h-3 w-3 text-text-secondary" aria-hidden={true} />
-                {localize('com_ui_variables')}
-              </Menu.MenuButton>
-            }
-            items={variableOptions.map((option) => ({
-              label: localize(option.label) || option.label,
-              onClick: () => handleAddVariable(option.label, option.value),
-            }))}
-            menuId={menuId}
-            className="z-30"
-          />
-        </div>
+        {SHOW_AGENT_VARIABLES_BUTTON && (
+          <div className="ml-auto" title="Add variables to instructions">
+            <DropdownPopup
+              portal={true}
+              mountByState={true}
+              unmountOnHide={true}
+              preserveTabOrder={true}
+              isOpen={isMenuOpen}
+              setIsOpen={setIsMenuOpen}
+              trigger={
+                <Menu.MenuButton
+                  id="variables-menu-button"
+                  aria-label="Add variable to instructions"
+                  className="flex h-7 items-center gap-1 rounded-md border border-border-medium bg-surface-secondary px-2 py-0 text-sm text-text-primary transition-colors duration-200 hover:bg-surface-tertiary"
+                >
+                  <PlusCircle className="mr-1 h-3 w-3 text-text-secondary" aria-hidden={true} />
+                  {localize('com_ui_variables')}
+                </Menu.MenuButton>
+              }
+              items={variableOptions.map((option) => ({
+                label: localize(option.label) || option.label,
+                onClick: () => handleAddVariable(option.label, option.value),
+              }))}
+              menuId={menuId}
+              className="z-30"
+            />
+          </div>
+        )}
       </div>
       <Controller
         name="instructions"
