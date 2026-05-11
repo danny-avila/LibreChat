@@ -198,6 +198,8 @@ securityContext:
 mongodb:
   enabled: true
   image:
+    registry: docker.io
+    repository: bitnami/mongodb
     tag: latest
   updateStrategy:
     type: Recreate
