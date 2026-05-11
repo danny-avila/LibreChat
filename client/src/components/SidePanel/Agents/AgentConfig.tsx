@@ -336,16 +336,38 @@ export default function AgentConfig() {
             </div>
           </button>
         </div>
-        {/* === SECTION 3 : Capacités essentielles === */}
+        {/* === SECTION 3 : Actions de l'agent (Accordion replié par défaut) === */}
         {(webSearchEnabled || fileSearchEnabled || contextEnabled) && (
-          <div className="mb-4 flex w-full flex-col items-start gap-3">
-            <label className="text-token-text-primary block text-sm font-medium">
-              {localize('com_ui_agent_essential_capabilities')}
-            </label>
-            {webSearchEnabled && <SearchForm />}
-            {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
-            {contextEnabled && <FileContext agent_id={agent_id} files={context_files} />}
-          </div>
+          <Accordion type="single" collapsible className="mb-4 w-full">
+            <AccordionItem value="agent-actions" className="border-b-0">
+              <AccordionTrigger className="text-sm font-medium text-text-primary hover:no-underline">
+                <div className="flex items-center gap-2">
+                  <span>{localize('com_ui_agent_essential_capabilities')}</span>
+                  <TooltipAnchor
+                    description={localize('com_ui_agent_actions_desc')}
+                    className="inline-flex"
+                    render={
+                      <Info
+                        className="size-4 text-text-secondary"
+                        aria-label={localize('com_ui_agent_actions_desc')}
+                      />
+                    }
+                  />
+                </div>
+              </AccordionTrigger>
+              <AccordionContent>
+                <div className="flex flex-col gap-3 pt-2">
+                  {webSearchEnabled && <SearchForm />}
+                  {fileSearchEnabled && (
+                    <FileSearch agent_id={agent_id} files={knowledge_files} />
+                  )}
+                  {contextEnabled && (
+                    <FileContext agent_id={agent_id} files={context_files} />
+                  )}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         )}
         {/* === SECTION 4 : Outils avancés (Accordion replié par défaut) === */}
         <Accordion type="single" collapsible className="mb-4 w-full">
