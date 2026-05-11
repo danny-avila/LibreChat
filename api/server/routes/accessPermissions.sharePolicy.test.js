@@ -40,11 +40,11 @@ const {
   Permissions,
 } = require('librechat-data-provider');
 
-const { getRoleByName } = require('~/models');
-const { canAccessResource } = require('~/server/middleware');
-const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { updateResourcePermissions } = require('~/server/controllers/PermissionsController');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const { canAccessResource } = require('~/server/middleware');
 const accessPermissionsRouter = require('./accessPermissions');
+const { getRoleByName } = require('~/models');
 
 describe('Access permissions share policy', () => {
   let app;

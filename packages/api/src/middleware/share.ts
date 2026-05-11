@@ -2,8 +2,8 @@ import { logger, ResourceCapabilityMap } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes, ResourceType } from 'librechat-data-provider';
 import type { NextFunction, Response } from 'express';
 import type { IRole } from '@librechat/data-schemas';
-import type { RequestBody, ServerRequest } from '~/types/http';
 import type { CapabilityUser, HasCapabilityFn } from './capabilities';
+import type { RequestBody, ServerRequest } from '~/types/http';
 
 type ShareResourcePermissions = Partial<Record<Permissions, boolean>>;
 

@@ -9,8 +9,8 @@ jest.mock('@librechat/data-schemas', () => ({
 import { Permissions, PermissionTypes, ResourceType } from 'librechat-data-provider';
 import type { NextFunction, Response } from 'express';
 import type { IRole } from '@librechat/data-schemas';
-import type { SharePolicyDeps } from './share';
 import type { ServerRequest } from '~/types/http';
+import type { SharePolicyDeps } from './share';
 import { createSharePolicyMiddleware } from './share';
 
 type ShareTestRequest = ServerRequest & {

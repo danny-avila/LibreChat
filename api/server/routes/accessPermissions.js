@@ -8,12 +8,12 @@ const {
   getResourceRoles,
   searchPrincipals,
 } = require('~/server/controllers/PermissionsController');
-const { requireJwtAuth, checkBan, uaParser, canAccessResource } = require('~/server/middleware');
-const { checkPeoplePickerAccess } = require('~/server/middleware/checkPeoplePickerAccess');
 const {
   checkShareAccess,
   checkSharePublicAccess,
 } = require('~/server/middleware/checkSharePublicAccess');
+const { requireJwtAuth, checkBan, uaParser, canAccessResource } = require('~/server/middleware');
+const { checkPeoplePickerAccess } = require('~/server/middleware/checkPeoplePickerAccess');
 const { findMCPServerByObjectId, getSkillById } = require('~/models');
 
 const router = express.Router();
