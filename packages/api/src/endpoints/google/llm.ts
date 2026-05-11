@@ -25,6 +25,20 @@ const vertexMultiRegionEndpoints = new Map([
   ['global', 'aiplatform.googleapis.com'],
 ]);
 
+const blockedModelOptionParams = [
+  'apiKey',
+  'baseUrl',
+  'baseURL',
+  'endpoint',
+  'authOptions',
+  'customHeaders',
+  'headers',
+] as const;
+
+type BlockedModelOptionParam = (typeof blockedModelOptionParams)[number];
+type GoogleModelOptions = Partial<t.GoogleParameters> &
+  Partial<Record<BlockedModelOptionParam, unknown>>;
+
 /** Known Google/Vertex AI parameters that map directly to the client config */
 export const knownGoogleParams = new Set([
   'model',
@@ -106,8 +120,57 @@ function getVertexMultiRegionEndpoint(location: string): string | undefined {
   return vertexMultiRegionEndpoints.get(location);
 }
 
-function hasStringEndpoint(config: Record<string, unknown>): boolean {
-  return typeof config.endpoint === 'string' && config.endpoint.length > 0;
+function sanitizeModelOptions(modelOptions: Partial<t.GoogleParameters> | undefined) {
+  const sanitizedOptions: GoogleModelOptions = { ...(modelOptions ?? {}) };
+  blockedModelOptionParams.forEach((param) => {
+    delete sanitizedOptions[param];
+  });
+  return sanitizedOptions;
+}
+
+function isAllowedVertexEndpoint(endpoint: string): boolean {
+  if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(endpoint)) {
+    return false;
+  }
+
+  if (endpoint === 'aiplatform.googleapis.com') {
+    return true;
+  }
+
+  if (/^[a-z0-9-]+-aiplatform\.googleapis\.com$/.test(endpoint)) {
+    return true;
+  }
+
+  if (/^aiplatform-[a-z0-9-]+\.p\.googleapis\.com$/.test(endpoint)) {
+    return true;
+  }
+
+  if (/^[a-z0-9-]+-aiplatform-restricted\.p\.googleapis\.com$/.test(endpoint)) {
+    return true;
+  }
+
+  return /^aiplatform\.[a-z0-9-]+\.rep\.googleapis\.com$/.test(endpoint);
+}
+
+function hasAllowedVertexEndpoint(config: Record<string, unknown>): boolean {
+  const endpoint = config.endpoint;
+  if (endpoint === undefined) {
+    return false;
+  }
+
+  if (typeof endpoint !== 'string' || endpoint.trim() !== endpoint || endpoint.length === 0) {
+    delete config.endpoint;
+    return false;
+  }
+
+  const normalizedEndpoint = endpoint.toLowerCase();
+  if (!isAllowedVertexEndpoint(normalizedEndpoint)) {
+    delete config.endpoint;
+    return false;
+  }
+
+  config.endpoint = normalizedEndpoint;
+  return true;
 }
 
 function applyVertexMultiRegionEndpoint(config: VertexAIClientOptions & { endpoint?: string }) {
@@ -205,11 +268,11 @@ export function getGoogleConfig(
     thinking = googleSettings.thinking.default,
     thinkingBudget = googleSettings.thinkingBudget.default,
     ...modelOptions
-  } = options.modelOptions || {};
+  } = sanitizeModelOptions(options.modelOptions);
 
   let enableWebSearch = web_search;
 
-  const llmConfig: GoogleClientOptions | VertexAIClientOptions = removeNullishValues(
+  const llmConfig = removeNullishValues(
     {
       ...(modelOptions || {}),
       model: modelOptions?.model ?? '',
@@ -220,9 +283,9 @@ export function getGoogleConfig(
       maxOutputTokens: modelOptions?.maxOutputTokens ?? undefined,
     },
     true,
-  );
+  ) as GoogleClientOptions | VertexAIClientOptions;
   const initialConfig = llmConfig as Record<string, unknown>;
-  let hasCustomVertexEndpoint = hasStringEndpoint(initialConfig);
+  let hasCustomVertexEndpoint = hasAllowedVertexEndpoint(initialConfig);
   let shouldSyncVertexEndpoint = true;
 
   /** Used only for Safety Settings */
@@ -341,8 +404,8 @@ export function getGoogleConfig(
       if (knownGoogleParams.has(key)) {
         /** Route known Google params to llmConfig only if undefined */
         applyDefaultParams(llmConfig as Record<string, unknown>, { [key]: value });
-        if (key === 'endpoint' && hasStringEndpoint(llmConfig as Record<string, unknown>)) {
-          hasCustomVertexEndpoint = true;
+        if (key === 'endpoint') {
+          hasCustomVertexEndpoint = hasAllowedVertexEndpoint(llmConfig as Record<string, unknown>);
         }
       }
       /** Leave other params for transform to handle - they might be OpenAI params */
@@ -364,7 +427,7 @@ export function getGoogleConfig(
         /** Route known Google params to llmConfig */
         (llmConfig as Record<string, unknown>)[key] = value;
         if (key === 'endpoint') {
-          hasCustomVertexEndpoint = hasStringEndpoint(llmConfig as Record<string, unknown>);
+          hasCustomVertexEndpoint = hasAllowedVertexEndpoint(llmConfig as Record<string, unknown>);
         }
       }
       /** Leave other params for transform to handle - they might be OpenAI params */
