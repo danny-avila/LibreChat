@@ -3,8 +3,14 @@ import { useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import type t from 'librechat-data-provider';
-import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
-import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
+import {
+  useDocumentTitle,
+  useHasAccess,
+  useLocalize,
+  useAgentCategories,
+  TranslationKeys,
+} from '~/hooks';
+import { useGetEndpointsQuery } from '~/data-provider';
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { SidePanelGroup } from '~/components/SidePanel';
@@ -52,29 +58,23 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   // Ensure endpoints config is loaded first (required for agent queries)
   useGetEndpointsQuery();
 
-  // Fetch categories using existing query pattern
-  const categoriesQuery = useGetAgentCategoriesQuery({
-    staleTime: 1000 * 60 * 15, // 15 minutes - categories rarely change
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-  });
+  // Single source of truth for Vermeer V1 categories (see commit Categories Vermeer)
+  const { categories: vermeerCategories } = useAgentCategories();
 
-  // Handle initial category when on /agents without a category
-  useEffect(() => {
-    if (
-      !category &&
-      window.location.pathname === '/agents' &&
-      categoriesQuery.data &&
-      displayCategory === 'all'
-    ) {
-      const hasPromoted = categoriesQuery.data.some((cat) => cat.value === 'promoted');
-      if (hasPromoted) {
-        // If promoted exists, update display to show it
-        setDisplayCategory('promoted');
-      }
-    }
-  }, [category, categoriesQuery.data, displayCategory]);
+  // Build Marketplace tab categories: 'all' system tab + Vermeer V1 categories.
+  // Counts are not surfaced anymore (no API call); set to 0 — CategoryTabs handles it.
+  const marketplaceCategories = useMemo<t.TMarketplaceCategory[]>(
+    () => [
+      { value: 'all', label: 'all', count: 0 },
+      ...vermeerCategories.map((c) => ({
+        value: c.value,
+        label: c.label,
+        description: c.description,
+        count: 0,
+      })),
+    ],
+    [vermeerCategories],
+  );
 
   /**
    * Handle agent card selection - updates URL for deep linking
@@ -89,11 +89,10 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
    * Determine ordered tabs to compute indices for direction
    */
   const orderedTabs = useMemo<string[]>(() => {
-    const dynamic = (categoriesQuery.data || []).map((c) => c.value);
-    // Only include values that actually exist in the categories
+    const dynamic = marketplaceCategories.map((c) => c.value);
     const set = new Set<string>(dynamic);
     return Array.from(set);
-  }, [categoriesQuery.data]);
+  }, [marketplaceCategories]);
 
   const getTabIndex = useCallback(
     (tab: string): number => {
@@ -233,9 +232,9 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
 
                 {/* Category tabs */}
                 <CategoryTabs
-                  categories={categoriesQuery.data || []}
+                  categories={marketplaceCategories}
                   activeTab={displayCategory}
-                  isLoading={categoriesQuery.isLoading}
+                  isLoading={false}
                   onChange={handleTabChange}
                 />
               </div>
@@ -274,7 +273,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                           }
 
                           // Find the category in the API data
-                          const categoryData = categoriesQuery.data?.find(
+                          const categoryData = marketplaceCategories.find(
                             (cat) => cat.value === displayCategory,
                           );
                           if (categoryData) {
@@ -351,7 +350,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                             }
 
                             // Find the category in the API data
-                            const categoryData = categoriesQuery.data?.find(
+                            const categoryData = marketplaceCategories.find(
                               (cat) => cat.value === nextCategory,
                             );
                             if (categoryData) {

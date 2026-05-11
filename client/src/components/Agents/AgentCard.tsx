@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Label, OGDialog, OGDialogTrigger } from '@librechat/client';
 import type t from 'librechat-data-provider';
-import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
+import { useLocalize, useAgentCategories } from '~/hooks';
 import { cn, renderAgentAvatar, getContactDisplayName } from '~/utils';
 import AgentDetailContent from './AgentDetailContent';
 
@@ -16,22 +16,13 @@ interface AgentCardProps {
  */
 const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }) => {
   const localize = useLocalize();
-  const { categories } = useAgentCategories();
+  const { getCategoryLabel } = useAgentCategories();
   const [isOpen, setIsOpen] = useState(false);
 
-  const categoryLabel = useMemo(() => {
-    if (!agent.category) return '';
-
-    const category = categories.find((cat) => cat.value === agent.category);
-    if (category) {
-      if (category.label && category.label.startsWith('com_')) {
-        return localize(category.label as TranslationKeys);
-      }
-      return category.label;
-    }
-
-    return agent.category.charAt(0).toUpperCase() + agent.category.slice(1);
-  }, [agent.category, categories, localize]);
+  const categoryLabel = useMemo(
+    () => (agent.category ? getCategoryLabel(agent.category) : ''),
+    [agent.category, getCategoryLabel],
+  );
 
   const displayName = getContactDisplayName(agent);
 

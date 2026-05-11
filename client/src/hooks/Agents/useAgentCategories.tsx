@@ -1,42 +1,45 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import useLocalize from '~/hooks/useLocalize';
-import { useGetAgentCategoriesQuery } from '~/data-provider/Agents';
-import { EMPTY_AGENT_CATEGORY } from '~/constants/agentCategories';
+import {
+  EMPTY_AGENT_CATEGORY,
+  VERMEER_AGENT_CATEGORIES,
+  LEGACY_AGENT_CATEGORY_IDS,
+} from '~/constants/agentCategories';
 
 // This interface matches the structure used by the ControlCombobox component
 export interface ProcessedAgentCategory {
   label: string; // Translated label
+  description?: string; // Translated description
   value: string; // Category value
   className?: string;
   icon?: string;
 }
 
 /**
- * Custom hook that provides processed and translated agent categories from API
+ * Custom hook providing the Vermeer V1 agent categories (hardcoded, single
+ * source of truth for the builder + Marketplace). The backend `/api/categories`
+ * endpoint is no longer consulted — categories are defined in
+ * VERMEER_AGENT_CATEGORIES.
  *
- * @returns Object containing categories, emptyCategory, and loading state
+ * Also exposes `getCategoryLabel(value)`: resolves a category value to its
+ * translated label. Legacy IDs stored on existing agents (hr, finance, rd,
+ * it, sales, aftersales) are remapped to 'general' so they render cleanly
+ * as "📋 Général" instead of falling through to the raw ID or an empty badge.
  */
 const useAgentCategories = () => {
   const localize = useLocalize();
 
-  // Fetch categories from API
-  const categoriesQuery = useGetAgentCategoriesQuery({
-    staleTime: 1000 * 60 * 15, // 15 minutes
-  });
-
-  const categories = useMemo((): ProcessedAgentCategory[] => {
-    if (!categoriesQuery.data) return [];
-
-    // Filter out special categories (promoted, all) and convert to form format
-    return categoriesQuery.data
-      .filter((category) => category.value !== 'promoted' && category.value !== 'all')
-      .map((category) => ({
-        label: category.label || category.value,
+  const categories = useMemo(
+    (): ProcessedAgentCategory[] =>
+      VERMEER_AGENT_CATEGORIES.map((category) => ({
+        label: localize(category.label),
+        description: category.description ? localize(category.description) : undefined,
         value: category.value,
         className: 'w-full',
-      }));
-  }, [categoriesQuery.data]);
+      })),
+    [localize],
+  );
 
   const emptyCategory = useMemo(
     (): ProcessedAgentCategory => ({
@@ -47,11 +50,29 @@ const useAgentCategories = () => {
     [localize],
   );
 
+  const getCategoryLabel = useCallback(
+    (value: string | null | undefined): string => {
+      if (!value) {
+        return categories.find((c) => c.value === 'general')?.label ?? '';
+      }
+      const direct = categories.find((c) => c.value === value);
+      if (direct) {
+        return direct.label;
+      }
+      if (LEGACY_AGENT_CATEGORY_IDS.includes(value)) {
+        return categories.find((c) => c.value === 'general')?.label ?? '';
+      }
+      return categories.find((c) => c.value === 'general')?.label ?? value;
+    },
+    [categories],
+  );
+
   return {
     categories,
     emptyCategory,
-    isLoading: categoriesQuery.isLoading,
-    error: categoriesQuery.error,
+    getCategoryLabel,
+    isLoading: false,
+    error: null,
   };
 };
 

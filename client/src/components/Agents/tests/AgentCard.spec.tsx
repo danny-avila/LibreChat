@@ -49,6 +49,14 @@ jest.mock('~/hooks', () => ({
       { value: 'hr', label: 'com_agents_category_hr' },
       { value: 'custom', label: 'Custom Category' }, // Non-localized custom category
     ],
+    getCategoryLabel: (value: string) => {
+      const mockMap: Record<string, string> = {
+        general: 'General',
+        hr: 'Human Resources',
+        custom: 'Custom Category',
+      };
+      return mockMap[value] ?? 'General';
+    },
   }),
   useDefaultConvo: jest.fn(() => jest.fn(() => ({}))),
   useFavorites: jest.fn(() => ({
