@@ -114,7 +114,7 @@ const buildIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
       },
       {
         isTemporary: { $exists: false },
-        ...activeExpirationQuery(),
+        $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
       },
     ],
   };
@@ -125,7 +125,7 @@ const hasActiveExpiration = (expiredAt?: Date | null): boolean =>
 
 const isIndexableDocument = (doc: DocumentWithMeiliIndex): boolean =>
   (doc.isTemporary === false && hasActiveExpiration(doc.expiredAt)) ||
-  (doc.isTemporary == null && hasActiveExpiration(doc.expiredAt));
+  (doc.isTemporary == null && _.isNil(doc.expiredAt));
 
 /**
  * Validates the required options for configuring the mongoMeili plugin.

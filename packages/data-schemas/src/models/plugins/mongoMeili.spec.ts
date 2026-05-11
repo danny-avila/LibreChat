@@ -331,7 +331,7 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(mockAddDocuments).not.toHaveBeenCalled();
   });
 
-  test('sync w/ meili includes legacy retained conversations without isTemporary', async () => {
+  test('sync w/ meili excludes legacy temporary conversations without isTemporary', async () => {
     const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
     await conversationModel.deleteMany({});
     mockAddDocumentsInBatches.mockClear();
@@ -340,7 +340,7 @@ describe('Meilisearch Mongoose plugin', () => {
     await conversationModel.collection.insertOne({
       conversationId,
       user: new mongoose.Types.ObjectId().toString(),
-      title: 'Legacy Retained Conversation',
+      title: 'Legacy Temporary Conversation',
       endpoint: EModelEndpoint.openAI,
       expiredAt: new Date(Date.now() + 60 * 60 * 1000),
       _meiliIndex: false,
@@ -351,15 +351,11 @@ describe('Meilisearch Mongoose plugin', () => {
     await conversationModel.syncWithMeili();
     const storedDoc = await conversationModel.collection.findOne({ conversationId });
 
-    expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(
-      [expect.objectContaining({ conversationId })],
-      undefined,
-      { primaryKey: 'conversationId' },
-    );
-    expect(storedDoc?._meiliIndex).toBe(true);
+    expect(mockAddDocumentsInBatches).not.toHaveBeenCalled();
+    expect(storedDoc?._meiliIndex).toBe(false);
   });
 
-  test('sync w/ meili includes legacy retained messages without isTemporary', async () => {
+  test('sync w/ meili excludes legacy temporary messages without isTemporary', async () => {
     const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
     await messageModel.deleteMany({});
     mockAddDocumentsInBatches.mockClear();
@@ -370,7 +366,7 @@ describe('Meilisearch Mongoose plugin', () => {
       conversationId: new mongoose.Types.ObjectId().toString(),
       user: new mongoose.Types.ObjectId().toString(),
       isCreatedByUser: true,
-      text: 'Legacy retained message',
+      text: 'Legacy temporary message',
       expiredAt: new Date(Date.now() + 60 * 60 * 1000),
       _meiliIndex: false,
       createdAt: new Date(),
@@ -380,12 +376,8 @@ describe('Meilisearch Mongoose plugin', () => {
     await messageModel.syncWithMeili();
     const storedDoc = await messageModel.collection.findOne({ messageId });
 
-    expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(
-      [expect.objectContaining({ messageId })],
-      undefined,
-      { primaryKey: 'messageId' },
-    );
-    expect(storedDoc?._meiliIndex).toBe(true);
+    expect(mockAddDocumentsInBatches).not.toHaveBeenCalled();
+    expect(storedDoc?._meiliIndex).toBe(false);
   });
 
   test('sync queries use a fresh expiration cutoff after plugin initialization', async () => {

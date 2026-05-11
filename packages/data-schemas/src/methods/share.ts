@@ -465,7 +465,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
   async function updateSharedLink(
     user: string,
     shareId: string,
-    expiredAt?: Date,
+    expiredAt?: Date | null,
   ): Promise<t.UpdateShareResult> {
     if (!user || !shareId) {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
@@ -487,14 +487,15 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         .lean();
 
       const newShareId = nanoid();
+      const hasNewExpiration = expiredAt instanceof Date;
       const update = {
         $set: {
           messages: updatedMessages,
           user,
           shareId: newShareId,
-          ...(expiredAt && { expiredAt }),
+          ...(hasNewExpiration && { expiredAt }),
         },
-        ...(expiredAt ? {} : { $unset: { expiredAt: 1 } }),
+        ...(expiredAt === null ? { $unset: { expiredAt: 1 } } : {}),
       };
 
       const updatedShare = (await SharedLink.findOneAndUpdate({ shareId, user }, update, {

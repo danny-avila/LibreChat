@@ -113,4 +113,28 @@ describe('share routes retention', () => {
       new Date('2030-01-01T00:00:00.000Z'),
     );
   });
+
+  it('clears updated share expiration when the conversation is no longer retained', async () => {
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mongoose.models.Conversation.findOne.mockReturnValue(
+      lean({ isTemporary: false, expiredAt: null }),
+    );
+    updateSharedLink.mockResolvedValue({ shareId: 'share-456' });
+
+    const response = await request(buildApp()).patch('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', null);
+  });
+
+  it('preserves updated share expiration when the conversation cannot be found', async () => {
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mongoose.models.Conversation.findOne.mockReturnValue(lean(null));
+    updateSharedLink.mockResolvedValue({ shareId: 'share-456' });
+
+    const response = await request(buildApp()).patch('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined);
+  });
 });

@@ -31,8 +31,12 @@ async function getSharedLinkExpiration(req, conversationId) {
       'isTemporary expiredAt',
     ).lean();
 
-    if (!hasRetainedConversationExpiry(convo)) {
+    if (!convo) {
       return;
+    }
+
+    if (!hasRetainedConversationExpiry(convo)) {
+      return null;
     }
   }
 

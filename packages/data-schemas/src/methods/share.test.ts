@@ -659,7 +659,7 @@ describe('Share Methods', () => {
       expect(updatedShare?.messages).toHaveLength(2);
     });
 
-    test('should clear stale expiration when updating without a new expiration', async () => {
+    test('should preserve stale expiration when updating without an expiration decision', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
       const shareId = `share_${nanoid()}`;
@@ -682,6 +682,34 @@ describe('Share Methods', () => {
       });
 
       const result = await shareMethods.updateSharedLink(userId, shareId);
+      const updatedShare = await SharedLink.findOne({ shareId: result.shareId }).lean();
+
+      expect(updatedShare?.expiredAt?.toISOString()).toBe(expiresAt.toISOString());
+    });
+
+    test('should clear stale expiration when updating with null expiration', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const expiresAt = new Date('2030-01-01T00:00:00.000Z');
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [],
+        isPublic: true,
+        expiredAt: expiresAt,
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Retained no longer applies',
+        isCreatedByUser: true,
+      });
+
+      const result = await shareMethods.updateSharedLink(userId, shareId, null);
       const updatedShare = await SharedLink.findOne({ shareId: result.shareId }).lean();
 
       expect(updatedShare?.expiredAt).toBeUndefined();

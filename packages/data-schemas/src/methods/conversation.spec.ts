@@ -509,11 +509,11 @@ describe('Conversation Operations', () => {
         updatedAt: new Date(),
       });
 
-      const legacyRetainedConvoId = uuidv4();
+      const legacyTemporaryConvoId = uuidv4();
       await Conversation.collection.insertOne({
-        conversationId: legacyRetainedConvoId,
+        conversationId: legacyTemporaryConvoId,
         user: 'user123',
-        title: 'Legacy Retained Conversation',
+        title: 'Legacy Temporary Conversation',
         endpoint: EModelEndpoint.openAI,
         expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         updatedAt: new Date(),
@@ -546,11 +546,11 @@ describe('Conversation Operations', () => {
       const result = await getConvosByCursor('user123');
 
       // Should return both non-temporary conversations, not the temporary one
-      expect(result?.conversations).toHaveLength(3);
+      expect(result?.conversations).toHaveLength(2);
       const convoIds = result?.conversations.map((c) => c.conversationId);
       expect(convoIds).toContain(newNonTemporaryConvo.conversationId);
       expect(convoIds).toContain(oldNonTemporaryConvo.conversationId);
-      expect(convoIds).toContain(legacyRetainedConvoId);
+      expect(convoIds).not.toContain(legacyTemporaryConvoId);
       expect(convoIds).not.toContain(expiredRetainedConvo.conversationId);
     });
 
@@ -575,11 +575,11 @@ describe('Conversation Operations', () => {
         updatedAt: new Date(),
       });
 
-      const legacyRetainedConvoId = uuidv4();
+      const legacyTemporaryConvoId = uuidv4();
       await Conversation.collection.insertOne({
-        conversationId: legacyRetainedConvoId,
+        conversationId: legacyTemporaryConvoId,
         user: 'user123',
-        title: 'Legacy Retained Conversation',
+        title: 'Legacy Temporary Conversation',
         endpoint: EModelEndpoint.openAI,
         expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         updatedAt: new Date(),
@@ -609,7 +609,7 @@ describe('Conversation Operations', () => {
       const convoIds = [
         { conversationId: newNonTemporaryConvo.conversationId },
         { conversationId: oldNonTemporaryConvo.conversationId },
-        { conversationId: legacyRetainedConvoId },
+        { conversationId: legacyTemporaryConvoId },
         { conversationId: expiredRetainedConvo.conversationId },
         { conversationId: tempConvo.conversationId },
       ];
@@ -617,15 +617,14 @@ describe('Conversation Operations', () => {
       const result = await getConvosQueried('user123', convoIds);
 
       // Should only return the non-temporary conversations
-      expect(result?.conversations).toHaveLength(3);
+      expect(result?.conversations).toHaveLength(2);
 
       const resultIds = result?.conversations.map((c) => c.conversationId);
       expect(resultIds).toContain(newNonTemporaryConvo.conversationId);
       expect(resultIds).toContain(oldNonTemporaryConvo.conversationId);
-      expect(resultIds).toContain(legacyRetainedConvoId);
       expect(result?.convoMap[newNonTemporaryConvo.conversationId]).toBeDefined();
       expect(result?.convoMap[oldNonTemporaryConvo.conversationId]).toBeDefined();
-      expect(result?.convoMap[legacyRetainedConvoId]).toBeDefined();
+      expect(result?.convoMap[legacyTemporaryConvoId]).toBeUndefined();
       expect(result?.convoMap[expiredRetainedConvo.conversationId]).toBeUndefined();
       expect(result?.convoMap[tempConvo.conversationId]).toBeUndefined();
     });
