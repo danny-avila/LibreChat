@@ -329,6 +329,21 @@ describe('Share Methods', () => {
       expect(result).toBeNull();
     });
 
+    test('should return null for expired share', async () => {
+      const shareId = `share_${nanoid()}`;
+
+      await SharedLink.create({
+        shareId,
+        conversationId: 'conv123',
+        user: 'user123',
+        isPublic: true,
+        expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      expect(result).toBeNull();
+    });
+
     test('should handle messages with attachments', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
@@ -426,6 +441,34 @@ describe('Share Methods', () => {
 
       expect(privateResults.links).toHaveLength(1);
       expect(privateResults.links[0].title).toBe('Private Share');
+    });
+
+    test('should exclude expired shares', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await SharedLink.create([
+        {
+          shareId: 'active_share',
+          conversationId: 'conv1',
+          user: userId,
+          title: 'Active Share',
+          isPublic: true,
+          expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+        },
+        {
+          shareId: 'expired_share',
+          conversationId: 'conv2',
+          user: userId,
+          title: 'Expired Share',
+          isPublic: true,
+          expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+        },
+      ]);
+
+      const result = await shareMethods.getSharedLinks(userId, undefined, 10, true);
+
+      expect(result.links).toHaveLength(1);
+      expect(result.links[0].shareId).toBe('active_share');
     });
 
     test('should handle search with mocked meiliSearch and user filter', async () => {
@@ -878,6 +921,24 @@ describe('Share Methods', () => {
 
     test('should return null shareId if not found', async () => {
       const result = await shareMethods.getSharedLink('user123', 'conv123');
+
+      expect(result.success).toBe(false);
+      expect(result.shareId).toBeNull();
+    });
+
+    test('should return null shareId for expired shares', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+
+      await SharedLink.create({
+        shareId: 'share123',
+        conversationId,
+        user: userId,
+        isPublic: true,
+        expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+      });
+
+      const result = await shareMethods.getSharedLink(userId, conversationId);
 
       expect(result.success).toBe(false);
       expect(result.shareId).toBeNull();

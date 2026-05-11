@@ -29,6 +29,10 @@ const anonymizeAssistantId = memoizedAnonymizeId('a');
 const anonymizeMessageId = (id: string) =>
   id === Constants.NO_PARENT ? id : memoizedAnonymizeId('msg')(id);
 
+const activeShareExpirationFilter = () => ({
+  $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }, { expiredAt: { $gt: new Date() } }],
+});
+
 function anonymizeConvo(conversation: Partial<t.IConversation> & Partial<t.ISharedLink>) {
   if (!conversation) {
     return null;
@@ -161,7 +165,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
   async function getSharedMessages(shareId: string): Promise<t.SharedMessagesResult | null> {
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
-      const share = (await SharedLink.findOne({ shareId, isPublic: true })
+      const share = (await SharedLink.findOne({
+        shareId,
+        isPublic: true,
+        ...activeShareExpirationFilter(),
+      })
         .populate({
           path: 'messages',
           select: '-_id -__v -user',
@@ -215,7 +223,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
       const Conversation = mongoose.models.Conversation as SchemaWithMeiliMethods;
-      const query: FilterQuery<t.ISharedLink> = { user, isPublic };
+      const query: FilterQuery<t.ISharedLink> = {
+        user,
+        isPublic,
+        ...activeShareExpirationFilter(),
+      };
 
       if (pageParam) {
         if (sortDirection === 'desc') {
@@ -440,7 +452,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
 
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
-      const share = (await SharedLink.findOne({ conversationId, user, isPublic: true })
+      const share = (await SharedLink.findOne({
+        conversationId,
+        user,
+        isPublic: true,
+        ...activeShareExpirationFilter(),
+      })
         .select('shareId -_id')
         .lean()) as { shareId?: string } | null;
 
