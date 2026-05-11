@@ -14,8 +14,16 @@ const {
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const router = express.Router();
 
-const hasRetainedConversationExpiry = (convo) =>
-  convo?.isTemporary === true || convo?.expiredAt != null;
+const getConversationExpirationDate = (convo) => {
+  if (convo?.expiredAt == null) {
+    return null;
+  }
+
+  const expiredAt = convo.expiredAt instanceof Date ? convo.expiredAt : new Date(convo.expiredAt);
+  return Number.isNaN(expiredAt.getTime()) ? null : expiredAt;
+};
+
+const isActiveExpirationDate = (expiredAt) => expiredAt > new Date();
 
 async function getSharedLinkExpiration(req, conversationId) {
   const isRetentionAll = req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL;
@@ -35,8 +43,13 @@ async function getSharedLinkExpiration(req, conversationId) {
       return;
     }
 
-    if (!hasRetainedConversationExpiry(convo)) {
+    const conversationExpiredAt = getConversationExpirationDate(convo);
+    if (conversationExpiredAt == null) {
       return null;
+    }
+
+    if (!isActiveExpirationDate(conversationExpiredAt)) {
+      return conversationExpiredAt;
     }
   }
 

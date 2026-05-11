@@ -43,17 +43,20 @@ const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
 const db = require('~/models');
 
-/**
- * Returns `{ expiredAt }` when the request indicates data retention applies, otherwise `{}`.
- * Spread into file data objects before calling createFile.
- * @param {ServerRequest} req
- * @returns {Promise<{ expiredAt?: Date | null }>}
- */
-async function getRetentionExpiry(req) {
-  if (!(await shouldApplyRetention(req))) {
-    return {};
+const isTruthy = (value) => value === true || value === 'true';
+
+const getConversationExpirationDate = (convo) => {
+  if (convo?.expiredAt == null) {
+    return null;
   }
 
+  const expiredAt = convo.expiredAt instanceof Date ? convo.expiredAt : new Date(convo.expiredAt);
+  return Number.isNaN(expiredAt.getTime()) ? null : expiredAt;
+};
+
+const isActiveExpirationDate = (expiredAt) => expiredAt > new Date();
+
+function createRetentionExpiry(req) {
   try {
     return { expiredAt: createTempChatExpirationDate(req.config?.interfaceConfig) };
   } catch (err) {
@@ -62,14 +65,15 @@ async function getRetentionExpiry(req) {
   }
 }
 
-const isTruthy = (value) => value === true || value === 'true';
-
-const hasRetainedConversationExpiry = (convo) =>
-  convo?.isTemporary === true || convo?.expiredAt != null;
-
-async function shouldApplyRetention(req) {
+/**
+ * Returns `{ expiredAt }` when the request indicates data retention applies, otherwise `{}`.
+ * Spread into file data objects before calling createFile.
+ * @param {ServerRequest} req
+ * @returns {Promise<{ expiredAt?: Date | null }>}
+ */
+async function getRetentionExpiry(req) {
   if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
-    return true;
+    return createRetentionExpiry(req);
   }
 
   const conversationId = req?.body?.conversationId;
@@ -77,14 +81,27 @@ async function shouldApplyRetention(req) {
     try {
       const convo = await db.getConvo(req.user.id, conversationId);
       if (convo) {
-        return hasRetainedConversationExpiry(convo);
+        const expiredAt = getConversationExpirationDate(convo);
+        if (expiredAt == null) {
+          return {};
+        }
+
+        if (!isActiveExpirationDate(expiredAt)) {
+          return { expiredAt };
+        }
+
+        return createRetentionExpiry(req);
       }
     } catch (err) {
-      logger.error('[shouldApplyRetention] Error checking conversation retention:', err);
+      logger.error('[getRetentionExpiry] Error checking conversation retention:', err);
     }
   }
 
-  return isTruthy(req?.body?.isTemporary);
+  if (!isTruthy(req?.body?.isTemporary)) {
+    return {};
+  }
+
+  return createRetentionExpiry(req);
 }
 
 /**

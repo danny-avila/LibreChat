@@ -75,6 +75,7 @@ jest.mock('~/server/services/Files/Audio/STTService', () => ({
   STTService: { getInstance: jest.fn() },
 }));
 
+const { createTempChatExpirationDate } = require('@librechat/data-schemas');
 const {
   EToolResources,
   FileSources,
@@ -613,6 +614,44 @@ describe('processFileURL', () => {
     expect(db.createFile).toHaveBeenCalledWith(
       expect.objectContaining({
         expiredAt: new Date('2030-01-01T00:00:00.000Z'),
+      }),
+      true,
+    );
+  });
+
+  it('keeps expired retained conversation files on the parent expiration', async () => {
+    const parentExpiredAt = new Date('2020-01-01T00:00:00.000Z');
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+    });
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+    db.getConvo.mockResolvedValue({
+      isTemporary: false,
+      expiredAt: parentExpiredAt,
+    });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+      req: {
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-123' },
+        config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY } },
+      },
+    });
+
+    expect(createTempChatExpirationDate).not.toHaveBeenCalled();
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expiredAt: parentExpiredAt,
       }),
       true,
     );

@@ -41,12 +41,18 @@ jest.mock('~/models', () => ({
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
 
 const { RetentionMode } = require('librechat-data-provider');
+const { createTempChatExpirationDate } = require('@librechat/data-schemas');
 const { createSharedLink, updateSharedLink } = require('~/models');
 const shareRouter = require('../share');
 
 const retainedConvo = {
   isTemporary: false,
   expiredAt: new Date('2029-01-01T00:00:00.000Z'),
+};
+
+const expiredRetainedConvo = {
+  isTemporary: false,
+  expiredAt: new Date('2020-01-01T00:00:00.000Z'),
 };
 
 const lean = (value) => ({
@@ -91,6 +97,24 @@ describe('share routes retention', () => {
     );
   });
 
+  it('keeps new shares on the parent expiration when the retained conversation expired', async () => {
+    mongoose.models.Conversation.findOne.mockReturnValue(lean(expiredRetainedConvo));
+    createSharedLink.mockResolvedValue({ shareId: 'share-123' });
+
+    const response = await request(buildApp())
+      .post('/api/share/convo-123')
+      .send({ targetMessageId: 'msg-123' });
+
+    expect(response.status).toBe(200);
+    expect(createTempChatExpirationDate).not.toHaveBeenCalled();
+    expect(createSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'convo-123',
+      'msg-123',
+      expiredRetainedConvo.expiredAt,
+    );
+  });
+
   it('expires updated shares for retained non-temporary conversations', async () => {
     mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
     mongoose.models.Conversation.findOne.mockReturnValue(lean(retainedConvo));
@@ -111,6 +135,22 @@ describe('share routes retention', () => {
       'user-123',
       'share-123',
       new Date('2030-01-01T00:00:00.000Z'),
+    );
+  });
+
+  it('keeps updated shares on the parent expiration when the retained conversation expired', async () => {
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mongoose.models.Conversation.findOne.mockReturnValue(lean(expiredRetainedConvo));
+    updateSharedLink.mockResolvedValue({ shareId: 'share-456' });
+
+    const response = await request(buildApp()).patch('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(createTempChatExpirationDate).not.toHaveBeenCalled();
+    expect(updateSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'share-123',
+      expiredRetainedConvo.expiredAt,
     );
   });
 
