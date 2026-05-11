@@ -92,11 +92,11 @@ jest.mock('~/server/utils', () => ({
   determineFileType: jest.fn().mockResolvedValue({ mime: 'text/csv' }),
 }));
 
-jest.mock('~/server/services/Files/process', () => ({
+jest.mock('~/server/services/Files/retention', () => ({
   getRetentionExpiry: jest.fn(() => ({})),
 }));
 
-const { getRetentionExpiry } = require('~/server/services/Files/process');
+const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { createFile } = require('~/models');
 const { processCodeOutput } = require('../process');
 

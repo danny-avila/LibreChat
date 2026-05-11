@@ -36,7 +36,7 @@ const { filterFilesByAgentAccess } = require('~/server/services/Files/permission
 const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
-const { getRetentionExpiry } = require('~/server/services/Files/process');
+const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { determineFileType } = require('~/server/utils');
 
 const axios = createAxiosInstance();

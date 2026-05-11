@@ -137,7 +137,7 @@ jest.mock('~/server/services/Files/images/convert', () => ({
   convertImage: jest.fn(),
 }));
 
-jest.mock('~/server/services/Files/process', () => ({
+jest.mock('~/server/services/Files/retention', () => ({
   getRetentionExpiry: jest.fn(() => ({})),
 }));
 
@@ -149,7 +149,7 @@ jest.mock('~/server/utils', () => ({
 const http = require('http');
 const https = require('https');
 const { createFile, getFiles } = require('~/models');
-const { getRetentionExpiry } = require('~/server/services/Files/process');
+const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { determineFileType } = require('~/server/utils');
