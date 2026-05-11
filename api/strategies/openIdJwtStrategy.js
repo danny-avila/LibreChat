@@ -13,6 +13,13 @@ const {
 } = require('@librechat/api');
 const { updateUser, findUser } = require('~/models');
 
+const getOpenIdJwtAudience = () => {
+  const audiences = [process.env.OPENID_CLIENT_ID, process.env.OPENID_AUDIENCE].filter(Boolean);
+  const uniqueAudiences = [...new Set(audiences)];
+
+  return uniqueAudiences.length > 1 ? uniqueAudiences : uniqueAudiences[0];
+};
+
 /**
  * @function openIdJwtLogin
  * @param {import('openid-client').Configuration} openIdConfig - Configuration object for the JWT strategy.
@@ -47,6 +54,8 @@ const openIdJwtLogin = (openIdConfig) => {
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKeyProvider: jwksRsa.passportJwtSecret(jwksRsaOptions),
+      audience: getOpenIdJwtAudience(),
+      issuer: openIdConfig.serverMetadata().issuer,
       passReqToCallback: true,
     },
     /**

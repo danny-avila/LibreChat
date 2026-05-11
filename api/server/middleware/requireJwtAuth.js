@@ -19,9 +19,7 @@ const requireJwtAuth = (req, res, next) => {
   const openidReuseEnabled = isEnabled(process.env.OPENID_REUSE_TOKENS);
   const openidJwtAvailable = openidReuseEnabled && hasPassportStrategy('openidJwt');
   const strategies =
-    tokenProvider === 'openid' && openidJwtAvailable
-      ? ['openidJwt', 'jwt']
-      : ['jwt', ...(openidJwtAvailable ? ['openidJwt'] : [])];
+    tokenProvider === 'openid' && openidJwtAvailable ? ['openidJwt', 'jwt'] : ['jwt'];
 
   const authenticateWithStrategy = (index) => {
     const strategy = strategies[index];

@@ -1,9 +1,11 @@
 const { SystemRoles } = require('librechat-data-provider');
 
-// --- Capture the verify callback from JwtStrategy ---
+// --- Capture JwtStrategy inputs ---
+let capturedStrategyOptions;
 let capturedVerifyCallback;
 jest.mock('passport-jwt', () => ({
-  Strategy: jest.fn((_opts, verifyCallback) => {
+  Strategy: jest.fn((opts, verifyCallback) => {
+    capturedStrategyOptions = opts;
     capturedVerifyCallback = verifyCallback;
     return { name: 'jwt' };
   }),
@@ -47,6 +49,28 @@ const { findOpenIDUser } = require('@librechat/api');
 const openIdJwtLogin = require('./openIdJwtStrategy');
 const { findUser, updateUser } = require('~/models');
 
+function withEnv(env, callback) {
+  const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+  Object.entries(env).forEach(([key, value]) => {
+    if (value === undefined) {
+      delete process.env[key];
+      return;
+    }
+    process.env[key] = value;
+  });
+  try {
+    callback();
+  } finally {
+    Object.entries(previous).forEach(([key, value]) => {
+      if (value === undefined) {
+        delete process.env[key];
+        return;
+      }
+      process.env[key] = value;
+    });
+  }
+}
+
 // Helper: build a mock openIdConfig
 const mockOpenIdConfig = {
   serverMetadata: () => ({
@@ -66,6 +90,35 @@ async function invokeVerify(req, payload) {
     });
   });
 }
+
+describe('openIdJwtStrategy – token validation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('requires OpenID JWTs to match the configured client audience and issuer', () => {
+    withEnv({ OPENID_CLIENT_ID: 'librechat-client-id', OPENID_AUDIENCE: undefined }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    expect(capturedStrategyOptions).toMatchObject({
+      audience: 'librechat-client-id',
+      issuer: 'https://issuer.example.com',
+      passReqToCallback: true,
+    });
+  });
+
+  it('also accepts OPENID_AUDIENCE for providers that mint resource-bound JWTs', () => {
+    withEnv({ OPENID_CLIENT_ID: 'librechat-client-id', OPENID_AUDIENCE: 'api://librechat' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    expect(capturedStrategyOptions).toMatchObject({
+      audience: ['librechat-client-id', 'api://librechat'],
+      issuer: 'https://issuer.example.com',
+    });
+  });
+});
 
 describe('openIdJwtStrategy – token source handling', () => {
   const baseUser = {

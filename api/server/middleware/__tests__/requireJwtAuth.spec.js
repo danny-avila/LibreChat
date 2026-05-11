@@ -8,8 +8,6 @@
  * If the chaining is removed, these tests fail.
  */
 
-const { getTenantId } = require('@librechat/data-schemas');
-
 // ── Mocks ──────────────────────────────────────────────────────────────
 
 let mockPassportError = null;
@@ -36,6 +34,15 @@ jest.mock('passport', () => ({
   }),
 }));
 
+jest.mock('@librechat/data-schemas', () => {
+  const { AsyncLocalStorage } = require('async_hooks');
+  const tenantStorage = new AsyncLocalStorage();
+  return {
+    getTenantId: () => tenantStorage.getStore()?.tenantId,
+    tenantStorage,
+  };
+});
+
 // Mock @librechat/api — the real tenantContextMiddleware is TS and cannot be
 // required directly from CJS tests. This thin wrapper mirrors the real logic
 // (read req.user.tenantId, call tenantStorage.run) using the same data-schemas
@@ -57,6 +64,7 @@ jest.mock('@librechat/api', () => {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 const requireJwtAuth = require('../requireJwtAuth');
+const { getTenantId } = require('@librechat/data-schemas');
 const { isEnabled } = require('@librechat/api');
 const passport = require('passport');
 
@@ -124,13 +132,39 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(getTenantId()).toBeUndefined();
   });
 
-  it('falls back to OpenID JWT for bearer-only reuse requests', async () => {
+  it('does not fall back to OpenID JWT for bearer-only reuse requests', () => {
     isEnabled.mockReturnValue(true);
     mockRegisteredStrategies.add('openidJwt');
     const req = mockReq(undefined, {
       _mockStrategies: {
         jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
         openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(req.authStrategy).toBeUndefined();
+    expect(passport.authenticate).toHaveBeenCalledTimes(1);
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'jwt',
+      { session: false },
+      expect.any(Function),
+    );
+  });
+
+  it('uses OpenID JWT before LibreChat JWT when the OpenID cookie is present', async () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      headers: { cookie: 'token_provider=openid' },
+      _mockStrategies: {
+        openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
       },
     });
     const res = mockRes();
@@ -143,6 +177,11 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(tenantId).toBe('tenant-openid');
     expect(req.authStrategy).toBe('openidJwt');
     expect(res.status).not.toHaveBeenCalled();
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'openidJwt',
+      { session: false },
+      expect.any(Function),
+    );
   });
 
   it('skips OpenID JWT fallback when the strategy was not registered', async () => {
