@@ -2,6 +2,8 @@ import { logger } from '@librechat/data-schemas';
 import { Run, Providers, Constants } from '@librechat/agents';
 import {
   KnownEndpoints,
+  MAX_SUBAGENT_DEPTH,
+  MAX_SUBAGENT_RUN_CONFIGS,
   extractEnvVariable,
   providerEndpointMap,
   normalizeEndpointName,
@@ -547,6 +549,27 @@ function computeEffectiveMaxContextTokens(
 /** Identifier for the self-spawn subagent (reuses parent's AgentInputs in an isolated child graph). */
 const SELF_SUBAGENT_TYPE = 'self';
 
+interface SubagentBuildState {
+  configCount: number;
+}
+
+function countSubagentConfig(state: SubagentBuildState): void {
+  state.configCount += 1;
+  if (state.configCount > MAX_SUBAGENT_RUN_CONFIGS) {
+    throw new Error(
+      `Subagent run configuration exceeds the maximum of ${MAX_SUBAGENT_RUN_CONFIGS} expanded entries.`,
+    );
+  }
+}
+
+function assertSubagentDepth(depth: number, agentId: string): void {
+  if (depth > MAX_SUBAGENT_DEPTH) {
+    throw new Error(
+      `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${agentId}.`,
+    );
+  }
+}
+
 /**
  * Recursive any-true check across the agent tree: returns `true` if this
  * agent or any subagent (transitively) has the per-agent codeenv gate
@@ -559,14 +582,17 @@ const SELF_SUBAGENT_TYPE = 'self';
  * run — without it, the subagent's `{{tool<idx>turn<turn>}}`
  * placeholders would pass through to the shell unsubstituted.
  *
- * Cycle-safe via a `visited` set, mirroring `buildSubagentConfigs`'s
- * `ancestors` pattern. The bash tool description itself is still gated
- * per-agent in `initializeAgent`, so only agents that actually have
- * bash registered learn the `{{…}}` syntax — broadening the run-level
+ * Cycle-safe via a `visited` set. The bash tool description itself is
+ * still gated per-agent in `initializeAgent`, so only agents that actually
+ * have bash registered learn the `{{…}}` syntax — broadening the run-level
  * registry gate doesn't broaden the model-facing surface.
  */
-function anyAgentHasCodeEnv(agents: RunAgent[], visited: Set<string> = new Set()): boolean {
-  for (const agent of agents) {
+function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
+  const visited = new Set<string>();
+  const pending = [...agents];
+
+  for (let index = 0; index < pending.length; index++) {
+    const agent = pending[index];
     if (visited.has(agent.id)) {
       continue;
     }
@@ -574,11 +600,10 @@ function anyAgentHasCodeEnv(agents: RunAgent[], visited: Set<string> = new Set()
     if (agent.codeEnvAvailable === true) {
       return true;
     }
-    if (
-      agent.subagentAgentConfigs != null &&
-      anyAgentHasCodeEnv(agent.subagentAgentConfigs, visited)
-    ) {
-      return true;
+    for (const child of agent.subagentAgentConfigs ?? []) {
+      if (!visited.has(child.id)) {
+        pending.push(child);
+      }
     }
   }
   return false;
@@ -593,7 +618,9 @@ function buildSubagentConfigs(
   agent: RunAgent,
   agentInput: AgentInputs,
   toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
+  state: SubagentBuildState,
   ancestors: Set<string> = new Set(),
+  depth = 0,
 ): SubagentConfig[] {
   if (!agent.subagents?.enabled) {
     return [];
@@ -604,6 +631,7 @@ function buildSubagentConfigs(
 
   if (allowSelf) {
     const selfName = agentInput.name ?? agent.name ?? 'self';
+    countSubagentConfig(state);
     configs.push({
       self: true,
       type: SELF_SUBAGENT_TYPE,
@@ -627,6 +655,9 @@ function buildSubagentConfigs(
     if (ancestors.has(child.id)) {
       continue;
     }
+    const childDepth = depth + 1;
+    assertSubagentDepth(childDepth, child.id);
+    countSubagentConfig(state);
     /**
      * `buildAgentInput` applies parent-run context (initialSummary +
      * discoveredTools) to the returned AgentInputs *and* to the
@@ -649,7 +680,14 @@ function buildSubagentConfigs(
      * `subagentConfigs`, and that only runs for the outer agents in
      * `agents[]`. Cycle-safe via `nextAncestors`.
      */
-    const grandchildConfigs = buildSubagentConfigs(child, childInputs, toInput, nextAncestors);
+    const grandchildConfigs = buildSubagentConfigs(
+      child,
+      childInputs,
+      toInput,
+      state,
+      nextAncestors,
+      childDepth,
+    );
     if (grandchildConfigs.length > 0) {
       childInputs.subagentConfigs = grandchildConfigs;
     }
@@ -884,9 +922,15 @@ export async function createRun({
   };
 
   const agentInputs: AgentInputs[] = [];
+  const subagentBuildState: SubagentBuildState = { configCount: 0 };
   for (const agent of agents) {
     const agentInput = buildAgentInput(agent);
-    const subagentConfigs = buildSubagentConfigs(agent, agentInput, buildAgentInput);
+    const subagentConfigs = buildSubagentConfigs(
+      agent,
+      agentInput,
+      buildAgentInput,
+      subagentBuildState,
+    );
     if (subagentConfigs.length > 0) {
       agentInput.subagentConfigs = subagentConfigs;
     }
