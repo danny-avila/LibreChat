@@ -1,4 +1,45 @@
-import { SSEOptionsSchema, MCPServerUserInputSchema } from '../src/mcp';
+import { SSEOptionsSchema, MCPOptionsSchema, MCPServerUserInputSchema } from '../src/mcp';
+
+describe('MCPOptionsSchema', () => {
+  describe('OBO transport support', () => {
+    it('should accept obo on SSE transport', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should accept obo on streamable-http transport', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject obo on WebSocket transport', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'websocket',
+        url: 'wss://mcp-server.com/ws',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject obo on stdio transport', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'stdio',
+        command: 'node',
+        args: ['server.js'],
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+});
 
 describe('MCPServerUserInputSchema', () => {
   describe('env variable exfiltration prevention', () => {
@@ -167,6 +208,15 @@ describe('MCPServerUserInputSchema', () => {
         obo: { scopes: 'api://other-app/Custom.Scope' },
       });
       expect(result.success).toBe(true);
+    });
+
+    it('should reject obo on WebSocket transport', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'websocket',
+        url: 'wss://mcp-server.com/ws',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      });
+      expect(result.success).toBe(false);
     });
 
     it('should reject obo with empty scopes', () => {

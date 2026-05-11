@@ -2,6 +2,11 @@ import { z } from 'zod';
 import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
+const OboOptionsSchema = z.object({
+  /** Scopes to request for the downstream MCP server (e.g., "api://<client-id>/Mcp.Tools.ReadWrite") */
+  scopes: z.string().min(1),
+});
+
 const BaseOptionsSchema = z.object({
   /** Display name for the MCP server - only letters, numbers, and spaces allowed */
   title: z
@@ -92,19 +97,6 @@ const BaseOptionsSchema = z.object({
       custom_header: z.string().optional(),
     })
     .optional(),
-  /**
-   * On-Behalf-Of (OBO) token exchange configuration.
-   * When configured, LibreChat exchanges the logged-in user's federated access token
-   * for a token scoped to this MCP server via the OAuth 2.0 OBO flow (jwt-bearer grant).
-   * The exchanged token is injected as a Bearer Authorization header automatically.
-   * Requires the user to be authenticated via OpenID Connect (e.g., Entra ID).
-   */
-  obo: z
-    .object({
-      /** Scopes to request for the downstream MCP server (e.g., "api://<client-id>/Mcp.Tools.ReadWrite") */
-      scopes: z.string().min(1),
-    })
-    .optional(),
   customUserVars: z
     .record(
       z.string(),
@@ -118,6 +110,7 @@ const BaseOptionsSchema = z.object({
 
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('stdio').default('stdio'),
+  obo: z.undefined().optional(),
   /**
    * The executable to run to start the server.
    */
@@ -158,6 +151,7 @@ export const StdioOptionsSchema = BaseOptionsSchema.extend({
 
 export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('websocket').default('websocket'),
+  obo: z.undefined().optional(),
   url: z
     .string()
     .transform((val: string) => extractEnvVariable(val))
@@ -176,6 +170,14 @@ export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
 export const SSEOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('sse').default('sse'),
   headers: z.record(z.string(), z.string()).optional(),
+  /**
+   * On-Behalf-Of (OBO) token exchange configuration.
+   * When configured, LibreChat exchanges the logged-in user's federated access token
+   * for a token scoped to this MCP server via the OAuth 2.0 OBO flow (jwt-bearer grant).
+   * The exchanged token is injected as a Bearer Authorization header automatically.
+   * Requires the user to be authenticated via OpenID Connect (e.g., Entra ID).
+   */
+  obo: OboOptionsSchema.optional(),
   url: z
     .string()
     .transform((val: string) => extractEnvVariable(val))
@@ -194,6 +196,14 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
 export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
   type: z.union([z.literal('streamable-http'), z.literal('http')]),
   headers: z.record(z.string(), z.string()).optional(),
+  /**
+   * On-Behalf-Of (OBO) token exchange configuration.
+   * When configured, LibreChat exchanges the logged-in user's federated access token
+   * for a token scoped to this MCP server via the OAuth 2.0 OBO flow (jwt-bearer grant).
+   * The exchanged token is injected as a Bearer Authorization header automatically.
+   * Requires the user to be authenticated via OpenID Connect (e.g., Entra ID).
+   */
+  obo: OboOptionsSchema.optional(),
   url: z
     .string()
     .transform((val: string) => extractEnvVariable(val))
