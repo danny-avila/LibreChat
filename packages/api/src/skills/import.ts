@@ -164,7 +164,7 @@ function isDuplicateKeyError(error: unknown): boolean {
 }
 
 export interface ImportSkillDeps {
-  limits?: Partial<ImportLimits>;
+  limits?: Partial<ImportLimits> | ((req: ServerRequest) => Partial<ImportLimits> | undefined);
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
@@ -255,6 +255,13 @@ function getImportLimits(limits?: Partial<ImportLimits>): ImportLimits {
     maxEntries: limits?.maxEntries ?? MAX_ENTRIES,
     maxSingleFileBytes: limits?.maxSingleFileBytes ?? MAX_SINGLE_FILE_BYTES,
   };
+}
+
+function resolveImportLimits(
+  limits: ImportSkillDeps['limits'],
+  req: ServerRequest,
+): Partial<ImportLimits> | undefined {
+  return typeof limits === 'function' ? limits(req) : limits;
 }
 
 /** Resolve author metadata from the request user. */
@@ -353,7 +360,7 @@ async function handleZip(
   file: Express.Multer.File,
 ) {
   const userId = req.user.id;
-  const limits = getImportLimits(deps.limits);
+  const limits = getImportLimits(resolveImportLimits(deps.limits, req));
 
   const zipBuffer = file.buffer;
 
