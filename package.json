@@ -52,7 +52,7 @@
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev --",
     "ios:build": "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 node utils/ios-build.js && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 npx cap sync ios",
-    "ios:run": "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 node utils/ios-build.js && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 npx cap run ios --target \"iPhone 15 Pro\"",
+    "ios:run": "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 node utils/ios-build.js && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 npx cap run ios --target-name \"iPhone 15 Pro\"",
     "ios:sync": "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 npx cap sync ios",
     "ios:open": "npx cap open ios",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
