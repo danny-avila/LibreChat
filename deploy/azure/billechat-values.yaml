@@ -3,6 +3,9 @@
 
 replicaCount: 1
 
+updateStrategy:
+  type: Recreate
+
 image:
   registry: billechatacr.azurecr.io
   repository: billechat
@@ -195,6 +198,8 @@ mongodb:
   enabled: true
   image:
     tag: latest
+  updateStrategy:
+    type: Recreate
   auth:
     enabled: false
   databases:
