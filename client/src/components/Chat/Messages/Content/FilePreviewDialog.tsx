@@ -94,35 +94,50 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
-function getDisplayType(fileType?: string, fileName?: string): string {
-  if (fileType) {
-    if (fileType.includes('pdf')) {
-      return 'PDF';
-    }
-    if (fileType.includes('word') || fileType.includes('document')) {
-      return 'Document';
-    }
-    if (fileType.includes('spreadsheet') || fileType.includes('excel')) {
-      return 'Spreadsheet';
-    }
-    if (fileType.includes('presentation') || fileType.includes('powerpoint')) {
-      return 'Presentation';
-    }
-    if (fileType.includes('image')) {
-      return 'Image';
-    }
-    if (fileType.startsWith('text/')) {
-      return fileType.split('/')[1]?.toUpperCase() || 'Text';
-    }
-    if (fileType.includes('json')) {
-      return 'JSON';
-    }
-    if (fileType.includes('xml')) {
-      return 'XML';
-    }
+function getMimeDisplayType(fileType?: string): string | undefined {
+  if (!fileType) {
+    return undefined;
   }
+  if (fileType.includes('pdf')) {
+    return 'PDF';
+  }
+  if (fileType.includes('word') || fileType.includes('document')) {
+    return 'Document';
+  }
+  if (fileType.includes('spreadsheet') || fileType.includes('excel')) {
+    return 'Spreadsheet';
+  }
+  if (fileType.includes('presentation') || fileType.includes('powerpoint')) {
+    return 'Presentation';
+  }
+  if (fileType.includes('image')) {
+    return 'Image';
+  }
+  if (fileType.startsWith('text/')) {
+    return fileType.split('/')[1]?.toUpperCase() || 'Text';
+  }
+  if (fileType.includes('json')) {
+    return 'JSON';
+  }
+  if (fileType.includes('xml')) {
+    return 'XML';
+  }
+  return undefined;
+}
+
+function getDisplayType(fileType?: string, fileName?: string): string {
+  const mimeDisplayType = getMimeDisplayType(fileType);
+
+  if (mimeDisplayType) {
+    return mimeDisplayType;
+  }
+
   const ext = fileName ? getFileExtension(fileName) : '';
   return ext ? ext.toUpperCase() : 'File';
+}
+
+function createTextDownloadUrl(text: string, fileType?: string): string {
+  return URL.createObjectURL(new Blob([text], { type: fileType || 'text/plain' }));
 }
 
 export default function FilePreviewDialog({
@@ -165,6 +180,69 @@ export default function FilePreviewDialog({
     return result.data?.status === 'ready' ? result.data.text : undefined;
   }, [fetchTextPreview, fileContent]);
 
+  const markPreviewUnavailable = useCallback(() => {
+    if (cancelledRef.current) {
+      return;
+    }
+    setPreviewError(true);
+  }, []);
+
+  const finishLoading = useCallback(() => {
+    loadingRef.current = false;
+
+    if (cancelledRef.current) {
+      return;
+    }
+    setLoading(false);
+  }, []);
+
+  const loadTextSourcePreview = useCallback(async () => {
+    const text = await getTextSourceContent();
+
+    if (cancelledRef.current) {
+      return;
+    }
+    if (text == null) {
+      markPreviewUnavailable();
+      return;
+    }
+    setFileContent(text);
+  }, [getTextSourceContent, markPreviewUnavailable]);
+
+  const loadStoredPreview = useCallback(async () => {
+    const result = await downloadFile();
+
+    if (cancelledRef.current) {
+      return;
+    }
+    if (!result.data) {
+      markPreviewUnavailable();
+      return;
+    }
+
+    const resp = await fetch(result.data);
+    const blob = await resp.blob();
+
+    if (cancelledRef.current) {
+      return;
+    }
+    if (previewKind === 'text') {
+      setFileContent(await blob.text());
+      return;
+    }
+
+    const typed = new Blob([blob], { type: 'application/pdf' });
+    setFileBlobUrl(URL.createObjectURL(typed));
+  }, [downloadFile, markPreviewUnavailable, previewKind]);
+
+  const loadPreviewContent = useCallback(async () => {
+    if (isTextSource) {
+      await loadTextSourcePreview();
+      return;
+    }
+    await loadStoredPreview();
+  }, [isTextSource, loadStoredPreview, loadTextSourcePreview]);
+
   const loadPreview = useCallback(async () => {
     if (!fileId || !previewKind || loadingRef.current) {
       return;
@@ -175,101 +253,74 @@ export default function FilePreviewDialog({
     setPreviewError(false);
 
     try {
-      if (isTextSource) {
-        const text = await getTextSourceContent();
-        if (cancelledRef.current || text == null) {
-          if (!cancelledRef.current) {
-            setPreviewError(true);
-          }
-          return;
-        }
-        setFileContent(text);
-        return;
-      }
-
-      const result = await downloadFile();
-      if (cancelledRef.current || !result.data) {
-        if (!cancelledRef.current) {
-          setPreviewError(true);
-        }
-        return;
-      }
-
-      const resp = await fetch(result.data);
-      const blob = await resp.blob();
-
-      if (cancelledRef.current) {
-        return;
-      }
-
-      if (previewKind === 'text') {
-        setFileContent(await blob.text());
-      } else {
-        const typed = new Blob([blob], { type: 'application/pdf' });
-        setFileBlobUrl(URL.createObjectURL(typed));
-      }
+      await loadPreviewContent();
     } catch {
-      if (!cancelledRef.current) {
-        setPreviewError(true);
-      }
+      markPreviewUnavailable();
     } finally {
-      loadingRef.current = false;
-      if (!cancelledRef.current) {
-        setLoading(false);
-      }
+      finishLoading();
     }
-  }, [fileId, previewKind, isTextSource, getTextSourceContent, downloadFile]);
+  }, [fileId, finishLoading, loadPreviewContent, markPreviewUnavailable, previewKind]);
+
+  const downloadTextSourceFile = useCallback(async () => {
+    const text = await getTextSourceContent();
+
+    if (text == null) {
+      return;
+    }
+    triggerDownload(createTextDownloadUrl(text, fileType), fileName);
+  }, [fileName, fileType, getTextSourceContent]);
+
+  const downloadStoredFile = useCallback(async () => {
+    const result = await downloadFile();
+
+    if (!result.data) {
+      return;
+    }
+    triggerDownload(result.data, fileName);
+  }, [downloadFile, fileName]);
 
   const handleDownload = useCallback(async () => {
     if (!fileId) {
       return;
     }
+
     try {
       if (isTextSource) {
-        const text = await getTextSourceContent();
-        if (text == null) {
-          return;
-        }
-        const downloadURL = URL.createObjectURL(
-          new Blob([text], { type: fileType || 'text/plain' }),
-        );
-        triggerDownload(downloadURL, fileName);
+        await downloadTextSourceFile();
         return;
       }
-
-      const result = await downloadFile();
-      if (!result.data) {
-        return;
-      }
-      triggerDownload(result.data, fileName);
+      await downloadStoredFile();
     } catch (err) {
       logger.error('[FilePreviewDialog] Download failed:', err);
     }
-  }, [downloadFile, fileId, fileName, fileType, isTextSource, getTextSourceContent]);
+  }, [downloadStoredFile, downloadTextSourceFile, fileId, isTextSource]);
 
   useEffect(() => {
-    if (open && previewKind && !fileContent && !fileBlobUrl) {
-      loadPreview();
+    if (!open || !previewKind || fileContent || fileBlobUrl) {
+      return;
     }
+    loadPreview();
   }, [open, previewKind, fileContent, fileBlobUrl, loadPreview]);
 
   useEffect(() => {
     return () => {
-      if (fileBlobUrl) {
-        URL.revokeObjectURL(fileBlobUrl);
+      if (!fileBlobUrl) {
+        return;
       }
+      URL.revokeObjectURL(fileBlobUrl);
     };
   }, [fileBlobUrl]);
 
   useEffect(() => {
-    if (!open) {
-      cancelledRef.current = true;
-      setFileContent(null);
-      setFileBlobUrl(null);
-      setPreviewError(false);
-      setLoading(false);
-      setIsCopied(false);
+    if (open) {
+      return;
     }
+    cancelledRef.current = true;
+    setFileContent(null);
+    setFileBlobUrl(null);
+    setPreviewError(false);
+    setLoading(false);
+    setIsCopied(false);
   }, [open]);
 
   const handleCopy = useCallback(() => {
