@@ -5,6 +5,7 @@ replicaCount: 1
 
 updateStrategy:
   type: Recreate
+  rollingUpdate: null
 
 image:
   registry: billechatacr.azurecr.io
@@ -200,6 +201,7 @@ mongodb:
     tag: latest
   updateStrategy:
     type: Recreate
+    rollingUpdate: null
   auth:
     enabled: false
   databases:
