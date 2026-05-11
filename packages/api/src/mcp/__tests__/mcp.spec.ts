@@ -150,6 +150,18 @@ describe('Environment Variable Extraction (MCP)', () => {
       expect(result.headers).toEqual(options.headers);
     });
 
+    it('should validate proxy URLs for remote HTTP transports', () => {
+      const options = {
+        type: 'streamable-http',
+        url: 'https://example.com/api',
+        proxy: 'http://proxy.example.com:8080',
+      };
+
+      const result = StreamableHTTPOptionsSchema.parse(options);
+
+      expect(result.proxy).toBe('http://proxy.example.com:8080');
+    });
+
     it('should accept "http" as an alias for "streamable-http"', () => {
       const options = {
         type: 'http',
@@ -322,6 +334,20 @@ describe('Environment Variable Extraction (MCP)', () => {
         'User-Id': 'test-user-123',
         'Content-Type': 'application/json',
       });
+    });
+
+    it('should process proxy in streamable-http options', () => {
+      process.env.MCP_PROXY_URL = 'http://proxy.example.com:8080';
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://example.com',
+        proxy: '${MCP_PROXY_URL}',
+      };
+
+      const result = processMCPEnv({ options });
+
+      expect('proxy' in result && result.proxy).toBe('http://proxy.example.com:8080');
+      delete process.env.MCP_PROXY_URL;
     });
 
     it('should maintain streamable-http type in processed options', () => {

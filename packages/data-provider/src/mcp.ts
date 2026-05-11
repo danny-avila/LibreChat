@@ -103,6 +103,25 @@ const BaseOptionsSchema = z.object({
     .optional(),
 });
 
+const ProxyUrlSchema = z
+  .string()
+  .transform((val: string) => extractEnvVariable(val))
+  .pipe(z.string().url())
+  .refine(
+    (val: string) => {
+      const protocol = new URL(val).protocol;
+      return (
+        protocol === 'http:' ||
+        protocol === 'https:' ||
+        protocol === 'socks:' ||
+        protocol === 'socks5:'
+      );
+    },
+    {
+      message: 'Proxy URL must use http://, https://, socks://, or socks5://',
+    },
+  );
+
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('stdio').default('stdio'),
   /**
@@ -163,6 +182,8 @@ export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
 export const SSEOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('sse').default('sse'),
   headers: z.record(z.string(), z.string()).optional(),
+  /** Optional outbound proxy URL for this remote MCP transport */
+  proxy: ProxyUrlSchema.optional(),
   url: z
     .string()
     .transform((val: string) => extractEnvVariable(val))
@@ -181,6 +202,8 @@ export const SSEOptionsSchema = BaseOptionsSchema.extend({
 export const StreamableHTTPOptionsSchema = BaseOptionsSchema.extend({
   type: z.union([z.literal('streamable-http'), z.literal('http')]),
   headers: z.record(z.string(), z.string()).optional(),
+  /** Optional outbound proxy URL for this remote MCP transport */
+  proxy: ProxyUrlSchema.optional(),
   url: z
     .string()
     .transform((val: string) => extractEnvVariable(val))
@@ -261,9 +284,11 @@ export const MCPServerUserInputSchema = z.union([
     url: userUrlSchema(isWsProtocol, 'WebSocket URL must use ws:// or wss://'),
   }),
   omitServerManagedFields(SSEOptionsSchema).extend({
+    proxy: z.never().optional(),
     url: userUrlSchema(isHttpProtocol, 'SSE URL must use http:// or https://'),
   }),
   omitServerManagedFields(StreamableHTTPOptionsSchema).extend({
+    proxy: z.never().optional(),
     url: userUrlSchema(isHttpProtocol, 'Streamable HTTP URL must use http:// or https://'),
   }),
 ]);

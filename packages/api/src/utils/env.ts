@@ -383,6 +383,17 @@ export function processMCPEnv(params: {
     });
   }
 
+  // Process outbound proxy if it exists (for SSE and StreamableHTTP types)
+  if ('proxy' in newObj && newObj.proxy) {
+    newObj.proxy = processSingleValue({
+      user,
+      body,
+      dbSourced,
+      customUserVars,
+      originalValue: newObj.proxy,
+    });
+  }
+
   // Process OAuth configuration if it exists (for all transport types)
   if ('oauth' in newObj && newObj.oauth) {
     const processedOAuth: Record<string, boolean | string | string[] | undefined> = {};
