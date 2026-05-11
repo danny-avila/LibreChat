@@ -355,6 +355,36 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(storedDoc?._meiliIndex).toBe(false);
   });
 
+  test('saving hydrated legacy temporary conversations without isTemporary does NOT index', async () => {
+    const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    mockAddDocuments.mockClear();
+    mockUpdateDocuments.mockClear();
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Legacy Temporary Conversation',
+      endpoint: EModelEndpoint.openAI,
+      expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+      _meiliIndex: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const legacyConvo = await conversationModel.findOne({ conversationId });
+    expect(legacyConvo).toBeTruthy();
+
+    legacyConvo!.title = 'Updated Legacy Temporary Conversation';
+    await legacyConvo!.save();
+    const storedDoc = await conversationModel.collection.findOne({ conversationId });
+
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+    expect(mockUpdateDocuments).not.toHaveBeenCalled();
+    expect(storedDoc?._meiliIndex).toBe(false);
+  });
+
   test('sync w/ meili excludes legacy temporary messages without isTemporary', async () => {
     const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
     await messageModel.deleteMany({});
@@ -378,6 +408,34 @@ describe('Meilisearch Mongoose plugin', () => {
 
     expect(mockAddDocumentsInBatches).not.toHaveBeenCalled();
     expect(storedDoc?._meiliIndex).toBe(false);
+  });
+
+  test('sync w/ meili treats null isTemporary with no expiration like missing legacy fields', async () => {
+    const modelName = `DynamicMeiliNullTemporary${new mongoose.Types.ObjectId().toString()}`;
+    const dynamicModel = createDynamicMeiliModel(modelName);
+    mockAddDocumentsInBatches.mockClear();
+
+    try {
+      await dynamicModel.collection.insertOne({
+        docId: 'legacy-null-temporary',
+        user: 'user-123',
+        title: 'Legacy Null Temporary',
+        isTemporary: null as unknown as boolean,
+        expiredAt: null,
+        _meiliIndex: false,
+      });
+
+      const progress = await dynamicModel.getSyncProgress();
+      await dynamicModel.syncWithMeili();
+      const storedDoc = await dynamicModel.collection.findOne({ docId: 'legacy-null-temporary' });
+
+      expect(progress.totalDocuments).toBe(1);
+      expect(mockAddDocumentsInBatches).toHaveBeenCalled();
+      expect(storedDoc?._meiliIndex).toBe(true);
+    } finally {
+      await mongoose.connection.dropCollection(modelName.toLowerCase()).catch(() => undefined);
+      delete mongoose.models[modelName];
+    }
   });
 
   test('sync queries use a fresh expiration cutoff after plugin initialization', async () => {

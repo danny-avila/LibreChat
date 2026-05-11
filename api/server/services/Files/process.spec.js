@@ -13,6 +13,47 @@ jest.mock('@librechat/api', () => ({
   parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
   processAudioFile: jest.fn(),
   getStorageMetadata: jest.fn(() => ({})),
+  getRetentionExpiry: jest.fn(async (req) => {
+    const { RetentionMode } = require('librechat-data-provider');
+    const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
+    const db = require('~/models');
+    const createExpiry = () => {
+      try {
+        return { expiredAt: createTempChatExpirationDate(req?.config?.interfaceConfig) };
+      } catch (err) {
+        logger.error('[getRetentionExpiry] Error creating file expiration date:', err);
+        return { expiredAt: null };
+      }
+    };
+
+    if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
+      return createExpiry();
+    }
+
+    const conversationId = req?.body?.conversationId;
+    if (conversationId && req?.user?.id) {
+      try {
+        const convo = await db.getConvo(req.user.id, conversationId);
+        if (convo?.expiredAt != null) {
+          const expiredAt =
+            convo.expiredAt instanceof Date ? convo.expiredAt : new Date(convo.expiredAt);
+          if (!Number.isNaN(expiredAt.getTime())) {
+            return expiredAt > new Date() ? createExpiry() : { expiredAt };
+          }
+        }
+        if (convo) {
+          return {};
+        }
+      } catch (err) {
+        logger.error('[getRetentionExpiry] Error checking conversation retention:', err);
+        return createExpiry();
+      }
+    }
+
+    return req?.body?.isTemporary === true || req?.body?.isTemporary === 'true'
+      ? createExpiry()
+      : {};
+  }),
 }));
 
 jest.mock('librechat-data-provider', () => ({

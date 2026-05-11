@@ -4,29 +4,8 @@ const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Tool } = require('@librechat/agents/langchain/tools');
+const { createMinimalRetentionRequest } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
-
-const getRetentionRequest = (req) => {
-  if (!req) {
-    return undefined;
-  }
-
-  return {
-    user: req.user
-      ? {
-          id: req.user.id,
-          tenantId: req.user.tenantId,
-        }
-      : undefined,
-    body: {
-      conversationId: req.body?.conversationId,
-      isTemporary: req.body?.isTemporary,
-    },
-    config: {
-      interfaceConfig: req.config?.interfaceConfig,
-    },
-  };
-};
 
 const fluxApiJsonSchema = {
   type: 'object',
@@ -132,7 +111,7 @@ class FluxAPI extends Tool {
 
     this.userId = fields.userId;
     this.tenantId = fields.req?.user?.tenantId;
-    this.retentionRequest = getRetentionRequest(fields.req);
+    this.retentionRequest = createMinimalRetentionRequest(fields.req);
     this.fileStrategy = fields.fileStrategy;
 
     /** @type {boolean} **/

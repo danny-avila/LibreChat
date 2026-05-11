@@ -4,30 +4,12 @@ const { v4: uuidv4 } = require('uuid');
 const { ProxyAgent, fetch } = require('undici');
 const { logger } = require('@librechat/data-schemas');
 const { Tool } = require('@librechat/agents/langchain/tools');
-const { getImageBasename, extractBaseURL } = require('@librechat/api');
+const {
+  getImageBasename,
+  extractBaseURL,
+  createMinimalRetentionRequest,
+} = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
-
-const getRetentionRequest = (req) => {
-  if (!req) {
-    return undefined;
-  }
-
-  return {
-    user: req.user
-      ? {
-          id: req.user.id,
-          tenantId: req.user.tenantId,
-        }
-      : undefined,
-    body: {
-      conversationId: req.body?.conversationId,
-      isTemporary: req.body?.isTemporary,
-    },
-    config: {
-      interfaceConfig: req.config?.interfaceConfig,
-    },
-  };
-};
 
 const dalle3JsonSchema = {
   type: 'object',
@@ -71,7 +53,7 @@ class DALLE3 extends Tool {
 
     this.userId = fields.userId;
     this.tenantId = fields.req?.user?.tenantId;
-    this.retentionRequest = getRetentionRequest(fields.req);
+    this.retentionRequest = createMinimalRetentionRequest(fields.req);
     this.fileStrategy = fields.fileStrategy;
     /** @type {boolean} */
     this.isAgent = fields.isAgent;

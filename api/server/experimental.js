@@ -149,8 +149,12 @@ if (cluster.isMaster) {
       return;
     }
 
-    const availableWorkers = Object.values(cluster.workers).filter(Boolean);
-    const retentionSweepWorker = availableWorkers[availableWorkers.length - 1];
+    const connectedWorkers = Object.values(cluster.workers).filter(
+      (worker) => worker && worker.isConnected(),
+    );
+    const availableWorkers = connectedWorkers.filter((worker) => listeningWorkers.has(worker.id));
+    const workerPool = availableWorkers.length > 0 ? availableWorkers : connectedWorkers;
+    const retentionSweepWorker = workerPool[workerPool.length - 1];
     if (!retentionSweepWorker) {
       return;
     }
@@ -191,7 +195,10 @@ if (cluster.isMaster) {
 
   cluster.on('listening', (worker) => {
     listeningWorkers.add(worker.id);
-    if (listeningWorkers.size === workers) {
+    if (
+      listeningWorkers.size === workers ||
+      (!retentionSweepWorkerId && activeWorkers >= workers)
+    ) {
       assignRetentionSweepWorker();
     }
   });
@@ -201,6 +208,7 @@ if (cluster.isMaster) {
     listeningWorkers.delete(worker.id);
     if (worker.id === retentionSweepWorkerId) {
       retentionSweepWorkerId = null;
+      assignRetentionSweepWorker();
     }
     logger.error(
       `Worker ${worker.process.pid} died (${activeWorkers}/${workers}). Code: ${code}, Signal: ${signal}`,

@@ -4,6 +4,14 @@ const mongoose = require('mongoose');
 
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => true),
+  getConversationExpirationDate: jest.fn((convo) => {
+    if (convo?.expiredAt == null) {
+      return null;
+    }
+    const expiredAt = convo.expiredAt instanceof Date ? convo.expiredAt : new Date(convo.expiredAt);
+    return Number.isNaN(expiredAt.getTime()) ? null : expiredAt;
+  }),
+  isActiveExpirationDate: jest.fn((expiredAt) => expiredAt > new Date()),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -41,7 +49,7 @@ jest.mock('~/models', () => ({
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
 
 const { RetentionMode } = require('librechat-data-provider');
-const { createTempChatExpirationDate } = require('@librechat/data-schemas');
+const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
 const { createSharedLink, updateSharedLink } = require('~/models');
 const shareRouter = require('../share');
 
@@ -176,5 +184,21 @@ describe('share routes retention', () => {
 
     expect(response.status).toBe(200);
     expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined);
+  });
+
+  it('clears updated share expiration when creating a new expiration throws', async () => {
+    const error = new Error('bad config');
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mongoose.models.Conversation.findOne.mockReturnValue(lean(retainedConvo));
+    createTempChatExpirationDate.mockImplementationOnce(() => {
+      throw error;
+    });
+    updateSharedLink.mockResolvedValue({ shareId: 'share-456' });
+
+    const response = await request(buildApp()).patch('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(logger.error).toHaveBeenCalledWith('Error creating shared link expiration date:', error);
+    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', null);
   });
 });

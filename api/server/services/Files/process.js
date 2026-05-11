@@ -846,21 +846,24 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
           `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
         );
       }
-      const fileInfo = removeNullishValues({
-        text,
-        bytes,
-        file_id,
-        temp_file_id,
-        user: req.user.id,
-        type,
-        filepath: filepath ?? file.path,
-        source: FileSources.text,
-        filename: file.originalname,
-        model: messageAttachment ? undefined : req.body.model,
-        context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-        ...(await getRetentionExpiry(req)),
-        tenantId: req.user.tenantId,
-      });
+      const retentionExpiry = await getRetentionExpiry(req);
+      const fileInfo = {
+        ...removeNullishValues({
+          text,
+          bytes,
+          file_id,
+          temp_file_id,
+          user: req.user.id,
+          type,
+          filepath: filepath ?? file.path,
+          source: FileSources.text,
+          filename: file.originalname,
+          model: messageAttachment ? undefined : req.body.model,
+          context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+          tenantId: req.user.tenantId,
+        }),
+        ...retentionExpiry,
+      };
 
       if (!messageAttachment && tool_resource) {
         await db.addAgentResourceFile({
@@ -1041,25 +1044,28 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     });
   }
 
-  const fileInfo = removeNullishValues({
-    user: req.user.id,
-    file_id,
-    temp_file_id,
-    bytes,
-    filepath,
-    ...storageMetadata,
-    filename: filename ?? sanitizeFilename(file.originalname),
-    context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-    model: messageAttachment ? undefined : req.body.model,
-    metadata: fileInfoMetadata,
-    type: file.mimetype,
-    embedded,
-    source,
-    height,
-    width,
-    ...(await getRetentionExpiry(req)),
-    tenantId: req.user.tenantId,
-  });
+  const retentionExpiry = await getRetentionExpiry(req);
+  const fileInfo = {
+    ...removeNullishValues({
+      user: req.user.id,
+      file_id,
+      temp_file_id,
+      bytes,
+      filepath,
+      ...storageMetadata,
+      filename: filename ?? sanitizeFilename(file.originalname),
+      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+      model: messageAttachment ? undefined : req.body.model,
+      metadata: fileInfoMetadata,
+      type: file.mimetype,
+      embedded,
+      source,
+      height,
+      width,
+      tenantId: req.user.tenantId,
+    }),
+    ...retentionExpiry,
+  };
 
   const result = await db.createFile(fileInfo, true);
 
@@ -1152,7 +1158,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     ...(await getRetentionExpiry(req)),
     tenantId: req.user.tenantId,
   };
-  db.createFile(file, true);
+  await db.createFile(file, true);
   return file;
 };
 

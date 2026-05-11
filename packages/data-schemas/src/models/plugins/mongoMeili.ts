@@ -99,6 +99,8 @@ const activeExpirationQuery = () => ({
   $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }, { expiredAt: { $gt: new Date() } }],
 });
 
+const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
+
 const buildIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
   if (!hasSchemaPath(schema, 'isTemporary')) {
     return hasSchemaPath(schema, 'expiredAt')
@@ -116,6 +118,10 @@ const buildIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
         isTemporary: { $exists: false },
         $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
       },
+      {
+        isTemporary: null,
+        $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
+      },
     ],
   };
 };
@@ -123,9 +129,20 @@ const buildIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
 const hasActiveExpiration = (expiredAt?: Date | null): boolean =>
   _.isNil(expiredAt) || new Date(expiredAt).getTime() > Date.now();
 
+const hasExplicitTemporaryFlag = (doc: DocumentWithMeiliIndex): boolean =>
+  typeof doc.$locals?.[explicitTemporaryFlagKey] === 'boolean'
+    ? (doc.$locals[explicitTemporaryFlagKey] as boolean)
+    : doc.isTemporary != null && !doc.$isDefault('isTemporary');
+
+const captureExplicitTemporaryFlag = (doc: DocumentWithMeiliIndex): void => {
+  doc.$locals[explicitTemporaryFlagKey] = doc.isTemporary != null && !doc.$isDefault('isTemporary');
+};
+
 const isIndexableDocument = (doc: DocumentWithMeiliIndex): boolean =>
-  (doc.isTemporary === false && hasActiveExpiration(doc.expiredAt)) ||
-  (doc.isTemporary == null && _.isNil(doc.expiredAt));
+  (doc.isTemporary === false &&
+    hasExplicitTemporaryFlag(doc) &&
+    hasActiveExpiration(doc.expiredAt)) ||
+  (!hasExplicitTemporaryFlag(doc) && _.isNil(doc.expiredAt));
 
 /**
  * Validates the required options for configuring the mongoMeili plugin.
@@ -708,6 +725,13 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   );
 
   // Register Mongoose hooks
+  schema.pre('save', function (this: DocumentWithMeiliIndex, next) {
+    if (hasSchemaPath(schema, 'isTemporary')) {
+      captureExplicitTemporaryFlag(this);
+    }
+    next();
+  });
+
   schema.post('save', function (doc: DocumentWithMeiliIndex, next) {
     doc.postSaveHook?.(next);
   });

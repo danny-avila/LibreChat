@@ -11,6 +11,7 @@ import {
   getDefaultModelSpec,
   getModelSpecPreset,
   isNotFoundError,
+  isTemporaryConversation,
   logger,
 } from '~/utils';
 import {
@@ -62,11 +63,7 @@ export default function ChatRoute() {
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
 
-  const isTemporaryChat = Boolean(
-    conversation &&
-      (conversation.isTemporary ||
-        (conversation.isTemporary === undefined && conversation.expiredAt != null)),
-  );
+  const isTemporaryChat = isTemporaryConversation(conversation);
 
   useEffect(() => {
     if (conversationId === Constants.NEW_CONVO) {

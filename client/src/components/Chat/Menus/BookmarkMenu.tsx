@@ -14,7 +14,7 @@ import { BookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import { useBookmarkSuccess, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
-import { cn, logger } from '~/utils';
+import { cn, isTemporaryConversation, logger } from '~/utils';
 import store from '~/store';
 
 const BookmarkMenu: FC = () => {
@@ -26,9 +26,7 @@ const BookmarkMenu: FC = () => {
   const conversationId = conversation?.conversationId ?? '';
   const updateConvoTags = useBookmarkSuccess(conversationId);
   const tags = conversation?.tags;
-  const isTemporary =
-    conversation?.isTemporary === true ||
-    (conversation?.isTemporary === undefined && conversation?.expiredAt != null);
+  const isTemporary = isTemporaryConversation(conversation);
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
