@@ -1,9 +1,18 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { X } from 'lucide-react';
-import { Switch, useToastContext } from '@librechat/client';
+import { X, Info } from 'lucide-react';
+import {
+  Switch,
+  useToastContext,
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+  TooltipAnchor,
+} from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import {
   EModelEndpoint,
+  SystemRoles,
   PermissionTypes,
   Permissions,
   getEndpointField,
@@ -24,12 +33,13 @@ import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
+import { useLocalize, useVisibleTools, useHasAccess, useAuthContext } from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
 import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
+import AdminSettings from './AdminSettings';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
 import FileSearch from './FileSearch';
@@ -47,6 +57,7 @@ const inputClass = cn(
 
 export default function AgentConfig() {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
   const methods = useFormContext<AgentForm>();
@@ -325,286 +336,318 @@ export default function AgentConfig() {
             </div>
           </button>
         </div>
-        {(codeEnabled ||
-          fileSearchEnabled ||
-          artifactsEnabled ||
-          contextEnabled ||
-          webSearchEnabled) && (
+        {/* === SECTION 3 : Capacités essentielles === */}
+        {(webSearchEnabled || fileSearchEnabled || contextEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block text-sm font-medium">
-              {localize('com_assistants_capabilities')}
+              {localize('com_ui_agent_essential_capabilities')}
             </label>
-            {/* Code Execution */}
-            {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
-            {/* Web Search */}
             {webSearchEnabled && <SearchForm />}
-            {/* File Context */}
-            {contextEnabled && <FileContext agent_id={agent_id} files={context_files} />}
-            {/* Artifacts */}
-            {artifactsEnabled && <Artifacts />}
-            {/* File Search */}
             {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+            {contextEnabled && <FileContext agent_id={agent_id} files={context_files} />}
           </div>
         )}
-        {/* MCP Section */}
-        {availableMCPServers != null && availableMCPServers.length > 0 && (
-          <MCPTools
-            agentId={agent_id}
-            mcpServerNames={mcpServerNames}
-            setShowMCPToolDialog={setShowMCPToolDialog}
-          />
-        )}
-
-        {showSkills && (
-          <div className="mb-4">
-            <div className="mb-2 flex items-center justify-between">
-              <label
-                htmlFor="skills_enabled"
-                className="text-token-text-primary block text-sm font-medium"
-              >
-                {localize('com_ui_skills')}
-              </label>
-              <Controller
-                name="skills_enabled"
-                control={control}
-                render={({ field }) => (
-                  <Switch
-                    id="skills_enabled"
-                    checked={field.value === true}
-                    onCheckedChange={(value: boolean) => field.onChange(Boolean(value))}
-                    data-testid="skills_enabled"
-                    aria-label={localize('com_ui_skills_enable_toggle')}
-                  />
-                )}
-              />
-            </div>
-            <p className="mb-2 text-xs text-text-secondary">{localize(skillsHintKey)}</p>
-            <div
-              className={skillsActive === true ? undefined : 'pointer-events-none opacity-50'}
-              aria-disabled={skillsActive !== true}
-            >
-              <div className="mb-1">
-                {(skills ?? []).map((skillId) => {
-                  const skillName = skillsMap.get(skillId);
-                  if (!skillName) {
-                    return null;
+        {/* === SECTION 4 : Outils avancés (Accordion replié par défaut) === */}
+        <Accordion type="single" collapsible className="mb-4 w-full">
+          <AccordionItem value="advanced-tools" className="border-b-0">
+            <AccordionTrigger className="text-sm font-medium text-text-primary hover:no-underline">
+              <div className="flex items-center gap-2">
+                <span>{localize('com_ui_advanced_tools')}</span>
+                <TooltipAnchor
+                  description={localize('com_ui_advanced_tools_desc')}
+                  className="inline-flex"
+                  render={
+                    <Info
+                      className="size-4 text-text-secondary"
+                      aria-label={localize('com_ui_advanced_tools_desc')}
+                    />
                   }
-                  return (
-                    <div
-                      key={skillId}
-                      className="mb-1 flex items-center justify-between rounded-md border border-border-light px-3 py-2 text-sm"
-                    >
-                      <span className="truncate text-text-primary">{skillName}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const current: string[] = methods.getValues('skills') ?? [];
-                          methods.setValue(
-                            'skills',
-                            current.filter((id) => id !== skillId),
-                            { shouldDirty: true },
-                          );
-                        }}
-                        className="ml-2 flex-shrink-0 text-text-secondary transition-colors hover:text-text-primary"
-                        aria-label={localize('com_ui_remove_skill_var', { 0: skillName })}
-                        disabled={skillsActive !== true}
+                />
+              </div>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="flex flex-col gap-3 pt-2">
+                {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
+                {artifactsEnabled && <Artifacts />}
+                {availableMCPServers != null && availableMCPServers.length > 0 && (
+                  <MCPTools
+                    agentId={agent_id}
+                    mcpServerNames={mcpServerNames}
+                    setShowMCPToolDialog={setShowMCPToolDialog}
+                  />
+                )}
+                {showSkills && (
+                  <div className="mb-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <label
+                        htmlFor="skills_enabled"
+                        className="text-token-text-primary block text-sm font-medium"
                       >
-                        <X className="h-4 w-4" aria-hidden="true" />
-                      </button>
+                        {localize('com_ui_skills')}
+                      </label>
+                      <Controller
+                        name="skills_enabled"
+                        control={control}
+                        render={({ field }) => (
+                          <Switch
+                            id="skills_enabled"
+                            checked={field.value === true}
+                            onCheckedChange={(value: boolean) => field.onChange(Boolean(value))}
+                            data-testid="skills_enabled"
+                            aria-label={localize('com_ui_skills_enable_toggle')}
+                          />
+                        )}
+                      />
                     </div>
-                  );
-                })}
-              </div>
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowSkillDialog(true)}
-                  className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
-                  aria-haspopup="dialog"
-                  disabled={skillsActive !== true}
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_ui_add_skills')}
+                    <p className="mb-2 text-xs text-text-secondary">
+                      {localize(skillsHintKey)}
+                    </p>
+                    <div
+                      className={
+                        skillsActive === true ? undefined : 'pointer-events-none opacity-50'
+                      }
+                      aria-disabled={skillsActive !== true}
+                    >
+                      <div className="mb-1">
+                        {(skills ?? []).map((skillId) => {
+                          const skillName = skillsMap.get(skillId);
+                          if (!skillName) {
+                            return null;
+                          }
+                          return (
+                            <div
+                              key={skillId}
+                              className="mb-1 flex items-center justify-between rounded-md border border-border-light px-3 py-2 text-sm"
+                            >
+                              <span className="truncate text-text-primary">{skillName}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const current: string[] = methods.getValues('skills') ?? [];
+                                  methods.setValue(
+                                    'skills',
+                                    current.filter((id) => id !== skillId),
+                                    { shouldDirty: true },
+                                  );
+                                }}
+                                className="ml-2 flex-shrink-0 text-text-secondary transition-colors hover:text-text-primary"
+                                aria-label={localize('com_ui_remove_skill_var', { 0: skillName })}
+                                disabled={skillsActive !== true}
+                              >
+                                <X className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowSkillDialog(true)}
+                          className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+                          aria-haspopup="dialog"
+                          disabled={skillsActive !== true}
+                        >
+                          <div className="flex w-full items-center justify-center gap-2">
+                            {localize('com_ui_add_skills')}
+                          </div>
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Agent Tools & Actions */}
-        <div className="mb-4">
-          <label className={labelClass}>
-            {(() => {
-              if (toolsEnabled === true && actionsEnabled === true) {
-                return localize('com_ui_tools_and_actions');
-              }
-              if (toolsEnabled === true) {
-                return localize('com_ui_tools');
-              }
-              if (actionsEnabled === true) {
-                return localize('com_assistants_actions');
-              }
-              return '';
-            })()}
-          </label>
-          <div>
-            <div className="mb-1">
-              {/* Render all visible IDs */}
-              {toolIds.map((toolId, i) => {
-                const tool = regularTools?.find((t) => t.pluginKey === toolId);
-                if (!tool) return null;
-                return (
-                  <AgentTool
-                    key={`${toolId}-${i}-${agent_id}`}
-                    tool={toolId}
-                    regularTools={regularTools}
-                    agent_id={agent_id}
-                  />
-                );
-              })}
-            </div>
-            <div className="flex flex-col gap-1">
-              {(actions ?? [])
-                .filter((action) => action.agent_id === agent_id)
-                .map((action, i) => (
-                  <Action
-                    key={i}
-                    action={action}
-                    onClick={() => {
-                      setAction(action);
-                      setActivePanel(Panel.actions);
-                    }}
-                  />
-                ))}
-            </div>
-            <div className="mt-2 flex space-x-2">
-              {(toolsEnabled ?? false) && (
-                <button
-                  type="button"
-                  onClick={() => setShowToolDialog(true)}
-                  className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
-                  aria-haspopup="dialog"
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_assistants_add_tools')}
-                  </div>
-                </button>
-              )}
-              {(actionsEnabled ?? false) && (
-                <button
-                  type="button"
-                  disabled={isEphemeralAgent(agent_id)}
-                  onClick={handleAddActions}
-                  className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
-                  aria-haspopup="dialog"
-                >
-                  <div className="flex w-full items-center justify-center gap-2">
-                    {localize('com_assistants_add_actions')}
-                  </div>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-        {/* Support Contact (Optional) */}
-        <div className="mb-4">
-          <div className="mb-1.5 flex items-center gap-2">
-            <span>
-              <label className="text-token-text-primary block text-sm font-medium">
-                {localize('com_ui_support_contact')}
-              </label>
-            </span>
-          </div>
-          <div className="space-y-3">
-            {/* Support Contact Name */}
-            <div className="flex flex-col">
-              <label
-                className="mb-1 flex items-center justify-between"
-                htmlFor="support-contact-name"
-              >
-                <span className="text-sm">{localize('com_ui_support_contact_name')}</span>
-              </label>
-              <Controller
-                name="support_contact.name"
-                control={control}
-                rules={{
-                  minLength: {
-                    value: 3,
-                    message: localize('com_ui_support_contact_name_min_length', { minLength: 3 }),
-                  },
-                }}
-                render={({ field, fieldState: { error } }) => (
-                  <>
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      className={cn(inputClass, error ? 'border-2 border-red-500' : '')}
-                      id="support-contact-name"
-                      type="text"
-                      placeholder={localize('com_ui_support_contact_name_placeholder')}
-                      aria-label={localize('com_ui_support_contact_name')}
-                      aria-invalid={error ? 'true' : 'false'}
-                      aria-describedby={error ? 'support-contact-name-error' : undefined}
-                    />
-                    {error && (
-                      <span
-                        id="support-contact-name-error"
-                        className="text-sm text-red-500 transition duration-300 ease-in-out"
-                        role="alert"
-                        aria-live="polite"
-                      >
-                        {error.message}
-                      </span>
-                    )}
-                  </>
                 )}
-              />
-            </div>
-            {/* Support Contact Email */}
-            <div className="flex flex-col">
-              <label
-                className="mb-1 flex items-center justify-between"
-                htmlFor="support-contact-email"
-              >
-                <span className="text-sm">{localize('com_ui_support_contact_email')}</span>
-              </label>
-              <Controller
-                name="support_contact.email"
-                control={control}
-                rules={{
-                  validate: (value) =>
-                    validateEmail(value ?? '', localize('com_ui_support_contact_email_invalid')),
-                }}
-                render={({ field, fieldState: { error } }) => (
-                  <>
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      className={cn(inputClass, error ? 'border-2 border-red-500' : '')}
-                      id="support-contact-email"
-                      type="email"
-                      placeholder={localize('com_ui_support_contact_email_placeholder')}
-                      aria-label={localize('com_ui_support_contact_email')}
-                      aria-invalid={error ? 'true' : 'false'}
-                      aria-describedby={error ? 'support-contact-email-error' : undefined}
-                    />
-                    {error && (
-                      <span
-                        id="support-contact-email-error"
-                        className="text-sm text-red-500 transition duration-300 ease-in-out"
-                        role="alert"
-                        aria-live="polite"
-                      >
-                        {error.message}
+                {/* Agent Tools & Actions */}
+                <div className="mb-4">
+                  <label className={labelClass}>
+                    {(() => {
+                      if (toolsEnabled === true && actionsEnabled === true) {
+                        return localize('com_ui_tools_and_actions');
+                      }
+                      if (toolsEnabled === true) {
+                        return localize('com_ui_tools');
+                      }
+                      if (actionsEnabled === true) {
+                        return localize('com_assistants_actions');
+                      }
+                      return '';
+                    })()}
+                  </label>
+                  <div>
+                    <div className="mb-1">
+                      {toolIds.map((toolId, i) => {
+                        const tool = regularTools?.find((t) => t.pluginKey === toolId);
+                        if (!tool) return null;
+                        return (
+                          <AgentTool
+                            key={`${toolId}-${i}-${agent_id}`}
+                            tool={toolId}
+                            regularTools={regularTools}
+                            agent_id={agent_id}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {(actions ?? [])
+                        .filter((action) => action.agent_id === agent_id)
+                        .map((action, i) => (
+                          <Action
+                            key={i}
+                            action={action}
+                            onClick={() => {
+                              setAction(action);
+                              setActivePanel(Panel.actions);
+                            }}
+                          />
+                        ))}
+                    </div>
+                    <div className="mt-2 flex space-x-2">
+                      {(toolsEnabled ?? false) && (
+                        <button
+                          type="button"
+                          onClick={() => setShowToolDialog(true)}
+                          className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+                          aria-haspopup="dialog"
+                        >
+                          <div className="flex w-full items-center justify-center gap-2">
+                            {localize('com_assistants_add_tools')}
+                          </div>
+                        </button>
+                      )}
+                      {(actionsEnabled ?? false) && (
+                        <button
+                          type="button"
+                          disabled={isEphemeralAgent(agent_id)}
+                          onClick={handleAddActions}
+                          className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+                          aria-haspopup="dialog"
+                        >
+                          <div className="flex w-full items-center justify-center gap-2">
+                            {localize('com_assistants_add_actions')}
+                          </div>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {/* Séparateur visuel : capacités techniques ↑ / contact + admin ↓ */}
+                <div className="mt-2 border-t border-border-light pt-4">
+                  {/* Support Contact (Optional) */}
+                  <div className="mb-4">
+                    <div className="mb-1.5 flex items-center gap-2">
+                      <span>
+                        <label className="text-token-text-primary block text-sm font-medium">
+                          {localize('com_ui_support_contact')}
+                        </label>
                       </span>
-                    )}
-                  </>
-                )}
-              />
-            </div>
-          </div>
-        </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex flex-col">
+                        <label
+                          className="mb-1 flex items-center justify-between"
+                          htmlFor="support-contact-name"
+                        >
+                          <span className="text-sm">
+                            {localize('com_ui_support_contact_name')}
+                          </span>
+                        </label>
+                        <Controller
+                          name="support_contact.name"
+                          control={control}
+                          rules={{
+                            minLength: {
+                              value: 3,
+                              message: localize('com_ui_support_contact_name_min_length', {
+                                minLength: 3,
+                              }),
+                            },
+                          }}
+                          render={({ field, fieldState: { error } }) => (
+                            <>
+                              <input
+                                {...field}
+                                value={field.value ?? ''}
+                                className={cn(inputClass, error ? 'border-2 border-red-500' : '')}
+                                id="support-contact-name"
+                                type="text"
+                                placeholder={localize('com_ui_support_contact_name_placeholder')}
+                                aria-label={localize('com_ui_support_contact_name')}
+                                aria-invalid={error ? 'true' : 'false'}
+                                aria-describedby={
+                                  error ? 'support-contact-name-error' : undefined
+                                }
+                              />
+                              {error && (
+                                <span
+                                  id="support-contact-name-error"
+                                  className="text-sm text-red-500 transition duration-300 ease-in-out"
+                                  role="alert"
+                                  aria-live="polite"
+                                >
+                                  {error.message}
+                                </span>
+                              )}
+                            </>
+                          )}
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label
+                          className="mb-1 flex items-center justify-between"
+                          htmlFor="support-contact-email"
+                        >
+                          <span className="text-sm">
+                            {localize('com_ui_support_contact_email')}
+                          </span>
+                        </label>
+                        <Controller
+                          name="support_contact.email"
+                          control={control}
+                          rules={{
+                            validate: (value) =>
+                              validateEmail(
+                                value ?? '',
+                                localize('com_ui_support_contact_email_invalid'),
+                              ),
+                          }}
+                          render={({ field, fieldState: { error } }) => (
+                            <>
+                              <input
+                                {...field}
+                                value={field.value ?? ''}
+                                className={cn(inputClass, error ? 'border-2 border-red-500' : '')}
+                                id="support-contact-email"
+                                type="email"
+                                placeholder={localize('com_ui_support_contact_email_placeholder')}
+                                aria-label={localize('com_ui_support_contact_email')}
+                                aria-invalid={error ? 'true' : 'false'}
+                                aria-describedby={
+                                  error ? 'support-contact-email-error' : undefined
+                                }
+                              />
+                              {error && (
+                                <span
+                                  id="support-contact-email-error"
+                                  className="text-sm text-red-500 transition duration-300 ease-in-out"
+                                  role="alert"
+                                  aria-live="polite"
+                                >
+                                  {error.message}
+                                </span>
+                              )}
+                            </>
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  {/* Admin Settings — admin role only */}
+                  {user?.role === SystemRoles.ADMIN && <AdminSettings />}
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </div>
       <ToolSelectDialog
         isOpen={showToolDialog}
