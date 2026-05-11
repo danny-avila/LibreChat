@@ -1,5 +1,5 @@
 import { isMainThread } from 'worker_threads';
-import { tenantStorage, logger } from '@librechat/data-schemas';
+import { getTenantId, tenantStorage, logger, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
 import type { ServerRequest } from '~/types/http';
 
@@ -60,6 +60,56 @@ export function tenantContextMiddleware(
       res.status(403).json({ error: 'Tenant context required in strict isolation mode' });
       return;
     }
+    next();
+    return;
+  }
+
+  return void tenantStorage.run({ tenantId }, async () => {
+    next();
+  });
+}
+
+type TenantScopedRequest = ServerRequest & {
+  tenantId?: string;
+  user?: ServerRequest['user'] & { tenantId?: string };
+};
+
+function resolveRequestTenantId(req: TenantScopedRequest): string | undefined {
+  return req.tenantId ?? req.user?.tenantId;
+}
+
+/**
+ * Re-enters tenant ALS from the server-resolved request tenant.
+ *
+ * Use this after middleware that may cross async stream boundaries (for example
+ * multipart parsers) and before tenant-isolated model calls. The tenant source
+ * is restricted to authenticated/resolved request fields, never form data.
+ */
+export function restoreTenantContextFromReq(
+  req: ServerRequest,
+  res: Response,
+  next: NextFunction,
+): void {
+  const tenantId = resolveRequestTenantId(req as TenantScopedRequest);
+
+  if (!tenantId) {
+    if (isStrict()) {
+      res.status(403).json({ error: 'Tenant context required in strict isolation mode' });
+      return;
+    }
+    next();
+    return;
+  }
+
+  if (tenantId === SYSTEM_TENANT_ID) {
+    logger.warn('[restoreTenantContextFromReq] Rejected system tenant for request route', {
+      path: req.path,
+    });
+    res.status(403).json({ error: 'Tenant context required in strict isolation mode' });
+    return;
+  }
+
+  if (getTenantId() === tenantId) {
     next();
     return;
   }

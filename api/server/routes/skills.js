@@ -7,6 +7,7 @@ const {
   createImportHandler,
   generateCheckAccess,
   getStorageMetadata,
+  restoreTenantContextFromReq,
 } = require('@librechat/api');
 const { isValidObjectIdString, logger } = require('@librechat/data-schemas');
 const {
@@ -217,6 +218,7 @@ async function uploadFileHandler(req, res) {
         bytes: file.size,
         isExecutable: false,
         author: req.user._id,
+        tenantId: req.user.tenantId,
       });
     } catch (dbError) {
       // Clean up the stored blob so it doesn't leak on DB failure
@@ -264,6 +266,7 @@ router.post(
   fileUploadIpLimiter,
   fileUploadUserLimiter,
   skillUpload.single('file'),
+  restoreTenantContextFromReq,
   importHandler,
 );
 
@@ -303,6 +306,7 @@ router.post(
   fileUploadIpLimiter,
   fileUploadUserLimiter,
   singleFileUpload.single('file'),
+  restoreTenantContextFromReq,
   uploadFileHandler,
 );
 
