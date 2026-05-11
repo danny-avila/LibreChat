@@ -4,6 +4,8 @@ const {
   PermissionBits,
   PrincipalType,
   PrincipalModel,
+  MAX_SUBAGENT_DEPTH,
+  MAX_SUBAGENT_GRAPH_NODES,
 } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -311,6 +313,24 @@ describe('initializeClient — subagent loading', () => {
     maxContextTokens: 4096,
   });
 
+  const makeNestedSubagentConfig = (id, childIds = []) => ({
+    ...makeSubagentConfig(id),
+    subagents: { enabled: true, allowSelf: false, agent_ids: childIds },
+  });
+
+  const createViewableAgent = async (id) => {
+    const agent = await createAgent({
+      id,
+      name: id,
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: [],
+    });
+    await grantView(agent);
+    return agent;
+  };
+
   it('loads a configured subagent, populates `subagentAgentConfigs`, and keeps it out of `agentConfigs`', async () => {
     const subAgent = await createAgent({
       id: SUBAGENT_ID,
@@ -451,6 +471,117 @@ describe('initializeClient — subagent loading', () => {
     /** One call for primary, one for the subagent — not four. */
     expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
     expect(agentClientArgs.agent.subagentAgentConfigs).toHaveLength(1);
+  });
+
+  it('rejects nested subagent chains deeper than MAX_SUBAGENT_DEPTH', async () => {
+    const ids = Array.from(
+      { length: MAX_SUBAGENT_DEPTH + 1 },
+      (_, index) => `agent_depth_${index}`,
+    );
+    for (const id of ids) {
+      await createViewableAgent(id);
+    }
+
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [ids[0]] },
+    });
+    const nestedConfigs = new Map(
+      ids.map((id, index) => [
+        id,
+        makeNestedSubagentConfig(id, index < ids.length - 1 ? [ids[index + 1]] : []),
+      ]),
+    );
+
+    mockInitializeAgent.mockImplementation(({ agent }) =>
+      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : nestedConfigs.get(agent.id)),
+    );
+
+    await expect(
+      initializeClient({
+        req: makeSubagentReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
+    expect(agentClientArgs).toBeUndefined();
+  });
+
+  it('preserves deeper path depth when a handoff root is also a nested subagent', async () => {
+    const chainIds = Array.from(
+      { length: MAX_SUBAGENT_DEPTH },
+      (_, index) => `agent_overlap_depth_${index}`,
+    );
+    const allIds = [HANDOFF_AND_SUB_ID, ...chainIds];
+    for (const id of allIds) {
+      await createViewableAgent(id);
+    }
+
+    const edges = [{ from: PRIMARY_ID, to: HANDOFF_AND_SUB_ID, edgeType: 'handoff' }];
+    const primaryConfig = makePrimaryConfig({
+      edges,
+      subagents: { enabled: true, allowSelf: false, agent_ids: [HANDOFF_AND_SUB_ID] },
+    });
+    const nestedConfigs = new Map([
+      [HANDOFF_AND_SUB_ID, makeNestedSubagentConfig(HANDOFF_AND_SUB_ID, [chainIds[0]])],
+      ...chainIds.map((id, index) => [
+        id,
+        makeNestedSubagentConfig(id, index < chainIds.length - 1 ? [chainIds[index + 1]] : []),
+      ]),
+    ]);
+
+    mockInitializeAgent.mockImplementation(({ agent }) =>
+      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : nestedConfigs.get(agent.id)),
+    );
+
+    await expect(
+      initializeClient({
+        req: makeSubagentReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
+    expect(agentClientArgs).toBeUndefined();
+  });
+
+  it('rejects subagent graphs that exceed MAX_SUBAGENT_GRAPH_NODES unique agents', async () => {
+    const firstLevelIds = Array.from({ length: 10 }, (_, index) => `agent_graph_${index}`);
+    const secondLevelIdsByParent = new Map(
+      firstLevelIds.map((id) => [
+        id,
+        Array.from({ length: 5 }, (_, index) => `${id}_child_${index}`),
+      ]),
+    );
+    const allIds = [...firstLevelIds, ...Array.from(secondLevelIdsByParent.values()).flat()];
+
+    for (const id of allIds) {
+      await createViewableAgent(id);
+    }
+
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: firstLevelIds },
+    });
+    const nestedConfigs = new Map(
+      firstLevelIds.map((id) => [id, makeNestedSubagentConfig(id, secondLevelIdsByParent.get(id))]),
+    );
+    for (const id of Array.from(secondLevelIdsByParent.values()).flat()) {
+      nestedConfigs.set(id, makeNestedSubagentConfig(id));
+    }
+
+    mockInitializeAgent.mockImplementation(({ agent }) =>
+      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : nestedConfigs.get(agent.id)),
+    );
+
+    await expect(
+      initializeClient({
+        req: makeSubagentReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toThrow(`maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents`);
+    expect(agentClientArgs).toBeUndefined();
   });
 
   it('keeps an agent in `agentConfigs` when it is BOTH a handoff target and a subagent', async () => {
