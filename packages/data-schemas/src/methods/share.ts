@@ -372,6 +372,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
           conversationId,
           user,
           isPublic: true,
+          ...activeShareExpirationFilter(),
           ...(targetMessageId && { targetMessageId }),
         })
           .select('-_id -__v -user')

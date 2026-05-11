@@ -154,6 +154,41 @@ describe('Share Methods', () => {
       );
     });
 
+    test('should ignore expired public shares when checking for duplicates', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const expiredShareId = `share_${nanoid()}`;
+
+      await Conversation.create({
+        conversationId,
+        title: 'Test Conversation',
+        user: userId,
+      });
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Test message',
+        isCreatedByUser: true,
+      });
+
+      await SharedLink.create({
+        shareId: expiredShareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+        isPublic: true,
+        expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+      });
+
+      const result = await shareMethods.createSharedLink(userId, conversationId);
+
+      expect(result.shareId).toBeDefined();
+      expect(result.shareId).not.toBe(expiredShareId);
+      expect(result.conversationId).toBe(conversationId);
+    });
+
     test('should throw error with missing parameters', async () => {
       await expect(shareMethods.createSharedLink('', 'conv123')).rejects.toThrow(
         'Missing required parameters',
