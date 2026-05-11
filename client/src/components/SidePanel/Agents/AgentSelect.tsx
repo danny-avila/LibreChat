@@ -205,7 +205,7 @@ function AgentSelect({
     };
   }, [selectedAgentId, agents, onSelect]);
 
-  const createAgent = localize('com_ui_create_new_agent');
+  const selectAgentPlaceholder = localize('com_ui_select_agent');
 
   return (
     <Controller
@@ -216,7 +216,7 @@ function AgentSelect({
           containerClassName="px-0"
           selectedValue={(field?.value?.value ?? '') + ''}
           displayValue={field?.value?.label ?? ''}
-          selectPlaceholder={field?.value?.value ?? createAgent}
+          selectPlaceholder={field?.value?.value ?? selectAgentPlaceholder}
           iconSide="right"
           searchPlaceholder={localize('com_agents_search_name')}
           SelectIcon={field?.value?.icon}

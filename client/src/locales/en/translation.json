@@ -1465,7 +1465,7 @@
   "com_ui_seconds": "seconds",
   "com_ui_secret_key": "Secret Key",
   "com_ui_select": "Select",
-  "com_ui_select_agent": "Select Agent",
+  "com_ui_select_agent": "Select an agent",
   "com_ui_select_all": "Select All",
   "com_ui_select_file": "Select a file",
   "com_ui_select_model": "Select a model",
