@@ -35,7 +35,7 @@ const createRequest = (overrides: Partial<ShareTestRequest> = {}): ShareTestRequ
   ({
     user: { id: 'user123', role: 'USER' },
     params: { resourceType: ResourceType.SKILL },
-    body: { updated: [] },
+    body: {},
     ...overrides,
   }) as ShareTestRequest;
 
@@ -60,7 +60,7 @@ describe('createSharePolicyMiddleware', () => {
       getRoleByName,
       hasCapability,
     });
-    const req = createRequest({ body: { updated: [], public: false } });
+    const req = createRequest({ body: { public: false } });
     const res = createResponse();
 
     await checkSharePublicAccess(req, res, next);
@@ -155,7 +155,7 @@ describe('createSharePolicyMiddleware', () => {
         },
       }),
     );
-    const req = createRequest({ body: { updated: [], public: true } });
+    const req = createRequest({ body: { public: true } });
     const res = createResponse();
 
     await checkSharePublicAccess(req, res, next);
@@ -181,7 +181,7 @@ describe('createSharePolicyMiddleware', () => {
         },
       }),
     );
-    const req = createRequest({ body: { updated: [], public: true } });
+    const req = createRequest({ body: { public: true } });
     const res = createResponse();
 
     await checkShareAccess(req, res, next);
@@ -232,7 +232,9 @@ describe('createSharePolicyMiddleware', () => {
       getRoleByName,
       hasCapability,
     });
-    getRoleByName.mockResolvedValue({ permissions: null } as IRole);
+    const role = createRole({});
+    Object.defineProperty(role, 'permissions', { value: null });
+    getRoleByName.mockResolvedValue(role);
     const req = createRequest();
     const res = createResponse();
 
