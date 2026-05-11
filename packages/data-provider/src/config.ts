@@ -493,7 +493,7 @@ const remoteApiOidcSchema = z
   .object({
     enabled: z.boolean().default(false),
     issuer: remoteApiOidcUrlSchema.optional(),
-    audience: z.string().optional(),
+    audience: z.string().min(1).optional(),
     jwksUri: remoteApiOidcUrlSchema.optional(),
     scope: remoteApiOidcScopeSchema.optional(),
   })
@@ -503,6 +503,13 @@ const remoteApiOidcSchema = z
         code: z.ZodIssueCode.custom,
         path: ['issuer'],
         message: 'issuer is required when OIDC auth is enabled',
+      });
+    }
+    if (oidc.enabled === true && !oidc.audience) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['audience'],
+        message: 'audience is required when OIDC auth is enabled',
       });
     }
   });

@@ -25,7 +25,7 @@ type OidcConfig = NonNullable<
 >;
 
 type AgentAuthConfig = NonNullable<NonNullable<TAgentsEndpoint['remoteApi']>['auth']>;
-type EnabledOidcConfig = OidcConfig & { issuer: string };
+type EnabledOidcConfig = OidcConfig & { audience: string; issuer: string };
 type JwksCacheOptions = {
   enabled: boolean;
   maxAge: number;
@@ -233,8 +233,8 @@ function getVerifyOptions(oidcConfig: EnabledOidcConfig): VerifyOptions {
 
   return {
     algorithms: JWT_ALGORITHMS,
+    audience: oidcConfig.audience,
     issuer,
-    ...(oidcConfig.audience ? { audience: oidcConfig.audience } : {}),
   };
 }
 
@@ -268,7 +268,14 @@ function getEnabledOidcConfig(
 ): EnabledOidcConfig | undefined {
   if (authConfig?.oidc?.enabled !== true) return undefined;
   if (!authConfig.oidc.issuer) throw new Error('OIDC issuer is required when OIDC auth is enabled');
-  return { ...authConfig.oidc, issuer: authConfig.oidc.issuer };
+  if (!authConfig.oidc.audience) {
+    throw new Error('OIDC audience is required when OIDC auth is enabled');
+  }
+  return {
+    ...authConfig.oidc,
+    audience: authConfig.oidc.audience,
+    issuer: authConfig.oidc.issuer,
+  };
 }
 
 function isApiKeyEnabled(config: AppConfig): boolean {
@@ -491,9 +498,14 @@ export function createRemoteAgentAuth({
         res.status(500).json({ error: 'Internal server error' });
         return;
       }
+      if (!authConfig.oidc.audience) {
+        logger.error('[remoteAgentAuth] OIDC audience is required when OIDC auth is enabled');
+        res.status(500).json({ error: 'Internal server error' });
+        return;
+      }
 
       const oidcConfig = getEnabledOidcConfig(authConfig);
-      if (!oidcConfig) throw new Error('OIDC issuer is required when OIDC auth is enabled');
+      if (!oidcConfig) throw new Error('OIDC configuration is required when OIDC auth is enabled');
 
       const token = extractBearer(req.headers.authorization);
       if (token == null) {
