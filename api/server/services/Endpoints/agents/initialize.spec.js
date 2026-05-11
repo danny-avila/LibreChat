@@ -507,6 +507,44 @@ describe('initializeClient — subagent loading', () => {
     expect(agentClientArgs).toBeUndefined();
   });
 
+  it('preserves deeper path depth when a handoff root is also a nested subagent', async () => {
+    const chainIds = Array.from(
+      { length: MAX_SUBAGENT_DEPTH },
+      (_, index) => `agent_overlap_depth_${index}`,
+    );
+    const allIds = [HANDOFF_AND_SUB_ID, ...chainIds];
+    for (const id of allIds) {
+      await createViewableAgent(id);
+    }
+
+    const edges = [{ from: PRIMARY_ID, to: HANDOFF_AND_SUB_ID, edgeType: 'handoff' }];
+    const primaryConfig = makePrimaryConfig({
+      edges,
+      subagents: { enabled: true, allowSelf: false, agent_ids: [HANDOFF_AND_SUB_ID] },
+    });
+    const nestedConfigs = new Map([
+      [HANDOFF_AND_SUB_ID, makeNestedSubagentConfig(HANDOFF_AND_SUB_ID, [chainIds[0]])],
+      ...chainIds.map((id, index) => [
+        id,
+        makeNestedSubagentConfig(id, index < chainIds.length - 1 ? [chainIds[index + 1]] : []),
+      ]),
+    ]);
+
+    mockInitializeAgent.mockImplementation(({ agent }) =>
+      Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : nestedConfigs.get(agent.id)),
+    );
+
+    await expect(
+      initializeClient({
+        req: makeSubagentReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
+    expect(agentClientArgs).toBeUndefined();
+  });
+
   it('rejects subagent graphs that exceed MAX_SUBAGENT_GRAPH_NODES unique agents', async () => {
     const firstLevelIds = Array.from({ length: 10 }, (_, index) => `agent_graph_${index}`);
     const secondLevelIdsByParent = new Map(

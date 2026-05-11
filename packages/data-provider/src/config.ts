@@ -2175,7 +2175,7 @@ export const MAX_SUBAGENTS = 10;
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */
 export const MAX_SUBAGENT_DEPTH = 5;
 
-/** Maximum unique agents that may be loaded through subagent relationships. */
+/** Maximum unique explicit subagent targets that may be loaded at runtime. */
 export const MAX_SUBAGENT_GRAPH_NODES = 50;
 
 /** Maximum expanded SubagentConfig entries embedded into one run request. */

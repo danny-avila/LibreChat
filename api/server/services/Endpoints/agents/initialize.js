@@ -639,7 +639,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  silently break nested delegation like A → B → C where B is only
    *  a subagent of A. */
   const pureSubagentIds = new Set();
-  const subagentGraphIds = new Set([primaryConfig.id]);
+  const subagentGraphIds = new Set();
+  const loadedSubagentConfigIds = new Set();
 
   const assertSubagentGraphRoom = (agentId) => {
     if (subagentGraphIds.has(agentId)) {
@@ -667,6 +668,15 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       return;
     }
 
+    if (loadedSubagentConfigIds.has(config.id)) {
+      if ((config.subagentAgentConfigs?.length ?? 0) > 0 && depth >= MAX_SUBAGENT_DEPTH) {
+        throw new Error(
+          `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${config.id}.`,
+        );
+      }
+      return;
+    }
+
     /** Dedupe and filter in one pass — a crafted payload could
      *  legitimately include the same ID twice; the backend shouldn't
      *  create duplicate SubagentConfig entries for the LLM to see as
@@ -684,6 +694,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${config.id}.`,
       );
     }
+
+    loadedSubagentConfigIds.add(config.id);
 
     /** @type {Array<Object>} */
     const resolved = [];
@@ -715,20 +727,26 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     config.subagentAgentConfigs = resolved;
   };
 
-  const visitedConfigIds = new Set();
+  const maxResolvedDepthByConfigId = new Map();
 
   /** BFS across subagent trees so nested chains like A → B → C get
-   *  resolved before any pruning. Each config is visited once globally. */
+   *  resolved before any pruning. Agent configs are loaded once, but
+   *  overlapping roots can still be revisited at deeper path depths so
+   *  the depth guard observes the deepest reachable subagent path. */
   const resolveSubagentTrees = async (rootConfigs) => {
     const pending = rootConfigs.map((cfg) => ({ cfg, depth: 0 }));
     for (let index = 0; index < pending.length; index++) {
       const { cfg, depth } = pending[index];
-      if (!cfg || visitedConfigIds.has(cfg.id)) continue;
-      visitedConfigIds.add(cfg.id);
+      if (!cfg?.id) continue;
+      const previousDepth = maxResolvedDepthByConfigId.get(cfg.id);
+      if (previousDepth != null && previousDepth >= depth) continue;
+      maxResolvedDepthByConfigId.set(cfg.id, depth);
       await loadSubagentsFor(cfg, depth);
       for (const child of cfg.subagentAgentConfigs ?? []) {
-        if (child?.id && !visitedConfigIds.has(child.id)) {
-          pending.push({ cfg: child, depth: depth + 1 });
+        const childDepth = depth + 1;
+        const previousChildDepth = child?.id ? maxResolvedDepthByConfigId.get(child.id) : undefined;
+        if (child?.id && (previousChildDepth == null || previousChildDepth < childDepth)) {
+          pending.push({ cfg: child, depth: childDepth });
         }
       }
     }
