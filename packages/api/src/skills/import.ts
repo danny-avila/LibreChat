@@ -12,6 +12,7 @@ import type {
   CreateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
+import { resolveRequestTenantId } from '~/middleware/tenant';
 
 /** Security limits for zip processing. */
 const MAX_ZIP_BYTES = 50 * 1024 * 1024; // 50 MB compressed
@@ -163,7 +164,7 @@ function isDuplicateKeyError(error: unknown): boolean {
 }
 
 export interface ImportSkillDeps {
-  limits?: Partial<ImportLimits>;
+  limits?: Partial<ImportLimits> | ((req: ServerRequest) => Partial<ImportLimits> | undefined);
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
@@ -194,6 +195,7 @@ export interface ImportSkillDeps {
 }
 
 interface ServerRequest extends Request {
+  tenantId?: string;
   user: {
     id: string;
     _id: Types.ObjectId;
@@ -255,12 +257,19 @@ function getImportLimits(limits?: Partial<ImportLimits>): ImportLimits {
   };
 }
 
+function resolveImportLimits(
+  limits: ImportSkillDeps['limits'],
+  req: ServerRequest,
+): Partial<ImportLimits> | undefined {
+  return typeof limits === 'function' ? limits(req) : limits;
+}
+
 /** Resolve author metadata from the request user. */
 function getAuthorInfo(req: ServerRequest) {
   const user = req.user;
   const authorId = (user._id ?? user.id) as unknown as Types.ObjectId;
   const authorName = user.name ?? user.username ?? 'Unknown';
-  const tenantId = user.tenantId;
+  const tenantId = resolveRequestTenantId(req);
   return { authorId, authorName, tenantId };
 }
 
@@ -351,7 +360,7 @@ async function handleZip(
   file: Express.Multer.File,
 ) {
   const userId = req.user.id;
-  const limits = getImportLimits(deps.limits);
+  const limits = getImportLimits(resolveImportLimits(deps.limits, req));
 
   const zipBuffer = file.buffer;
 
