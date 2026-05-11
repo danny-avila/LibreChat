@@ -69,12 +69,12 @@ export function tenantContextMiddleware(
   });
 }
 
-type TenantScopedRequest = ServerRequest & {
+export type RequestTenantSource = {
   tenantId?: string;
-  user?: ServerRequest['user'] & { tenantId?: string };
+  user?: { tenantId?: string } | null;
 };
 
-function resolveRequestTenantId(req: TenantScopedRequest): string | undefined {
+export function resolveRequestTenantId(req: RequestTenantSource): string | undefined {
   return req.tenantId ?? req.user?.tenantId;
 }
 
@@ -90,7 +90,7 @@ export function restoreTenantContextFromReq(
   res: Response,
   next: NextFunction,
 ): void {
-  const tenantId = resolveRequestTenantId(req as TenantScopedRequest);
+  const tenantId = resolveRequestTenantId(req as RequestTenantSource);
 
   if (!tenantId) {
     if (isStrict()) {

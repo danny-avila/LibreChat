@@ -72,7 +72,7 @@ jest.mock('~/server/middleware', () => {
 
   return {
     requireJwtAuth: (req, _res, next) => {
-      const tenantId = req.user?.tenantId;
+      const tenantId = req.tenantId ?? req.user?.tenantId;
       if (!tenantId) {
         next();
         return;
@@ -93,6 +93,7 @@ let User;
 let testUsers;
 let testRoles;
 let currentTestUser;
+let currentRequestTenantId;
 
 function setTestUser(user) {
   currentTestUser = user;
@@ -130,6 +131,9 @@ beforeAll(async () => {
   app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
+    if (currentRequestTenantId) {
+      req.tenantId = currentRequestTenantId;
+    }
     if (currentTestUser) {
       req.user = toRequestUser(currentTestUser);
     }
@@ -147,6 +151,7 @@ afterEach(async () => {
     await AclEntry.deleteMany({});
   });
   currentTestUser = testUsers.owner;
+  currentRequestTenantId = undefined;
 });
 
 afterAll(async () => {
@@ -261,6 +266,33 @@ describe('Skill multipart routes under strict tenant isolation', () => {
     );
   });
 
+  it('imports using the resolved request tenant when user tenant differs', async () => {
+    currentRequestTenantId = TEST_TENANT;
+    setTestUser({
+      ...testUsers.owner.toObject(),
+      tenantId: 'stale-user-tenant',
+    });
+
+    const res = await request(app)
+      .post('/api/skills/import')
+      .attach('file', Buffer.from('# Request Tenant Markdown'), {
+        filename: 'request-tenant.md',
+        contentType: 'text/markdown',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.tenantId).toBe(TEST_TENANT);
+
+    const savedSkill = await runInTenant(async () =>
+      Skill.findOne({ name: 'request-tenant' }).lean(),
+    );
+    expect(savedSkill).toEqual(
+      expect.objectContaining({
+        tenantId: TEST_TENANT,
+      }),
+    );
+  });
+
   it('rejects multipart import in strict mode when the request has no tenant', async () => {
     setTestUser({
       _id: new mongoose.Types.ObjectId(),
@@ -304,6 +336,41 @@ describe('Skill multipart routes under strict tenant isolation', () => {
       expect.objectContaining({
         tenantId: TEST_TENANT,
         relativePath: 'scripts/manual.sh',
+      }),
+    );
+  });
+
+  it('uploads an individual skill file using the resolved request tenant', async () => {
+    const created = await createSkillAsOwner({ name: 'request-tenant-file-skill' });
+    expect(created.status).toBe(201);
+
+    currentRequestTenantId = TEST_TENANT;
+    setTestUser({
+      ...testUsers.owner.toObject(),
+      tenantId: 'stale-user-tenant',
+    });
+
+    const res = await request(app)
+      .post(`/api/skills/${created.body._id}/files`)
+      .field('relativePath', 'scripts/request-tenant.sh')
+      .attach('file', Buffer.from('echo request tenant'), {
+        filename: 'request-tenant.sh',
+        contentType: 'text/x-shellscript',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.tenantId).toBe(TEST_TENANT);
+
+    const savedFile = await runInTenant(async () =>
+      SkillFile.findOne({
+        skillId: created.body._id,
+        relativePath: 'scripts/request-tenant.sh',
+      }).lean(),
+    );
+    expect(savedFile).toEqual(
+      expect.objectContaining({
+        tenantId: TEST_TENANT,
+        relativePath: 'scripts/request-tenant.sh',
       }),
     );
   });

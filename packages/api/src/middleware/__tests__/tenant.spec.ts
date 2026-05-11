@@ -6,6 +6,7 @@ import type { ServerRequest } from '~/types/http';
 import {
   tenantContextMiddleware,
   restoreTenantContextFromReq,
+  resolveRequestTenantId,
   _resetTenantMiddlewareStrictCache,
 } from '../tenant';
 
@@ -168,5 +169,19 @@ describe('restoreTenantContextFromReq', () => {
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveRequestTenantId', () => {
+  it('uses req.tenantId before req.user.tenantId', () => {
+    const req = mockTenantReq({ tenantId: 'tenant-user', role: 'user' }, 'tenant-request');
+
+    expect(resolveRequestTenantId(req)).toBe('tenant-request');
+  });
+
+  it('falls back to req.user.tenantId', () => {
+    const req = mockReq({ tenantId: 'tenant-user', role: 'user' });
+
+    expect(resolveRequestTenantId(req)).toBe('tenant-user');
   });
 });
