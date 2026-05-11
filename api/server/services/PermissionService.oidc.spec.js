@@ -228,7 +228,7 @@ describe('syncUserOidcGroupsFromToken', () => {
             memberIds: ['user-123'],
           },
         ],
-        {},
+        { ordered: false },
       );
     });
 
@@ -381,7 +381,7 @@ describe('syncUserOidcGroupsFromToken', () => {
             memberIds: ['user-123'],
           },
         ],
-        {},
+        { ordered: false },
       );
     });
   });
@@ -427,6 +427,61 @@ describe('syncUserOidcGroupsFromToken', () => {
       // Should still call cleanup updateMany despite insertMany error
       expect(Group.updateMany).toHaveBeenCalledTimes(1);
     });
+
+    it('should recover from duplicate-key race by adding membership to existing groups', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin', 'developer']);
+      Group.find = jest.fn().mockResolvedValue([]); // appeared empty at read time
+
+      const dupErr = new Error('E11000 duplicate key error');
+      dupErr.code = 11000;
+      Group.insertMany = jest.fn().mockRejectedValue(dupErr);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      // First updateMany call: recovery $addToSet on the racing groups
+      expect(Group.updateMany).toHaveBeenNthCalledWith(
+        1,
+        { idOnTheSource: { $in: ['admin', 'developer'] }, source: 'oidc' },
+        { $addToSet: { memberIds: 'user-123' } },
+        {},
+      );
+      // Second updateMany call: regular cleanup (remove from old groups) still runs
+      expect(Group.updateMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('should detect duplicate-key inside writeErrors (BulkWriteError shape)', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn().mockResolvedValue([]);
+
+      const bulkErr = new Error('BulkWriteError');
+      bulkErr.writeErrors = [{ code: 11000, err: { code: 11000 } }];
+      Group.insertMany = jest.fn().mockRejectedValue(bulkErr);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      expect(Group.updateMany).toHaveBeenNthCalledWith(
+        1,
+        { idOnTheSource: { $in: ['admin'] }, source: 'oidc' },
+        { $addToSet: { memberIds: 'user-123' } },
+        {},
+      );
+    });
   });
 
   describe('Session Support', () => {
@@ -450,7 +505,10 @@ describe('syncUserOidcGroupsFromToken', () => {
 
       await syncUserOidcGroupsFromToken(user, tokenset, session);
 
-      expect(Group.insertMany).toHaveBeenCalledWith(expect.any(Array), { session });
+      expect(Group.insertMany).toHaveBeenCalledWith(expect.any(Array), {
+        session,
+        ordered: false,
+      });
       expect(Group.updateMany).toHaveBeenCalledWith(expect.any(Object), expect.any(Object), {
         session,
       });
@@ -578,20 +636,53 @@ describe('syncUserOidcGroupsFromToken', () => {
       expect(Group.find).not.toHaveBeenCalled();
     });
 
-    it('should reject idOnTheSource with dots', async () => {
+    it('should accept idOnTheSource containing dots (e.g. email-like sub)', async () => {
       const user = {
         email: 'test@example.com',
         provider: 'openid',
-        idOnTheSource: 'user.admin',
+        idOnTheSource: 'alice.smith@example.com',
       };
       const tokenset = { access_token: 'token' };
 
       extractGroupsFromToken.mockReturnValue(['admin']);
-      Group.find = jest.fn();
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
 
       await syncUserOidcGroupsFromToken(user, tokenset);
 
-      expect(Group.find).not.toHaveBeenCalled();
+      // Validation should pass and sync should proceed
+      expect(Group.find).toHaveBeenCalled();
+      expect(Group.insertMany).toHaveBeenCalledWith(
+        [
+          {
+            name: 'admin',
+            idOnTheSource: 'admin',
+            source: 'oidc',
+            memberIds: ['alice.smith@example.com'],
+          },
+        ],
+        { ordered: false },
+      );
+    });
+
+    it('should accept idOnTheSource containing dots (e.g. URI-style sub)', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'https://login.example.com/users/123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      expect(Group.find).toHaveBeenCalled();
+      expect(Group.insertMany).toHaveBeenCalled();
     });
   });
 });

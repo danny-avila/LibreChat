@@ -662,7 +662,7 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     if (
       typeof user.idOnTheSource !== 'string' ||
       user.idOnTheSource.trim().length === 0 ||
-      /[${}.]/.test(user.idOnTheSource)
+      /[${}]/.test(user.idOnTheSource)
     ) {
       logger.warn(
         '[PermissionService.syncUserOidcGroupsFromToken] Invalid idOnTheSource: contains special characters or is empty',
@@ -764,20 +764,49 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
       }
     }
 
-    // Bulk create new groups
+    // ordered: false so a duplicate on one group doesn't abort the rest
     if (groupsToCreate.length > 0) {
       try {
-        await Group.insertMany(groupsToCreate, sessionOptions);
+        await Group.insertMany(groupsToCreate, { ...sessionOptions, ordered: false });
         for (const group of groupsToCreate) {
           logger.info(
             `[PermissionService.syncUserOidcGroupsFromToken] Created new group: ${group.idOnTheSource}`,
           );
         }
       } catch (error) {
-        logger.error(
-          `[PermissionService.syncUserOidcGroupsFromToken] Error creating groups:`,
-          error,
-        );
+        // Recover from concurrent-login races where another request created the group(s) first
+        const isDuplicateKey =
+          error?.code === 11000 ||
+          (Array.isArray(error?.writeErrors) &&
+            error.writeErrors.some((e) => e?.code === 11000 || e?.err?.code === 11000));
+
+        if (isDuplicateKey) {
+          const createdNames = groupsToCreate.map((g) => g.idOnTheSource);
+          try {
+            await Group.updateMany(
+              {
+                idOnTheSource: { $in: createdNames },
+                source: groupSource,
+              },
+              { $addToSet: { memberIds: user.idOnTheSource } },
+              sessionOptions,
+            );
+            logger.info(
+              `[PermissionService.syncUserOidcGroupsFromToken] Resolved duplicate-key race for user ${user.email}; ensured membership on existing groups`,
+              { groups: createdNames },
+            );
+          } catch (recoveryError) {
+            logger.error(
+              `[PermissionService.syncUserOidcGroupsFromToken] Failed to recover from duplicate-key race:`,
+              recoveryError,
+            );
+          }
+        } else {
+          logger.error(
+            `[PermissionService.syncUserOidcGroupsFromToken] Error creating groups:`,
+            error,
+          );
+        }
       }
     }
 
