@@ -33,6 +33,7 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { isUserProvided } from '~/utils/common';
+import { getOrComputeToolTokens } from './toolTokens';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -200,6 +201,26 @@ export function overrideDeferLoadingForDiscoveredTools(
     }
   }
   return overrideCount;
+}
+
+function cloneToolRegistry(toolRegistry?: LCToolRegistry): LCToolRegistry | undefined {
+  if (!toolRegistry) {
+    return undefined;
+  }
+
+  const cloned = new Map<string, LCTool>();
+  for (const [name, tool] of toolRegistry.entries()) {
+    cloned.set(name, { ...tool });
+  }
+  return cloned;
+}
+
+function cloneToolDefinitions(toolDefinitions: LCTool[] | undefined): LCTool[] {
+  if (!toolDefinitions) {
+    return [];
+  }
+
+  return toolDefinitions.map((def) => ({ ...def }));
 }
 
 const customProviders = new Set([
@@ -589,12 +610,12 @@ function anyAgentHasCodeEnv(agents: RunAgent[], visited: Set<string> = new Set()
  * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
  * array when subagents are disabled or no spawn targets are available.
  */
-function buildSubagentConfigs(
+async function buildSubagentConfigs(
   agent: RunAgent,
   agentInput: AgentInputs,
-  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
+  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => Promise<AgentInputs>,
   ancestors: Set<string> = new Set(),
-): SubagentConfig[] {
+): Promise<SubagentConfig[]> {
   if (!agent.subagents?.enabled) {
     return [];
   }
@@ -629,18 +650,12 @@ function buildSubagentConfigs(
     }
     /**
      * `buildAgentInput` applies parent-run context (initialSummary +
-     * discoveredTools) to the returned AgentInputs *and* to the
-     * passed-in agent's `toolRegistry` / `toolDefinitions` — flipping
-     * `defer_loading: true → false` on tools the parent had previously
-     * searched for, and injecting those tools' definitions into the
-     * child's `toolDefinitions`. Clearing fields on the returned
-     * object post-hoc would leave those side-effects in place, leaking
-     * the parent's tool-search state into an "isolated" subagent and
-     * inflating the child's prompt/token budget. The `isSubagent` flag
-     * skips both the field stamping and the registry mutation at the
-     * source so children truly start fresh.
+     * discoveredTools) to returned top-level AgentInputs. The `isSubagent`
+     * flag skips that field stamping so child agents start from an isolated
+     * context even when the same initialized agent object also appears in the
+     * outer top-level run list.
      */
-    const childInputs = toInput(child, { isSubagent: true });
+    const childInputs = await toInput(child, { isSubagent: true });
     /**
      * Recursively resolve the child's own spawn targets so multi-level
      * delegation (A → B → C) works. Without this, a child whose own
@@ -649,7 +664,12 @@ function buildSubagentConfigs(
      * `subagentConfigs`, and that only runs for the outer agents in
      * `agents[]`. Cycle-safe via `nextAncestors`.
      */
-    const grandchildConfigs = buildSubagentConfigs(child, childInputs, toInput, nextAncestors);
+    const grandchildConfigs = await buildSubagentConfigs(
+      child,
+      childInputs,
+      toInput,
+      nextAncestors,
+    );
     if (grandchildConfigs.length > 0) {
       childInputs.subagentConfigs = grandchildConfigs;
     }
@@ -737,7 +757,10 @@ export async function createRun({
       ? extractDiscoveredToolsFromHistory(messages)
       : new Set<string>();
 
-  const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
+  const buildAgentInput = async (
+    agent: RunAgent,
+    opts: { isSubagent?: boolean } = {},
+  ): Promise<AgentInputs> => {
     const isSubagent = opts.isSubagent === true;
     const provider =
       (providerEndpointMap[
@@ -803,6 +826,24 @@ export async function createRun({
     }
 
     /**
+     * Clone mutable tool metadata before any deferred-tool override. The same
+     * initialized agent object can be used both as a top-level root and as a
+     * subagent child, and root inputs are built in parallel for latency. If the
+     * root path mutates `agent.toolRegistry` directly, a sibling parent building
+     * this object as a subagent can observe the flipped `defer_loading` flags
+     * and lose isolation. Cloning only when a mutation/isolation boundary exists
+     * keeps the common no-discovery path allocation-light.
+     */
+    const shouldCloneToolState =
+      agent.toolRegistry != null && (isSubagent || discoveredTools.size > 0);
+    const toolRegistry = shouldCloneToolState
+      ? cloneToolRegistry(agent.toolRegistry)
+      : agent.toolRegistry;
+    let toolDefinitions = shouldCloneToolState
+      ? cloneToolDefinitions(agent.toolDefinitions)
+      : (agent.toolDefinitions ?? []);
+
+    /**
      * Override defer_loading for tools that were discovered in previous
      * turns. This prevents the LLM from having to re-discover tools via
      * tool_search. Also add the discovered tools' definitions so the
@@ -811,15 +852,15 @@ export async function createRun({
      * Skipped for subagent children (`isSubagent`) — they run in an
      * isolated context by contract, so inheriting the parent's
      * tool-search state leaks unrelated history and pre-loads tools the
-     * child shouldn't care about. Mutations on `agent.toolRegistry`
-     * and additions to `toolDefinitions` both happen here, so the flag
-     * has to gate the whole block (clearing fields post-return can't
-     * undo registry writes).
+     * child shouldn't care about.
      */
-    let toolDefinitions = agent.toolDefinitions ?? [];
-    let toolRegistry = agent.toolRegistry;
-    if (!isSubagent && discoveredTools.size > 0 && agent.toolRegistry) {
-      overrideDeferLoadingForDiscoveredTools(agent.toolRegistry, discoveredTools);
+    if (!isSubagent && discoveredTools.size > 0 && toolRegistry) {
+      overrideDeferLoadingForDiscoveredTools(toolRegistry, discoveredTools);
+      toolDefinitions = toolDefinitions.map((def) =>
+        discoveredTools.has(def.name) && def.defer_loading === true
+          ? { ...def, defer_loading: false }
+          : def,
+      );
 
       /** Add discovered tools' definitions so the LLM can see their schemas */
       const existingToolNames = new Set(toolDefinitions.map((d) => d.name));
@@ -827,30 +868,11 @@ export async function createRun({
         if (existingToolNames.has(toolName)) {
           continue;
         }
-        const toolDef = agent.toolRegistry.get(toolName);
+        const toolDef = toolRegistry.get(toolName);
         if (toolDef) {
           toolDefinitions = [...toolDefinitions, toolDef];
         }
       }
-    } else if (isSubagent && agent.toolRegistry) {
-      /**
-       * Subagent children: hand the child a deep-enough clone of the
-       * registry so later parent-graph builds (e.g. when the same
-       * agent also appears as a handoff target in the outer loop)
-       * can't mutate `defer_loading` on tool definitions the child
-       * already holds a reference to. Clone the `Map` *and* each
-       * `LCTool` — `overrideDeferLoadingForDiscoveredTools` writes
-       * through to the tool object itself, so a shallow Map copy
-       * alone wouldn't isolate the flag.
-       */
-      toolRegistry = new Map();
-      for (const [name, tool] of agent.toolRegistry.entries()) {
-        toolRegistry.set(name, { ...tool });
-      }
-      /** Child's own `toolDefinitions` list gets the same shallow-
-       *  copied view so any later parent mutation of shared definitions
-       *  is contained to the parent-graph path. */
-      toolDefinitions = toolDefinitions.map((def) => ({ ...def }));
     }
 
     const effectiveMaxContextTokens = computeEffectiveMaxContextTokens(
@@ -859,11 +881,33 @@ export async function createRun({
       agent.maxContextTokens,
     );
 
+    let toolSchemaTokens: number | undefined;
+    if (tokenCounter) {
+      try {
+        toolSchemaTokens = await getOrComputeToolTokens({
+          tools: agent.tools,
+          toolDefinitions,
+          provider,
+          clientOptions: llmConfig,
+          tokenCounter,
+          tenantId: user?.tenantId,
+          toolRegistry,
+          discoveredTools: isSubagent ? undefined : discoveredTools,
+        });
+      } catch (err) {
+        logger.warn(
+          `[createRun] Failed to precompute tool schema tokens for agent ${agent.id}; falling back to AgentContext calculation`,
+          err,
+        );
+      }
+    }
+
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
     return {
       provider,
       reasoningKey,
       toolDefinitions,
+      toolSchemaTokens,
       agentId: agent.id,
       tools: agent.tools,
       clientOptions: llmConfig,
@@ -883,15 +927,16 @@ export async function createRun({
     };
   };
 
-  const agentInputs: AgentInputs[] = [];
-  for (const agent of agents) {
-    const agentInput = buildAgentInput(agent);
-    const subagentConfigs = buildSubagentConfigs(agent, agentInput, buildAgentInput);
+  const buildRootAgentInput = async (agent: RunAgent): Promise<AgentInputs> => {
+    const agentInput = await buildAgentInput(agent);
+    const subagentConfigs = await buildSubagentConfigs(agent, agentInput, buildAgentInput);
     if (subagentConfigs.length > 0) {
       agentInput.subagentConfigs = subagentConfigs;
     }
-    agentInputs.push(agentInput);
-  }
+    return agentInput;
+  };
+
+  const agentInputs = await Promise.all(agents.map(buildRootAgentInput));
 
   const graphConfig: RunConfig['graphConfig'] = {
     signal,
