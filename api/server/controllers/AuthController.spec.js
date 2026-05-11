@@ -24,15 +24,29 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(),
   findOpenIDUser: jest.fn(),
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
+  buildOpenIDRefreshParams: jest.fn(() => {
+    const params = {};
+    if (process.env.OPENID_SCOPE) {
+      params.scope = process.env.OPENID_SCOPE;
+    }
+    if (process.env.OPENID_REFRESH_AUDIENCE) {
+      params.audience = process.env.OPENID_REFRESH_AUDIENCE;
+    }
+    return params;
+  }),
 }));
 
 const openIdClient = require('openid-client');
-const { isEnabled, findOpenIDUser } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
+const { isEnabled, findOpenIDUser, buildOpenIDRefreshParams } = require('@librechat/api');
 const { graphTokenController, refreshController } = require('./AuthController');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 const { updateUser } = require('~/models');
+
+const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
+const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
 
 describe('graphTokenController', () => {
   let req, res;
@@ -155,6 +169,7 @@ describe('refreshController – OpenID path', () => {
     access_token: 'new-access',
     id_token: 'new-id',
     refresh_token: 'new-refresh',
+    expires_in: 3600,
   };
 
   const baseClaims = {
@@ -179,6 +194,8 @@ describe('refreshController – OpenID path', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.OPENID_SCOPE;
+    delete process.env.OPENID_REFRESH_AUDIENCE;
 
     isEnabled.mockReturnValue(true);
     getOpenIdConfig.mockReturnValue({ some: 'config' });
@@ -201,9 +218,24 @@ describe('refreshController – OpenID path', () => {
     };
   });
 
+  afterAll(() => {
+    if (ORIGINAL_OPENID_SCOPE === undefined) {
+      delete process.env.OPENID_SCOPE;
+    } else {
+      process.env.OPENID_SCOPE = ORIGINAL_OPENID_SCOPE;
+    }
+
+    if (ORIGINAL_OPENID_REFRESH_AUDIENCE === undefined) {
+      delete process.env.OPENID_REFRESH_AUDIENCE;
+    } else {
+      process.env.OPENID_REFRESH_AUDIENCE = ORIGINAL_OPENID_REFRESH_AUDIENCE;
+    }
+  });
+
   it('should call getOpenIdEmail with token claims and use result for findOpenIDUser', async () => {
     await refreshController(req, res);
 
+    expect(buildOpenIDRefreshParams).toHaveBeenCalledTimes(1);
     expect(getOpenIdEmail).toHaveBeenCalledWith(baseClaims);
     expect(findOpenIDUser).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -212,6 +244,83 @@ describe('refreshController – OpenID path', () => {
       }),
     );
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('should pass scope-only OpenID refresh params when OPENID_SCOPE is set', async () => {
+    process.env.OPENID_SCOPE = 'openid profile email';
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'stored-refresh',
+      { scope: 'openid profile email' },
+    );
+  });
+
+  it('should pass scope and audience OpenID refresh params when both are set', async () => {
+    process.env.OPENID_SCOPE = 'openid profile email';
+    process.env.OPENID_REFRESH_AUDIENCE = 'https://api.example.com';
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'stored-refresh',
+      {
+        scope: 'openid profile email',
+        audience: 'https://api.example.com',
+      },
+    );
+  });
+
+  it('should pass audience-only OpenID refresh params when scope is unset', async () => {
+    process.env.OPENID_REFRESH_AUDIENCE = 'https://api.example.com';
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'stored-refresh',
+      { audience: 'https://api.example.com' },
+    );
+  });
+
+  it('should omit empty OpenID refresh audience', async () => {
+    process.env.OPENID_SCOPE = 'openid profile email';
+    process.env.OPENID_REFRESH_AUDIENCE = '';
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'stored-refresh',
+      { scope: 'openid profile email' },
+    );
+  });
+
+  it('should keep OpenID refresh diagnostics free of token and audience values', async () => {
+    process.env.OPENID_SCOPE = 'openid profile email';
+    process.env.OPENID_REFRESH_AUDIENCE = 'https://api.example.com';
+
+    await refreshController(req, res);
+
+    expect(logger.debug).toHaveBeenCalledWith('[refreshController] OpenID refresh params', {
+      has_scope: true,
+      has_refresh_audience: true,
+    });
+    expect(logger.debug).toHaveBeenCalledWith('[refreshController] OpenID refresh succeeded', {
+      has_access_token: true,
+      has_id_token: true,
+      has_refresh_token: true,
+      expires_in: 3600,
+    });
+    const debugOutput = JSON.stringify(logger.debug.mock.calls);
+    expect(debugOutput).not.toContain('stored-refresh');
+    expect(debugOutput).not.toContain('new-access');
+    expect(debugOutput).not.toContain('new-id');
+    expect(debugOutput).not.toContain('new-refresh');
+    expect(debugOutput).not.toContain('https://api.example.com');
   });
 
   it('should use OPENID_EMAIL_CLAIM-resolved value when claim is present in token', async () => {
@@ -303,6 +412,15 @@ describe('refreshController – OpenID path', () => {
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.redirect).toHaveBeenCalledWith('/login');
+  });
+
+  it('should preserve invalid OpenID refresh token behavior', async () => {
+    openIdClient.refreshTokenGrant.mockRejectedValue(new Error('invalid_grant'));
+
+    await refreshController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.send).toHaveBeenCalledWith('Invalid OpenID refresh token');
   });
 
   it('should skip OpenID path when token_provider is not openid', async () => {
