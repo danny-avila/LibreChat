@@ -1,8 +1,10 @@
-const { ResourceType, PermissionTypes, Permissions } = require('librechat-data-provider');
-const { checkSharePublicAccess } = require('./checkSharePublicAccess');
-const { getRoleByName } = require('~/models');
+jest.mock('~/models', () => ({
+  getRoleByName: jest.fn(),
+}));
 
-jest.mock('~/models');
+const { ResourceType, PermissionTypes, Permissions } = require('librechat-data-provider');
+const { checkShareAccess, checkSharePublicAccess } = require('./checkSharePublicAccess');
+const { getRoleByName } = require('~/models');
 
 describe('checkSharePublicAccess middleware', () => {
   let mockReq;
@@ -159,6 +161,108 @@ describe('checkSharePublicAccess middleware', () => {
     expect(mockRes.json).toHaveBeenCalledWith({
       error: 'Internal Server Error',
       message: 'Failed to check public sharing permissions',
+    });
+  });
+});
+
+describe('checkShareAccess middleware', () => {
+  let mockReq;
+  let mockRes;
+  let mockNext;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockReq = {
+      user: { id: 'user123', role: 'USER' },
+      params: { resourceType: ResourceType.SKILL },
+      body: { updated: [] },
+    };
+    mockRes = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    mockNext = jest.fn();
+  });
+
+  it('should return 403 when user role has no SHARE permission for skills', async () => {
+    getRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.SKILLS]: {
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    await checkShareAccess(mockReq, mockRes, mockNext);
+
+    expect(mockRes.status).toHaveBeenCalledWith(403);
+    expect(mockRes.json).toHaveBeenCalledWith({
+      error: 'Forbidden',
+      message: `You do not have permission to share ${ResourceType.SKILL} resources`,
+    });
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it('should call next() when user role has SHARE permission for skills', async () => {
+    getRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.SKILLS]: {
+          [Permissions.SHARE]: true,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    await checkShareAccess(mockReq, mockRes, mockNext);
+
+    expect(mockNext).toHaveBeenCalled();
+    expect(mockRes.status).not.toHaveBeenCalled();
+  });
+
+  it('should return 401 when user is not authenticated', async () => {
+    mockReq.user = null;
+
+    await checkShareAccess(mockReq, mockRes, mockNext);
+
+    expect(mockRes.status).toHaveBeenCalledWith(401);
+    expect(mockRes.json).toHaveBeenCalledWith({
+      error: 'Unauthorized',
+      message: 'Authentication required',
+    });
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it('should return 400 for unsupported resource type', async () => {
+    mockReq.params = { resourceType: 'unsupported' };
+
+    await checkShareAccess(mockReq, mockRes, mockNext);
+
+    expect(mockRes.status).toHaveBeenCalledWith(400);
+    expect(mockRes.json).toHaveBeenCalledWith({
+      error: 'Bad Request',
+      message: 'Unsupported resource type for sharing: unsupported',
+    });
+  });
+
+  it('should return 403 when role has no permissions object', async () => {
+    getRoleByName.mockResolvedValue({ permissions: null });
+
+    await checkShareAccess(mockReq, mockRes, mockNext);
+
+    expect(mockRes.status).toHaveBeenCalledWith(403);
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it('should return 500 on error', async () => {
+    getRoleByName.mockRejectedValue(new Error('Database error'));
+
+    await checkShareAccess(mockReq, mockRes, mockNext);
+
+    expect(mockRes.status).toHaveBeenCalledWith(500);
+    expect(mockRes.json).toHaveBeenCalledWith({
+      error: 'Internal Server Error',
+      message: 'Failed to check sharing permissions',
     });
   });
 });
