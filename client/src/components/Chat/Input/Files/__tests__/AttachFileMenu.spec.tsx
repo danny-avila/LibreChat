@@ -320,7 +320,7 @@ describe('AttachFileMenu', () => {
       });
       renderMenu({ endpointType: EModelEndpoint.openAI });
       openMenu();
-      expect(screen.getByText('Upload Code Files')).toBeInTheDocument();
+      expect(screen.getByText('Upload to Code Environment')).toBeInTheDocument();
     });
 
     it('shows all options when all capabilities are enabled', () => {
@@ -340,7 +340,7 @@ describe('AttachFileMenu', () => {
       expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
       expect(screen.getByText('Upload as Text')).toBeInTheDocument();
       expect(screen.getByText('Upload for File Search')).toBeInTheDocument();
-      expect(screen.getByText('Upload Code Files')).toBeInTheDocument();
+      expect(screen.getByText('Upload to Code Environment')).toBeInTheDocument();
     });
 
     it('passes File Search resource when the file input changes before React state commits', () => {
