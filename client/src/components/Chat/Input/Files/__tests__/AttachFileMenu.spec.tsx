@@ -95,13 +95,13 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false 
 
 function setupMocks(overrides: { provider?: string } = {}) {
   const translations: Record<string, string> = {
-    com_ui_upload_provider: 'Upload to Provider',
+    com_files_upload_sharepoint: 'Upload from SharePoint',
+    com_sidepanel_attach_files: 'Attach Files',
+    com_ui_upload_code_environment: 'Upload to Code Environment',
+    com_ui_upload_file_search: 'Upload for File Search',
     com_ui_upload_image_input: 'Upload Image',
     com_ui_upload_ocr_text: 'Upload as Text',
-    com_ui_upload_file_search: 'Upload for File Search',
-    com_ui_upload_code_environment: 'Upload to Code Environment',
-    com_sidepanel_attach_files: 'Attach Files',
-    com_files_upload_sharepoint: 'Upload from SharePoint',
+    com_ui_upload_provider: 'Upload to Provider',
   };
   mockUseLocalize.mockReturnValue((key: string) => translations[key] || key);
   mockUseAgentCapabilities.mockReturnValue({
