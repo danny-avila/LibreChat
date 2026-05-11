@@ -1,3 +1,4 @@
+import { unlink } from 'fs/promises';
 import { getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -9,6 +10,12 @@ import {
   resolveRequestTenantId,
   _resetTenantMiddlewareStrictCache,
 } from '../tenant';
+
+jest.mock('fs/promises', () => ({
+  unlink: jest.fn().mockResolvedValue(undefined),
+}));
+
+const unlinkMock = unlink as jest.MockedFunction<typeof unlink>;
 
 function mockReq(user?: Record<string, unknown>): ServerRequest {
   return { user } as unknown as ServerRequest;
@@ -40,6 +47,7 @@ describe('tenantContextMiddleware', () => {
   afterEach(() => {
     _resetTenantMiddlewareStrictCache();
     delete process.env.TENANT_ISOLATION_STRICT;
+    unlinkMock.mockClear();
   });
 
   it('sets ALS tenant context for authenticated requests with tenantId', async () => {
@@ -66,7 +74,7 @@ describe('tenantContextMiddleware', () => {
     expect(tenantId).toBeUndefined();
   });
 
-  it('returns 403 when user has no tenantId in strict mode', () => {
+  it('returns 403 when user has no tenantId in strict mode', async () => {
     process.env.TENANT_ISOLATION_STRICT = 'true';
     _resetTenantMiddlewareStrictCache();
 
@@ -74,7 +82,7 @@ describe('tenantContextMiddleware', () => {
     const res = mockRes();
     const next: NextFunction = jest.fn();
 
-    tenantContextMiddleware(req, res, next);
+    await tenantContextMiddleware(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(
@@ -113,6 +121,7 @@ describe('restoreTenantContextFromReq', () => {
   afterEach(() => {
     _resetTenantMiddlewareStrictCache();
     delete process.env.TENANT_ISOLATION_STRICT;
+    unlinkMock.mockClear();
   });
 
   it('restores ALS tenant context from req.user.tenantId', async () => {
@@ -143,7 +152,7 @@ describe('restoreTenantContextFromReq', () => {
     expect(tenantId).toBe('tenant-request');
   });
 
-  it('returns 403 in strict mode when no request tenant can be resolved', () => {
+  it('returns 403 in strict mode when no request tenant can be resolved', async () => {
     process.env.TENANT_ISOLATION_STRICT = 'true';
     _resetTenantMiddlewareStrictCache();
 
@@ -151,7 +160,7 @@ describe('restoreTenantContextFromReq', () => {
     const res = mockRes();
     const next: NextFunction = jest.fn();
 
-    restoreTenantContextFromReq(req, res, next);
+    await restoreTenantContextFromReq(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(
@@ -160,14 +169,52 @@ describe('restoreTenantContextFromReq', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('rejects the system tenant sentinel for request-owned work', () => {
+  it('deletes uploaded temp files before rejecting strict requests without a tenant', async () => {
+    process.env.TENANT_ISOLATION_STRICT = 'true';
+    _resetTenantMiddlewareStrictCache();
+
+    const req = {
+      ...mockReq({ role: 'user' }),
+      file: { path: '/tmp/no-tenant-upload' },
+    } as ServerRequest;
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await restoreTenantContextFromReq(req, res, next);
+
+    expect(unlinkMock).toHaveBeenCalledWith('/tmp/no-tenant-upload');
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects the system tenant sentinel for request-owned work', async () => {
     const req = mockReq({ tenantId: SYSTEM_TENANT_ID, role: 'user' });
     const res = mockRes();
     const next: NextFunction = jest.fn();
 
-    restoreTenantContextFromReq(req, res, next);
+    await restoreTenantContextFromReq(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('deletes uploaded temp files before rejecting system-tenant requests', async () => {
+    const req = {
+      ...mockReq({ tenantId: SYSTEM_TENANT_ID, role: 'user' }),
+      file: { path: '/tmp/system-tenant-upload' },
+      files: [{ path: '/tmp/system-tenant-extra' }],
+    } as ServerRequest;
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await restoreTenantContextFromReq(req, res, next);
+
+    expect(unlinkMock).toHaveBeenCalledWith('/tmp/system-tenant-upload');
+    expect(unlinkMock).toHaveBeenCalledWith('/tmp/system-tenant-extra');
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'System tenant is not allowed for request-scoped routes',
+    });
     expect(next).not.toHaveBeenCalled();
   });
 });

@@ -2,11 +2,16 @@ process.env.TENANT_ISOLATION_STRICT = 'true';
 
 const express = require('express');
 const request = require('supertest');
+const fs = require('fs/promises');
 const { getTenantId, tenantStorage: mockTenantStorage } = require('@librechat/data-schemas');
 
 const TEST_TENANT = 'tenant-files-strict';
 
 let mockCurrentUser;
+
+jest.mock('fs/promises', () => ({
+  unlink: jest.fn().mockResolvedValue(undefined),
+}));
 
 const mockTenantResponse = (route) => (req, res) =>
   res.status(200).json({ route, tenantId: getTenantId() });
@@ -105,6 +110,7 @@ describe('file upload routes restore strict isolation context after multer', () 
   });
 
   beforeEach(() => {
+    fs.unlink.mockClear();
     mockCurrentUser = {
       id: 'user-files-strict',
       role: 'USER',
@@ -140,5 +146,6 @@ describe('file upload routes restore strict isolation context after multer', () 
 
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/Tenant context required/);
+    expect(fs.unlink).toHaveBeenCalledWith('/tmp/uploaded-file');
   });
 });
