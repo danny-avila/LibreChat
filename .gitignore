@@ -146,3 +146,10 @@ helm/**/.values.yaml
 # Documents
 building-code
 app.yaml
+
+# iOS / Capacitor build artifacts
+ios/DerivedData/
+ios/App/App/public/
+ios/App/Pods/
+*.xcuserstate
+xcuserdata/

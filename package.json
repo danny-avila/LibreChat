@@ -51,9 +51,9 @@
     "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev --",
-    "ios:build": "node utils/ios-build.js && npx cap sync ios",
-    "ios:run": "node utils/ios-build.js && npx cap run ios --target \"91248378-6511-4C09-BBCD-AF3FF05768D0\"",
-    "ios:sync": "npx cap sync ios",
+    "ios:build": "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 node utils/ios-build.js && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 npx cap sync ios",
+    "ios:run": "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 node utils/ios-build.js && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 npx cap run ios --target \"iPhone 15 Pro\"",
+    "ios:sync": "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 npx cap sync ios",
     "ios:open": "npx cap open ios",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
     "e2e:headed": "playwright test --config=e2e/playwright.config.local.ts --headed",
@@ -102,12 +102,16 @@
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
   "homepage": "https://librechat.ai/",
+  "dependencies": {
+    "@revenuecat/purchases-capacitor": "^12.3.0",
+    "@revenuecat/purchases-capacitor-ui": "^12.3.2"
+  },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.1",
     "@capacitor/cli": "^8.3.1",
     "@capacitor/core": "^8.3.1",
-    "@capacitor/keyboard": "^8.0.3",
     "@capacitor/ios": "^8.3.1",
-    "@axe-core/playwright": "^4.10.1",
+    "@capacitor/keyboard": "^8.0.3",
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.20.0",
