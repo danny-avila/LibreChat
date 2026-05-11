@@ -27,6 +27,7 @@ jest.mock('@librechat/api', () => ({
   findOpenIDUser: jest.fn(),
   getOpenIdEmail: jest.requireActual('@librechat/api').getOpenIdEmail,
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
+  normalizeOpenIdIssuer: jest.requireActual('@librechat/api').normalizeOpenIdIssuer,
   math: jest.fn((val, fallback) => fallback),
 }));
 jest.mock('~/models', () => ({
@@ -103,9 +104,9 @@ describe('openIdJwtStrategy – token validation', () => {
 
     expect(capturedStrategyOptions).toMatchObject({
       audience: 'librechat-client-id',
-      issuer: 'https://issuer.example.com',
       passReqToCallback: true,
     });
+    expect(capturedStrategyOptions).not.toHaveProperty('issuer');
   });
 
   it('also accepts OPENID_AUDIENCE for providers that mint resource-bound JWTs', () => {
@@ -115,8 +116,52 @@ describe('openIdJwtStrategy – token validation', () => {
 
     expect(capturedStrategyOptions).toMatchObject({
       audience: ['librechat-client-id', 'api://librechat'],
-      issuer: 'https://issuer.example.com',
     });
+  });
+
+  it('rejects OpenID JWTs whose issuer does not match the configured issuer', async () => {
+    findOpenIDUser.mockResolvedValue({ user: null, error: null, migration: false });
+    openIdJwtLogin(mockOpenIdConfig);
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user, info } = await invokeVerify(req, {
+      sub: 'oidc-123',
+      email: 'test@example.com',
+      iss: 'https://other-issuer.example.com',
+      exp: 9999999999,
+    });
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: 'Invalid issuer' });
+    expect(findOpenIDUser).not.toHaveBeenCalled();
+  });
+
+  it('allows Microsoft Entra tenant issuer values for tenant-independent metadata', async () => {
+    const entraConfig = {
+      serverMetadata: () => ({
+        issuer: 'https://login.microsoftonline.com/{tenantid}/v2.0',
+        jwks_uri: 'https://login.microsoftonline.com/common/discovery/v2.0/keys',
+      }),
+    };
+    const user = {
+      _id: { toString: () => 'user-abc' },
+      role: SystemRoles.USER,
+      provider: 'openid',
+    };
+    findOpenIDUser.mockResolvedValue({ user, error: null, migration: false });
+    updateUser.mockResolvedValue({});
+    openIdJwtLogin(entraConfig);
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user: result } = await invokeVerify(req, {
+      sub: 'oidc-123',
+      email: 'test@example.com',
+      iss: 'https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0',
+      exp: 9999999999,
+    });
+
+    expect(result).toBeTruthy();
+    expect(findOpenIDUser).toHaveBeenCalled();
   });
 });
 
@@ -127,7 +172,12 @@ describe('openIdJwtStrategy – token source handling', () => {
     provider: 'openid',
   };
 
-  const payload = { sub: 'oidc-123', email: 'test@example.com', exp: 9999999999 };
+  const payload = {
+    sub: 'oidc-123',
+    email: 'test@example.com',
+    iss: 'https://issuer.example.com',
+    exp: 9999999999,
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -257,6 +307,7 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     email: 'test@example.com',
     preferred_username: 'testuser',
     upn: 'test@corp.example.com',
+    iss: 'https://issuer.example.com',
     exp: 9999999999,
   };
 
@@ -402,6 +453,7 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
       sub: 'oidc-new-sub',
       preferred_username: 'legacy@corp.com',
       upn: 'legacy@corp.com',
+      iss: 'https://issuer.example.com',
       exp: 9999999999,
     };
 

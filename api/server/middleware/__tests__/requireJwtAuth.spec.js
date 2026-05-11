@@ -182,7 +182,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     const req = mockReq(undefined, {
       headers: { cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie()}` },
       _mockStrategies: {
-        openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
+        openidJwt: { user: { id: 'user-openid', tenantId: 'tenant-openid', role: 'user' } },
         jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
       },
     });
@@ -198,6 +198,41 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(res.status).not.toHaveBeenCalled();
     expect(passport.authenticate).toHaveBeenCalledWith(
       'openidJwt',
+      { session: false },
+      expect.any(Function),
+    );
+  });
+
+  it('does not authenticate OpenID JWT when the reuse cookie belongs to another user', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      headers: {
+        cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie('user-a')}`,
+      },
+      _mockStrategies: {
+        openidJwt: { user: { id: 'user-b', tenantId: 'tenant-openid', role: 'user' } },
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(req.authStrategy).toBeUndefined();
+    expect(passport.authenticate).toHaveBeenCalledTimes(2);
+    expect(passport.authenticate).toHaveBeenNthCalledWith(
+      1,
+      'openidJwt',
+      { session: false },
+      expect.any(Function),
+    );
+    expect(passport.authenticate).toHaveBeenNthCalledWith(
+      2,
+      'jwt',
       { session: false },
       expect.any(Function),
     );

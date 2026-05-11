@@ -6,19 +6,23 @@ const { isEnabled, tenantContextMiddleware } = require('@librechat/api');
 const hasPassportStrategy = (strategy) =>
   typeof passport._strategy === 'function' && passport._strategy(strategy) != null;
 
-const hasValidOpenIdReuseCookie = (parsedCookies) => {
+const getValidOpenIdReuseUserId = (parsedCookies) => {
   const openidUserId = parsedCookies.openid_user_id;
   if (!openidUserId || !process.env.JWT_REFRESH_SECRET) {
-    return false;
+    return null;
   }
 
   try {
     const payload = jwt.verify(openidUserId, process.env.JWT_REFRESH_SECRET);
-    return typeof payload === 'object' && payload != null && typeof payload.id === 'string';
+    return typeof payload === 'object' && payload != null && typeof payload.id === 'string'
+      ? payload.id
+      : null;
   } catch {
-    return false;
+    return null;
   }
 };
+
+const getAuthenticatedUserId = (user) => user?.id?.toString?.() ?? user?._id?.toString?.();
 
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse.
@@ -34,8 +38,9 @@ const requireJwtAuth = (req, res, next) => {
   const tokenProvider = parsedCookies.token_provider;
   const openidReuseEnabled = isEnabled(process.env.OPENID_REUSE_TOKENS);
   const openidJwtAvailable = openidReuseEnabled && hasPassportStrategy('openidJwt');
+  const openIdReuseUserId = getValidOpenIdReuseUserId(parsedCookies);
   const useOpenIdJwt =
-    tokenProvider === 'openid' && openidJwtAvailable && hasValidOpenIdReuseCookie(parsedCookies);
+    tokenProvider === 'openid' && openidJwtAvailable && openIdReuseUserId != null;
   const strategies = useOpenIdJwt ? ['openidJwt', 'jwt'] : ['jwt'];
 
   const authenticateWithStrategy = (index) => {
@@ -51,6 +56,12 @@ const requireJwtAuth = (req, res, next) => {
         return res.status(status || 401).json({
           message: info?.message || 'Unauthorized',
         });
+      }
+      if (strategy === 'openidJwt' && getAuthenticatedUserId(user) !== openIdReuseUserId) {
+        if (index + 1 < strategies.length) {
+          return authenticateWithStrategy(index + 1);
+        }
+        return res.status(401).json({ message: 'Unauthorized' });
       }
       req.user = user;
       req.authStrategy = strategy;
