@@ -399,6 +399,7 @@ export default function RetrievalCall({
       pages: result.pages,
       pageRelevance: result.pageRelevance,
       fileType: result.fileType,
+      source: result.source,
     };
   }, [displayResults, previewIndex]);
 

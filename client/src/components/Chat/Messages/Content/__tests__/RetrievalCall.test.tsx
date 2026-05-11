@@ -1,6 +1,7 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { FileSources } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
 import RetrievalCall from '../RetrievalCall';
 
@@ -74,6 +75,7 @@ jest.mock('../ToolOutput', () => ({
 jest.mock('~/utils', () => ({
   cn: (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' '),
   logger: { error: jest.fn(), debug: jest.fn() },
+  sortPagesByRelevance: (pages: number[]) => pages,
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -82,9 +84,19 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('../FilePreviewDialog', () => ({
   __esModule: true,
-  default: ({ open, fileId, fileName }: { open: boolean; fileId?: string; fileName: string }) =>
+  default: ({
+    open,
+    fileId,
+    fileName,
+    source,
+  }: {
+    open: boolean;
+    fileId?: string;
+    fileName: string;
+    source?: string;
+  }) =>
     open ? (
-      <div data-testid="file-preview-dialog" data-file-id={fileId}>
+      <div data-testid="file-preview-dialog" data-file-id={fileId} data-source={source}>
         {fileName}
       </div>
     ) : null,
@@ -271,6 +283,45 @@ describe('RetrievalCall - file preview resolution', () => {
 
     expect(screen.getAllByRole('button', { name: 'Preview: Tutorial Imazing.pdf' })).toHaveLength(
       2,
+    );
+  });
+
+  it('preserves storage source metadata when opening a retrieval preview', () => {
+    renderRetrievalCall({
+      initialProgress: 1,
+      isSubmitting: false,
+      output: 'Retrieved text-backed source',
+      attachments: [
+        {
+          type: 'file_search',
+          toolCallId: 'call-1',
+          file_search: {
+            sources: [
+              {
+                fileId: 'file-text',
+                fileName: 'notes.txt',
+                relevance: 0.9,
+                content: 'Text-backed result',
+                pages: [1],
+                pageRelevance: { 1: 0.9 },
+                metadata: {
+                  fileType: 'text/plain',
+                  fileBytes: 18,
+                  storageType: FileSources.text,
+                },
+              },
+            ],
+          },
+        },
+      ] as any,
+    });
+
+    fireEvent.click(screen.getByTestId('progress-text'));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview: notes.txt' }));
+
+    expect(screen.getByTestId('file-preview-dialog')).toHaveAttribute(
+      'data-source',
+      FileSources.text,
     );
   });
 });
