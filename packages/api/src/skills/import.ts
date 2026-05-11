@@ -12,6 +12,7 @@ import type {
   CreateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
+import { resolveRequestTenantId } from '~/middleware/tenant';
 
 /** Security limits for zip processing. */
 const MAX_ZIP_BYTES = 50 * 1024 * 1024; // 50 MB compressed
@@ -194,6 +195,7 @@ export interface ImportSkillDeps {
 }
 
 interface ServerRequest extends Request {
+  tenantId?: string;
   user: {
     id: string;
     _id: Types.ObjectId;
@@ -260,7 +262,7 @@ function getAuthorInfo(req: ServerRequest) {
   const user = req.user;
   const authorId = (user._id ?? user.id) as unknown as Types.ObjectId;
   const authorName = user.name ?? user.username ?? 'Unknown';
-  const tenantId = user.tenantId;
+  const tenantId = resolveRequestTenantId(req);
   return { authorId, authorName, tenantId };
 }
 
