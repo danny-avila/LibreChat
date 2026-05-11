@@ -1,8 +1,12 @@
 import { useMemo, useState, useCallback, memo } from 'react';
+import { FileContext, FileSources } from 'librechat-data-provider';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import FilePreviewDialog from './FilePreviewDialog';
 import Image from './Image';
+
+const isUploadAsTextAttachment = (file: Partial<TFile>) =>
+  file.source === FileSources.text && file.context === FileContext.message_attachment;
 
 const Files = ({ message }: { message?: TMessage }) => {
   const imageFiles = useMemo(() => {
@@ -24,13 +28,17 @@ const Files = ({ message }: { message?: TMessage }) => {
   return (
     <>
       {otherFiles.length > 0 &&
-        otherFiles.map((file) => (
-          <FileContainer
-            key={file.file_id}
-            file={file as TFile}
-            onClick={() => setSelectedFile(file)}
-          />
-        ))}
+        otherFiles.map((file) => {
+          const previewDisabled = isUploadAsTextAttachment(file);
+          return (
+            <FileContainer
+              key={file.file_id}
+              file={file as TFile}
+              disabled={previewDisabled}
+              onClick={previewDisabled ? undefined : () => setSelectedFile(file)}
+            />
+          );
+        })}
       {imageFiles.length > 0 &&
         imageFiles.map((file) => (
           <Image

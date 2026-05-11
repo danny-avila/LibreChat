@@ -14,6 +14,7 @@ const FileContainer = ({
   containerClassName,
   onDelete,
   onClick,
+  disabled,
 }: {
   file: Partial<ExtendedFile | TFile>;
   overrideType?: string;
@@ -36,6 +37,7 @@ const FileContainer = ({
   containerClassName?: string;
   onDelete?: () => void;
   onClick?: React.MouseEventHandler<HTMLButtonElement>;
+  disabled?: boolean;
 }) => {
   const fileType = getFileType(overrideType ?? file.type);
   const visibleName = displayName ?? file.filename ?? '';
@@ -47,9 +49,11 @@ const FileContainer = ({
       <button
         type="button"
         onClick={onClick}
+        disabled={disabled}
         aria-label={visibleName}
         className={cn(
           'relative overflow-hidden rounded-2xl border border-border-light bg-surface-hover-alt',
+          disabled && 'cursor-default',
           buttonClassName,
         )}
       >
