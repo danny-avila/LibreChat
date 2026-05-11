@@ -1609,6 +1609,8 @@
   "com_ui_tool_failed": "failed",
   "com_ui_tool_list_collapse": "Collapse {{serverName}} tool list",
   "com_ui_tool_list_expand": "Expand {{serverName}} tool list",
+  "com_ui_tool_name_code": "Code",
+  "com_ui_tool_name_code_analysis": "Code Analysis",
   "com_ui_tool_name_file_search": "File Search",
   "com_ui_tool_name_image_edit": "Image Edit",
   "com_ui_tool_name_image_gen": "Image Generation",
