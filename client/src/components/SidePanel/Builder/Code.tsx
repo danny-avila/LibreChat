@@ -49,7 +49,7 @@ export default function Code({ version }: { version: number | string }) {
               className="form-check-label text-token-text-primary w-full cursor-pointer"
               htmlFor={Capabilities.code_interpreter}
             >
-              {localize('com_ui_run_code')}
+              {localize('com_assistants_code_interpreter')}
             </label>
             <HoverCardTrigger>
               <CircleHelpIcon className="h-5 w-5 text-gray-500" />

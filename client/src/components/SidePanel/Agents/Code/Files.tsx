@@ -63,7 +63,7 @@ function Files({
     <div className="mb-2 w-full">
       <div className="flex flex-col gap-3">
         <div className="rounded-lg text-xs text-text-secondary">
-          {localize('com_assistants_code_interpreter_files')}
+          {localize('com_agents_run_code_files')}
         </div>
         <FileRow
           files={files}

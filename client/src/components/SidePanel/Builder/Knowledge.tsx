@@ -19,7 +19,7 @@ const CodeInterpreterFiles = ({ children }: { children: React.ReactNode }) => {
       <div className="text-token-text-tertiary mb-2 text-xs">
         {localize('com_assistants_code_interpreter_files')}
       </div>
-      {/* Files available to Run Code only */}
+      {/* Files available to Code Interpreter only */}
       <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );
