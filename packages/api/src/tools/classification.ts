@@ -185,6 +185,10 @@ export interface BuildToolClassificationParams {
   agentToolOptions?: AgentToolOptions;
   /** Whether the deferred_tools capability is enabled (from agent config) */
   deferredToolsEnabled?: boolean;
+  /** Whether the programmatic_tools capability is enabled (from agent config) */
+  programmaticToolsEnabled?: boolean;
+  /** Whether code execution is enabled and requested by this agent */
+  codeExecutionEnabled?: boolean;
   /** When true, skip creating tool instances (for event-driven mode) */
   definitionsOnly?: boolean;
   /** Optional host-supplied Code API auth headers for remote programmatic execution. */
@@ -238,7 +242,7 @@ export function agentHasDeferredTools(toolRegistry: LCToolRegistry): boolean {
  * 1. Filters loaded tools for MCP tools
  * 2. Extracts tool definitions and builds the registry from agent's tool_options
  * 3. Cleans up temporary mcpJsonSchema properties
- * 4. Creates PTC tool only if agent has tools configured for programmatic calling
+ * 4. Creates PTC tool only if capabilities allow the agent's programmatic tools
  * 5. Creates tool search tool only if agent has deferred tools
  *
  * @param params - Parameters including loaded tools, userId, agentId, agentToolOptions, and dependencies
@@ -253,6 +257,8 @@ export async function buildToolClassification(
     agentToolOptions,
     definitionsOnly = false,
     deferredToolsEnabled = true,
+    programmaticToolsEnabled = false,
+    codeExecutionEnabled = false,
     authHeaders,
   } = params;
   const additionalTools: GenericTool[] = [];
@@ -275,10 +281,11 @@ export async function buildToolClassification(
 
   /**
    * Check if this agent actually has tools configured for these features.
-   * Only enable PTC if the agent has programmatic tools.
+   * Only enable PTC if code/programmatic capabilities allow the agent's programmatic tools.
    * Only enable tool search if the agent has deferred tools AND the capability is enabled.
    */
-  const hasProgrammaticTools = agentHasProgrammaticTools(toolRegistry);
+  const hasProgrammaticTools =
+    programmaticToolsEnabled && codeExecutionEnabled && agentHasProgrammaticTools(toolRegistry);
   const hasDeferredTools = deferredToolsEnabled && agentHasDeferredTools(toolRegistry);
 
   /** Clear defer_loading if capability disabled */

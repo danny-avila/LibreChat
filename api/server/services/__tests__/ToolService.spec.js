@@ -300,14 +300,20 @@ describe('ToolService - Action Capability Gating', () => {
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = Tools.web_search;
 
-    it('loads bash PTC under the legacy programmatic tool name for event-driven compatibility', async () => {
-      const req = createMockReq([]);
+    it('loads bash PTC under the legacy programmatic tool name when code capabilities are enabled', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
       const toolRegistry = new Map([['custom_tool', { name: 'custom_tool' }]]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
 
       const result = await loadToolsForExecution({
         req,
         res: {},
-        agent: { id: 'agent_ptc' },
+        agent: { id: 'agent_ptc', tools: [Tools.execute_code] },
         toolNames: [Constants.PROGRAMMATIC_TOOL_CALLING],
         toolRegistry,
         actionsEnabled: false,
@@ -318,6 +324,50 @@ describe('ToolService - Action Capability Gating', () => {
       ]);
       expect(result.configurable.toolRegistry).toBe(toolRegistry);
       expect(result.configurable.ptcToolMap.size).toBe(0);
+    });
+
+    it('does not load PTC when programmatic tools capability is disabled', async () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.execute_code];
+      const req = createMockReq(capabilities);
+      const toolRegistry = new Map([['custom_tool', { name: 'custom_tool' }]]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_ptc', tools: [Tools.execute_code] },
+        toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry,
+        actionsEnabled: false,
+      });
+
+      expect(result.loadedTools.map((tool) => tool.name)).toEqual([]);
+      expect(result.configurable.toolRegistry).toBeUndefined();
+      expect(result.configurable.ptcToolMap).toBeUndefined();
+    });
+
+    it('does not load PTC when agent did not request execute_code', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const toolRegistry = new Map([['custom_tool', { name: 'custom_tool' }]]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_ptc', tools: [] },
+        toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry,
+        actionsEnabled: false,
+      });
+
+      expect(result.loadedTools.map((tool) => tool.name)).toEqual([]);
+      expect(result.configurable.toolRegistry).toBeUndefined();
+      expect(result.configurable.ptcToolMap).toBeUndefined();
     });
 
     it('should skip action tool loading when actionsEnabled=false', async () => {
