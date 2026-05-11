@@ -1641,7 +1641,7 @@
   "com_ui_upload_agent_avatar": "Successfully updated agent avatar",
   "com_ui_upload_agent_avatar_label": "Upload agent avatar image",
   "com_ui_upload_avatar_label": "Upload avatar image",
-  "com_ui_upload_code_files": "Upload for Run Code",
+  "com_ui_upload_code_files": "Upload to Code Environment",
   "com_ui_upload_delay": "Uploading \"{{0}}\" is taking more time than anticipated. Please wait while the file finishes indexing for retrieval.",
   "com_ui_upload_error": "There was an error uploading your file",
   "com_ui_upload_file_context": "Upload File Context",
