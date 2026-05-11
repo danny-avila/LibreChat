@@ -141,6 +141,10 @@ router.post('/:conversationId', requireJwtAuth, async (req, res) => {
   try {
     const { targetMessageId } = req.body;
     const expiredAt = await getSharedLinkExpiration(req, req.params.conversationId);
+    if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
+      return res.status(404).end();
+    }
+
     const created = await createSharedLink(
       req.user.id,
       req.params.conversationId,
