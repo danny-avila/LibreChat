@@ -16,6 +16,11 @@ import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
 
+// V1 UX (POP/BETC) : bouton Presets masqué du Header — feature jugée non
+// pertinente pour les users V1. Réactiver en passant à `true` ; le composant
+// PresetsMenu et toute la logique sous-jacente sont préservés.
+const SHOW_PRESETS_BUTTON = false;
+
 function Header() {
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
@@ -76,7 +81,7 @@ function Header() {
                     index={1}
                     className="max-w-[35vw]"
                   />
-                  {interfaceConfig.presets === true && interfaceConfig.modelSelect && (
+                  {SHOW_PRESETS_BUTTON && interfaceConfig.presets === true && interfaceConfig.modelSelect && (
                     <PresetsMenu />
                   )}
                   {hasAccessToBookmarks === true && <BookmarkMenu />}
@@ -95,7 +100,7 @@ function Header() {
               ) : (
                 <>
                   <ModelSelector startupConfig={startupConfig} />
-                  {interfaceConfig.presets === true && interfaceConfig.modelSelect && (
+                  {SHOW_PRESETS_BUTTON && interfaceConfig.presets === true && interfaceConfig.modelSelect && (
                     <PresetsMenu />
                   )}
                   {hasAccessToBookmarks === true && <BookmarkMenu />}
