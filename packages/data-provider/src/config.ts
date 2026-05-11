@@ -215,6 +215,7 @@ export const cloudfrontConfigSchema = z
       .optional(),
     storageRegion: z.string().min(1).optional(),
     includeRegionInPath: z.boolean().default(false),
+    requireSignedAccess: z.boolean().default(false),
   })
   .refine((data) => !data.invalidateOnDelete || !!data.distributionId, {
     message: 'distributionId is required when invalidateOnDelete is true',

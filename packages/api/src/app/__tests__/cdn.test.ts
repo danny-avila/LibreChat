@@ -122,6 +122,34 @@ describe('initializeFileStorage', () => {
     expect(initializeS3).not.toHaveBeenCalled();
   });
 
+  it('throws when CloudFront init fails and requireSignedAccess is true', () => {
+    (initializeCloudFront as jest.Mock).mockReturnValue(false);
+    const cloudfrontConfig = {
+      domain: 'https://d123.cloudfront.net',
+      requireSignedAccess: true,
+    };
+    const appConfig = {
+      ...baseAppConfig,
+      fileStrategy: FileSources.cloudfront,
+      cloudfront: cloudfrontConfig,
+    } as AppConfig;
+    expect(() => initializeFileStorage(appConfig)).toThrow(/requireSignedAccess=true/);
+  });
+
+  it('does not throw when CloudFront init fails and requireSignedAccess is false', () => {
+    (initializeCloudFront as jest.Mock).mockReturnValue(false);
+    const cloudfrontConfig = {
+      domain: 'https://d123.cloudfront.net',
+      requireSignedAccess: false,
+    };
+    const appConfig = {
+      ...baseAppConfig,
+      fileStrategy: FileSources.cloudfront,
+      cloudfront: cloudfrontConfig,
+    } as AppConfig;
+    expect(() => initializeFileStorage(appConfig)).not.toThrow();
+  });
+
   it('does not call any initializer when fileStrategy is local with no fileStrategies', () => {
     const appConfig = { ...baseAppConfig, fileStrategy: FileSources.local } as AppConfig;
     initializeFileStorage(appConfig);
