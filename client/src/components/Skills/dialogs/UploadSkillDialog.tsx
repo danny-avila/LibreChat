@@ -54,7 +54,7 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
       if (importMutation.isLoading) {
         return;
       }
-      if (file.size >= skillImportSizeLimit) {
+      if (file.size > skillImportSizeLimit) {
         showToast({
           status: 'error',
           message: localize('com_ui_skill_upload_size_error', { 0: displayedSizeLimit }),

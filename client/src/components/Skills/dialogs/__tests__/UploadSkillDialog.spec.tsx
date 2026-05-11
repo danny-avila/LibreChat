@@ -94,9 +94,9 @@ describe('UploadSkillDialog', () => {
     expect(screen.getByText('File size must not exceed 1 MB')).toBeInTheDocument();
   });
 
-  it('rejects files at the configured skill import limit before upload', () => {
+  it('rejects files above the configured skill import limit before upload', () => {
     const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
-    const file = new File([new Uint8Array(1024 * 1024)], 'too-large.skill', {
+    const file = new File([new Uint8Array(1024 * 1024 + 1)], 'too-large.skill', {
       type: 'application/zip',
     });
 
@@ -111,6 +111,25 @@ describe('UploadSkillDialog', () => {
       status: 'error',
       message: 'Skill import must not exceed 1 MB',
     });
+  });
+
+  it('uploads files exactly at the configured skill import limit', () => {
+    const appendSpy = jest.spyOn(FormData.prototype, 'append');
+    const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+    const file = new File([new Uint8Array(1024 * 1024)], 'exact-limit.skill', {
+      type: 'application/zip',
+    });
+
+    fireEvent.change(getFileInput(container), {
+      target: {
+        files: [file],
+      },
+    });
+
+    expect(mockShowToast).not.toHaveBeenCalled();
+    expect(appendSpy).toHaveBeenCalledWith('file', file, file.name);
+    expect(mockMutate).toHaveBeenCalledWith(expect.any(FormData));
+    appendSpy.mockRestore();
   });
 
   it('uploads files under the configured skill import limit', () => {
