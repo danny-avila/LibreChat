@@ -68,7 +68,9 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     const getFileType = (file: File) => inferMimeType(file.name, file.type);
 
     const isAzureWithResponsesApi =
-      currentProvider === EModelEndpoint.azureOpenAI && useResponsesApi;
+      (currentProvider === EModelEndpoint.azureOpenAI ||
+        endpointType === EModelEndpoint.azureOpenAI) &&
+      useResponsesApi === true;
 
     // Check if provider supports document upload
     if (

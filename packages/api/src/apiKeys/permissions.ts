@@ -23,7 +23,7 @@ export interface Principal {
 export interface EnricherDependencies {
   aggregateAclEntries: (pipeline: PipelineStage[]) => Promise<Record<string, unknown>[]>;
   bulkWriteAclEntries: (
-    ops: AnyBulkWriteOperation<unknown>[],
+    ops: AnyBulkWriteOperation[],
     options?: Record<string, unknown>,
   ) => Promise<unknown>;
   findRoleByIdentifier: (

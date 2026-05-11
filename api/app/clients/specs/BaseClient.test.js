@@ -952,6 +952,45 @@ describe('BaseClient', () => {
       saveConvo.mockReset();
     });
 
+    test('saveMessageToDatabase reuses conversation resolved on the request', async () => {
+      const existingConvo = {
+        conversationId: 'cached-convo-id',
+        endpoint: 'openai',
+        endpointType: 'openai',
+        temperature: 0.7,
+      };
+      const user = { id: 'user-id' };
+      const req = { user, resolvedConversation: existingConvo };
+
+      getConvo.mockClear();
+      saveMessage.mockResolvedValue({ messageId: 'msg-1' });
+      saveConvo.mockResolvedValue(existingConvo);
+
+      TestClient = initializeFakeClient(apiKey, { ...options, endpoint: 'openai', req }, []);
+
+      await TestClient.saveMessageToDatabase(
+        {
+          messageId: 'msg-1',
+          conversationId: existingConvo.conversationId,
+          isCreatedByUser: true,
+          text: 'hi',
+        },
+        { endpoint: 'openai' },
+        user,
+      );
+
+      expect(getConvo).not.toHaveBeenCalled();
+      expect(req).not.toHaveProperty('resolvedConversation');
+      expect(TestClient.fetchedConvo).toBe(true);
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ conversationId: existingConvo.conversationId }),
+        expect.objectContaining({
+          unsetFields: expect.objectContaining({ temperature: 1 }),
+        }),
+      );
+    });
+
     test('userMessagePromise is awaited before saving response message', async () => {
       // Mock the saveMessageToDatabase method
       TestClient.saveMessageToDatabase = jest.fn().mockImplementation(() => {

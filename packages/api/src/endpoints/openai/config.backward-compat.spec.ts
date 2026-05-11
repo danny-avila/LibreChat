@@ -80,6 +80,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           streaming: true,
           model: 'qwen/qwen3-max',
           include_reasoning: true,
+          promptCache: true,
           apiKey: 'sk-xxxx',
         },
         configOptions: {

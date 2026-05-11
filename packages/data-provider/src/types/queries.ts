@@ -212,6 +212,8 @@ export type TUserFavorite = {
   model?: string;
   endpoint?: string;
   spec?: string;
+  /** Phase 2 — skill favoriting isn't persisted yet, but the shape is reserved. */
+  skillId?: string;
 };
 
 /* SharePoint Graph API Token */

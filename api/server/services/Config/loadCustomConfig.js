@@ -3,6 +3,7 @@ const axios = require('axios');
 const yaml = require('js-yaml');
 const keyBy = require('lodash/keyBy');
 const { loadYaml } = require('@librechat/api');
+const { Providers } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const {
   configSchema,
@@ -16,6 +17,48 @@ const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
 
 let i = 0;
+
+const OPENROUTER_PROMPT_CACHE_DEFAULT = {
+  key: 'promptCache',
+  default: true,
+};
+
+function includesOpenRouter(value) {
+  return typeof value === 'string' && value.toLowerCase().includes(Providers.OPENROUTER);
+}
+
+function isOpenRouterEndpoint(endpoint) {
+  return includesOpenRouter(endpoint.name) || includesOpenRouter(endpoint.baseURL);
+}
+
+function shouldPreserveCustomParams(customParams) {
+  const defaultEndpoint = customParams?.defaultParamsEndpoint;
+  return (
+    defaultEndpoint && defaultEndpoint !== 'custom' && defaultEndpoint !== Providers.OPENROUTER
+  );
+}
+
+function addOpenRouterDefaults(endpoint) {
+  if (!isOpenRouterEndpoint(endpoint)) {
+    return;
+  }
+
+  if (shouldPreserveCustomParams(endpoint.customParams)) {
+    return;
+  }
+
+  const customParams = endpoint.customParams ?? {};
+  const paramDefinitions = customParams.paramDefinitions ?? [];
+  const hasPromptCache = paramDefinitions.some((param) => param.key === 'promptCache');
+
+  endpoint.customParams = {
+    ...customParams,
+    defaultParamsEndpoint: Providers.OPENROUTER,
+    paramDefinitions: hasPromptCache
+      ? paramDefinitions
+      : [...paramDefinitions, OPENROUTER_PROMPT_CACHE_DEFAULT],
+  };
+}
 
 /**
  * Load custom configuration files and caches the object if the `cache` field at root is true.
@@ -118,6 +161,8 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
       logger.debug('Custom config:', customConfig);
     }
   }
+
+  (customConfig.endpoints?.custom ?? []).forEach(addOpenRouterDefaults);
 
   (customConfig.endpoints?.custom ?? [])
     .filter((endpoint) => endpoint.customParams)

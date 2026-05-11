@@ -194,7 +194,6 @@
   "com_citation_source": "Källa",
   "com_click_to_download": "(klicka här för att ladda ner)",
   "com_download_expired": "(nedladdningen har löpt ut)",
-  "com_download_expires": "(klicka här för att ladda ner - upphör att gälla {{0}})",
   "com_endpoint": "Slutpunkt",
   "com_endpoint_agent": "Agent",
   "com_endpoint_agent_placeholder": "Vänligen välj en agent",

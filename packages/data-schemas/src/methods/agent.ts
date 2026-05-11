@@ -271,7 +271,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
    */
   async function getAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    return (await Agent.findOne(searchParameter).lean()) as IAgent | null;
+    return await Agent.findOne(searchParameter).lean<IAgent>();
   }
 
   /**
@@ -279,7 +279,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
    */
   async function getAgents(searchParameter: FilterQuery<IAgent>): Promise<IAgent[]> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    return (await Agent.find(searchParameter).lean()) as IAgent[];
+    return await Agent.find(searchParameter).lean<IAgent[]>();
   }
 
   /**
@@ -711,6 +711,12 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
       category: 1,
       support_contact: 1,
       is_promoted: 1,
+      /* Needed so the client can scope the `$` skill popover to each agent's
+         configured catalog without refetching the full agent document. The
+         master toggle is required alongside the allowlist so the popover can
+         distinguish "enabled with full catalog" from "disabled". */
+      skills: 1,
+      skills_enabled: 1,
     }).sort({ updatedAt: -1, _id: 1 });
 
     if (isPaginated && normalizedLimit) {
@@ -774,9 +780,13 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     delete revertToVersion.author;
     delete revertToVersion.updatedBy;
 
-    return (await Agent.findOneAndUpdate(searchParameter, revertToVersion, {
+    const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertToVersion, {
       new: true,
-    }).lean()) as IAgent;
+    }).lean<IAgent>();
+    if (!revertedAgent) {
+      throw new Error('Agent not found');
+    }
+    return revertedAgent;
   }
 
   /**

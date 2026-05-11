@@ -171,30 +171,54 @@ describe('recordCollectedUsage — bulk path parity', () => {
     });
   });
 
-  describe('cache token handling - OpenAI format', () => {
-    it('should route cache entries to structured path — same input_tokens as legacy', async () => {
+  describe('cache token handling - subset providers (input_tokens already includes cache)', () => {
+    it('subtracts cache from input portion in bulk docs for OpenAI', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 100,
           output_tokens: 50,
           model: 'gpt-4',
+          provider: 'openAI',
           input_token_details: { cache_creation: 20, cache_read: 10 },
         },
       ];
 
       const result = await recordCollectedUsage(deps, { ...baseParams, collectedUsage });
 
-      expect(result?.input_tokens).toBe(130); // 100 + 20 + 10
+      expect(result?.input_tokens).toBe(100);
       expect(mockInsertMany).toHaveBeenCalledTimes(1);
       expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
       expect(mockSpendTokens).not.toHaveBeenCalled();
 
       const docs = mockInsertMany.mock.calls[0][0];
       const promptDoc = docs.find((d: { tokenType: string }) => d.tokenType === 'prompt');
-      expect(promptDoc.inputTokens).toBe(-100);
+      expect(promptDoc.inputTokens).toBe(-70);
       expect(promptDoc.writeTokens).toBe(-20);
       expect(promptDoc.readTokens).toBe(-10);
       expect(promptDoc.model).toBe('gpt-4');
+    });
+
+    it('does not double-count cache_read for Gemini in bulk path — issue #12855', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 11125,
+          output_tokens: 20,
+          model: 'gemini-3-flash-preview',
+          provider: 'google',
+          input_token_details: { cache_read: 7441 },
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, { ...baseParams, collectedUsage });
+
+      expect(result?.input_tokens).toBe(11125);
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+
+      const docs = mockInsertMany.mock.calls[0][0];
+      const promptDoc = docs.find((d: { tokenType: string }) => d.tokenType === 'prompt');
+      expect(promptDoc.inputTokens).toBe(-3684);
+      expect(promptDoc.readTokens).toBe(-7441);
+      expect(promptDoc.writeTokens || 0).toBe(0);
     });
   });
 

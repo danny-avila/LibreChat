@@ -234,4 +234,34 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(parsedResult.maxOutputTokens).toBeUndefined();
     expect(parsedResult.max_tokens).toBe(4096);
   });
+
+  it('should not enter the enforce branch when modelSpecs.list is empty', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.openAI,
+        model: 'gpt-4',
+      },
+      {
+        modelSpecs: {
+          enforce: true,
+          list: [],
+        },
+      },
+    );
+    const res = createRes();
+    const { handleError } = require('@librechat/api');
+
+    await buildEndpointOption(req, res, jest.fn());
+
+    expect(handleError).not.toHaveBeenCalledWith(
+      res,
+      expect.objectContaining({ text: 'No model spec selected' }),
+    );
+    expect(handleError).not.toHaveBeenCalledWith(
+      res,
+      expect.objectContaining({ text: 'Invalid model spec' }),
+    );
+  });
 });

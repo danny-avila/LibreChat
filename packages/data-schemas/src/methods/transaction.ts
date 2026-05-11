@@ -188,9 +188,9 @@ export function createTransactionMethods(
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      let currentBalanceDoc;
+      let currentBalanceDoc: IBalance | null;
       try {
-        currentBalanceDoc = await Balance.findOne({ user }).lean();
+        currentBalanceDoc = await Balance.findOne({ user }).lean<IBalance>();
         const currentCredits = currentBalanceDoc ? currentBalanceDoc.tokenCredits : 0;
         const potentialNewCredits = currentCredits + incrementValue;
         const newCredits = Math.max(0, potentialNewCredits);
@@ -208,7 +208,7 @@ export function createTransactionMethods(
             { user, tokenCredits: currentCredits },
             updatePayload,
             { new: true },
-          ).lean();
+          ).lean<IBalance>();
 
           if (updatedBalance) {
             return updatedBalance;
@@ -219,7 +219,7 @@ export function createTransactionMethods(
             updatedBalance = await Balance.findOneAndUpdate({ user }, updatePayload, {
               upsert: true,
               new: true,
-            }).lean();
+            }).lean<IBalance>();
 
             if (updatedBalance) {
               return updatedBalance;
@@ -384,7 +384,7 @@ export function createTransactionMethods(
   /** Retrieves a user's balance record. */
   async function findBalanceByUser(user: string): Promise<IBalance | null> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
-    return Balance.findOne({ user }).lean();
+    return Balance.findOne({ user }).lean<IBalance>();
   }
 
   /** Upserts balance fields for a user. */
@@ -393,7 +393,11 @@ export function createTransactionMethods(
     fields: IBalanceUpdate,
   ): Promise<IBalance | null> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
-    return Balance.findOneAndUpdate({ user }, { $set: fields }, { upsert: true, new: true }).lean();
+    return Balance.findOneAndUpdate(
+      { user },
+      { $set: fields },
+      { upsert: true, new: true },
+    ).lean<IBalance>();
   }
 
   /** Deletes transactions matching a filter. */

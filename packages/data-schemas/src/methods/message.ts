@@ -276,7 +276,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const message = await Message.findOne({ messageId, user: userId }).lean();
+      const message = await Message.findOne({ messageId, user: userId }).lean<IMessage>();
 
       if (message) {
         const query = Message.find({ conversationId, user: userId });
@@ -298,10 +298,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
       if (select) {
-        return await Message.find(filter).select(select).sort({ createdAt: 1 }).lean();
+        return await Message.find(filter).select(select).sort({ createdAt: 1 }).lean<IMessage[]>();
       }
 
-      return await Message.find(filter).sort({ createdAt: 1 }).lean();
+      return await Message.find(filter).sort({ createdAt: 1 }).lean<IMessage[]>();
     } catch (err) {
       logger.error('Error getting messages:', err);
       throw err;
@@ -314,7 +314,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   async function getMessage({ user, messageId }: { user: string; messageId: string }) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      return await Message.findOne({ user, messageId }).lean();
+      return await Message.findOne({ user, messageId }).lean<IMessage>();
     } catch (err) {
       logger.error('Error getting message:', err);
       throw err;
@@ -355,13 +355,15 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     const messages = await Message.find(queryFilter)
       .sort({ [sortField]: sortOrder })
       .limit(limit + 1)
-      .lean();
+      .lean<IMessage[]>();
 
     let nextCursor: string | null = null;
     if (messages.length > limit) {
       messages.pop();
-      const last = messages[messages.length - 1] as Record<string, unknown>;
-      nextCursor = String(last[sortField] ?? '');
+      const last = messages[messages.length - 1];
+      const cursorValue =
+        sortField === 'createdAt' ? last.createdAt : last[sortField as keyof IMessage];
+      nextCursor = String(cursorValue ?? '');
     }
     return { messages, nextCursor };
   }

@@ -4,14 +4,13 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
 }));
 
-jest.mock('@librechat/agents', () => ({
-  EnvVar: { CODE_API_KEY: 'CODE_API_KEY' },
-}));
+jest.mock('@librechat/agents', () => ({}));
 
 jest.mock('@librechat/api', () => ({
   sanitizeFilename: jest.fn((n) => n),
   parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
   processAudioFile: jest.fn(),
+  getStorageMetadata: jest.fn(() => ({})),
 }));
 
 jest.mock('librechat-data-provider', () => ({
@@ -70,11 +69,17 @@ jest.mock('~/server/services/Files/Audio/STTService', () => ({
   STTService: { getInstance: jest.fn() },
 }));
 
-const { EToolResources, FileSources, AgentCapabilities } = require('librechat-data-provider');
+const {
+  EToolResources,
+  FileSources,
+  FileContext,
+  AgentCapabilities,
+} = require('librechat-data-provider');
 const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { processAgentFileUpload } = require('./process');
+const db = require('~/models');
+const { processAgentFileUpload, processFileURL } = require('./process');
 
 const PDF_MIME = 'application/pdf';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -86,7 +91,7 @@ const ODP_MIME = 'application/vnd.oasis.opendocument.presentation';
 const ODG_MIME = 'application/vnd.oasis.opendocument.graphics';
 
 const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null } = {}) => ({
-  user: { id: 'user-123' },
+  user: { id: 'user-123', tenantId: 'tenant-a' },
   file: {
     path: '/tmp/upload.bin',
     originalname: 'upload.bin',
@@ -340,5 +345,260 @@ describe('processAgentFileUpload', () => {
         processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
       ).resolves.not.toThrow();
     });
+  });
+
+  /* Phase C / option α regression: the upload must persist its sandbox
+   * pointer under `metadata.codeEnvRef` (the post-cutover schema). The
+   * legacy `metadata.fileIdentifier` key is silently stripped by mongoose
+   * strict mode and downstream readers (`primeFiles`, `getCodeFilesByIds`,
+   * `categorizeFileForToolResources`, controller filtering) only check
+   * `codeEnvRef`. Storing under the legacy key would orphan the file —
+   * priming would skip it on subsequent code-execution turns and the
+   * sandbox copy would never re-mount. */
+  describe('execute_code uploads persist codeEnvRef metadata', () => {
+    const fs = require('fs');
+    const { Readable } = require('stream');
+    let createReadStreamSpy;
+
+    beforeEach(() => {
+      /* `processAgentFileUpload` opens the multer-staged temp file via
+       * `fs.createReadStream`. The test fixture path doesn't exist, so
+       * stub it to a tiny in-memory stream. */
+      createReadStreamSpy = jest
+        .spyOn(fs, 'createReadStream')
+        .mockImplementation(() => Readable.from(Buffer.from('')));
+    });
+
+    afterEach(() => {
+      createReadStreamSpy.mockRestore();
+    });
+
+    const setupCodeEnvUpload = (uploaded) => {
+      /* `processAgentFileUpload` calls `getStrategyFunctions` twice:
+       * once with `execute_code` for the codeapi upload, then again with
+       * the on-disk strategy (`local`) for the standard storage step that
+       * runs in the same flow. Both must return a working
+       * `handleFileUpload`. */
+      const codeEnvUpload = jest.fn().mockResolvedValue(uploaded);
+      const localUpload = jest.fn().mockResolvedValue({
+        bytes: 0,
+        filename: 'upload.bin',
+        filepath: '/uploads/upload.bin',
+      });
+      getStrategyFunctions.mockImplementation((src) =>
+        src === FileSources.execute_code
+          ? { handleFileUpload: codeEnvUpload }
+          : { handleFileUpload: localUpload, saveBuffer: jest.fn() },
+      );
+      return codeEnvUpload;
+    };
+
+    it('persists kind:user codeEnvRef for chat attachments (messageAttachment=true)', async () => {
+      setupCodeEnvUpload({ storage_session_id: 'sess-1', file_id: 'fid-1' });
+      const req = makeReq();
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+          message_file: true,
+        },
+      });
+
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: {
+            codeEnvRef: {
+              kind: 'user',
+              id: 'user-123',
+              storage_session_id: 'sess-1',
+              file_id: 'fid-1',
+            },
+          },
+        }),
+        true,
+      );
+    });
+
+    it('persists kind:agent codeEnvRef for agent setup files (messageAttachment=false)', async () => {
+      setupCodeEnvUpload({ storage_session_id: 'sess-2', file_id: 'fid-2' });
+      const req = makeReq();
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+        },
+      });
+
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: {
+            codeEnvRef: {
+              kind: 'agent',
+              id: 'agent-abc',
+              storage_session_id: 'sess-2',
+              file_id: 'fid-2',
+            },
+          },
+        }),
+        true,
+      );
+    });
+
+    it('does not persist legacy fileIdentifier key (mongoose strict drops it)', async () => {
+      setupCodeEnvUpload({ storage_session_id: 'sess-3', file_id: 'fid-3' });
+      const req = makeReq();
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+          message_file: true,
+        },
+      });
+
+      const persisted = db.createFile.mock.calls[0][0];
+      expect(persisted.metadata).not.toHaveProperty('fileIdentifier');
+    });
+  });
+});
+
+describe('processFileURL', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('throws and skips DB persistence when saveURL returns null', async () => {
+    const saveURL = jest.fn().mockResolvedValue(null);
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await expect(
+      processFileURL({
+        fileStrategy: FileSources.local,
+        userId: 'user-123',
+        URL: 'https://example.com/image.png',
+        fileName: 'image.png',
+        basePath: 'images',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+      }),
+    ).rejects.toThrow('Strategy "local" did not save "image.png"');
+
+    expect(getFileURL).not.toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('persists tenantId and strategy-returned filepath metadata', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+      dimensions: { width: 32, height: 64 },
+    });
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+    });
+
+    expect(getFileURL).not.toHaveBeenCalled();
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: 'user-123',
+        filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+        bytes: 512,
+        filename: 'image.png',
+        source: FileSources.cloudfront,
+        type: 'image/png',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+        width: 32,
+        height: 64,
+      }),
+      true,
+    );
+  });
+
+  it('falls back to getFileURL with user and tenant context when metadata lacks filepath', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      bytes: 256,
+      type: 'image/png',
+    });
+    const getFileURL = jest
+      .fn()
+      .mockResolvedValue('https://cdn.example.com/t/tenant-a/images/user-123/image.png');
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+    });
+
+    expect(getFileURL).toHaveBeenCalledWith({
+      userId: 'user-123',
+      fileName: 'image.png',
+      basePath: 'images',
+      tenantId: 'tenant-a',
+    });
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+        tenantId: 'tenant-a',
+      }),
+      true,
+    );
+  });
+
+  it('preserves the user path segment for local fallback URLs', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      bytes: 256,
+      type: 'image/png',
+    });
+    const getFileURL = jest.fn().mockResolvedValue('/images/user-123/image.png');
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await processFileURL({
+      fileStrategy: FileSources.local,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+    });
+
+    expect(getFileURL).toHaveBeenCalledWith({
+      userId: 'user-123',
+      fileName: 'user-123/image.png',
+      basePath: 'images',
+      tenantId: 'tenant-a',
+    });
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filepath: '/images/user-123/image.png',
+        tenantId: 'tenant-a',
+      }),
+      true,
+    );
   });
 });

@@ -238,3 +238,9 @@ describe('createEndpointsConfigService', () => {
     });
   });
 });
+
+describe('defaultAgentCapabilities', () => {
+  it('includes AgentCapabilities.skills so skills are enabled by default', () => {
+    expect(defaultAgentCapabilities).toContain(AgentCapabilities.skills);
+  });
+});

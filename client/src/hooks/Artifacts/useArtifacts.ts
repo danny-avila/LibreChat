@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
 import { useArtifactsContext } from '~/Providers';
+import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { logger } from '~/utils';
 import store from '~/store';
 
@@ -15,10 +16,17 @@ export default function useArtifacts() {
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
 
-  const orderedArtifactIds = useMemo(() => {
-    return Object.keys(artifacts ?? {}).sort(
+  const { orderedArtifactIds, latestAutoOpenArtifactId } = useMemo(() => {
+    const ids = Object.keys(artifacts ?? {}).sort(
       (a, b) => (artifacts?.[a]?.lastUpdateTime ?? 0) - (artifacts?.[b]?.lastUpdateTime ?? 0),
     );
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const id = ids[i];
+      if (!isCodeOnlyArtifact(artifacts?.[id]?.type)) {
+        return { orderedArtifactIds: ids, latestAutoOpenArtifactId: id };
+      }
+    }
+    return { orderedArtifactIds: ids, latestAutoOpenArtifactId: null };
   }, [artifacts]);
 
   const prevIsSubmittingRef = useRef<boolean>(false);
@@ -62,8 +70,14 @@ export default function useArtifacts() {
     if (orderedArtifactIds.length === 0) return;
     const currentId = currentArtifactIdRef.current;
     if (currentId != null && orderedArtifactIds.includes(currentId)) return;
-    setCurrentArtifactId(orderedArtifactIds[orderedArtifactIds.length - 1]);
-  }, [orderedArtifactIds, setCurrentArtifactId]);
+    if (latestAutoOpenArtifactId == null) {
+      if (currentId != null) {
+        resetCurrentArtifactId();
+      }
+      return;
+    }
+    setCurrentArtifactId(latestAutoOpenArtifactId);
+  }, [latestAutoOpenArtifactId, orderedArtifactIds, resetCurrentArtifactId, setCurrentArtifactId]);
 
   /**
    * Manage artifact selection and code tab switching for non-enclosed artifacts
@@ -89,9 +103,12 @@ export default function useArtifacts() {
     if (latestArtifact?.content === lastContentRef.current && !justFinishedSubmitting) {
       return;
     }
+    lastContentRef.current = latestArtifact?.content ?? null;
+    if (isCodeOnlyArtifact(latestArtifact?.type)) {
+      return;
+    }
 
     setCurrentArtifactId(latestArtifactId);
-    lastContentRef.current = latestArtifact?.content ?? null;
 
     // Only switch to code tab if we haven't detected an enclosed artifact yet
     if (!hasEnclosedArtifactRef.current && !hasAutoSwitchedToCodeRef.current) {

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Time, EModelEndpoint, defaultModels } from 'librechat-data-provider';
+import { Time, EModelEndpoint, defaultModels, AuthType } from 'librechat-data-provider';
 import {
   fetchModels,
   splitAndTrim,
@@ -210,6 +210,51 @@ describe('getOpenAIModels', () => {
   it('returns default models when no environment configurations are provided (and fetch fails)', async () => {
     const models = await getOpenAIModels({ user: 'user456' });
     expect(models).toContain('gpt-4');
+  });
+
+  it('returns default models when OpenAI API key is user provided', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'should-not-appear' }] } });
+    process.env.OPENAI_API_KEY = AuthType.USER_PROVIDED;
+
+    const models = await getOpenAIModels({ user: 'user456' });
+
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+    expect(models).not.toContain('should-not-appear');
+    expect(models).toContain('gpt-4');
+  });
+
+  it('fetches models when OpenAI API key is provided through options', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'gpt-runtime-key' }] } });
+    process.env.OPENAI_API_KEY = AuthType.USER_PROVIDED;
+
+    const models = await getOpenAIModels({ user: 'user456', openAIApiKey: 'sk-runtime' });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.openai.com/v1/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer sk-runtime',
+        }),
+      }),
+    );
+    expect(models).toEqual(['gpt-runtime-key']);
+  });
+
+  it('falls back to environment OpenAI API key when options key is empty', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'gpt-env-key' }] } });
+    process.env.OPENAI_API_KEY = 'sk-env';
+
+    const models = await getOpenAIModels({ user: 'user456', openAIApiKey: '' });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.openai.com/v1/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer sk-env',
+        }),
+      }),
+    );
+    expect(models).toEqual(['gpt-env-key']);
   });
 
   it('returns `AZURE_OPENAI_MODELS` with `azure` flag (and fetch fails)', async () => {

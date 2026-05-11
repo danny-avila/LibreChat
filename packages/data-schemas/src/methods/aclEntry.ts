@@ -93,7 +93,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     if (resourceType) {
       query.resourceType = resourceType;
     }
-    return await AclEntry.find(query).lean();
+    return await AclEntry.find(query).lean<IAclEntry[]>();
   }
 
   /**
@@ -107,7 +107,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     resourceId: string | Types.ObjectId,
   ): Promise<IAclEntry[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    return await AclEntry.find({ resourceType, resourceId }).lean();
+    return await AclEntry.find({ resourceType, resourceId }).lean<IAclEntry[]>();
   }
 
   /**
@@ -132,7 +132,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       $or: principalsQuery,
       resourceType,
       resourceId,
-    }).lean();
+    }).lean<IAclEntry[]>();
   }
 
   /**

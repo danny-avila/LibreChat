@@ -16,7 +16,7 @@ function categorizeFile(
     type?: string | null;
     source?: string;
     embedded?: boolean;
-    metadata?: { fileIdentifier?: string };
+    metadata?: { fileIdentifier?: string; codeEnvRef?: unknown };
   },
   isBedrock: boolean,
   mergedFileConfig: FileConfig | undefined,
@@ -26,7 +26,11 @@ function categorizeFile(
   if (source === FileSources.text) {
     return 'skipped';
   }
-  if (file.embedded === true || file.metadata?.fileIdentifier != null) {
+  if (
+    file.embedded === true ||
+    file.metadata?.codeEnvRef != null ||
+    file.metadata?.fileIdentifier != null
+  ) {
     return 'skipped';
   }
 

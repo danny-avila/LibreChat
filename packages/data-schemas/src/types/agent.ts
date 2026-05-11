@@ -1,5 +1,10 @@
 import { Document, Types } from 'mongoose';
-import type { GraphEdge, AgentToolOptions, AgentToolResources } from 'librechat-data-provider';
+import type {
+  GraphEdge,
+  AgentToolOptions,
+  AgentToolResources,
+  AgentSubagentsConfig,
+} from 'librechat-data-provider';
 
 export interface ISupportContact {
   name?: string;
@@ -22,6 +27,8 @@ export interface IAgent extends Omit<Document, 'model'> {
   access_level?: number;
   recursion_limit?: number;
   tools?: string[];
+  skills?: string[];
+  skills_enabled?: boolean;
   tool_kwargs?: Array<unknown>;
   actions?: string[];
   author: Types.ObjectId;
@@ -41,5 +48,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   mcpServerNames?: string[];
   /** Per-tool configuration (defer_loading, allowed_callers) */
   tool_options?: AgentToolOptions;
+  /** Subagent spawning configuration — isolated-context child agents. */
+  subagents?: AgentSubagentsConfig;
   tenantId?: string;
 }

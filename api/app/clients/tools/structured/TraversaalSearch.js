@@ -1,6 +1,6 @@
-const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const { getEnvironmentVariable } = require('@langchain/core/utils/env');
+const { Tool } = require('@librechat/agents/langchain/tools');
+const { getEnvironmentVariable } = require('@librechat/agents/langchain/utils/env');
 
 const traversaalSearchJsonSchema = {
   type: 'object',

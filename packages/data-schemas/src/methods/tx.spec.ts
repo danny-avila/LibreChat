@@ -2322,14 +2322,14 @@ describe('Claude Model Tests', () => {
 });
 
 describe('Premium Token Pricing', () => {
-  const premiumModel = 'claude-opus-4-6';
+  const premiumModel = 'gemini-3.1';
   const premiumEntry = premiumTokenValues[premiumModel];
   const { threshold } = premiumEntry;
   const belowThreshold = threshold - 1;
   const aboveThreshold = threshold + 1;
   const wellAboveThreshold = threshold * 2;
 
-  it('should have premium pricing defined for claude-opus-4-6', () => {
+  it('should have premium pricing defined for gemini-3.1', () => {
     expect(premiumEntry).toBeDefined();
     expect(premiumEntry.threshold).toBeDefined();
     expect(premiumEntry.prompt).toBeDefined();
@@ -2338,14 +2338,26 @@ describe('Premium Token Pricing', () => {
     expect(premiumEntry.completion).toBeGreaterThan(tokenValues[premiumModel].completion);
   });
 
-  it('should have premium pricing defined for claude-opus-4-7', () => {
-    const entry = premiumTokenValues['claude-opus-4-7'];
-    expect(entry).toBeDefined();
-    expect(entry.threshold).toBe(200000);
-    expect(entry.prompt).toBe(10);
-    expect(entry.completion).toBe(37.5);
-    expect(entry.prompt).toBeGreaterThan(tokenValues['claude-opus-4-7'].prompt);
-    expect(entry.completion).toBeGreaterThan(tokenValues['claude-opus-4-7'].completion);
+  it('should not apply premium pricing to Claude 1M GA models', () => {
+    const claudeModels = ['claude-opus-4-6', 'claude-opus-4-7', 'claude-sonnet-4-6'];
+    claudeModels.forEach((model) => {
+      expect(premiumTokenValues[model]).toBeUndefined();
+      expect(getPremiumRate(model, 'prompt', wellAboveThreshold)).toBeNull();
+      expect(
+        getMultiplier({
+          model,
+          tokenType: 'prompt',
+          inputTokenCount: wellAboveThreshold,
+        }),
+      ).toBe(tokenValues[model].prompt);
+      expect(
+        getMultiplier({
+          model,
+          tokenType: 'completion',
+          inputTokenCount: wellAboveThreshold,
+        }),
+      ).toBe(tokenValues[model].completion);
+    });
   });
 
   it('should return null from getPremiumRate when inputTokenCount is below threshold', () => {

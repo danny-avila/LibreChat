@@ -1,9 +1,9 @@
 const undici = require('undici');
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
-const { ErrorTypes } = require('librechat-data-provider');
+const { ErrorTypes, FileSources } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
-const { resolveAppConfigForUser } = require('@librechat/api');
+const { getOpenIdIssuer, resolveAppConfigForUser } = require('@librechat/api');
 const { getAppConfig } = require('~/server/services/Config');
 const { setupOpenId } = require('./openidStrategy');
 
@@ -27,9 +27,11 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => false),
   isEmailDomainAllowed: jest.fn(() => true),
   findOpenIDUser: jest.requireActual('@librechat/api').findOpenIDUser,
+  getOpenIdEmail: jest.requireActual('@librechat/api').getOpenIdEmail,
   getBalanceConfig: jest.fn(() => ({
     enabled: false,
   })),
+  getOpenIdIssuer: jest.fn(() => 'https://fake-issuer.com'),
   resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
 }));
 jest.mock('~/models', () => ({
@@ -202,10 +204,17 @@ describe('setupOpenId', () => {
 
     // Assert
     expect(user.username).toBe(userinfo.preferred_username);
+    expect(getOpenIdIssuer).toHaveBeenCalledTimes(1);
+    expect(getOpenIdIssuer.mock.calls[0]).toHaveLength(2);
+    expect(getOpenIdIssuer.mock.calls[0][0]).toEqual(userinfo);
+    expect(getOpenIdIssuer.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ issuer: 'https://fake-issuer.com' }),
+    );
     expect(createUser).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: 'openid',
         openidId: userinfo.sub,
+        openidIssuer: 'https://fake-issuer.com',
         username: userinfo.preferred_username,
         email: userinfo.email,
         name: `${userinfo.given_name} ${userinfo.family_name}`,
@@ -326,6 +335,7 @@ describe('setupOpenId', () => {
       expect.objectContaining({
         provider: 'openid',
         openidId: userinfo.sub,
+        openidIssuer: 'https://fake-issuer.com',
         username: userinfo.preferred_username,
         name: `${userinfo.given_name} ${userinfo.family_name}`,
       }),
@@ -1087,12 +1097,47 @@ describe('setupOpenId', () => {
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+
     // Act
     const { user } = await validate(tokenset);
+    const strategyResult =
+      getStrategyFunctions.mock.results[getStrategyFunctions.mock.results.length - 1];
+    const { saveBuffer } = strategyResult.value;
+    const [saveParams] = saveBuffer.mock.calls[0];
 
     // Assert – verify that download was attempted and the avatar field was set via updateUser
     expect(fetch).toHaveBeenCalled();
+    expect(saveParams).toEqual(
+      expect.objectContaining({
+        fileName: 'hashed-token.png',
+        userId: 'newUserId',
+        buffer: expect.any(Buffer),
+      }),
+    );
+    expect(saveParams).not.toHaveProperty('basePath');
     // Our mock getStrategyFunctions.saveBuffer returns '/fake/path/to/avatar.png'
+    expect(user.avatar).toBe('/fake/path/to/avatar.png');
+  });
+
+  it('should save CloudFront IdP avatars under the shared avatar prefix', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+    getAppConfig.mockResolvedValueOnce({ fileStrategy: FileSources.cloudfront });
+
+    const { user } = await validate(tokenset);
+    const strategyResult =
+      getStrategyFunctions.mock.results[getStrategyFunctions.mock.results.length - 1];
+    const { saveBuffer } = strategyResult.value;
+    const [saveParams] = saveBuffer.mock.calls[0];
+
+    expect(getStrategyFunctions).toHaveBeenLastCalledWith(FileSources.cloudfront);
+    expect(saveParams).toEqual(
+      expect.objectContaining({
+        basePath: 'avatars',
+        fileName: 'hashed-token.png',
+        userId: 'newUserId',
+      }),
+    );
     expect(user.avatar).toBe('/fake/path/to/avatar.png');
   });
 

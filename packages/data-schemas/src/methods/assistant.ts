@@ -12,11 +12,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IAssistant | null> {
     const Assistant = mongoose.models.Assistant as Model<IAssistant>;
     const options = { new: true, upsert: true };
-    return (await Assistant.findOneAndUpdate(
-      searchParams,
-      updateData,
-      options,
-    ).lean()) as IAssistant | null;
+    return await Assistant.findOneAndUpdate(searchParams, updateData, options).lean<IAssistant>();
   }
 
   /**
@@ -24,7 +20,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')) {
    */
   async function getAssistant(searchParams: FilterQuery<IAssistant>): Promise<IAssistant | null> {
     const Assistant = mongoose.models.Assistant as Model<IAssistant>;
-    return (await Assistant.findOne(searchParams).lean()) as IAssistant | null;
+    return await Assistant.findOne(searchParams).lean<IAssistant>();
   }
 
   /**
@@ -37,7 +33,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')) {
     const Assistant = mongoose.models.Assistant as Model<IAssistant>;
     const query = Assistant.find(searchParams);
 
-    return (await (select ? query.select(select) : query).lean()) as IAssistant[];
+    return await (select ? query.select(select) : query).lean<IAssistant[]>();
   }
 
   /**

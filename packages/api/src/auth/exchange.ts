@@ -30,7 +30,10 @@ export interface AdminExchangeUser {
 }
 
 /**
- * Data stored in cache for admin OAuth exchange
+ * Data stored in cache for admin OAuth exchange.
+ *
+ * `expiresAt` is the absolute expiry of `token` (ms epoch). Used by admin
+ * panel clients to drive proactive refresh before the bearer expires.
  */
 export interface AdminExchangeData {
   userId: string;
@@ -39,6 +42,7 @@ export interface AdminExchangeData {
   refreshToken?: string;
   origin?: string;
   codeChallenge?: string;
+  expiresAt?: number;
 }
 
 /**
@@ -48,6 +52,7 @@ export interface AdminExchangeResponse {
   token: string;
   refreshToken?: string;
   user: AdminExchangeUser;
+  expiresAt?: number;
 }
 
 /**
@@ -94,6 +99,7 @@ export function verifyCodeChallenge(verifier: string, challenge: string): boolea
  * @param refreshToken - Optional refresh token for OpenID users
  * @param origin - The admin panel origin (scheme://host:port) for origin binding
  * @param codeChallenge - PKCE code_challenge (hex-encoded SHA-256 of code_verifier)
+ * @param expiresAt - Optional absolute expiry of `token` (ms epoch); admin panel uses for proactive refresh
  * @returns The generated exchange code
  */
 export async function generateAdminExchangeCode(
@@ -103,6 +109,7 @@ export async function generateAdminExchangeCode(
   refreshToken?: string,
   origin?: string,
   codeChallenge?: string,
+  expiresAt?: number,
 ): Promise<string> {
   const exchangeCode = crypto.randomBytes(32).toString('hex');
 
@@ -113,6 +120,7 @@ export async function generateAdminExchangeCode(
     refreshToken,
     origin,
     codeChallenge,
+    expiresAt,
   };
 
   await cache.set(exchangeCode, data);
@@ -165,6 +173,7 @@ export async function exchangeAdminCode(
     token: data.token,
     refreshToken: data.refreshToken,
     user: data.user,
+    expiresAt: data.expiresAt,
   };
 }
 

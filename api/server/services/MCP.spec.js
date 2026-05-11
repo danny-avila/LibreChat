@@ -929,6 +929,7 @@ describe('User parameter passing tests', () => {
       expect(mockIsMCPDomainAllowed).toHaveBeenCalledWith(
         { url: 'https://disallowed-domain.com/sse' },
         ['allowed-domain.com'],
+        undefined,
       );
     });
 

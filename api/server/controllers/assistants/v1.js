@@ -328,7 +328,11 @@ const uploadAssistantAvatar = async (req, res) => {
     if (_metadata.avatar && _metadata.avatar_source) {
       const { deleteFile } = getStrategyFunctions(_metadata.avatar_source);
       try {
-        await deleteFile(req, { filepath: _metadata.avatar });
+        await deleteFile(req, {
+          filepath: _metadata.avatar,
+          user: req.user.id,
+          tenantId: req.user.tenantId,
+        });
         await deleteFileByFilter({ user: req.user.id, filepath: _metadata.avatar });
       } catch (error) {
         logger.error('[/:assistant_id/avatar] Error deleting old avatar', error);

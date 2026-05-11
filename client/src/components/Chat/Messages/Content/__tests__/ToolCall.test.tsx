@@ -214,6 +214,42 @@ describe('ToolCall', () => {
 
       expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
     });
+
+    it('should not render AttachmentGroup when hideAttachments is true (grouped path)', () => {
+      const attachments = [
+        {
+          type: Tools.ui_resources,
+          messageId: 'msg-hide',
+          toolCallId: 'tool-hide',
+          conversationId: 'conv-hide',
+          [Tools.ui_resources]: { '0': { type: 'chart', data: [] } },
+        },
+      ];
+
+      renderWithRecoil(
+        <ToolCall {...mockProps} attachments={attachments as any} hideAttachments />,
+      );
+
+      expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+    });
+
+    it('should render AttachmentGroup when hideAttachments is false explicitly', () => {
+      const attachments = [
+        {
+          type: Tools.ui_resources,
+          messageId: 'msg-show',
+          toolCallId: 'tool-show',
+          conversationId: 'conv-show',
+          [Tools.ui_resources]: { '0': { type: 'chart', data: [] } },
+        },
+      ];
+
+      renderWithRecoil(
+        <ToolCall {...mockProps} attachments={attachments as any} hideAttachments={false} />,
+      );
+
+      expect(screen.getByTestId('attachment-group')).toBeInTheDocument();
+    });
   });
 
   describe('tool call info visibility', () => {

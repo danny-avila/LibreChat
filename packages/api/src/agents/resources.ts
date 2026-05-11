@@ -80,7 +80,7 @@ const addFileToResource = ({
 /**
  * Categorizes a file into the appropriate tool resource based on its properties
  * Files are categorized as:
- * - execute_code: Files with fileIdentifier metadata
+ * - execute_code: Files with a code-environment ref (`codeEnvRef`)
  * - file_search: Files marked as embedded
  * - image_edit: Image files in the request file set with dimensions
  * @param params - Parameters object
@@ -100,7 +100,7 @@ const categorizeFileForToolResources = ({
   requestFileSet: Set<string>;
   processedResourceFiles: Set<string>;
 }): void => {
-  if (file.metadata?.fileIdentifier) {
+  if (file.metadata?.codeEnvRef) {
     addFileToResource({
       file,
       resourceType: EToolResources.execute_code,

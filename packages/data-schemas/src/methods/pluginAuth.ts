@@ -23,7 +23,7 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
         userId,
         authField,
         ...(pluginKey && { pluginKey }),
-      }).lean();
+      }).lean<IPluginAuth>();
     } catch (error) {
       throw new Error(
         `Failed to find plugin auth: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -47,7 +47,7 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
       return await PluginAuth.find({
         userId,
         pluginKey: { $in: pluginKeys },
-      }).lean();
+      }).lean<IPluginAuth[]>();
     } catch (error) {
       throw new Error(
         `Failed to find plugin auths: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -66,14 +66,18 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
   }: UpdatePluginAuthParams): Promise<IPluginAuth> {
     try {
       const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
-      const existingAuth = await PluginAuth.findOne({ userId, pluginKey, authField }).lean();
+      const existingAuth = await PluginAuth.findOne({
+        userId,
+        pluginKey,
+        authField,
+      }).lean<IPluginAuth>();
 
       if (existingAuth) {
         return await PluginAuth.findOneAndUpdate(
           { userId, pluginKey, authField },
           { $set: { value } },
           { new: true, upsert: true },
-        ).lean();
+        ).lean<IPluginAuth>();
       } else {
         const newPluginAuth = await new PluginAuth({
           userId,

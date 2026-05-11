@@ -10,6 +10,7 @@ import type { TMessage } from 'librechat-data-provider';
 import type { ArtifactsContextValue } from '~/Providers';
 import { ArtifactsProvider, EditorProvider } from '~/Providers';
 import Artifacts from '~/components/Artifacts/Artifacts';
+import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { getLatestText } from '~/utils';
 import store from '~/store';
 
@@ -55,6 +56,7 @@ export function ShareArtifactsContainer({
 }: ShareArtifactsContainerProps) {
   const artifacts = useRecoilValue(store.artifactsState);
   const artifactsVisibility = useRecoilValue(store.artifactsVisibility);
+  const currentArtifactId = useRecoilValue(store.currentArtifactId);
   const isSmallScreen = useMediaQuery('(max-width: 1023px)');
   const [artifactPanelSize, setArtifactPanelSize] = useState(getInitialArtifactPanelSize);
 
@@ -76,10 +78,14 @@ export function ShareArtifactsContainer({
     };
   }, [messages, conversationId]);
 
+  const hasSelectedArtifact = currentArtifactId != null && artifacts?.[currentArtifactId] != null;
+  const hasAutoOpenableArtifact = Object.values(artifacts ?? {}).some(
+    (artifact) => artifact != null && !isCodeOnlyArtifact(artifact.type),
+  );
   const shouldRenderArtifacts =
     artifactsVisibility === true &&
     artifactsContextValue != null &&
-    Object.keys(artifacts ?? {}).length > 0;
+    (hasSelectedArtifact || hasAutoOpenableArtifact);
 
   const normalizedArtifactSize = Math.min(60, Math.max(20, artifactPanelSize));
 

@@ -1,9 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 import { isEnabled } from '~/utils/common';
+import { DEFAULT_BASE_PATH } from '~/storage/constants';
 
 const MAX_EXPIRY_SECONDS = 7 * 24 * 60 * 60; // 7 days
 const DEFAULT_EXPIRY_SECONDS = 2 * 60; // 2 minutes
-const DEFAULT_BASE_PATH = 'images';
 
 const parseUrlExpiry = (): number => {
   if (process.env.S3_URL_EXPIRY_SECONDS === undefined) {

@@ -62,6 +62,27 @@ export interface DiscoverConnectedAgentsParams {
    * don't bypass the same sharing boundary enforced at the route.
    */
   resourceType?: string;
+  /**
+   * Optional per-sub-agent skill scoper. When provided, its return value
+   * is forwarded to `initializeAgent` as `accessibleSkillIds` so each
+   * handoff agent sees only the skills that match its own `skills`
+   * allowlist (or the full accessible set when scoping is disabled).
+   */
+  computeAccessibleSkillIds?: (agent: Agent) => InitializeAgentParams['accessibleSkillIds'];
+  /** Per-user skill active/inactive state, forwarded to each sub-agent. */
+  skillStates?: InitializeAgentParams['skillStates'];
+  /** Default active-on-share flag, forwarded to each sub-agent. */
+  defaultActiveOnShare?: InitializeAgentParams['defaultActiveOnShare'];
+  /**
+   * Whether the `execute_code` capability is enabled for the run. Forwarded
+   * verbatim to each handoff sub-agent so `registerCodeExecutionTools` can
+   * expand `agent.tools: ['execute_code']` into the `bash_tool` + `read_file`
+   * pair. Omitted (or `undefined`) → the expansion is skipped, matching the
+   * primary-agent gate; callers that already resolved the capability set
+   * for the primary SHOULD forward the same value here or sub-agents lose
+   * code-execution tooling even though their parent had it.
+   */
+  codeEnvAvailable?: InitializeAgentParams['codeEnvAvailable'];
 }
 
 export interface DiscoverConnectedAgentsDeps {
@@ -126,6 +147,10 @@ export async function discoverConnectedAgents(
     conversationId,
     parentMessageId,
     resourceType = ResourceType.AGENT,
+    computeAccessibleSkillIds,
+    skillStates,
+    defaultActiveOnShare,
+    codeEnvAvailable,
   } = params;
 
   const {
@@ -223,6 +248,10 @@ export async function discoverConnectedAgents(
         parentMessageId,
         endpointOption: subAgentEndpointOption,
         allowedProviders,
+        accessibleSkillIds: computeAccessibleSkillIds?.(agent),
+        skillStates,
+        defaultActiveOnShare,
+        codeEnvAvailable,
       },
       db,
     );

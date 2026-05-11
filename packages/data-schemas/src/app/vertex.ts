@@ -18,7 +18,7 @@ import type {
  * These are the standard Anthropic model names as served by Vertex AI
  */
 export const defaultVertexModels = [
-  'claude-sonnet-4-20250514',
+  'claude-sonnet-4-6',
   'claude-3-7-sonnet-20250219',
   'claude-3-5-sonnet-v2@20241022',
   'claude-3-5-sonnet@20240620',

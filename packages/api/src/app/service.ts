@@ -48,6 +48,15 @@ export interface AppConfigServiceDeps {
   overrideCacheTtl?: number;
 }
 
+export interface GetAppConfigOptions {
+  role?: string;
+  userId?: string;
+  tenantId?: string;
+  refresh?: boolean;
+  /** When true, return only the YAML-derived base config — no DB override queries. */
+  baseOnly?: boolean;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 let _strictOverride: boolean | undefined;
@@ -140,16 +149,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
    * `role`, `userId`, and `tenantId` are ignored in this mode.
    * Use this for startup, auth strategies, and other pre-tenant code paths.
    */
-  async function getAppConfig(
-    options: {
-      role?: string;
-      userId?: string;
-      tenantId?: string;
-      refresh?: boolean;
-      /** When true, return only the YAML-derived base config — no DB override queries. */
-      baseOnly?: boolean;
-    } = {},
-  ): Promise<AppConfig> {
+  async function getAppConfig(options: GetAppConfigOptions = {}): Promise<AppConfig> {
     const { role, userId, tenantId, refresh, baseOnly } = options;
 
     const baseConfig = await ensureBaseConfig(refresh);

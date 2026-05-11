@@ -143,7 +143,8 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   }
 
   if (!result) {
-    return res.status(404).json({ error: 'Failed to subscribe to stream' });
+    onError('Failed to subscribe to stream');
+    return;
   }
 
   req.on('close', () => {

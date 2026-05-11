@@ -349,6 +349,14 @@ export type TOptions = {
   isResubmission?: boolean;
   /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
   overrideFiles?: t.TMessage['files'];
+  /**
+   * Carry forward a user message's manually-invoked skills when the caller
+   * is resubmitting / regenerating that same message — the compose-time
+   * atom has already been drained on the original submit, so without this
+   * the second turn would run without any manual priming even though the
+   * pills are still visible on the user bubble.
+   */
+  overrideManualSkills?: string[];
   /** Added conversation for multi-convo feature - sent to server as part of submission payload */
   addedConvo?: t.TConversation;
 };

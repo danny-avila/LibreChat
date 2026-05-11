@@ -1,6 +1,6 @@
 const { ProxyAgent, fetch } = require('undici');
-const { Tool } = require('@langchain/core/tools');
-const { getEnvironmentVariable } = require('@langchain/core/utils/env');
+const { Tool } = require('@librechat/agents/langchain/tools');
+const { getEnvironmentVariable } = require('@librechat/agents/langchain/utils/env');
 
 const tavilySearchJsonSchema = {
   type: 'object',

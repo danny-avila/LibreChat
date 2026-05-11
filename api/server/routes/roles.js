@@ -11,6 +11,7 @@ const {
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
   remoteAgentsPermissionsSchema,
+  skillPermissionsSchema,
 } = require('librechat-data-provider');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
 const { updateRoleByName, getRoleByName } = require('~/models');
@@ -59,6 +60,11 @@ const permissionConfigs = {
     schema: remoteAgentsPermissionsSchema,
     permissionType: PermissionTypes.REMOTE_AGENTS,
     errorMessage: 'Invalid remote agents permissions.',
+  },
+  skills: {
+    schema: skillPermissionsSchema,
+    permissionType: PermissionTypes.SKILLS,
+    errorMessage: 'Invalid skill permissions.',
   },
 };
 
@@ -176,5 +182,11 @@ router.put('/:roleName/marketplace', manageRoles, createPermissionUpdateHandler(
  * Update remote agents (API) permissions for a specific role
  */
 router.put('/:roleName/remote-agents', manageRoles, createPermissionUpdateHandler('remote-agents'));
+
+/**
+ * PUT /api/roles/:roleName/skills
+ * Update skill permissions for a specific role
+ */
+router.put('/:roleName/skills', manageRoles, createPermissionUpdateHandler('skills'));
 
 module.exports = router;

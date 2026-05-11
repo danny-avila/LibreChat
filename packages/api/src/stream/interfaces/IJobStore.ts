@@ -98,6 +98,16 @@ export interface UsageMetadata {
    * Present for Claude models. Mutually exclusive with input_token_details.
    */
   cache_read_input_tokens?: number;
+  /**
+   * Breakdown of output token counts. Per the LangChain core contract,
+   * `output_tokens` is the sum of all output token types — these fields
+   * are subsets of `output_tokens`, *not* additional charges.
+   */
+  output_token_details?: {
+    /** Reasoning/thinking tokens generated as chain-of-thought (o1, Gemini thinking, etc.) */
+    reasoning?: number;
+    audio?: number;
+  };
 }
 
 /**

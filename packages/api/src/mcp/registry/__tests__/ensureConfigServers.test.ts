@@ -123,7 +123,13 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     expect(result).toHaveProperty('my_server');
     expect(result.my_server.source).toBe('config');
     expect(inspectSpy).toHaveBeenCalledTimes(1);
-    expect(inspectSpy).toHaveBeenCalledWith('my_server', sseConfig, undefined, undefined);
+    expect(inspectSpy).toHaveBeenCalledWith(
+      'my_server',
+      sseConfig,
+      undefined,
+      undefined,
+      undefined,
+    );
   });
 
   it('should return cached result on second call without re-inspecting', async () => {

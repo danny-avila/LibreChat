@@ -391,8 +391,10 @@ export default function useResumableSSE(
          * Server-sent error event (event: error with data) - no responseCode.
          * These are known errors (ErrorTypes, ViolationTypes) that should be displayed to user.
          * Only check e.data if there's no HTTP responseCode, since HTTP errors may also have body data.
+         * Note: responseCode === 0 means transport failure (connection dropped) - treat as network error,
+         * not a server-sent error payload. Use `== null` to only match undefined/null (no HTTP status).
          */
-        if (!responseCode && e.data) {
+        if (responseCode == null && e.data) {
           console.log('[ResumableSSE] Server-sent error event received:', e.data);
           sse.close();
           removeActiveJob(currentStreamId);

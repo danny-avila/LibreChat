@@ -45,6 +45,8 @@ function hasExplicitConfig(
       return interfaceConfig?.mcpServers !== undefined;
     case PermissionTypes.REMOTE_AGENTS:
       return interfaceConfig?.remoteAgents !== undefined;
+    case PermissionTypes.SKILLS:
+      return interfaceConfig?.skills !== undefined;
     default:
       return false;
   }
@@ -87,7 +89,7 @@ export async function updateInterfacePermissions({
   const memoryEnabled = isMemoryEnabled(memoryConfig);
   /** Check if memory is explicitly disabled (memory.disabled === true) */
   const isMemoryExplicitlyDisabled = memoryConfig?.disabled === true;
-  /** Check if memory should be enabled (explicitly enabled or valid config) */
+  /** Check if memory should be enabled (explicitly enabled or configured) */
   const shouldEnableMemory =
     memoryConfig?.disabled === false ||
     (memoryConfig && memoryEnabled && memoryConfig.disabled === undefined);
@@ -150,7 +152,7 @@ export async function updateInterfacePermissions({
           logger.debug(`Role '${roleName}': Disabling memories as memory.disabled is true`);
         } else if (isMemoryReenabling) {
           logger.debug(
-            `Role '${roleName}': Re-enabling memories due to valid memory configuration`,
+            `Role '${roleName}': Re-enabling memories due to memory configuration`,
           );
         }
       } else {
@@ -177,18 +179,26 @@ export async function updateInterfacePermissions({
       typeof defaults.prompts === 'boolean' ? defaults.prompts : defaults.prompts?.use;
     const agentsDefaultUse =
       typeof defaults.agents === 'boolean' ? defaults.agents : defaults.agents?.use;
+    const skillsDefaultUse =
+      typeof defaults.skills === 'boolean' ? defaults.skills : defaults.skills?.use;
     const promptsDefaultCreate =
       typeof defaults.prompts === 'object' ? defaults.prompts?.create : undefined;
     const agentsDefaultCreate =
       typeof defaults.agents === 'object' ? defaults.agents?.create : undefined;
+    const skillsDefaultCreate =
+      typeof defaults.skills === 'object' ? defaults.skills?.create : undefined;
     const promptsDefaultShare =
       typeof defaults.prompts === 'object' ? defaults.prompts?.share : undefined;
     const agentsDefaultShare =
       typeof defaults.agents === 'object' ? defaults.agents?.share : undefined;
+    const skillsDefaultShare =
+      typeof defaults.skills === 'object' ? defaults.skills?.share : undefined;
     const promptsDefaultPublic =
       typeof defaults.prompts === 'object' ? defaults.prompts?.public : undefined;
     const agentsDefaultPublic =
       typeof defaults.agents === 'object' ? defaults.agents?.public : undefined;
+    const skillsDefaultPublic =
+      typeof defaults.skills === 'object' ? defaults.skills?.public : undefined;
 
     const allPermissions: Partial<Record<PermissionTypes, Record<string, boolean | undefined>>> = {
       [PermissionTypes.PROMPTS]: {
@@ -431,6 +441,39 @@ export async function updateInterfacePermissions({
             }
           : {}),
       },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: getPermissionValue(
+          getConfigUse(loadedInterface.skills),
+          defaultPerms[PermissionTypes.SKILLS]?.[Permissions.USE],
+          skillsDefaultUse,
+        ),
+        ...((typeof interfaceConfig?.skills === 'object' && 'create' in interfaceConfig.skills) ||
+        !existingPermissions?.[PermissionTypes.SKILLS]
+          ? {
+              [Permissions.CREATE]: getPermissionValue(
+                getConfigCreate(loadedInterface.skills),
+                defaultPerms[PermissionTypes.SKILLS]?.[Permissions.CREATE],
+                skillsDefaultCreate ?? true,
+              ),
+            }
+          : {}),
+        ...((typeof interfaceConfig?.skills === 'object' &&
+          ('share' in interfaceConfig.skills || 'public' in interfaceConfig.skills)) ||
+        !existingPermissions?.[PermissionTypes.SKILLS]
+          ? {
+              [Permissions.SHARE]: getPermissionValue(
+                getConfigShare(loadedInterface.skills),
+                defaultPerms[PermissionTypes.SKILLS]?.[Permissions.SHARE],
+                skillsDefaultShare,
+              ),
+              [Permissions.SHARE_PUBLIC]: getPermissionValue(
+                getConfigPublic(loadedInterface.skills),
+                defaultPerms[PermissionTypes.SKILLS]?.[Permissions.SHARE_PUBLIC],
+                skillsDefaultPublic,
+              ),
+            }
+          : {}),
+      },
     };
 
     // Check and add each permission type if needed
@@ -507,6 +550,21 @@ export async function updateInterfacePermissions({
             loadedInterface.remoteAgents?.public,
             defaultPerms[PermissionTypes.REMOTE_AGENTS]?.[Permissions.SHARE_PUBLIC],
             defaults.remoteAgents?.public,
+          ),
+        },
+      ],
+      [
+        PermissionTypes.SKILLS,
+        {
+          [Permissions.SHARE]: getPermissionValue(
+            getConfigShare(loadedInterface.skills),
+            defaultPerms[PermissionTypes.SKILLS]?.[Permissions.SHARE],
+            skillsDefaultShare,
+          ),
+          [Permissions.SHARE_PUBLIC]: getPermissionValue(
+            getConfigPublic(loadedInterface.skills),
+            defaultPerms[PermissionTypes.SKILLS]?.[Permissions.SHARE_PUBLIC],
+            skillsDefaultPublic,
           ),
         },
       ],

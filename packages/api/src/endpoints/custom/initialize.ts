@@ -128,7 +128,7 @@ export async function initializeCustom({
   }
 
   if (userProvidesURL) {
-    await validateEndpointURL(baseURL, endpoint);
+    await validateEndpointURL(baseURL, endpoint, appConfig?.endpoints?.allowedAddresses);
   }
 
   let endpointTokenConfig: EndpointTokenConfig | undefined;

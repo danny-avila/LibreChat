@@ -11,6 +11,49 @@ import { createFetch } from '~/utils/generators';
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+const OPENROUTER_DEFAULT_PARAMS = { promptCache: true };
+
+function includesOpenRouter(value?: string | null): boolean {
+  return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
+}
+
+function getDefaultParams({
+  customDefaultParams,
+  useOpenRouter,
+}: {
+  customDefaultParams?: Record<string, unknown>;
+  useOpenRouter: boolean;
+}): Record<string, unknown> | undefined {
+  if (!useOpenRouter) {
+    return customDefaultParams;
+  }
+
+  return {
+    ...OPENROUTER_DEFAULT_PARAMS,
+    ...customDefaultParams,
+  };
+}
+
+function mergeHeadersPreservingAnthropicBeta(
+  headers: Record<string, string> | undefined,
+  defaultHeaders: Record<string, string>,
+): Record<string, string> {
+  const mergedHeaders = Object.assign({}, headers ?? {}, defaultHeaders);
+  const existingBetaHeader = headers?.['anthropic-beta'];
+  const defaultBetaHeader = defaultHeaders['anthropic-beta'];
+
+  if (existingBetaHeader && defaultBetaHeader) {
+    const betaValues = [existingBetaHeader, defaultBetaHeader]
+      .flatMap((value) => value.split(','))
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    mergedHeaders['anthropic-beta'] = Array.from(new Set(betaValues)).join(',');
+  }
+
+  return mergedHeaders;
+}
+
 /**
  * Generates configuration options for creating a language model (LLM) instance.
  * @param apiKey - The API key for authentication.
@@ -34,24 +77,25 @@ export function getOpenAIConfig(
     reverseProxyUrl: baseURL,
   } = options;
 
-  /** Extract default params from customParams.paramDefinitions */
-  const defaultParams = extractDefaultParams(options.customParams?.paramDefinitions);
-
   let llmConfig: t.OAIClientOptions;
   let tools: t.LLMConfigResult['tools'];
   const isAnthropic = options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic;
   const isGoogle = options.customParams?.defaultParamsEndpoint === EModelEndpoint.google;
+  const isOpenRouter = options.customParams?.defaultParamsEndpoint === KnownEndpoints.openrouter;
 
   const useOpenRouter =
     !isAnthropic &&
     !isGoogle &&
-    ((baseURL && baseURL.includes(KnownEndpoints.openrouter)) ||
-      (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.openrouter)));
+    (isOpenRouter || includesOpenRouter(baseURL) || includesOpenRouter(endpoint));
   const isVercel =
     !isAnthropic &&
     !isGoogle &&
     ((baseURL && baseURL.includes('ai-gateway.vercel.sh')) ||
       (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.vercel)));
+  const defaultParams = getDefaultParams({
+    customDefaultParams: extractDefaultParams(options.customParams?.paramDefinitions),
+    useOpenRouter: Boolean(useOpenRouter),
+  });
 
   let azure = options.azure;
   let headers = options.headers;
@@ -74,7 +118,10 @@ export function getOpenAIConfig(
     llmConfig = transformed.llmConfig;
     tools = anthropicResult.tools;
     if (transformed.configOptions?.defaultHeaders) {
-      headers = Object.assign(headers ?? {}, transformed.configOptions?.defaultHeaders);
+      headers = mergeHeadersPreservingAnthropicBeta(
+        headers,
+        transformed.configOptions.defaultHeaders as Record<string, string>,
+      );
     }
   } else if (isGoogle) {
     const googleResult = getGoogleConfig(

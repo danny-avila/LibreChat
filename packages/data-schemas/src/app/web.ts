@@ -1,4 +1,4 @@
-import { SafeSearchTypes } from 'librechat-data-provider';
+import { RerankerTypes, SafeSearchTypes } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '~/types/web';
 
@@ -12,6 +12,10 @@ export const webSearchAuth = {
       /** Optional (0) */
       searxngApiKey: 0 as const,
     },
+    tavily: {
+      tavilyApiKey: 1 as const,
+      tavilySearchUrl: 0 as const,
+    },
   },
   scrapers: {
     firecrawl: {
@@ -22,6 +26,10 @@ export const webSearchAuth = {
     },
     serper: {
       serperApiKey: 1 as const,
+    },
+    tavily: {
+      tavilyApiKey: 1 as const,
+      tavilyExtractUrl: 0 as const,
     },
   },
   rerankers: {
@@ -69,22 +77,30 @@ export function loadWebSearchConfig(
   const firecrawlApiKey = config?.firecrawlApiKey ?? '${FIRECRAWL_API_KEY}';
   const firecrawlApiUrl = config?.firecrawlApiUrl ?? '${FIRECRAWL_API_URL}';
   const firecrawlVersion = config?.firecrawlVersion ?? '${FIRECRAWL_VERSION}';
+  const tavilyApiKey = config?.tavilyApiKey ?? '${TAVILY_API_KEY}';
+  const tavilySearchUrl = config?.tavilySearchUrl ?? '${TAVILY_SEARCH_URL}';
+  const tavilyExtractUrl = config?.tavilyExtractUrl ?? '${TAVILY_EXTRACT_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
+  const rerankerType = config?.rerankerType;
 
   return {
-    ...config,
+    ...config, // Preserve provider-specific option blocks such as firecrawlOptions and tavilySearchOptions.
     safeSearch,
     jinaApiKey,
     jinaApiUrl,
     cohereApiKey,
     serperApiKey,
     searxngApiKey,
+    tavilyApiKey,
+    tavilySearchUrl,
+    tavilyExtractUrl,
     firecrawlApiKey,
     firecrawlApiUrl,
     firecrawlVersion,
     searxngInstanceUrl,
+    rerankerType,
   };
 }

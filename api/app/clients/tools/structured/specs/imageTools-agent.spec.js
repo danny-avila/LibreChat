@@ -12,8 +12,8 @@ const axios = require('axios');
 const OpenAI = require('openai');
 const undici = require('undici');
 const fetch = require('node-fetch');
-const { ToolMessage } = require('@langchain/core/messages');
 const { ContentTypes } = require('librechat-data-provider');
+const { ToolMessage } = require('@librechat/agents/langchain/messages');
 const StableDiffusionAPI = require('../StableDiffusion');
 const FluxAPI = require('../FluxAPI');
 const DALLE3 = require('../DALLE3');
@@ -99,6 +99,14 @@ describe('image tools - agent mode ToolMessage format', () => {
       expect(dalle.responseFormat).not.toBe('content_and_artifact');
     });
 
+    it('keeps tenant context without retaining the request object', () => {
+      const req = { user: { tenantId: 'tenant-a' }, socket: {} };
+      const dalle = new DALLE3({ isAgent: false, processFileURL: jest.fn(), req });
+
+      expect(dalle.tenantId).toBe('tenant-a');
+      expect(dalle.req).toBeUndefined();
+    });
+
     it('invoke() returns ToolMessage with base64 in artifact, not serialized in content', async () => {
       const dalle = new DALLE3({ isAgent: true });
       const result = await dalle.invoke(
@@ -170,6 +178,14 @@ describe('image tools - agent mode ToolMessage format', () => {
     it('does not set responseFormat when isAgent is false', () => {
       const flux = new FluxAPI({ isAgent: false, processFileURL: jest.fn() });
       expect(flux.responseFormat).not.toBe('content_and_artifact');
+    });
+
+    it('keeps tenant context without retaining the request object', () => {
+      const req = { user: { tenantId: 'tenant-a' }, socket: {} };
+      const flux = new FluxAPI({ isAgent: false, processFileURL: jest.fn(), req });
+
+      expect(flux.tenantId).toBe('tenant-a');
+      expect(flux.req).toBeUndefined();
     });
 
     it('invoke() returns ToolMessage with base64 in artifact, not serialized in content', async () => {
