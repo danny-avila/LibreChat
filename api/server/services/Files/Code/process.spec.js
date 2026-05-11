@@ -62,6 +62,7 @@ jest.mock('@librechat/api', () => {
     sanitizeArtifactPath: jest.fn((name) => name),
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
+    getCodeApiAuthHeaders: jest.fn(async () => ({})),
     withTimeout: (...args) => passthroughWithTimeout(...args),
     hasOfficeHtmlPath: (...args) => mockHasOfficeHtmlPath(...args),
     /**
@@ -148,7 +149,12 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('@librechat/data-schemas');
-const { codeServerHttpAgent, codeServerHttpsAgent, getStorageMetadata } = require('@librechat/api');
+const {
+  codeServerHttpAgent,
+  codeServerHttpsAgent,
+  getCodeApiAuthHeaders,
+  getStorageMetadata,
+} = require('@librechat/api');
 
 const { processCodeOutput, getSessionInfo, readSandboxFile, primeFiles } = require('./process');
 
@@ -231,6 +237,24 @@ describe('Code Process', () => {
   });
 
   describe('processCodeOutput', () => {
+    it('forwards Code API auth headers when downloading generated output', async () => {
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer codeapi-token' });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      await processCodeOutput(baseParams);
+
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'get',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer codeapi-token',
+            'User-Agent': 'LibreChat/1.0',
+          }),
+        }),
+      );
+    });
+
     describe('image file processing', () => {
       it('should process image files using convertImage', async () => {
         const imageParams = { ...baseParams, name: 'chart.png' };
@@ -1008,6 +1032,34 @@ describe('Code Process', () => {
         expect(callConfig.httpAgent.keepAlive).toBe(false);
         expect(callConfig.httpsAgent.keepAlive).toBe(false);
       });
+
+      it('forwards Code API auth headers when checking session object freshness', async () => {
+        getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer freshness-token' });
+        mockAxios.mockResolvedValue({
+          data: { lastModified: '2024-01-01T00:00:00Z' },
+        });
+
+        await getSessionInfo(
+          {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'session-123',
+            file_id: 'file-123',
+          },
+          mockReq,
+        );
+
+        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            method: 'get',
+            headers: expect.objectContaining({
+              Authorization: 'Bearer freshness-token',
+              'User-Agent': 'LibreChat/1.0',
+            }),
+          }),
+        );
+      });
     });
 
     describe('deferred-preview flow (office-bucket files)', () => {
@@ -1465,6 +1517,24 @@ describe('Code Process', () => {
         expect(call.httpAgent).toBe(codeServerHttpAgent);
         expect(call.httpsAgent).toBe(codeServerHttpsAgent);
       });
+
+      it('forwards Code API auth headers when reading from the sandbox', async () => {
+        getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer sandbox-token' });
+        mockAxios.mockResolvedValueOnce({ data: { stdout: 'x', stderr: '' } });
+
+        await readSandboxFile({ file_path: '/mnt/data/x.txt', req: mockReq });
+
+        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            method: 'post',
+            headers: expect.objectContaining({
+              Authorization: 'Bearer sandbox-token',
+              'User-Agent': 'LibreChat/1.0',
+            }),
+          }),
+        );
+      });
     });
 
     describe('response handling', () => {
@@ -1770,13 +1840,11 @@ describe('Code Process', () => {
     });
   });
 
-  describe('primeFiles toolContext surfaces preview status to the LLM', () => {
-    /* When a prior-turn code-execution file's HTML preview never resolved
-     * (still pending, or failed), the agent context for this turn must
-     * carry that signal so the model can tell the user "you can still
-     * download it, but the preview isn't available." Otherwise the model
-     * would refer to the file as if everything is fine and the user gets
-     * a confusing UI mismatch. */
+  describe('primeFiles toolContext for model-visible code files', () => {
+    /* User-visible code-env input files keep their `/mnt/data` context and
+     * preview lifecycle hints. Prior-turn generated artifacts are still
+     * primed into the sandbox, but no longer repeated in model-visible
+     * instructions every turn. */
 
     const { getStrategyFunctions } = require('~/server/services/Files/strategies');
     const { getFiles } = require('~/models');
@@ -1788,7 +1856,7 @@ describe('Code Process', () => {
         filename: `data-${overrides.status ?? 'ready'}.xlsx`,
         filepath: `/uploads/${overrides.status ?? 'ready'}.xlsx`,
         source: 'local',
-        context: 'execute_code',
+        context: FileContext.message_attachment,
         metadata: {
           codeEnvRef: {
             kind: 'user',
@@ -1810,6 +1878,33 @@ describe('Code Process', () => {
       getStrategyFunctions.mockReturnValue({});
       filterFilesByAgentAccess.mockImplementation(({ files }) => Promise.resolve(files));
     }
+
+    it('does not include generated code files in model-visible toolContext', async () => {
+      setupSessionInfoOk();
+      getFiles.mockResolvedValue([
+        makeFile({
+          context: FileContext.execute_code,
+          filename: 'generated.html',
+        }),
+      ]);
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: { execute_code: { file_ids: ['fid-ready'], files: [] } },
+        agentId: 'agent-id',
+      });
+
+      expect(result.toolContext).toBe('');
+      expect(result.files).toEqual([
+        {
+          id: 'CURRENT_ID',
+          resource_id: 'user-123',
+          storage_session_id: 'CURRENT_SESSION',
+          name: 'generated.html',
+          kind: 'user',
+        },
+      ]);
+    });
 
     it('annotates a pending file with "(preview not yet generated)"', async () => {
       setupSessionInfoOk();

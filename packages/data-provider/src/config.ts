@@ -493,7 +493,7 @@ const remoteApiOidcSchema = z
   .object({
     enabled: z.boolean().default(false),
     issuer: remoteApiOidcUrlSchema.optional(),
-    audience: z.string().optional(),
+    audience: z.string().min(1).optional(),
     jwksUri: remoteApiOidcUrlSchema.optional(),
     scope: remoteApiOidcScopeSchema.optional(),
   })
@@ -503,6 +503,13 @@ const remoteApiOidcSchema = z
         code: z.ZodIssueCode.custom,
         path: ['issuer'],
         message: 'issuer is required when OIDC auth is enabled',
+      });
+    }
+    if (oidc.enabled === true && !oidc.audience) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['audience'],
+        message: 'audience is required when OIDC auth is enabled',
       });
     }
   });
@@ -2163,12 +2170,23 @@ export enum Constants {
   EPHEMERAL_AGENT_ID = 'ephemeral',
   /** Programmatic Tool Calling tool name */
   PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_code',
+  /** Bash Programmatic Tool Calling tool name */
+  BASH_PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_bash',
   /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
   SUBAGENT = 'subagent',
 }
 
 /** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
 export const MAX_SUBAGENTS = 10;
+
+/** Maximum explicit subagent hops allowed from any root agent at runtime. */
+export const MAX_SUBAGENT_DEPTH = 5;
+
+/** Maximum unique explicit subagent targets that may be loaded at runtime. */
+export const MAX_SUBAGENT_GRAPH_NODES = 50;
+
+/** Maximum expanded SubagentConfig entries embedded into one run request. */
+export const MAX_SUBAGENT_RUN_CONFIGS = 100;
 
 export enum LocalStorageKeys {
   /** Key for the admin defined App Title */

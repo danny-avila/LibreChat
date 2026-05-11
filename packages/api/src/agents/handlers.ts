@@ -14,10 +14,10 @@ import type { CodeEnvRef } from 'librechat-data-provider';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
+import { logAxiosError, runOutsideTracing } from '~/utils';
 import { buildSkillPrimeMessage } from './skills';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
-import { runOutsideTracing } from '~/utils';
 
 export interface ToolEndCallbackData {
   output: {
@@ -104,7 +104,7 @@ export interface ToolExecuteOptions {
     files: Array<{ fileId: string; filename: string }>;
   }>;
   /** Checks if a code env file is still active. Returns lastModified or null. */
-  getSessionInfo?: (ref: CodeEnvRef) => Promise<string | null>;
+  getSessionInfo?: (ref: CodeEnvRef, req?: ServerRequest) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
   /** Persists `codeEnvRef` on skill files after upload */
@@ -147,6 +147,7 @@ export interface ToolExecuteOptions {
     file_path: string;
     session_id?: string;
     files?: Array<{ id: string; name: string; session_id?: string }>;
+    req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
 }
 
@@ -332,6 +333,7 @@ async function handleSandboxFileFallback(
   tc: ToolCallRequest,
   filePath: string,
   options: ToolExecuteOptions,
+  req?: ServerRequest,
 ): Promise<ToolExecuteResult> {
   const ext = lowercaseExtension(filePath);
   if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
@@ -361,6 +363,7 @@ async function handleSandboxFileFallback(
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
+      ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
       return {
@@ -450,7 +453,7 @@ async function handleReadFileCall(
    */
   if (args.file_path.startsWith('/mnt/data/')) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options);
+      return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
       toolCallId: tc.id,
@@ -463,7 +466,7 @@ async function handleReadFileCall(
   const slashIdx = args.file_path.indexOf('/');
   if (slashIdx < 1) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options);
+      return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
       toolCallId: tc.id,
@@ -483,7 +486,7 @@ async function handleReadFileCall(
      * dead-ending with a skill-centric error message.
      */
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options);
+      return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
       toolCallId: tc.id,
@@ -502,7 +505,7 @@ async function handleReadFileCall(
    */
   if (!skillsEffectivelyEnabled) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options);
+      return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
       toolCallId: tc.id,
@@ -544,7 +547,7 @@ async function handleReadFileCall(
   const activeSkillNames = mergedConfigurable?.activeSkillNames as Set<string> | undefined;
   if (activeSkillNames && !activeSkillNames.has(skillName) && !isPrimedThisTurn) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options);
+      return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
       toolCallId: tc.id,
@@ -750,10 +753,10 @@ async function handleReadFileCall(
       if (file.isBinary == null && updateSkillFileContent) {
         updateSkillFileContent(skill._id, relativePath, { isBinary: true }).catch(
           (err: unknown) => {
-            logger.warn(
-              '[handleReadFileCall] cache write failed:',
-              err instanceof Error ? err.message : err,
-            );
+            logAxiosError({
+              message: '[handleReadFileCall] cache write failed',
+              error: err,
+            });
           },
         );
       }
@@ -790,10 +793,10 @@ async function handleReadFileCall(
     if (file.content == null && updateSkillFileContent && buffer.length <= MAX_CACHE_BYTES) {
       updateSkillFileContent(skill._id, relativePath, { content: text, isBinary: false }).catch(
         (err: unknown) => {
-          logger.warn(
-            '[handleReadFileCall] cache write failed:',
-            err instanceof Error ? err.message : err,
-          );
+          logAxiosError({
+            message: '[handleReadFileCall] cache write failed',
+            error: err,
+          });
         },
       );
     }
@@ -1078,11 +1081,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           typeof f.storage_session_id === 'string' && !!f.storage_session_id,
                         hasVersion: typeof f.version === 'number',
                       }));
-                      const missingResourceId = summary.filter((s) => !s.hasResourceId).length;
+                      let missingResourceId = 0;
+                      let missingStorageSessionId = 0;
+                      let missingVersion = 0;
+                      const kindCounts: Record<string, number> = {};
+                      for (const s of summary) {
+                        if (!s.hasResourceId) missingResourceId++;
+                        if (!s.hasStorageSessionId) missingStorageSessionId++;
+                        if (!s.hasVersion) missingVersion++;
+                        const k = typeof s.kind === 'string' ? s.kind : 'unknown';
+                        kindCounts[k] = (kindCounts[k] ?? 0) + 1;
+                      }
                       logger.debug(
                         `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
-                          `missingResourceId=${missingResourceId}`,
-                        { summary },
+                          `missingResourceId=${missingResourceId} ` +
+                          `missingStorageSessionId=${missingStorageSessionId} ` +
+                          `missingVersion=${missingVersion} ` +
+                          `kinds=${JSON.stringify(kindCounts)}`,
                       );
                       if (missingResourceId > 0) {
                         logger.warn(
@@ -1113,7 +1128,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     }
                   }
 
-                  if (tc.name === Constants.PROGRAMMATIC_TOOL_CALLING) {
+                  if (
+                    tc.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING ||
+                    tc.name === Constants.PROGRAMMATIC_TOOL_CALLING
+                  ) {
                     const toolRegistry = mergedConfigurable?.toolRegistry as
                       | LCToolRegistry
                       | undefined;
@@ -1124,6 +1142,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
                         (t) =>
                           t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
+                          t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
                           t.name !== Constants.TOOL_SEARCH,
                       );
                       toolCallConfig.toolDefs = toolDefs;

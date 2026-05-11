@@ -135,6 +135,7 @@ function makeConfig(
             oidc: {
               enabled: true,
               issuer: BASE_ISSUER,
+              audience: 'remote-agent-api',
               jwksUri: BASE_JWKS_URI,
               ...oidcOverrides,
             },
@@ -384,6 +385,17 @@ describe('createRemoteAgentAuth', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Internal server error' });
       expect(mockNext).not.toHaveBeenCalled();
     });
+
+    it('returns 500 when OIDC is enabled without an audience', async () => {
+      const deps = makeDeps(makeConfig({ audience: undefined }, { enabled: false }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(makeReq() as Request, res, mockNext);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Internal server error' });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
   });
 
   describe('when OIDC verification succeeds', () => {
@@ -396,6 +408,9 @@ describe('createRemoteAgentAuth', () => {
       await createRemoteAgentAuth(deps)(req as Request, res, mockNext);
 
       expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@test.com' });
+      expect((jwt.verify as jest.Mock).mock.calls[0][2]).toEqual(
+        expect.objectContaining({ audience: 'remote-agent-api' }),
+      );
       expect(mockNext).toHaveBeenCalledWith();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
@@ -407,7 +422,7 @@ describe('createRemoteAgentAuth', () => {
       deps.getAppConfig.mockImplementation(async (options) =>
         options?.tenantId === 'tenant-strict'
           ? makeConfig({ audience: 'tenant-audience', scope: 'remote_agent' }, { enabled: false })
-          : makeConfig({ audience: undefined, scope: undefined }, { enabled: true }),
+          : makeConfig({ scope: undefined }, { enabled: true }),
       );
       const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
 

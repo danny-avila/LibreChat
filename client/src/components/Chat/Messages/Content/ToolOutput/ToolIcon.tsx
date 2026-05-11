@@ -72,7 +72,7 @@ export function getToolIconType(name: string): ToolIconType {
   if (name === 'read_file') {
     return 'read_file';
   }
-  if (name === 'bash_tool') {
+  if (name === 'bash_tool' || name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING) {
     return 'bash_tool';
   }
   if (name.startsWith(Constants.LC_TRANSFER_TO_)) {

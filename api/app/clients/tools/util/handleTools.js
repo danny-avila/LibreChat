@@ -6,6 +6,7 @@ const {
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
+  getCodeApiAuthHeaders,
   buildImageToolContext,
   buildWebSearchContext,
   buildWebSearchDynamicContext,
@@ -282,7 +283,11 @@ const loadTools = async ({
         if (files?.length) {
           primedCodeFiles = files;
         }
-        return createCodeExecutionTool({ user_id: user, files });
+        return createCodeExecutionTool({
+          user_id: user,
+          files,
+          authHeaders: () => getCodeApiAuthHeaders(options.req),
+        });
       };
       continue;
     } else if (tool === Tools.file_search) {

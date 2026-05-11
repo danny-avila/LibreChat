@@ -6,6 +6,7 @@ import type { CodeEnvRef } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type { ServerRequest } from '~/types';
 import { extractInvokedSkillsFromPayload } from './run';
+import { logAxiosError } from '~/utils';
 
 export interface SkillFileRecord {
   relativePath: string;
@@ -51,7 +52,7 @@ export interface PrimeSkillFilesParams {
     files: Array<{ fileId: string; filename: string }>;
   }>;
   /** Checks if a code env file is still active. Returns lastModified timestamp or null. */
-  getSessionInfo?: (ref: CodeEnvRef) => Promise<string | null>;
+  getSessionInfo?: (ref: CodeEnvRef, req?: ServerRequest) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
   /** Persists `codeEnvRef` on skill files after upload. Implementations
@@ -128,7 +129,7 @@ export async function primeSkillFiles(
       try {
         const checkResults = await Promise.all(
           Array.from(refsBySession.values()).map(async (ref) => {
-            const lastModified = await getSessionInfo(ref);
+            const lastModified = await getSessionInfo(ref, req);
             return !!(lastModified && checkIfActive(lastModified));
           }),
         );
@@ -288,20 +289,20 @@ export async function primeSkillFiles(
         try {
           await updateSkillFileCodeEnvIds(updates);
         } catch (err: unknown) {
-          logger.warn(
-            '[primeSkillFiles] Failed to persist codeEnvRefs:',
-            err instanceof Error ? err.message : err,
-          );
+          logAxiosError({
+            message: `[primeSkillFiles] Failed to persist codeEnvRefs`,
+            error: err,
+          });
         }
       }
     }
 
     return { storage_session_id: result.storage_session_id, files };
   } catch (error) {
-    logger.error(
-      `[primeSkillFiles] Batch upload failed for skill "${skill.name}":`,
-      error instanceof Error ? error.message : error,
-    );
+    logAxiosError({
+      message: `[primeSkillFiles] Batch upload failed for skill "${skill.name}"`,
+      error,
+    });
     return null;
   }
 }
@@ -421,7 +422,7 @@ export async function primeInvokedSkills(
         const checkResults = await Promise.all(
           Array.from(refsBySession.values()).map(async (ref) => {
             try {
-              const lastModified = await deps.getSessionInfo?.(ref);
+              const lastModified = await deps.getSessionInfo?.(ref, deps.req);
               return !!(lastModified && deps.checkIfActive?.(lastModified));
             } catch {
               return false;
@@ -470,7 +471,7 @@ export async function primeInvokedSkills(
     // Per-skill upload: each skill gets its own storage session keyed
     // by `(kind: 'skill', id: skillId, version: skill.version)`.
     // primeSkillFiles handles freshness caching per-skill, so only
-    // expired skills re-upload. CodeAPI handles mixed
+    // expired skills re-upload. Code API handles mixed
     // storage_session_ids natively.
     const allPrimedFiles: Array<{
       id: string;

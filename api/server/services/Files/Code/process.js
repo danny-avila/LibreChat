@@ -10,6 +10,7 @@ const {
   sanitizeArtifactPath,
   flattenArtifactPath,
   createAxiosInstance,
+  getCodeApiAuthHeaders,
   classifyCodeArtifact,
   codeServerHttpAgent,
   codeServerHttpsAgent,
@@ -335,6 +336,7 @@ const processCodeOutput = async ({
 
   try {
     const formattedDate = currentDate.toISOString();
+    const authHeaders = await getCodeApiAuthHeaders(req);
     /* Code-output files are always user-private — no skill execution
      * produces a skill-scoped output bucket. The download URL must
      * carry `?kind=user&id=<userId>` so codeapi's `sessionAuth`
@@ -347,6 +349,7 @@ const processCodeOutput = async ({
       responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'LibreChat/1.0',
+        ...authHeaders,
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -669,14 +672,16 @@ function checkIfActive(dateString) {
  * @param {import('librechat-data-provider').CodeEnvRef} ref - Typed pointer
  *   into codeapi storage. Carries kind/id/storage_session_id/file_id;
  *   codeapi resolves the sessionKey from the request's auth context.
+ * @param {ServerRequest} [req] - Current authenticated request, used to mint Code API auth.
  *
  * @returns {Promise<string|null>}
  *          A promise that resolves to the `lastModified` time string of the file if successful, or null if there is an
  *          error in initialization or fetching the info.
  */
-async function getSessionInfo(ref) {
+async function getSessionInfo(ref, req) {
   try {
     const baseURL = getCodeBaseURL();
+    const authHeaders = await getCodeApiAuthHeaders(req);
     /* `/sessions/.../objects/...` is gated by codeapi's `sessionAuth`
      * middleware (post-Phase C). The middleware reconstructs the
      * sessionKey from the URL query (`kind`/`id`/`version?`) plus the
@@ -693,6 +698,7 @@ async function getSessionInfo(ref) {
       url: `${baseURL}/sessions/${ref.storage_session_id}/objects/${ref.file_id}${query}`,
       headers: {
         'User-Agent': 'LibreChat/1.0',
+        ...authHeaders,
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -701,13 +707,47 @@ async function getSessionInfo(ref) {
 
     return response.data?.lastModified;
   } catch (error) {
-    logAxiosError({
-      message: `Error fetching session info: ${error.message}`,
-      error,
-    });
+    logger.debug(
+      `[getSessionInfo] session lookup failed (treating as cache miss): ${error?.message ?? String(error)}`,
+    );
     return null;
   }
 }
+
+const getPreviewContextSuffix = (file) => {
+  if (file.status === 'pending') {
+    return ' (preview not yet generated)';
+  }
+
+  if (file.status !== 'failed') {
+    return '';
+  }
+
+  return file.previewError
+    ? ` (preview unavailable: ${file.previewError})`
+    : ' (preview unavailable)';
+};
+
+const getVisibleCodeFileContextLine = (file, agentResourceIds) => {
+  if (file.context === FileContext.execute_code) {
+    return '';
+  }
+
+  const fileSuffix = agentResourceIds.has(file.file_id) ? '' : ' (attached by user)';
+  return `\n\t- /mnt/data/${file.filename}${fileSuffix}${getPreviewContextSuffix(file)}`;
+};
+
+const appendVisibleCodeFileContext = (toolContext, contextLine) => {
+  if (!contextLine) {
+    return toolContext;
+  }
+
+  if (toolContext) {
+    return `${toolContext}${contextLine}`;
+  }
+
+  return `- Note: The following files are available in the "${Tools.execute_code}" tool environment:${contextLine}`;
+};
 
 /**
  *
@@ -797,34 +837,10 @@ const primeFiles = async (options) => {
      * tenant prefix from auth context).
      */
     const pushFile = (overrideSessionId, overrideId) => {
-      if (!toolContext) {
-        toolContext = `- Note: The following files are available in the "${Tools.execute_code}" tool environment:`;
-      }
-
-      let fileSuffix = '';
-      if (!agentResourceIds.has(file.file_id)) {
-        fileSuffix =
-          file.context === FileContext.execute_code
-            ? ' (from previous code execution)'
-            : ' (attached by user)';
-      }
-
-      /* Surface the preview lifecycle so the LLM knows when a
-       * prior-turn artifact's rich preview didn't materialize. The
-       * file blob is always available (`processCodeOutput` persists
-       * it before returning), so the model can still tell the user
-       * "you can download it" even when the preview never resolved.
-       * Absent status means legacy or non-office — render normally. */
-      let previewSuffix = '';
-      if (file.status === 'pending') {
-        previewSuffix = ' (preview not yet generated)';
-      } else if (file.status === 'failed') {
-        previewSuffix = file.previewError
-          ? ` (preview unavailable: ${file.previewError})`
-          : ' (preview unavailable)';
-      }
-
-      toolContext += `\n\t- /mnt/data/${file.filename}${fileSuffix}${previewSuffix}`;
+      toolContext = appendVisibleCodeFileContext(
+        toolContext,
+        getVisibleCodeFileContextLine(file, agentResourceIds),
+      );
       /* `id` is the storage file_id (drives codeapi's upload-key
        * existence check), `resource_id` is the entity that owns
        * the storage session (drives sessionKey re-derivation). For
@@ -914,7 +930,7 @@ const primeFiles = async (options) => {
         );
       }
     };
-    const uploadTime = await getSessionInfo(ref);
+    const uploadTime = await getSessionInfo(ref, req);
     if (!uploadTime) {
       logger.debug(
         `[primeCodeFiles] file=${file.file_id} path=reupload reason=no-uploadtime ` +
@@ -968,9 +984,10 @@ const primeFiles = async (options) => {
  * @param {string} params.file_path - Absolute path inside the sandbox (e.g. `/mnt/data/foo.txt`).
  * @param {string} [params.session_id] - Sandbox session id from the seeded context.
  * @param {Array<{id: string, name: string, session_id?: string}>} [params.files] - File refs to mount.
+ * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
  * @returns {Promise<{content: string} | null>}
  */
-async function readSandboxFile({ file_path, session_id, files }) {
+async function readSandboxFile({ file_path, session_id, files, req }) {
   const baseURL = getCodeBaseURL();
   if (!baseURL) {
     return null;
@@ -991,6 +1008,7 @@ async function readSandboxFile({ file_path, session_id, files }) {
   }
 
   try {
+    const authHeaders = await getCodeApiAuthHeaders(req);
     const response = await axios({
       method: 'post',
       url: `${baseURL}/exec`,
@@ -998,6 +1016,7 @@ async function readSandboxFile({ file_path, session_id, files }) {
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'LibreChat/1.0',
+        ...authHeaders,
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,

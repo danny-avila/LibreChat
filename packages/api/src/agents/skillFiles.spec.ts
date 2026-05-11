@@ -274,17 +274,28 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
       },
     ]);
     const batchUploadCodeEnvFiles = jest.fn();
+    const getSessionInfo = jest.fn().mockResolvedValue('2026-05-06T00:00:00Z');
     const deps = makeDeps({
       codeEnvAvailable: true,
       listSkillFiles,
       batchUploadCodeEnvFiles,
-      getSessionInfo: jest.fn().mockResolvedValue('2026-05-06T00:00:00Z'),
+      getSessionInfo,
       checkIfActive: jest.fn().mockReturnValue(true),
     });
 
     const result = await primeInvokedSkills(deps);
 
     expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+    expect(getSessionInfo).toHaveBeenCalledWith(
+      {
+        kind: 'skill',
+        id: SKILL_ID.toString(),
+        storage_session_id: 'session-cached',
+        file_id: 'file-cached',
+        version: SKILL_VERSION,
+      },
+      deps.req,
+    );
     const codeSession = result.initialSessions?.get('execute_code');
     expect(codeSession?.files).toEqual([
       {
