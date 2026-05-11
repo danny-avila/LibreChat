@@ -11,7 +11,7 @@ jobs:
     secrets: inherit # required because the underlying workflow accesses org secrets
     permissions: {} # we're not using the default GITHUB_TOKEN
     with:
-      include_users: "dlew entropic489 AnJuHyppolite"
+      include_users: "dlew AnJuHyppolite"
       number_of_reviewers: 2 # should always pick the other two members of the team
       channel_id: "C0590CD1EE8" # resx-eng
   pr-show:
