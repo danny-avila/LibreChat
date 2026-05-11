@@ -49,12 +49,72 @@ const { getRoleByName } = require('~/models');
 describe('Access permissions share policy', () => {
   let app;
 
-  const skillResourceId = '507f1f77bcf86cd799439011';
-  const updatedPrincipal = {
+  const resourceId = '507f1f77bcf86cd799439011';
+  const sharePolicyCases = [
+    {
+      label: 'agent',
+      resourceType: ResourceType.AGENT,
+      permissionType: PermissionTypes.AGENTS,
+      accessRoleId: AccessRoleIds.AGENT_VIEWER,
+      middlewareOptions: {
+        resourceType: ResourceType.AGENT,
+        requiredPermission: PermissionBits.SHARE,
+        resourceIdParam: 'resourceId',
+      },
+    },
+    {
+      label: 'prompt group',
+      resourceType: ResourceType.PROMPTGROUP,
+      permissionType: PermissionTypes.PROMPTS,
+      accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
+      middlewareOptions: {
+        resourceType: ResourceType.PROMPTGROUP,
+        requiredPermission: PermissionBits.SHARE,
+        resourceIdParam: 'resourceId',
+      },
+    },
+    {
+      label: 'MCP server',
+      resourceType: ResourceType.MCPSERVER,
+      permissionType: PermissionTypes.MCP_SERVERS,
+      accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+      middlewareOptions: {
+        resourceType: ResourceType.MCPSERVER,
+        requiredPermission: PermissionBits.SHARE,
+        resourceIdParam: 'resourceId',
+        idResolver: expect.any(Function),
+      },
+    },
+    {
+      label: 'remote agent',
+      resourceType: ResourceType.REMOTE_AGENT,
+      permissionType: PermissionTypes.REMOTE_AGENTS,
+      accessRoleId: AccessRoleIds.REMOTE_AGENT_VIEWER,
+      middlewareOptions: {
+        resourceType: ResourceType.REMOTE_AGENT,
+        requiredPermission: PermissionBits.SHARE,
+        resourceIdParam: 'resourceId',
+      },
+    },
+    {
+      label: 'skill',
+      resourceType: ResourceType.SKILL,
+      permissionType: PermissionTypes.SKILLS,
+      accessRoleId: AccessRoleIds.SKILL_VIEWER,
+      middlewareOptions: {
+        resourceType: ResourceType.SKILL,
+        requiredPermission: PermissionBits.SHARE,
+        resourceIdParam: 'resourceId',
+        idResolver: expect.any(Function),
+      },
+    },
+  ];
+
+  const createUpdatedPrincipal = (accessRoleId) => ({
     type: PrincipalType.USER,
     id: 'target-user',
-    accessRoleId: AccessRoleIds.SKILL_VIEWER,
-  };
+    accessRoleId,
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -69,33 +129,31 @@ describe('Access permissions share policy', () => {
     app.use('/api/permissions', accessPermissionsRouter);
   });
 
-  it('blocks non-public skill sharing when ACL SHARE passes but role SKILLS.SHARE is disabled', async () => {
-    getRoleByName.mockResolvedValue({
-      permissions: {
-        [PermissionTypes.SKILLS]: {
-          [Permissions.SHARE]: false,
-          [Permissions.SHARE_PUBLIC]: false,
+  it.each(sharePolicyCases)(
+    'blocks non-public $label sharing when ACL SHARE passes but role SHARE is disabled',
+    async ({ resourceType, permissionType, accessRoleId, middlewareOptions }) => {
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [permissionType]: {
+            [Permissions.SHARE]: false,
+            [Permissions.SHARE_PUBLIC]: false,
+          },
         },
-      },
-    });
+      });
 
-    const response = await request(app)
-      .put(`/api/permissions/${ResourceType.SKILL}/${skillResourceId}`)
-      .send({ updated: [updatedPrincipal], public: false });
+      const response = await request(app)
+        .put(`/api/permissions/${resourceType}/${resourceId}`)
+        .send({ updated: [createUpdatedPrincipal(accessRoleId)], public: false });
 
-    expect(response.status).toBe(403);
-    expect(response.body).toEqual({
-      error: 'Forbidden',
-      message: `You do not have permission to share ${ResourceType.SKILL} resources`,
-    });
-    expect(canAccessResource).toHaveBeenCalledWith({
-      resourceType: ResourceType.SKILL,
-      requiredPermission: PermissionBits.SHARE,
-      resourceIdParam: 'resourceId',
-      idResolver: expect.any(Function),
-    });
-    expect(updateResourcePermissions).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({
+        error: 'Forbidden',
+        message: `You do not have permission to share ${resourceType} resources`,
+      });
+      expect(canAccessResource).toHaveBeenCalledWith(middlewareOptions);
+      expect(updateResourcePermissions).not.toHaveBeenCalled();
+    },
+  );
 
   it('allows non-public skill sharing when both ACL SHARE and role SKILLS.SHARE pass', async () => {
     getRoleByName.mockResolvedValue({
@@ -108,8 +166,8 @@ describe('Access permissions share policy', () => {
     });
 
     const response = await request(app)
-      .put(`/api/permissions/${ResourceType.SKILL}/${skillResourceId}`)
-      .send({ updated: [updatedPrincipal], public: false });
+      .put(`/api/permissions/${ResourceType.SKILL}/${resourceId}`)
+      .send({ updated: [createUpdatedPrincipal(AccessRoleIds.SKILL_VIEWER)], public: false });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ success: true });
@@ -120,8 +178,8 @@ describe('Access permissions share policy', () => {
     hasCapability.mockResolvedValue(true);
 
     const response = await request(app)
-      .put(`/api/permissions/${ResourceType.SKILL}/${skillResourceId}`)
-      .send({ updated: [updatedPrincipal], public: false });
+      .put(`/api/permissions/${ResourceType.SKILL}/${resourceId}`)
+      .send({ updated: [createUpdatedPrincipal(AccessRoleIds.SKILL_VIEWER)], public: false });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ success: true });
@@ -140,7 +198,7 @@ describe('Access permissions share policy', () => {
     });
 
     const response = await request(app)
-      .put(`/api/permissions/${ResourceType.SKILL}/${skillResourceId}`)
+      .put(`/api/permissions/${ResourceType.SKILL}/${resourceId}`)
       .send({ public: true, publicAccessRoleId: AccessRoleIds.SKILL_VIEWER });
 
     expect(response.status).toBe(403);
