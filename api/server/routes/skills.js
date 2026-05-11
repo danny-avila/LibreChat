@@ -16,6 +16,7 @@ const {
   PermissionTypes,
   Permissions,
   FileContext,
+  mergeFileConfig,
 } = require('librechat-data-provider');
 const {
   createSkill,
@@ -52,6 +53,11 @@ const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
 
 const memoryStorage = multer.memoryStorage();
 
+function getSkillImportSizeLimit(req) {
+  const fileConfig = mergeFileConfig(req.config?.fileConfig);
+  return fileConfig.skills?.fileSizeLimit ?? MAX_IMPORT_SIZE;
+}
+
 const skillImportFilter = (_req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
   if (ALLOWED_EXTENSIONS.has(ext)) {
@@ -62,11 +68,12 @@ const skillImportFilter = (_req, file, cb) => {
   }
 };
 
-const skillUpload = multer({
-  storage: memoryStorage,
-  fileFilter: skillImportFilter,
-  limits: { fileSize: MAX_IMPORT_SIZE },
-});
+const skillUpload = (req, res, next) =>
+  multer({
+    storage: memoryStorage,
+    fileFilter: skillImportFilter,
+    limits: { fileSize: getSkillImportSizeLimit(req) },
+  }).single('file')(req, res, next);
 
 // Per-file upload (for adding individual files to an existing skill)
 const MAX_SINGLE_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -135,6 +142,9 @@ function resolveSkillStorage(req, { isImage = false } = {}) {
 // Import handler (zip/md/skill → create skill + files)
 // ---------------------------------------------------------------------------
 const importHandler = createImportHandler({
+  limits: (req) => ({
+    maxZipBytes: getSkillImportSizeLimit(req),
+  }),
   createSkill,
   getSkillById,
   deleteSkill,
@@ -269,7 +279,7 @@ router.post(
   checkSkillCreate,
   fileUploadIpLimiter,
   fileUploadUserLimiter,
-  skillUpload.single('file'),
+  skillUpload,
   restoreTenantContextFromReq,
   importHandler,
 );

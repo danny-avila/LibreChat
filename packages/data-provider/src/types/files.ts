@@ -51,6 +51,9 @@ export type FileConfig = {
   endpoints: {
     [key: string]: EndpointFileConfig;
   };
+  skills?: {
+    fileSizeLimit?: number;
+  };
   fileTokenLimit?: number;
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
@@ -75,6 +78,9 @@ export type FileConfig = {
 export type FileConfigInput = {
   endpoints?: {
     [key: string]: EndpointFileConfig;
+  };
+  skills?: {
+    fileSizeLimit?: number;
   };
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
