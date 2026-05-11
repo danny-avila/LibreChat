@@ -119,7 +119,8 @@ jobs:
             --set librechat.configEnv.RAG_OPENAI_API_KEY=${{ secrets.RAG_OPENAI_API_KEY }} \
             --set librechat.configEnv.AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }} \
             --timeout 10m \
-            --wait
+            --wait \
+            --force
 
       - name: Verify deployment
         run: |
