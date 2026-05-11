@@ -612,4 +612,21 @@ describe('createAggregatorEventHandlers — tool call lifecycle', () => {
     expect(aggregator.toolCalls.get('call_A')?.arguments).toBe('ARGS_A');
     expect(aggregator.toolCalls.get('call_B')?.arguments).toBe('ARGS_B');
   });
+
+  it('preserves on_run_step_completed output when on_tool_end also fires for the same call', () => {
+    const aggregator = createResponseAggregator();
+    const handlers = createAggregatorEventHandlers(aggregator);
+
+    handlers.on_run_step.handle('on_run_step', {
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'call_1', name: 'tool_a' }] },
+    });
+    handlers.on_run_step_completed.handle('on_run_step_completed', {
+      result: { id: 'step_1', type: 'tool_call', tool_call: { id: 'call_1', output: 'CANONICAL' } },
+    });
+    handlers.on_tool_end.handle('on_tool_end', {
+      output: { tool_call_id: 'call_1', content: 'DIVERGENT' },
+    });
+
+    expect(aggregator.toolOutputs.get('call_1')).toBe('CANONICAL');
+  });
 });

@@ -952,7 +952,7 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
         const callId = toolOutput?.tool_call_id;
         const content = toolOutput?.content ?? '';
 
-        if (callId) {
+        if (callId && !aggregator.toolOutputs.has(callId)) {
           aggregator.toolOutputs.set(callId, content);
         }
       },
