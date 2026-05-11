@@ -8,6 +8,8 @@
  * If the chaining is removed, these tests fail.
  */
 
+const jwt = require('jsonwebtoken');
+
 // ── Mocks ──────────────────────────────────────────────────────────────
 
 let mockPassportError = null;
@@ -68,8 +70,14 @@ const { getTenantId } = require('@librechat/data-schemas');
 const { isEnabled } = require('@librechat/api');
 const passport = require('passport');
 
+const jwtSecret = 'test-refresh-secret';
+
 function mockReq(user, extra = {}) {
   return { headers: {}, _mockUser: user, ...extra };
+}
+
+function signedOpenIdUserCookie(userId = 'user-openid') {
+  return jwt.sign({ id: userId }, jwtSecret);
 }
 
 function mockRes() {
@@ -90,12 +98,23 @@ function runAuth(user) {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 describe('requireJwtAuth tenant context chaining', () => {
+  const originalJwtSecret = process.env.JWT_REFRESH_SECRET;
+
+  beforeEach(() => {
+    process.env.JWT_REFRESH_SECRET = jwtSecret;
+  });
+
   afterEach(() => {
     mockPassportError = null;
     mockRegisteredStrategies = new Set(['jwt']);
     isEnabled.mockReturnValue(false);
     passport.authenticate.mockClear();
     passport._strategy.mockClear();
+    if (originalJwtSecret === undefined) {
+      delete process.env.JWT_REFRESH_SECRET;
+    } else {
+      process.env.JWT_REFRESH_SECRET = originalJwtSecret;
+    }
   });
 
   it('forwards passport errors to next() without entering tenant middleware', async () => {
@@ -161,7 +180,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     isEnabled.mockReturnValue(true);
     mockRegisteredStrategies.add('openidJwt');
     const req = mockReq(undefined, {
-      headers: { cookie: 'token_provider=openid' },
+      headers: { cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie()}` },
       _mockStrategies: {
         openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
         jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
@@ -179,6 +198,58 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(res.status).not.toHaveBeenCalled();
     expect(passport.authenticate).toHaveBeenCalledWith(
       'openidJwt',
+      { session: false },
+      expect.any(Function),
+    );
+  });
+
+  it('does not use OpenID JWT when the signed OpenID reuse cookie is missing', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      headers: { cookie: 'token_provider=openid' },
+      _mockStrategies: {
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
+        openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(req.authStrategy).toBeUndefined();
+    expect(passport.authenticate).toHaveBeenCalledTimes(1);
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'jwt',
+      { session: false },
+      expect.any(Function),
+    );
+  });
+
+  it('does not use OpenID JWT when the OpenID reuse cookie is invalid', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      headers: { cookie: 'token_provider=openid; openid_user_id=invalid-jwt' },
+      _mockStrategies: {
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
+        openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(req.authStrategy).toBeUndefined();
+    expect(passport.authenticate).toHaveBeenCalledTimes(1);
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'jwt',
       { session: false },
       expect.any(Function),
     );
