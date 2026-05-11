@@ -1,6 +1,13 @@
 import React, { useMemo, useEffect } from 'react';
 import keyBy from 'lodash/keyBy';
-import { ControlCombobox } from '@librechat/client';
+import {
+  ControlCombobox,
+  TooltipAnchor,
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from '@librechat/client';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
@@ -16,8 +23,44 @@ import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import type { TranslationKeys } from '~/hooks';
 import { Panel } from '~/common';
 import { cn, getEndpointAlternateName, getModelDisplayName } from '~/utils';
+
+const ESSENTIAL_PARAM_KEYS = ['temperature', 'resendFiles', 'thinking', 'web_search'];
+
+const LABEL_OVERRIDES: Record<string, TranslationKeys> = {
+  temperature: 'com_endpoint_temperature_friendly',
+};
+
+const DESCRIPTION_OVERRIDES: Record<string, TranslationKeys> = {
+  temperature: 'com_endpoint_temperature_friendly_desc',
+  resendFiles: 'com_endpoint_resend_files_friendly_desc',
+  thinking: 'com_endpoint_thinking_friendly_desc',
+  web_search: 'com_endpoint_grounding_friendly_desc',
+  maxContextTokens: 'com_endpoint_max_context_tokens_friendly_desc',
+  maxOutputTokens: 'com_endpoint_max_output_tokens_friendly_desc',
+  maxTokens: 'com_endpoint_max_output_tokens_friendly_desc',
+  topP: 'com_endpoint_top_p_friendly_desc',
+  top_p: 'com_endpoint_top_p_friendly_desc',
+  topK: 'com_endpoint_top_k_friendly_desc',
+  thinkingBudget: 'com_endpoint_thinking_budget_friendly_desc',
+  thinkingLevel: 'com_endpoint_thinking_level_friendly_desc',
+  fileTokenLimit: 'com_endpoint_file_token_limit_friendly_desc',
+};
+
+const applyOverrides = (setting: SettingDefinition): SettingDefinition => {
+  const labelOverride = LABEL_OVERRIDES[setting.key];
+  const descOverride = DESCRIPTION_OVERRIDES[setting.key];
+  if (!labelOverride && !descOverride) {
+    return setting;
+  }
+  return {
+    ...setting,
+    ...(labelOverride ? { label: labelOverride, labelCode: true } : {}),
+    ...(descOverride ? { description: descOverride, descriptionCode: true } : {}),
+  };
+};
 
 export default function ModelPanel({
   providers,
@@ -85,6 +128,22 @@ export default function ModelPanel({
       .filter((param) => param != null)
       .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
   }, [endpointType, endpointsConfig, model, provider]);
+
+  const { essentialParams, advancedParams } = useMemo(() => {
+    const essentialByKey = new Map<string, SettingDefinition>();
+    const advanced: SettingDefinition[] = [];
+    for (const param of parameters) {
+      if (ESSENTIAL_PARAM_KEYS.includes(param.key)) {
+        essentialByKey.set(param.key, applyOverrides(param));
+      } else {
+        advanced.push(applyOverrides(param));
+      }
+    }
+    const ordered = ESSENTIAL_PARAM_KEYS.map((k) => essentialByKey.get(k)).filter(
+      (p): p is SettingDefinition => p != null,
+    );
+    return { essentialParams: ordered, advancedParams: advanced };
+  }, [parameters]);
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
     setValue(`model_parameters.${optionKey}`, value);
@@ -218,23 +277,19 @@ export default function ModelPanel({
           />
         </div>
       </div>
-      {/* Model Parameters */}
-      {parameters && (
+      {/* Essential Model Parameters */}
+      {essentialParams.length > 0 && (
         <div className="h-auto max-w-full">
           <div className="grid grid-cols-2 gap-4">
-            {/* This is the parent element containing all settings */}
-            {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}
-            {parameters.map((setting) => {
+            {essentialParams.map((setting) => {
               const Component = componentMapping[setting.component];
               if (!Component) {
                 return null;
               }
               const { key, default: defaultValue, ...rest } = setting;
-
               if (key === 'region' && bedrockRegions.length) {
                 rest.options = bedrockRegions;
               }
-
               return (
                 <Component
                   key={key}
@@ -249,15 +304,51 @@ export default function ModelPanel({
           </div>
         </div>
       )}
+      {/* Advanced Settings — collapsed by default */}
+      {advancedParams.length > 0 && (
+        <Accordion type="single" collapsible className="mt-2 w-full">
+          <AccordionItem value="advanced-settings" className="border-b-0">
+            <AccordionTrigger className="text-sm font-medium text-text-primary hover:no-underline">
+              {localize('com_ui_advanced_settings')}
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                {advancedParams.map((setting) => {
+                  const Component = componentMapping[setting.component];
+                  if (!Component) {
+                    return null;
+                  }
+                  const { key, default: defaultValue, ...rest } = setting;
+                  if (key === 'region' && bedrockRegions.length) {
+                    rest.options = bedrockRegions;
+                  }
+                  return (
+                    <Component
+                      key={key}
+                      settingKey={key}
+                      defaultValue={defaultValue}
+                      {...rest}
+                      setOption={setOption as t.TSetOption}
+                      conversation={modelParameters as Partial<t.TConversation>}
+                    />
+                  );
+                })}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
       {/* Reset Parameters Button */}
-      <button
-        type="button"
+      <TooltipAnchor
+        description={localize('com_ui_reset_model_params_desc')}
+        role="button"
+        tabIndex={0}
         onClick={handleResetParameters}
         className="btn btn-neutral my-1 flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
       >
         <RotateCcw className="h-4 w-4" aria-hidden="true" />
         {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
-      </button>
+      </TooltipAnchor>
     </div>
   );
 }
