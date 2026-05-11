@@ -226,6 +226,11 @@ export const cloudfrontConfigSchema = z
       'cookieDomain is required when imageSigning is "cookies" (e.g., ".example.com" for API at api.example.com and CDN at cdn.example.com)',
     path: ['cookieDomain'],
   })
+  .refine((data) => !data.requireSignedAccess || data.imageSigning === 'cookies', {
+    message:
+      'requireSignedAccess=true requires imageSigning="cookies" (signed URL mode is not yet implemented)',
+    path: ['requireSignedAccess'],
+  })
   .optional();
 
 export type CloudFrontConfig = z.infer<typeof cloudfrontConfigSchema>;

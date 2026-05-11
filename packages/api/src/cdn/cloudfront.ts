@@ -34,16 +34,16 @@ export function initializeCloudFront(config: CloudFrontConfig): boolean {
   if (requireSignedAccess) {
     logger.info('[initializeCloudFront] Strict signed CloudFront access enabled at startup.');
 
-    if (!keyPairId || !privateKey) {
+    if (config.imageSigning !== 'cookies') {
       logger.error(
-        '[initializeCloudFront] Strict startup failure: requireSignedAccess=true but CLOUDFRONT_KEY_PAIR_ID and/or CLOUDFRONT_PRIVATE_KEY are missing.',
+        `[initializeCloudFront] Strict startup failure: requireSignedAccess=true requires imageSigning="cookies" (got "${config.imageSigning ?? 'none'}"); signed URL mode is not yet implemented.`,
       );
       return false;
     }
 
-    if (config.imageSigning === 'url') {
+    if (!keyPairId || !privateKey) {
       logger.error(
-        '[initializeCloudFront] Strict startup failure: imageSigning="url" is not yet implemented; cannot enforce requireSignedAccess.',
+        '[initializeCloudFront] Strict startup failure: requireSignedAccess=true but CLOUDFRONT_KEY_PAIR_ID and/or CLOUDFRONT_PRIVATE_KEY are missing.',
       );
       return false;
     }
