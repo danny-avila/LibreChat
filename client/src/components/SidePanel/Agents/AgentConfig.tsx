@@ -39,11 +39,10 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
-import uswdsIcons from '@uswds/uswds/img/sprite.svg';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { X } from 'lucide-react';
-import { showAgentComplexBanner } from '~/nj/store/agents';
+import TipComponent from '~/nj/components/TipComponent';
 
 const sectionLabelClass = 'text-sm font-semibold';
 const labelClass = 'mb-2 text-token-text-primary block text-sm font-semibold';
@@ -60,7 +59,6 @@ export default function AgentConfig() {
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
   const [showMCPToolDialog, setShowMCPToolDialog] = useState(false);
-  const [showComplexBanner, setShowComplexBanner] = useRecoilState(showAgentComplexBanner);
   const {
     actions,
     setAction,
@@ -332,35 +330,11 @@ export default function AgentConfig() {
         <Instructions />
       </div>
 
-      {showComplexBanner && (
-        <div className="mx-3 mb-4 rounded-lg border border-border-light bg-surface-secondary p-3">
-          <div className="flex items-start gap-2">
-            <svg
-              className="usa-icon usa-icon--size-2 mt-0.5 flex-shrink-0 text-jersey-blue"
-              aria-hidden="true"
-              focusable="false"
-              role="img"
-            >
-              <use href={`${uswdsIcons}#lightbulb_outline`} />
-            </svg>
-            <div className="flex-grow">
-              <p className="text-sm font-medium">Building complex instructions?</p>
-              <p className="mt-1 text-sm text-text-secondary">
-                For longer or more complex instructions, you can upload them as a file instead of
-                writing them here.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowComplexBanner(false)}
-              className="flex-shrink-0 text-text-tertiary hover:text-text-secondary"
-              aria-label="Dismiss"
-            >
-              <X className="h-4 w-4" aria-hidden />
-            </button>
-          </div>
-        </div>
-      )}
+      <TipComponent
+        title="Building complex instructions?"
+        description="For longer or more complex instructions, you can upload them as a file instead of writing them here."
+        stateKey="showAgentComplexBanner"
+      />
 
       <hr className="mb-4 border-border-heavy" />
 
