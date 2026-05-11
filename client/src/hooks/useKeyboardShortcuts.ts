@@ -81,14 +81,6 @@ export const shortcutDefinitions = {
     ariaMac: 'Meta+Shift+S',
     ariaOther: 'Control+Shift+S',
   },
-  toggleRightSidebar: {
-    labelKey: 'com_shortcut_toggle_right_sidebar',
-    groupKey: 'com_shortcut_group_navigation',
-    displayMac: '⌘ ⇧ R',
-    displayOther: 'Ctrl+Shift+R',
-    ariaMac: 'Meta+Shift+R',
-    ariaOther: 'Control+Shift+R',
-  },
   openModelSelector: {
     labelKey: 'com_shortcut_open_model_selector',
     groupKey: 'com_shortcut_group_navigation',
@@ -185,6 +177,102 @@ export const shortcutDefinitions = {
     ariaMac: 'Meta+Shift+Backspace',
     ariaOther: 'Control+Shift+Backspace',
   },
+  submitMessage: {
+    labelKey: 'com_shortcut_submit_message',
+    groupKey: 'com_shortcut_group_general',
+    displayMac: '⌘ ↵',
+    displayOther: 'Ctrl+Enter',
+    ariaMac: 'Meta+Enter',
+    ariaOther: 'Control+Enter',
+  },
+  bookmarkConversation: {
+    labelKey: 'com_shortcut_bookmark_conversation',
+    groupKey: 'com_shortcut_group_navigation',
+    displayMac: '⌘ ⇧ B',
+    displayOther: 'Ctrl+Shift+B',
+    ariaMac: 'Meta+Shift+B',
+    ariaOther: 'Control+Shift+B',
+  },
+  continueResponse: {
+    labelKey: 'com_shortcut_continue_response',
+    groupKey: 'com_shortcut_group_chat',
+    displayMac: '⌘ ⇧ C',
+    displayOther: 'Ctrl+Shift+C',
+    ariaMac: 'Meta+Shift+C',
+    ariaOther: 'Control+Shift+C',
+  },
+  readAloudLastResponse: {
+    labelKey: 'com_shortcut_read_aloud',
+    groupKey: 'com_shortcut_group_chat',
+    displayMac: '⌘ ⇧ V',
+    displayOther: 'Ctrl+Shift+V',
+    ariaMac: 'Meta+Shift+V',
+    ariaOther: 'Control+Shift+V',
+  },
+  openAssistants: {
+    labelKey: 'com_shortcut_open_assistants',
+    groupKey: 'com_shortcut_group_panels',
+    displayMac: '',
+    displayOther: '',
+    ariaMac: '',
+    ariaOther: '',
+  },
+  openAgents: {
+    labelKey: 'com_shortcut_open_agents',
+    groupKey: 'com_shortcut_group_panels',
+    displayMac: '',
+    displayOther: '',
+    ariaMac: '',
+    ariaOther: '',
+  },
+  openPrompts: {
+    labelKey: 'com_shortcut_open_prompts',
+    groupKey: 'com_shortcut_group_panels',
+    displayMac: '',
+    displayOther: '',
+    ariaMac: '',
+    ariaOther: '',
+  },
+  openMemories: {
+    labelKey: 'com_shortcut_open_memories',
+    groupKey: 'com_shortcut_group_panels',
+    displayMac: '',
+    displayOther: '',
+    ariaMac: '',
+    ariaOther: '',
+  },
+  openParameters: {
+    labelKey: 'com_shortcut_open_parameters',
+    groupKey: 'com_shortcut_group_panels',
+    displayMac: '',
+    displayOther: '',
+    ariaMac: '',
+    ariaOther: '',
+  },
+  openFiles: {
+    labelKey: 'com_shortcut_open_files',
+    groupKey: 'com_shortcut_group_panels',
+    displayMac: '',
+    displayOther: '',
+    ariaMac: '',
+    ariaOther: '',
+  },
+  openBookmarks: {
+    labelKey: 'com_shortcut_open_bookmarks',
+    groupKey: 'com_shortcut_group_panels',
+    displayMac: '',
+    displayOther: '',
+    ariaMac: '',
+    ariaOther: '',
+  },
+  openMCP: {
+    labelKey: 'com_shortcut_open_mcp',
+    groupKey: 'com_shortcut_group_panels',
+    displayMac: '',
+    displayOther: '',
+    ariaMac: '',
+    ariaOther: '',
+  },
 } as const satisfies Record<string, ShortcutDefinition>;
 
 export type ShortcutActionId = keyof typeof shortcutDefinitions;
@@ -196,6 +284,15 @@ export type ShortcutAction = ShortcutDefinition & {
 const shortcutActionIds = Object.keys(shortcutDefinitions) as ShortcutActionId[];
 
 function getMainScrollContainer(): Element | null {
+  const end = document.getElementById('messages-end');
+  let node: HTMLElement | null = end?.parentElement ?? null;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+    node = node.parentElement;
+  }
   return document.querySelector('main[role="main"]');
 }
 
@@ -303,11 +400,6 @@ export function useShortcutActions(): ShortcutAction[] {
   const handleToggleSidebar = useCallback(() => {
     setSidebarExpanded((prev) => !prev);
   }, [setSidebarExpanded]);
-
-  const handleToggleRightSidebar = useCallback(() => {
-    const btn = document.querySelector<HTMLButtonElement>('[data-testid="parameters-button"]');
-    btn?.click();
-  }, []);
 
   const handleOpenModelSelector = useCallback(() => {
     const btn = document.querySelector<HTMLButtonElement>('[data-testid="model-selector-button"]');
@@ -469,6 +561,46 @@ export function useShortcutActions(): ShortcutAction[] {
     navigate,
   ]);
 
+  const handleSubmitMessage = useCallback(() => {
+    const btn = document.querySelector<HTMLButtonElement>('[data-testid="send-button"]');
+    if (btn && !btn.disabled) {
+      btn.click();
+    }
+  }, []);
+
+  const handleContinueResponse = useCallback(() => {
+    const btn = document.querySelector<HTMLButtonElement>(
+      '[data-testid="continue-generation-button"]',
+    );
+    btn?.click();
+  }, []);
+
+  const handleReadAloudLastResponse = useCallback(() => {
+    const btn = document.querySelector<HTMLButtonElement>('[data-testid="read-aloud-button"]');
+    btn?.click();
+  }, []);
+
+  const handleBookmarkConversation = useCallback(() => {
+    const btn =
+      document.querySelector<HTMLButtonElement>('[data-testid="bookmark-menu"]') ??
+      document.getElementById('bookmark-menu-button');
+    (btn as HTMLButtonElement | null)?.click();
+  }, []);
+
+  const handleOpenPanel = useCallback((panelId: string) => {
+    const btn = document.querySelector<HTMLButtonElement>(`[data-testid="nav-panel-${panelId}"]`);
+    btn?.click();
+  }, []);
+
+  const handleOpenAssistants = useCallback(() => handleOpenPanel('assistants'), [handleOpenPanel]);
+  const handleOpenAgents = useCallback(() => handleOpenPanel('agents'), [handleOpenPanel]);
+  const handleOpenPrompts = useCallback(() => handleOpenPanel('prompts'), [handleOpenPanel]);
+  const handleOpenMemories = useCallback(() => handleOpenPanel('memories'), [handleOpenPanel]);
+  const handleOpenParameters = useCallback(() => handleOpenPanel('parameters'), [handleOpenPanel]);
+  const handleOpenFiles = useCallback(() => handleOpenPanel('files'), [handleOpenPanel]);
+  const handleOpenBookmarks = useCallback(() => handleOpenPanel('bookmarks'), [handleOpenPanel]);
+  const handleOpenMCP = useCallback(() => handleOpenPanel('mcp-builder'), [handleOpenPanel]);
+
   const handlers = useMemo<Record<ShortcutActionId, () => void>>(
     () => ({
       showShortcuts: handleShowShortcuts,
@@ -477,7 +609,6 @@ export function useShortcutActions(): ShortcutAction[] {
       copyLastResponse: handleCopyLastResponse,
       uploadFile: handleUploadFile,
       toggleSidebar: handleToggleSidebar,
-      toggleRightSidebar: handleToggleRightSidebar,
       openModelSelector: handleOpenModelSelector,
       focusSearch: handleFocusSearch,
       openSettings: handleOpenSettings,
@@ -490,6 +621,18 @@ export function useShortcutActions(): ShortcutAction[] {
       toggleTemporaryChat: handleToggleTemporaryChat,
       archiveConversation: handleArchiveConversation,
       deleteConversation: handleDeleteConversation,
+      submitMessage: handleSubmitMessage,
+      bookmarkConversation: handleBookmarkConversation,
+      continueResponse: handleContinueResponse,
+      readAloudLastResponse: handleReadAloudLastResponse,
+      openAssistants: handleOpenAssistants,
+      openAgents: handleOpenAgents,
+      openPrompts: handleOpenPrompts,
+      openMemories: handleOpenMemories,
+      openParameters: handleOpenParameters,
+      openFiles: handleOpenFiles,
+      openBookmarks: handleOpenBookmarks,
+      openMCP: handleOpenMCP,
     }),
     [
       handleShowShortcuts,
@@ -498,7 +641,6 @@ export function useShortcutActions(): ShortcutAction[] {
       handleCopyLastResponse,
       handleUploadFile,
       handleToggleSidebar,
-      handleToggleRightSidebar,
       handleOpenModelSelector,
       handleFocusSearch,
       handleOpenSettings,
@@ -511,6 +653,18 @@ export function useShortcutActions(): ShortcutAction[] {
       handleToggleTemporaryChat,
       handleArchiveConversation,
       handleDeleteConversation,
+      handleSubmitMessage,
+      handleBookmarkConversation,
+      handleContinueResponse,
+      handleReadAloudLastResponse,
+      handleOpenAssistants,
+      handleOpenAgents,
+      handleOpenPrompts,
+      handleOpenMemories,
+      handleOpenParameters,
+      handleOpenFiles,
+      handleOpenBookmarks,
+      handleOpenMCP,
     ],
   );
 
@@ -674,7 +828,12 @@ export default function useKeyboardShortcuts() {
       const isEditing =
         tagName === 'INPUT' || tagName === 'TEXTAREA' || target?.isContentEditable === true;
 
-      const allowedWhileEditing: ShortcutActionId[] = ['focusChat', 'focusSearch', 'showShortcuts'];
+      const allowedWhileEditing: ShortcutActionId[] = [
+        'focusChat',
+        'focusSearch',
+        'showShortcuts',
+        'submitMessage',
+      ];
       if (isEditing && !allowedWhileEditing.includes(matchedId)) {
         return;
       }

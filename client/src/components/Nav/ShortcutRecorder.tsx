@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { RefObject } from 'react';
 import type { ShortcutBinding } from '~/utils/shortcuts';
 import {
@@ -171,6 +171,12 @@ export function RecorderPill({
   const localize = useLocalize();
   const { containerRef, previewKeys, hasConflict, showInvalid, showHint, onKeyDown, onKeyUp } =
     state;
+  let stateBorder = 'border-border-medium';
+  if (hasConflict) {
+    stateBorder = 'border-amber-500/60';
+  } else if (showInvalid) {
+    stateBorder = 'animate-shortcut-shake border-red-500/60';
+  }
   return (
     <div
       ref={containerRef}
@@ -182,24 +188,13 @@ export function RecorderPill({
       onKeyDown={onKeyDown}
       onKeyUp={onKeyUp}
       className={cn(
-        'group relative flex h-[30px] items-center gap-1.5 rounded-lg px-2.5 outline-none transition-all duration-200',
-        'ring-2 ring-offset-2 ring-offset-surface-primary',
-        hasConflict
-          ? 'bg-amber-500/10 ring-amber-500/50'
-          : showInvalid
-            ? 'animate-shortcut-shake bg-red-500/10 ring-red-500/50'
-            : 'bg-blue-500/10 ring-blue-500/50',
+        'flex h-[30px] items-center gap-1.5 rounded-md border bg-surface-primary px-2 outline-none transition-colors',
+        'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface-primary-alt',
+        stateBorder,
       )}
     >
-      <span
-        aria-hidden="true"
-        className={cn(
-          'inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full',
-          hasConflict ? 'bg-amber-500' : showInvalid ? 'bg-red-500' : 'bg-blue-500',
-        )}
-      />
       {showHint ? (
-        <span className="text-[11.5px] font-medium text-text-secondary">
+        <span className="text-[11.5px] text-text-secondary">
           {localize('com_shortcut_recorder_placeholder')}
         </span>
       ) : (
@@ -227,29 +222,26 @@ export function RecorderInfo({
     return (
       <div
         id={`${ownerId}-recorder-hint`}
-        className="flex w-full items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2"
+        className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 pl-1 text-[11.5px]"
       >
-        <span className="text-[12.5px] text-text-primary">
-          <span className="font-medium text-text-secondary">
-            {localize('com_shortcut_recorder_conflict_prefix')}
-          </span>{' '}
-          <span className="font-semibold">{conflict.conflictLabel}</span>
+        <span className="text-text-secondary">
+          {localize('com_shortcut_recorder_conflict_prefix')}{' '}
+          <span className="font-medium text-text-primary">{conflict.conflictLabel}</span>
         </span>
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
             onClick={onTryAgain}
-            className="inline-flex items-center rounded-md px-2.5 py-1 text-[12px] font-medium text-text-secondary transition-colors hover:bg-surface-active-alt hover:text-text-primary"
+            className="whitespace-nowrap rounded-md px-1.5 py-0.5 text-text-secondary transition-colors hover:text-text-primary"
           >
             {localize('com_shortcut_recorder_try_again')}
           </button>
           <button
             type="button"
             onClick={() => onSaveReplacing(conflict.binding, conflict.conflictId)}
-            className="inline-flex items-center gap-1 rounded-md bg-amber-500 px-3 py-1 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-amber-600"
+            className="whitespace-nowrap rounded-md bg-surface-tertiary px-2 py-0.5 font-medium text-text-primary transition-colors hover:bg-surface-active-alt"
           >
             {localize('com_shortcut_recorder_replace')}
-            <ArrowRight className="h-3 w-3" />
           </button>
         </div>
       </div>
@@ -257,21 +249,22 @@ export function RecorderInfo({
   }
 
   return (
-    <div id={`${ownerId}-recorder-hint`} className="flex items-center justify-end gap-2">
-      {showInvalid ? (
-        <span className="text-[11.5px] font-medium text-red-600 dark:text-red-400">
-          {localize('com_shortcut_recorder_needs_modifier')}
-        </span>
-      ) : (
-        <span className="text-[11.5px] font-medium text-text-secondary">
-          {localize('com_shortcut_recorder_hint')}
-        </span>
-      )}
+    <div id={`${ownerId}-recorder-hint`} className="flex items-center justify-end gap-2 pl-1">
+      <span
+        className={cn(
+          'text-[11.5px]',
+          showInvalid ? 'text-red-600 dark:text-red-400' : 'text-text-secondary',
+        )}
+      >
+        {showInvalid
+          ? localize('com_shortcut_recorder_needs_modifier')
+          : localize('com_shortcut_recorder_hint')}
+      </span>
       <button
         type="button"
         onClick={onCancel}
         aria-label={localize('com_ui_cancel')}
-        className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-active-alt hover:text-text-primary"
+        className="inline-flex h-5 w-5 items-center justify-center rounded text-text-secondary transition-colors hover:bg-surface-active-alt hover:text-text-primary"
       >
         <X className="h-3 w-3" />
       </button>

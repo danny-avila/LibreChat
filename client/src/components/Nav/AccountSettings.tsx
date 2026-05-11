@@ -15,7 +15,6 @@ import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { useShortcutDisplay } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
@@ -25,13 +24,11 @@ function HelpSubmenu({
   termsOfServiceURL,
   privacyPolicyURL,
   onShowShortcuts,
-  showShortcutsDisplay,
 }: {
   helpAndFaqURL?: string;
   termsOfServiceURL?: string;
   privacyPolicyURL?: string;
   onShowShortcuts: () => void;
-  showShortcutsDisplay: string;
 }) {
   const localize = useLocalize();
   const hasHelpFaq = !!helpAndFaqURL && helpAndFaqURL !== '/';
@@ -53,7 +50,7 @@ function HelpSubmenu({
       </Menu.MenuItem>
       <Menu.Menu
         portal
-        gutter={4}
+        gutter={12}
         className="account-settings-popover popover-ui popover-from-left z-[126] w-[244px] rounded-lg"
       >
         {hasHelpFaq && (
@@ -67,8 +64,7 @@ function HelpSubmenu({
         )}
         <Menu.MenuItem onClick={onShowShortcuts} className="select-item text-sm">
           <Keyboard className="icon-md" aria-hidden="true" />
-          <span className="flex-1">{localize('com_shortcut_keyboard_shortcuts')}</span>
-          <span className="text-xs text-text-secondary">{showShortcutsDisplay}</span>
+          {localize('com_shortcut_keyboard_shortcuts')}
         </Menu.MenuItem>
         {showLegalDivider && (hasTos || hasPrivacy) && <DropdownMenuSeparator />}
         {hasTos && (
@@ -105,8 +101,6 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const [showFiles, setShowFiles] = useState(false);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
-  const showShortcutsDisplay = useShortcutDisplay('showShortcuts');
-  const openSettingsDisplay = useShortcutDisplay('openSettings');
 
   return (
     <Menu.MenuProvider placement={collapsed ? 'right-end' : undefined}>
@@ -157,6 +151,12 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
             <DropdownMenuSeparator />
           </>
         )}
+        <HelpSubmenu
+          helpAndFaqURL={startupConfig?.helpAndFaqURL}
+          termsOfServiceURL={startupConfig?.interface?.termsOfService?.externalUrl}
+          privacyPolicyURL={startupConfig?.interface?.privacyPolicy?.externalUrl}
+          onShowShortcuts={() => setShowShortcutsDialog(true)}
+        />
         <Menu.MenuItem onClick={() => setShowFiles(true)} className="select-item text-sm">
           <FileText className="icon-md" aria-hidden="true" />
           {localize('com_nav_my_files')}
@@ -167,16 +167,8 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           data-testid="nav-settings"
         >
           <GearIcon className="icon-md" aria-hidden="true" />
-          <span className="flex-1">{localize('com_nav_settings')}</span>
-          <span className="text-xs text-text-secondary">{openSettingsDisplay}</span>
+          {localize('com_nav_settings')}
         </Menu.MenuItem>
-        <HelpSubmenu
-          helpAndFaqURL={startupConfig?.helpAndFaqURL}
-          termsOfServiceURL={startupConfig?.interface?.termsOfService?.externalUrl}
-          privacyPolicyURL={startupConfig?.interface?.privacyPolicy?.externalUrl}
-          onShowShortcuts={() => setShowShortcutsDialog(true)}
-          showShortcutsDisplay={showShortcutsDisplay}
-        />
         <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
           <LogOut className="icon-md" aria-hidden="true" />

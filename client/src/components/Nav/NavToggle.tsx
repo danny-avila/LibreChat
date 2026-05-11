@@ -46,7 +46,7 @@ export default function NavToggle({
   }
 
   const ariaDescription = localize(actionKey, { 0: sidebarLabel });
-  const shortcutId = side === 'left' ? 'toggleSidebar' : 'toggleRightSidebar';
+  const shortcutId = side === 'left' ? 'toggleSidebar' : undefined;
   const tooltipDescription = useShortcutHint(shortcutId, ariaDescription);
   const ariaKey = useShortcutAriaKey(shortcutId);
 

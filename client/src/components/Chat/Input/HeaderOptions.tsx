@@ -7,7 +7,6 @@ import type { TPreset, TInterfaceConfig } from 'librechat-data-provider';
 import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
-import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import OptionsPopover from './OptionsPopover';
 import PopoverButtons from './PopoverButtons';
 import { useChatContext } from '~/Providers';
@@ -25,11 +24,6 @@ export default function HeaderOptions({
   const { showPopover, conversation, setShowPopover } = useChatContext();
   const { setOption } = useSetIndexOptions();
   const { endpoint } = conversation ?? {};
-  const toggleRightSidebarHint = useShortcutHint(
-    'toggleRightSidebar',
-    localize('com_ui_model_parameters'),
-  );
-  const toggleRightSidebarAriaKey = useShortcutAriaKey('toggleRightSidebar');
 
   const saveAsPreset = () => {
     setSaveAsDialogShow(true);
@@ -57,12 +51,11 @@ export default function HeaderOptions({
                 <TooltipAnchor
                   id="parameters-button"
                   aria-label={localize('com_ui_model_parameters')}
-                  description={toggleRightSidebarHint}
+                  description={localize('com_ui_model_parameters')}
                   tabIndex={0}
                   role="button"
                   onClick={triggerAdvancedMode}
                   data-testid="parameters-button"
-                  aria-keyshortcuts={toggleRightSidebarAriaKey}
                   className="inline-flex size-10 items-center justify-center rounded-lg border border-border-light bg-transparent text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
                 >
                   <Settings2 size={16} aria-hidden="true" />
