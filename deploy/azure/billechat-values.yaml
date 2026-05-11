@@ -114,6 +114,11 @@ librechat:
             version: "2024-12-01-preview"
             models:
               gpt-5-chat: true
+    memory:
+      personalize: true
+      agent:
+        provider: "azureOpenAI"
+        model: "gpt-5-chat"
 
   imageVolume:
     enabled: true
