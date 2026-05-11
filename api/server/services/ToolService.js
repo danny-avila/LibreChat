@@ -546,6 +546,10 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
   const actionsEnabled = checkCapability(AgentCapabilities.actions);
   const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
+  const programmaticToolsEnabled = enabledCapabilities.has(AgentCapabilities.programmatic_tools);
+  const codeExecutionEnabled =
+    agent.tools?.includes(Tools.execute_code) === true &&
+    enabledCapabilities.has(AgentCapabilities.execute_code);
 
   const filteredTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
@@ -721,6 +725,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       tools: filteredTools,
       toolOptions: agent.tool_options,
       deferredToolsEnabled,
+      programmaticToolsEnabled,
+      codeExecutionEnabled,
     },
     {
       isBuiltInTool,
@@ -775,6 +781,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           tools: filteredTools,
           toolOptions: agent.tool_options,
           deferredToolsEnabled,
+          programmaticToolsEnabled,
+          codeExecutionEnabled,
         },
         {
           isBuiltInTool,
@@ -1003,6 +1011,10 @@ async function loadAgentTools({
 
   /** Build tool registry from MCP tools and create PTC/tool search tools if configured */
   const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
+  const programmaticToolsEnabled = enabledCapabilities.has(AgentCapabilities.programmatic_tools);
+  const codeExecutionEnabled =
+    agent.tools?.includes(Tools.execute_code) === true &&
+    enabledCapabilities.has(AgentCapabilities.execute_code);
   const { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools } =
     await buildToolClassification({
       loadedTools,
@@ -1010,6 +1022,8 @@ async function loadAgentTools({
       agentId: agent.id,
       agentToolOptions: agent.tool_options,
       deferredToolsEnabled,
+      programmaticToolsEnabled,
+      codeExecutionEnabled,
       authHeaders: () => getCodeApiAuthHeaders(req),
     });
 
@@ -1256,17 +1270,26 @@ async function loadToolsForExecution({
   const allLoadedTools = [];
   const configurable = { userMCPAuthMap };
 
-  if (actionsEnabled === undefined) {
-    const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent?.id);
-    actionsEnabled = enabledCapabilities.has(AgentCapabilities.actions);
-  }
-
   const isToolSearch = toolNames.includes(AgentConstants.TOOL_SEARCH);
   const ptcToolNames = [
     AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING,
     AgentConstants.PROGRAMMATIC_TOOL_CALLING,
   ].filter((name) => toolNames.includes(name));
-  const isPTC = ptcToolNames.length > 0;
+  const isPTCRequested = ptcToolNames.length > 0;
+
+  let enabledCapabilities;
+  if (actionsEnabled === undefined || isPTCRequested) {
+    enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent?.id);
+  }
+  if (actionsEnabled === undefined) {
+    actionsEnabled = enabledCapabilities.has(AgentCapabilities.actions);
+  }
+
+  const isPTC =
+    isPTCRequested &&
+    enabledCapabilities.has(AgentCapabilities.programmatic_tools) &&
+    enabledCapabilities.has(AgentCapabilities.execute_code) &&
+    agent?.tools?.includes(Tools.execute_code) === true;
 
   logger.debug(
     `[loadToolsForExecution] isToolSearch: ${isToolSearch}, toolRegistry: ${toolRegistry?.size ?? 'undefined'}`,

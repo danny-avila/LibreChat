@@ -308,7 +308,7 @@ describe('getGoogleConfig', () => {
       });
     });
 
-    it('should preserve explicit Vertex AI endpoint overrides', () => {
+    it('should preserve explicit Google Vertex AI endpoint overrides', () => {
       process.env.GOOGLE_LOC = 'us';
 
       const credentials = {
@@ -323,13 +323,134 @@ describe('getGoogleConfig', () => {
         },
         addParams: {
           location: 'eu',
-          endpoint: 'custom-aiplatform.example.com',
+          endpoint: 'us-central1-aiplatform.googleapis.com',
         },
       });
 
       expect(result.llmConfig).toMatchObject({
         location: 'eu',
-        endpoint: 'custom-aiplatform.example.com',
+        endpoint: 'us-central1-aiplatform.googleapis.com',
+      });
+    });
+
+    it('should preserve explicit Google Vertex AI Private Service Connect endpoints', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          endpoint: 'aiplatform-genai1.p.googleapis.com',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'us',
+        endpoint: 'aiplatform-genai1.p.googleapis.com',
+      });
+    });
+
+    it('should preserve explicit Google Vertex AI restricted Private Service Connect endpoints', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          endpoint: 'us-central1-aiplatform-restricted.p.googleapis.com',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'us',
+        endpoint: 'us-central1-aiplatform-restricted.p.googleapis.com',
+      });
+    });
+
+    it('should ignore model option Vertex AI endpoint overrides', () => {
+      process.env.GOOGLE_LOC = 'eu';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+          endpoint: 'attacker.example.test',
+        } as t.GoogleParameters,
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'eu',
+        endpoint: 'aiplatform.eu.rep.googleapis.com',
+      });
+    });
+
+    it('should ignore model option transport-level overrides', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+          client_email: 'test@test-project.iam.gserviceaccount.com',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+          apiKey: 'attacker-api-key',
+          authOptions: { projectId: 'attacker-project' },
+          baseUrl: 'https://attacker.example.test',
+          customHeaders: { Authorization: 'Bearer attacker' },
+        } as t.GoogleParameters,
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('apiKey', 'attacker-api-key');
+      expect(result.llmConfig).not.toHaveProperty('baseUrl');
+      expect(result.llmConfig).not.toHaveProperty('customHeaders');
+      expect((result.llmConfig as Record<string, unknown>).authOptions).toMatchObject({
+        projectId: 'test-project',
+      });
+    });
+
+    it('should ignore non-Google Vertex AI endpoint overrides from additional params', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          location: 'eu',
+          endpoint: 'attacker.example.test',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'eu',
+        endpoint: 'aiplatform.eu.rep.googleapis.com',
       });
     });
 

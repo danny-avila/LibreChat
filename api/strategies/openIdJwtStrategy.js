@@ -9,9 +9,39 @@ const {
   findOpenIDUser,
   getOpenIdEmail,
   getOpenIdIssuer,
+  normalizeOpenIdIssuer,
   math,
 } = require('@librechat/api');
 const { updateUser, findUser } = require('~/models');
+
+const getOpenIdJwtAudience = () => {
+  const audiences = [process.env.OPENID_CLIENT_ID, process.env.OPENID_AUDIENCE].filter(Boolean);
+  const uniqueAudiences = [...new Set(audiences)];
+
+  return uniqueAudiences.length > 1 ? uniqueAudiences : uniqueAudiences[0];
+};
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const issuerMatchesTemplate = (expectedIssuer, actualIssuer) => {
+  if (!expectedIssuer.includes('{tenantid}')) {
+    return false;
+  }
+
+  const escapedTemplate = expectedIssuer.split('{tenantid}').map(escapeRegExp).join('[^/]+');
+  return new RegExp(`^${escapedTemplate}$`).test(actualIssuer);
+};
+
+const isOpenIdIssuerAllowed = (payload, openIdConfig) => {
+  const actualIssuer = normalizeOpenIdIssuer(payload?.iss);
+  const expectedIssuer = normalizeOpenIdIssuer(openIdConfig.serverMetadata().issuer);
+
+  if (!actualIssuer || !expectedIssuer) {
+    return false;
+  }
+
+  return actualIssuer === expectedIssuer || issuerMatchesTemplate(expectedIssuer, actualIssuer);
+};
 
 /**
  * @function openIdJwtLogin
@@ -47,6 +77,7 @@ const openIdJwtLogin = (openIdConfig) => {
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKeyProvider: jwksRsa.passportJwtSecret(jwksRsaOptions),
+      audience: getOpenIdJwtAudience(),
       passReqToCallback: true,
     },
     /**
@@ -56,6 +87,11 @@ const openIdJwtLogin = (openIdConfig) => {
      */
     async (req, payload, done) => {
       try {
+        if (!isOpenIdIssuerAllowed(payload, openIdConfig)) {
+          done(null, false, { message: 'Invalid issuer' });
+          return;
+        }
+
         const authHeader = req.headers.authorization;
         const rawToken = authHeader?.replace('Bearer ', '');
         const openidIssuer = getOpenIdIssuer(payload, openIdConfig);

@@ -14,10 +14,10 @@ import type { CodeEnvRef } from 'librechat-data-provider';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
+import { logAxiosError, runOutsideTracing } from '~/utils';
 import { buildSkillPrimeMessage } from './skills';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
-import { runOutsideTracing } from '~/utils';
 
 export interface ToolEndCallbackData {
   output: {
@@ -753,10 +753,10 @@ async function handleReadFileCall(
       if (file.isBinary == null && updateSkillFileContent) {
         updateSkillFileContent(skill._id, relativePath, { isBinary: true }).catch(
           (err: unknown) => {
-            logger.warn(
-              '[handleReadFileCall] cache write failed:',
-              err instanceof Error ? err.message : err,
-            );
+            logAxiosError({
+              message: '[handleReadFileCall] cache write failed',
+              error: err,
+            });
           },
         );
       }
@@ -793,10 +793,10 @@ async function handleReadFileCall(
     if (file.content == null && updateSkillFileContent && buffer.length <= MAX_CACHE_BYTES) {
       updateSkillFileContent(skill._id, relativePath, { content: text, isBinary: false }).catch(
         (err: unknown) => {
-          logger.warn(
-            '[handleReadFileCall] cache write failed:',
-            err instanceof Error ? err.message : err,
-          );
+          logAxiosError({
+            message: '[handleReadFileCall] cache write failed',
+            error: err,
+          });
         },
       );
     }
@@ -1081,11 +1081,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           typeof f.storage_session_id === 'string' && !!f.storage_session_id,
                         hasVersion: typeof f.version === 'number',
                       }));
-                      const missingResourceId = summary.filter((s) => !s.hasResourceId).length;
+                      let missingResourceId = 0;
+                      let missingStorageSessionId = 0;
+                      let missingVersion = 0;
+                      const kindCounts: Record<string, number> = {};
+                      for (const s of summary) {
+                        if (!s.hasResourceId) missingResourceId++;
+                        if (!s.hasStorageSessionId) missingStorageSessionId++;
+                        if (!s.hasVersion) missingVersion++;
+                        const k = typeof s.kind === 'string' ? s.kind : 'unknown';
+                        kindCounts[k] = (kindCounts[k] ?? 0) + 1;
+                      }
                       logger.debug(
                         `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
-                          `missingResourceId=${missingResourceId}`,
-                        { summary },
+                          `missingResourceId=${missingResourceId} ` +
+                          `missingStorageSessionId=${missingStorageSessionId} ` +
+                          `missingVersion=${missingVersion} ` +
+                          `kinds=${JSON.stringify(kindCounts)}`,
                       );
                       if (missingResourceId > 0) {
                         logger.warn(

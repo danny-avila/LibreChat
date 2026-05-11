@@ -309,6 +309,66 @@ describe('definitions.ts', () => {
       });
     });
 
+    describe('programmatic tool calling capability gate', () => {
+      const mcpToolName = 'run_report_mcp_server_one';
+      const serverTools = {
+        [mcpToolName]: {
+          function: {
+            name: mcpToolName,
+            description: 'Run report',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      it('does not add Bash PTC definitions unless both code and programmatic capabilities are enabled', async () => {
+        mockGetOrFetchMCPServerTools.mockResolvedValueOnce(serverTools);
+
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: [mcpToolName],
+            toolOptions: {
+              [mcpToolName]: { allowed_callers: ['code_execution'] },
+            },
+            codeExecutionEnabled: true,
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(false);
+        expect(result.toolRegistry.has('run_tools_with_bash')).toBe(false);
+      });
+
+      it('adds Bash PTC definitions when code and programmatic capabilities are enabled', async () => {
+        mockGetOrFetchMCPServerTools.mockResolvedValueOnce(serverTools);
+
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: [mcpToolName],
+            toolOptions: {
+              [mcpToolName]: { allowed_callers: ['code_execution'] },
+            },
+            programmaticToolsEnabled: true,
+            codeExecutionEnabled: true,
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(true);
+        expect(result.toolRegistry.has('run_tools_with_bash')).toBe(true);
+      });
+    });
+
     describe('MCP tool definitions with server name variants', () => {
       it('should load MCP tools with underscored server names (server_one)', async () => {
         const mockServerTools = {

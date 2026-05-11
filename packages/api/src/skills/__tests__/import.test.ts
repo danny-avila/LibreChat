@@ -1,4 +1,94 @@
-import { parseFrontmatter } from '../import';
+import JSZip from 'jszip';
+import { Types } from 'mongoose';
+
+import type { ISkill, ISkillFile, CreateSkillResult } from '@librechat/data-schemas';
+import type { Response } from 'express';
+import type { ImportSkillDeps } from '../import';
+
+import { createImportHandler, parseFrontmatter } from '../import';
+
+type ImportRequest = Parameters<ReturnType<typeof createImportHandler>>[0];
+
+interface MockResponse extends Response {
+  body?: unknown;
+}
+
+interface ImportSummary {
+  filesProcessed: number;
+  filesSucceeded: number;
+  filesFailed: number;
+  errors: Array<{ path: string; status: 'ok' | 'error'; error?: string }>;
+}
+
+function mockResponse(): MockResponse {
+  const res = {} as MockResponse;
+  res.status = jest.fn((statusCode: number) => {
+    res.statusCode = statusCode;
+    return res;
+  }) as MockResponse['status'];
+  res.json = jest.fn((body: unknown) => {
+    res.body = body;
+    return res;
+  }) as MockResponse['json'];
+  return res;
+}
+
+function mockImportDeps(limits?: ImportSkillDeps['limits']): ImportSkillDeps {
+  const skillId = new Types.ObjectId();
+  const skill = {
+    _id: skillId,
+    name: 'tiny-limit-skill',
+    description: 'A skill used by import handler tests.',
+  } as ISkill & { _id: Types.ObjectId };
+  const skillFile = { _id: new Types.ObjectId() } as ISkillFile & { _id: Types.ObjectId };
+
+  return {
+    limits,
+    createSkill: jest.fn(async () => ({ skill }) as unknown as CreateSkillResult),
+    getSkillById: jest.fn(async () => skill),
+    deleteSkill: jest.fn(async () => ({ deleted: true })),
+    upsertSkillFile: jest.fn(async () => skillFile),
+    saveBuffer: jest.fn(async () => ({ filepath: '/tmp/imported-file', source: 'local' })),
+    grantPermission: jest.fn(async () => undefined),
+  };
+}
+
+function mockZipRequest(buffer: Buffer): ImportRequest {
+  return {
+    user: {
+      id: 'user-1',
+      _id: new Types.ObjectId(),
+      username: 'tester',
+    },
+    file: {
+      originalname: 'tiny-limit-skill.skill',
+      buffer,
+    },
+  } as unknown as ImportRequest;
+}
+
+function importSummary(body: unknown): ImportSummary {
+  return (body as { _importSummary: ImportSummary })._importSummary;
+}
+
+async function zipWithAdditionalFiles(fileCount: number, fileBytes: number): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file(
+    'SKILL.md',
+    [
+      '---',
+      'name: tiny-limit-skill',
+      'description: A skill used by import handler tests.',
+      '---',
+      '# Test skill',
+    ].join('\n'),
+  );
+  const content = 'a'.repeat(fileBytes);
+  for (let i = 0; i < fileCount; i++) {
+    zip.file(`files/${i}.txt`, content);
+  }
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
 
 describe('parseFrontmatter', () => {
   it('extracts name + description from a minimal frontmatter block', () => {
@@ -123,5 +213,29 @@ describe('parseFrontmatter', () => {
     const result = parseFrontmatter(raw);
     expect(result.alwaysApply).toBe(false);
     expect(result.invalidBooleans).toEqual([]);
+  });
+});
+
+describe('createImportHandler', () => {
+  it('counts rejected oversized zip entries toward the cumulative decompressed limit', async () => {
+    const kib = 1024;
+    const deps = mockImportDeps({
+      maxZipBytes: 1024 * kib,
+      maxEntries: 10,
+      maxSingleFileBytes: 10 * kib,
+      maxDecompressedBytes: 32 * kib,
+    });
+    const handler = createImportHandler(deps);
+    const buffer = await zipWithAdditionalFiles(4, 11 * kib);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(buffer), res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    const summary = importSummary(res.body);
+    expect(summary.filesProcessed).toBe(3);
+    expect(summary.filesSucceeded).toBe(0);
+    expect(summary.filesFailed).toBe(3);
+    expect(summary.errors).toHaveLength(3);
   });
 });

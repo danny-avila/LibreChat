@@ -20,6 +20,13 @@ const MAX_ENTRIES = 500;
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const SKILL_MD = 'SKILL.md';
 
+export interface ImportLimits {
+  maxZipBytes: number;
+  maxDecompressedBytes: number;
+  maxEntries: number;
+  maxSingleFileBytes: number;
+}
+
 /** Strip surrounding YAML quotes (single or double) from a scalar value. */
 function unquoteYaml(value: string): string {
   if (
@@ -156,6 +163,7 @@ function isDuplicateKeyError(error: unknown): boolean {
 }
 
 export interface ImportSkillDeps {
+  limits?: Partial<ImportLimits>;
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
@@ -235,6 +243,15 @@ export function createImportHandler(deps: ImportSkillDeps) {
       logger.error('[importSkill] Unhandled error:', error);
       return res.status(500).json({ error: 'Failed to import skill' });
     }
+  };
+}
+
+function getImportLimits(limits?: Partial<ImportLimits>): ImportLimits {
+  return {
+    maxZipBytes: limits?.maxZipBytes ?? MAX_ZIP_BYTES,
+    maxDecompressedBytes: limits?.maxDecompressedBytes ?? MAX_DECOMPRESSED_BYTES,
+    maxEntries: limits?.maxEntries ?? MAX_ENTRIES,
+    maxSingleFileBytes: limits?.maxSingleFileBytes ?? MAX_SINGLE_FILE_BYTES,
   };
 }
 
@@ -334,11 +351,14 @@ async function handleZip(
   file: Express.Multer.File,
 ) {
   const userId = req.user.id;
+  const limits = getImportLimits(deps.limits);
 
   const zipBuffer = file.buffer;
 
-  if (zipBuffer.length > MAX_ZIP_BYTES) {
-    return res.status(400).json({ error: `File too large (max ${MAX_ZIP_BYTES / 1024 / 1024}MB)` });
+  if (zipBuffer.length > limits.maxZipBytes) {
+    return res
+      .status(400)
+      .json({ error: `File too large (max ${limits.maxZipBytes / 1024 / 1024}MB)` });
   }
 
   let zip: JSZip;
@@ -349,8 +369,8 @@ async function handleZip(
   }
   const entries = Object.keys(zip.files);
 
-  if (entries.length > MAX_ENTRIES) {
-    return res.status(400).json({ error: `Too many files in archive (max ${MAX_ENTRIES})` });
+  if (entries.length > limits.maxEntries) {
+    return res.status(400).json({ error: `Too many files in archive (max ${limits.maxEntries})` });
   }
 
   // Find SKILL.md — at root or one level deep
@@ -377,7 +397,7 @@ async function handleZip(
   const declaredSize =
     (skillMdEntry as unknown as { _data?: { uncompressedSize?: number } })?._data
       ?.uncompressedSize ?? 0;
-  if (declaredSize > MAX_SINGLE_FILE_BYTES) {
+  if (declaredSize > limits.maxSingleFileBytes) {
     return res
       .status(400)
       .json({ error: `SKILL.md too large (${Math.round(declaredSize / 1024 / 1024)}MB)` });
@@ -386,7 +406,7 @@ async function handleZip(
   if (!skillMdContent) {
     return res.status(400).json({ error: 'Could not read SKILL.md from archive' });
   }
-  if (Buffer.byteLength(skillMdContent, 'utf-8') > MAX_SINGLE_FILE_BYTES) {
+  if (Buffer.byteLength(skillMdContent, 'utf-8') > limits.maxSingleFileBytes) {
     return res.status(400).json({ error: 'SKILL.md exceeds maximum file size' });
   }
 
@@ -461,8 +481,8 @@ async function handleZip(
     try {
       // Stream-decompress with hard byte cap. JSZip's nodeStream decompresses
       // incrementally so we can abort mid-entry without buffering the full file.
-      const perFileLimit = MAX_SINGLE_FILE_BYTES;
-      const cumulativeLimit = MAX_DECOMPRESSED_BYTES - totalDecompressed;
+      const perFileLimit = limits.maxSingleFileBytes;
+      const cumulativeLimit = limits.maxDecompressedBytes - totalDecompressed;
       const effectiveLimit = Math.min(perFileLimit, cumulativeLimit);
 
       if (effectiveLimit <= 0) {
@@ -482,7 +502,11 @@ async function handleZip(
 
       await new Promise<void>((resolve, reject) => {
         entryStream.on('data', (chunk: Buffer) => {
+          if (exceededLimit) {
+            return;
+          }
           entryBytes += chunk.length;
+          totalDecompressed += chunk.length;
           if (entryBytes > effectiveLimit) {
             exceededLimit = true;
             if ('destroy' in entryStream && typeof entryStream.destroy === 'function') {
@@ -510,7 +534,6 @@ async function handleZip(
       }
 
       const fileBuffer = Buffer.concat(chunks);
-      totalDecompressed += fileBuffer.length;
 
       const fileId = crypto.randomUUID();
       const filename = path.basename(relativePath);

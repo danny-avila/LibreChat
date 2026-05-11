@@ -707,10 +707,9 @@ async function getSessionInfo(ref, req) {
 
     return response.data?.lastModified;
   } catch (error) {
-    logAxiosError({
-      message: `Error fetching session info: ${error.message}`,
-      error,
-    });
+    logger.debug(
+      `[getSessionInfo] session lookup failed (treating as cache miss): ${error?.message ?? String(error)}`,
+    );
     return null;
   }
 }

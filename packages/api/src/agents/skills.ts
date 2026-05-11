@@ -8,6 +8,7 @@ import type { Agent } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type { InitializeAgentDbMethods } from './initialize';
 import { registerCodeExecutionTools } from './tools';
+import { logAxiosError } from '~/utils';
 
 const SKILL_CATALOG_LIMIT = 100;
 /** Max pages scanned per run when filtering out inactive skills. */
@@ -809,10 +810,10 @@ export async function resolveAlwaysApplySkills(
         cursor,
       });
     } catch (err) {
-      logger.warn(
-        '[resolveAlwaysApplySkills] listAlwaysApplySkills failed:',
-        err instanceof Error ? err.message : err,
-      );
+      logAxiosError({
+        message: '[resolveAlwaysApplySkills] listAlwaysApplySkills failed',
+        error: err,
+      });
       return resolved;
     }
 
