@@ -52,7 +52,7 @@
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev --",
     "ios:build": "node utils/ios-build.js && npx cap sync ios",
-    "ios:run": "node utils/ios-build.js && npx cap run ios --target \"91248378-6511-4C09-BBCD-AF3FF05768D0\"",
+    "ios:run": "node utils/ios-build.js && npx cap run ios --target \"iPhone 15 Pro\"",
     "ios:sync": "npx cap sync ios",
     "ios:open": "npx cap open ios",
     "e2e": "playwright test --config=e2e/playwright.config.local.ts",
