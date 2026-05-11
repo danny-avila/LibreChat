@@ -15,6 +15,10 @@ jest.mock('~/server/middleware/checkPeoplePickerAccess', () => ({
   checkPeoplePickerAccess: jest.fn((_req, _res, next) => next()),
 }));
 
+jest.mock('~/server/middleware/roles/capabilities', () => ({
+  hasCapability: jest.fn(),
+}));
+
 jest.mock('~/server/controllers/PermissionsController', () => ({
   getUserEffectivePermissions: jest.fn((_req, res) => res.json({ permissions: [] })),
   getAllEffectivePermissions: jest.fn((_req, res) => res.json({ permissions: [] })),
@@ -38,6 +42,7 @@ const {
 
 const { getRoleByName } = require('~/models');
 const { canAccessResource } = require('~/server/middleware');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { updateResourcePermissions } = require('~/server/controllers/PermissionsController');
 const accessPermissionsRouter = require('./accessPermissions');
 
@@ -53,6 +58,7 @@ describe('Access permissions share policy', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    hasCapability.mockResolvedValue(false);
 
     app = express();
     app.use(express.json());
@@ -107,6 +113,19 @@ describe('Access permissions share policy', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ success: true });
+    expect(updateResourcePermissions).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves resource management capability bypass for non-public skill sharing', async () => {
+    hasCapability.mockResolvedValue(true);
+
+    const response = await request(app)
+      .put(`/api/permissions/${ResourceType.SKILL}/${skillResourceId}`)
+      .send({ updated: [updatedPrincipal], public: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ success: true });
+    expect(getRoleByName).not.toHaveBeenCalled();
     expect(updateResourcePermissions).toHaveBeenCalledTimes(1);
   });
 

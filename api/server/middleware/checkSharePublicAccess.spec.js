@@ -2,9 +2,14 @@ jest.mock('~/models', () => ({
   getRoleByName: jest.fn(),
 }));
 
+jest.mock('~/server/middleware/roles/capabilities', () => ({
+  hasCapability: jest.fn(),
+}));
+
 const { ResourceType, PermissionTypes, Permissions } = require('librechat-data-provider');
 const { checkShareAccess, checkSharePublicAccess } = require('./checkSharePublicAccess');
 const { getRoleByName } = require('~/models');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
 describe('checkSharePublicAccess middleware', () => {
   let mockReq;
@@ -13,6 +18,7 @@ describe('checkSharePublicAccess middleware', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    hasCapability.mockResolvedValue(false);
     mockReq = {
       user: { id: 'user123', role: 'USER' },
       params: { resourceType: ResourceType.AGENT },
@@ -172,6 +178,7 @@ describe('checkShareAccess middleware', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    hasCapability.mockResolvedValue(false);
     mockReq = {
       user: { id: 'user123', role: 'USER' },
       params: { resourceType: ResourceType.SKILL },
@@ -204,6 +211,17 @@ describe('checkShareAccess middleware', () => {
     expect(mockNext).not.toHaveBeenCalled();
   });
 
+  it('should call next() when user has resource management capability for skills', async () => {
+    hasCapability.mockResolvedValue(true);
+
+    await checkShareAccess(mockReq, mockRes, mockNext);
+
+    expect(hasCapability).toHaveBeenCalledWith(mockReq.user, 'manage:skills');
+    expect(getRoleByName).not.toHaveBeenCalled();
+    expect(mockNext).toHaveBeenCalled();
+    expect(mockRes.status).not.toHaveBeenCalled();
+  });
+
   it('should call next() when user role has SHARE permission for skills', async () => {
     getRoleByName.mockResolvedValue({
       permissions: {
@@ -216,6 +234,7 @@ describe('checkShareAccess middleware', () => {
 
     await checkShareAccess(mockReq, mockRes, mockNext);
 
+    expect(hasCapability).toHaveBeenCalledWith(mockReq.user, 'manage:skills');
     expect(mockNext).toHaveBeenCalled();
     expect(mockRes.status).not.toHaveBeenCalled();
   });
@@ -264,5 +283,24 @@ describe('checkShareAccess middleware', () => {
       error: 'Internal Server Error',
       message: 'Failed to check sharing permissions',
     });
+  });
+
+  it('should reuse the role permission lookup for public sharing checks', async () => {
+    mockReq.body = { updated: [], public: true };
+    getRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.SKILLS]: {
+          [Permissions.SHARE]: true,
+          [Permissions.SHARE_PUBLIC]: true,
+        },
+      },
+    });
+
+    await checkShareAccess(mockReq, mockRes, mockNext);
+    await checkSharePublicAccess(mockReq, mockRes, mockNext);
+
+    expect(getRoleByName).toHaveBeenCalledTimes(1);
+    expect(mockNext).toHaveBeenCalledTimes(2);
+    expect(mockRes.status).not.toHaveBeenCalled();
   });
 });

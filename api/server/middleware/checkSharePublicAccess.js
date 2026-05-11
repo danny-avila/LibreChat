@@ -1,6 +1,7 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, ResourceCapabilityMap } = require('@librechat/data-schemas');
 const { ResourceType, PermissionTypes, Permissions } = require('librechat-data-provider');
 const { getRoleByName } = require('~/models');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
 /**
  * Maps resource types to their corresponding permission types
@@ -13,14 +14,14 @@ const resourceToPermissionType = {
   [ResourceType.SKILL]: PermissionTypes.SKILLS,
 };
 
-const getResourcePerms = async (req, res, action) => {
+const getShareContext = (req, res, action) => {
   const user = req.user;
   if (!user || !user.role) {
     res.status(401).json({
       error: 'Unauthorized',
       message: 'Authentication required',
     });
-    return null;
+    return;
   }
 
   const { resourceType } = req.params;
@@ -31,7 +32,31 @@ const getResourcePerms = async (req, res, action) => {
       error: 'Bad Request',
       message: `Unsupported resource type for ${action}: ${resourceType}`,
     });
+    return;
+  }
+
+  return {
+    user,
+    resourceType,
+    permissionType,
+  };
+};
+
+const getResourcePerms = async (req, res, action, context) => {
+  const resolvedContext = context || getShareContext(req, res, action);
+  if (!resolvedContext) {
     return null;
+  }
+
+  const { user, resourceType, permissionType } = resolvedContext;
+  const cacheKey = `${user.role}:${resourceType}`;
+  const cached = req.sharePermissionContext;
+  if (cached?.cacheKey === cacheKey) {
+    return {
+      user,
+      resourceType,
+      resourcePerms: cached.resourcePerms,
+    };
   }
 
   const role = await getRoleByName(user.role);
@@ -43,11 +68,31 @@ const getResourcePerms = async (req, res, action) => {
     return null;
   }
 
+  const resourcePerms = role.permissions[permissionType] || {};
+  req.sharePermissionContext = {
+    cacheKey,
+    resourcePerms,
+  };
+
   return {
     user,
     resourceType,
-    resourcePerms: role.permissions[permissionType] || {},
+    resourcePerms,
   };
+};
+
+const hasResourceManagementCapability = async (user, resourceType) => {
+  const capability = ResourceCapabilityMap[resourceType];
+  if (!capability) {
+    return false;
+  }
+
+  try {
+    return await hasCapability(user, capability);
+  } catch (error) {
+    logger.warn(`[checkShareAccess] capability check failed, denying bypass: ${error.message}`);
+    return false;
+  }
 };
 
 /**
@@ -58,7 +103,16 @@ const getResourcePerms = async (req, res, action) => {
  */
 const checkShareAccess = async (req, res, next) => {
   try {
-    const result = await getResourcePerms(req, res, 'sharing');
+    const context = getShareContext(req, res, 'sharing');
+    if (!context) {
+      return;
+    }
+
+    if (await hasResourceManagementCapability(context.user, context.resourceType)) {
+      return next();
+    }
+
+    const result = await getResourcePerms(req, res, 'sharing', context);
     if (!result) {
       return;
     }
