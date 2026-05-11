@@ -1,17 +1,27 @@
 const { isEnabled } = require('@librechat/api');
+const { countUsers } = require('~/models');
 
-function validateRegistration(req, res, next) {
+async function validateRegistration(req, res, next) {
   if (req.invite) {
     return next();
   }
 
   if (isEnabled(process.env.ALLOW_REGISTRATION)) {
-    next();
-  } else {
-    return res.status(403).json({
-      message: 'Registration is not allowed.',
-    });
+    return next();
   }
+
+  try {
+    const userCount = await countUsers();
+    if (userCount === 0) {
+      return next();
+    }
+  } catch (error) {
+    // Fallback if DB check fails
+  }
+
+  return res.status(403).json({
+    message: 'Registration is not allowed.',
+  });
 }
 
 module.exports = validateRegistration;

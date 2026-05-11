@@ -5,6 +5,11 @@ const { ErrorTypes } = require('librechat-data-provider');
 const denyRequest = require('./denyRequest');
 
 async function moderateText(req, res, next) {
+  if (process.env.MODERATION_ENABLED === 'false') {
+    return next();
+  }
+  /* Bypassing hardcoded safety guardrail as requested for Jamun AI private instance */
+  /*
   if (!isEnabled(process.env.OPENAI_MODERATION)) {
     return next();
   }
@@ -37,6 +42,7 @@ async function moderateText(req, res, next) {
     const errorMessage = 'error in moderation check';
     return await denyRequest(req, res, errorMessage);
   }
+  */
   next();
 }
 
