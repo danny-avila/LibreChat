@@ -140,6 +140,7 @@ if (cluster.isMaster) {
   logger.info(`Spawning ${workers} workers to simulate multi-pod environment`);
 
   let activeWorkers = 0;
+  const listeningWorkers = new Set();
   let retentionSweepWorkerId = null;
   const startTime = Date.now();
 
@@ -188,14 +189,16 @@ if (cluster.isMaster) {
     }
   });
 
-  cluster.on('listening', () => {
-    if (activeWorkers === workers) {
+  cluster.on('listening', (worker) => {
+    listeningWorkers.add(worker.id);
+    if (listeningWorkers.size === workers) {
       assignRetentionSweepWorker();
     }
   });
 
   cluster.on('exit', (worker, code, signal) => {
     activeWorkers--;
+    listeningWorkers.delete(worker.id);
     if (worker.id === retentionSweepWorkerId) {
       retentionSweepWorkerId = null;
     }
