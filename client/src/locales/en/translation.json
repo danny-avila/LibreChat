@@ -91,7 +91,7 @@
   "com_agents_not_available": "Agent Not Available",
   "com_agents_recommended": "Our recommended agents",
   "com_agents_results_for": "Results for '{{query}}'",
-  "com_agents_run_code_files": "Files below are for Run Code only:",
+  "com_agents_run_code_files": "Files below are for Code Environment only:",
   "com_agents_search_aria": "Search for agents",
   "com_agents_search_empty_heading": "No search results",
   "com_agents_search_info": "When enabled, allows your agent to search the web for up-to-date information. Requires a valid API key.",
