@@ -59,7 +59,7 @@ export default function Action() {
           <HoverCardContent side={ESide.Top} className="w-80">
             <div className="space-y-2">
               <p className="text-sm text-text-secondary">
-                {localize('com_agents_code_interpreter')}
+                {localize('com_agents_run_code_info')}
               </p>
             </div>
           </HoverCardContent>

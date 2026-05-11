@@ -99,7 +99,7 @@ function setupMocks(overrides: { provider?: string } = {}) {
     com_ui_upload_image_input: 'Upload Image',
     com_ui_upload_ocr_text: 'Upload as Text',
     com_ui_upload_file_search: 'Upload for File Search',
-    com_ui_upload_code_files: 'Upload Code Files',
+    com_ui_upload_code_environment: 'Upload to Code Environment',
     com_sidepanel_attach_files: 'Attach Files',
     com_files_upload_sharepoint: 'Upload from SharePoint',
   };

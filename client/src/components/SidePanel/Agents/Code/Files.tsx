@@ -91,7 +91,7 @@ function Files({
                 onChange={handleFileChange}
               />
               <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-              {localize('com_ui_upload_code_files')}
+              {localize('com_ui_upload_code_environment')}
             </div>
           </button>
         </div>
