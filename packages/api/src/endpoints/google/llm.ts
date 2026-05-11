@@ -1,9 +1,29 @@
 import { Providers } from '@librechat/agents';
 import { googleSettings, AuthKeys, removeNullishValues } from 'librechat-data-provider';
 import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
-import type { GoogleAIToolType } from '@langchain/google-common';
+import type { GoogleAIToolType } from '@librechat/agents/langchain/google-common';
 import type * as t from '~/types';
 import { isEnabled } from '~/utils';
+
+type GoogleThinkingLevel = 'THINKING_LEVEL_UNSPECIFIED' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
+type GoogleThinkingConfig = {
+  includeThoughts: boolean;
+  thinkingLevel?: GoogleThinkingLevel;
+};
+
+const googleThinkingLevels = new Set<GoogleThinkingLevel>([
+  'THINKING_LEVEL_UNSPECIFIED',
+  'MINIMAL',
+  'LOW',
+  'MEDIUM',
+  'HIGH',
+]);
+
+const vertexMultiRegionEndpoints = new Map([
+  ['eu', 'aiplatform.eu.rep.googleapis.com'],
+  ['us', 'aiplatform.us.rep.googleapis.com'],
+  ['global', 'aiplatform.googleapis.com'],
+]);
 
 /** Known Google/Vertex AI parameters that map directly to the client config */
 export const knownGoogleParams = new Set([
@@ -28,6 +48,7 @@ export const knownGoogleParams = new Set([
   'streamUsage',
   'apiKey',
   'baseUrl',
+  'endpoint',
   'location',
   'authOptions',
 ]);
@@ -68,6 +89,36 @@ function getThresholdMapping(model: string) {
   }
 
   return (value: string) => value;
+}
+
+function normalizeGoogleThinkingLevel(value: unknown): GoogleThinkingLevel | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const normalized = value.toUpperCase() as GoogleThinkingLevel;
+  if (!googleThinkingLevels.has(normalized)) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function getVertexMultiRegionEndpoint(location: string): string | undefined {
+  return vertexMultiRegionEndpoints.get(location);
+}
+
+function hasStringEndpoint(config: Record<string, unknown>): boolean {
+  return typeof config.endpoint === 'string' && config.endpoint.length > 0;
+}
+
+function applyVertexMultiRegionEndpoint(config: VertexAIClientOptions & { endpoint?: string }) {
+  const location = config.location;
+  if (typeof location !== 'string') {
+    return;
+  }
+  const multiRegionEndpoint = getVertexMultiRegionEndpoint(location);
+  if (multiRegionEndpoint) {
+    config.endpoint = multiRegionEndpoint;
+  }
 }
 
 export function getSafetySettings(
@@ -170,6 +221,9 @@ export function getGoogleConfig(
     },
     true,
   );
+  const initialConfig = llmConfig as Record<string, unknown>;
+  let hasCustomVertexEndpoint = hasStringEndpoint(initialConfig);
+  let shouldSyncVertexEndpoint = true;
 
   /** Used only for Safety Settings */
   llmConfig.safetySettings = getSafetySettings(llmConfig.model);
@@ -188,7 +242,8 @@ export function getGoogleConfig(
       credentials: { ...serviceKey },
       projectId: project_id,
     };
-    (llmConfig as VertexAIClientOptions).location = process.env.GOOGLE_LOC || 'us-central1';
+    const location = process.env.GOOGLE_LOC || 'us-central1';
+    (llmConfig as VertexAIClientOptions).location = location;
   } else if (apiKey && provider === Providers.GOOGLE) {
     llmConfig.apiKey = apiKey;
   } else {
@@ -206,22 +261,23 @@ export function getGoogleConfig(
    * with `includeThoughts: true`. The `thinkingBudget` param is ignored for Gemini 3+.
    *
    * For Vertex AI, top-level `includeThoughts` is still required because
-   * `@langchain/google-common`'s `formatGenerationConfig` reads it separately
+   * `@librechat/agents/langchain/google-common`'s `formatGenerationConfig` reads it separately
    * from `thinkingConfig` — they serve different purposes in the request pipeline.
    */
   const isGemini3Plus = /gemini-([3-9]|\d{2,})/i.test(modelName);
 
   if (isGemini3Plus && thinking) {
-    const thinkingConfig: { includeThoughts: boolean; thinkingLevel?: string } = {
+    const thinkingConfig: GoogleThinkingConfig = {
       includeThoughts: true,
     };
-    if (thinkingLevel) {
-      thinkingConfig.thinkingLevel = thinkingLevel as string;
+    const normalizedThinkingLevel = normalizeGoogleThinkingLevel(thinkingLevel);
+    if (normalizedThinkingLevel) {
+      thinkingConfig.thinkingLevel = normalizedThinkingLevel;
     }
     if (provider === Providers.GOOGLE) {
-      (llmConfig as GoogleClientOptions).thinkingConfig = thinkingConfig;
+      (llmConfig as { thinkingConfig?: GoogleThinkingConfig }).thinkingConfig = thinkingConfig;
     } else if (provider === Providers.VERTEXAI) {
-      (llmConfig as Record<string, unknown>).thinkingConfig = thinkingConfig;
+      (llmConfig as { thinkingConfig?: GoogleThinkingConfig }).thinkingConfig = thinkingConfig;
       (llmConfig as VertexAIClientOptions).includeThoughts = true;
     }
   } else if (!isGemini3Plus) {
@@ -285,6 +341,9 @@ export function getGoogleConfig(
       if (knownGoogleParams.has(key)) {
         /** Route known Google params to llmConfig only if undefined */
         applyDefaultParams(llmConfig as Record<string, unknown>, { [key]: value });
+        if (key === 'endpoint' && hasStringEndpoint(llmConfig as Record<string, unknown>)) {
+          hasCustomVertexEndpoint = true;
+        }
       }
       /** Leave other params for transform to handle - they might be OpenAI params */
     }
@@ -304,6 +363,9 @@ export function getGoogleConfig(
       if (knownGoogleParams.has(key)) {
         /** Route known Google params to llmConfig */
         (llmConfig as Record<string, unknown>)[key] = value;
+        if (key === 'endpoint') {
+          hasCustomVertexEndpoint = hasStringEndpoint(llmConfig as Record<string, unknown>);
+        }
       }
       /** Leave other params for transform to handle - they might be OpenAI params */
     }
@@ -317,10 +379,19 @@ export function getGoogleConfig(
         return;
       }
 
+      if (param === 'endpoint') {
+        shouldSyncVertexEndpoint = false;
+        hasCustomVertexEndpoint = false;
+      }
+
       if (param in llmConfig) {
         delete (llmConfig as Record<string, unknown>)[param];
       }
     });
+  }
+
+  if (provider === Providers.VERTEXAI && shouldSyncVertexEndpoint && !hasCustomVertexEndpoint) {
+    applyVertexMultiRegionEndpoint(llmConfig as VertexAIClientOptions & { endpoint?: string });
   }
 
   const tools: GoogleAIToolType[] = [];

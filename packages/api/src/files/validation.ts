@@ -132,7 +132,7 @@ async function validateAnthropicPdf(
 /**
  * Matches Bedrock Claude 4+ model identifiers, including cross-region inference profile IDs.
  * Pattern: [region.]anthropic.claude-{family}-{version≥4}-{date}-v{n}:{rev}
- * e.g. "anthropic.claude-sonnet-4-20250514-v1:0" or "us.anthropic.claude-sonnet-4-20250514-v1:0"
+ * e.g. "anthropic.claude-sonnet-4-6" or "us.anthropic.claude-sonnet-4-6"
  */
 const BEDROCK_CLAUDE_4_PLUS_RE = /(?:^|\.)anthropic\.claude-(?:sonnet|opus|haiku)-[4-9]\d*-/;
 const isBedrockClaude4Plus = (model?: string): boolean =>

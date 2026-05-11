@@ -15,6 +15,7 @@ const HANDLED_RESOURCE_TYPES = {
   [ResourceType.REMOTE_AGENT]: 'deleteUserAgents',
   [ResourceType.PROMPTGROUP]: 'deleteUserPrompts',
   [ResourceType.MCPSERVER]: 'deleteUserMcpServers',
+  [ResourceType.SKILL]: 'deleteUserSkills',
 };
 
 /**

@@ -1,6 +1,6 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
-const { getBufferString, HumanMessage } = require('@langchain/core/messages');
+const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
   isEnabled,
@@ -18,6 +18,7 @@ const {
   memoryInstructions,
   createTokenCounter,
   applyContextToAgent,
+  isMemoryAgentEnabled,
   recordCollectedUsage,
   GenerationJobManager,
   getTransactionsConfig,
@@ -28,6 +29,10 @@ const {
   filterMalformedContentParts,
   countFormattedMessageTokens,
   hydrateMissingIndexTokenCounts,
+  injectSkillPrimes,
+  isSkillPrimeMessage,
+  buildSkillPrimeContentParts,
+  buildInitialToolSessions,
 } = require('@librechat/api');
 const {
   Callback,
@@ -44,6 +49,7 @@ const {
   ContentTypes,
   EModelEndpoint,
   PermissionTypes,
+  AgentCapabilities,
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
@@ -76,8 +82,10 @@ class AgentClient extends BaseClient {
       agentConfigs,
       contentParts,
       collectedUsage,
+      collectedThoughtSignatures,
       artifactPromises,
       maxContextTokens,
+      subagentAggregatorsByToolCallId,
       ...clientOptions
     } = options;
 
@@ -87,8 +95,20 @@ class AgentClient extends BaseClient {
     this.contentParts = contentParts;
     /** @type {Array<UsageMetadata>} */
     this.collectedUsage = collectedUsage;
+    /** Vertex Gemini 3 thought signatures captured during the run, keyed by
+     *  `tool_call_id`. Persisted on `responseMessage.metadata.thoughtSignatures`
+     *  and restored as `additional_kwargs.signatures` on subsequent turns to
+     *  keep tool round-trips valid across DB reconstruction.
+     *  @type {Record<string, string> | undefined} */
+    this.collectedThoughtSignatures = collectedThoughtSignatures;
     /** @type {ArtifactPromises} */
     this.artifactPromises = artifactPromises;
+    /** Per-request map of `createContentAggregator` instances keyed by
+     *  the parent's `tool_call_id`. `ON_SUBAGENT_UPDATE` events stream
+     *  into each aggregator as they arrive; `finalizeSubagentContent`
+     *  harvests `contentParts` onto the matching `subagent` tool_call
+     *  so the child's full activity survives a page refresh. */
+    this.subagentAggregatorsByToolCallId = subagentAggregatorsByToolCallId ?? new Map();
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
     /** @type {string} */
@@ -112,6 +132,45 @@ class AgentClient extends BaseClient {
    * @returns {MessageContentComplex[]} */
   getContentParts() {
     return this.contentParts;
+  }
+
+  /**
+   * Harvest the `contentParts` from each per-subagent `createContentAggregator`
+   * instance and attach them onto the matching parent `subagent` tool_call
+   * as `subagent_content`. Runs once per message save (from
+   * `sendCompletion`'s `finally`) so the child's full reasoning / tool
+   * calls / final text survive a page refresh — the client-side Recoil
+   * atom is session-only. Aggregators keyed by a tool_call_id that never
+   * appeared in `contentParts` are discarded (no home to attach to).
+   */
+  finalizeSubagentContent() {
+    const buffer = this.subagentAggregatorsByToolCallId;
+    if (!buffer || buffer.size === 0 || !Array.isArray(this.contentParts)) {
+      return;
+    }
+    for (const part of this.contentParts) {
+      if (part?.type !== ContentTypes.TOOL_CALL) continue;
+      const toolCall = part[ContentTypes.TOOL_CALL];
+      if (!toolCall || toolCall.name !== Constants.SUBAGENT || !toolCall.id) continue;
+      const aggregator = buffer.get(toolCall.id);
+      if (!aggregator) continue;
+      try {
+        /** `createContentAggregator` returns a sparse array (undefined
+         *  slots for indices that never received content). Strip those
+         *  so the persisted shape is a clean `TMessageContentParts[]`. */
+        const parts = Array.isArray(aggregator.contentParts)
+          ? aggregator.contentParts.filter((p) => p != null)
+          : [];
+        if (parts.length > 0) {
+          toolCall.subagent_content = parts;
+        }
+      } catch (err) {
+        logger.warn(
+          `[AgentClient] Failed to attach subagent content for tool_call ${toolCall.id}: ${err?.message ?? err}`,
+        );
+      }
+    }
+    buffer.clear();
   }
 
   setOptions(_options) {}
@@ -194,25 +253,19 @@ class AgentClient extends BaseClient {
     /** @type {number | undefined} */
     let promptTokens;
 
-    /**
-     * Extract base instructions for all agents (combines instructions + additional_instructions).
-     * This must be done before applying context to preserve the original agent configuration.
-     */
-    const extractBaseInstructions = (agent) => {
-      const baseInstructions = [agent.instructions ?? '', agent.additional_instructions ?? '']
-        .filter(Boolean)
-        .join('\n')
-        .trim();
-      agent.instructions = baseInstructions;
+    /** Normalize instruction fields before applying per-run context. */
+    const normalizeInstructions = (agent) => {
+      agent.instructions = agent.instructions?.trim() || undefined;
+      agent.additional_instructions = agent.additional_instructions?.trim() || undefined;
       return agent;
     };
 
-    /** Collect all agents for unified processing, extracting base instructions during collection */
+    /** Collect all agents for unified processing while preserving stable/dynamic instruction fields. */
     const allAgents = [
-      { agent: extractBaseInstructions(this.options.agent), agentId: this.options.agent.id },
+      { agent: normalizeInstructions(this.options.agent), agentId: this.options.agent.id },
       ...(this.agentConfigs?.size > 0
         ? Array.from(this.agentConfigs.entries()).map(([agentId, agent]) => ({
-            agent: extractBaseInstructions(agent),
+            agent: normalizeInstructions(agent),
             agentId,
           }))
         : []),
@@ -285,7 +338,7 @@ class AgentClient extends BaseClient {
             this.contextHandlers?.processFile(file);
             continue;
           }
-          if (file.metadata?.fileIdentifier) {
+          if (file.metadata?.codeEnvRef) {
             continue;
           }
         }
@@ -321,7 +374,8 @@ class AgentClient extends BaseClient {
 
     /**
      * Build shared run context - applies to ALL agents in the run.
-     * This includes: file context (latest message), augmented prompt (RAG), memory context.
+     * This includes file context from the latest message and augmented prompt (RAG).
+     * Memory context is handled separately and applied per-agent based on config.
      */
     const sharedRunContextParts = [];
 
@@ -341,12 +395,12 @@ class AgentClient extends BaseClient {
 
     /** Memory context (user preferences/memories) */
     const withoutKeys = await this.useMemory();
-    if (withoutKeys) {
-      const memoryContext = `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
-      sharedRunContextParts.push(memoryContext);
-    }
+    const memoryContext = withoutKeys
+      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
+      : undefined;
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
+    const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
     /** Preserve canonical pre-format token counts for all history entering graph formatting */
     this.indexTokenCountMap = canonicalTokenCountMap;
@@ -372,7 +426,8 @@ class AgentClient extends BaseClient {
 
     /**
      * Apply context to all agents.
-     * Each agent gets: shared run context + their own base instructions + their own MCP instructions.
+     * Stable agent/MCP instructions stay on `instructions`; shared runtime context
+     * is appended to `additional_instructions` as the dynamic system tail.
      *
      * NOTE: This intentionally mutates agent objects in place. The agentConfigs Map
      * holds references to config objects that will be passed to the graph runtime.
@@ -383,17 +438,22 @@ class AgentClient extends BaseClient {
     const configServers = await resolveConfigServers(this.options.req);
 
     await Promise.all(
-      allAgents.map(({ agent, agentId }) =>
-        applyContextToAgent({
+      allAgents.map(({ agent, agentId }) => {
+        const agentRunContext =
+          memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)
+            ? [sharedRunContext, memoryContext].filter(Boolean).join('\n\n')
+            : sharedRunContext;
+
+        return applyContextToAgent({
           agent,
           agentId,
           logger,
           mcpManager,
           configServers,
-          sharedRunContext,
+          sharedRunContext: agentRunContext,
           ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
-        }),
-      ),
+        });
+      }),
     );
 
     return result;
@@ -454,6 +514,22 @@ class AgentClient extends BaseClient {
       return;
     }
 
+    const userId = this.options.req.user.id + '';
+    this.processMemory = undefined;
+
+    if (!isMemoryAgentEnabled(memoryConfig)) {
+      try {
+        const { withoutKeys } = await db.getFormattedMemories({ userId });
+        return withoutKeys;
+      } catch (error) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
+          error,
+        );
+        return;
+      }
+    }
+
     /** @type {Agent} */
     let prelimAgent;
     const allowedProviders = new Set(
@@ -486,6 +562,13 @@ class AgentClient extends BaseClient {
       return;
     }
 
+    /** Forward the same `execute_code` capability gate the chat flow uses —
+     *  memory agents are unlikely to list `execute_code`, but if one does,
+     *  Phase 8 relies on this flag to expand the string into
+     *  `bash_tool` + `read_file` (pre-Phase 8 the legacy `execute_code`
+     *  tool registered unconditionally; without this passthrough the
+     *  memory path would silently lose code-execution tooling). */
+    const memoryCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
     const agent = await initializeAgent(
       {
         req: this.options.req,
@@ -497,6 +580,7 @@ class AgentClient extends BaseClient {
             ? EModelEndpoint.agents
             : memoryConfig.agent?.provider,
         },
+        codeEnvAvailable: memoryCapabilities.has(AgentCapabilities.execute_code),
       },
       {
         getFiles: db.getFiles,
@@ -534,7 +618,6 @@ class AgentClient extends BaseClient {
       tokenLimit: memoryConfig.tokenLimit,
     };
 
-    const userId = this.options.req.user.id + '';
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
     const streamId = this.options.req?._resumableStreamId || null;
@@ -603,18 +686,27 @@ class AgentClient extends BaseClient {
       const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
 
-      let messagesToProcess = [...messages];
-      if (messages.length > messageWindowSize) {
-        for (let i = messages.length - messageWindowSize; i >= 0; i--) {
-          const potentialWindow = messages.slice(i, i + messageWindowSize);
+      /**
+       * Strip skill-primed meta messages before memory extraction. The primes
+       * sit next to the latest user message and carry large SKILL.md bodies,
+       * so letting them into the window would crowd out real chat turns and
+       * pollute extracted memories with synthetic instruction content the
+       * user never typed.
+       */
+      const chatMessages = messages.filter((m) => !isSkillPrimeMessage(m));
+
+      let messagesToProcess = [...chatMessages];
+      if (chatMessages.length > messageWindowSize) {
+        for (let i = chatMessages.length - messageWindowSize; i >= 0; i--) {
+          const potentialWindow = chatMessages.slice(i, i + messageWindowSize);
           if (potentialWindow[0]?.role === 'user') {
             messagesToProcess = [...potentialWindow];
             break;
           }
         }
 
-        if (messagesToProcess.length === messages.length) {
-          messagesToProcess = [...messages.slice(-messageWindowSize)];
+        if (messagesToProcess.length === chatMessages.length) {
+          messagesToProcess = [...chatMessages.slice(-messageWindowSize)];
         }
       }
 
@@ -637,7 +729,11 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
-    return { completion };
+    const signatures = this.collectedThoughtSignatures;
+    if (!signatures || Object.keys(signatures).length === 0) {
+      return { completion };
+    }
+    return { completion, metadata: { thoughtSignatures: signatures } };
   }
 
   /**
@@ -742,17 +838,76 @@ class AgentClient extends BaseClient {
 
       const toolSet = buildToolSet(this.options.agent);
       const tokenCounter = createTokenCounter(this.getEncoding());
+
+      /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
+      const skillPrimeResult = this.options.primeInvokedSkills
+        ? await this.options.primeInvokedSkills(payload)
+        : undefined;
+
+      /**
+       * Seed `Graph.sessions` with code-env files primed across every
+       * reachable agent (primary, handoff/addedConvo, and nested
+       * subagents) plus skill-priming output. The merge logic and its
+       * run-wide semantics live in `buildInitialToolSessions`; see that
+       * helper's doc for why this is intentionally NOT per-agent.
+       */
+      const initialSessions = buildInitialToolSessions({
+        skillSessions: skillPrimeResult?.initialSessions,
+        agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
+      });
+
       let {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
-      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet);
+      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet, skillPrimeResult?.skills);
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
         );
       }
+
+      /**
+       * Skill priming — both manual ($ popover) and always-apply (frontmatter).
+       *
+       * Splice + index-shift logic lives in `injectSkillPrimes`
+       * (packages/api/src/agents/skills.ts) so the delicate position math
+       * can be unit-tested in TS without standing up AgentClient. The
+       * resolver enforces a combined ceiling (manual-first, always-apply
+       * truncated first when over cap) before reaching here; the splice
+       * re-applies the cap as defense-in-depth. Runs for both single-
+       * agent and multi-agent runs; how primes interact with handoff /
+       * added-convo agents' per-agent state is an agents-SDK concern,
+       * not this layer's to gate.
+       */
+      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
+      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      if (
+        (manualSkillPrimes && manualSkillPrimes.length > 0) ||
+        (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0)
+      ) {
+        const primeResult = injectSkillPrimes({
+          initialMessages,
+          indexTokenCountMap,
+          manualSkillPrimes,
+          alwaysApplySkillPrimes,
+        });
+        indexTokenCountMap = primeResult.indexTokenCountMap;
+        if (primeResult.inserted > 0) {
+          const manualNames = (manualSkillPrimes ?? []).map((p) => p.name);
+          const alwaysApplyNames = (alwaysApplySkillPrimes ?? []).map((p) => p.name);
+          logger.debug(
+            `[AgentClient] Primed ${primeResult.inserted} skill(s) at message index ${primeResult.insertIdx} — manual: [${manualNames.join(', ')}], always-apply: [${alwaysApplyNames.join(', ')}]`,
+          );
+        }
+        if (primeResult.alwaysApplyDropped > 0) {
+          logger.warn(
+            `[AgentClient] Dropped ${primeResult.alwaysApplyDropped} always-apply prime(s) to stay within MAX_PRIMED_SKILLS_PER_TURN.`,
+          );
+        }
+      }
+
       if (indexTokenCountMap && isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
         const entries = Object.entries(indexTokenCountMap);
         const perMsg = entries.map(([idx, count]) => {
@@ -809,7 +964,9 @@ class AgentClient extends BaseClient {
         //   messages = addCacheControl(messages);
         // }
 
-        memoryPromise = this.runMemory(messages);
+        if (this.processMemory) {
+          memoryPromise = this.runMemory(messages);
+        }
 
         /** Seed calibration state from previous run if encoding matches */
         const currentEncoding = this.getEncoding();
@@ -829,6 +986,7 @@ class AgentClient extends BaseClient {
           messages,
           indexTokenCountMap,
           initialSummary,
+          initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,
@@ -868,6 +1026,43 @@ class AgentClient extends BaseClient {
 
       const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
       await runAgents(initialMessages);
+
+      /**
+       * Surface a completed `skill` tool_call content part per *manually*-
+       * primed skill so the existing `SkillCall` frontend renderer shows
+       * a "Skill X loaded" card on the assistant response. Applied after
+       * the graph finishes to avoid clashing with the aggregator's own
+       * per-step content indexing. Prepended (not appended) so cards sit
+       * above the model's output — priming ran before the turn, the
+       * reply follows.
+       *
+       * Always-apply primes intentionally do NOT emit assistant-side
+       * cards. `extractInvokedSkillsFromPayload` scans history for
+       * `skill` tool_calls and feeds `primeInvokedSkills`, which is
+       * Phase 3's sticky-re-prime path — that's the right behavior for
+       * manual (user picked `$skill` once; re-prime on every subsequent
+       * turn from history). For always-apply, `resolveAlwaysApplySkills`
+       * already re-primes every turn from fresh DB state, so persisting
+       * the card would cause the skill body to get primed twice per
+       * turn starting on turn 2. The user-facing acknowledgement for
+       * always-apply lives on the user bubble as the pinned
+       * `SkillPills` row (`message.alwaysAppliedSkills`), which
+       * is the durable signal the user wants: "this skill auto-primes".
+       *
+       * Live streaming display of manual user-bubble pills is handled
+       * by `SkillPills` reading `message.manualSkills`. No
+       * separate SSE emit is needed here; trying to stream a mid-run
+       * tool_call at index 0 collided with the LLM's first text
+       * content, while emitting at a sparse offset pushed the card
+       * below the reply on finalize. Post-run unshift keeps the final
+       * responseMessage.content in the right order.
+       */
+      const manualPrimed = this.options.agent?.manualSkillPrimes ?? [];
+      if (manualPrimed.length > 0) {
+        const runId = this.responseMessageId ?? 'skill-prime';
+        const manualParts = buildSkillPrimeContentParts(manualPrimed, { runId });
+        this.contentParts.unshift(...manualParts);
+      }
 
       /** @deprecated Agent Chain */
       if (hideSequentialOutputs) {
@@ -910,6 +1105,8 @@ class AgentClient extends BaseClient {
       } else {
         this.contextMeta = undefined;
       }
+
+      this.finalizeSubagentContent();
 
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);

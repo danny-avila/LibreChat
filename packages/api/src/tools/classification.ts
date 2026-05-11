@@ -8,11 +8,10 @@
 import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
 import {
-  EnvVar,
   createToolSearch,
   ToolSearchToolDefinition,
-  createProgrammaticToolCallingTool,
-  ProgrammaticToolCallingDefinition,
+  BashProgrammaticToolCallingDefinition,
+  createBashProgrammaticToolCallingTool,
 } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type {
@@ -188,11 +187,8 @@ export interface BuildToolClassificationParams {
   deferredToolsEnabled?: boolean;
   /** When true, skip creating tool instances (for event-driven mode) */
   definitionsOnly?: boolean;
-  /** Function to load auth values (dependency injection) */
-  loadAuthValues: (params: {
-    userId: string;
-    authFields: string[];
-  }) => Promise<Record<string, string>>;
+  /** Optional host-supplied Code API auth headers for remote programmatic execution. */
+  authHeaders?: () => Promise<Record<string, string>> | Record<string, string>;
 }
 
 /** Result from building tool classification */
@@ -252,13 +248,12 @@ export async function buildToolClassification(
   params: BuildToolClassificationParams,
 ): Promise<BuildToolClassificationResult> {
   const {
-    userId,
     agentId,
     loadedTools,
     agentToolOptions,
     definitionsOnly = false,
     deferredToolsEnabled = true,
-    loadAuthValues,
+    authHeaders,
   } = params;
   const additionalTools: GenericTool[] = [];
 
@@ -331,7 +326,6 @@ export async function buildToolClassification(
     logger.debug(`[buildToolClassification] Tool Search enabled for agent ${agentId}`);
   }
 
-  /** PTC requires CODE_API_KEY for sandbox execution */
   if (!hasProgrammaticTools) {
     return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
   }
@@ -339,12 +333,12 @@ export async function buildToolClassification(
   /** In definitions-only mode, add PTC definition without creating the tool instance */
   if (definitionsOnly) {
     toolDefinitions.push({
-      name: ProgrammaticToolCallingDefinition.name,
-      description: ProgrammaticToolCallingDefinition.description,
-      parameters: ProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
+      name: BashProgrammaticToolCallingDefinition.name,
+      description: BashProgrammaticToolCallingDefinition.description,
+      parameters: BashProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
     });
-    toolRegistry.set(ProgrammaticToolCallingDefinition.name, {
-      name: ProgrammaticToolCallingDefinition.name,
+    toolRegistry.set(BashProgrammaticToolCallingDefinition.name, {
+      name: BashProgrammaticToolCallingDefinition.name,
       allowed_callers: ['direct'],
     });
     logger.debug(
@@ -354,28 +348,19 @@ export async function buildToolClassification(
   }
 
   try {
-    const authValues = await loadAuthValues({
-      userId,
-      authFields: [EnvVar.CODE_API_KEY],
-    });
-    const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-
-    if (!codeApiKey) {
-      logger.warn('[buildToolClassification] PTC configured but CODE_API_KEY not available');
-      return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
-    }
-
-    const ptcTool = createProgrammaticToolCallingTool({ apiKey: codeApiKey });
+    const ptcTool = createBashProgrammaticToolCallingTool({ authHeaders } as Parameters<
+      typeof createBashProgrammaticToolCallingTool
+    >[0] & { authHeaders?: BuildToolClassificationParams['authHeaders'] });
     additionalTools.push(ptcTool);
 
     /** Add PTC definition for event-driven mode */
     toolDefinitions.push({
-      name: ProgrammaticToolCallingDefinition.name,
-      description: ProgrammaticToolCallingDefinition.description,
-      parameters: ProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
+      name: BashProgrammaticToolCallingDefinition.name,
+      description: BashProgrammaticToolCallingDefinition.description,
+      parameters: BashProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
     });
-    toolRegistry.set(ProgrammaticToolCallingDefinition.name, {
-      name: ProgrammaticToolCallingDefinition.name,
+    toolRegistry.set(BashProgrammaticToolCallingDefinition.name, {
+      name: BashProgrammaticToolCallingDefinition.name,
       allowed_callers: ['direct'],
     });
 

@@ -37,6 +37,37 @@ beforeEach(async () => {
   await mongoose.connection.dropDatabase();
 });
 
+describe('User schema indexes', () => {
+  test('should allow the same OpenID subject from different issuers', async () => {
+    await User.syncIndexes();
+
+    await User.create({
+      email: 'issuer-a@example.com',
+      provider: 'openid',
+      openidId: 'shared-sub',
+      openidIssuer: 'https://issuer-a.example.com',
+    });
+
+    await expect(
+      User.create({
+        email: 'issuer-b@example.com',
+        provider: 'openid',
+        openidId: 'shared-sub',
+        openidIssuer: 'https://issuer-b.example.com',
+      }),
+    ).resolves.toBeTruthy();
+
+    await expect(
+      User.create({
+        email: 'issuer-a-duplicate@example.com',
+        provider: 'openid',
+        openidId: 'shared-sub',
+        openidIssuer: 'https://issuer-a.example.com',
+      }),
+    ).rejects.toThrow(/duplicate key/);
+  });
+});
+
 describe('User Methods - Database Tests', () => {
   describe('findUser', () => {
     test('should find user by exact email', async () => {

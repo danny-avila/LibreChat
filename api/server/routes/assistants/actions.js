@@ -37,6 +37,7 @@ router.post('/:assistant_id', async (req, res) => {
     const isDomainAllowed = await isActionDomainAllowed(
       metadata.domain,
       appConfig?.actions?.allowedDomains,
+      appConfig?.actions?.allowedAddresses,
     );
     if (!isDomainAllowed) {
       return res.status(400).json({ message: 'Domain not allowed' });
