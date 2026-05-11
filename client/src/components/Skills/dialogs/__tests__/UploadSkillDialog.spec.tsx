@@ -94,6 +94,18 @@ describe('UploadSkillDialog', () => {
     expect(screen.getByText('File size must not exceed 1 MB')).toBeInTheDocument();
   });
 
+  it('renders fractional configured skill import size limits exactly', () => {
+    mockFileConfigInput = {
+      skills: {
+        fileSizeLimit: 1.06,
+      },
+    };
+
+    render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+
+    expect(screen.getByText('File size must not exceed 1.06 MB')).toBeInTheDocument();
+  });
+
   it('rejects files above the configured skill import limit before upload', () => {
     const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
     const file = new File([new Uint8Array(1024 * 1024 + 1)], 'too-large.skill', {
