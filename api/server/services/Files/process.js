@@ -43,6 +43,8 @@ const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
 const db = require('~/models');
 
+const DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+
 /**
  * Creates a modular file upload wrapper that ensures filename sanitization
  * across all storage strategies. This prevents storage-specific implementations
@@ -264,12 +266,12 @@ const processDeleteRequest = async ({ req, files }) => {
 function getFileRetentionSweepInterval() {
   const interval = process.env.FILE_RETENTION_SWEEP_INTERVAL_MS;
   if (interval == null || interval.trim() === '') {
-    return 60 * 60 * 1000;
+    return DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS;
   }
 
   const value = Number(interval);
-  if (!Number.isFinite(value) || value < 0) {
-    return 60 * 60 * 1000;
+  if (!Number.isFinite(value) || value < 0 || (value > 0 && value < 1)) {
+    return DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS;
   }
   return value;
 }

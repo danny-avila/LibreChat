@@ -948,6 +948,36 @@ describe('startExpiredFileSweep', () => {
     clearInterval(interval);
   });
 
+  it('uses the default interval when the sweep interval env var is sub-millisecond', async () => {
+    jest.useFakeTimers();
+    process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = '0.5';
+    db.getExpiredFiles.mockResolvedValue([]);
+
+    const interval = startExpiredFileSweep({
+      appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(interval).not.toBeNull();
+    expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
+
+    jest.advanceTimersByTime(1);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
+
+    jest.advanceTimersByTime(60 * 60 * 1000);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(db.getExpiredFiles).toHaveBeenCalledTimes(2);
+
+    clearInterval(interval);
+  });
+
   it('does not start another sweep while one is in progress', async () => {
     jest.useFakeTimers();
     process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = '10';
