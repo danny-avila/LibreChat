@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
+import { FileSources } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { logger, sortPagesByRelevance, triggerDownload } from '~/utils';
-import { useFileDownload } from '~/data-provider';
+import { useFileDownload, useFilePreview } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -19,6 +20,7 @@ interface FilePreviewDialogProps {
   pageRelevance?: Record<number, number>;
   fileType?: string;
   fileSize?: number;
+  source?: string | null;
 }
 
 function getFileExtension(filename: string): string {
@@ -133,10 +135,18 @@ export default function FilePreviewDialog({
   pageRelevance,
   fileType,
   fileSize,
+  source,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
+  const isTextSource = source === FileSources.text;
+  const previewKind = isTextSource
+    ? 'text'
+    : canPreviewByMime(fileType) || canPreviewByExt(fileName);
   const { refetch: downloadFile } = useFileDownload(user?.id ?? '', fileId, { direct: false });
+  const { refetch: fetchTextPreview } = useFilePreview(isTextSource ? fileId : undefined, {
+    enabled: false,
+  });
 
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
@@ -145,9 +155,15 @@ export default function FilePreviewDialog({
   const [isCopied, setIsCopied] = useState(false);
   const loadingRef = useRef(false);
 
-  const previewKind = canPreviewByMime(fileType) || canPreviewByExt(fileName);
-
   const cancelledRef = useRef(false);
+
+  const getTextSourceContent = useCallback(async () => {
+    if (fileContent != null) {
+      return fileContent;
+    }
+    const result = await fetchTextPreview();
+    return result.data?.status === 'ready' ? result.data.text : undefined;
+  }, [fetchTextPreview, fileContent]);
 
   const loadPreview = useCallback(async () => {
     if (!fileId || !previewKind || loadingRef.current) {
@@ -159,6 +175,18 @@ export default function FilePreviewDialog({
     setPreviewError(false);
 
     try {
+      if (isTextSource) {
+        const text = await getTextSourceContent();
+        if (cancelledRef.current || text == null) {
+          if (!cancelledRef.current) {
+            setPreviewError(true);
+          }
+          return;
+        }
+        setFileContent(text);
+        return;
+      }
+
       const result = await downloadFile();
       if (cancelledRef.current || !result.data) {
         if (!cancelledRef.current) {
@@ -190,13 +218,25 @@ export default function FilePreviewDialog({
         setLoading(false);
       }
     }
-  }, [fileId, previewKind, downloadFile]);
+  }, [fileId, previewKind, isTextSource, getTextSourceContent, downloadFile]);
 
   const handleDownload = useCallback(async () => {
     if (!fileId) {
       return;
     }
     try {
+      if (isTextSource) {
+        const text = await getTextSourceContent();
+        if (text == null) {
+          return;
+        }
+        const downloadURL = URL.createObjectURL(
+          new Blob([text], { type: fileType || 'text/plain' }),
+        );
+        triggerDownload(downloadURL, fileName);
+        return;
+      }
+
       const result = await downloadFile();
       if (!result.data) {
         return;
@@ -205,7 +245,7 @@ export default function FilePreviewDialog({
     } catch (err) {
       logger.error('[FilePreviewDialog] Download failed:', err);
     }
-  }, [downloadFile, fileId, fileName]);
+  }, [downloadFile, fileId, fileName, fileType, isTextSource, getTextSourceContent]);
 
   useEffect(() => {
     if (open && previewKind && !fileContent && !fileBlobUrl) {

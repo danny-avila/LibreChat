@@ -10,6 +10,7 @@ import { useLocalize } from '~/hooks';
 interface FileCitationMetadata {
   fileBytes?: number;
   fileType?: string;
+  storageType?: string;
 }
 
 interface FileCitationSource {
@@ -37,6 +38,7 @@ function getFileCitationData(source?: FileCitationSource) {
     filePages: isFileType ? source.pages : undefined,
     fileRelevance: isFileType ? source.relevance : undefined,
     filePageRelevance: isFileType ? source.pageRelevance : undefined,
+    fileSource: isFileType ? source.metadata?.storageType : undefined,
   };
 }
 
@@ -93,8 +95,16 @@ export function CompositeCitation(props: CompositeCitationProps) {
   };
 
   const currentSource = sources[currentPage] as FileCitationSource;
-  const { isFileType, fileId, fileMeta, fileName, filePages, fileRelevance, filePageRelevance } =
-    getFileCitationData(currentSource);
+  const {
+    isFileType,
+    fileId,
+    fileMeta,
+    fileName,
+    filePages,
+    fileRelevance,
+    filePageRelevance,
+    fileSource,
+  } = getFileCitationData(currentSource);
 
   const handleFileClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -273,6 +283,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
           pageRelevance={filePageRelevance}
           fileType={fileMeta?.fileType}
           fileSize={fileMeta?.fileBytes}
+          source={fileSource}
         />
       )}
     </>
@@ -297,8 +308,16 @@ export function Citation(props: CitationComponentProps) {
     index: citation?.index || 0,
   }) as FileCitationSource | undefined;
 
-  const { isFileType, fileId, fileMeta, fileName, filePages, fileRelevance, filePageRelevance } =
-    getFileCitationData(refData);
+  const {
+    isFileType,
+    fileId,
+    fileMeta,
+    fileName,
+    filePages,
+    fileRelevance,
+    filePageRelevance,
+    fileSource,
+  } = getFileCitationData(refData);
 
   const [showPreview, setShowPreview] = useState(false);
 
@@ -349,6 +368,7 @@ export function Citation(props: CitationComponentProps) {
           pageRelevance={filePageRelevance}
           fileType={fileMeta?.fileType}
           fileSize={fileMeta?.fileBytes}
+          source={fileSource}
         />
       )}
     </>

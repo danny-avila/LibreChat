@@ -48,6 +48,7 @@ const Files = ({ message }: { message?: TMessage }) => {
         fileId={selectedFile?.file_id}
         fileType={selectedFile?.type ?? undefined}
         fileSize={(selectedFile as TFile)?.bytes}
+        source={selectedFile?.source}
       />
     </>
   );

@@ -401,7 +401,7 @@ router.get('/:file_id/preview', fileAccess, async (req, res) => {
     const status = file.status ?? 'ready';
     const payload = { file_id, status };
     if (status === 'ready') {
-      const withText = await db.findFileById(file_id);
+      const withText = await db.findFileById(file_id, { _id: file._id });
       if (withText?.text != null) {
         payload.text = withText.text;
         payload.textFormat = withText.textFormat ?? null;

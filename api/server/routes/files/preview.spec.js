@@ -163,7 +163,13 @@ describe('GET /files/:file_id/preview', () => {
 
   it('returns status:ready with text + textFormat when the deferred render succeeded', async () => {
     mockGetFiles.mockResolvedValueOnce([
-      { file_id: 'fid-ready', user: OWNER_USER_ID, filename: 'data.xlsx', status: 'ready' },
+      {
+        _id: 'mongo-ready',
+        file_id: 'fid-ready',
+        user: OWNER_USER_ID,
+        filename: 'data.xlsx',
+        status: 'ready',
+      },
     ]);
     /* Text is fetched only on the terminal ready response. */
     mockFindFileById.mockResolvedValueOnce({
@@ -172,6 +178,7 @@ describe('GET /files/:file_id/preview', () => {
       textFormat: 'html',
     });
     const res = await request(buildApp()).get('/files/fid-ready/preview');
+    expect(mockFindFileById).toHaveBeenCalledWith('fid-ready', { _id: 'mongo-ready' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       file_id: 'fid-ready',
