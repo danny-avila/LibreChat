@@ -68,8 +68,11 @@ jest.mock('~/cache', () => ({
 }));
 
 const { initializeClient } = require('./initialize');
+const { logger } = require('@librechat/data-schemas');
 const { User, AclEntry } = require('~/db/models');
 const { createAgent } = require('~/models');
+
+jest.spyOn(logger, 'warn').mockImplementation(() => {});
 
 const PRIMARY_ID = 'agent_primary';
 const TARGET_ID = 'agent_target';
@@ -504,6 +507,16 @@ describe('initializeClient — subagent loading', () => {
         endpointOption: makeEndpointOption(),
       }),
     ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[initializeClient] Subagent graph depth limit exceeded',
+      expect.objectContaining({
+        agentId: `agent_depth_${MAX_SUBAGENT_DEPTH - 1}`,
+        primaryAgentId: PRIMARY_ID,
+        depth: MAX_SUBAGENT_DEPTH,
+        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+        childCount: 1,
+      }),
+    );
     expect(agentClientArgs).toBeUndefined();
   });
 
@@ -542,6 +555,15 @@ describe('initializeClient — subagent loading', () => {
         endpointOption: makeEndpointOption(),
       }),
     ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[initializeClient] Subagent graph depth limit exceeded',
+      expect.objectContaining({
+        primaryAgentId: PRIMARY_ID,
+        depth: MAX_SUBAGENT_DEPTH,
+        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+        childCount: 1,
+      }),
+    );
     expect(agentClientArgs).toBeUndefined();
   });
 
@@ -581,6 +603,14 @@ describe('initializeClient — subagent loading', () => {
         endpointOption: makeEndpointOption(),
       }),
     ).rejects.toThrow(`maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents`);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[initializeClient] Subagent graph node limit exceeded',
+      expect.objectContaining({
+        primaryAgentId: PRIMARY_ID,
+        loadedSubagentCount: MAX_SUBAGENT_GRAPH_NODES,
+        maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+      }),
+    );
     expect(agentClientArgs).toBeUndefined();
   });
 

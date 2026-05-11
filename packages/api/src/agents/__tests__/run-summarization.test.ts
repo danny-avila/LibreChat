@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
 import {
@@ -24,6 +25,16 @@ jest.mock('winston', () => ({
 jest.mock('~/utils/env', () => ({
   resolveHeaders: jest.fn((opts: { headers: unknown }) => opts?.headers ?? {}),
   createSafeUser: jest.fn(() => ({})),
+}));
+
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  logger: {
+    debug: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    info: jest.fn(),
+  },
 }));
 
 // Mock Run.create to capture the graphConfig it receives
@@ -1007,6 +1018,14 @@ describe('subagentConfigs', () => {
       }),
     ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
 
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[createRun] Subagent graph depth limit exceeded',
+      expect.objectContaining({
+        agentId: `agent_chain_${MAX_SUBAGENT_DEPTH + 1}`,
+        depth: MAX_SUBAGENT_DEPTH + 1,
+        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+      }),
+    );
     expect(Run.create).not.toHaveBeenCalled();
   });
 
@@ -1020,6 +1039,14 @@ describe('subagentConfigs', () => {
       }),
     ).rejects.toThrow(`maximum of ${MAX_SUBAGENT_RUN_CONFIGS} expanded entries`);
 
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[createRun] Subagent run configuration limit exceeded',
+      expect.objectContaining({
+        expandedConfigCount: MAX_SUBAGENT_RUN_CONFIGS + 1,
+        maxSubagentRunConfigs: MAX_SUBAGENT_RUN_CONFIGS,
+        rootAgentIds: ['agent_dag_root'],
+      }),
+    );
     expect(Run.create).not.toHaveBeenCalled();
   });
 });

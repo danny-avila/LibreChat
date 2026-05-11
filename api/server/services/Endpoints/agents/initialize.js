@@ -647,6 +647,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       return;
     }
     if (subagentGraphIds.size >= MAX_SUBAGENT_GRAPH_NODES) {
+      logger.warn('[initializeClient] Subagent graph node limit exceeded', {
+        agentId,
+        primaryAgentId: primaryConfig.id,
+        loadedSubagentCount: subagentGraphIds.size,
+        maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+      });
       throw new Error(
         `Subagent graph exceeds the maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents.`,
       );
@@ -670,6 +676,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
     if (loadedSubagentConfigIds.has(config.id)) {
       if ((config.subagentAgentConfigs?.length ?? 0) > 0 && depth >= MAX_SUBAGENT_DEPTH) {
+        logger.warn('[initializeClient] Subagent graph depth limit exceeded', {
+          agentId: config.id,
+          primaryAgentId: primaryConfig.id,
+          depth,
+          maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+          childCount: config.subagentAgentConfigs.length,
+        });
         throw new Error(
           `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${config.id}.`,
         );
@@ -690,6 +703,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     );
 
     if (explicitSubagentIds.length > 0 && depth >= MAX_SUBAGENT_DEPTH) {
+      logger.warn('[initializeClient] Subagent graph depth limit exceeded', {
+        agentId: config.id,
+        primaryAgentId: primaryConfig.id,
+        depth,
+        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+        childCount: explicitSubagentIds.length,
+      });
       throw new Error(
         `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${config.id}.`,
       );

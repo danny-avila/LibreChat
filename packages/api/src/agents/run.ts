@@ -551,11 +551,17 @@ const SELF_SUBAGENT_TYPE = 'self';
 
 interface SubagentBuildState {
   configCount: number;
+  rootAgentIds: string[];
 }
 
 function countSubagentConfig(state: SubagentBuildState): void {
   state.configCount += 1;
   if (state.configCount > MAX_SUBAGENT_RUN_CONFIGS) {
+    logger.warn('[createRun] Subagent run configuration limit exceeded', {
+      expandedConfigCount: state.configCount,
+      maxSubagentRunConfigs: MAX_SUBAGENT_RUN_CONFIGS,
+      rootAgentIds: state.rootAgentIds,
+    });
     throw new Error(
       `Subagent run configuration exceeds the maximum of ${MAX_SUBAGENT_RUN_CONFIGS} expanded entries.`,
     );
@@ -564,6 +570,11 @@ function countSubagentConfig(state: SubagentBuildState): void {
 
 function assertSubagentDepth(depth: number, agentId: string): void {
   if (depth > MAX_SUBAGENT_DEPTH) {
+    logger.warn('[createRun] Subagent graph depth limit exceeded', {
+      agentId,
+      depth,
+      maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+    });
     throw new Error(
       `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${agentId}.`,
     );
@@ -922,7 +933,10 @@ export async function createRun({
   };
 
   const agentInputs: AgentInputs[] = [];
-  const subagentBuildState: SubagentBuildState = { configCount: 0 };
+  const subagentBuildState: SubagentBuildState = {
+    configCount: 0,
+    rootAgentIds: agents.map((agent) => agent.id),
+  };
   for (const agent of agents) {
     const agentInput = buildAgentInput(agent);
     const subagentConfigs = buildSubagentConfigs(
