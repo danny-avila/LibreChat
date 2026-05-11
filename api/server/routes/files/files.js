@@ -480,12 +480,12 @@ const getDownloadFileMetadata = (file) => {
   }, {});
 };
 
-const getTextFileDownloadStream = async (file_id) => {
-  const file = await db.findFileById(file_id);
-  if (file?.text == null) {
+const getTextFileDownloadStream = async (file) => {
+  const withText = await db.findFileById(file.file_id, { _id: file._id });
+  if (withText?.text == null) {
     return null;
   }
-  return Readable.from([Buffer.from(file.text, 'utf8')]);
+  return Readable.from([withText.text]);
 };
 
 router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
@@ -549,7 +549,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
     };
 
     if (file.source === FileSources.text) {
-      const fileStream = await getTextFileDownloadStream(file_id);
+      const fileStream = await getTextFileDownloadStream(file);
       if (!fileStream) {
         logger.warn(`Text file download requested by user ${userId} has no text: ${file_id}`);
         return res.status(404).send('File content not found');

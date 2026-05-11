@@ -672,9 +672,6 @@ describe('File Routes - Delete with Agent Access', () => {
     it('streams text-source downloads from stored DB text instead of the temp filepath', async () => {
       const userFileId = uuidv4();
       const text = 'hello from db text';
-      getStrategyFunctions.mockImplementation(() => {
-        throw new Error('Text downloads should not use file storage strategies');
-      });
 
       await createFile({
         user: otherUserId,
@@ -699,6 +696,50 @@ describe('File Routes - Delete with Agent Access', () => {
         source: FileSources.text,
       });
       expect(metadata).not.toHaveProperty('text');
+      expect(getStrategyFunctions).not.toHaveBeenCalled();
+    });
+
+    it('scopes text-source downloads to the authorized file record', async () => {
+      const duplicatedFileId = uuidv4();
+      const authorizedText = 'authorized text';
+
+      await File.create({
+        user: authorId,
+        file_id: duplicatedFileId,
+        filename: 'shadow.txt',
+        filepath: '/app/uploads/temp/shadow/example.txt',
+        bytes: Buffer.byteLength('shadow text', 'utf8'),
+        type: 'text/plain',
+        source: FileSources.text,
+        text: 'shadow text',
+      });
+
+      const authorizedFile = await File.create({
+        user: otherUserId,
+        file_id: duplicatedFileId,
+        filename: 'example.txt',
+        filepath: '/app/uploads/temp/authorized/example.txt',
+        bytes: Buffer.byteLength(authorizedText, 'utf8'),
+        type: 'text/plain',
+        source: FileSources.text,
+        text: authorizedText,
+      });
+      await File.updateOne(
+        { _id: authorizedFile._id },
+        { updatedAt: new Date(Date.now() + 1000) },
+      );
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${duplicatedFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.toString()).toBe(authorizedText);
+      const metadata = JSON.parse(decodeURIComponent(response.headers['x-file-metadata']));
+      expect(metadata).toMatchObject({
+        file_id: duplicatedFileId,
+        filename: 'example.txt',
+        filepath: '/app/uploads/temp/authorized/example.txt',
+        source: FileSources.text,
+      });
       expect(getStrategyFunctions).not.toHaveBeenCalled();
     });
 
