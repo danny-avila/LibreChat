@@ -724,10 +724,7 @@ describe('File Routes - Delete with Agent Access', () => {
         source: FileSources.text,
         text: authorizedText,
       });
-      await File.updateOne(
-        { _id: authorizedFile._id },
-        { updatedAt: new Date(Date.now() + 1000) },
-      );
+      await File.updateOne({ _id: authorizedFile._id }, { updatedAt: new Date(Date.now() + 1000) });
 
       const response = await request(app).get(`/files/download/${otherUserId}/${duplicatedFileId}`);
 
