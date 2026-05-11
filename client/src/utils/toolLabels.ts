@@ -10,16 +10,16 @@ import type { TranslationKeys } from '~/hooks';
 
 /** Native tool id → translation key for a user-readable short name. */
 export const TOOL_FRIENDLY_NAME_KEYS: Record<string, TranslationKeys> = {
-  execute_code: 'com_ui_tool_name_code',
-  run_tools_with_code: 'com_ui_tool_name_code',
-  run_tools_with_bash: 'com_ui_tool_name_code',
-  bash_tool: 'com_ui_tool_name_code',
+  execute_code: 'com_ui_run_code',
+  run_tools_with_code: 'com_ui_run_code',
+  run_tools_with_bash: 'com_ui_run_code',
+  bash_tool: 'com_ui_run_code',
   web_search: 'com_ui_tool_name_web_search',
   image_gen_oai: 'com_ui_tool_name_image_gen',
   image_edit_oai: 'com_ui_tool_name_image_edit',
   gemini_image_gen: 'com_ui_tool_name_image_gen',
   file_search: 'com_ui_tool_name_file_search',
-  code_interpreter: 'com_ui_tool_name_code_analysis',
+  code_interpreter: 'com_ui_run_code',
   retrieval: 'com_ui_tool_name_file_search',
 };
 
