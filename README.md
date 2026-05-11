@@ -1,9 +1,8 @@
 <img width="2752" height="1536" alt="Gemini_Generated_Image_mjwvz9mjwvz9mjwv (1)" src="https://github.com/user-attachments/assets/73ff8760-684e-44f2-ad8f-c66d3451feab" /> 
 
+---
 
 # 🍇 JAMUN AI: The Ultimate Private AI Interface 🍇
-
-![Jamun AI Banner](https://raw.githubusercontent.com/danny-avila/LibreChat/main/client/public/assets/logo.png)
 
 > **"A Personal Assistant for Personal Tasks"**
 
