@@ -47,6 +47,11 @@ import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
 
+// V1 UX (POP/BETC) : ID technique agent_XXX masqué sous le champ Nom —
+// bruit visuel sans utilité métier. Réactiver en passant à `true` ; le
+// champ id reste dans le formulaire et le data model côté backend.
+const SHOW_AGENT_ID = false;
+
 const labelClass = 'mb-2 text-token-text-primary block text-sm font-medium';
 const inputClass = cn(
   defaultTextProps,
@@ -264,15 +269,17 @@ export default function AgentConfig() {
               </>
             )}
           />
-          <Controller
-            name="id"
-            control={control}
-            render={({ field }) => (
-              <p className="h-3 text-xs italic text-text-secondary" aria-live="polite">
-                {field.value}
-              </p>
-            )}
-          />
+          {SHOW_AGENT_ID && (
+            <Controller
+              name="id"
+              control={control}
+              render={({ field }) => (
+                <p className="h-3 text-xs italic text-text-secondary" aria-live="polite">
+                  {field.value}
+                </p>
+              )}
+            />
+          )}
         </div>
         {/* Description */}
         <div className="mb-4">
