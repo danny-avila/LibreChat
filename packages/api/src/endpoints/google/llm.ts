@@ -145,6 +145,10 @@ function isAllowedVertexEndpoint(endpoint: string): boolean {
     return true;
   }
 
+  if (/^[a-z0-9-]+-aiplatform-restricted\.p\.googleapis\.com$/.test(endpoint)) {
+    return true;
+  }
+
   return /^aiplatform\.[a-z0-9-]+\.rep\.googleapis\.com$/.test(endpoint);
 }
 

@@ -357,6 +357,30 @@ describe('getGoogleConfig', () => {
       });
     });
 
+    it('should preserve explicit Google Vertex AI restricted Private Service Connect endpoints', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          endpoint: 'us-central1-aiplatform-restricted.p.googleapis.com',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'us',
+        endpoint: 'us-central1-aiplatform-restricted.p.googleapis.com',
+      });
+    });
+
     it('should ignore model option Vertex AI endpoint overrides', () => {
       process.env.GOOGLE_LOC = 'eu';
 
