@@ -69,6 +69,12 @@ const pendingNotificationQuestion = atom<string>({
   default: '',
 });
 
+// Incremented after newConversation() has settled — triggers the actual submit
+const notificationSubmitTrigger = atom<number>({
+  key: 'notificationSubmitTrigger',
+  default: 0,
+});
+
 export default {
   hideBannerHint,
   messageAttachmentsMap,
@@ -77,4 +83,5 @@ export default {
   isEditingBadges,
   chatBadges,
   pendingNotificationQuestion,
+  notificationSubmitTrigger,
 };

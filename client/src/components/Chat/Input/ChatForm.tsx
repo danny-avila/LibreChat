@@ -1,5 +1,4 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
 import { useWatch } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
@@ -135,18 +134,28 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
-  const location = useLocation();
-  const autoQuestionRef = useRef<string>('');
+  const [pendingQuestion, setPendingQuestion] = useRecoilState(store.pendingNotificationQuestion);
+  const [submitTrigger, setSubmitTrigger] = useRecoilState(store.notificationSubmitTrigger);
+
+  // Phase 1: newConversation() is already called in NotificationBell before navigate.
+  // Wait for it to settle, then signal phase 2. pendingQuestion stays in the atom until phase 2 reads it.
   useEffect(() => {
-    const state = location.state as { autoQuestion?: string } | null;
-    const autoQuestion = state?.autoQuestion;
-    if (!autoQuestion || autoQuestionRef.current === autoQuestion) return;
-    autoQuestionRef.current = autoQuestion;
-    // Clear the state so refreshing doesn't resubmit
-    window.history.replaceState({ ...window.history.state, usr: null }, '');
-    const timer = setTimeout(() => submitMessage({ text: autoQuestion }), 500);
+    if (!pendingQuestion) return;
+    const timer = setTimeout(() => setSubmitTrigger((n) => n + 1), 600);
     return () => clearTimeout(timer);
-  }, [location.state, submitMessage]);
+  }, [pendingQuestion, setSubmitTrigger]);
+
+  // Phase 2: fired by the trigger counter after newConversation has settled.
+  // Reads pendingQuestion fresh from Recoil (survives any remount), then clears it.
+  useEffect(() => {
+    if (submitTrigger === 0 || !pendingQuestion) return;
+    const question = pendingQuestion;
+    setPendingQuestion('');
+    methods.setValue('text', question, { shouldDirty: true });
+    const timer = setTimeout(() => submitButtonRef.current?.click(), 200);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submitTrigger]);
 
   const handleKeyUp = useHandleKeyUp({
     index,

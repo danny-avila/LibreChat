@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { useSetRecoilState } from 'recoil';
 import { Bell } from 'lucide-react';
 import useNotifications from '~/hooks/useNotifications';
+import useNewConvo from '~/hooks/useNewConvo';
+import store from '~/store';
 
 function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -10,6 +13,8 @@ function NotificationBell() {
   const { notifications, unreadCount, markAsVisited, markAllVisited, fetchNotifications } =
     useNotifications();
   const navigate = useNavigate();
+  const { newConversation } = useNewConvo();
+  const setPendingQuestion = useSetRecoilState(store.pendingNotificationQuestion);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -85,7 +90,9 @@ function NotificationBell() {
                   onClick={() => {
                     markAsVisited(n._id);
                     setOpen(false);
-                    navigate('/c/new', { state: { autoQuestion: n.originalQuestion } });
+                    newConversation();
+                    setPendingQuestion(n.originalQuestion);
+                    navigate('/c/new');
                   }}
                   className={`cursor-pointer border-b border-border-light px-4 py-3 last:border-0 hover:bg-surface-active-alt ${
                     !n.isVisited ? 'bg-surface-secondary' : ''
