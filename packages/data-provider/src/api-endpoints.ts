@@ -368,6 +368,10 @@ export const memories = () => `${BASE_URL}/api/memories`;
 export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
 
+/* CodeCan jurisdictions */
+export const codecanJurisdictions = () => `${BASE_URL}/api/codecan/jurisdictions`;
+export const codecanPreferences = () => `${BASE_URL}/api/codecan/preferences`;
+
 export const searchPrincipals = (params: q.PrincipalSearchParams) => {
   const { q: query, limit, types } = params;
   let url = `${BASE_URL}/api/permissions/search-principals?q=${encodeURIComponent(query)}`;
@@ -405,7 +409,6 @@ const adminRoot = () => `${BASE_URL}/api/admin`;
 
 export const adminBuildQuery = buildQuery;
 
-export const adminReauth = () => `${adminRoot()}/reauth`;
 export const adminOverview = () => `${adminRoot()}/overview`;
 
 export const adminUsers = (params: Record<string, unknown> = {}) =>

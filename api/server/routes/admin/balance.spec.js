@@ -115,14 +115,10 @@ jest.mock('~/server/middleware', () => {
   };
 });
 
-// Set JWT_SECRET so issueFreshAuthToken can sign tokens.
-process.env.JWT_SECRET = 'test-secret-balance-spec';
-
 const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { issueFreshAuthToken } = require('~/server/middleware/admin/requireFreshAuth');
 
 let mongoServer;
 let app;
@@ -170,9 +166,11 @@ async function createAdmin() {
   return admin;
 }
 
-function freshTokenFor(adminId) {
-  const { token } = issueFreshAuthToken(adminId.toString());
-  return token;
+// No-op shim: fresh-auth was removed from the admin chain. Existing test
+// call sites that pass this to `.set('x-fresh-auth-token', ...)` still work
+// because the route no longer reads that header.
+function freshTokenFor(_adminId) {
+  return '';
 }
 
 // Wait for the audit row that's written on `res.on('finish')` to land.
@@ -308,18 +306,7 @@ describe('POST /api/admin/balance/users/:userId/adjust', () => {
     expect(res.body.before).toBe(0);
   });
 
-  it('negative delta requires fresh auth (rejects without)', async () => {
-    await createAdmin();
-    const target = await createUser();
-    await Balance.create({ user: target._id, tokenCredits: 1000 });
-    const res = await request(app)
-      .post(`/api/admin/balance/users/${target._id}/adjust`)
-      .send({ delta: -100, reason: 'Refund' });
-    expect(res.status).toBe(401);
-    expect(res.body.code).toBe('FRESH_AUTH_REQUIRED');
-  });
-
-  it('negative delta succeeds with fresh auth', async () => {
+  it('negative delta succeeds', async () => {
     const admin = await createAdmin();
     const target = await createUser();
     await Balance.create({ user: target._id, tokenCredits: 1000 });
@@ -332,18 +319,7 @@ describe('POST /api/admin/balance/users/:userId/adjust', () => {
     expect(res.body.before).toBe(1000);
   });
 
-  it('large positive delta (>10M) requires fresh auth', async () => {
-    await createAdmin();
-    const target = await createUser();
-    await Balance.create({ user: target._id, tokenCredits: 1000 });
-    const res = await request(app)
-      .post(`/api/admin/balance/users/${target._id}/adjust`)
-      .send({ delta: 10_000_001, reason: 'Big top-up' });
-    expect(res.status).toBe(401);
-    expect(res.body.code).toBe('FRESH_AUTH_REQUIRED');
-  });
-
-  it('large positive delta succeeds with fresh auth', async () => {
+  it('large positive delta (>10M) succeeds', async () => {
     const admin = await createAdmin();
     const target = await createUser();
     await Balance.create({ user: target._id, tokenCredits: 1000 });
@@ -387,16 +363,6 @@ describe('POST /api/admin/balance/users/:userId/set', () => {
       .post(`/api/admin/balance/users/${u._id}/set`)
       .send({ tokenCredits: 100, reason: 'test' });
     expect(res.status).toBe(403);
-  });
-
-  it('rejects without fresh auth', async () => {
-    await createAdmin();
-    const target = await createUser();
-    const res = await request(app)
-      .post(`/api/admin/balance/users/${target._id}/set`)
-      .send({ tokenCredits: 5000, reason: 'reset' });
-    expect(res.status).toBe(401);
-    expect(res.body.code).toBe('FRESH_AUTH_REQUIRED');
   });
 
   it('rejects negative tokenCredits', async () => {

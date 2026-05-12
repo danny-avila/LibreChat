@@ -28,7 +28,6 @@ account menu and can navigate to `/admin/overview`.
 |----------|---------|---------|
 | `ADMIN_IP_ALLOWLIST` | unset (allow all) | Comma-separated CIDRs / IPs (v4 + v6). When set, only matching `req.ip` values may hit `/api/admin/*`. Malformed entries fail closed. |
 | `ADMIN_RATE_LIMIT_PER_MIN` | `60` | Per-admin-user requests-per-minute cap on admin endpoints. Clamped to `[1, 1000]`. |
-| `ADMIN_FRESH_AUTH_TTL_SEC` | `300` | Lifetime (seconds) of fresh-auth tokens issued by `/api/admin/reauth`. |
 | `ADMIN_AUDIT_LOG_RETENTION_DAYS` | `365` | TTL for `adminAuditLogs` documents. `0` disables expiry (retain forever). Applied at schema definition time only — see retention notes below. |
 | `ADMIN_IMPERSONATE_TTL_SEC` | `300` | Lifetime (seconds) of one-shot impersonation tokens. Each token is single-use. |
 
@@ -41,7 +40,7 @@ account menu and can navigate to `/admin/overview`.
 Every `/api/admin/*` route is composed as:
 
 ```
-requireJwtAuth → checkBan → checkAdmin → checkAdminIpAllowlist → adminRateLimiter → [auditLogger] → [requireFreshAuth?] → handler
+requireJwtAuth → checkBan → checkAdmin → checkAdminIpAllowlist → adminRateLimiter → [auditLogger] → handler
 ```
 
 - `requireJwtAuth` — standard JWT bearer auth
@@ -50,61 +49,39 @@ requireJwtAuth → checkBan → checkAdmin → checkAdminIpAllowlist → adminRa
 - `checkAdminIpAllowlist` — optional CIDR allowlist
 - `adminRateLimiter` — per-admin-user rate cap
 - `auditLogger` — wraps the response, writes a row to `adminAuditLogs` on `finish` and emits a structured INFO/WARN log
-- `requireFreshAuth` — applied per-route to destructive actions; verifies an `X-Fresh-Auth-Token` header
 
-## Fresh-auth flow
-
-Destructive admin operations (ban, role change, delete user, grant/revoke Pro,
-balance set, large/negative balance adjust) require a recent password
-re-confirmation in addition to the normal session.
-
-```
-+--------+   POST /api/admin/reauth { password }   +---------+
-| Admin  | --------------------------------------> | Backend |
-| Client |                                         |         |
-|        | <-------- { token, expiresAt } -------- |         |
-+--------+                                         +---------+
-     |                                                   ^
-     |  (subsequent destructive call carries header)     |
-     +--- X-Fresh-Auth-Token: <token> -------------------+
-```
-
-The token is `base64url(payload).base64url(HMAC_SHA256(payload, JWT_SECRET))`
-where `payload = "${userId}.${expiresAtUnixMs}.admin"`. The verifier checks
-the signature, that the embedded `userId` matches the authenticated user,
-that the scope is `admin`, and that the embedded expiry is in the future.
-
-The frontend manages this transparently via `useAdminMutation`: any mutation
-that gets back `401 { code: 'FRESH_AUTH_REQUIRED' }` triggers a password
-modal; on success the request is retried automatically with the new token.
-Tokens live in memory only — never localStorage.
+> An earlier revision required a password re-confirmation
+> (`POST /api/admin/reauth`) before every destructive action. That layer was
+> removed because SSO-only admins (Google, Apple, etc.) have no local
+> password to confirm. All destructive actions are still gated by the chain
+> above and durably audited; if you reintroduce a step-up factor it should
+> be SSO-aware (e.g. provider re-confirmation or email magic link).
 
 ## Endpoints
 
 All routes are mounted at `/api/admin/*`.
 
-| Method | Path | Fresh auth | Description |
-|---|---|---|---|
-| `POST` | `/reauth` | — | Verify password, mint fresh-auth token |
-| `GET` | `/overview` | — | Org-wide KPIs |
-| `GET` | `/users` | — | Paginated user list with filters |
-| `GET` | `/users/:id` | — | User detail incl. subscription + balance |
-| `POST` | `/users/:id/ban` | yes | Ban with reason |
-| `POST` | `/users/:id/unban` | yes | Unban |
-| `PATCH` | `/users/:id/role` | yes | Promote/demote (last-admin & self-demote enforced) |
-| `POST` | `/users/:id/reset-password` | yes | Email a reset link |
-| `POST` | `/users/invite` | — | Invite user by email |
-| `DELETE` | `/users/:id` | yes | Delete user (typed-email confirm) |
-| `POST` | `/users/:id/impersonate` | yes | Issue a one-shot impersonation URL. Body `{ reason }`. Refuses self / banned / admin targets. URL valid 5min, single-use. |
-| `GET` | `/subscription` | — | List active Pro subscriptions |
-| `GET` | `/subscription/users/:userId` | — | Subscription detail |
-| `POST` | `/subscription/users/:userId/grant` | yes | Manual Pro grant |
-| `POST` | `/subscription/users/:userId/revoke` | yes | Manual Pro revoke |
-| `POST` | `/subscription/users/:userId/clear-override` | — | Hand control back to RevenueCat |
-| `POST` | `/subscription/users/:userId/refresh` | — | Force refresh from RevenueCat |
-| `GET` | `/balance/users/:userId` | — | Token credit balance |
-| `POST` | `/balance/users/:userId/adjust` | conditional | Delta; fresh auth required for negative or `\|delta\| > 10M` |
-| `POST` | `/balance/users/:userId/set` | yes | Absolute set |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/overview` | Org-wide KPIs |
+| `GET` | `/users` | Paginated user list with filters |
+| `GET` | `/users/:id` | User detail incl. subscription + balance |
+| `POST` | `/users/:id/ban` | Ban with reason |
+| `POST` | `/users/:id/unban` | Unban with reason |
+| `PATCH` | `/users/:id/role` | Promote/demote (last-admin & self-demote enforced) |
+| `POST` | `/users/:id/reset-password` | Email a reset link |
+| `POST` | `/users/invite` | Invite user by email |
+| `DELETE` | `/users/:id` | Delete user (typed-email confirm) |
+| `POST` | `/users/:id/impersonate` | Issue a one-shot impersonation URL. Body `{ reason }`. Refuses self / banned / admin targets. URL valid 5min, single-use. |
+| `GET` | `/subscription` | List active Pro subscriptions |
+| `GET` | `/subscription/users/:userId` | Subscription detail |
+| `POST` | `/subscription/users/:userId/grant` | Manual Pro grant |
+| `POST` | `/subscription/users/:userId/revoke` | Manual Pro revoke |
+| `POST` | `/subscription/users/:userId/clear-override` | Hand control back to RevenueCat |
+| `POST` | `/subscription/users/:userId/refresh` | Force refresh from RevenueCat |
+| `GET` | `/balance/users/:userId` | Token credit balance |
+| `POST` | `/balance/users/:userId/adjust` | Adjust balance by `delta` |
+| `POST` | `/balance/users/:userId/set` | Absolute set |
 | `GET` | `/usage/users/:userId` | — | Per-user usage timeseries |
 | `GET` | `/usage/transactions` | — | Paginated transactions list |
 | `GET` | `/usage/stats/overview` | — | Org-wide overview stats |
@@ -124,7 +101,7 @@ for support workflows ("the user reports X is broken; let me reproduce as
 them"). Every step is auditable.
 
 ```
-[Admin tab]  POST /api/admin/users/:id/impersonate { reason }   (admin + fresh-auth)
+[Admin tab]  POST /api/admin/users/:id/impersonate { reason }   (admin)
            ← { url, expiresAt }
 [Admin tab]  navigates to url
 [Same tab]   POST /api/auth/impersonate { token }               (token IS the auth)
@@ -142,7 +119,7 @@ tools work in most admin platforms.
 
 Guardrails:
 
-- Admin must pass fresh-auth before issuance
+- Caller must be admin
 - Cannot impersonate yourself, a banned user, or another admin
 - Token is HMAC-SHA256 (`JWT_SECRET`), 5-minute TTL, single-use
 - Atomic CAS on `jti` in `impersonationTokens` prevents replay

@@ -8,14 +8,11 @@ const {
   adminRateLimiter,
   checkAdminIpAllowlist,
   auditLogger,
-  requireFreshAuth,
 } = require('~/server/middleware');
 const balanceService = require('~/server/services/admin/balance');
 
 const router = express.Router();
 
-// 10M tokens = 10 million tokenCredits = $10 worth.
-const LARGE_DELTA_THRESHOLD = 10_000_000;
 const REASON_MAX_LEN = 500;
 
 router.use(requireJwtAuth, checkBan, checkAdmin, checkAdminIpAllowlist, adminRateLimiter);
@@ -34,24 +31,6 @@ function rejectInvalidUserId(req, res) {
 
 function isValidReason(reason) {
   return typeof reason === 'string' && reason.length >= 1 && reason.length <= REASON_MAX_LEN;
-}
-
-/**
- * Conditional fresh-auth gate: invokes `requireFreshAuth` only when the
- * delta is negative or above `LARGE_DELTA_THRESHOLD`. Body validation that
- * happens here is intentionally minimal — full validation runs in the
- * handler — but we must validate enough to know whether fresh auth is
- * required, so an attacker can't bypass it by sending a non-numeric value.
- */
-function requireFreshAuthForLargeOrNegativeDelta(req, res, next) {
-  const delta = req.body?.delta;
-  if (typeof delta !== 'number' || !Number.isFinite(delta)) {
-    return res.status(400).json({ message: 'Invalid delta', code: 'INVALID_DELTA' });
-  }
-  if (delta < 0 || Math.abs(delta) > LARGE_DELTA_THRESHOLD) {
-    return requireFreshAuth(req, res, next);
-  }
-  return next();
 }
 
 // GET /api/admin/balance/users/:userId
@@ -97,7 +76,6 @@ router.post(
     }
     return next();
   },
-  requireFreshAuthForLargeOrNegativeDelta,
   auditLogger(AdminAuditActions.BALANCE_ADJUST, {
     targetType: 'balance',
     getTargetId: (req) => req.params.userId,
@@ -166,7 +144,6 @@ router.post(
     }
     return next();
   },
-  requireFreshAuth,
   auditLogger(AdminAuditActions.BALANCE_SET, {
     targetType: 'balance',
     getTargetId: (req) => req.params.userId,
@@ -209,4 +186,3 @@ router.post(
 );
 
 module.exports = router;
-module.exports._internal = { LARGE_DELTA_THRESHOLD };

@@ -3,9 +3,6 @@
  * Routes are mounted at /api/admin/*. All responses are JSON.
  *
  * Failure responses follow the shape `{ message: string, code?: string }`.
- * A 401 with `code: 'FRESH_AUTH_REQUIRED'` means the caller must obtain a
- * fresh-auth token (via POST /api/admin/reauth) and retry the request with
- * the token in the `X-Fresh-Auth-Token` header.
  */
 
 /* ---------- Common ---------- */
@@ -20,23 +17,6 @@ export type AdminPaginated<T> = {
 export type AdminErrorResponse = {
   message: string;
   code?: string;
-};
-
-export type AdminFreshAuthOptions = {
-  /** Optional fresh-auth token, required by mutations gated by `requireFreshAuth`. */
-  freshAuthToken?: string;
-};
-
-/* ---------- Reauth ---------- */
-
-export type AdminReauthRequest = {
-  password: string;
-};
-
-export type AdminReauthResponse = {
-  token: string;
-  /** ISO-8601 timestamp string. */
-  expiresAt: string;
 };
 
 /* ---------- Overview ---------- */
@@ -150,11 +130,11 @@ export type AdminUserDetail = {
   balance: AdminBalance | null;
 };
 
-export type AdminBanUserRequest = AdminFreshAuthOptions & {
+export type AdminBanUserRequest = {
   reason: string;
 };
 
-export type AdminUnbanUserRequest = AdminFreshAuthOptions & {
+export type AdminUnbanUserRequest = {
   reason?: string;
 };
 
@@ -162,7 +142,7 @@ export type AdminBanUserResponse = {
   user: AdminUserListItem;
 };
 
-export type AdminChangeUserRoleRequest = AdminFreshAuthOptions & {
+export type AdminChangeUserRoleRequest = {
   role: string;
   reason: string;
 };
@@ -171,7 +151,7 @@ export type AdminChangeUserRoleResponse = {
   user: AdminUserListItem;
 };
 
-export type AdminResetPasswordRequest = AdminFreshAuthOptions & {
+export type AdminResetPasswordRequest = {
   reason?: string;
 };
 
@@ -190,7 +170,7 @@ export type AdminInviteUserResponse = {
   email: string;
 };
 
-export type AdminDeleteUserRequest = AdminFreshAuthOptions & {
+export type AdminDeleteUserRequest = {
   confirmEmail: string;
   reason: string;
 };
@@ -203,7 +183,7 @@ export type AdminDeleteUserResponse = {
 
 /* ---------- Impersonation ---------- */
 
-export type AdminImpersonateRequest = AdminFreshAuthOptions & {
+export type AdminImpersonateRequest = {
   reason: string;
 };
 
@@ -250,12 +230,12 @@ export type AdminSubscriptionListParams = {
 
 export type AdminSubscriptionListResponse = AdminPaginated<AdminSubscriptionListItem>;
 
-export type AdminGrantProRequest = AdminFreshAuthOptions & {
+export type AdminGrantProRequest = {
   reason: string;
   plan?: string;
 };
 
-export type AdminRevokeProRequest = AdminFreshAuthOptions & {
+export type AdminRevokeProRequest = {
   reason: string;
 };
 
@@ -265,12 +245,12 @@ export type AdminClearOverrideRequest = {
 
 /* ---------- Balance mutations ---------- */
 
-export type AdminAdjustBalanceRequest = AdminFreshAuthOptions & {
+export type AdminAdjustBalanceRequest = {
   delta: number;
   reason: string;
 };
 
-export type AdminSetBalanceRequest = AdminFreshAuthOptions & {
+export type AdminSetBalanceRequest = {
   tokenCredits: number;
   reason: string;
 };
