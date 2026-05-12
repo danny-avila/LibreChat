@@ -21,6 +21,13 @@ import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 import { cn } from '~/utils';
 
+// V1 UX POP/BETC : recherche web nécessite clés admin (Serper/
+// Firecrawl/Jina) posées en yaml DevOps. Cachée tant que conf
+// côté serveur non faite. Repasser à true quand DevOps a configuré.
+// Couplé avec le même flag dans ActiveToolChips.tsx — flipper les deux
+// ensemble.
+const SHOW_WEB_SEARCH_TOOL = false;
+
 interface ToolMenuConfig {
   id: string;
   icon: React.ReactNode;
@@ -100,7 +107,7 @@ function ToolsMenu() {
         onToggle: handleFileSearchToggle,
       });
     }
-    if (canUseWebSearch && webSearchEnabled) {
+    if (SHOW_WEB_SEARCH_TOOL && canUseWebSearch && webSearchEnabled) {
       items.push({
         id: 'web_search',
         icon: <Globe className="icon-md" aria-hidden="true" />,

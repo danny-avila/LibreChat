@@ -10,6 +10,11 @@ import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 import ActiveToolChip from './ActiveToolChip';
 
+// V1 UX POP/BETC : recherche web cachée tant que clés admin non posées
+// côté yaml DevOps. Couplé avec le même flag dans ToolsMenu.tsx — flipper
+// les deux ensemble.
+const SHOW_WEB_SEARCH_TOOL = false;
+
 function ActiveToolChips() {
   const localize = useLocalize();
   const context = useBadgeRowContext();
@@ -41,6 +46,7 @@ function ActiveToolChips() {
   }
 
   const showWebSearch =
+    SHOW_WEB_SEARCH_TOOL &&
     canUseWebSearch &&
     webSearchEnabled &&
     webSearch?.toggleState &&
