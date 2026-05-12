@@ -161,7 +161,6 @@ const startServer = async () => {
   app.use('/api/mcp', routes.mcp);
   app.use('/api/webhooks', routes.webhooks);
   app.use('/api/push', routes.push);
-  app.use('/api/notifications', routes.notifications);
 
   app.use(ErrorController);
 
