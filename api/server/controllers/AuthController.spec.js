@@ -7,6 +7,7 @@ jest.mock('~/server/services/GraphTokenService', () => ({
 jest.mock('~/server/services/AuthService', () => ({
   requestPasswordReset: jest.fn(),
   setOpenIDAuthTokens: jest.fn(),
+  setCloudFrontAuthCookies: jest.fn(),
   resetPassword: jest.fn(),
   setAuthTokens: jest.fn(),
   registerUser: jest.fn(),
@@ -37,16 +38,18 @@ jest.mock('@librechat/api', () => ({
 }));
 
 const openIdClient = require('openid-client');
+const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, findOpenIDUser, buildOpenIDRefreshParams } = require('@librechat/api');
 const { graphTokenController, refreshController } = require('./AuthController');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
-const { setOpenIDAuthTokens } = require('~/server/services/AuthService');
+const { setOpenIDAuthTokens, setCloudFrontAuthCookies } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
-const { updateUser } = require('~/models');
+const { getUserById, updateUser } = require('~/models');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
+const ORIGINAL_JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
 describe('graphTokenController', () => {
   let req, res;
@@ -196,6 +199,7 @@ describe('refreshController – OpenID path', () => {
     jest.clearAllMocks();
     delete process.env.OPENID_SCOPE;
     delete process.env.OPENID_REFRESH_AUDIENCE;
+    process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
 
     isEnabled.mockReturnValue(true);
     getOpenIdConfig.mockReturnValue({ some: 'config' });
@@ -203,7 +207,13 @@ describe('refreshController – OpenID path', () => {
     mockTokenset.claims.mockReturnValue(baseClaims);
     getOpenIdEmail.mockReturnValue(baseClaims.email);
     setOpenIDAuthTokens.mockReturnValue('new-app-token');
+    setCloudFrontAuthCookies.mockReturnValue(true);
     findOpenIDUser.mockResolvedValue({ user: { ...defaultUser }, error: null, migration: false });
+    getUserById.mockResolvedValue({
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+    });
     updateUser.mockResolvedValue({});
 
     req = {
@@ -230,6 +240,12 @@ describe('refreshController – OpenID path', () => {
     } else {
       process.env.OPENID_REFRESH_AUDIENCE = ORIGINAL_OPENID_REFRESH_AUDIENCE;
     }
+
+    if (ORIGINAL_JWT_REFRESH_SECRET === undefined) {
+      delete process.env.JWT_REFRESH_SECRET;
+    } else {
+      process.env.JWT_REFRESH_SECRET = ORIGINAL_JWT_REFRESH_SECRET;
+    }
   });
 
   it('should call getOpenIdEmail with token claims and use result for findOpenIDUser', async () => {
@@ -244,6 +260,70 @@ describe('refreshController – OpenID path', () => {
       }),
     );
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('reuses valid OpenID session tokens and refreshes CloudFront cookies', async () => {
+    const reusableIdToken = jwt.sign(
+      { sub: baseClaims.sub, exp: Math.floor(Date.now() / 1000) + 3600 },
+      'idp-signing-secret',
+    );
+    const signedUserId = jwt.sign({ id: 'user-db-id' }, process.env.JWT_REFRESH_SECRET, {
+      expiresIn: '1h',
+    });
+    req.headers.cookie = [
+      'token_provider=openid',
+      'refreshToken=stored-refresh',
+      `openid_user_id=${signedUserId}`,
+    ].join('; ');
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: reusableIdToken,
+        refreshToken: 'stored-refresh',
+      },
+    };
+    const user = {
+      ...defaultUser,
+      federatedTokens: { access_token: 'do-not-return' },
+    };
+    getUserById.mockResolvedValue(user);
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(getUserById).toHaveBeenCalledWith(
+      'user-db-id',
+      '-password -__v -totpSecret -backupCodes -federatedTokens',
+    );
+    expect(setCloudFrontAuthCookies).toHaveBeenCalledWith(req, res, user);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.send).toHaveBeenCalledWith({
+      token: reusableIdToken,
+      user: expect.objectContaining({
+        _id: 'user-db-id',
+        email: baseClaims.email,
+        openidId: baseClaims.sub,
+      }),
+    });
+
+    const sentPayload = res.send.mock.calls[0][0];
+    expect(sentPayload.user).not.toHaveProperty('password');
+    expect(sentPayload.user).not.toHaveProperty('totpSecret');
+    expect(sentPayload.user).not.toHaveProperty('backupCodes');
+    expect(sentPayload.user).not.toHaveProperty('federatedTokens');
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[refreshController] OpenID session token reused',
+      expect.objectContaining({
+        token_type: 'id_token',
+        cloudfront_cookies_attempted: true,
+        cloudfront_cookies_set: true,
+      }),
+    );
+    const debugOutput = JSON.stringify(logger.debug.mock.calls);
+    expect(debugOutput).not.toContain(reusableIdToken);
+    expect(debugOutput).not.toContain(signedUserId);
+    expect(debugOutput).not.toContain('session-access-token');
   });
 
   it('should pass scope-only OpenID refresh params when OPENID_SCOPE is set', async () => {

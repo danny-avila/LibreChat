@@ -12,6 +12,7 @@ const {
   isEnabled,
   checkEmailConfig,
   setCloudFrontCookies,
+  getCloudFrontConfig,
   parseCloudFrontCookieScope,
   CLOUDFRONT_SCOPE_COOKIE,
   isEmailDomainAllowed,
@@ -411,6 +412,85 @@ const resetPassword = async (userId, token, password) => {
 const getPreviousCloudFrontScope = (req) =>
   parseCloudFrontCookieScope(req?.cookies?.[CLOUDFRONT_SCOPE_COOKIE]);
 
+const normalizeCloudFrontScopeValue = (value) => {
+  if (value == null) {
+    return value;
+  }
+  return value.toString?.() ?? value;
+};
+
+const getCloudFrontScopeValue = (optionsValue, userValue, requestValue) =>
+  normalizeCloudFrontScopeValue(optionsValue ?? userValue ?? requestValue);
+
+const getCloudFrontAuthCookieSkipReason = (scope) => {
+  const config = getCloudFrontConfig();
+  if (!config || config.imageSigning !== 'cookies' || !config.privateKey || !config.keyPairId) {
+    return 'cloudfront_disabled';
+  }
+  if (!config.cookieDomain) {
+    return 'missing_cookie_domain';
+  }
+  if (!scope.userId) {
+    return 'missing_user_id';
+  }
+  return null;
+};
+
+/**
+ * Refreshes CloudFront signed cookies for authenticated image/avatar access.
+ * @param {ServerRequest | null} req
+ * @param {ServerResponse} res
+ * @param {Partial<IUser> | null} user
+ * @param {import('@librechat/api').CloudFrontCookieScope & { orgId?: string }} [options={}]
+ * @returns {boolean}
+ */
+const setCloudFrontAuthCookies = (req, res, user, options = {}) => {
+  const storageRegion = getCloudFrontScopeValue(
+    options.storageRegion,
+    user?.storageRegion,
+    req?.user?.storageRegion,
+  );
+  const scope = {
+    userId: getCloudFrontScopeValue(
+      options.userId,
+      user?._id ?? user?.id,
+      req?.user?._id ?? req?.user?.id,
+    ),
+    tenantId: getCloudFrontScopeValue(
+      options.tenantId ?? options.orgId,
+      user?.tenantId ?? user?.orgId,
+      req?.user?.tenantId ?? req?.user?.orgId,
+    ),
+    ...(storageRegion ? { storageRegion } : {}),
+  };
+  const skipReason = getCloudFrontAuthCookieSkipReason(scope);
+  if (skipReason) {
+    logger.debug('[setCloudFrontAuthCookies] CloudFront auth cookies skipped', {
+      attempted: false,
+      set: false,
+      reason: skipReason,
+      has_user_id: Boolean(scope.userId),
+      has_tenant_scope: Boolean(scope.tenantId),
+      has_storage_region: Boolean(scope.storageRegion),
+      has_previous_scope: Boolean(getPreviousCloudFrontScope(req)?.userId),
+    });
+    return false;
+  }
+
+  const previousScope = getPreviousCloudFrontScope(req);
+  const cookiesSet = setCloudFrontCookies(res, scope, previousScope);
+  logger.debug('[setCloudFrontAuthCookies] CloudFront auth cookies refreshed', {
+    attempted: true,
+    set: cookiesSet,
+    reason: cookiesSet ? undefined : 'set_failed',
+    has_user_id: true,
+    has_tenant_scope: Boolean(scope.tenantId),
+    has_storage_region: Boolean(scope.storageRegion),
+    has_previous_scope: Boolean(previousScope?.userId),
+  });
+  return cookiesSet;
+};
+
 /**
  * Set Auth Tokens
  * @param {String | ObjectId} userId
@@ -453,14 +533,7 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
       sameSite: 'strict',
     });
 
-    setCloudFrontCookies(
-      res,
-      {
-        userId: user?._id?.toString?.() ?? userId,
-        tenantId: user?.tenantId?.toString?.(),
-      },
-      getPreviousCloudFrontScope(req),
-    );
+    setCloudFrontAuthCookies(req, res, user, { userId });
 
     return token;
   } catch (error) {
@@ -609,14 +682,7 @@ const setOpenIDAuthTokens = (
       });
     }
 
-    setCloudFrontCookies(
-      res,
-      {
-        userId,
-        tenantId: tenantId ?? req.user?.tenantId,
-      },
-      getPreviousCloudFrontScope(req),
-    );
+    setCloudFrontAuthCookies(req, res, req.user, { userId, tenantId });
 
     return appAuthToken;
   } catch (error) {
@@ -691,6 +757,7 @@ module.exports = {
   setAuthTokens,
   resetPassword,
   setOpenIDAuthTokens,
+  setCloudFrontAuthCookies,
   requestPasswordReset,
   resendVerificationEmail,
 };

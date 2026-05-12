@@ -11,6 +11,7 @@ const {
 const {
   requestPasswordReset,
   setOpenIDAuthTokens,
+  setCloudFrontAuthCookies,
   resetPassword,
   setAuthTokens,
   registerUser,
@@ -25,6 +26,8 @@ const {
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
+const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
+
 const registrationController = async (req, res) => {
   try {
     const response = await registerUser(req.body);
@@ -34,6 +37,55 @@ const registrationController = async (req, res) => {
     logger.error('[registrationController]', err);
     return res.status(500).json({ message: err.message });
   }
+};
+
+const sanitizeUserForAuthResponse = (user) => {
+  const source = (typeof user?.toObject === 'function' ? user.toObject() : user) || {};
+  const {
+    password: _pw,
+    __v: _v,
+    totpSecret: _ts,
+    backupCodes: _bc,
+    federatedTokens: _ft,
+    ...safeUser
+  } = source;
+  return safeUser;
+};
+
+const getValidOpenIDReuseUserId = (parsedCookies) => {
+  const openidUserId = parsedCookies.openid_user_id;
+  if (!openidUserId || !process.env.JWT_REFRESH_SECRET) {
+    return null;
+  }
+
+  try {
+    const payload = jwt.verify(openidUserId, process.env.JWT_REFRESH_SECRET);
+    return typeof payload === 'object' && payload != null && typeof payload.id === 'string'
+      ? payload.id
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const getReusableOpenIDSessionToken = (openidTokens) => {
+  const candidates = [
+    { token: openidTokens?.idToken, type: 'id_token' },
+    { token: openidTokens?.accessToken, type: 'access_token' },
+  ];
+  const now = Math.floor(Date.now() / 1000);
+
+  for (const candidate of candidates) {
+    if (!candidate.token) {
+      continue;
+    }
+    const decoded = jwt.decode(candidate.token);
+    if (decoded && typeof decoded === 'object' && decoded.exp > now) {
+      return candidate;
+    }
+  }
+
+  return null;
 };
 
 const resetPasswordRequestController = async (req, res) => {
@@ -82,6 +134,26 @@ const refreshController = async (req, res) => {
     }
 
     try {
+      const reusableSessionToken = getReusableOpenIDSessionToken(req.session?.openidTokens);
+      const reuseUserId = reusableSessionToken ? getValidOpenIDReuseUserId(parsedCookies) : null;
+      if (reuseUserId) {
+        const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);
+        if (user) {
+          const cloudFrontCookiesSet = setCloudFrontAuthCookies(req, res, user);
+          logger.debug('[refreshController] OpenID session token reused', {
+            token_type: reusableSessionToken.type,
+            has_id_token: Boolean(req.session?.openidTokens?.idToken),
+            has_access_token: Boolean(req.session?.openidTokens?.accessToken),
+            cloudfront_cookies_attempted: true,
+            cloudfront_cookies_set: cloudFrontCookiesSet,
+          });
+          return res.status(200).send({
+            token: reusableSessionToken.token,
+            user: sanitizeUserForAuthResponse(user),
+          });
+        }
+      }
+
       const openIdConfig = getOpenIdConfig();
       const refreshParams = buildOpenIDRefreshParams();
       logger.debug('[refreshController] OpenID refresh params', {
@@ -141,8 +213,7 @@ const refreshController = async (req, res) => {
         tenantId: user.tenantId,
       });
 
-      const { password: _pw, __v: _v, totpSecret: _ts, backupCodes: _bc, ...safeUser } = user;
-      return res.status(200).send({ token, user: safeUser });
+      return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
     } catch (error) {
       logger.error('[refreshController] OpenID token refresh error', error);
       return res.status(403).send('Invalid OpenID refresh token');
@@ -157,7 +228,7 @@ const refreshController = async (req, res) => {
 
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await getUserById(payload.id, '-password -__v -totpSecret -backupCodes');
+    const user = await getUserById(payload.id, AUTH_REFRESH_USER_PROJECTION);
     if (!user) {
       return res.status(401).redirect('/login');
     }
