@@ -1,6 +1,7 @@
 import { useForm } from 'react-hook-form';
 import React, { useContext, useState } from 'react';
 import { Turnstile } from '@marsidev/react-turnstile';
+import { Eye, EyeOff } from 'lucide-react';
 import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useRegisterUserMutation } from 'librechat-data-provider/react-query';
@@ -27,6 +28,7 @@ const Registration: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [countdown, setCountdown] = useState<number>(3);
+  const [passwordVisibility, setPasswordVisibility] = useState<Record<string, boolean>>({});
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const location = useLocation();
@@ -64,12 +66,19 @@ const Registration: React.FC = () => {
     },
   });
 
+  const togglePasswordVisibility = (fieldName: string) => {
+    setPasswordVisibility((prev) => ({
+      ...prev,
+      [fieldName]: !prev[fieldName],
+    }));
+  };
+
   const renderInput = (id: string, label: TranslationKeys, type: string, validation: object) => (
     <div className="mb-4">
       <div className="relative">
         <input
           id={id}
-          type={type}
+          type={type === 'password' && passwordVisibility[id] ? 'text' : type}
           autoComplete={id}
           aria-label={localize(label)}
           {...register(
@@ -77,10 +86,28 @@ const Registration: React.FC = () => {
             validation,
           )}
           aria-invalid={!!errors[id]}
-          className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none"
+          className={`webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none ${type === 'password' ? 'pr-11' : ''}`}
           placeholder=" "
           data-testid={id}
         />
+        {type === 'password' && (
+          <button
+            type="button"
+            onClick={() => togglePasswordVisibility(id)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary transition-colors hover:text-text-primary"
+            aria-label={
+              passwordVisibility[id]
+                ? localize('com_ui_hide_password')
+                : localize('com_ui_show_password')
+            }
+          >
+            {passwordVisibility[id] ? (
+              <EyeOff className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Eye className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
+        )}
         <label
           htmlFor={id}
           className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"

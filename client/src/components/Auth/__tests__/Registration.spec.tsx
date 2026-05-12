@@ -156,6 +156,23 @@ test('renders registration form', () => {
   );
 });
 
+test('toggles password visibility for registration fields', async () => {
+  const { getByTestId, getAllByRole, getByRole } = setup();
+
+  expect(getByTestId('password')).toHaveAttribute('type', 'password');
+  expect(getByTestId('confirm_password')).toHaveAttribute('type', 'password');
+
+  const toggleButtons = getAllByRole('button', { name: /show password/i });
+  expect(toggleButtons).toHaveLength(2);
+
+  await userEvent.click(toggleButtons[0]);
+  expect(getByTestId('password')).toHaveAttribute('type', 'text');
+  expect(getByTestId('confirm_password')).toHaveAttribute('type', 'password');
+
+  await userEvent.click(getByRole('button', { name: /hide password/i }));
+  expect(getByTestId('password')).toHaveAttribute('type', 'password');
+});
+
 // test('calls registerUser.mutate on registration', async () => {
 //   const mutate = jest.fn();
 //   const { getByTestId, getByRole, history } = setup({
