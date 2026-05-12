@@ -33,8 +33,17 @@ export default function SubscriptionSection() {
 
   if (!subscription) {
     return (
-      <div className="flex flex-col gap-2 rounded-2xl border border-border-light bg-surface-primary p-4">
-        <div className="text-base font-semibold">CodeCan AI Pro</div>
+      <div className="relative flex flex-col gap-2 overflow-hidden rounded-2xl border border-border-light bg-surface-primary p-5 pl-6">
+        <span
+          aria-hidden="true"
+          className="absolute left-0 top-5 h-10 w-[3px] rounded-r-sm bg-[var(--signal-amber)]"
+        />
+        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--slate-500)]">
+          Subscription
+        </div>
+        <div className="text-base font-semibold tracking-tight text-text-primary">
+          CodeCan AI Pro
+        </div>
         <div className="text-sm text-text-secondary">
           Subscription settings are temporarily unavailable. Reload the page and try again.
         </div>
@@ -58,19 +67,28 @@ export default function SubscriptionSection() {
   const planLabel = formatPlanLabel(currentPlan, isPro);
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-border-light bg-surface-primary p-4">
+    <div className="relative flex flex-col gap-4 overflow-hidden rounded-2xl border border-border-light bg-surface-primary p-5 pl-6">
+      <span
+        aria-hidden="true"
+        className="absolute left-0 top-5 h-10 w-[3px] rounded-r-sm bg-[var(--signal-amber)]"
+      />
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-base font-semibold">CodeCan AI Pro</div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--slate-500)]">
+            Subscription
+          </div>
+          <div className="text-base font-semibold tracking-tight text-text-primary">
+            CodeCan AI Pro
+          </div>
           <div className="text-sm text-text-secondary">
             {isPro ? `Active plan: ${planLabel}` : 'Upgrade to unlock unlimited Pro access.'}
           </div>
         </div>
         <div
-          className={`rounded-full px-2 py-1 text-xs font-medium ${
+          className={`rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] ${
             isPro
-              ? 'bg-green-500/10 text-green-700 dark:text-green-300'
-              : 'bg-surface-hover text-text-secondary'
+              ? 'bg-[var(--signal-amber)]/15 text-[var(--signal-amber)]'
+              : 'bg-brand-blue-500/10 text-brand-blue-500 dark:bg-white/10 dark:text-[var(--dm-text-mute)]'
           }`}
         >
           {isPro ? 'Pro' : 'Free'}
