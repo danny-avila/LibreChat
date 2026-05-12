@@ -206,8 +206,6 @@ function setBanned(v) {
 
 jest.mock('~/server/middleware', () => {
   const auditLogger = require('~/server/middleware/admin/auditLogger');
-  const requireFreshAuth = require('~/server/middleware/admin/requireFreshAuth');
-  const { issueFreshAuthToken } = requireFreshAuth;
   return {
     requireJwtAuth: (req, res, next) => {
       if (!reqState.user) return res.status(401).json({ message: 'Unauthorized' });
@@ -227,8 +225,6 @@ jest.mock('~/server/middleware', () => {
     checkAdminIpAllowlist: (_req, _res, next) => next(),
     adminRateLimiter: (_req, _res, next) => next(),
     auditLogger,
-    requireFreshAuth,
-    issueFreshAuthToken,
   };
 });
 
@@ -320,10 +316,11 @@ function setAdminUser(user) {
   });
 }
 
-function freshAuthHeader(userId) {
-  const { issueFreshAuthToken } = require('~/server/middleware/admin/requireFreshAuth');
-  const { token } = issueFreshAuthToken(String(userId));
-  return { 'x-fresh-auth-token': token };
+// Fresh-auth was removed from the admin chain. The function is preserved as
+// a no-op shim so existing test call sites (`.set(freshAuthHeader(...))`)
+// keep compiling without churn.
+function freshAuthHeader(_userId) {
+  return {};
 }
 
 describe('GET /api/admin/users', () => {
@@ -446,17 +443,6 @@ describe('GET /api/admin/users/:id', () => {
 });
 
 describe('POST /api/admin/users/:id/ban', () => {
-  it('rejects without fresh auth token', async () => {
-    const admin = await createTestUser({ role: SystemRoles.ADMIN });
-    const target = await createTestUser();
-    setAdminUser(admin);
-    const res = await request(app)
-      .post(`/api/admin/users/${target._id}/ban`)
-      .send({ reason: 'spam' });
-    expect(res.status).toBe(401);
-    expect(res.body.code).toBe('FRESH_AUTH_REQUIRED');
-  });
-
   it('returns 400 when reason is missing', async () => {
     const admin = await createTestUser({ role: SystemRoles.ADMIN });
     const target = await createTestUser();

@@ -7,7 +7,6 @@ const {
   adminRateLimiter,
   checkAdminIpAllowlist,
   auditLogger,
-  requireFreshAuth,
 } = require('~/server/middleware');
 const usersService = require('~/server/services/admin/users');
 const impersonateService = require('~/server/services/admin/impersonate');
@@ -102,7 +101,6 @@ router.get(
  */
 router.post(
   '/:id/ban',
-  requireFreshAuth,
   auditLogger(AdminAuditActions.USER_BAN, {
     targetType: 'user',
     getTargetId: (req) => req.params.id,
@@ -134,7 +132,6 @@ router.post(
  */
 router.post(
   '/:id/unban',
-  requireFreshAuth,
   auditLogger(AdminAuditActions.USER_UNBAN, {
     targetType: 'user',
     getTargetId: (req) => req.params.id,
@@ -169,7 +166,6 @@ router.post(
  */
 router.patch(
   '/:id/role',
-  requireFreshAuth,
   auditLogger(AdminAuditActions.USER_ROLE_CHANGE, {
     targetType: 'user',
     getTargetId: (req) => req.params.id,
@@ -204,7 +200,6 @@ router.patch(
  */
 router.post(
   '/:id/reset-password',
-  requireFreshAuth,
   auditLogger(AdminAuditActions.USER_RESET_PASSWORD, {
     targetType: 'user',
     getTargetId: (req) => req.params.id,
@@ -260,7 +255,6 @@ router.post(
  */
 router.delete(
   '/:id',
-  requireFreshAuth,
   auditLogger(AdminAuditActions.USER_DELETE, {
     targetType: 'user',
     getTargetId: (req) => req.params.id,
@@ -301,7 +295,6 @@ router.delete(
  */
 router.post(
   '/:id/impersonate',
-  requireFreshAuth,
   auditLogger(AdminAuditActions.USER_IMPERSONATE_ISSUED, {
     targetType: 'user',
     getTargetId: (req) => req.params.id,

@@ -1,11 +1,8 @@
 /**
  * Admin dashboard data service. One function per admin endpoint.
  *
- * Mutations gated by `requireFreshAuth` accept an optional
- * `freshAuthToken` argument; when provided we set the
- * `X-Fresh-Auth-Token` header for that request only. The bearer
- * (session) token is set globally via `setTokenHeader` and is sent on
- * every axios call automatically.
+ * The bearer (session) token is set globally via `setTokenHeader` and is
+ * sent on every axios call automatically.
  */
 
 import axios, { AxiosRequestConfig } from 'axios';
@@ -13,14 +10,7 @@ import * as endpoints from './api-endpoints';
 import request from './request';
 import type * as t from './types/admin';
 
-const FRESH_AUTH_HEADER = 'X-Fresh-Auth-Token';
-
-function freshAuthConfig(token?: string): AxiosRequestConfig | undefined {
-  if (!token) return undefined;
-  return { headers: { [FRESH_AUTH_HEADER]: token } };
-}
-
-/** POST that supports custom headers (used for fresh-auth gated routes). */
+/** POST that supports custom headers. */
 async function postWithConfig<T>(
   url: string,
   data: unknown,
@@ -70,12 +60,6 @@ async function deleteWithConfig<T>(
   return res.data;
 }
 
-/* ---------- Reauth ---------- */
-
-export function adminReauth(payload: t.AdminReauthRequest): Promise<t.AdminReauthResponse> {
-  return request.post(endpoints.adminReauth(), payload) as Promise<t.AdminReauthResponse>;
-}
-
 /* ---------- Overview ---------- */
 
 export function getAdminOverview(): Promise<t.AdminOverview> {
@@ -100,47 +84,30 @@ export function banAdminUser(
   id: string,
   payload: t.AdminBanUserRequest,
 ): Promise<t.AdminBanUserResponse> {
-  const { freshAuthToken, ...body } = payload;
-  return postWithConfig<t.AdminBanUserResponse>(
-    endpoints.adminUserBan(id),
-    body,
-    freshAuthConfig(freshAuthToken),
-  );
+  return postWithConfig<t.AdminBanUserResponse>(endpoints.adminUserBan(id), payload);
 }
 
 export function unbanAdminUser(
   id: string,
   payload: t.AdminUnbanUserRequest = {},
 ): Promise<t.AdminBanUserResponse> {
-  const { freshAuthToken, ...body } = payload;
-  return postWithConfig<t.AdminBanUserResponse>(
-    endpoints.adminUserUnban(id),
-    body,
-    freshAuthConfig(freshAuthToken),
-  );
+  return postWithConfig<t.AdminBanUserResponse>(endpoints.adminUserUnban(id), payload);
 }
 
 export function changeAdminUserRole(
   id: string,
   payload: t.AdminChangeUserRoleRequest,
 ): Promise<t.AdminChangeUserRoleResponse> {
-  const { freshAuthToken, ...body } = payload;
-  return patchWithConfig<t.AdminChangeUserRoleResponse>(
-    endpoints.adminUserRole(id),
-    body,
-    freshAuthConfig(freshAuthToken),
-  );
+  return patchWithConfig<t.AdminChangeUserRoleResponse>(endpoints.adminUserRole(id), payload);
 }
 
 export function resetAdminUserPassword(
   id: string,
   payload: t.AdminResetPasswordRequest = {},
 ): Promise<t.AdminResetPasswordResponse> {
-  const { freshAuthToken, ...body } = payload;
   return postWithConfig<t.AdminResetPasswordResponse>(
     endpoints.adminUserResetPassword(id),
-    body,
-    freshAuthConfig(freshAuthToken),
+    payload,
   );
 }
 
@@ -154,24 +121,14 @@ export function deleteAdminUser(
   id: string,
   payload: t.AdminDeleteUserRequest,
 ): Promise<t.AdminDeleteUserResponse> {
-  const { freshAuthToken, ...body } = payload;
-  return deleteWithConfig<t.AdminDeleteUserResponse>(
-    endpoints.adminUserDelete(id),
-    body,
-    freshAuthConfig(freshAuthToken),
-  );
+  return deleteWithConfig<t.AdminDeleteUserResponse>(endpoints.adminUserDelete(id), payload);
 }
 
 export function impersonateAdminUser(
   id: string,
   payload: t.AdminImpersonateRequest,
 ): Promise<t.AdminImpersonateResponse> {
-  const { freshAuthToken, ...body } = payload;
-  return postWithConfig<t.AdminImpersonateResponse>(
-    endpoints.adminUserImpersonate(id),
-    body,
-    freshAuthConfig(freshAuthToken),
-  );
+  return postWithConfig<t.AdminImpersonateResponse>(endpoints.adminUserImpersonate(id), payload);
 }
 
 export function consumeImpersonationToken(
@@ -202,24 +159,14 @@ export function grantAdminPro(
   userId: string,
   payload: t.AdminGrantProRequest,
 ): Promise<t.AdminSubscription> {
-  const { freshAuthToken, ...body } = payload;
-  return postWithConfig<t.AdminSubscription>(
-    endpoints.adminSubscriptionGrant(userId),
-    body,
-    freshAuthConfig(freshAuthToken),
-  );
+  return postWithConfig<t.AdminSubscription>(endpoints.adminSubscriptionGrant(userId), payload);
 }
 
 export function revokeAdminPro(
   userId: string,
   payload: t.AdminRevokeProRequest,
 ): Promise<t.AdminSubscription> {
-  const { freshAuthToken, ...body } = payload;
-  return postWithConfig<t.AdminSubscription>(
-    endpoints.adminSubscriptionRevoke(userId),
-    body,
-    freshAuthConfig(freshAuthToken),
-  );
+  return postWithConfig<t.AdminSubscription>(endpoints.adminSubscriptionRevoke(userId), payload);
 }
 
 export function clearAdminSubscriptionOverride(
@@ -249,11 +196,9 @@ export function adjustAdminBalance(
   userId: string,
   payload: t.AdminAdjustBalanceRequest,
 ): Promise<t.AdminBalanceMutationResponse> {
-  const { freshAuthToken, ...body } = payload;
   return postWithConfig<t.AdminBalanceMutationResponse>(
     endpoints.adminBalanceAdjust(userId),
-    body,
-    freshAuthConfig(freshAuthToken),
+    payload,
   );
 }
 
@@ -261,12 +206,7 @@ export function setAdminBalance(
   userId: string,
   payload: t.AdminSetBalanceRequest,
 ): Promise<t.AdminBalanceMutationResponse> {
-  const { freshAuthToken, ...body } = payload;
-  return postWithConfig<t.AdminBalanceMutationResponse>(
-    endpoints.adminBalanceSet(userId),
-    body,
-    freshAuthConfig(freshAuthToken),
-  );
+  return postWithConfig<t.AdminBalanceMutationResponse>(endpoints.adminBalanceSet(userId), payload);
 }
 
 /* ---------- Usage ---------- */

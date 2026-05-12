@@ -18,16 +18,6 @@ function useInvalidateAdmin() {
   return () => qc.invalidateQueries([AdminQueryKeys.admin]);
 }
 
-/* ---------- Reauth ---------- */
-
-export const useReauthMutation = (
-  options?: Options<t.AdminReauthResponse, t.AdminReauthRequest>,
-): UseMutationResult<t.AdminReauthResponse, unknown, t.AdminReauthRequest> =>
-  useMutation<t.AdminReauthResponse, unknown, t.AdminReauthRequest>({
-    mutationFn: (vars) => adminService.adminReauth(vars),
-    ...(options ?? {}),
-  });
-
 /* ---------- User mutations ---------- */
 
 type WithUserId<T> = T & { id: string };

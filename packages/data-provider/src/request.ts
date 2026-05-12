@@ -98,13 +98,6 @@ if (typeof window !== 'undefined') {
       if (originalRequest.url?.includes('/api/auth/logout') === true) {
         return Promise.reject(error);
       }
-      // Admin fresh-auth challenges return 401 with a specific code. They
-      // are not session-expired errors — let the caller handle them so the
-      // user isn't bounced to /login when re-confirming their password.
-      if (error.response?.data?.code === 'FRESH_AUTH_REQUIRED') {
-        return Promise.reject(error);
-      }
-
       if (error.response.status === 401 && !originalRequest._retry) {
         console.warn('401 error, refreshing token');
         originalRequest._retry = true;

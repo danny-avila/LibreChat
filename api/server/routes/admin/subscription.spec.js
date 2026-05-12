@@ -114,7 +114,6 @@ function setBanned(v) {
 
 jest.mock('~/server/middleware', () => {
   const auditLogger = jest.requireActual('~/server/middleware/admin/auditLogger');
-  const requireFreshAuth = jest.requireActual('~/server/middleware/admin/requireFreshAuth');
   // adminRateLimiter is a no-op pass-through in tests so the supertest harness
   // doesn't need a real keyv/redis store.
   const adminRateLimiter = (_req, _res, next) => next();
@@ -137,7 +136,6 @@ jest.mock('~/server/middleware', () => {
     checkAdminIpAllowlist: (_req, _res, next) => next(),
     adminRateLimiter,
     auditLogger,
-    requireFreshAuth,
   };
 });
 
@@ -149,15 +147,12 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 let mongoServer;
 let app;
 let User, AdminAuditLog, SubscriptionProfile;
-let issueFreshAuthToken;
 
 beforeAll(async () => {
-  process.env.JWT_SECRET = 'test-secret-for-fresh-auth';
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
 
   ({ User, AdminAuditLog, SubscriptionProfile } = require('~/db/models'));
-  ({ issueFreshAuthToken } = require('~/server/middleware/admin/requireFreshAuth'));
 
   app = express();
   app.use(express.json());
@@ -197,9 +192,10 @@ async function createAdmin() {
   return u;
 }
 
-function freshAuthHeader(adminUser) {
-  const { token } = issueFreshAuthToken(adminUser._id.toString());
-  return { 'x-fresh-auth-token': token };
+// Fresh-auth was removed from the admin chain. No-op shim to keep existing
+// `.set(freshAuthHeader(...))` test call sites compiling without churn.
+function freshAuthHeader(_adminUser) {
+  return {};
 }
 
 async function createProfileFor(userId, overrides = {}) {
@@ -360,16 +356,6 @@ describe('POST /api/admin/subscription/users/:userId/grant', () => {
     expect(res.body.code).toBe('INVALID_USER_ID');
   });
 
-  it('401 without fresh auth token', async () => {
-    await createAdmin();
-    const u = await createUser();
-    const res = await request(app)
-      .post(`/api/admin/subscription/users/${u._id}/grant`)
-      .send({ reason: 'test' });
-    expect(res.status).toBe(401);
-    expect(res.body.code).toBe('FRESH_AUTH_REQUIRED');
-  });
-
   it('400 when reason is missing', async () => {
     const admin = await createAdmin();
     const u = await createUser();
@@ -442,16 +428,6 @@ describe('POST /api/admin/subscription/users/:userId/grant', () => {
 });
 
 describe('POST /api/admin/subscription/users/:userId/revoke', () => {
-  it('401 without fresh auth', async () => {
-    await createAdmin();
-    const u = await createUser();
-    const res = await request(app)
-      .post(`/api/admin/subscription/users/${u._id}/revoke`)
-      .send({ reason: 'r' });
-    expect(res.status).toBe(401);
-    expect(res.body.code).toBe('FRESH_AUTH_REQUIRED');
-  });
-
   it('400 missing reason', async () => {
     const admin = await createAdmin();
     const u = await createUser();

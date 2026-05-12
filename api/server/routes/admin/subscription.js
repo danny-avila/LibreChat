@@ -7,7 +7,6 @@ const {
   adminRateLimiter,
   checkAdminIpAllowlist,
   auditLogger,
-  requireFreshAuth,
 } = require('~/server/middleware');
 const subscriptionService = require('~/server/services/admin/subscription');
 
@@ -110,7 +109,6 @@ router.get(
 router.post(
   '/users/:userId/grant',
   validateUserIdParam,
-  requireFreshAuth,
   attachSnapshotCarrier,
   auditLogger(AdminAuditActions.SUBSCRIPTION_GRANT, {
     targetType: 'subscription',
@@ -162,7 +160,6 @@ router.post(
 router.post(
   '/users/:userId/revoke',
   validateUserIdParam,
-  requireFreshAuth,
   attachSnapshotCarrier,
   auditLogger(AdminAuditActions.SUBSCRIPTION_REVOKE, {
     targetType: 'subscription',

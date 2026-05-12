@@ -33,8 +33,6 @@ export const AdminAuditActions = {
   TRANSACTION_VIEW: 'TRANSACTION_VIEW',
 
   AUDIT_VIEW: 'AUDIT_VIEW',
-
-  REAUTH: 'REAUTH',
 } as const;
 
 export type AdminAuditAction = (typeof AdminAuditActions)[keyof typeof AdminAuditActions];
