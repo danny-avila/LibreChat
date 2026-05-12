@@ -26,7 +26,6 @@ const user = require('./user');
 const mcp = require('./mcp');
 const webhooks = require('./webhooks');
 const push = require('./push');
-const notifications = require('./notifications');
 
 module.exports = {
   mcp,
@@ -57,5 +56,4 @@ module.exports = {
   accessPermissions,
   webhooks,
   push,
-  notifications,
 };
