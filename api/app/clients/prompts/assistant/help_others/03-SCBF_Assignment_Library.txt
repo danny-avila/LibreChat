@@ -1,3 +1,4 @@
+<!-- SCBF Assignment Library v6 -->
 SCBF THERAPEUTIC ACTIVITY ASSIGNMENT LIBRARY
 St. Clair Butterfly Foundation -- Version 1.0
 ============================================================
