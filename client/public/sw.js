@@ -68,15 +68,26 @@ self.addEventListener('notificationclick', function (event) {
         }
       }
 
-      // 2. Focus existing window and let the app navigate via React Router (no page reload)
+      // 2. Try to navigate an existing window
       if (windowClients.length > 0) {
-        console.log('[PUSH-DEBUG] Focusing existing tab and sending navigation message');
+        console.log('[PUSH-DEBUG] Focusing existing tab and navigating');
         var targetClient = windowClients[0];
         return targetClient.focus().then(function (focusedClient) {
-          if (focusedClient) {
+          // navigate() only works if the SW controls the client.
+          // If it doesn't (e.g. first load before clients.claim propagates),
+          // fall back to postMessage so the app can navigate itself.
+          if (focusedClient && 'navigate' in focusedClient) {
+            return focusedClient.navigate(urlToOpen).catch(function (err) {
+              console.warn('[PUSH-DEBUG] navigate() failed, using postMessage fallback:', err);
+              focusedClient.postMessage({
+                type: 'NOTIFICATION_CLICK_NAVIGATE',
+                url: urlToOpen
+              });
+            });
+          } else if (focusedClient) {
             focusedClient.postMessage({
               type: 'NOTIFICATION_CLICK_NAVIGATE',
-              url: urlToOpen,
+              url: urlToOpen
             });
           }
         });
