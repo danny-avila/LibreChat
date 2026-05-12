@@ -72,18 +72,24 @@ module.exports = {
           850: '#171717',
           900: '#0d0d0d',
         },
+        // V1 UX POP/BETC : palette "green" remapée vers le rouge Vermeer
+        // (#E5384A). Les 85 classes hardcoded bg-green-X/text-green-X/etc.
+        // basculent automatiquement vers l'accent rouge. Sémantique
+        // success-vs-accent en collision acceptée pour V1 best-guess.
+        // Cleanup ciblé (renommer green->accent + restaurer green pour
+        // success states) prévu en atelier specs post-congé.
         green: {
-          50: '#f1f9f7',
-          100: '#def2ed',
-          200: '#a6e5d6',
-          300: '#6dc8b9',
-          400: '#41a79d',
-          500: '#10a37f',
-          550: '#349072',
-          600: '#126e6b',
-          700: '#0a4f53',
-          800: '#06373e',
-          900: '#031f29',
+          50: '#FEF2F3',
+          100: '#FEE2E4',
+          200: '#FCC8CD',
+          300: '#F9A4AB',
+          400: '#F47780',
+          500: '#E5384A',
+          550: '#DD2E3F',
+          600: '#C52838',
+          700: '#A31F2D',
+          800: '#821923',
+          900: '#6A1319',
         },
         'brand-purple': 'var(--brand-purple)',
         presentation: 'var(--presentation)',

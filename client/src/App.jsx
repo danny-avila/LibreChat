@@ -14,6 +14,14 @@ import { initializeFontSize } from '~/store/fontSize';
 import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
 
+// V1 UX POP/BETC : refonte design system Vermeer (dark mode + accent
+// rouge #E5384A). Force le thème dark au boot pour activer la palette
+// Vermeer définie dans style.css section .dark. Passer à false pour
+// revenir au thème system upstream LibreChat. Synchro avec le même
+// flag dans Nav/SettingsTabs/General/General.tsx (flipper les deux).
+// Cleanup atelier specs post-congé avec Antoine.
+const FORCE_VERMEER_DARK = true;
+
 const App = () => {
   const { setError } = useApiErrorBoundary();
 
@@ -49,9 +57,12 @@ const App = () => {
       <RecoilRoot>
         <LiveAnnouncer>
           <ThemeProvider
-            // Only pass initialTheme and themeRGB if environment theme exists
-            // This allows localStorage values to persist when no env theme is set
-            {...(envTheme && { initialTheme: 'system', themeRGB: envTheme })}
+            // FORCE_VERMEER_DARK : force dark mode global Vermeer V1.
+            // Sinon : passe initialTheme/themeRGB depuis env si défini,
+            // sinon localStorage utilisateur (comportement upstream).
+            {...(FORCE_VERMEER_DARK
+              ? { initialTheme: 'dark' }
+              : envTheme && { initialTheme: 'system', themeRGB: envTheme })}
           >
             {/* The ThemeProvider will automatically:
                 1. Apply dark/light mode classes

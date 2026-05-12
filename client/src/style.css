@@ -125,60 +125,65 @@ html {
   --chart-5: 27 87% 67%;
   --switch-unchecked: 0 0% 58%;
 }
+/* V1 UX POP/BETC : refonte design system Vermeer (dark mode + accent
+ * rouge #E5384A). Valeurs best-guess à raffiner en atelier specs
+ * post-congé avec Antoine. Activé via FORCE_VERMEER_DARK=true dans
+ * App.jsx qui force initialTheme='dark'. Rollback : flipper le flag
+ * + retirer ces overrides pour revenir aux valeurs upstream LibreChat. */
 .dark {
-  --brand-purple: #ab68ff;
-  --presentation: var(--gray-800);
-  --text-primary: var(--gray-100);
-  --text-secondary: var(--gray-300);
-  --text-secondary-alt: var(--gray-400);
-  --text-tertiary: var(--gray-500);
+  --brand-purple: #E5384A;
+  --presentation: #1A1A1C;
+  --text-primary: #F4F4F5;
+  --text-secondary: #A1A1AA;
+  --text-secondary-alt: #71717A;
+  --text-tertiary: #52525B;
   --text-warning: var(--amber-500);
   --text-destructive: var(--red-600);
-  --header-primary: var(--gray-700);
-  --header-hover: var(--gray-600);
-  --header-button-hover: var(--gray-700);
-  --surface-active: var(--gray-500);
-  --surface-active-alt: var(--gray-700);
-  --surface-hover: var(--gray-600);
-  --surface-hover-alt: var(--gray-600);
-  --surface-primary: var(--gray-900);
-  --surface-primary-alt: var(--gray-850);
-  --surface-primary-contrast: var(--gray-850);
-  --surface-secondary: var(--gray-800);
-  --surface-secondary-alt: var(--gray-800);
-  --surface-tertiary: var(--gray-700);
-  --surface-tertiary-alt: var(--gray-700);
-  --surface-dialog: var(--gray-850);
-  --surface-submit: var(--green-700);
-  --surface-submit-hover: var(--green-800);
+  --header-primary: #141416;
+  --header-hover: #1F1F22;
+  --header-button-hover: #1F1F22;
+  --surface-active: #2A2A2D;
+  --surface-active-alt: rgba(229, 56, 74, 0.15);
+  --surface-hover: #1F1F22;
+  --surface-hover-alt: #1F1F22;
+  --surface-primary: #0A0A0B;
+  --surface-primary-alt: #0F0F11;
+  --surface-primary-contrast: #1A1A1C;
+  --surface-secondary: #141416;
+  --surface-secondary-alt: #1A1A1C;
+  --surface-tertiary: #1A1A1C;
+  --surface-tertiary-alt: #1A1A1C;
+  --surface-dialog: #141416;
+  --surface-submit: #E5384A;
+  --surface-submit-hover: #C52838;
   --surface-destructive: var(--red-800);
   --surface-destructive-hover: var(--red-900);
-  --surface-chat: var(--gray-700);
-  --border-light: var(--gray-700);
-  --border-medium-alt: var(--gray-600);
-  --border-medium: var(--gray-600);
-  --border-heavy: var(--gray-500);
-  --border-xheavy: var(--gray-400);
+  --surface-chat: #141416;
+  --border-light: #2A2A2D;
+  --border-medium-alt: #3A3A3F;
+  --border-medium: #3A3A3F;
+  --border-heavy: #52525B;
+  --border-xheavy: #71717A;
   --border-destructive: var(--red-500);
   /* These are test styles */
 
-  --background: 0 0% 7%;
-  --foreground: 0 0% 98%;
-  --card: 0 0% 3.9%;
+  --background: 240 4% 6%;
+  --foreground: 0 0% 96%;
+  --card: 240 4% 10%;
   --card-foreground: 0 0% 98%;
-  --primary: 0 0% 98%;
-  --primary-foreground: 0 0% 9%;
-  --secondary: 0 0% 14.9%;
+  --primary: 354 76% 56%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 4% 15%;
   --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 14.9%;
-  --muted-foreground: 0 0% 63.9%;
-  --accent: 0 0% 14.9%;
-  --accent-foreground: 0 0% 98%;
+  --muted: 240 4% 15%;
+  --muted-foreground: 240 5% 65%;
+  --accent: 354 76% 56%;
+  --accent-foreground: 0 0% 100%;
   --destructive: 0 62.8% 40.6%;
   --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 14.9%;
-  --input: 0 0% 14.9%;
-  --ring: 0 0% 83.1%;
+  --border: 240 4% 18%;
+  --input: 240 4% 15%;
+  --ring: 354 76% 56%;
   --chart-1: 220 70% 50%;
   --chart-2: 160 60% 45%;
   --chart-3: 30 80% 55%;
@@ -1404,15 +1409,22 @@ button {
   cursor: not-allowed;
   opacity: 0.5;
 }
+/* V1 UX POP/BETC : .btn-primary aligné sur l'accent rouge Vermeer
+ * (#E5384A → rgb(229, 56, 74), hover #C52838 → rgb(197, 40, 56)).
+ * Valeurs upstream LibreChat (teal #10A37F) hardcodées en RGB, donc
+ * en bypass du remap palette Tailwind et des overrides .dark. Touch
+ * direct ici pour rattraper les 2 boutons résiduels (« Créer agent »
+ * dans AgentFooter, « Enregistrer comme préréglage » dans Parameters
+ * Panel). Cleanup atelier specs post-congé. */
 .btn-primary {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
-  background-color: rgba(16, 163, 127, var(--tw-bg-opacity));
+  background-color: rgba(229, 56, 74, var(--tw-bg-opacity));
   color: rgba(255, 255, 255, var(--tw-text-opacity));
 }
 .btn-primary:hover {
   --tw-bg-opacity: 1;
-  background-color: rgba(26, 127, 100, var(--tw-bg-opacity));
+  background-color: rgba(197, 40, 56, var(--tw-bg-opacity));
 }
 .btn-primary:focus {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
@@ -1429,15 +1441,15 @@ button {
 }
 .btn-primary.focus-visible {
   --tw-ring-opacity: 1;
-  --tw-ring-color: rgba(25, 195, 125, var(--tw-ring-opacity));
+  --tw-ring-color: rgba(229, 56, 74, var(--tw-ring-opacity));
 }
 .btn-primary:focus-visible {
   --tw-ring-opacity: 1;
-  --tw-ring-color: rgba(25, 195, 125, var(--tw-ring-opacity));
+  --tw-ring-color: rgba(229, 56, 74, var(--tw-ring-opacity));
 }
 .btn-primary:disabled:hover {
   --tw-bg-opacity: 1;
-  background-color: rgba(16, 163, 127, var(--tw-bg-opacity));
+  background-color: rgba(229, 56, 74, var(--tw-bg-opacity));
 }
 .btn-secondary {
   --tw-border-opacity: 1;

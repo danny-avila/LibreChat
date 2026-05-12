@@ -111,7 +111,10 @@ const NavIconButton = memo(function NavIconButton({
           )}
           onClick={handleClick}
         >
-          <link.icon className="h-5 w-5" aria-hidden="true" />
+          <link.icon
+            className={cn('h-5 w-5', isActive && 'text-accent')}
+            aria-hidden="true"
+          />
         </Button>
       }
     />
