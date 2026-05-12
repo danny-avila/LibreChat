@@ -634,6 +634,7 @@ export type TUserTermsResponse = {
   farmerLandholdCompleted?: boolean;
   farmerNeedsUpdate?: boolean;
   missingFields?: string[];
+  farmerProfile?: IFarmerProfile;
 };
 
 export type TAcceptTermsResponse = {
