@@ -36,7 +36,6 @@ type FarmerProfileForm = {
   phoneNo: string;
   languagePreference: string;
   yearsOfExperience: number;
-  cropsCultivated: string;
   primaryCrop: string;
   secondaryCrop: string;
   awarenessOfKCC: string;
@@ -71,6 +70,7 @@ const FarmerProfileModal = ({
     control,
     reset,
     watch,
+    getValues,
     setValue,
     formState: { errors, isValid },
   } = useForm<FarmerProfileForm>({ mode: 'onChange' });
@@ -86,7 +86,8 @@ const FarmerProfileModal = ({
   const selectedDistrict = watch('district');
   const selectedBlock = watch('blockName');
   const selectedVillage = watch('villageName');
-  const selectedCrops = watch('cropsCultivated');
+  const selectedPrimaryCrop = watch('primaryCrop');
+  const selectedSecondaryCrop = watch('secondaryCrop');
   const selectedLanguagePreference = watch('languagePreference');
   const otherOption = localize('com_farmer_option_other');
 
@@ -156,12 +157,36 @@ const FarmerProfileModal = ({
       ? KVKS[selectedDistrict] ?? KVKS.Other
       : [];
 
-  const selectedCropsList = selectedCrops
-    ? selectedCrops
+  const selectedPrimaryCropList = selectedPrimaryCrop
+    ? selectedPrimaryCrop
       .split(',')
       .map((c: string) => c.trim())
       .filter(Boolean)
     : [];
+  const selectedSecondaryCropList = selectedSecondaryCrop
+    ? selectedSecondaryCrop
+      .split(',')
+      .map((c: string) => c.trim())
+      .filter(Boolean)
+    : [];
+
+  const updateCropsCultivated = (selected: string[]) => {
+    setValue('cropsCultivated', selected.join(', '), { shouldValidate: true });
+
+    const primaryCrop = getValues('primaryCrop');
+    const secondaryCrop = getValues('secondaryCrop');
+
+    if (primaryCrop && !selected.includes(primaryCrop)) {
+      setValue('primaryCrop', '', { shouldValidate: true });
+    }
+    if (secondaryCrop && !selected.includes(secondaryCrop)) {
+      setValue('secondaryCrop', '', { shouldValidate: true });
+    }
+  };
+
+  const removeSelectedCrop = (cropToRemove: string) => {
+    updateCropsCultivated(selectedCropsList.filter((crop) => crop !== cropToRemove));
+  };
 
   const saveMutation = useSaveFarmerProfileMutation({
     onSuccess: () => {
@@ -187,6 +212,14 @@ const FarmerProfileModal = ({
     const resolvedDistrict = data.district === otherOption ? data.customDistrict : data.district;
     const resolvedBlock = data.blockName === otherOption ? data.customBlock : data.blockName;
     const resolvedVillage = data.villageName === otherOption ? data.customVillage : data.villageName;
+    const primaryCrops = (data.primaryCrop ?? '')
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    const secondaryCrops = (data.secondaryCrop ?? '')
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
 
     const profile: IFarmerProfile = {
       ...data,
@@ -196,10 +229,7 @@ const FarmerProfileModal = ({
       age: Number(data.age),
       yearsOfExperience: Number(data.yearsOfExperience),
       numberOfSmartphones: Number(data.numberOfSmartphones),
-      cropsCultivated: data.cropsCultivated
-        .split(',')
-        .map((c) => c.trim())
-        .filter(Boolean),
+      cropsCultivated: Array.from(new Set([...primaryCrops, ...secondaryCrops])),
       awarenessOfKCC: data.awarenessOfKCC === 'yes',
       usesAgriApps: data.usesAgriApps === 'yes',
       landhold: data.landhold ? Number(data.landhold) : undefined,
@@ -636,68 +666,41 @@ const FarmerProfileModal = ({
                 )}
               </div>
 
-              <div className={fieldClass}>
-                <Label htmlFor="cropsCultivated">{localize('com_farmer_label_crops_cultivated')}</Label>
-                <SearchableMultiSelect
-                  options={CROPS}
-                  value={selectedCropsList}
-                  onChange={(selected) => setValue('cropsCultivated', selected.join(', '), { shouldValidate: true })}
-                  placeholder={localize('com_ui_select_options')}
-                />
-                <input
-                  type="hidden"
-                  {...register('cropsCultivated', {
-                    required: localize('com_farmer_validation_crops_required'),
-                  })}
-                />
-                {errors.cropsCultivated && (
-                  <p className={errorClass}>{errors.cropsCultivated.message}</p>
-                )}
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div className={fieldClass}>
-                  <Label>{localize('com_farmer_label_primary_crop')}</Label>
-                  <Controller
-                    name="primaryCrop"
-                    control={control}
-                    rules={{ required: localize('com_farmer_validation_primary_crop_required') }}
-                    render={({ field }) => (
-                      <SearchableSelect
-                        options={selectedCropsList}
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        placeholder={
-                          selectedCropsList.length
-                            ? localize('com_farmer_placeholder_select_primary_crop')
-                            : localize('com_farmer_placeholder_select_crops_first')
-                        }
-                        disabled={!selectedCropsList.length}
-                      />
-                    )}
+                  <Label htmlFor="primaryCrop">{localize('com_farmer_label_primary_crop')}</Label>
+                  <SearchableMultiSelect
+                    options={CROPS}
+                    value={selectedPrimaryCropList}
+                    onChange={(selected) =>
+                      setValue('primaryCrop', selected.join(', '), { shouldValidate: true })
+                    }
+                    placeholder={localize('com_ui_select_options')}
+                  />
+                  <input
+                    type="hidden"
+                    {...register('primaryCrop', {
+                      required: localize('com_farmer_validation_primary_crop_required'),
+                    })}
                   />
                   {errors.primaryCrop && <p className={errorClass}>{errors.primaryCrop.message}</p>}
                 </div>
 
                 <div className={fieldClass}>
-                  <Label>{localize('com_farmer_label_secondary_crop')}</Label>
-                  <Controller
-                    name="secondaryCrop"
-                    control={control}
-                    rules={{ required: localize('com_farmer_validation_secondary_crop_required') }}
-                    render={({ field }) => (
-                      <SearchableSelect
-                        options={selectedCropsList}
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        placeholder={
-                          selectedCropsList.length
-                            ? localize('com_farmer_placeholder_select_secondary_crop')
-                            : localize('com_farmer_placeholder_select_crops_first')
-                        }
-                        disabled={!selectedCropsList.length}
-                      />
-                    )}
+                  <Label htmlFor="secondaryCrop">{localize('com_farmer_label_secondary_crop')}</Label>
+                  <SearchableMultiSelect
+                    options={CROPS}
+                    value={selectedSecondaryCropList}
+                    onChange={(selected) =>
+                      setValue('secondaryCrop', selected.join(', '), { shouldValidate: true })
+                    }
+                    placeholder={localize('com_ui_select_options')}
+                  />
+                  <input
+                    type="hidden"
+                    {...register('secondaryCrop', {
+                      required: localize('com_farmer_validation_secondary_crop_required'),
+                    })}
                   />
                   {errors.secondaryCrop && (
                     <p className={errorClass}>{errors.secondaryCrop.message}</p>

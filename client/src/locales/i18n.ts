@@ -41,6 +41,18 @@ import translationBs from './bs/translation.json';
 import translationNb from './nb/translation.json';
 import translationSl from './sl/translation.json';
 import translationPa from './pa/translation.json';
+import translationAs_IN from './as-IN/translation.json';
+import translationBn_IN from './bn-IN/translation.json';
+import translationGu_IN from './gu-IN/translation.json';
+import translationHi_IN from './hi-IN/translation.json';
+import translationKn_IN from './kn-IN/translation.json';
+import translationMl_IN from './ml-IN/translation.json';
+import translationMr_IN from './mr-IN/translation.json';
+import translationOr_IN from './or-IN/translation.json';
+import translationSa_IN from './sa-IN/translation.json';
+import translationTa_IN from './ta-IN/translation.json';
+import translationTe_IN from './te-IN/translation.json';
+import translationUr_IN from './ur-IN/translation.json';
 
 export const defaultNS = 'translation';
 
@@ -83,6 +95,18 @@ export const resources = {
   sl: { translation: translationSl },
   uk: { translation: translationUk },
   pa: { translation: translationPa },
+  'as-IN': { translation: translationAs_IN },
+  'bn-IN': { translation: translationBn_IN },
+  'gu-IN': { translation: translationGu_IN },
+  'hi-IN': { translation: translationHi_IN },
+  'kn-IN': { translation: translationKn_IN },
+  'ml-IN': { translation: translationMl_IN },
+  'mr-IN': { translation: translationMr_IN },
+  'or-IN': { translation: translationOr_IN },
+  'sa-IN': { translation: translationSa_IN },
+  'ta-IN': { translation: translationTa_IN },
+  'te-IN': { translation: translationTe_IN },
+  'ur-IN': { translation: translationUr_IN },
 } as const;
 
 i18n
