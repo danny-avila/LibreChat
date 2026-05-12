@@ -91,19 +91,19 @@ export const LangSelector = ({
 
   const languageOptions: LanguageOption[] = [
     { value: 'auto', label: localize('com_nav_lang_auto') },
-    { value: 'as-IN', label: 'অসমীয়া' },
-    { value: 'bn-IN', label: 'বাংলা' },
-    { value: 'gu-IN', label: 'ગુજરાતી' },
-    { value: 'hi-IN', label: 'हिन्दी' },
-    { value: 'kn-IN', label: 'ಕನ್ನಡ' },
-    { value: 'ml-IN', label: 'മലയാളം' },
-    { value: 'mr-IN', label: 'मराठी' },
-    { value: 'or-IN', label: 'ଓଡ଼ିଆ' },
-    { value: 'pa', label: 'ਪੰਜਾਬੀ' },
-    { value: 'sa-IN', label: 'संस्कृतम्' },
-    { value: 'ta-IN', label: 'தமிழ்' },
-    { value: 'te-IN', label: 'తెలుగు' },
-    { value: 'ur-IN', label: 'اردو' },
+    { value: 'as-IN', label: localize('com_nav_lang_assamese') },
+    { value: 'bn-IN', label: localize('com_nav_lang_bengali') },
+    { value: 'gu-IN', label: localize('com_nav_lang_gujarati') },
+    { value: 'hi-IN', label: localize('com_nav_lang_hindi') },
+    { value: 'kn-IN', label: localize('com_nav_lang_kannada') },
+    { value: 'ml-IN', label: localize('com_nav_lang_malayalam') },
+    { value: 'mr-IN', label: localize('com_nav_lang_marathi') },
+    { value: 'or-IN', label: localize('com_nav_lang_odia') },
+    { value: 'pa', label: localize('com_nav_lang_punjabi') },
+    { value: 'sa-IN', label: localize('com_nav_lang_sanskrit') },
+    { value: 'ta-IN', label: localize('com_nav_lang_tamil') },
+    { value: 'te-IN', label: localize('com_nav_lang_telugu') },
+    { value: 'ur-IN', label: localize('com_nav_lang_urdu') },
   ];
 
   const labelId = 'language-selector-label';
