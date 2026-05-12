@@ -72,6 +72,19 @@ export interface AdminGrantsDeps {
     tenantId?: string;
   }) => ResolvedPrincipal[] | undefined;
   checkRoleExists?: (roleId: string) => Promise<boolean>;
+  /** Optional audit emission. Failure is logged but does not roll back the grant. */
+  recordAuditEntry?: (input: {
+    action: 'grant_assigned' | 'grant_removed';
+    actorId: string | Types.ObjectId;
+    actorName: string;
+    targetPrincipalType: PrincipalType;
+    targetPrincipalId: string | Types.ObjectId;
+    targetName: string;
+    capability: string;
+    tenantId?: string;
+  }) => Promise<unknown>;
+  /** Resolves a User document's display name from its id (for audit actor name). */
+  resolveUserName?: (userId: string | Types.ObjectId) => Promise<string | null>;
 }
 
 /** Currently ROLE-only; Record/Set structure preserved for future principal-type expansion. */
@@ -97,7 +110,38 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     getHeldCapabilities,
     getCachedPrincipals,
     checkRoleExists,
+    recordAuditEntry,
+    resolveUserName,
   } = deps;
+
+  async function emitAudit(args: {
+    action: 'grant_assigned' | 'grant_removed';
+    caller: { userId: string; role: string; tenantId?: string };
+    principalType: PrincipalType;
+    principalId: string;
+    capability: SystemCapability;
+  }): Promise<void> {
+    if (!recordAuditEntry) return;
+    try {
+      const actorName = resolveUserName ? (await resolveUserName(args.caller.userId)) ?? args.caller.userId : args.caller.userId;
+      // For ROLE principals the principalId IS the human-readable name; for USER/GROUP
+      // the same string is the id, and the display name lookup happens in a later iteration.
+      const targetName = args.principalId;
+      await recordAuditEntry({
+        action: args.action,
+        actorId: args.caller.userId,
+        actorName,
+        targetPrincipalType: args.principalType,
+        targetPrincipalId: args.principalId,
+        targetName,
+        capability: args.capability,
+        tenantId: args.caller.tenantId,
+      });
+    } catch (err) {
+      // Audit failure must not roll back the grant — log and move on.
+      logger.error('[adminGrants] audit write failed', err);
+    }
+  }
 
   const MANAGE_CAPABILITY_BY_TYPE: Record<GrantPrincipalType, SystemCapability> = {
     [PrincipalType.ROLE]: SystemCapabilities.MANAGE_ROLES,
@@ -352,6 +396,13 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
       if (!grant) {
         return res.status(500).json({ error: 'Grant operation returned no result' });
       }
+      await emitAudit({
+        action: 'grant_assigned',
+        caller,
+        principalType,
+        principalId,
+        capability,
+      });
       return res.status(201).json({ grant });
     } catch (error) {
       logger.error('[adminGrants] assignGrant error:', error);
@@ -397,6 +448,13 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         principalId,
         capability: capability as SystemCapability,
         tenantId,
+      });
+      await emitAudit({
+        action: 'grant_removed',
+        caller,
+        principalType: principalType as PrincipalType,
+        principalId,
+        capability: capability as SystemCapability,
       });
       return res.status(200).json({ success: true });
     } catch (error) {

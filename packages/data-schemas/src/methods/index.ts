@@ -20,6 +20,14 @@ import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
 import { createUserGroupMethods, type UserGroupMethods } from './userGroup';
 import { createAclEntryMethods, permissionBitSupersets, type AclEntryMethods } from './aclEntry';
 import { createSystemGrantMethods, type SystemGrantMethods } from './systemGrant';
+import {
+  createAuditLogMethods,
+  type AuditLogMethods,
+  type AuditLogFilters,
+  type AuditLogPage,
+  type AdminAuditLogEntryWire,
+  type RecordAuditEntryInput,
+} from './auditLog';
 import { createShareMethods, type ShareMethods } from './share';
 /* Tier 1 — Simple CRUD */
 import { createActionMethods, type ActionMethods } from './action';
@@ -115,6 +123,7 @@ export type AllMethods = UserMethods &
   UserGroupMethods &
   AclEntryMethods &
   SystemGrantMethods &
+  AuditLogMethods &
   ShareMethods &
   AccessRoleMethods &
   PluginAuthMethods &
@@ -242,6 +251,7 @@ export function createMethods(
     ...createUserGroupMethods(mongoose),
     ...aclEntryMethods,
     ...systemGrantMethods,
+    ...createAuditLogMethods(mongoose),
     ...createShareMethods(mongoose),
     ...createPluginAuthMethods(mongoose),
     /* Tier 1 */
@@ -284,6 +294,11 @@ export type {
   UserGroupMethods,
   AclEntryMethods,
   SystemGrantMethods,
+  AuditLogMethods,
+  AuditLogFilters,
+  AuditLogPage,
+  AdminAuditLogEntryWire,
+  RecordAuditEntryInput,
   ShareMethods,
   AccessRoleMethods,
   PluginAuthMethods,
