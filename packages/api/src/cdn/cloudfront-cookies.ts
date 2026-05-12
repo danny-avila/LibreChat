@@ -42,6 +42,10 @@ type CloudFrontCookieRequest = {
   user?: CloudFrontScopeUser | null;
 };
 
+type CloudFrontAuthCookieRefreshRequest = CloudFrontCookieRequest & {
+  cloudFrontAuthCookieRefreshResult?: CloudFrontAuthCookieRefreshResult;
+};
+
 export type CloudFrontAuthCookieRefreshResult = {
   enabled: boolean;
   attempted: boolean;
@@ -632,10 +636,10 @@ export function forceRefreshCloudFrontAuthCookies(
 }
 
 export function maybeRefreshCloudFrontAuthCookiesMiddleware(
-  req: CloudFrontCookieRequest,
+  req: CloudFrontAuthCookieRefreshRequest,
   res: Response,
   next: NextFunction,
 ): void {
-  maybeRefreshCloudFrontAuthCookies(req, res, req.user);
+  req.cloudFrontAuthCookieRefreshResult = maybeRefreshCloudFrontAuthCookies(req, res, req.user);
   next();
 }

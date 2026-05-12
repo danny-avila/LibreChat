@@ -153,6 +153,36 @@ describe('CloudFront cookie refresh helpers', () => {
     img.remove();
   });
 
+  it('does not consume the one retry when cookie refresh fails', async () => {
+    fetchMock
+      .mockResolvedValueOnce(refreshResponse({ ok: false }))
+      .mockResolvedValueOnce(refreshResponse({ ok: true }));
+    const cleanup = installCloudFrontImageRetry(cloudFrontStartupConfig);
+    const img = document.createElement('img');
+    const onFailure = jest.fn();
+    img.src = 'https://cdn.example.com/i/images/user/file.png';
+    img.addEventListener('error', onFailure);
+    document.body.appendChild(img);
+
+    fireEvent.error(img);
+
+    await waitFor(() => expect(onFailure).toHaveBeenCalledTimes(1));
+    expect(img).toHaveAttribute('src', 'https://cdn.example.com/i/images/user/file.png');
+
+    fireEvent.error(img);
+
+    await waitFor(() =>
+      expect(img).toHaveAttribute(
+        'src',
+        'https://cdn.example.com/i/images/user/file.png?_cf_refresh=1700000000000',
+      ),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    cleanup();
+    img.remove();
+  });
+
   it('does not retry arbitrary external images', () => {
     const cleanup = installCloudFrontImageRetry(cloudFrontStartupConfig);
     const img = document.createElement('img');

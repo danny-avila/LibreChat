@@ -63,6 +63,15 @@ jest.mock('~/server/middleware', () => {
         return res.status(401).json({ message: 'Unauthorized' });
       }
       req.user = { _id: 'user123', tenantId: 'tenantA' };
+      if (req.headers['x-cloudfront-warmed'] === 'true') {
+        req.cloudFrontAuthCookieRefreshResult = {
+          enabled: true,
+          attempted: true,
+          refreshed: true,
+          expiresInSec: 1800,
+          refreshAfterSec: 1500,
+        };
+      }
       return next();
     }),
   };
@@ -126,5 +135,20 @@ describe('POST /api/auth/cloudfront/refresh', () => {
       expect.any(Object),
       { _id: 'user123', tenantId: 'tenantA' },
     );
+  });
+
+  it('reuses the auth middleware refresh result instead of minting cookies twice', async () => {
+    const response = await request(app)
+      .post('/api/auth/cloudfront/refresh')
+      .set('Authorization', 'Bearer ok')
+      .set('x-cloudfront-warmed', 'true')
+      .expect(200);
+
+    expect(response.body).toEqual({
+      ok: true,
+      expiresInSec: 1800,
+      refreshAfterSec: 1500,
+    });
+    expect(mockForceRefreshCloudFrontAuthCookies).not.toHaveBeenCalled();
   });
 });

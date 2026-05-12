@@ -28,6 +28,14 @@ const setBalanceConfig = createSetBalanceConfig({
 });
 
 const router = express.Router();
+const getCloudFrontAuthCookieRefreshResult = (req, res) => {
+  const warmedResult = req.cloudFrontAuthCookieRefreshResult;
+  if (warmedResult && (warmedResult.attempted || !warmedResult.enabled)) {
+    return warmedResult;
+  }
+
+  return forceRefreshCloudFrontAuthCookies(req, res, req.user);
+};
 
 const ldapAuth = !!process.env.LDAP_URL && !!process.env.LDAP_USER_SEARCH_BASE;
 //Local
@@ -43,7 +51,7 @@ router.post(
 );
 router.post('/refresh', refreshController);
 router.post('/cloudfront/refresh', middleware.requireJwtAuth, (req, res) => {
-  const result = forceRefreshCloudFrontAuthCookies(req, res, req.user);
+  const result = getCloudFrontAuthCookieRefreshResult(req, res);
   if (!result.enabled) {
     return res.sendStatus(404);
   }

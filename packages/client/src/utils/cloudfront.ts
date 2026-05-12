@@ -16,6 +16,8 @@ let getAuthorizationHeader: CloudFrontCookieRefreshOptions['getAuthorizationHead
 let refreshPromise: Promise<boolean> | null = null;
 let removeImageErrorListener: (() => void) | null = null;
 const retriedImageSources = new WeakMap<HTMLImageElement, string>();
+const pendingImageRefreshes = new WeakMap<HTMLImageElement, string>();
+const forwardedImageErrors = new WeakSet<HTMLImageElement>();
 
 function getRefreshConfig(
   startupConfig?: Pick<TStartupConfig, 'cloudFront'> | null,
@@ -78,6 +80,7 @@ function getRetryKey(url: string): string {
 }
 
 function dispatchImageError(img: HTMLImageElement): void {
+  forwardedImageErrors.add(img);
   img.dispatchEvent(new Event('error'));
 }
 
@@ -158,6 +161,10 @@ export function installCloudFrontImageRetry(
     if (!(img instanceof HTMLImageElement)) {
       return;
     }
+    if (forwardedImageErrors.has(img)) {
+      forwardedImageErrors.delete(img);
+      return;
+    }
 
     const failedSrc = img.currentSrc || img.src || img.getAttribute('src') || '';
     if (!isCloudFrontMediaUrl(failedSrc)) {
@@ -172,14 +179,19 @@ export function installCloudFrontImageRetry(
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
-    retriedImageSources.set(img, retryKey);
+    if (pendingImageRefreshes.get(img) === retryKey) {
+      return;
+    }
+    pendingImageRefreshes.set(img, retryKey);
 
     void refreshCloudFrontCookiesOnce().then((refreshed) => {
+      pendingImageRefreshes.delete(img);
       if (!refreshed || !img.isConnected) {
         dispatchImageError(img);
         return;
       }
 
+      retriedImageSources.set(img, retryKey);
       img.src = withCloudFrontCacheBuster(failedSrc);
     });
   };
