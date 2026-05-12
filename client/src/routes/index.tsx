@@ -14,6 +14,7 @@ import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import { SubscriptionProvider } from '~/hooks/Subscription';
 import RouteErrorBoundary from './RouteErrorBoundary';
+import NotFound from './NotFound';
 import StartupLayout from './Layouts/Startup';
 import ImpersonateConsumer from './Admin/ImpersonateConsumer';
 import LoginLayout from './Layouts/Login';
@@ -143,6 +144,11 @@ export const router = createBrowserRouter(
           ],
         },
       ],
+    },
+    {
+      path: '*',
+      element: <NotFound />,
+      errorElement: <RouteErrorBoundary />,
     },
   ],
   { basename: baseHref },
