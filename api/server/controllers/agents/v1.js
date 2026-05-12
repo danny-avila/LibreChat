@@ -1,12 +1,14 @@
 const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
-const { logger, encryptV2 } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
   agentCreateSchema,
   agentUpdateSchema,
+  redactLangfuseSecret,
   refreshListAvatars,
+  normalizeLangfuseConfig,
   collectEdgeAgentIds,
   mergeAgentOcrConversion,
   MAX_AVATAR_REFRESH_AGENTS,
@@ -58,88 +60,6 @@ const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const getSafeModelParameters = (modelParameters) => {
   const { useResponsesApi } = modelParameters ?? {};
   return typeof useResponsesApi === 'boolean' ? { useResponsesApi } : {};
-};
-
-const toPlainObject = (value) =>
-  value && typeof value.toObject === 'function' ? value.toObject() : value;
-
-const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
-const ENCRYPTED_V2_VALUE = /^[a-f0-9]{32}:[a-f0-9]+$/i;
-
-const encryptSensitiveValue = async (value) => encryptV2(encodeURIComponent(value));
-
-const normalizeLangfuseSecret = async (value, options = {}) => {
-  if (!isNonEmptyString(value)) {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  if (options.preserveEncrypted === true && ENCRYPTED_V2_VALUE.test(trimmed)) {
-    return trimmed;
-  }
-  return await encryptSensitiveValue(trimmed);
-};
-
-const normalizeLangfuseConfig = async (incoming, existing, options = {}) => {
-  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
-    return incoming;
-  }
-
-  const existingConfig = toPlainObject(existing) ?? {};
-  const normalized = {};
-
-  if (typeof incoming.enabled === 'boolean') {
-    normalized.enabled = incoming.enabled;
-  }
-
-  for (const key of ['publicKey', 'baseUrl']) {
-    if (isNonEmptyString(incoming[key])) {
-      normalized[key] = incoming[key].trim();
-    }
-  }
-
-  if (isNonEmptyString(incoming.secretKey)) {
-    normalized.secretKey = await normalizeLangfuseSecret(incoming.secretKey, {
-      preserveEncrypted: options.preserveIncomingEncrypted === true,
-    });
-  } else if (isNonEmptyString(existingConfig.secretKey)) {
-    normalized.secretKey = await normalizeLangfuseSecret(existingConfig.secretKey, {
-      preserveEncrypted: true,
-    });
-  }
-
-  return Object.keys(normalized).length > 0 ? normalized : undefined;
-};
-
-const redactLangfuseSecret = (agent) => {
-  const payload = toPlainObject(agent);
-  if (!payload || typeof payload !== 'object') {
-    return payload;
-  }
-
-  const redactSingleAgent = (value) => {
-    if (!value || typeof value !== 'object') {
-      return value;
-    }
-    if (value.langfuse && typeof value.langfuse === 'object' && value.langfuse.secretKey) {
-      return {
-        ...value,
-        langfuse: {
-          ...toPlainObject(value.langfuse),
-          secretKey: '',
-        },
-      };
-    }
-    return value;
-  };
-
-  const redactedPayload = redactSingleAgent(payload);
-  if (Array.isArray(redactedPayload.versions)) {
-    redactedPayload.versions = redactedPayload.versions.map((version) =>
-      redactSingleAgent(toPlainObject(version)),
-    );
-  }
-
-  return redactedPayload;
 };
 
 /**

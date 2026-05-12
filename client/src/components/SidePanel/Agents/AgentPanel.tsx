@@ -53,22 +53,25 @@ function getUpdateToastMessage(
 
 function composeLangfusePayload(
   langfuse: AgentForm['langfuse'],
-  existingLangfuse?: AgentForm['langfuse'],
 ): AgentForm['langfuse'] | undefined {
   if (!langfuse) {
     return undefined;
   }
 
-  const normalized = {
-    enabled: langfuse.enabled === true,
+  const normalized: NonNullable<AgentForm['langfuse']> = {
     publicKey: langfuse.publicKey?.trim() ?? '',
     secretKey: langfuse.secretKey?.trim() ?? '',
     baseUrl: langfuse.baseUrl?.trim() ?? '',
   };
+  if (typeof langfuse.enabled === 'boolean') {
+    normalized.enabled = langfuse.enabled;
+  }
+
   const hasCredentialValue =
     normalized.publicKey !== '' || normalized.secretKey !== '' || normalized.baseUrl !== '';
+  const hasExplicitEnabled = typeof normalized.enabled === 'boolean';
 
-  if (!normalized.enabled && !hasCredentialValue && !existingLangfuse) {
+  if (!hasExplicitEnabled && !hasCredentialValue) {
     return undefined;
   }
 
@@ -84,7 +87,6 @@ function composeLangfusePayload(
  */
 export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | null) {
   const {
-    agent,
     name,
     artifacts,
     description,
@@ -112,7 +114,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
   const model = _model ?? '';
   const provider =
     (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
-  const langfusePayload = composeLangfusePayload(langfuse, agent?.langfuse);
+  const langfusePayload = composeLangfusePayload(langfuse);
 
   return {
     payload: {

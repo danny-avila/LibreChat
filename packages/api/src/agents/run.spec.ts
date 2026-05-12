@@ -22,6 +22,7 @@ jest.mock('@librechat/data-schemas', () => {
 
 type LangfuseRunAgent = Parameters<typeof resolveEffectiveLangfuseConfig>[0];
 type LangfuseAppConfig = NonNullable<Parameters<typeof resolveEffectiveLangfuseConfig>[1]>;
+const decryptV2Mock = jest.mocked(decryptV2);
 
 const createLangfuseAgent = (langfuse?: LangfuseRunAgent['langfuse']): LangfuseRunAgent =>
   ({
@@ -29,9 +30,7 @@ const createLangfuseAgent = (langfuse?: LangfuseRunAgent['langfuse']): LangfuseR
     langfuse,
   }) as LangfuseRunAgent;
 
-const createLangfuseAppConfig = (
-  langfuse?: LangfuseAppConfig['langfuse'],
-): LangfuseAppConfig =>
+const createLangfuseAppConfig = (langfuse?: LangfuseAppConfig['langfuse']): LangfuseAppConfig =>
   ({
     langfuse,
   }) as LangfuseAppConfig;
@@ -186,6 +185,11 @@ describe('resolveEffectiveLangfuseConfig', () => {
 
   beforeEach(() => {
     warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    decryptV2Mock.mockImplementation(async (value: string) =>
+      value === '0123456789abcdef0123456789abcdef:736b2d6167656e74'
+        ? encodeURIComponent('sk-agent')
+        : value,
+    );
     process.env.LANGFUSE_TEST_PUBLIC_KEY = 'pk-tenant';
     process.env.LANGFUSE_TEST_SECRET_KEY = 'sk-tenant';
     process.env.LANGFUSE_TEST_BASE_URL = 'https://cloud.langfuse.com';
@@ -194,6 +198,7 @@ describe('resolveEffectiveLangfuseConfig', () => {
 
   afterEach(() => {
     warnSpy.mockRestore();
+    decryptV2Mock.mockReset();
     delete process.env.LANGFUSE_TEST_PUBLIC_KEY;
     delete process.env.LANGFUSE_TEST_SECRET_KEY;
     delete process.env.LANGFUSE_TEST_BASE_URL;
@@ -247,6 +252,25 @@ describe('resolveEffectiveLangfuseConfig', () => {
     });
   });
 
+  it('inherits tenant enabled when an agent override omits enabled', async () => {
+    const result = await resolveEffectiveLangfuseConfig(
+      createLangfuseAgent({
+        publicKey: 'pk-agent',
+      }),
+      createLangfuseAppConfig({
+        enabled: true,
+        publicKey: 'pk-tenant',
+        secretKey: 'sk-tenant',
+      }),
+    );
+
+    expect(result).toEqual({
+      enabled: true,
+      publicKey: 'pk-agent',
+      secretKey: 'sk-tenant',
+    });
+  });
+
   it('enables tracing with valid keys and no base URL', async () => {
     const result = await resolveEffectiveLangfuseConfig(
       createLangfuseAgent(),
@@ -285,6 +309,99 @@ describe('resolveEffectiveLangfuseConfig', () => {
       publicKey: 'pk-agent',
       secretKey: 'sk-agent',
     });
+  });
+
+  it('does not expand placeholders inside decrypted literal agent secrets', async () => {
+    const encryptedSecret = '0123456789abcdef0123456789abcdef:736b2d6167656e74';
+    decryptV2Mock.mockResolvedValueOnce(encodeURIComponent('sk-${literal}'));
+
+    const result = await resolveEffectiveLangfuseConfig(
+      createLangfuseAgent({
+        enabled: true,
+        publicKey: 'pk-agent',
+        secretKey: encryptedSecret,
+      }),
+      createLangfuseAppConfig(),
+    );
+
+    expect(result).toEqual({
+      enabled: true,
+      publicKey: 'pk-agent',
+      secretKey: 'sk-${literal}',
+    });
+  });
+
+  it('still resolves exact env refs stored in encrypted agent secrets', async () => {
+    const encryptedSecret = '0123456789abcdef0123456789abcdef:736b2d6167656e74';
+    decryptV2Mock.mockResolvedValueOnce(encodeURIComponent('${LANGFUSE_TEST_SECRET_KEY}'));
+
+    const result = await resolveEffectiveLangfuseConfig(
+      createLangfuseAgent({
+        enabled: true,
+        publicKey: 'pk-agent',
+        secretKey: encryptedSecret,
+      }),
+      createLangfuseAppConfig(),
+    );
+
+    expect(result).toEqual({
+      enabled: true,
+      publicKey: 'pk-agent',
+      secretKey: 'sk-tenant',
+    });
+  });
+
+  it('does not attempt to decrypt tenant secrets that look encrypted', async () => {
+    const encryptedLookingSecret = '0123456789abcdef0123456789abcdef:736b2d6167656e74';
+    const result = await resolveEffectiveLangfuseConfig(
+      createLangfuseAgent(),
+      createLangfuseAppConfig({
+        enabled: true,
+        publicKey: 'pk-tenant',
+        secretKey: encryptedLookingSecret,
+      }),
+    );
+
+    expect(decryptV2Mock).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      enabled: true,
+      publicKey: 'pk-tenant',
+      secretKey: encryptedLookingSecret,
+    });
+  });
+
+  it('disables tracing and warns when agent secret decryption fails', async () => {
+    const encryptedSecret = '0123456789abcdef0123456789abcdef:736b2d6167656e74';
+    decryptV2Mock.mockRejectedValueOnce(new Error('bad decrypt'));
+
+    const result = await resolveEffectiveLangfuseConfig(
+      createLangfuseAgent({
+        enabled: true,
+        publicKey: 'pk-agent',
+        secretKey: encryptedSecret,
+      }),
+      createLangfuseAppConfig(),
+    );
+
+    expect(result).toEqual({ enabled: false });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('failed to decrypt secretKey'));
+  });
+
+  it('disables tracing and warns when decrypted agent secret is malformed', async () => {
+    const encryptedSecret = '0123456789abcdef0123456789abcdef:736b2d6167656e74';
+    decryptV2Mock.mockResolvedValueOnce('%E0%A4%A');
+
+    const result = await resolveEffectiveLangfuseConfig(
+      createLangfuseAgent({
+        enabled: true,
+        publicKey: 'pk-agent',
+        secretKey: encryptedSecret,
+      }),
+      createLangfuseAppConfig(),
+    );
+
+    expect(result).toEqual({ enabled: false });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('failed to decrypt secretKey'));
   });
 
   it('lets an agent explicitly disable tracing over enabled tenant defaults', async () => {

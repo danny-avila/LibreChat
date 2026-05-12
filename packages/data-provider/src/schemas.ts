@@ -4,6 +4,7 @@ import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './typ
 import { TFeedback, feedbackSchema } from './feedback';
 import type { SearchResultData } from './types/web';
 import type { TFile } from './types/files';
+import type { LangfuseConfig } from './config';
 
 export const isUUID = z.string().uuid();
 
@@ -303,9 +304,7 @@ export const defaultAgentFormValues = {
   subagents: undefined as
     | { enabled?: boolean; allowSelf?: boolean; agent_ids?: string[] }
     | undefined,
-  langfuse: undefined as
-    | { enabled?: boolean; publicKey?: string; secretKey?: string; baseUrl?: string }
-    | undefined,
+  langfuse: undefined as LangfuseConfig | undefined,
 };
 
 export const ImageVisionTool: FunctionTool = {

@@ -10,7 +10,11 @@ const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { agentSchema, fileSchema, encryptV2, decryptV2 } = require('@librechat/data-schemas');
-const { FileSources, PermissionBits } = require('librechat-data-provider');
+const {
+  FileSources,
+  PermissionBits,
+  LANGFUSE_SECRET_CLEAR_VALUE,
+} = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 // Only mock the dependencies that are not database-related
@@ -875,6 +879,44 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.langfuse.secretKey).not.toBe('sk-updated');
       expect(agentInDb.langfuse.secretKey).not.toBe(encryptedOriginal);
       expect(await decryptStoredSecret(agentInDb.langfuse.secretKey)).toBe('sk-updated');
+    });
+
+    test('should clear existing Langfuse secret when update sends the clear sentinel', async () => {
+      const encryptedOriginal = await encryptStoredSecret('sk-original');
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          langfuse: {
+            enabled: true,
+            publicKey: 'pk-original',
+            secretKey: encryptedOriginal,
+            baseUrl: 'https://cloud.langfuse.com',
+          },
+        },
+      );
+
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        langfuse: {
+          enabled: true,
+          publicKey: 'pk-original',
+          secretKey: LANGFUSE_SECRET_CLEAR_VALUE,
+          baseUrl: 'https://cloud.langfuse.com',
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.langfuse.secretKey).toBeUndefined();
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.langfuse).toEqual({
+        enabled: true,
+        publicKey: 'pk-original',
+        baseUrl: 'https://cloud.langfuse.com',
+      });
     });
 
     test('uploadAgentAvatarHandler should redact Langfuse secret in response', async () => {

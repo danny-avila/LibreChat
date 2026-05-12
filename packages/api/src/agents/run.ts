@@ -5,6 +5,7 @@ import {
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_RUN_CONFIGS,
   extractEnvVariable,
+  extractVariableName,
   providerEndpointMap,
   normalizeEndpointName,
 } from 'librechat-data-provider';
@@ -36,6 +37,7 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { isUserProvided } from '~/utils/common';
+import { ENCRYPTED_V2_VALUE, isNonEmptyString } from './langfuse';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -273,12 +275,7 @@ type RunAgent = Omit<Agent, 'tools'> & {
   subagents?: AgentSubagentsConfig;
 };
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 const UNRESOLVED_ENV_VAR_PLACEHOLDER = /\$\{[^}]+\}/;
-const ENCRYPTED_V2_VALUE = /^[a-f0-9]{32}:[a-f0-9]+$/i;
 
 function hasUnresolvedPlaceholder(value: string): boolean {
   return UNRESOLVED_ENV_VAR_PLACEHOLDER.test(value);
@@ -304,19 +301,23 @@ async function resolveLangfuseValue(
   tenantValue?: string,
   options: { encrypted?: boolean; agentId?: string } = {},
 ): Promise<string | undefined> {
-  const rawValue = isNonEmptyString(agentValue)
-    ? agentValue
-    : isNonEmptyString(tenantValue)
-      ? tenantValue
-      : undefined;
+  const isAgentValue = isNonEmptyString(agentValue);
+  let rawValue: string | undefined;
+  if (isAgentValue) {
+    rawValue = agentValue;
+  } else if (isNonEmptyString(tenantValue)) {
+    rawValue = tenantValue;
+  }
   if (!rawValue) {
     return undefined;
   }
 
   let value = rawValue;
-  if (options.encrypted === true && ENCRYPTED_V2_VALUE.test(value)) {
+  let decrypted = false;
+  if (options.encrypted === true && isAgentValue && ENCRYPTED_V2_VALUE.test(value)) {
     try {
       value = decodeURIComponent(await decryptV2(value));
+      decrypted = true;
     } catch (error) {
       logger.warn(
         `[createRun] Langfuse tracing disabled for agent ${
@@ -327,8 +328,9 @@ async function resolveLangfuseValue(
     }
   }
 
-  const resolved = extractEnvVariable(value);
-  if (!isNonEmptyString(resolved) || hasUnresolvedPlaceholder(resolved)) {
+  const shouldResolveEnv = !decrypted || extractVariableName(value) != null;
+  const resolved = shouldResolveEnv ? extractEnvVariable(value) : value.trim();
+  if (!isNonEmptyString(resolved) || (shouldResolveEnv && hasUnresolvedPlaceholder(resolved))) {
     return undefined;
   }
 
@@ -351,12 +353,14 @@ export async function resolveEffectiveLangfuseConfig(
     return { enabled: false };
   }
 
-  const publicKey = await resolveLangfuseValue(agentLangfuse?.publicKey, tenantLangfuse?.publicKey);
-  const secretKey = await resolveLangfuseValue(agentLangfuse?.secretKey, tenantLangfuse?.secretKey, {
-    encrypted: true,
-    agentId: agent.id,
-  });
-  const baseUrl = await resolveLangfuseValue(agentLangfuse?.baseUrl, tenantLangfuse?.baseUrl);
+  const [publicKey, secretKey, baseUrl] = await Promise.all([
+    resolveLangfuseValue(agentLangfuse?.publicKey, tenantLangfuse?.publicKey),
+    resolveLangfuseValue(agentLangfuse?.secretKey, tenantLangfuse?.secretKey, {
+      encrypted: true,
+      agentId: agent.id,
+    }),
+    resolveLangfuseValue(agentLangfuse?.baseUrl, tenantLangfuse?.baseUrl),
+  ]);
 
   if (!publicKey || !secretKey) {
     const missingFields = [

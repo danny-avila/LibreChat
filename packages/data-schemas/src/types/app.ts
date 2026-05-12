@@ -11,6 +11,7 @@ import type {
   CloudFrontConfig,
   TCustomEndpoints,
   TAssistantEndpoint,
+  LangfuseConfig,
   TAnthropicEndpoint,
   SummarizationConfig,
 } from 'librechat-data-provider';
@@ -61,7 +62,7 @@ export interface AppConfig {
   /** Summarization configuration */
   summarization?: SummarizationConfig;
   /** Tenant-level Langfuse tracing defaults */
-  langfuse?: TCustomConfig['langfuse'];
+  langfuse?: LangfuseConfig;
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
   /** File storage strategy ('local', 's3', 'firebase', 'azure_blob', 'cloudfront') */
