@@ -54,6 +54,7 @@ const { getUserById, findSession, updateUser } = require('~/models');
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
 const ORIGINAL_JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
 describe('graphTokenController', () => {
   let req, res;
@@ -274,6 +275,7 @@ describe('refreshController – OpenID path', () => {
     }
   });
 
+  /** Asserts the full OpenID refresh grant was triggered using default mock state. */
   const expectOpenIDRefreshGrant = () => {
     expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
       { some: 'config' },
@@ -458,6 +460,39 @@ describe('refreshController – OpenID path', () => {
         idToken: makeSessionToken(),
         refreshToken: 'stored-refresh',
         lastRefreshedAt: Date.now() - 16 * 60 * 1000,
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('falls through to full OpenID refresh when session refresh timestamp is in the future', async () => {
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now() + 60 * 1000,
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('falls through to full OpenID refresh for pre-upgrade sessions without lastRefreshedAt', async () => {
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
       },
     };
 
@@ -712,6 +747,7 @@ describe('refreshController – LibreChat path', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.JWT_REFRESH_SECRET = refreshSecret;
+    process.env.NODE_ENV = 'test';
     setAuthTokens.mockResolvedValue('local-app-token');
     findSession.mockResolvedValue({ expiration: new Date(Date.now() + 60_000) });
 
@@ -735,6 +771,12 @@ describe('refreshController – LibreChat path', () => {
       delete process.env.JWT_REFRESH_SECRET;
     } else {
       process.env.JWT_REFRESH_SECRET = ORIGINAL_JWT_REFRESH_SECRET;
+    }
+
+    if (ORIGINAL_NODE_ENV === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = ORIGINAL_NODE_ENV;
     }
   });
 
@@ -760,6 +802,34 @@ describe('refreshController – LibreChat path', () => {
       { expiration: expect.any(Date) },
       req,
     );
+    expect(sentPayload).toEqual({
+      token: 'local-app-token',
+      user: {
+        _id: 'local-user-id',
+        email: 'local@example.com',
+      },
+    });
+  });
+
+  it('sanitizes user documents before returning CI refresh responses', async () => {
+    process.env.NODE_ENV = 'CI';
+    getUserById.mockResolvedValue({
+      toObject: () => ({
+        _id: 'local-user-id',
+        email: 'local@example.com',
+        password: 'hashed-password',
+        __v: 1,
+        totpSecret: 'totp-secret',
+        backupCodes: ['backup-code'],
+        federatedTokens: { access_token: 'do-not-return' },
+      }),
+    });
+
+    await refreshController(req, res);
+
+    const sentPayload = res.send.mock.calls[0][0];
+    expect(findSession).not.toHaveBeenCalled();
+    expect(setAuthTokens).toHaveBeenCalledWith('local-user-id', res, null, req);
     expect(sentPayload).toEqual({
       token: 'local-app-token',
       user: {

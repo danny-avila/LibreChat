@@ -611,8 +611,8 @@ const setOpenIDAuthTokens = (
      * audience (e.g., Microsoft Graph API), which fails JWKS validation.
      * Falls back to access_token for providers where id_token is not available.
      */
-    const appAuthToken = tokenset.id_token || tokenset.access_token;
     const sessionIdToken = req.session?.openidTokens?.idToken;
+    const appAuthToken = tokenset.id_token || sessionIdToken || tokenset.access_token;
     const logoutIdToken = tokenset.id_token || sessionIdToken;
 
     /**

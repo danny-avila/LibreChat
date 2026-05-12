@@ -28,6 +28,7 @@ const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
 const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
+/** Mirrors the default SESSION_EXPIRY to bound IdP revocation lag for session-token reuse. */
 const OPENID_REUSE_MAX_SESSION_AGE_MS = 15 * 60 * 1000;
 
 const registrationController = async (req, res) => {
@@ -72,9 +73,9 @@ const getValidOpenIDReuseUserId = (parsedCookies) => {
 
 const isRecentOpenIDSessionRefresh = (openidTokens) => {
   const lastRefreshedAt = Number(openidTokens?.lastRefreshedAt);
+  const elapsed = Date.now() - lastRefreshedAt;
   return (
-    Number.isFinite(lastRefreshedAt) &&
-    Date.now() - lastRefreshedAt <= OPENID_REUSE_MAX_SESSION_AGE_MS
+    Number.isFinite(lastRefreshedAt) && elapsed >= 0 && elapsed <= OPENID_REUSE_MAX_SESSION_AGE_MS
   );
 };
 
