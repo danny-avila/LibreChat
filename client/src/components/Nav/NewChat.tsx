@@ -1,4 +1,5 @@
 import React, { useCallback } from 'react';
+import posthog from 'posthog-js';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, Constants } from 'librechat-data-provider';
@@ -38,6 +39,7 @@ export default function NewChat({
         [],
       );
       queryClient.invalidateQueries([QueryKeys.messages]);
+      posthog.capture('conversation_created', { source: 'new_chat_button' });
       newConvo();
       navigate('/c/new', { state: { focusChat: true } });
       if (isSmallScreen) {

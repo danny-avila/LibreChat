@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
+import posthog from 'posthog-js';
 import type { ContextType } from '~/common';
 import {
   useSearchEnabled,
@@ -8,6 +9,7 @@ import {
   useAgentsMap,
   useFileMap,
   useGTM,
+  usePostHog,
 } from '~/hooks';
 import { useMediaQuery } from '@librechat/client';
 import {
@@ -33,7 +35,7 @@ export default function Root() {
   });
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
-  const { isAuthenticated, logout } = useAuthContext();
+  const { isAuthenticated, logout, user } = useAuthContext();
 
   // Global health check - runs once per authenticated session
   useHealthCheck(isAuthenticated);
@@ -48,7 +50,30 @@ export default function Root() {
   });
 
   useGTM(config?.analyticsGtmId);
+  usePostHog(config?.analyticsPosthogKey, config?.analyticsPosthogHost);
   useSearchEnabled(isAuthenticated);
+
+  useEffect(() => {
+    if (!config?.analyticsPosthogKey) {
+      return;
+    }
+    if (isAuthenticated && user?.id) {
+      posthog.identify(user.id, {
+        email: user.email,
+        username: user.username,
+        role: user.role,
+      });
+    } else if (!isAuthenticated) {
+      posthog.reset();
+    }
+  }, [
+    isAuthenticated,
+    user?.id,
+    user?.email,
+    user?.username,
+    user?.role,
+    config?.analyticsPosthogKey,
+  ]);
 
   useEffect(() => {
     if (termsData) {
@@ -87,11 +112,11 @@ export default function Root() {
             <PromptGroupsProvider>
               <Banner onHeightChange={setBannerHeight} />
               <div
-                className="flex pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+                className="flex pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]"
                 style={{ height: `calc(100dvh - ${bannerHeight}px)` }}
               >
-                  <div className="relative z-0 flex h-full w-full overflow-hidden">
-                    {!isSmallScreen && <Nav navVisible={navVisible} setNavVisible={setNavVisible} />}
+                <div className="relative z-0 flex h-full w-full overflow-hidden">
+                  {!isSmallScreen && <Nav navVisible={navVisible} setNavVisible={setNavVisible} />}
                   <div
                     className={cn(
                       'relative flex h-full max-w-full flex-1 flex-col overflow-hidden',

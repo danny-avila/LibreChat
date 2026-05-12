@@ -658,6 +658,8 @@ export type TStartupConfig = {
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
+  analyticsPosthogKey?: string;
+  analyticsPosthogHost?: string;
   instanceProjectId: string;
   bundlerURL?: string;
   staticBundlerURL?: string;

@@ -1,4 +1,5 @@
 import debounce from 'lodash/debounce';
+import posthog from 'posthog-js';
 import React, { createContext, useContext, useState, useMemo } from 'react';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
@@ -153,6 +154,12 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
 
   const handleSelectSpec = (spec: t.TModelSpec) => {
     let model = spec.preset.model ?? null;
+    posthog.capture('model_changed', {
+      type: 'spec',
+      spec: spec.name,
+      endpoint: spec.preset.endpoint,
+      model: spec.preset.model,
+    });
     onSelectSpec?.(spec);
     if (isAgentsEndpoint(spec.preset.endpoint)) {
       model = spec.preset.agent_id ?? '';
@@ -168,6 +175,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
 
   const handleSelectEndpoint = (endpoint: Endpoint) => {
     if (!endpoint.hasModels) {
+      posthog.capture('model_changed', { type: 'endpoint', endpoint: endpoint.value });
       if (endpoint.value) {
         onSelectEndpoint?.(endpoint.value);
       }
@@ -180,6 +188,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   };
 
   const handleSelectModel = (endpoint: Endpoint, model: string) => {
+    posthog.capture('model_changed', { type: 'model', endpoint: endpoint.value, model });
     if (isAgentsEndpoint(endpoint.value)) {
       onSelectEndpoint?.(endpoint.value, {
         agent_id: model,

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import posthog from 'posthog-js';
 import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
@@ -422,6 +423,13 @@ const useFileHandling = (params?: UseFileHandling) => {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>, _toolResource?: string) => {
     event.stopPropagation();
     if (event.target.files) {
+      posthog.capture('file_uploaded', {
+        count: event.target.files.length,
+        tool_resource: _toolResource,
+        types: Array.from(event.target.files)
+          .map((f) => f.type)
+          .filter(Boolean),
+      });
       setFilesLoading(true);
       handleFiles(event.target.files, _toolResource);
       // reset the input
