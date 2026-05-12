@@ -30,8 +30,10 @@ const mcp = require('./mcp');
 const revenuecat = require('./revenuecat');
 const subscription = require('./subscription');
 const admin = require('./admin');
+const codecan = require('./codecan');
 
 module.exports = {
+  codecan,
   admin,
   subscription,
   revenuecat,

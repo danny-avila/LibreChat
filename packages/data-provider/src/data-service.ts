@@ -934,6 +934,35 @@ export const updateMemoryPreferences = (preferences: {
   return request.patch(endpoints.memoryPreferences(), preferences);
 };
 
+/* CodeCan jurisdictions */
+export type TJurisdiction = {
+  id: string;
+  displayName: string;
+  shortLabel: string;
+  region: string;
+  starters: string[];
+};
+
+export type TJurisdictionsResponse = {
+  jurisdictions: TJurisdiction[];
+  default: string;
+  selected: string | null;
+  hasPicked: boolean;
+};
+
+export const getCodeCanJurisdictions = (): Promise<TJurisdictionsResponse> => {
+  return request.get(endpoints.codecanJurisdictions());
+};
+
+export const updateCodeCanJurisdiction = (
+  jurisdiction: string,
+): Promise<{
+  updated: boolean;
+  preferences: { jurisdiction: string; hasPickedJurisdiction: boolean };
+}> => {
+  return request.patch(endpoints.codecanPreferences(), { jurisdiction });
+};
+
 export const createMemory = (data: {
   key: string;
   value: string;

@@ -654,6 +654,8 @@ class OpenAIClient extends BaseClient {
       'tools',
       'tool_choice',
       'tool_resources',
+      // Responses-API-only field; Chat Completions returns 400 if forwarded.
+      'previous_response_id',
     ];
     this.options.dropParams = [...new Set([...(originalDropParams || []), ...titleDropParams])];
 
@@ -1085,7 +1087,6 @@ ${convo}
   }
 
   async chatCompletion({ payload, onProgress, abortController = null, returnRaw = false }) {
-    // eslint-disable-next-line no-console
     console.log('[TRACE] chatCompletion entry');
     const appConfig = this.options.req?.config;
     let error = null;
@@ -1220,7 +1221,11 @@ ${convo}
       try {
         console.log(
           '[TRACE] chatCompletion outbound params:',
-          JSON.stringify({ modelOptions, baseURL: opts.baseURL, headers: opts.defaultHeaders }, null, 2),
+          JSON.stringify(
+            { modelOptions, baseURL: opts.baseURL, headers: opts.defaultHeaders },
+            null,
+            2,
+          ),
         );
         logger.info('[CodeCan] chatCompletion outbound', {
           modelOptions: JSON.stringify(modelOptions),
@@ -1368,7 +1373,6 @@ ${convo}
       intermediateReply = this.streamHandler.tokens;
 
       if (modelOptions.stream) {
-        // eslint-disable-next-line no-console
         console.log('[TRACE] chatCompletion before chat.completions.stream');
         streamPromise = new Promise((resolve) => {
           streamResolve = resolve;
@@ -1381,11 +1385,11 @@ ${convo}
         };
         const stream = await openai.chat.completions
           .stream(params)
-          // eslint-disable-next-line no-console
+
           .on('connect', () => console.log('[TRACE] chatCompletion stream connect'))
-          // eslint-disable-next-line no-console
+
           .on('end', () => console.log('[TRACE] chatCompletion stream end'))
-          // eslint-disable-next-line no-console
+
           .on('close', () => console.log('[TRACE] chatCompletion stream close'))
           .on('abort', () => {
             /* Do nothing here */
@@ -1394,7 +1398,6 @@ ${convo}
             handleOpenAIErrors(err, errorCallback, 'stream');
           })
           .on('finalChatCompletion', async (finalChatCompletion) => {
-            // eslint-disable-next-line no-console
             console.log(
               '[OpenAIClient] RAW chat.completions finalChatCompletion (stream, full):',
               JSON.stringify(finalChatCompletion, null, 2),
@@ -1447,7 +1450,6 @@ ${convo}
             });
           }
           if (!loggedFirstChunk) {
-            // eslint-disable-next-line no-console
             console.log(
               '[OpenAIClient] FIRST chat.completions stream chunk (full):',
               JSON.stringify(chunk, null, 2),
@@ -1478,7 +1480,6 @@ ${convo}
             handleOpenAIErrors(err, errorCallback, 'finalChatCompletion');
           });
           if (chatCompletion) {
-            // eslint-disable-next-line no-console
             console.log(
               '[OpenAIClient] RAW chat.completions response (stream final, full):',
               JSON.stringify(chatCompletion, null, 2),
@@ -1495,7 +1496,6 @@ ${convo}
       }
       // regular completion
       else {
-        // eslint-disable-next-line no-console
         console.log('[TRACE] chatCompletion before chat.completions.create');
         chatCompletion = await openai.chat.completions
           .create({
@@ -1504,10 +1504,9 @@ ${convo}
           .catch((err) => {
             handleOpenAIErrors(err, errorCallback, 'create');
           });
-        // eslint-disable-next-line no-console
+
         console.log('[TRACE] chatCompletion after chat.completions.create');
         if (chatCompletion) {
-          // eslint-disable-next-line no-console
           console.log(
             '[OpenAIClient] RAW chat.completions response (non-stream, full):',
             JSON.stringify(chatCompletion, null, 2),
@@ -1650,6 +1649,10 @@ ${convo}
       Object.assign(requestBody, requestBody.modelKwargs);
       delete requestBody.modelKwargs;
     }
+    // Drop null/empty previous_response_id so it isn't sent on first turns.
+    if (requestBody.previous_response_id == null || requestBody.previous_response_id === '') {
+      delete requestBody.previous_response_id;
+    }
     return requestBody;
   }
 
@@ -1678,7 +1681,9 @@ ${convo}
       return [{ type: defaultType, text: content }];
     }
     const fallback =
-      typeof content === 'object' && content != null ? JSON.stringify(content) : String(content ?? '');
+      typeof content === 'object' && content != null
+        ? JSON.stringify(content)
+        : String(content ?? '');
     return [{ type: defaultType, text: fallback }];
   }
 
@@ -1702,7 +1707,7 @@ ${convo}
       const url =
         typeof part.image_url === 'string'
           ? part.image_url
-          : part.image_url?.url ?? part.image_url?.href;
+          : (part.image_url?.url ?? part.image_url?.href);
       if (!url) {
         return null;
       }
@@ -1713,14 +1718,19 @@ ${convo}
       return { type: defaultType, text: part[ContentTypes.THINK] ?? '' };
     }
     const textValue = part.text ?? part.content ?? JSON.stringify(part);
-    return { type: defaultType, text: typeof textValue === 'string' ? textValue : JSON.stringify(textValue) };
+    return {
+      type: defaultType,
+      text: typeof textValue === 'string' ? textValue : JSON.stringify(textValue),
+    };
   }
 
   ensureFileSearchTool(tools) {
     if (!Array.isArray(tools) || tools.length === 0) {
       return [{ type: 'file_search' }];
     }
-    const exists = tools.some((tool) => tool && typeof tool === 'object' && tool.type === 'file_search');
+    const exists = tools.some(
+      (tool) => tool && typeof tool === 'object' && tool.type === 'file_search',
+    );
     if (exists) {
       return tools;
     }
@@ -1737,10 +1747,10 @@ ${convo}
     requestBody.input = this.formatResponsesMessages(payload);
     requestBody.input = this.addCodeCanAttachment(requestBody.input);
     const tools = this.ensureFileSearchTool(requestBody.tools);
-    const toolResourceIds =
-      modelOptions?.tool_resources?.file_search?.vector_store_ids ??
-      tools.find((tool) => tool?.type === 'file_search')?.vector_store_ids ??
-      [DEFAULT_VECTOR_STORE_ID];
+    const toolResourceIds = modelOptions?.tool_resources?.file_search?.vector_store_ids ??
+      tools.find((tool) => tool?.type === 'file_search')?.vector_store_ids ?? [
+        DEFAULT_VECTOR_STORE_ID,
+      ];
     requestBody.tools = tools.map((tool) =>
       tool?.type === 'file_search'
         ? Object.assign({}, tool, { vector_store_ids: toolResourceIds })
@@ -1753,9 +1763,12 @@ ${convo}
         modelOptions.tool_resources,
       )}`,
     );
-    // eslint-disable-next-line no-console
-    console.log('[OpenAIClient] buildResponsesRequest tool_resources source:', modelOptions.tool_resources);
-    // eslint-disable-next-line no-console
+
+    console.log(
+      '[OpenAIClient] buildResponsesRequest tool_resources source:',
+      modelOptions.tool_resources,
+    );
+
     console.log('[OpenAIClient] buildResponsesRequest tools:', requestBody.tools);
     return requestBody;
   }
@@ -1783,14 +1796,20 @@ ${convo}
     return segments.join('') || fallback;
   }
 
-  async handleResponsesApi({ openai, modelOptions, payload, onProgress, abortController, returnRaw = false }) {
-    // eslint-disable-next-line no-console
+  async handleResponsesApi({
+    openai,
+    modelOptions,
+    payload,
+    onProgress,
+    abortController,
+    returnRaw = false,
+  }) {
     console.log('[TRACE] handleResponsesApi entry');
-    // eslint-disable-next-line no-console
+
     console.log('[OpenAIClient] handleResponsesApi invoked');
     const shouldStream = modelOptions.stream === true && typeof onProgress === 'function';
     const requestBody = this.buildResponsesRequest(modelOptions, payload, shouldStream);
-    // eslint-disable-next-line no-console
+
     console.log(
       '[TRACE] handleResponsesApi requestBody (full):',
       JSON.stringify(requestBody, null, 2),
@@ -1807,11 +1826,11 @@ ${convo}
       2,
     ).slice(0, 2000);
     logger.warn(`[OpenAIClient] Responses API request preview: ${requestPreview}`);
-    // eslint-disable-next-line no-console
+
     console.log('[OpenAIClient] FULL Responses API request to OpenAI:', requestBody);
-    // eslint-disable-next-line no-console
+
     console.log('[OpenAIClient] tool_resources sent to OpenAI:', requestBody.tool_resources);
-    // eslint-disable-next-line no-console
+
     console.log('[OpenAIClient] tools sent to OpenAI:', requestBody.tools);
 
     if (shouldStream) {
@@ -1824,10 +1843,9 @@ ${convo}
       });
     }
 
-    // eslint-disable-next-line no-console
     console.log('[TRACE] handleResponsesApi before responses.create');
     const response = await openai.responses.create(requestBody);
-    // eslint-disable-next-line no-console
+
     console.log('[TRACE] handleResponsesApi after responses.create');
     this.usage = response.usage;
     this.metadata = { finish_reason: response.status };
@@ -1835,26 +1853,31 @@ ${convo}
       status: response.status,
       usage: response.usage,
     });
-    // eslint-disable-next-line no-console
-    console.log('[OpenAIClient] RAW Responses API response (full):', JSON.stringify(response, null, 2));
+
+    console.log(
+      '[OpenAIClient] RAW Responses API response (full):',
+      JSON.stringify(response, null, 2),
+    );
     const outputPreview = Array.isArray(response.output)
       ? JSON.stringify(response.output.slice(0, 2)).slice(0, 2000)
       : String(response.output).slice(0, 2000);
     logger.info(`[OpenAIClient] Responses API output preview: ${outputPreview}`);
-    logger.info(`[OpenAIClient] Responses API request preview: ${JSON.stringify(
-      {
-        tools: requestBody.tools,
-        tool_resources: requestBody.tool_resources,
-        input: requestBody.input,
-        model: requestBody.model,
-      },
-      null,
-      2,
-    ).slice(0, 2000)}`);
+    logger.info(
+      `[OpenAIClient] Responses API request preview: ${JSON.stringify(
+        {
+          tools: requestBody.tools,
+          tool_resources: requestBody.tool_resources,
+          input: requestBody.input,
+          model: requestBody.model,
+        },
+        null,
+        2,
+      ).slice(0, 2000)}`,
+    );
     // Explicit console logging to verify tool_resources reach OpenAI
-    // eslint-disable-next-line no-console
+
     console.log('[OpenAIClient] tool_resources sent to OpenAI:', requestBody.tool_resources);
-    // eslint-disable-next-line no-console
+
     console.log('[OpenAIClient] tools sent to OpenAI:', requestBody.tools);
     const textOut = this.extractResponseText(response);
     if (returnRaw) {
@@ -1874,18 +1897,13 @@ ${convo}
     });
 
     let aggregated = '';
-    let stream;
     let loggedFirstEvent = false;
     let loggedEventTypes = 0;
-    try {
-      // eslint-disable-next-line no-console
-      console.log('[TRACE] handleResponsesApi before responses.stream');
-      stream = await openai.responses.stream(requestBody);
-      // eslint-disable-next-line no-console
-      console.log('[TRACE] handleResponsesApi after responses.stream (stream created)');
-    } catch (err) {
-      throw err;
-    }
+
+    console.log('[TRACE] handleResponsesApi before responses.stream');
+    const stream = await openai.responses.stream(requestBody);
+
+    console.log('[TRACE] handleResponsesApi after responses.stream (stream created)');
 
     const abortSignal = abortController?.signal;
     const abortHandler = () => {
@@ -1900,7 +1918,6 @@ ${convo}
     try {
       for await (const event of stream) {
         if (!loggedFirstEvent) {
-          // eslint-disable-next-line no-console
           console.log(
             '[OpenAIClient] FIRST Responses API stream event (full):',
             JSON.stringify(event, null, 2),
@@ -1915,7 +1932,7 @@ ${convo}
           /* ignore logging errors */
         }
         // Console output for visibility when logger output isn't surfacing
-        // eslint-disable-next-line no-console
+
         console.log('[CodeCan] Responses API stream event JSON:', JSON.stringify(event));
         if (loggedEventTypes < 5) {
           loggedEventTypes += 1;
@@ -1926,7 +1943,7 @@ ${convo}
               deltaLength:
                 typeof event?.delta === 'string'
                   ? event.delta.length
-                  : event?.delta?.text?.length ?? null,
+                  : (event?.delta?.text?.length ?? null),
               hasText: typeof event?.text === 'string',
               textLength: typeof event?.text === 'string' ? event.text.length : null,
             });
@@ -1995,7 +2012,7 @@ ${convo}
 
     this.usage = finalResponse.usage;
     this.metadata = { finish_reason: finalResponse.status };
-    // eslint-disable-next-line no-console
+
     console.log(
       '[OpenAIClient] RAW Responses API streamed final response (full):',
       JSON.stringify(finalResponse, null, 2),

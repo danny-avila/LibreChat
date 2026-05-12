@@ -3,12 +3,12 @@ import React from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import type { TDialogProps } from '~/common';
-import { Account } from './SettingsTabs';
+import { Account, Location } from './SettingsTabs';
 import SubscriptionSection from './SettingsTabs/Account/SubscriptionSection';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-type SettingsTab = 'account' | 'subscription';
+type SettingsTab = 'account' | 'subscription' | 'location';
 type SettingsProps = TDialogProps & {
   initialTab?: SettingsTab;
 };
@@ -113,6 +113,17 @@ export default function Settings({ open, onOpenChange, initialTab = 'account' }:
                     >
                       Subscription
                     </Tabs.Trigger>
+                    <Tabs.Trigger
+                      value="location"
+                      className={cn(
+                        'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                        activeTab === 'location'
+                          ? 'bg-surface-hover text-text-primary'
+                          : 'text-text-secondary hover:text-text-primary',
+                      )}
+                    >
+                      Location
+                    </Tabs.Trigger>
                   </Tabs.List>
                 </div>
                 <div className="max-h-[550px] w-full overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">
@@ -122,6 +133,11 @@ export default function Settings({ open, onOpenChange, initialTab = 'account' }:
                   <Tabs.Content value="subscription" tabIndex={-1}>
                     <div className="p-1">
                       <SubscriptionSection />
+                    </div>
+                  </Tabs.Content>
+                  <Tabs.Content value="location" tabIndex={-1}>
+                    <div className="p-1">
+                      <Location />
                     </div>
                   </Tabs.Content>
                 </div>

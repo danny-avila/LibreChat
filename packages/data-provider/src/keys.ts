@@ -53,6 +53,8 @@ export enum QueryKeys {
   banner = 'banner',
   /* Memories */
   memories = 'memories',
+  /* CodeCan */
+  jurisdictions = 'jurisdictions',
   principalSearch = 'principalSearch',
   accessRoles = 'accessRoles',
   resourcePermissions = 'resourcePermissions',
@@ -89,4 +91,5 @@ export enum MutationKeys {
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
   updateMemoryPreferences = 'updateMemoryPreferences',
+  updateJurisdiction = 'updateJurisdiction',
 }

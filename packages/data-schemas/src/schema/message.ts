@@ -171,6 +171,9 @@ const messageSchema: Schema<IMessage> = new Schema(
     expiredAt: {
       type: Date,
     },
+    openai_response_id: {
+      type: String,
+    },
   },
   { timestamps: true },
 );

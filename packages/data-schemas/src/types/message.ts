@@ -49,4 +49,6 @@ export interface IMessage extends Document {
   expiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
+  /** CodeCan: OpenAI Responses API response id, used to chain follow-up turns via `previous_response_id`. */
+  openai_response_id?: string;
 }

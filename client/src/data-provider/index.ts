@@ -5,6 +5,8 @@ export * from './Files';
 export * from './Subscription';
 /* Memories */
 export * from './Memories';
+/* CodeCan */
+export * from './CodeCan';
 export * from './Messages';
 export * from './Misc';
 export * from './Tools';

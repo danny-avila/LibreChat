@@ -138,6 +138,13 @@ const userSchema = new Schema<IUser>(
           type: Boolean,
           default: true,
         },
+        jurisdiction: {
+          type: String,
+        },
+        hasPickedJurisdiction: {
+          type: Boolean,
+          default: false,
+        },
       },
       default: {},
     },

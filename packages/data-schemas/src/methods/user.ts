@@ -200,6 +200,28 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
+   * Update a user's selected jurisdiction (CodeCan). Also flips hasPickedJurisdiction so the
+   * Landing picker is suppressed on subsequent visits.
+   */
+  async function setUserJurisdiction(userId: string, jurisdiction: string): Promise<IUser | null> {
+    const User = mongoose.models.User;
+    const user = await User.findById(userId);
+    if (!user) {
+      return null;
+    }
+    const updateOperation = {
+      $set: {
+        'personalization.jurisdiction': jurisdiction,
+        'personalization.hasPickedJurisdiction': true,
+      },
+    };
+    return (await User.findByIdAndUpdate(userId, updateOperation, {
+      new: true,
+      runValidators: true,
+    }).lean()) as IUser | null;
+  }
+
+  /**
    * Search for users by pattern matching on name, email, or username (case-insensitive)
    * @param searchPattern - The pattern to search for
    * @param limit - Maximum number of results to return
@@ -289,6 +311,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     generateToken,
     deleteUserById,
     toggleUserMemories,
+    setUserJurisdiction,
   };
 }
 
