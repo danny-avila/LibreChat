@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from './AuthContext';
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -15,6 +16,7 @@ function urlBase64ToUint8Array(base64String: string) {
 export default function useWebPush() {
   const isInitialized = useRef(false);
   const { user, token } = useAuthContext();
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Only attempt if user is logged in
@@ -75,7 +77,13 @@ export default function useWebPush() {
     // before the SW fully controls the page).
     function handleSWMessage(event: MessageEvent) {
       if (event.data && event.data.type === 'NOTIFICATION_CLICK_NAVIGATE') {
-        window.location.href = event.data.url;
+        try {
+          const url = new URL(event.data.url);
+          // Client-side navigation — no page reload, auth state stays intact
+          navigate(url.pathname + url.search + url.hash);
+        } catch {
+          navigate('/');
+        }
       }
     }
 
