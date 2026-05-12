@@ -99,7 +99,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                 </div>
                 <div
                   className={cn(
-                    'ios-dock dark:via-dm-ambient/95 sticky bottom-0 z-40 flex w-full shrink-0 justify-center border-0 bg-gradient-to-t from-white via-white/95 to-transparent px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+16px)] dark:from-dm-ambient md:py-4 md:pb-4',
+                    'ios-dock dark:via-dm-ambient/95 sticky bottom-0 z-40 flex w-full shrink-0 justify-center border-0 bg-gradient-to-t from-white via-white/95 to-transparent px-4 py-4 dark:from-dm-ambient',
                     isSmallScreen && navVisible && 'hidden',
                   )}
                 >

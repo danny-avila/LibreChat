@@ -21,7 +21,7 @@ export default function MobileNav({
   const headerTitle = title?.trim() ? title : localize('com_ui_new_chat');
 
   return (
-    <div className="dark:border-white/8 sticky top-0 z-10 flex min-h-[56px] items-center justify-between gap-2 border-b border-[rgba(11,47,91,0.06)] bg-white px-3 pb-2 pt-[max(env(safe-area-inset-top),0.5rem)] dark:bg-dm-surface2 dark:text-dm-text md:hidden">
+    <div className="dark:border-white/8 sticky top-0 z-10 flex min-h-[56px] items-center justify-between gap-2 border-b border-[rgba(11,47,91,0.06)] bg-white px-3 py-2 dark:bg-dm-surface2 dark:text-dm-text md:hidden">
       <button
         type="button"
         data-testid="mobile-header-new-chat-button"
