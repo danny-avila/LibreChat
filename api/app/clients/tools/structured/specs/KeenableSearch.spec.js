@@ -56,7 +56,7 @@ describe('KeenableSearch', () => {
       fetch.mockResolvedValue(mockResponse);
     });
 
-    it('should send a POST with Bearer auth and the query body', async () => {
+    it('should send a POST with X-API-Key auth and the query body', async () => {
       const instance = new KeenableSearch({ KEENABLE_API_KEY: mockApiKey });
       await instance._call({ query: 'test query', max_results: 3 });
 
@@ -69,6 +69,18 @@ describe('KeenableSearch', () => {
             'X-API-Key': mockApiKey,
           }),
           body: JSON.stringify({ query: 'test query', max_results: 3 }),
+        }),
+      );
+    });
+
+    it('should default max_results to 10 when not provided', async () => {
+      const instance = new KeenableSearch({ KEENABLE_API_KEY: mockApiKey });
+      await instance._call({ query: 'test query' });
+
+      expect(fetch).toHaveBeenCalledWith(
+        'https://api.keenable.ai/v1/search',
+        expect.objectContaining({
+          body: JSON.stringify({ query: 'test query', max_results: 10 }),
         }),
       );
     });

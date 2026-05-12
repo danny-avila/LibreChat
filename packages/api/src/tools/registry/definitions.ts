@@ -350,17 +350,7 @@ export const keenableSearchSchema: ExtendedJsonSchema = {
       type: 'number',
       minimum: 1,
       maximum: 20,
-      description: 'The maximum number of search results to return. Defaults to 5.',
-    },
-    include_domains: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'A list of domains to specifically include in the search results.',
-    },
-    exclude_domains: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'A list of domains to specifically exclude from the search results.',
+      description: 'The maximum number of search results to return. Defaults to 10.',
     },
   },
   required: ['query'],

@@ -16,17 +16,7 @@ const keenableSearchJsonSchema = {
       type: 'number',
       minimum: 1,
       maximum: 20,
-      description: 'The maximum number of search results to return. Defaults to 5.',
-    },
-    include_domains: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'A list of domains to specifically include in the search results.',
-    },
-    exclude_domains: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'A list of domains to specifically exclude from the search results.',
+      description: 'The maximum number of search results to return. Defaults to 10.',
     },
   },
   required: ['query'],
@@ -68,10 +58,11 @@ class KeenableSearch extends Tool {
   }
 
   async _call(input) {
-    const { query, ...rest } = input;
+    const { query, max_results, ...rest } = input;
 
     const requestBody = {
       query,
+      max_results: max_results ?? 10,
       ...rest,
       ...this.kwargs,
     };
