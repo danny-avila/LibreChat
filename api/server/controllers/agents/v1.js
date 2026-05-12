@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
-const { logger } = require('@librechat/data-schemas');
+const { logger, encryptV2 } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
   agentCreateSchema,
@@ -64,8 +64,22 @@ const toPlainObject = (value) =>
   value && typeof value.toObject === 'function' ? value.toObject() : value;
 
 const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
+const ENCRYPTED_V2_VALUE = /^[a-f0-9]{32}:[a-f0-9]+$/i;
 
-const normalizeLangfuseConfig = (incoming, existing) => {
+const encryptSensitiveValue = async (value) => encryptV2(encodeURIComponent(value));
+
+const normalizeLangfuseSecret = async (value, options = {}) => {
+  if (!isNonEmptyString(value)) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (options.preserveEncrypted === true && ENCRYPTED_V2_VALUE.test(trimmed)) {
+    return trimmed;
+  }
+  return await encryptSensitiveValue(trimmed);
+};
+
+const normalizeLangfuseConfig = async (incoming, existing, options = {}) => {
   if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
     return incoming;
   }
@@ -84,9 +98,13 @@ const normalizeLangfuseConfig = (incoming, existing) => {
   }
 
   if (isNonEmptyString(incoming.secretKey)) {
-    normalized.secretKey = incoming.secretKey.trim();
+    normalized.secretKey = await normalizeLangfuseSecret(incoming.secretKey, {
+      preserveEncrypted: options.preserveIncomingEncrypted === true,
+    });
   } else if (isNonEmptyString(existingConfig.secretKey)) {
-    normalized.secretKey = existingConfig.secretKey;
+    normalized.secretKey = await normalizeLangfuseSecret(existingConfig.secretKey, {
+      preserveEncrypted: true,
+    });
   }
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
@@ -349,7 +367,7 @@ const createAgentHandler = async (req, res) => {
     }
 
     if (agentData.langfuse) {
-      agentData.langfuse = normalizeLangfuseConfig(agentData.langfuse);
+      agentData.langfuse = await normalizeLangfuseConfig(agentData.langfuse);
       if (!agentData.langfuse) {
         delete agentData.langfuse;
       }
@@ -628,7 +646,10 @@ const updateAgentHandler = async (req, res) => {
     }
 
     if (updateData.langfuse) {
-      updateData.langfuse = normalizeLangfuseConfig(updateData.langfuse, existingAgent.langfuse);
+      updateData.langfuse = await normalizeLangfuseConfig(
+        updateData.langfuse,
+        existingAgent.langfuse,
+      );
       if (!updateData.langfuse) {
         delete updateData.langfuse;
       }
@@ -1120,7 +1141,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       logger.error('[/:agent_id/avatar] Error invalidating avatar refresh cache', cacheErr);
     }
 
-    res.status(201).json(updatedAgent);
+    res.status(201).json(redactLangfuseSecret(updatedAgent));
   } catch (error) {
     const message = 'An error occurred while updating the Agent Avatar';
     logger.error(
@@ -1204,6 +1225,15 @@ const revertAgentVersionHandler = async (req, res) => {
       }
     }
 
+    if (updatedAgent.langfuse) {
+      const normalizedLangfuse = await normalizeLangfuseConfig(updatedAgent.langfuse, undefined, {
+        preserveIncomingEncrypted: true,
+      });
+      if (normalizedLangfuse) {
+        revertUpdates.langfuse = normalizedLangfuse;
+      }
+    }
+
     if (Object.keys(revertUpdates).length > 0) {
       updatedAgent = await db.updateAgent({ id }, revertUpdates, { updatingUserId: req.user.id });
     }
@@ -1216,7 +1246,7 @@ const revertAgentVersionHandler = async (req, res) => {
       delete updatedAgent.author;
     }
 
-    return res.json(updatedAgent);
+    return res.json(redactLangfuseSecret(updatedAgent));
   } catch (error) {
     logger.error('[/agents/:id/revert] Error reverting Agent version', error);
     res.status(500).json({ error: error.message });

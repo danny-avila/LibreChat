@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, decryptV2 } from '@librechat/data-schemas';
 import { Run, Providers, Constants } from '@librechat/agents';
 import {
   KnownEndpoints,
@@ -278,6 +278,7 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 const UNRESOLVED_ENV_VAR_PLACEHOLDER = /\$\{[^}]+\}/;
+const ENCRYPTED_V2_VALUE = /^[a-f0-9]{32}:[a-f0-9]+$/i;
 
 function hasUnresolvedPlaceholder(value: string): boolean {
   return UNRESOLVED_ENV_VAR_PLACEHOLDER.test(value);
@@ -298,7 +299,11 @@ type EffectiveLangfuseConfig =
       enabled: false;
     };
 
-function resolveLangfuseValue(agentValue?: string, tenantValue?: string): string | undefined {
+async function resolveLangfuseValue(
+  agentValue?: string,
+  tenantValue?: string,
+  options: { encrypted?: boolean; agentId?: string } = {},
+): Promise<string | undefined> {
   const rawValue = isNonEmptyString(agentValue)
     ? agentValue
     : isNonEmptyString(tenantValue)
@@ -308,7 +313,21 @@ function resolveLangfuseValue(agentValue?: string, tenantValue?: string): string
     return undefined;
   }
 
-  const resolved = extractEnvVariable(rawValue);
+  let value = rawValue;
+  if (options.encrypted === true && ENCRYPTED_V2_VALUE.test(value)) {
+    try {
+      value = decodeURIComponent(await decryptV2(value));
+    } catch (error) {
+      logger.warn(
+        `[createRun] Langfuse tracing disabled for agent ${
+          options.agentId ?? 'unknown'
+        }; failed to decrypt secretKey: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+  }
+
+  const resolved = extractEnvVariable(value);
   if (!isNonEmptyString(resolved) || hasUnresolvedPlaceholder(resolved)) {
     return undefined;
   }
@@ -316,10 +335,10 @@ function resolveLangfuseValue(agentValue?: string, tenantValue?: string): string
   return resolved;
 }
 
-export function resolveEffectiveLangfuseConfig(
+export async function resolveEffectiveLangfuseConfig(
   agent: RunAgent,
   appConfig?: AppConfig,
-): EffectiveLangfuseConfig | undefined {
+): Promise<EffectiveLangfuseConfig | undefined> {
   const tenantLangfuse = appConfig?.langfuse;
   const agentLangfuse = agent.langfuse;
 
@@ -332,9 +351,12 @@ export function resolveEffectiveLangfuseConfig(
     return { enabled: false };
   }
 
-  const publicKey = resolveLangfuseValue(agentLangfuse?.publicKey, tenantLangfuse?.publicKey);
-  const secretKey = resolveLangfuseValue(agentLangfuse?.secretKey, tenantLangfuse?.secretKey);
-  const baseUrl = resolveLangfuseValue(agentLangfuse?.baseUrl, tenantLangfuse?.baseUrl);
+  const publicKey = await resolveLangfuseValue(agentLangfuse?.publicKey, tenantLangfuse?.publicKey);
+  const secretKey = await resolveLangfuseValue(agentLangfuse?.secretKey, tenantLangfuse?.secretKey, {
+    encrypted: true,
+    agentId: agent.id,
+  });
+  const baseUrl = await resolveLangfuseValue(agentLangfuse?.baseUrl, tenantLangfuse?.baseUrl);
 
   if (!publicKey || !secretKey) {
     const missingFields = [
@@ -697,14 +719,14 @@ function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
  * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
  * array when subagents are disabled or no spawn targets are available.
  */
-function buildSubagentConfigs(
+async function buildSubagentConfigs(
   agent: RunAgent,
   agentInput: AgentInputs,
-  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
+  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => Promise<AgentInputs>,
   state: SubagentBuildState,
   ancestors: Set<string> = new Set(),
   depth = 0,
-): SubagentConfig[] {
+): Promise<SubagentConfig[]> {
   if (!agent.subagents?.enabled) {
     return [];
   }
@@ -754,7 +776,7 @@ function buildSubagentConfigs(
      * skips both the field stamping and the registry mutation at the
      * source so children truly start fresh.
      */
-    const childInputs = toInput(child, { isSubagent: true });
+    const childInputs = await toInput(child, { isSubagent: true });
     /**
      * Recursively resolve the child's own spawn targets so multi-level
      * delegation (A → B → C) works. Without this, a child whose own
@@ -763,7 +785,7 @@ function buildSubagentConfigs(
      * `subagentConfigs`, and that only runs for the outer agents in
      * `agents[]`. Cycle-safe via `nextAncestors`.
      */
-    const grandchildConfigs = buildSubagentConfigs(
+    const grandchildConfigs = await buildSubagentConfigs(
       child,
       childInputs,
       toInput,
@@ -858,7 +880,10 @@ export async function createRun({
       ? extractDiscoveredToolsFromHistory(messages)
       : new Set<string>();
 
-  const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
+  const buildAgentInput = async (
+    agent: RunAgent,
+    opts: { isSubagent?: boolean } = {},
+  ): Promise<AgentInputs> => {
     const isSubagent = opts.isSubagent === true;
     const provider =
       (providerEndpointMap[
@@ -981,7 +1006,7 @@ export async function createRun({
     );
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
-    const langfuse = resolveEffectiveLangfuseConfig(agent, appConfig);
+    const langfuse = await resolveEffectiveLangfuseConfig(agent, appConfig);
     const agentInput: AgentInputs & { langfuse?: LangfuseConfig } = {
       provider,
       reasoningKey,
@@ -1015,8 +1040,8 @@ export async function createRun({
     rootAgentIds: agents.map((agent) => agent.id),
   };
   for (const agent of agents) {
-    const agentInput = buildAgentInput(agent);
-    const subagentConfigs = buildSubagentConfigs(
+    const agentInput = await buildAgentInput(agent);
+    const subagentConfigs = await buildSubagentConfigs(
       agent,
       agentInput,
       buildAgentInput,

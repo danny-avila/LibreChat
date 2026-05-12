@@ -1,5 +1,5 @@
 import { Providers } from '@librechat/agents';
-import { logger } from '@librechat/data-schemas';
+import { logger, decryptV2 } from '@librechat/data-schemas';
 import { ToolMessage, AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
 
 import {
@@ -7,6 +7,18 @@ import {
   resolveEffectiveLangfuseConfig,
   extractDiscoveredToolsFromHistory,
 } from './run';
+
+jest.mock('@librechat/data-schemas', () => {
+  const actual = jest.requireActual('@librechat/data-schemas');
+  return {
+    ...actual,
+    decryptV2: jest.fn(async (value: string) =>
+      value === '0123456789abcdef0123456789abcdef:736b2d6167656e74'
+        ? encodeURIComponent('sk-agent')
+        : value,
+    ),
+  };
+});
 
 type LangfuseRunAgent = Parameters<typeof resolveEffectiveLangfuseConfig>[0];
 type LangfuseAppConfig = NonNullable<Parameters<typeof resolveEffectiveLangfuseConfig>[1]>;
@@ -188,14 +200,14 @@ describe('resolveEffectiveLangfuseConfig', () => {
     delete process.env.LANGFUSE_TEST_MISSING_KEY;
   });
 
-  it('returns undefined when no tenant or agent config is supplied', () => {
+  it('returns undefined when no tenant or agent config is supplied', async () => {
     expect(
-      resolveEffectiveLangfuseConfig(createLangfuseAgent(), createLangfuseAppConfig()),
+      await resolveEffectiveLangfuseConfig(createLangfuseAgent(), createLangfuseAppConfig()),
     ).toBeUndefined();
   });
 
-  it('uses tenant defaults and resolves env var refs', () => {
-    const result = resolveEffectiveLangfuseConfig(
+  it('uses tenant defaults and resolves env var refs', async () => {
+    const result = await resolveEffectiveLangfuseConfig(
       createLangfuseAgent(),
       createLangfuseAppConfig({
         enabled: true,
@@ -213,8 +225,8 @@ describe('resolveEffectiveLangfuseConfig', () => {
     });
   });
 
-  it('overlays non-empty agent fields on tenant defaults', () => {
-    const result = resolveEffectiveLangfuseConfig(
+  it('overlays non-empty agent fields on tenant defaults', async () => {
+    const result = await resolveEffectiveLangfuseConfig(
       createLangfuseAgent({
         enabled: true,
         publicKey: 'pk-agent',
@@ -235,8 +247,8 @@ describe('resolveEffectiveLangfuseConfig', () => {
     });
   });
 
-  it('enables tracing with valid keys and no base URL', () => {
-    const result = resolveEffectiveLangfuseConfig(
+  it('enables tracing with valid keys and no base URL', async () => {
+    const result = await resolveEffectiveLangfuseConfig(
       createLangfuseAgent(),
       createLangfuseAppConfig({
         enabled: true,
@@ -252,8 +264,31 @@ describe('resolveEffectiveLangfuseConfig', () => {
     });
   });
 
-  it('lets an agent explicitly disable tracing over enabled tenant defaults', () => {
-    const result = resolveEffectiveLangfuseConfig(
+  it('decrypts encrypted agent secret keys before resolving the effective config', async () => {
+    const encryptedSecret = '0123456789abcdef0123456789abcdef:736b2d6167656e74';
+    const result = await resolveEffectiveLangfuseConfig(
+      createLangfuseAgent({
+        enabled: true,
+        publicKey: 'pk-agent',
+        secretKey: encryptedSecret,
+      }),
+      createLangfuseAppConfig({
+        enabled: true,
+        publicKey: 'pk-tenant',
+        secretKey: 'sk-tenant',
+      }),
+    );
+
+    expect(decryptV2).toHaveBeenCalledWith(encryptedSecret);
+    expect(result).toEqual({
+      enabled: true,
+      publicKey: 'pk-agent',
+      secretKey: 'sk-agent',
+    });
+  });
+
+  it('lets an agent explicitly disable tracing over enabled tenant defaults', async () => {
+    const result = await resolveEffectiveLangfuseConfig(
       createLangfuseAgent({
         enabled: false,
       }),
@@ -268,8 +303,8 @@ describe('resolveEffectiveLangfuseConfig', () => {
     expect(result).toEqual({ enabled: false });
   });
 
-  it('disables tracing and warns when credentials are unresolved', () => {
-    const result = resolveEffectiveLangfuseConfig(
+  it('disables tracing and warns when credentials are unresolved', async () => {
+    const result = await resolveEffectiveLangfuseConfig(
       createLangfuseAgent(),
       createLangfuseAppConfig({
         enabled: true,

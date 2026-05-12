@@ -1,7 +1,15 @@
+process.env.CREDS_KEY =
+  process.env.CREDS_KEY?.length === 64
+    ? process.env.CREDS_KEY
+    : '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+process.env.CREDS_IV =
+  process.env.CREDS_IV?.length === 32 ? process.env.CREDS_IV : '0123456789abcdef0123456789abcdef';
+
 const mongoose = require('mongoose');
+const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
-const { agentSchema, fileSchema } = require('@librechat/data-schemas');
+const { agentSchema, fileSchema, encryptV2, decryptV2 } = require('@librechat/data-schemas');
 const { FileSources, PermissionBits } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -74,6 +82,7 @@ const {
   createAgent: createAgentHandler,
   getAgent: getAgentHandler,
   duplicateAgent: duplicateAgentHandler,
+  uploadAgentAvatar: uploadAgentAvatarHandler,
   revertAgentVersion: revertAgentVersionHandler,
   updateAgent: updateAgentHandler,
   getListAgents: getListAgentsHandler,
@@ -86,11 +95,16 @@ const {
 } = require('~/server/services/PermissionService');
 
 const { refreshS3Url } = require('@librechat/api');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
  */
 let Agent;
+
+const encryptStoredSecret = async (value) => encryptV2(encodeURIComponent(value));
+const decryptStoredSecret = async (value) => decodeURIComponent(await decryptV2(value));
 
 describe('Agent Controllers - Mass Assignment Protection', () => {
   let mongoServer;
@@ -203,12 +217,12 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       });
 
       const agentInDb = await Agent.findOne({ id: createdAgent.id }).lean();
-      expect(agentInDb.langfuse).toEqual({
-        enabled: true,
-        publicKey: 'pk-test',
-        secretKey: 'sk-test',
-        baseUrl: 'https://cloud.langfuse.com',
-      });
+      expect(agentInDb.langfuse.enabled).toBe(true);
+      expect(agentInDb.langfuse.publicKey).toBe('pk-test');
+      expect(agentInDb.langfuse.secretKey).not.toBe('sk-test');
+      expect(agentInDb.langfuse.secretKey).toContain(':');
+      expect(await decryptStoredSecret(agentInDb.langfuse.secretKey)).toBe('sk-test');
+      expect(agentInDb.langfuse.baseUrl).toBe('https://cloud.langfuse.com');
     });
 
     test('should reject creation with unauthorized fields (mass assignment protection)', async () => {
@@ -785,13 +799,14 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     });
 
     test('should preserve existing Langfuse secret when update sends an empty secret', async () => {
+      const encryptedOriginal = await encryptStoredSecret('sk-original');
       await Agent.updateOne(
         { id: existingAgentId },
         {
           langfuse: {
             enabled: true,
             publicKey: 'pk-original',
-            secretKey: 'sk-original',
+            secretKey: encryptedOriginal,
             baseUrl: 'https://cloud.langfuse.com',
           },
         },
@@ -819,22 +834,22 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       });
 
       const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
-      expect(agentInDb.langfuse).toEqual({
-        enabled: true,
-        publicKey: 'pk-updated',
-        secretKey: 'sk-original',
-        baseUrl: 'https://us.cloud.langfuse.com',
-      });
+      expect(agentInDb.langfuse.enabled).toBe(true);
+      expect(agentInDb.langfuse.publicKey).toBe('pk-updated');
+      expect(agentInDb.langfuse.secretKey).toBe(encryptedOriginal);
+      expect(await decryptStoredSecret(agentInDb.langfuse.secretKey)).toBe('sk-original');
+      expect(agentInDb.langfuse.baseUrl).toBe('https://us.cloud.langfuse.com');
     });
 
     test('should update Langfuse secret explicitly while redacting it in update response', async () => {
+      const encryptedOriginal = await encryptStoredSecret('sk-original');
       await Agent.updateOne(
         { id: existingAgentId },
         {
           langfuse: {
             enabled: true,
             publicKey: 'pk-original',
-            secretKey: 'sk-original',
+            secretKey: encryptedOriginal,
             baseUrl: 'https://cloud.langfuse.com',
           },
         },
@@ -857,7 +872,50 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(updatedAgent.langfuse.secretKey).toBe('');
 
       const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
-      expect(agentInDb.langfuse.secretKey).toBe('sk-updated');
+      expect(agentInDb.langfuse.secretKey).not.toBe('sk-updated');
+      expect(agentInDb.langfuse.secretKey).not.toBe(encryptedOriginal);
+      expect(await decryptStoredSecret(agentInDb.langfuse.secretKey)).toBe('sk-updated');
+    });
+
+    test('uploadAgentAvatarHandler should redact Langfuse secret in response', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          langfuse: {
+            enabled: true,
+            publicKey: 'pk-avatar',
+            secretKey: 'sk-avatar',
+            baseUrl: 'https://cloud.langfuse.com',
+          },
+        },
+      );
+
+      const readFileSpy = jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('avatar'));
+      const unlinkSpy = jest.spyOn(fs, 'unlink').mockResolvedValue();
+      getStrategyFunctions.mockReturnValue({
+        processAvatar: jest.fn().mockResolvedValue('avatars/new-avatar.png'),
+      });
+      resizeAvatar.mockResolvedValue(Buffer.from('resized-avatar'));
+
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.user.tenantId = 'tenant-1';
+      mockReq.params.agent_id = existingAgentId;
+      mockReq.config = {};
+      mockReq.file = {
+        path: '/tmp/avatar.png',
+      };
+
+      await uploadAgentAvatarHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.langfuse.secretKey).toBe('');
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.langfuse.secretKey).toBe('sk-avatar');
+
+      readFileSpy.mockRestore();
+      unlinkSpy.mockRestore();
     });
 
     test('should return 404 for non-existent agent', async () => {
@@ -1158,6 +1216,44 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.json).toHaveBeenCalled();
       const agentInDb = await Agent.findOne({ id: agent.id }).lean();
       expect(agentInDb.tool_resources.file_search.file_ids).toEqual([ownedFileId]);
+    });
+
+    test('revertAgentVersionHandler should redact Langfuse secret in response', async () => {
+      const agentAuthorId = new mongoose.Types.ObjectId();
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Current Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: agentAuthorId,
+        versions: [
+          {
+            name: 'Historical Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            langfuse: {
+              enabled: true,
+              publicKey: 'pk-version',
+              secretKey: 'sk-version',
+              baseUrl: 'https://cloud.langfuse.com',
+            },
+          },
+        ],
+      });
+
+      mockReq.user.id = agentAuthorId.toString();
+      mockReq.params.id = agent.id;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.langfuse.secretKey).toBe('');
+
+      const agentInDb = await Agent.findOne({ id: agent.id }).lean();
+      expect(agentInDb.langfuse.secretKey).not.toBe('sk-version');
+      expect(await decryptStoredSecret(agentInDb.langfuse.secretKey)).toBe('sk-version');
     });
   });
 
