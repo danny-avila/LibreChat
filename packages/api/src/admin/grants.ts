@@ -123,7 +123,9 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
   }): Promise<void> {
     if (!recordAuditEntry) return;
     try {
-      const actorName = resolveUserName ? (await resolveUserName(args.caller.userId)) ?? args.caller.userId : args.caller.userId;
+      const actorName = resolveUserName
+        ? ((await resolveUserName(args.caller.userId)) ?? args.caller.userId)
+        : args.caller.userId;
       // For ROLE principals the principalId IS the human-readable name; for USER/GROUP
       // the same string is the id, and the display name lookup happens in a later iteration.
       const targetName = args.principalId;

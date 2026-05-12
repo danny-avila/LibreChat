@@ -27,13 +27,13 @@ export interface AuditLogFilters {
   targetPrincipalType?: PrincipalType;
   targetPrincipalId?: string;
   capability?: string;
-  cursor?: string;
+  offset?: number;
   limit?: number;
 }
 
 export interface AuditLogPage {
   entries: AdminAuditLogEntryWire[];
-  nextCursor: string | null;
+  total: number;
 }
 
 /**
@@ -64,7 +64,7 @@ export interface AuditLogMethods {
   ) => Promise<AdminAuditLogEntryWire | null>;
   streamAuditLogEntries: (
     tenantId: string | undefined,
-    filters: Omit<AuditLogFilters, 'cursor' | 'limit'>,
+    filters: Omit<AuditLogFilters, 'offset' | 'limit'>,
     onEntry: (entry: AdminAuditLogEntryWire) => void | Promise<void>,
   ) => Promise<number>;
 }
@@ -87,20 +87,6 @@ function toWire(doc: IAuditLog): AdminAuditLogEntryWire {
   };
 }
 
-function encodeCursor(id: Types.ObjectId): string {
-  return Buffer.from(id.toString(), 'utf8').toString('base64url');
-}
-
-function decodeCursor(cursor: string): string | null {
-  try {
-    const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
-    if (!/^[a-fA-F0-9]{24}$/.test(decoded)) return null;
-    return decoded;
-  } catch {
-    return null;
-  }
-}
-
 function tenantFilter(tenantId?: string): FilterQuery<IAuditLog> {
   return tenantId != null ? { tenantId } : { tenantId: { $exists: false } };
 }
@@ -114,17 +100,20 @@ function buildFilter(
   if (filters.action && filters.action.length > 0) {
     query.action = filters.action.length === 1 ? filters.action[0] : { $in: filters.action };
   }
+  // The `actorId` and `targetPrincipalId` filter params are matched against the
+  // denormalized `actorName` / `targetName` fields with case-insensitive partial
+  // regex — UI users want to filter by human name, not by Mongo ObjectId.
   if (filters.actorId) {
-    query.actorId = filters.actorId;
+    query.actorName = { $regex: escapeRegex(filters.actorId), $options: 'i' };
   }
   if (filters.targetPrincipalType) {
     query.targetPrincipalType = filters.targetPrincipalType;
   }
   if (filters.targetPrincipalId) {
-    query.targetPrincipalId = filters.targetPrincipalId;
+    query.targetName = { $regex: escapeRegex(filters.targetPrincipalId), $options: 'i' };
   }
   if (filters.capability) {
-    query.capability = filters.capability;
+    query.capability = { $regex: escapeRegex(filters.capability), $options: 'i' };
   }
   if (filters.from || filters.to) {
     query.createdAt = {};
@@ -180,28 +169,21 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
   ): Promise<AuditLogPage> {
     const AuditLog = mongoose.models.AuditLog as Model<IAuditLog>;
     const limit = clampLimit(filters.limit);
+    const offset = filters.offset && filters.offset > 0 ? Math.floor(filters.offset) : 0;
     const query = buildFilter(tenantId, filters);
 
-    if (filters.cursor) {
-      const cursorId = decodeCursor(filters.cursor);
-      if (cursorId) {
-        query._id = { $lt: cursorId };
-      }
-    }
-
-    const rows = await AuditLog.find(query)
-      .sort({ createdAt: -1, _id: -1 })
-      .limit(limit + 1)
-      .lean<IAuditLog[]>();
-
-    const hasMore = rows.length > limit;
-    const page = hasMore ? rows.slice(0, limit) : rows;
-    const last = page[page.length - 1];
-    const nextCursor = hasMore && last ? encodeCursor(last._id) : null;
+    const [rows, total] = await Promise.all([
+      AuditLog.find(query)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(offset)
+        .limit(limit)
+        .lean<IAuditLog[]>(),
+      AuditLog.countDocuments(query),
+    ]);
 
     return {
-      entries: page.map(toWire),
-      nextCursor,
+      entries: rows.map(toWire),
+      total,
     };
   }
 
@@ -218,7 +200,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
 
   async function streamAuditLogEntries(
     tenantId: string | undefined,
-    filters: Omit<AuditLogFilters, 'cursor' | 'limit'>,
+    filters: Omit<AuditLogFilters, 'offset' | 'limit'>,
     onEntry: (entry: AdminAuditLogEntryWire) => void | Promise<void>,
   ): Promise<number> {
     const AuditLog = mongoose.models.AuditLog as Model<IAuditLog>;

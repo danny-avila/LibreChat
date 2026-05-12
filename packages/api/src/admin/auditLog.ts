@@ -7,7 +7,6 @@ import type {
   RecordAuditEntryInput,
 } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import type { Types } from 'mongoose';
 import type { ServerRequest } from '~/types/http';
 
 const FORMULA_PREFIX = /^[=+\-@\t\r]/;
@@ -32,7 +31,7 @@ export interface AdminAuditLogDeps {
       targetPrincipalType?: PrincipalType;
       targetPrincipalId?: string;
       capability?: string;
-      cursor?: string;
+      offset?: number;
       limit?: number;
     },
   ) => Promise<AuditLogPage>;
@@ -84,12 +83,24 @@ function parseIsoDate(raw: unknown): { ok: true; value?: Date } | { ok: false; e
   return { ok: true, value: d };
 }
 
-function parseLimit(raw: unknown): { ok: true; value: number | undefined } | { ok: false; error: string } {
+function parseLimit(
+  raw: unknown,
+): { ok: true; value: number | undefined } | { ok: false; error: string } {
   if (raw == null || raw === '') return { ok: true, value: undefined };
   const n = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10);
   if (!Number.isFinite(n)) return { ok: false, error: 'limit must be a number' };
   if (n < 1) return { ok: false, error: 'limit must be >= 1' };
   if (n > 500) return { ok: false, error: 'limit must be <= 500' };
+  return { ok: true, value: Math.floor(n) };
+}
+
+function parseOffset(
+  raw: unknown,
+): { ok: true; value: number | undefined } | { ok: false; error: string } {
+  if (raw == null || raw === '') return { ok: true, value: undefined };
+  const n = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(n)) return { ok: false, error: 'offset must be a number' };
+  if (n < 0) return { ok: false, error: 'offset must be >= 0' };
   return { ok: true, value: Math.floor(n) };
 }
 
@@ -145,8 +156,21 @@ interface ParsedFilters {
   capability?: string;
 }
 
+interface AuditLogQuery {
+  search?: string;
+  action?: string | string[];
+  from?: string;
+  to?: string;
+  actorId?: string;
+  targetPrincipalType?: string;
+  targetPrincipalId?: string;
+  capability?: string;
+  limit?: string;
+  offset?: string;
+}
+
 function parseFilters(
-  query: Record<string, unknown>,
+  query: AuditLogQuery,
 ): { ok: true; value: ParsedFilters } | { ok: false; error: string } {
   const from = parseIsoDate(query.from);
   if (!from.ok) return { ok: false, error: `from: ${from.error}` };
@@ -175,16 +199,18 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps) {
       const caller = resolveCaller(req);
       if (!caller) return res.status(401).json({ error: 'Authentication required' });
 
-      const filters = parseFilters(req.query as Record<string, unknown>);
+      const query = req.query as AuditLogQuery;
+      const filters = parseFilters(query);
       if (!filters.ok) return res.status(400).json({ error: filters.error });
 
-      const cursor = pickString((req.query as Record<string, unknown>).cursor, 256);
-      const limitResult = parseLimit((req.query as Record<string, unknown>).limit);
+      const limitResult = parseLimit(query.limit);
       if (!limitResult.ok) return res.status(400).json({ error: limitResult.error });
+      const offsetResult = parseOffset(query.offset);
+      if (!offsetResult.ok) return res.status(400).json({ error: offsetResult.error });
 
       const page = await listAuditLogPage(caller.tenantId, {
         ...filters.value,
-        cursor,
+        offset: offsetResult.value,
         limit: limitResult.value,
       });
 
@@ -219,15 +245,12 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps) {
       const caller = resolveCaller(req);
       if (!caller) return res.status(401).json({ error: 'Authentication required' });
 
-      const filters = parseFilters(req.query as Record<string, unknown>);
+      const filters = parseFilters(req.query as AuditLogQuery);
       if (!filters.ok) return res.status(400).json({ error: filters.error });
 
       const filenameStamp = new Date().toISOString().slice(0, 10);
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="audit-log-${filenameStamp}.csv"`,
-      );
+      res.setHeader('Content-Disposition', `attachment; filename="audit-log-${filenameStamp}.csv"`);
       res.setHeader('Cache-Control', 'no-store');
 
       res.write(CSV_BOM);
@@ -255,15 +278,3 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps) {
     exportAuditLogCsv: exportAuditLogCsvHandler,
   };
 }
-
-export type ResolveAuditNamesInput = {
-  caller: { userId: string; role: string; tenantId?: string };
-  targetPrincipalType: PrincipalType;
-  targetPrincipalId: string;
-};
-
-export type AuditNameResolution = {
-  actorId: string | Types.ObjectId;
-  actorName: string;
-  targetName: string;
-};
