@@ -70,6 +70,7 @@ const FarmerProfileModal = ({
     control,
     reset,
     watch,
+    getValues,
     setValue,
     formState: { errors, isValid },
   } = useForm<FarmerProfileForm>({ mode: 'onChange' });
@@ -168,6 +169,24 @@ const FarmerProfileModal = ({
       .map((c: string) => c.trim())
       .filter(Boolean)
     : [];
+
+  const updateCropsCultivated = (selected: string[]) => {
+    setValue('cropsCultivated', selected.join(', '), { shouldValidate: true });
+
+    const primaryCrop = getValues('primaryCrop');
+    const secondaryCrop = getValues('secondaryCrop');
+
+    if (primaryCrop && !selected.includes(primaryCrop)) {
+      setValue('primaryCrop', '', { shouldValidate: true });
+    }
+    if (secondaryCrop && !selected.includes(secondaryCrop)) {
+      setValue('secondaryCrop', '', { shouldValidate: true });
+    }
+  };
+
+  const removeSelectedCrop = (cropToRemove: string) => {
+    updateCropsCultivated(selectedCropsList.filter((crop) => crop !== cropToRemove));
+  };
 
   const saveMutation = useSaveFarmerProfileMutation({
     onSuccess: () => {

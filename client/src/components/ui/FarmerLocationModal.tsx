@@ -16,6 +16,7 @@ import { useLocalize } from '~/hooks';
 import { SearchableMultiSelect } from '~/components/ui';
 import { STATES, DISTRICTS, INDIAN_LANGUAGES, CROPS } from '~/utils/metaData';
 import SearchableSelect from './SearchableSelect';
+import SearchableMultiSelect from './SearchableMultiSelect';
 
 type FarmerLocationForm = Partial<IFarmerProfile> & {
   landhold?: string;
@@ -47,6 +48,7 @@ const FarmerLocationModal = ({
     register,
     handleSubmit,
     watch,
+    getValues,
     setValue,
     control,
     unregister,
@@ -90,6 +92,31 @@ const FarmerLocationModal = ({
   const watchedState = watch('state');
   const selectedState = watchedState;
   const selectedDistrict = watch('district');
+  const selectedCropsRaw = watch('cropsCultivated');
+  const selectedCropsList = selectedCropsRaw
+    ? String(selectedCropsRaw)
+      .split(',')
+      .map((crop) => crop.trim())
+      .filter(Boolean)
+    : [];
+
+  const updateCropsCultivated = (selected: string[]) => {
+    setValue('cropsCultivated', selected.join(', '), { shouldValidate: true });
+
+    const primaryCrop = getValues('primaryCrop');
+    const secondaryCrop = getValues('secondaryCrop');
+
+    if (primaryCrop && !selected.includes(primaryCrop)) {
+      setValue('primaryCrop', '', { shouldValidate: true });
+    }
+    if (secondaryCrop && !selected.includes(secondaryCrop)) {
+      setValue('secondaryCrop', '', { shouldValidate: true });
+    }
+  };
+
+  const removeSelectedCrop = (cropToRemove: string) => {
+    updateCropsCultivated(selectedCropsList.filter((crop) => crop !== cropToRemove));
+  };
 
   const matchedStateKey = selectedState
     ? Object.keys(DISTRICTS).find((k) => k.toLowerCase() === selectedState.toLowerCase())
@@ -182,6 +209,16 @@ const FarmerLocationModal = ({
 
   const isLocationMissing = effectiveMissingFields.includes('location');
   const otherMissingFields = effectiveMissingFields.filter((f) => f !== 'location');
+  const isLocationMissing = missingFields.includes('location');
+  const otherMissingFields = missingFields.filter((f) => f !== 'location');
+  const shouldShowCloseButton = isLocationMissing && otherMissingFields.length === 0;
+
+  const handleOpenChange = (isOpen: boolean) => {
+    if (!isOpen && !shouldShowCloseButton) {
+      return;
+    }
+    onOpenChange(isOpen);
+  };
 
   const fieldConfig: Record<
     string,
@@ -408,9 +445,19 @@ const FarmerLocationModal = ({
   };
 
   return (
-    <OGDialog open={open} onOpenChange={onOpenChange}>
+    <OGDialog open={open} onOpenChange={handleOpenChange}>
       <OGDialogContent
-        showCloseButton={true}
+        showCloseButton={shouldShowCloseButton}
+        onInteractOutside={(e) => {
+          if (!shouldShowCloseButton) {
+            e.preventDefault();
+          }
+        }}
+        onEscapeKeyDown={(e) => {
+          if (!shouldShowCloseButton) {
+            e.preventDefault();
+          }
+        }}
         className="flex max-h-[90vh] w-11/12 max-w-md flex-col overflow-y-auto sm:w-full"
       >
         <OGDialogHeader>
