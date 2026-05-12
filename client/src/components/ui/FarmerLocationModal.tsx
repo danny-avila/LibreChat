@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { useForm, Controller } from 'react-hook-form';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   OGDialog,
   OGDialogContent,
@@ -13,7 +13,8 @@ import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
 import useGeolocation from '~/hooks/useGeolocation';
 import { useLocalize } from '~/hooks';
-import { STATES, DISTRICTS, INDIAN_LANGUAGES } from '~/utils/metaData';
+import { SearchableMultiSelect } from '~/components/ui';
+import { STATES, DISTRICTS, INDIAN_LANGUAGES, CROPS } from '~/utils/metaData';
 import SearchableSelect from './SearchableSelect';
 
 type FarmerLocationForm = Partial<IFarmerProfile> & {
@@ -37,6 +38,10 @@ const FarmerLocationModal = ({
 }) => {
   const localize = useLocalize();
   const [submitError, setSubmitError] = useState('');
+  const effectiveMissingFields = useMemo(
+    () => missingFields.filter((field) => field !== 'cropsCultivated'),
+    [missingFields],
+  );
 
   const {
     register,
@@ -68,20 +73,19 @@ const FarmerLocationModal = ({
       'numberOfSmartphones',
       'primaryCrop',
       'secondaryCrop',
-      'cropsCultivated',
       'landhold',
       'awarenessOfKCC',
       'usesAgriApps',
       'customDistrict',
     ];
 
-    const fieldsToUnregister = allFields.filter((f) => !missingFields.includes(f as string));
+    const fieldsToUnregister = allFields.filter((f) => !effectiveMissingFields.includes(f as string));
 
     fieldsToUnregister.forEach((f) => {
       unregister(f);
       clearErrors(f);
     });
-  }, [missingFields, unregister, clearErrors]);
+  }, [effectiveMissingFields, unregister, clearErrors]);
 
   const watchedState = watch('state');
   const selectedState = watchedState;
@@ -135,7 +139,7 @@ const FarmerLocationModal = ({
   const onSubmit = (data: FarmerLocationForm) => {
     const profilePayload: IFarmerProfile = {};
 
-    missingFields.forEach((field) => {
+    effectiveMissingFields.forEach((field) => {
       if (field === 'location' && data.location?.latitude && data.location?.longitude) {
         profilePayload.location = {
           latitude: Number(data.location.latitude),
@@ -158,11 +162,6 @@ const FarmerLocationModal = ({
           data.district === localize('com_farmer_option_other')
             ? data.customDistrict
             : data.district;
-      } else if (field === 'cropsCultivated' && data.cropsCultivated) {
-        profilePayload.cropsCultivated = (data.cropsCultivated as any)
-          .split(',')
-          .map((c: string) => c.trim())
-          .filter(Boolean);
       } else {
         if (data[field as keyof FarmerLocationForm]) {
           profilePayload[field as keyof IFarmerProfile] = data[
@@ -181,8 +180,8 @@ const FarmerLocationModal = ({
   const integerRegex = /^\d+$/;
   const decimalRegex = /^\d+(\.\d+)?$/;
 
-  const isLocationMissing = missingFields.includes('location');
-  const otherMissingFields = missingFields.filter((f) => f !== 'location');
+  const isLocationMissing = effectiveMissingFields.includes('location');
+  const otherMissingFields = effectiveMissingFields.filter((f) => f !== 'location');
 
   const fieldConfig: Record<
     string,
@@ -271,18 +270,15 @@ const FarmerLocationModal = ({
     },
     primaryCrop: {
       label: localize('com_farmer_label_primary_crop'),
-      type: 'text',
-      placeholder: localize('com_farmer_placeholder_primary_crop_example'),
+      type: 'searchable-multi-select',
+      options: CROPS,
+      selectPlaceholder: localize('com_ui_select_options'),
     },
     secondaryCrop: {
       label: localize('com_farmer_label_secondary_crop'),
-      type: 'text',
-      placeholder: localize('com_farmer_placeholder_secondary_crop_example'),
-    },
-    cropsCultivated: {
-      label: localize('com_farmer_label_crops_cultivated'),
-      type: 'text',
-      placeholder: localize('com_farmer_placeholder_crops_example'),
+      type: 'searchable-multi-select',
+      options: CROPS,
+      selectPlaceholder: localize('com_ui_select_options'),
     },
     landhold: {
       label: localize('com_farmer_label_landholding_short'),
@@ -377,7 +373,7 @@ const FarmerLocationModal = ({
     return fieldConfig[field]?.label ?? field;
   };
 
-  const missingOrInvalidFields = missingFields.flatMap((field) => {
+  const missingOrInvalidFields = effectiveMissingFields.flatMap((field) => {
     if (field === 'location') {
       const hasLocation =
         !!watch('location.latitude' as any) && !!watch('location.longitude' as any);
@@ -515,6 +511,43 @@ const FarmerLocationModal = ({
                       </label>
                     ))}
                   </div>
+                  {errors[field as keyof FarmerLocationForm] && (
+                    <p className="mt-1 text-xs text-red-500">
+                      {(errors[field as keyof FarmerLocationForm] as any)?.message}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+
+            if (config.type === 'searchable-multi-select') {
+              return (
+                <div key={field} className={fieldClass}>
+                  <Label>{config.label}</Label>
+                  <Controller
+                    name={field as any}
+                    control={control}
+                    rules={{
+                      required: localize('com_farmer_validation_required_generic', {
+                        0: config.label,
+                      }),
+                    }}
+                    render={({ field: controllerField }) => {
+                      const selectedValues = String(controllerField.value ?? '')
+                        .split(',')
+                        .map((v) => v.trim())
+                        .filter(Boolean);
+
+                      return (
+                        <SearchableMultiSelect
+                          options={config.options || []}
+                          value={selectedValues}
+                          onChange={(selected) => controllerField.onChange(selected.join(', '))}
+                          placeholder={config.selectPlaceholder ?? localize('com_ui_select_options')}
+                        />
+                      );
+                    }}
+                  />
                   {errors[field as keyof FarmerLocationForm] && (
                     <p className="mt-1 text-xs text-red-500">
                       {(errors[field as keyof FarmerLocationForm] as any)?.message}
