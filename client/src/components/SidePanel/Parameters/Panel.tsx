@@ -17,6 +17,17 @@ import { componentMapping } from './components';
 import { useChatContext } from '~/Providers';
 import { logger } from '~/utils';
 
+// V1 UX POP/BETC : 2 mécanismes Recherche web actuellement cassés
+// (services tiers nécessitent clés admin non posées, et natif LLM
+// throws 400 Anthropic). Caché en attendant décision archi avec
+// Antoine post-congé. Repasser à true quand mécanisme stabilisé.
+// Quand le param `web_search` est retiré du schema effectif, le
+// useEffect ci-dessous le supprime automatiquement de la conversation
+// courante (cf. ligne `if (paramKeys.has(key)) return` + delete) — donc
+// un user qui avait `web_search=true` voit la valeur nettoyée au
+// premier rendu du panel post-flag.
+const SHOW_USER_WEB_SEARCH_SETTING = false;
+
 export default function Parameters() {
   const localize = useLocalize();
   const { conversation, setConversation } = useChatContext();
@@ -47,6 +58,7 @@ export default function Parameters() {
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
     return defaultParams
       .filter((param) => param != null)
+      .filter((param) => SHOW_USER_WEB_SEARCH_SETTING || param.key !== 'web_search')
       .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
   }, [endpointType, endpointsConfig, model, provider]);
 
