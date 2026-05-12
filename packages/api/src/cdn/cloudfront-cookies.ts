@@ -341,6 +341,10 @@ export function setCloudFrontCookies(
       path: '/',
     });
 
+    logger.debug(
+      `[setCloudFrontCookies] Issued signed CloudFront cookies (paths=${signedCookieSets.length}, expiresInSec=${cookieExpiry}).`,
+    );
+
     return true;
   } catch (error) {
     logger.error('[setCloudFrontCookies] Failed to generate signed cookies:', error);

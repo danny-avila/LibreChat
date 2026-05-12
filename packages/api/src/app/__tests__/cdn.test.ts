@@ -21,6 +21,7 @@ jest.mock('~/cdn/cloudfront', () => ({
 }));
 
 import type { AppConfig } from '@librechat/data-schemas';
+import type { CloudFrontConfig } from 'librechat-data-provider';
 import { initializeFileStorage } from '../cdn';
 import { initializeFirebase } from '~/cdn/firebase';
 import { initializeAzureBlobService } from '~/cdn/azure';
@@ -32,6 +33,23 @@ const baseAppConfig: AppConfig = {
   fileStrategy: FileSources.local,
   imageOutputType: 'png',
 };
+
+type RequiredCloudFrontConfig = NonNullable<CloudFrontConfig>;
+
+function makeCloudFrontConfig(
+  overrides: Partial<RequiredCloudFrontConfig> = {},
+): RequiredCloudFrontConfig {
+  return {
+    domain: 'https://d123.cloudfront.net',
+    invalidateOnDelete: false,
+    imageSigning: 'none',
+    urlExpiry: 3600,
+    cookieExpiry: 1800,
+    includeRegionInPath: false,
+    requireSignedAccess: false,
+    ...overrides,
+  };
+}
 
 describe('initializeFileStorage', () => {
   beforeEach(() => {
@@ -88,7 +106,7 @@ describe('initializeFileStorage', () => {
   });
 
   it('initializes CloudFront with config when fileStrategy is cloudfront', () => {
-    const cloudfrontConfig = { domain: 'https://d123.cloudfront.net' };
+    const cloudfrontConfig = makeCloudFrontConfig();
     const appConfig = {
       ...baseAppConfig,
       fileStrategy: FileSources.cloudfront,
@@ -109,7 +127,7 @@ describe('initializeFileStorage', () => {
   });
 
   it('initializes CloudFront from fileStrategies when fileStrategy is local, but avatar is configured for CloudFront', () => {
-    const cloudfrontConfig = { domain: 'https://d123.cloudfront.net' };
+    const cloudfrontConfig = makeCloudFrontConfig();
     const appConfig = {
       ...baseAppConfig,
       fileStrategy: FileSources.local,
@@ -120,6 +138,32 @@ describe('initializeFileStorage', () => {
     expect(initializeCloudFront).toHaveBeenCalledTimes(1);
     expect(initializeCloudFront).toHaveBeenCalledWith(cloudfrontConfig);
     expect(initializeS3).not.toHaveBeenCalled();
+  });
+
+  it('throws when CloudFront init fails and requireSignedAccess is true', () => {
+    (initializeCloudFront as jest.Mock).mockReturnValue(false);
+    const cloudfrontConfig = makeCloudFrontConfig({
+      imageSigning: 'cookies',
+      cookieDomain: '.example.com',
+      requireSignedAccess: true,
+    });
+    const appConfig = {
+      ...baseAppConfig,
+      fileStrategy: FileSources.cloudfront,
+      cloudfront: cloudfrontConfig,
+    } as AppConfig;
+    expect(() => initializeFileStorage(appConfig)).toThrow(/requireSignedAccess=true/);
+  });
+
+  it('does not throw when CloudFront init fails and requireSignedAccess is false', () => {
+    (initializeCloudFront as jest.Mock).mockReturnValue(false);
+    const cloudfrontConfig = makeCloudFrontConfig();
+    const appConfig = {
+      ...baseAppConfig,
+      fileStrategy: FileSources.cloudfront,
+      cloudfront: cloudfrontConfig,
+    } as AppConfig;
+    expect(() => initializeFileStorage(appConfig)).not.toThrow();
   });
 
   it('does not call any initializer when fileStrategy is local with no fileStrategies', () => {
