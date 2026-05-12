@@ -5,7 +5,6 @@ const mockGetTokenHeader = jest.fn(() => 'Bearer test-token');
 
 jest.mock('librechat-data-provider', () => ({
   apiBaseUrl: () => mockApiBaseUrl(),
-  getTokenHeader: () => mockGetTokenHeader(),
 }));
 
 import {
@@ -66,7 +65,9 @@ describe('CloudFront cookie refresh helpers', () => {
         resolveRefresh = resolve;
       }),
     );
-    configureCloudFrontCookieRefresh(cloudFrontStartupConfig);
+    configureCloudFrontCookieRefresh(cloudFrontStartupConfig, {
+      getAuthorizationHeader: mockGetTokenHeader,
+    });
 
     const first = refreshCloudFrontCookiesOnce();
     const second = refreshCloudFrontCookiesOnce();
@@ -88,7 +89,9 @@ describe('CloudFront cookie refresh helpers', () => {
 
   it('returns false on 401 without retrying the refresh request', async () => {
     fetchMock.mockResolvedValue(refreshResponse({}, false));
-    configureCloudFrontCookieRefresh(cloudFrontStartupConfig);
+    configureCloudFrontCookieRefresh(cloudFrontStartupConfig, {
+      getAuthorizationHeader: mockGetTokenHeader,
+    });
 
     await expect(refreshCloudFrontCookiesOnce()).resolves.toBe(false);
 
@@ -97,7 +100,9 @@ describe('CloudFront cookie refresh helpers', () => {
 
   it('prefixes the refresh endpoint with the configured app base path', async () => {
     mockApiBaseUrl.mockReturnValue('/chat');
-    configureCloudFrontCookieRefresh(cloudFrontStartupConfig);
+    configureCloudFrontCookieRefresh(cloudFrontStartupConfig, {
+      getAuthorizationHeader: mockGetTokenHeader,
+    });
 
     await expect(refreshCloudFrontCookiesOnce()).resolves.toBe(true);
 

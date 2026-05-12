@@ -1,4 +1,4 @@
-import { apiBaseUrl, getTokenHeader } from 'librechat-data-provider';
+import { apiBaseUrl } from 'librechat-data-provider';
 import type { TStartupConfig } from 'librechat-data-provider';
 
 type CloudFrontCookieRefreshConfig = NonNullable<
@@ -7,8 +7,12 @@ type CloudFrontCookieRefreshConfig = NonNullable<
 type CloudFrontCookieRefreshResponse = {
   ok?: boolean;
 };
+type CloudFrontCookieRefreshOptions = {
+  getAuthorizationHeader?: () => string | undefined;
+};
 
 let cookieRefreshConfig: CloudFrontCookieRefreshConfig | undefined;
+let getAuthorizationHeader: CloudFrontCookieRefreshOptions['getAuthorizationHeader'];
 let refreshPromise: Promise<boolean> | null = null;
 let removeImageErrorListener: (() => void) | null = null;
 const retriedImageSources = new WeakMap<HTMLImageElement, string>();
@@ -33,8 +37,10 @@ function parseUrl(value: string): URL | null {
 
 export function configureCloudFrontCookieRefresh(
   startupConfig?: Pick<TStartupConfig, 'cloudFront'> | null,
+  options: CloudFrontCookieRefreshOptions = {},
 ): void {
   cookieRefreshConfig = startupConfig?.cloudFront?.cookieRefresh;
+  getAuthorizationHeader = options.getAuthorizationHeader;
 }
 
 export function isCloudFrontMediaUrl(
@@ -89,7 +95,7 @@ function getRefreshEndpoint(endpoint: string): string {
 }
 
 async function postCloudFrontCookieRefresh(endpoint: string): Promise<boolean> {
-  const authorization = getTokenHeader();
+  const authorization = getAuthorizationHeader?.();
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -136,8 +142,9 @@ export function refreshCloudFrontCookiesOnce(): Promise<boolean> {
 
 export function installCloudFrontImageRetry(
   startupConfig?: Pick<TStartupConfig, 'cloudFront'> | null,
+  options: CloudFrontCookieRefreshOptions = {},
 ): () => void {
-  configureCloudFrontCookieRefresh(startupConfig);
+  configureCloudFrontCookieRefresh(startupConfig, options);
   removeImageErrorListener?.();
   removeImageErrorListener = null;
 

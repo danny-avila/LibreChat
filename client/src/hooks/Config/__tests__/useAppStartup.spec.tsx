@@ -8,11 +8,20 @@ const mockUseHasAccess = jest.fn();
 const mockUseMCPServersQuery = jest.fn();
 const mockUseMCPToolsQuery = jest.fn();
 const mockInstallCloudFrontImageRetry = jest.fn(() => jest.fn());
+const mockGetTokenHeader = jest.fn();
 
 jest.mock('@librechat/client', () => ({
-  installCloudFrontImageRetry: (startupConfig: unknown) =>
-    mockInstallCloudFrontImageRetry(startupConfig),
+  installCloudFrontImageRetry: (startupConfig: unknown, options: unknown) =>
+    mockInstallCloudFrontImageRetry(startupConfig, options),
 }));
+
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    getTokenHeader: () => mockGetTokenHeader(),
+  };
+});
 
 jest.mock('~/hooks', () => ({
   useHasAccess: (args: unknown) => mockUseHasAccess(args),
@@ -141,6 +150,13 @@ describe('useAppStartup — MCP permission gating', () => {
 
     renderHook(() => useAppStartup({ startupConfig, user: mockUser }), { wrapper });
 
-    expect(mockInstallCloudFrontImageRetry).toHaveBeenCalledWith(startupConfig);
+    expect(mockInstallCloudFrontImageRetry).toHaveBeenCalledWith(startupConfig, {
+      getAuthorizationHeader: expect.any(Function),
+    });
+    const [, options] = mockInstallCloudFrontImageRetry.mock.calls[0];
+    mockGetTokenHeader.mockReturnValue('Bearer app-token');
+
+    expect(options.getAuthorizationHeader()).toBe('Bearer app-token');
+    expect(mockGetTokenHeader).toHaveBeenCalledTimes(1);
   });
 });
