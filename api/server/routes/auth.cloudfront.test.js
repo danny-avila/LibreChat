@@ -94,10 +94,12 @@ describe('POST /api/auth/cloudfront/refresh', () => {
       reason: 'cloudfront_disabled',
     });
 
-    await request(app)
+    const response = await request(app)
       .post('/api/auth/cloudfront/refresh')
       .set('Authorization', 'Bearer ok')
       .expect(404);
+
+    expect(response.status).toBe(404);
   });
 
   it('returns cookie refresh timing when CloudFront cookies are refreshed', async () => {
