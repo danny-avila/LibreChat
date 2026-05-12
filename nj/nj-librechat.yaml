@@ -19,9 +19,9 @@ interface:
   # Disable temporary chats (we need to retain data for OPRA)
   temporaryChat: false
 
-  # Since we only have limited endpoints, we disable the more elaborate model selector
-  # (Instead, we define the model selection using `modelSpecs` below)
-  modelSelect: false
+  # We allow model selection in general, but in the code we filter to only
+  # models that we want to allow users to see
+  modelSelect: true
 
   # We're purposefully disabling most LibreChat features (for now)
   agents: 

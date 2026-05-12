@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { TooltipAnchor } from '@librechat/client';
-import { getConfigDefaults } from 'librechat-data-provider';
+import { getConfigDefaults, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { ModelSelectorProps } from '~/common';
 import {
   renderModelSpecs,
@@ -13,7 +13,7 @@ import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
-import { useLocalize } from '~/hooks';
+import { useHasAccess, useLocalize } from '~/hooks';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -38,6 +38,12 @@ function ModelSelectorContent() {
     onOpenChange,
     keyDialogEndpoint,
   } = useModelSelectorContext();
+
+  // NJ: Proxy for whether agents is enabled or not
+  const hasAccessToCreateAgents = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.CREATE,
+  });
 
   const selectedIcon = useMemo(
     () =>
@@ -81,7 +87,7 @@ function ModelSelectorContent() {
     />
   );
 
-  // NJ: We disable the actual selection for now (since we only have one model)
+  // NJ: Only enable selection if agents are enabled
   return (
     <div className="relative flex w-full max-w-md flex-col items-center gap-2">
       <Menu
@@ -97,7 +103,7 @@ function ModelSelectorContent() {
         combobox={<input id="model-search" placeholder=" " />}
         comboboxLabel={localize('com_endpoint_search_models')}
         trigger={trigger}
-        disabled={true}
+        disabled={!hasAccessToCreateAgents}
       >
         {searchResults ? (
           renderSearchResults(searchResults, localize, searchValue)
