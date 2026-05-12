@@ -39,7 +39,14 @@ function isBirthday() {
   return today.getMonth() === 1 && today.getDate() === 11;
 }
 
-function buildSharedPayload() {
+/**
+ * Pre-login fields rendered by the unauthenticated login, registration, password-reset,
+ * and email-verification pages. Any field added here is readable by anonymous callers
+ * of `GET /api/config`, so keep this set strictly to what those pages need.
+ *
+ * See client consumers under `client/src/components/Auth/` and `client/src/routes/Layouts/Startup.tsx`.
+ */
+function buildPreLoginPayload() {
   const isOpenIdEnabled =
     !!process.env.OPENID_CLIENT_ID &&
     (isEnabled(process.env.OPENID_USE_PKCE) || !!process.env.OPENID_CLIENT_SECRET?.trim()) &&
@@ -83,19 +90,6 @@ function buildSharedPayload() {
       !!process.env.EMAIL_PASSWORD &&
       !!process.env.EMAIL_FROM,
     passwordResetEnabled,
-    showBirthdayIcon:
-      isBirthday() ||
-      isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
-      process.env.SHOW_BIRTHDAY_ICON === '',
-    helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
-    sharedLinksEnabled,
-    publicSharedLinksEnabled,
-    analyticsGtmId: process.env.ANALYTICS_GTM_ID,
-    openidReuseTokens,
-    /** Read inline (not module-level) for per-request evaluation and test isolation */
-    allowAccountDeletion:
-      process.env.ALLOW_ACCOUNT_DELETION === undefined ||
-      isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
   };
 
   const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
@@ -107,9 +101,49 @@ function buildSharedPayload() {
     payload.ldap = ldap;
   }
 
+  return payload;
+}
+
+/**
+ * Public share fields rendered by `client/src/components/Share/ShareView.tsx`.
+ * They remain off the default anonymous config used by login screens, and are
+ * exposed to anonymous callers only when the client asks for share context.
+ */
+function buildPublicSharePayload() {
+  /** @type {Partial<TStartupConfig>} */
+  const payload = {
+    analyticsGtmId: process.env.ANALYTICS_GTM_ID,
+  };
+
   if (typeof process.env.CUSTOM_FOOTER === 'string') {
     payload.customFooter = process.env.CUSTOM_FOOTER;
   }
+
+  return payload;
+}
+
+/**
+ * Post-login fields appended only when `req.user` is present. These describe the
+ * authenticated UX (account-settings links, share-link feature flags, birthday icon,
+ * openid token-reuse marker) and are not needed on the pre-login screens, so they
+ * are not exposed to unauthenticated callers.
+ */
+function buildPostLoginPayload() {
+  /** @type {Partial<TStartupConfig>} */
+  const payload = {
+    showBirthdayIcon:
+      isBirthday() ||
+      isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
+      process.env.SHOW_BIRTHDAY_ICON === '',
+    helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
+    sharedLinksEnabled,
+    publicSharedLinksEnabled,
+    openidReuseTokens,
+    /** Read inline (not module-level) for per-request evaluation and test isolation */
+    allowAccountDeletion:
+      process.env.ALLOW_ACCOUNT_DELETION === undefined ||
+      isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
+  };
 
   return payload;
 }
@@ -168,8 +202,8 @@ function buildCloudFrontStartupConfig() {
 
 router.get('/', async function (req, res) {
   try {
-    const sharedPayload = buildSharedPayload();
-    const cloudFront = buildCloudFrontStartupConfig();
+    const preLoginPayload = buildPreLoginPayload();
+    const publicSharePayload = buildPublicSharePayload();
     const rum = getRumConfig();
 
     if (!req.user) {
@@ -178,10 +212,10 @@ router.get('/', async function (req, res) {
 
       /** @type {Partial<TStartupConfig>} */
       const payload = {
-        ...sharedPayload,
+        ...preLoginPayload,
+        ...(req.query.context === 'share' ? publicSharePayload : {}),
         socialLogins: baseConfig?.registration?.socialLogins ?? defaultSocialLogins,
         turnstile: baseConfig?.turnstileConfig,
-        ...(cloudFront ? { cloudFront } : {}),
         ...(rum ? { rum } : {}),
       };
 
@@ -215,10 +249,13 @@ router.get('/', async function (req, res) {
     });
 
     const balanceConfig = getBalanceConfig(appConfig);
+    const cloudFront = buildCloudFrontStartupConfig();
 
     /** @type {TStartupConfig} */
     const payload = {
-      ...sharedPayload,
+      ...preLoginPayload,
+      ...publicSharePayload,
+      ...buildPostLoginPayload(),
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       interface: appConfig?.interfaceConfig,
       turnstile: appConfig?.turnstileConfig,
