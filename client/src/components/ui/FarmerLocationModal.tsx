@@ -281,7 +281,7 @@ const FarmerLocationModal = ({
       selectPlaceholder: localize('com_ui_select_options'),
     },
     landhold: {
-      label: localize('com_farmer_label_landholding_short'),
+      label: localize('com_farmer_label_landholding'),
       type: 'text',
       placeholder: localize('com_farmer_placeholder_landholding'),
     },
