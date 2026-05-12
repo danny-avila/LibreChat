@@ -3,27 +3,17 @@ const { v4: uuidv4 } = require('uuid');
 const { sendEvent } = require('@librechat/api');
 const { Constants, ContentTypes } = require('librechat-data-provider');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
-const { saveMessage, saveConvo, getConvo } = require('~/models');
+const { saveMessage, saveConvo, getConvo, getMessages } = require('~/models');
 const addTitle = require('~/server/services/Endpoints/openAI/title');
 const { createOnProgress } = require('~/server/utils');
 const {
-  buildCodeCanSystemPrompt,
-  getCodeCanVectorStoreConfig,
-  getCodeCanVectorStoreIds,
-  NO_RELEVANT_ONTARIO_TEXT,
-  NO_RELEVANT_NATIONAL_TEXT,
+  getJurisdiction,
+  DEFAULT_JURISDICTION_ID,
+  DEFAULT_MAX_NUM_RESULTS,
+  DEFAULT_REASONING_EFFORT,
+  DEFAULT_VERBOSITY,
+  NO_RELEVANT_TEXT,
 } = require('~/server/services/prompts/codeCan');
-
-const PRE_FLIGHT_RESPONSE = Object.freeze({
-  RELEVANT: 'RELEVANT',
-  NOT_RELEVANT: 'NOT_RELEVANT',
-});
-const CODECAN_NO_RELEVANT_TEXT = 'No relevant content found in the Ontario or National Building Code files.';
-const PRE_FLIGHT_INSTRUCTIONS = `Determine whether the Ontario Building Code retrieval can answer the user question.
-Always call file_search before deciding.
-Return exactly one token and nothing else:
-- RELEVANT
-- NOT_RELEVANT`;
 
 function extractCompletionText(completion, fallback = '') {
   if (typeof completion === 'string') {
@@ -32,33 +22,18 @@ function extractCompletionText(completion, fallback = '') {
   return completion?.text ?? fallback;
 }
 
-function isOntarioRelevant(preflightText) {
-  const decision = String(preflightText || '').trim().toUpperCase();
-  if (decision.includes(PRE_FLIGHT_RESPONSE.NOT_RELEVANT)) {
-    return false;
-  }
-  return true;
-}
-
-function buildStageModelOptions(baseModelOptions, stage, stream, instructions = buildCodeCanSystemPrompt(stage)) {
-  return Object.assign({}, baseModelOptions, {
-    useResponsesApi: true,
-    stream,
-    instructions,
-    promptPrefix: instructions,
-    tools: [{ type: 'file_search' }],
-    tool_choice: 'required',
-    tool_resources: {
-      file_search: {
-        vector_store_ids: getCodeCanVectorStoreIds(stage),
-      },
-    },
-  });
-}
-
 /**
- * CodeCan-only direct Responses API handler (bypasses LangGraph/agents).
- * Streams or returns the response using OpenAIClient.handleResponsesApi.
+ * CodeCan direct Responses API handler.
+ *
+ * Pipeline:
+ *   1. Resolve the locked jurisdiction (conversation → request → user-default → fallback).
+ *   2. Look up the prior assistant message's openai_response_id for `previous_response_id` threading.
+ *   3. Make ONE streaming Responses API call against the jurisdiction's vector stores.
+ *   4. Persist response.id on the assistant message for the next turn.
+ *
+ * The legacy two-stage pre-flight classifier (Ontario → fallback NBC) was removed; the same
+ * "OBC first, NBC fallback" semantics are now expressed by the jurisdiction registry which lists
+ * both vector stores on the Ontario entry and instructs the model to prefer OBC citations.
  */
 async function codeCanDirectHandler(req, res) {
   const {
@@ -77,13 +52,34 @@ async function codeCanDirectHandler(req, res) {
     conversationId: convoId,
   });
 
-  // Build base model options from endpointOption
+  const existingConvo = await getConvo(userId, convoId);
+  const isNewConvo = existingConvo == null;
+  const isRootMessage = (parentMessageId ?? Constants.NO_PARENT) === Constants.NO_PARENT;
+
+  // Jurisdiction resolution: conversation lock wins. Once a conversation has a jurisdiction
+  // set, switching is a "new chat" UX, never a silent corpus swap mid-thread.
+  const requestedJurisdictionId =
+    existingConvo?.jurisdiction ||
+    endpointOption?.jurisdictionId ||
+    req.body?.resolvedJurisdictionId ||
+    req.body?.jurisdiction ||
+    req.user?.personalization?.jurisdiction ||
+    DEFAULT_JURISDICTION_ID;
+  const jurisdiction = getJurisdiction(requestedJurisdictionId);
+
+  req.traceStep?.('codecan_jurisdiction_resolved', {
+    conversationId: convoId,
+    jurisdictionId: jurisdiction.id,
+    vectorStoreIds: jurisdiction.vectorStoreIds,
+    locked: Boolean(existingConvo?.jurisdiction),
+  });
+
+  // Build base model options from endpointOption.
   const baseModelOptions = Object.assign(
     {},
     endpointOption?.model_parameters ?? endpointOption?.modelOptions ?? {},
   );
   baseModelOptions.useResponsesApi = true;
-  const vectorStoreConfig = getCodeCanVectorStoreConfig();
 
   const clientBaseOptions = {
     req,
@@ -94,19 +90,10 @@ async function codeCanDirectHandler(req, res) {
     resendFiles: endpointOption?.resendFiles ?? true,
     maxContextTokens: endpointOption?.maxContextTokens,
   };
-  let client = null;
 
-  const existingConvo = await getConvo(userId, convoId);
-  const isNewConvo = existingConvo == null;
-  const isRootMessage = (parentMessageId ?? Constants.NO_PARENT) === Constants.NO_PARENT;
-
-  // Prepare message payload for OpenAIClient
-  const payload = [
-    {
-      role: 'user',
-      content: text,
-    },
-  ];
+  // Single-message payload. Multi-turn context is supplied to the model via
+  // `previous_response_id` rather than re-sending prior turns as input messages.
+  const payload = [{ role: 'user', content: text }];
 
   const abortController = new AbortController();
 
@@ -132,7 +119,7 @@ async function codeCanDirectHandler(req, res) {
     sendProgress(delta);
   };
 
-  // Prepare user message and save it so it appears in the timeline
+  // Save user message so it appears in the timeline.
   const userMessageId = clientMessageId ?? uuidv4();
   const userMessage = {
     messageId: userMessageId,
@@ -153,11 +140,6 @@ async function codeCanDirectHandler(req, res) {
     await saveMessage(req, userMessage, {
       context: 'api/server/controllers/agents/codeCanDirect.js - user message',
     });
-    logger.info('[CodeCan] Saved user message', {
-      conversationId: convoId,
-      messageId: userMessageId,
-      userId,
-    });
     sendEvent(res, { message: userMessage, created: true });
   } catch (error) {
     logger.error('[CodeCan] Failed to save user message', {
@@ -169,6 +151,7 @@ async function codeCanDirectHandler(req, res) {
     throw error;
   }
   req.traceStep?.('codecan_direct_user_saved');
+
   let conversation = null;
   try {
     conversation = await saveConvo(
@@ -177,13 +160,12 @@ async function codeCanDirectHandler(req, res) {
         conversationId: convoId,
         endpoint: endpointOption?.endpoint,
         endpointType: endpointOption?.endpointType,
+        // Lock jurisdiction on first save. saveConvo upserts via $set, so on subsequent turns
+        // this is a no-op write of the already-locked value.
+        jurisdiction: jurisdiction.id,
       },
       { context: 'api/server/controllers/agents/codeCanDirect.js - saveConvo (user)' },
     );
-    logger.info('[CodeCan] Saved conversation (user)', {
-      conversationId: convoId,
-      userId,
-    });
   } catch (error) {
     logger.error('[CodeCan] Failed to save conversation (user)', {
       conversationId: convoId,
@@ -192,66 +174,120 @@ async function codeCanDirectHandler(req, res) {
     });
   }
 
-  req.traceStep?.('codecan_preflight_start', {
+  // Look up the prior assistant message's openai_response_id for threading. On the first turn
+  // of a conversation (or if no prior assistant message recorded an id) this stays null.
+  let previousResponseId = null;
+  if (!isRootMessage) {
+    try {
+      const priorMessages = await getMessages(
+        {
+          conversationId: convoId,
+          isCreatedByUser: false,
+          openai_response_id: { $ne: null },
+        },
+        'openai_response_id createdAt',
+      );
+      if (Array.isArray(priorMessages) && priorMessages.length) {
+        // getMessages returns ascending by default; take the most recent.
+        const latest = priorMessages[priorMessages.length - 1];
+        previousResponseId = latest?.openai_response_id ?? null;
+      }
+    } catch (error) {
+      logger.warn('[CodeCan] Failed to look up previous_response_id', {
+        conversationId: convoId,
+        error: error?.message,
+      });
+    }
+  }
+  req.traceStep?.('codecan_previous_response_id', {
     conversationId: convoId,
-    vectorStoreId: vectorStoreConfig.ontarioId,
-  });
-  const preflightModelOptions = buildStageModelOptions(
-    baseModelOptions,
-    'ontario',
-    false,
-    PRE_FLIGHT_INSTRUCTIONS,
-  );
-  const preflightClient = new OpenAIClient(endpointOption?.model_parameters?.apiKey, {
-    ...clientBaseOptions,
-    modelOptions: preflightModelOptions,
-  });
-  const preflightCompletion = await preflightClient.chatCompletion({
-    payload,
-    abortController,
-    returnRaw: false,
-  });
-  const preflightText = extractCompletionText(preflightCompletion).trim();
-  const selectedStage = isOntarioRelevant(preflightText) ? 'ontario' : 'national';
-  req.traceStep?.('codecan_preflight_result', {
-    conversationId: convoId,
-    response: preflightText,
-    selectedStage,
-  });
-  req.traceStep?.('codecan_selected_stage', {
-    conversationId: convoId,
-    stage: selectedStage,
-  });
-  req.traceStep?.('codecan_selected_vector_store_id', {
-    conversationId: convoId,
-    vectorStoreId:
-      selectedStage === 'ontario' ? vectorStoreConfig.ontarioId : vectorStoreConfig.nationalId,
+    previousResponseId,
+    isFirstTurn: isRootMessage,
   });
 
-  const stageModelOptions = buildStageModelOptions(baseModelOptions, selectedStage, true);
-  client = new OpenAIClient(endpointOption?.model_parameters?.apiKey, {
+  // First-turn forces retrieval; follow-ups let the model decide whether to re-search.
+  // With `previous_response_id` the model already sees prior tool results in its context.
+  const toolChoice = isRootMessage ? 'required' : 'auto';
+
+  const stageModelOptions = Object.assign({}, baseModelOptions, {
+    useResponsesApi: true,
+    stream: true,
+    instructions: jurisdiction.systemPrompt,
+    promptPrefix: jurisdiction.systemPrompt,
+    tools: [
+      {
+        type: 'file_search',
+        vector_store_ids: jurisdiction.vectorStoreIds,
+        max_num_results: DEFAULT_MAX_NUM_RESULTS,
+      },
+    ],
+    tool_choice: toolChoice,
+    tool_resources: {
+      file_search: { vector_store_ids: jurisdiction.vectorStoreIds },
+    },
+    previous_response_id: previousResponseId,
+    // gpt-5-mini reasoning controls — defaults are too high for retrieval-grounded Q&A.
+    reasoning: { effort: DEFAULT_REASONING_EFFORT },
+    text: { verbosity: DEFAULT_VERBOSITY },
+  });
+
+  const client = new OpenAIClient(endpointOption?.model_parameters?.apiKey, {
     ...clientBaseOptions,
     modelOptions: stageModelOptions,
   });
 
-  // Run completion
   req.traceStep?.('codecan_direct_llm_start');
-  const completion = await client.chatCompletion({
-    payload,
-    onProgress,
-    abortController,
-    returnRaw: true,
-  });
+  let completion;
+  try {
+    completion = await client.chatCompletion({
+      payload,
+      onProgress,
+      abortController,
+      returnRaw: true,
+    });
+  } catch (error) {
+    // Stale/expired previous_response_id (OpenAI returns 400/404) → retry once without it.
+    const message = error?.message || '';
+    const looksLikeStaleResponseId =
+      previousResponseId &&
+      /previous_response_id|response_.*not.*found|invalid.*response/i.test(message);
+    if (!looksLikeStaleResponseId) {
+      throw error;
+    }
+    logger.warn('[CodeCan] previous_response_id rejected, retrying without it', {
+      conversationId: convoId,
+      previousResponseId,
+      error: message,
+    });
+    req.traceStep?.('codecan_previous_response_id_retry');
+    const retryModelOptions = Object.assign({}, stageModelOptions, {
+      previous_response_id: null,
+    });
+    const retryClient = new OpenAIClient(endpointOption?.model_parameters?.apiKey, {
+      ...clientBaseOptions,
+      modelOptions: retryModelOptions,
+    });
+    completion = await retryClient.chatCompletion({
+      payload,
+      onProgress,
+      abortController,
+      returnRaw: true,
+    });
+  }
   req.traceStep?.('codecan_direct_llm_end');
 
   let finalText = extractCompletionText(completion, aggregated || '');
-  if (selectedStage === 'national' && finalText.trim() === NO_RELEVANT_NATIONAL_TEXT) {
-    finalText = CODECAN_NO_RELEVANT_TEXT;
-  } else if (selectedStage === 'ontario' && finalText.trim() === NO_RELEVANT_ONTARIO_TEXT) {
-    finalText = CODECAN_NO_RELEVANT_TEXT;
+  // Normalize legacy sentinel strings to the unified one.
+  if (
+    finalText.trim() === 'No relevant content found in the Ontario Building Code vector store.' ||
+    finalText.trim() === 'No relevant content found in the National Building Code vector store.'
+  ) {
+    finalText = NO_RELEVANT_TEXT;
   }
   const rawResponse = completion?.raw;
-  // Extract annotations from raw response if present
+  const openaiResponseId = rawResponse?.id ?? null;
+
+  // Extract annotations from raw response if present.
   let annotations = [];
   try {
     const messageOutput = Array.isArray(rawResponse?.output)
@@ -266,7 +302,6 @@ async function codeCanDirectHandler(req, res) {
     /* ignore annotation extraction errors */
   }
 
-  // Build response message
   const citations =
     Array.isArray(annotations) && annotations.length
       ? annotations
@@ -292,26 +327,13 @@ async function codeCanDirectHandler(req, res) {
     conversationId: convoId,
     parentMessageId: userMessageId,
     annotations,
-    citations:
-      finalText === CODECAN_NO_RELEVANT_TEXT || finalText.trim() === NO_RELEVANT_NATIONAL_TEXT
-        ? []
-        : citations,
+    citations: finalText === NO_RELEVANT_TEXT ? [] : citations,
+    openai_response_id: openaiResponseId,
   };
 
-  // Save response message
   try {
-    logger.info('[CodeCan] Saving response message', {
-      conversationId: convoId,
-      messageId: responseMessageId,
-      userId,
-    });
     await saveMessage(req, responseMessage, {
       context: 'api/server/controllers/agents/codeCanDirect.js - response',
-    });
-    logger.info('[CodeCan] Saved response message', {
-      conversationId: convoId,
-      messageId: responseMessageId,
-      userId,
     });
   } catch (error) {
     logger.error('[CodeCan] Failed to save response message', {
@@ -323,6 +345,7 @@ async function codeCanDirectHandler(req, res) {
     throw error;
   }
   req.traceStep?.('codecan_direct_response_saved');
+
   try {
     conversation = await saveConvo(
       req,
@@ -330,13 +353,10 @@ async function codeCanDirectHandler(req, res) {
         conversationId: convoId,
         endpoint: endpointOption?.endpoint,
         endpointType: endpointOption?.endpointType,
+        jurisdiction: jurisdiction.id,
       },
       { context: 'api/server/controllers/agents/codeCanDirect.js - saveConvo (response)' },
     );
-    logger.info('[CodeCan] Saved conversation (response)', {
-      conversationId: convoId,
-      userId,
-    });
   } catch (error) {
     logger.error('[CodeCan] Failed to save conversation (response)', {
       conversationId: convoId,
@@ -345,10 +365,9 @@ async function codeCanDirectHandler(req, res) {
     });
   }
 
-  // Emit final event
   sendEvent(res, {
     final: true,
-    conversation: conversation || { conversationId: convoId },
+    conversation: conversation || { conversationId: convoId, jurisdiction: jurisdiction.id },
     title: conversation?.title ?? null,
     requestMessage: userMessage,
     responseMessage,

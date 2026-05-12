@@ -40,6 +40,9 @@ const convoSchema: Schema<IConversation> = new Schema(
     expiredAt: {
       type: Date,
     },
+    jurisdiction: {
+      type: String,
+    },
   },
   { timestamps: true },
 );

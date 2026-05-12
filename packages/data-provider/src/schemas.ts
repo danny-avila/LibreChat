@@ -763,6 +763,8 @@ export const tConversationSchema = z.object({
   expiredAt: z.string().nullable().optional(),
   /* file token limits */
   fileTokenLimit: coerceNumber.optional(),
+  /* CodeCan: locked jurisdiction id (e.g. 'ontario', 'canada-federal') */
+  jurisdiction: z.string().nullable().optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated */

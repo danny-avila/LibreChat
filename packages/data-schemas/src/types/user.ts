@@ -33,6 +33,10 @@ export interface IUser extends Document {
   termsAccepted?: boolean;
   personalization?: {
     memories?: boolean;
+    /** CodeCan: account-default jurisdiction id, e.g. 'ontario'. */
+    jurisdiction?: string;
+    /** CodeCan: true once the user has explicitly chosen a jurisdiction (suppresses the Landing picker). */
+    hasPickedJurisdiction?: boolean;
   };
   createdAt?: Date;
   updatedAt?: Date;
@@ -65,6 +69,8 @@ export interface UpdateUserRequest {
   termsAccepted?: boolean;
   personalization?: {
     memories?: boolean;
+    jurisdiction?: string;
+    hasPickedJurisdiction?: boolean;
   };
 }
 

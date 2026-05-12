@@ -16,11 +16,11 @@ const agents = require('~/server/services/Endpoints/agents');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
 const {
-  buildCodeCanSystemPrompt,
   getCodeCanModel,
   getCodeCanFileId,
-  getCodeCanVectorStoreConfig,
-  getCodeCanVectorStoreIds,
+  getJurisdiction,
+  DEFAULT_JURISDICTION_ID,
+  DEFAULT_MAX_NUM_RESULTS,
 } = require('~/server/services/prompts/codeCan');
 
 const buildFunction = {
@@ -36,21 +36,28 @@ const buildFunction = {
 };
 
 async function buildEndpointOption(req, res, next) {
-  const defaultStage = 'ontario';
-  const codeCanPrompt = buildCodeCanSystemPrompt(defaultStage);
-  const vectorStoreConfig = getCodeCanVectorStoreConfig();
+  // Resolve jurisdiction in request-priority order. The handler may override again with the
+  // value locked onto the conversation document.
+  const requestedJurisdictionId =
+    req.body?.jurisdiction ||
+    req.body?.conversation?.jurisdiction ||
+    req.user?.personalization?.jurisdiction ||
+    DEFAULT_JURISDICTION_ID;
+  const jurisdiction = getJurisdiction(requestedJurisdictionId);
+  const codeCanPrompt = jurisdiction.systemPrompt;
   const codeCanModel = getCodeCanModel();
   req.body.endpoint = EModelEndpoint.openAI;
   req.body.endpointType = EModelEndpoint.openAI;
   req.body.agent_id = Constants.EPHEMERAL_AGENT_ID;
   req.body.model = codeCanModel;
   req.body.promptPrefix = codeCanPrompt;
+  // Stash so the handler can persist on conversation create and reuse without re-resolving.
+  req.body.resolvedJurisdictionId = jurisdiction.id;
   logger.info('[CodeCan] Config', {
     model: codeCanModel,
     fileId: getCodeCanFileId(),
-    ontarioVectorStoreId: vectorStoreConfig.ontarioId,
-    nationalVectorStoreId: vectorStoreConfig.nationalId,
-    activeDefaultStage: defaultStage,
+    jurisdictionId: jurisdiction.id,
+    vectorStoreIds: jurisdiction.vectorStoreIds,
   });
 
   const { endpoint, endpointType } = req.body;
@@ -103,11 +110,15 @@ async function buildEndpointOption(req, res, next) {
     }
   }
 
-  const fileSearchTool = [{ type: 'file_search' }];
-  const fileSearchResources = {
-    file_search: {
-      vector_store_ids: getCodeCanVectorStoreIds(defaultStage),
+  const fileSearchTool = [
+    {
+      type: 'file_search',
+      vector_store_ids: jurisdiction.vectorStoreIds,
+      max_num_results: DEFAULT_MAX_NUM_RESULTS,
     },
+  ];
+  const fileSearchResources = {
+    file_search: { vector_store_ids: jurisdiction.vectorStoreIds },
   };
 
   parsedBody.promptPrefix = codeCanPrompt;
@@ -117,7 +128,7 @@ async function buildEndpointOption(req, res, next) {
     useResponsesApi: true,
     instructions: codeCanPrompt,
     tools: fileSearchTool,
-    tool_choice: 'required',
+    // tool_choice is decided per-turn inside codeCanDirect.js so follow-ups don't re-search.
     tool_resources: fileSearchResources,
     modelKwargs: Object.assign({}, parsedBody.model_parameters?.modelKwargs),
   });
@@ -147,9 +158,10 @@ async function buildEndpointOption(req, res, next) {
     req.body.endpointOption.modelOptions.model = codeCanModel;
     req.body.endpointOption.modelOptions.useResponsesApi = true;
     req.body.endpointOption.modelOptions.instructions = codeCanPrompt;
-    req.body.endpointOption.modelOptions.tool_choice = 'required';
     req.body.endpointOption.modelOptions.tools = fileSearchTool;
     req.body.endpointOption.modelOptions.tool_resources = fileSearchResources;
+    // Surface the resolved jurisdiction so the handler can persist + lock it on the conversation.
+    req.body.endpointOption.jurisdictionId = jurisdiction.id;
     req.body.endpointOption.modelOptions.modelKwargs = Object.assign(
       {},
       req.body.endpointOption.modelOptions?.modelKwargs,
@@ -157,11 +169,7 @@ async function buildEndpointOption(req, res, next) {
     // User-provided attachments/uploads are not supported in the CodeCan-locked experience.
     req.body.endpointOption.attachments = [];
 
-    // eslint-disable-next-line no-console
-    console.log(
-      '[CodeCan] endpointOption',
-      JSON.stringify(req.body.endpointOption, null, 2),
-    );
+    console.log('[CodeCan] endpointOption', JSON.stringify(req.body.endpointOption, null, 2));
 
     next();
   } catch (error) {

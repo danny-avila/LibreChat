@@ -2,11 +2,12 @@
 import { useMemo, useCallback } from 'react';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
-import { useGetAssistantDocsQuery, useGetEndpointsQuery } from '~/data-provider';
+import { useGetAssistantDocsQuery, useGetEndpointsQuery, useGetUserQuery } from '~/data-provider';
+import { useJurisdictionsQuery } from '~/data-provider/CodeCan';
 import { getIconEndpoint, getEntity } from '~/utils';
 import { useSubmitMessage } from '~/hooks';
 
-const CODECAN_DEFAULT_STARTERS = [
+const CODECAN_FALLBACK_STARTERS = [
   'What is the minimum stair width in a single dwelling?',
   'Do my smoke alarms need to be interconnected?',
   'Maximum joist spacing for a 2x10 deck?',
@@ -17,6 +18,8 @@ const ConversationStarters = () => {
   const agentsMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
+  const { data: user } = useGetUserQuery();
+  const { data: catalog } = useJurisdictionsQuery();
 
   const endpointType = useMemo(() => {
     let ep = conversation?.endpoint ?? '';
@@ -58,8 +61,19 @@ const ConversationStarters = () => {
       return fromDocs;
     }
 
-    return CODECAN_DEFAULT_STARTERS;
-  }, [documentsMap, entity]);
+    // Prefer the conversation's locked jurisdiction; fall back to the user's account default;
+    // finally the registry default. If the catalog hasn't loaded, use the hardcoded fallback.
+    const jurisdictionId =
+      (conversation as { jurisdiction?: string } | null)?.jurisdiction ??
+      user?.personalization?.jurisdiction ??
+      catalog?.selected ??
+      catalog?.default;
+    const fromCatalog = catalog?.jurisdictions?.find((j) => j.id === jurisdictionId)?.starters;
+    if (fromCatalog?.length) {
+      return fromCatalog;
+    }
+    return CODECAN_FALLBACK_STARTERS;
+  }, [documentsMap, entity, conversation, user, catalog]);
 
   const { submitMessage } = useSubmitMessage();
   const sendConversationStarter = useCallback(

@@ -56,4 +56,6 @@ export interface IConversation extends Document {
   expiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
+  /** CodeCan: locked jurisdiction id (e.g. 'ontario', 'canada-federal'). Set on first save. */
+  jurisdiction?: string;
 }
