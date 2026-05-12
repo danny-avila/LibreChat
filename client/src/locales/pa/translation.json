@@ -271,5 +271,13 @@
   "com_farmer_validation_experience_range": "ਅਨੁਭਵ ਦੇ ਸਾਲ 0 ਤੋਂ 70 ਦੇ ਵਿਚਕਾਰ ਹੋਣੇ ਚਾਹੀਦੇ ਹਨ",
   "com_farmer_validation_landholding_valid": "ਜ਼ਮੀਨ ਦੀ ਮਾਤਰਾ ਵੈਧ ਸੰਖਿਆ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ।",
   "com_farmer_validation_smartphones_integer": "ਸਮਾਰਟਫੋਨਾਂ ਦੀ ਗਿਣਤੀ ਪੂਰੀ ਸੰਖਿਆ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ",
-  "com_farmer_validation_smartphones_range": "ਸਮਾਰਟਫੋਨਾਂ ਦੀ ਗਿਣਤੀ 0 ਤੋਂ 20 ਦੇ ਵਿਚਕਾਰ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ"
+  "com_farmer_validation_smartphones_range": "ਸਮਾਰਟਫੋਨਾਂ ਦੀ ਗਿਣਤੀ 0 ਤੋਂ 20 ਦੇ ਵਿਚਕਾਰ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ",
+  "com_nav_language": "ਭਾਸ਼ਾ",
+  "com_ui_no": "ਨਹੀਂ",
+  "com_ui_reset": "ਰੀਸੈਟ",
+  "com_ui_save": "ਸੰਭਾਲੋ",
+  "com_ui_select": "ਚੁਣੋ",
+  "com_ui_select_options": "ਵਿਕਲਪ ਚੁਣੋ...",
+  "com_ui_submit": "ਜਮ੍ਹਾਂ ਕਰੋ",
+  "com_ui_yes": "ਹਾਂ"
 }
