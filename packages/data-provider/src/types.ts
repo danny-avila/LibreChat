@@ -319,7 +319,8 @@ export type TSharedLinkResponse = Pick<TSharedLink, 'shareId'> &
   Pick<TSharedLink, 'targetMessageId'> &
   Pick<TConversation, 'conversationId'>;
 
-export type TSharedLinkGetResponse = TSharedLinkResponse & {
+export type TSharedLinkGetResponse = Omit<TSharedLinkResponse, 'shareId'> & {
+  shareId: string | null;
   success: boolean;
 };
 

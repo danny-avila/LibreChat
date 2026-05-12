@@ -114,6 +114,10 @@ router.post('/:conversationId', requireJwtAuth, async (req, res) => {
 router.patch('/:shareId', requireJwtAuth, async (req, res) => {
   try {
     const { targetMessageId } = req.body ?? {};
+    if (targetMessageId !== undefined && typeof targetMessageId !== 'string') {
+      return res.status(400).json({ message: 'targetMessageId must be a string' });
+    }
+
     const updatedShare = await updateSharedLink(req.user.id, req.params.shareId, targetMessageId);
     if (updatedShare) {
       res.status(200).json(updatedShare);
