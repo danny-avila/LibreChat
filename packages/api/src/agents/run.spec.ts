@@ -235,6 +235,23 @@ describe('resolveEffectiveLangfuseConfig', () => {
     });
   });
 
+  it('enables tracing with valid keys and no base URL', () => {
+    const result = resolveEffectiveLangfuseConfig(
+      createLangfuseAgent(),
+      createLangfuseAppConfig({
+        enabled: true,
+        publicKey: 'pk-tenant',
+        secretKey: 'sk-tenant',
+      }),
+    );
+
+    expect(result).toEqual({
+      enabled: true,
+      publicKey: 'pk-tenant',
+      secretKey: 'sk-tenant',
+    });
+  });
+
   it('lets an agent explicitly disable tracing over enabled tenant defaults', () => {
     const result = resolveEffectiveLangfuseConfig(
       createLangfuseAgent({

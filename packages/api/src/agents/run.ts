@@ -292,7 +292,7 @@ type EffectiveLangfuseConfig =
       enabled: true;
       publicKey: string;
       secretKey: string;
-      baseUrl: string;
+      baseUrl?: string;
     }
   | {
       enabled: false;
@@ -336,11 +336,10 @@ export function resolveEffectiveLangfuseConfig(
   const secretKey = resolveLangfuseValue(agentLangfuse?.secretKey, tenantLangfuse?.secretKey);
   const baseUrl = resolveLangfuseValue(agentLangfuse?.baseUrl, tenantLangfuse?.baseUrl);
 
-  if (!publicKey || !secretKey || !baseUrl) {
+  if (!publicKey || !secretKey) {
     const missingFields = [
       !publicKey ? 'publicKey' : undefined,
       !secretKey ? 'secretKey' : undefined,
-      !baseUrl ? 'baseUrl' : undefined,
     ].filter(Boolean);
 
     logger.warn(
@@ -355,7 +354,7 @@ export function resolveEffectiveLangfuseConfig(
     enabled: true,
     publicKey,
     secretKey,
-    baseUrl,
+    ...(baseUrl ? { baseUrl } : {}),
   };
 }
 
