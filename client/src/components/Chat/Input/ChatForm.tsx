@@ -134,29 +134,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
-  const [pendingQuestion, setPendingQuestion] = useRecoilState(store.pendingNotificationQuestion);
-  const [submitTrigger, setSubmitTrigger] = useRecoilState(store.notificationSubmitTrigger);
-
-  // Phase 1: newConversation() is already called in NotificationBell before navigate.
-  // Wait for it to settle, then signal phase 2. pendingQuestion stays in the atom until phase 2 reads it.
-  useEffect(() => {
-    if (!pendingQuestion) return;
-    const timer = setTimeout(() => setSubmitTrigger((n) => n + 1), 600);
-    return () => clearTimeout(timer);
-  }, [pendingQuestion, setSubmitTrigger]);
-
-  // Phase 2: fired by the trigger counter after newConversation has settled.
-  // Reads pendingQuestion fresh from Recoil (survives any remount), then clears it.
-  useEffect(() => {
-    if (submitTrigger === 0 || !pendingQuestion) return;
-    const question = pendingQuestion;
-    setPendingQuestion('');
-    methods.setValue('text', question, { shouldDirty: true });
-    const timer = setTimeout(() => submitButtonRef.current?.click(), 200);
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submitTrigger]);
-
   const handleKeyUp = useHandleKeyUp({
     index,
     textAreaRef,

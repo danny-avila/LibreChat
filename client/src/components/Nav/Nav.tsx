@@ -32,7 +32,6 @@ import store from '~/store';
 
 const BookmarkNav = lazy(() => import('./Bookmarks/BookmarkNav'));
 const AccountSettings = lazy(() => import('./AccountSettings'));
-const NotificationBell = lazy(() => import('./NotificationBell'));
 
 export const NAV_WIDTH = {
   MOBILE: 320,
@@ -248,16 +247,9 @@ const Nav = memo(
               />
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="min-w-0 flex-1">
-              <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>
-                <AccountSettings />
-              </Suspense>
-            </div>
-            <Suspense fallback={null}>
-              <NotificationBell />
-            </Suspense>
-          </div>
+          <Suspense fallback={<Skeleton className="mt-1 h-12 w-full rounded-xl" />}>
+            <AccountSettings />
+          </Suspense>
         </nav>
       </div>
     );
