@@ -58,7 +58,7 @@ export function initializeCloudFront(config: CloudFrontConfig): boolean {
 
   cloudFrontConfig = { ...config, privateKey, keyPairId };
 
-  if (config.imageSigning === 'cookies') {
+  if (config.imageSigning === 'cookies' && !requireSignedAccess) {
     logger.info(
       '[initializeCloudFront] CloudFront cookie signing enabled. Cookies will be set during auth.',
     );

@@ -149,6 +149,9 @@ describe('CloudFront CDN module', () => {
         expect(mockLogger.info).toHaveBeenCalledWith(
           expect.stringContaining('Strict signed CloudFront access enabled at startup'),
         );
+        expect(mockLogger.info).not.toHaveBeenCalledWith(
+          expect.stringContaining('CloudFront cookie signing enabled'),
+        );
       });
 
       it('returns false and logs strict failure when keys are missing', async () => {
