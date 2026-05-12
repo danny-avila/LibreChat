@@ -1,7 +1,28 @@
 import { Providers } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import { ToolMessage, AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
 
-import { extractDiscoveredToolsFromHistory, getReasoningKey } from './run';
+import {
+  getReasoningKey,
+  resolveEffectiveLangfuseConfig,
+  extractDiscoveredToolsFromHistory,
+} from './run';
+
+type LangfuseRunAgent = Parameters<typeof resolveEffectiveLangfuseConfig>[0];
+type LangfuseAppConfig = NonNullable<Parameters<typeof resolveEffectiveLangfuseConfig>[1]>;
+
+const createLangfuseAgent = (langfuse?: LangfuseRunAgent['langfuse']): LangfuseRunAgent =>
+  ({
+    id: 'agent_1',
+    langfuse,
+  }) as LangfuseRunAgent;
+
+const createLangfuseAppConfig = (
+  langfuse?: LangfuseAppConfig['langfuse'],
+): LangfuseAppConfig =>
+  ({
+    langfuse,
+  }) as LangfuseAppConfig;
 
 describe('extractDiscoveredToolsFromHistory', () => {
   it('extracts tool names from tool_search JSON output', () => {
@@ -145,5 +166,105 @@ describe('getReasoningKey', () => {
     const reasoningKey = getReasoningKey(Providers.OPENAI, llmConfig);
 
     expect(reasoningKey).toBe('reasoning');
+  });
+});
+
+describe('resolveEffectiveLangfuseConfig', () => {
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    process.env.LANGFUSE_TEST_PUBLIC_KEY = 'pk-tenant';
+    process.env.LANGFUSE_TEST_SECRET_KEY = 'sk-tenant';
+    process.env.LANGFUSE_TEST_BASE_URL = 'https://cloud.langfuse.com';
+    delete process.env.LANGFUSE_TEST_MISSING_KEY;
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+    delete process.env.LANGFUSE_TEST_PUBLIC_KEY;
+    delete process.env.LANGFUSE_TEST_SECRET_KEY;
+    delete process.env.LANGFUSE_TEST_BASE_URL;
+    delete process.env.LANGFUSE_TEST_MISSING_KEY;
+  });
+
+  it('returns undefined when no tenant or agent config is supplied', () => {
+    expect(
+      resolveEffectiveLangfuseConfig(createLangfuseAgent(), createLangfuseAppConfig()),
+    ).toBeUndefined();
+  });
+
+  it('uses tenant defaults and resolves env var refs', () => {
+    const result = resolveEffectiveLangfuseConfig(
+      createLangfuseAgent(),
+      createLangfuseAppConfig({
+        enabled: true,
+        publicKey: '${LANGFUSE_TEST_PUBLIC_KEY}',
+        secretKey: '${LANGFUSE_TEST_SECRET_KEY}',
+        baseUrl: '${LANGFUSE_TEST_BASE_URL}',
+      }),
+    );
+
+    expect(result).toEqual({
+      enabled: true,
+      publicKey: 'pk-tenant',
+      secretKey: 'sk-tenant',
+      baseUrl: 'https://cloud.langfuse.com',
+    });
+  });
+
+  it('overlays non-empty agent fields on tenant defaults', () => {
+    const result = resolveEffectiveLangfuseConfig(
+      createLangfuseAgent({
+        enabled: true,
+        publicKey: 'pk-agent',
+      }),
+      createLangfuseAppConfig({
+        enabled: true,
+        publicKey: 'pk-tenant',
+        secretKey: '${LANGFUSE_TEST_SECRET_KEY}',
+        baseUrl: '${LANGFUSE_TEST_BASE_URL}',
+      }),
+    );
+
+    expect(result).toEqual({
+      enabled: true,
+      publicKey: 'pk-agent',
+      secretKey: 'sk-tenant',
+      baseUrl: 'https://cloud.langfuse.com',
+    });
+  });
+
+  it('lets an agent explicitly disable tracing over enabled tenant defaults', () => {
+    const result = resolveEffectiveLangfuseConfig(
+      createLangfuseAgent({
+        enabled: false,
+      }),
+      createLangfuseAppConfig({
+        enabled: true,
+        publicKey: 'pk-tenant',
+        secretKey: 'sk-tenant',
+        baseUrl: 'https://cloud.langfuse.com',
+      }),
+    );
+
+    expect(result).toEqual({ enabled: false });
+  });
+
+  it('disables tracing and warns when credentials are unresolved', () => {
+    const result = resolveEffectiveLangfuseConfig(
+      createLangfuseAgent(),
+      createLangfuseAppConfig({
+        enabled: true,
+        publicKey: '${LANGFUSE_TEST_MISSING_KEY}',
+        secretKey: 'sk-tenant',
+        baseUrl: 'https://cloud.langfuse.com',
+      }),
+    );
+
+    expect(result).toEqual({ enabled: false });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Langfuse tracing disabled for agent agent_1'),
+    );
   });
 });

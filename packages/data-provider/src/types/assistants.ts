@@ -1,5 +1,6 @@
 import type { OpenAPIV3 } from 'openapi-types';
 import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
+import type { LangfuseConfig } from 'src/config';
 import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
 import type { TFile } from './files';
@@ -295,6 +296,8 @@ export type Agent = {
   skills_enabled?: boolean;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
+  /** Optional per-agent Langfuse tracing override. */
+  langfuse?: LangfuseConfig;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -323,6 +326,7 @@ export type AgentCreateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'langfuse'
 >;
 
 export type AgentUpdateParams = {
@@ -350,6 +354,7 @@ export type AgentUpdateParams = {
   | 'skills'
   | 'skills_enabled'
   | 'subagents'
+  | 'langfuse'
 >;
 
 export type AgentListParams = {

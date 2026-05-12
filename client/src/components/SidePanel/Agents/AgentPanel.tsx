@@ -78,6 +78,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     tool_options,
     skills,
     skills_enabled,
+    langfuse,
     avatar_action: avatarActionState,
   } = data;
 
@@ -107,6 +108,14 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       tool_options,
       skills,
       skills_enabled,
+      langfuse: langfuse
+        ? {
+            enabled: langfuse.enabled === true,
+            publicKey: langfuse.publicKey?.trim() ?? '',
+            secretKey: langfuse.secretKey?.trim() ?? '',
+            baseUrl: langfuse.baseUrl?.trim() ?? '',
+          }
+        : undefined,
       ...(shouldResetAvatar ? { avatar: null } : {}),
     },
     provider,

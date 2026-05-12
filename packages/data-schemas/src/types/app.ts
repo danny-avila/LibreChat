@@ -60,6 +60,8 @@ export interface AppConfig {
   memory?: TMemoryConfig;
   /** Summarization configuration */
   summarization?: SummarizationConfig;
+  /** Tenant-level Langfuse tracing defaults */
+  langfuse?: TCustomConfig['langfuse'];
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
   /** File storage strategy ('local', 's3', 'firebase', 'azure_blob', 'cloudfront') */

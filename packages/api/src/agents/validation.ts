@@ -90,6 +90,15 @@ export const agentSubagentsSchema = z
   })
   .optional();
 
+export const agentLangfuseSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    publicKey: z.string().optional(),
+    secretKey: z.string().optional(),
+    baseUrl: z.string().optional(),
+  })
+  .optional();
+
 /** Base agent schema with all common fields */
 export const agentBaseSchema = z.object({
   name: z.string().nullable().optional(),
@@ -111,6 +120,7 @@ export const agentBaseSchema = z.object({
   tool_resources: agentToolResourcesSchema,
   tool_options: agentToolOptionsSchema,
   subagents: agentSubagentsSchema,
+  langfuse: agentLangfuseSchema,
   support_contact: agentSupportContactSchema,
   category: z.string().optional(),
 });

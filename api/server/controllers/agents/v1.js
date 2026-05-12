@@ -60,6 +60,70 @@ const getSafeModelParameters = (modelParameters) => {
   return typeof useResponsesApi === 'boolean' ? { useResponsesApi } : {};
 };
 
+const toPlainObject = (value) =>
+  value && typeof value.toObject === 'function' ? value.toObject() : value;
+
+const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
+
+const normalizeLangfuseConfig = (incoming, existing) => {
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+    return incoming;
+  }
+
+  const existingConfig = toPlainObject(existing) ?? {};
+  const normalized = {};
+
+  if (typeof incoming.enabled === 'boolean') {
+    normalized.enabled = incoming.enabled;
+  }
+
+  for (const key of ['publicKey', 'baseUrl']) {
+    if (isNonEmptyString(incoming[key])) {
+      normalized[key] = incoming[key].trim();
+    }
+  }
+
+  if (isNonEmptyString(incoming.secretKey)) {
+    normalized.secretKey = incoming.secretKey.trim();
+  } else if (isNonEmptyString(existingConfig.secretKey)) {
+    normalized.secretKey = existingConfig.secretKey;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+};
+
+const redactLangfuseSecret = (agent) => {
+  const payload = toPlainObject(agent);
+  if (!payload || typeof payload !== 'object') {
+    return payload;
+  }
+
+  const redactSingleAgent = (value) => {
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+    if (value.langfuse && typeof value.langfuse === 'object' && value.langfuse.secretKey) {
+      return {
+        ...value,
+        langfuse: {
+          ...toPlainObject(value.langfuse),
+          secretKey: '',
+        },
+      };
+    }
+    return value;
+  };
+
+  const redactedPayload = redactSingleAgent(payload);
+  if (Array.isArray(redactedPayload.versions)) {
+    redactedPayload.versions = redactedPayload.versions.map((version) =>
+      redactSingleAgent(toPlainObject(version)),
+    );
+  }
+
+  return redactedPayload;
+};
+
 /**
  * Looks up each referenced agent id in Mongo, splits them into three
  * buckets the caller needs for validation: ids that don't exist at all,
@@ -284,6 +348,13 @@ const createAgentHandler = async (req, res) => {
       agentData.model_parameters = removeNullishValues(agentData.model_parameters, true);
     }
 
+    if (agentData.langfuse) {
+      agentData.langfuse = normalizeLangfuseConfig(agentData.langfuse);
+      if (!agentData.langfuse) {
+        delete agentData.langfuse;
+      }
+    }
+
     const { id: userId, role: userRole } = req.user;
 
     if (agentData.tool_resources) {
@@ -389,7 +460,7 @@ const createAgentHandler = async (req, res) => {
       );
     }
 
-    res.status(201).json(agent);
+    res.status(201).json(redactLangfuseSecret(agent));
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.error('[/Agents] Validation error', error.errors);
@@ -471,8 +542,8 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
       });
     }
 
-    // EDIT permission: Full agent details including sensitive configuration
-    return res.status(200).json(agent);
+    // EDIT permission: Full agent details, with write-only Langfuse secret redacted.
+    return res.status(200).json(redactLangfuseSecret(agent));
   } catch (error) {
     logger.error('[/Agents/:id] Error retrieving agent', error);
     res.status(500).json({ error: error.message });
@@ -556,6 +627,13 @@ const updateAgentHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
+    if (updateData.langfuse) {
+      updateData.langfuse = normalizeLangfuseConfig(updateData.langfuse, existingAgent.langfuse);
+      if (!updateData.langfuse) {
+        delete updateData.langfuse;
+      }
+    }
+
     // Convert legacy OCR tool resource to context format in existing agent
     const ocrConversion = mergeAgentOcrConversion(existingAgent, updateData);
     if (ocrConversion.tool_resources) {
@@ -615,7 +693,7 @@ const updateAgentHandler = async (req, res) => {
       delete updatedAgent.author;
     }
 
-    return res.json(updatedAgent);
+    return res.json(redactLangfuseSecret(updatedAgent));
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.error('[/Agents/:id] Validation error', error.errors);
@@ -794,7 +872,7 @@ const duplicateAgentHandler = async (req, res) => {
     }
 
     return res.status(201).json({
-      agent: newAgent,
+      agent: redactLangfuseSecret(newAgent),
       actions: newActionsList,
     });
   } catch (error) {
@@ -948,7 +1026,7 @@ const getListAgentsHandler = async (req, res) => {
         // Silently ignore mapping errors
         void e;
       }
-      return agent;
+      return redactLangfuseSecret(agent);
     });
 
     return res.json(data);

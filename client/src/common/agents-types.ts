@@ -4,6 +4,7 @@ import type {
   AgentSubagentsConfig,
   AgentToolOptions,
   SupportContact,
+  LangfuseConfig,
   AgentProvider,
   GraphEdge,
   Agent,
@@ -46,6 +47,7 @@ export type AgentForm = {
   agent_ids?: string[];
   edges?: GraphEdge[];
   subagents?: AgentSubagentsConfig;
+  langfuse?: LangfuseConfig;
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
   recursion_limit?: number;
   support_contact?: SupportContact;

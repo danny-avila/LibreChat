@@ -28,6 +28,12 @@ const createForm = (): AgentForm => ({
   recursion_limit: undefined,
   category: 'general',
   support_contact: undefined,
+  langfuse: {
+    enabled: false,
+    publicKey: '',
+    secretKey: '',
+    baseUrl: '',
+  },
   artifacts: '',
   execute_code: false,
   file_search: false,
@@ -63,6 +69,25 @@ describe('composeAgentUpdatePayload', () => {
     const { payload } = composeAgentUpdatePayload(form, 'agent_123');
 
     expect(payload.avatar).toBeUndefined();
+  });
+
+  it('includes normalized Langfuse config fields', () => {
+    const form = createForm();
+    form.langfuse = {
+      enabled: true,
+      publicKey: ' pk-test ',
+      secretKey: ' sk-test ',
+      baseUrl: ' https://langfuse.test ',
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.langfuse).toEqual({
+      enabled: true,
+      publicKey: 'pk-test',
+      secretKey: 'sk-test',
+      baseUrl: 'https://langfuse.test',
+    });
   });
 });
 

@@ -4,6 +4,7 @@ import type {
   AgentToolOptions,
   AgentToolResources,
   AgentSubagentsConfig,
+  LangfuseConfig,
 } from 'librechat-data-provider';
 
 export interface ISupportContact {
@@ -50,5 +51,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   tool_options?: AgentToolOptions;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
+  /** Optional per-agent Langfuse tracing override. */
+  langfuse?: LangfuseConfig;
   tenantId?: string;
 }

@@ -178,6 +178,39 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.author.toString()).toBe(mockReq.user.id);
     });
 
+    test('should persist Langfuse config but redact secret key in create response', async () => {
+      mockReq.body = {
+        name: 'Langfuse Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        langfuse: {
+          enabled: true,
+          publicKey: ' pk-test ',
+          secretKey: ' sk-test ',
+          baseUrl: ' https://cloud.langfuse.com ',
+        },
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const createdAgent = mockRes.json.mock.calls[0][0];
+      expect(createdAgent.langfuse).toEqual({
+        enabled: true,
+        publicKey: 'pk-test',
+        secretKey: '',
+        baseUrl: 'https://cloud.langfuse.com',
+      });
+
+      const agentInDb = await Agent.findOne({ id: createdAgent.id }).lean();
+      expect(agentInDb.langfuse).toEqual({
+        enabled: true,
+        publicKey: 'pk-test',
+        secretKey: 'sk-test',
+        baseUrl: 'https://cloud.langfuse.com',
+      });
+    });
+
     test('should reject creation with unauthorized fields (mass assignment protection)', async () => {
       const maliciousData = {
         // Required fields
@@ -751,6 +784,82 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.model_parameters.maxContextTokens).toBeUndefined();
     });
 
+    test('should preserve existing Langfuse secret when update sends an empty secret', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          langfuse: {
+            enabled: true,
+            publicKey: 'pk-original',
+            secretKey: 'sk-original',
+            baseUrl: 'https://cloud.langfuse.com',
+          },
+        },
+      );
+
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        langfuse: {
+          enabled: true,
+          publicKey: ' pk-updated ',
+          secretKey: '',
+          baseUrl: ' https://us.cloud.langfuse.com ',
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.langfuse).toEqual({
+        enabled: true,
+        publicKey: 'pk-updated',
+        secretKey: '',
+        baseUrl: 'https://us.cloud.langfuse.com',
+      });
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.langfuse).toEqual({
+        enabled: true,
+        publicKey: 'pk-updated',
+        secretKey: 'sk-original',
+        baseUrl: 'https://us.cloud.langfuse.com',
+      });
+    });
+
+    test('should update Langfuse secret explicitly while redacting it in update response', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          langfuse: {
+            enabled: true,
+            publicKey: 'pk-original',
+            secretKey: 'sk-original',
+            baseUrl: 'https://cloud.langfuse.com',
+          },
+        },
+      );
+
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        langfuse: {
+          enabled: true,
+          publicKey: 'pk-original',
+          secretKey: ' sk-updated ',
+          baseUrl: 'https://cloud.langfuse.com',
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.langfuse.secretKey).toBe('');
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.langfuse.secretKey).toBe('sk-updated');
+    });
+
     test('should return 404 for non-existent agent', async () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = `agent_${uuidv4()}`; // Non-existent ID
@@ -1301,6 +1410,30 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.data).toHaveLength(1);
       expect(response.data[0].id).toBe(agentA1.id);
       expect(response.data[0].name).toBe('Agent A1');
+    });
+
+    test('should not expose Langfuse secrets in agent list responses', async () => {
+      await Agent.updateOne(
+        { id: agentA1.id },
+        {
+          langfuse: {
+            enabled: true,
+            publicKey: 'pk-list',
+            secretKey: 'sk-list',
+            baseUrl: 'https://cloud.langfuse.com',
+          },
+        },
+      );
+
+      mockReq.user.id = userB.toString();
+      findAccessibleResources.mockResolvedValue([agentA1._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].langfuse).toBeUndefined();
     });
 
     test('should return multiple accessible agents', async () => {

@@ -24,6 +24,7 @@ import type {
 } from '@librechat/agents';
 import type {
   Agent,
+  LangfuseConfig,
   AgentModelParameters,
   AgentSubagentsConfig,
   SummarizationConfig,
@@ -284,6 +285,78 @@ function hasUnresolvedPlaceholder(value: string): boolean {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+type EffectiveLangfuseConfig =
+  | {
+      enabled: true;
+      publicKey: string;
+      secretKey: string;
+      baseUrl: string;
+    }
+  | {
+      enabled: false;
+    };
+
+function resolveLangfuseValue(agentValue?: string, tenantValue?: string): string | undefined {
+  const rawValue = isNonEmptyString(agentValue)
+    ? agentValue
+    : isNonEmptyString(tenantValue)
+      ? tenantValue
+      : undefined;
+  if (!rawValue) {
+    return undefined;
+  }
+
+  const resolved = extractEnvVariable(rawValue);
+  if (!isNonEmptyString(resolved) || hasUnresolvedPlaceholder(resolved)) {
+    return undefined;
+  }
+
+  return resolved;
+}
+
+export function resolveEffectiveLangfuseConfig(
+  agent: RunAgent,
+  appConfig?: AppConfig,
+): EffectiveLangfuseConfig | undefined {
+  const tenantLangfuse = appConfig?.langfuse;
+  const agentLangfuse = agent.langfuse;
+
+  if (!tenantLangfuse && !agentLangfuse) {
+    return undefined;
+  }
+
+  const enabled = agentLangfuse?.enabled ?? tenantLangfuse?.enabled;
+  if (enabled !== true) {
+    return { enabled: false };
+  }
+
+  const publicKey = resolveLangfuseValue(agentLangfuse?.publicKey, tenantLangfuse?.publicKey);
+  const secretKey = resolveLangfuseValue(agentLangfuse?.secretKey, tenantLangfuse?.secretKey);
+  const baseUrl = resolveLangfuseValue(agentLangfuse?.baseUrl, tenantLangfuse?.baseUrl);
+
+  if (!publicKey || !secretKey || !baseUrl) {
+    const missingFields = [
+      !publicKey ? 'publicKey' : undefined,
+      !secretKey ? 'secretKey' : undefined,
+      !baseUrl ? 'baseUrl' : undefined,
+    ].filter(Boolean);
+
+    logger.warn(
+      `[createRun] Langfuse tracing disabled for agent ${agent.id}; missing or unresolved ${missingFields.join(
+        ', ',
+      )}`,
+    );
+    return { enabled: false };
+  }
+
+  return {
+    enabled: true,
+    publicKey,
+    secretKey,
+    baseUrl,
+  };
 }
 
 const nullableAgentModelParameterKeys = [
@@ -909,7 +982,8 @@ export async function createRun({
     );
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
-    return {
+    const langfuse = resolveEffectiveLangfuseConfig(agent, appConfig);
+    const agentInput: AgentInputs & { langfuse?: LangfuseConfig } = {
       provider,
       reasoningKey,
       toolDefinitions,
@@ -930,6 +1004,10 @@ export async function createRun({
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
     };
+    if (langfuse) {
+      agentInput.langfuse = langfuse;
+    }
+    return agentInput;
   };
 
   const agentInputs: AgentInputs[] = [];

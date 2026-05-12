@@ -440,6 +440,19 @@ describe('allowedAddressesSchema', () => {
       expect(result.success).toBe(true);
     });
 
+    it('accepts tenant-level Langfuse config with env var refs', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        langfuse: {
+          enabled: true,
+          publicKey: '${LANGFUSE_PUBLIC_KEY}',
+          secretKey: '${LANGFUSE_SECRET_KEY}',
+          baseUrl: '${LANGFUSE_BASE_URL}',
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+
     it('rejects a public IP at the endpoints location', () => {
       const result = configSchema.safeParse({
         version: '1.0',

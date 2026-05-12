@@ -1321,6 +1321,15 @@ export const summarizationConfigSchema = z.object({
 
 export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
+export const langfuseConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  publicKey: z.string().optional(),
+  secretKey: z.string().optional(),
+  baseUrl: z.string().optional(),
+});
+
+export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
+
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
 export const configSchema = z.object({
@@ -1330,6 +1339,7 @@ export const configSchema = z.object({
   webSearch: webSearchSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
+  langfuse: langfuseConfigSchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
@@ -2122,7 +2132,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.8.5',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.10',
+  CONFIG_VERSION = '1.3.11',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
