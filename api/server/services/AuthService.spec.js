@@ -243,6 +243,31 @@ describe('setOpenIDAuthTokens', () => {
       expect(req.session.openidTokens.idToken).toBe(expiredIdToken);
       expect(req.session.openidTokens.accessToken).toBe('new-access-token');
     });
+
+    it('should fall back to access_token when the existing session id_token is near expiry', () => {
+      const nearExpiryIdToken = jwt.sign(
+        { sub: 'user-123', exp: Math.floor(Date.now() / 1000) + 10 },
+        'idp-signing-secret',
+      );
+      const tokenset = {
+        access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
+      };
+      const req = mockRequest({
+        openidTokens: {
+          accessToken: 'old-access-token',
+          idToken: nearExpiryIdToken,
+          refreshToken: 'old-refresh-token',
+        },
+      });
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+      expect(result).toBe('new-access-token');
+      expect(req.session.openidTokens.idToken).toBe(nearExpiryIdToken);
+      expect(req.session.openidTokens.accessToken).toBe('new-access-token');
+    });
   });
 
   describe('cookie secure flag', () => {
