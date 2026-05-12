@@ -947,12 +947,17 @@ describe('clearCloudFrontCookies', () => {
       secure: true,
       sameSite: 'none',
     };
+    const scopePathOptions = {
+      ...rootPathOptions,
+      httpOnly: false,
+    };
     expect(clearedCookies).toContainEqual(['CloudFront-Policy', legacyPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Signature', legacyPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Key-Pair-Id', legacyPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Policy', rootPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Signature', rootPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Key-Pair-Id', rootPathOptions]);
+    expect(clearedCookies).toContainEqual(['LibreChat-CloudFront-Scope', scopePathOptions]);
     expect(clearedCookies).toContainEqual([
       'CloudFront-Policy',
       expect.objectContaining({ path: '/r' }),
@@ -1004,7 +1009,7 @@ describe('clearCloudFrontCookies', () => {
       {
         domain: '.example.com',
         path: '/',
-        httpOnly: true,
+        httpOnly: false,
         secure: true,
         sameSite: 'none',
       },

@@ -389,7 +389,7 @@ export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieSco
     }
 
     clearCookiePaths(res, baseOptions, paths);
-    res.clearCookie(CLOUDFRONT_SCOPE_COOKIE, { ...baseOptions, path: '/' });
+    res.clearCookie(CLOUDFRONT_SCOPE_COOKIE, { ...baseOptions, httpOnly: false, path: '/' });
   } catch (error) {
     logger.warn('[clearCloudFrontCookies] Failed to clear cookies:', error);
   }
