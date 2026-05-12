@@ -303,12 +303,9 @@ export const defaultAgentFormValues = {
   subagents: undefined as
     | { enabled?: boolean; allowSelf?: boolean; agent_ids?: string[] }
     | undefined,
-  langfuse: {
-    enabled: false,
-    publicKey: '',
-    secretKey: '',
-    baseUrl: '',
-  },
+  langfuse: undefined as
+    | { enabled?: boolean; publicKey?: string; secretKey?: string; baseUrl?: string }
+    | undefined,
 };
 
 export const ImageVisionTool: FunctionTool = {

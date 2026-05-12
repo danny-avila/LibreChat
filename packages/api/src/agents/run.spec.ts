@@ -173,7 +173,7 @@ describe('resolveEffectiveLangfuseConfig', () => {
   let warnSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
     process.env.LANGFUSE_TEST_PUBLIC_KEY = 'pk-tenant';
     process.env.LANGFUSE_TEST_SECRET_KEY = 'sk-tenant';
     process.env.LANGFUSE_TEST_BASE_URL = 'https://cloud.langfuse.com';

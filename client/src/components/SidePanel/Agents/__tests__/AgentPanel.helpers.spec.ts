@@ -28,12 +28,7 @@ const createForm = (): AgentForm => ({
   recursion_limit: undefined,
   category: 'general',
   support_contact: undefined,
-  langfuse: {
-    enabled: false,
-    publicKey: '',
-    secretKey: '',
-    baseUrl: '',
-  },
+  langfuse: undefined,
   artifacts: '',
   execute_code: false,
   file_search: false,
@@ -87,6 +82,48 @@ describe('composeAgentUpdatePayload', () => {
       publicKey: 'pk-test',
       secretKey: 'sk-test',
       baseUrl: 'https://langfuse.test',
+    });
+  });
+
+  it('omits blank disabled Langfuse defaults to preserve tenant inheritance', () => {
+    const form = createForm();
+    form.langfuse = {
+      enabled: false,
+      publicKey: '',
+      secretKey: '',
+      baseUrl: '',
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.langfuse).toBeUndefined();
+  });
+
+  it('keeps an explicit blank disabled Langfuse override for existing agent config', () => {
+    const form = createForm();
+    form.agent = {
+      id: 'agent_123',
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-existing',
+        secretKey: '',
+        baseUrl: 'https://cloud.langfuse.com',
+      },
+    } as Agent;
+    form.langfuse = {
+      enabled: false,
+      publicKey: '',
+      secretKey: '',
+      baseUrl: '',
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.langfuse).toEqual({
+      enabled: false,
+      publicKey: '',
+      secretKey: '',
+      baseUrl: '',
     });
   });
 });

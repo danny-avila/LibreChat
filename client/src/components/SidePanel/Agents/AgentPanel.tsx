@@ -51,6 +51,30 @@ function getUpdateToastMessage(
   return localize('com_assistants_update_success_name', { name: name ?? localize('com_ui_agent') });
 }
 
+function composeLangfusePayload(
+  langfuse: AgentForm['langfuse'],
+  existingLangfuse?: AgentForm['langfuse'],
+): AgentForm['langfuse'] | undefined {
+  if (!langfuse) {
+    return undefined;
+  }
+
+  const normalized = {
+    enabled: langfuse.enabled === true,
+    publicKey: langfuse.publicKey?.trim() ?? '',
+    secretKey: langfuse.secretKey?.trim() ?? '',
+    baseUrl: langfuse.baseUrl?.trim() ?? '',
+  };
+  const hasCredentialValue =
+    normalized.publicKey !== '' || normalized.secretKey !== '' || normalized.baseUrl !== '';
+
+  if (!normalized.enabled && !hasCredentialValue && !existingLangfuse) {
+    return undefined;
+  }
+
+  return normalized;
+}
+
 /**
  * Normalizes the payload sent to the agent update/create endpoints.
  * Handles avatar reset requests for persistent agents independently of avatar uploads.
@@ -60,6 +84,7 @@ function getUpdateToastMessage(
  */
 export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | null) {
   const {
+    agent,
     name,
     artifacts,
     description,
@@ -87,6 +112,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
   const model = _model ?? '';
   const provider =
     (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
+  const langfusePayload = composeLangfusePayload(langfuse, agent?.langfuse);
 
   return {
     payload: {
@@ -108,14 +134,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       tool_options,
       skills,
       skills_enabled,
-      langfuse: langfuse
-        ? {
-            enabled: langfuse.enabled === true,
-            publicKey: langfuse.publicKey?.trim() ?? '',
-            secretKey: langfuse.secretKey?.trim() ?? '',
-            baseUrl: langfuse.baseUrl?.trim() ?? '',
-          }
-        : undefined,
+      langfuse: langfusePayload,
       ...(shouldResetAvatar ? { avatar: null } : {}),
     },
     provider,
