@@ -12,6 +12,7 @@ import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useGetFileConfig, useGetEndpointsQuery, useGetAgentByIdQuery } from '~/data-provider';
 import { useAgentsMapContext } from '~/Providers';
+import ComposerActionsMenu from '../ComposerActionsMenu';
 import AttachFileMenu from './AttachFileMenu';
 import AttachFile from './AttachFile';
 
@@ -21,12 +22,18 @@ function AttachFileChat({
   files,
   setFiles,
   setFilesLoading,
+  useLegacyMenu = true,
 }: {
   disableInputs: boolean;
   conversation: TConversation | null;
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  /** When true, renders the legacy AttachFileMenu (trombone) in LLM
+   *  direct mode. When false, renders the unified ComposerActionsMenu
+   *  ("+" button) in LLM direct mode. Agent mode always uses the legacy
+   *  menu regardless of this flag (Décision D#1 — refonte composer). */
+  useLegacyMenu?: boolean;
 }) {
   const conversationId = conversation?.conversationId ?? Constants.NEW_CONVO;
   const { endpoint } = conversation ?? { endpoint: null };
@@ -107,8 +114,29 @@ function AttachFileChat({
       />
     );
   } else if ((isAgents || endpointSupportsFiles) && !isUploadDisabled) {
+    // D#1 : mode agent → legacy AttachFileMenu (items granulaires
+    // file_search / execute_code / context selon capabilities agent).
+    // LLM direct → ComposerActionsMenu unifié si flag décide, sinon
+    // legacy pour rollback.
+    if (isAgents || useLegacyMenu) {
+      return (
+        <AttachFileMenu
+          endpoint={endpoint}
+          disabled={disableInputs}
+          endpointType={endpointType}
+          conversationId={conversationId}
+          agentId={conversation?.agent_id}
+          endpointFileConfig={endpointFileConfig}
+          useResponsesApi={useResponsesApi}
+          files={files}
+          setFiles={setFiles}
+          setFilesLoading={setFilesLoading}
+          conversation={conversation}
+        />
+      );
+    }
     return (
-      <AttachFileMenu
+      <ComposerActionsMenu
         endpoint={endpoint}
         disabled={disableInputs}
         endpointType={endpointType}

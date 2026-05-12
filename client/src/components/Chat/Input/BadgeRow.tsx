@@ -13,6 +13,7 @@ import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { LucideIcon } from 'lucide-react';
 import CodeInterpreter from './CodeInterpreter';
 import { BadgeRowProvider } from '~/Providers';
+import ActiveToolChips from './ActiveToolChips';
 import ToolsDropdown from './ToolsDropdown';
 import type { BadgeItem } from '~/common';
 import { useChatBadges } from '~/hooks';
@@ -21,11 +22,16 @@ import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
+import ToolsMenu from './ToolsMenu';
 import Skills from './Skills';
 import store from '~/store';
 
 interface BadgeRowProps {
   showEphemeralBadges?: boolean;
+  /** When true, renders the legacy ToolsDropdown (gear/settings menu)
+   *  inline. When false (default), tools are toggled via the badges
+   *  directly and the gear is hidden. */
+  showLegacyToolsDropdown?: boolean;
   onChange: (badges: Pick<BadgeItem, 'id'>[]) => void;
   onToggle?: (badgeId: string, currentActive: boolean) => void;
   conversationId?: string | null;
@@ -143,6 +149,7 @@ const dragReducer = (state: DragState, action: DragAction): DragState => {
 
 function BadgeRow({
   showEphemeralBadges,
+  showLegacyToolsDropdown = false,
   conversationId,
   specName,
   isSubmitting,
@@ -329,7 +336,7 @@ function BadgeRow({
       isSubmitting={isSubmitting}
     >
       <div ref={containerRef} className="relative flex flex-wrap items-center gap-2">
-        {showEphemeralBadges === true && <ToolsDropdown />}
+        {showEphemeralBadges === true && showLegacyToolsDropdown && <ToolsDropdown />}
         {tempBadges.map((badge, index) => (
           <React.Fragment key={badge.id}>
             {dragState.draggedBadge && dragState.insertIndex === index && ghostBadge && (
@@ -369,7 +376,7 @@ function BadgeRow({
             />
           </div>
         )}
-        {showEphemeralBadges === true && (
+        {showEphemeralBadges === true && showLegacyToolsDropdown && (
           <>
             <WebSearch />
             <CodeInterpreter />
@@ -377,6 +384,12 @@ function BadgeRow({
             <Skills />
             <Artifacts />
             <MCPSelect />
+          </>
+        )}
+        {showEphemeralBadges === true && !showLegacyToolsDropdown && (
+          <>
+            <ToolsMenu />
+            <ActiveToolChips />
           </>
         )}
         {ghostBadge && (

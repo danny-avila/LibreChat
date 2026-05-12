@@ -38,6 +38,14 @@ import BadgeRow from './BadgeRow';
 import Mention from './Mention';
 import store from '~/store';
 
+// V1 UX (POP/BETC) — Refonte composer style Claude : bouton « + » unifié
+// remplaçant les 2 menus historiques (trombone AttachFileMenu + gear
+// ToolsDropdown) en mode LLM direct. Mode agent inchangé (Décision D#1).
+// Passer à `true` pour rétablir l'UX legacy en cas de régression.
+// Cleanup des composants legacy prévu dans un commit séparé après
+// validation Antoine.
+const SHOW_LEGACY_COMPOSER_MENUS = false;
+
 interface ChatFormProps {
   index: number;
   /** From ChatContext — individual values so memo can compare them */
@@ -345,12 +353,14 @@ const ChatForm = memo(function ChatForm({
                   files={files}
                   setFiles={setFiles}
                   setFilesLoading={setFilesLoading}
+                  useLegacyMenu={SHOW_LEGACY_COMPOSER_MENUS}
                 />
               </div>
               <BadgeRow
                 showEphemeralBadges={
                   !!endpoint && !isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)
                 }
+                showLegacyToolsDropdown={SHOW_LEGACY_COMPOSER_MENUS}
                 isSubmitting={isSubmitting}
                 conversationId={conversationId}
                 specName={conversation?.spec}
