@@ -14,6 +14,10 @@ on:
       - 'librechat.yaml'
   workflow_dispatch:
 
+concurrency:
+  group: billechat-deploy
+  cancel-in-progress: true
+
 env:
   ACR_NAME: billechatacr
   AKS_CLUSTER: billechat-aks
