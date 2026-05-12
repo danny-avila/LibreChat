@@ -64,6 +64,17 @@ const chatBadges = atomWithLocalStorage<Pick<BadgeItem, 'id'>[]>('chatBadges', [
   // { id: '2' },
 ]);
 
+const pendingNotificationQuestion = atom<string>({
+  key: 'pendingNotificationQuestion',
+  default: '',
+});
+
+// Incremented after newConversation() has settled — triggers the actual submit
+const notificationSubmitTrigger = atom<number>({
+  key: 'notificationSubmitTrigger',
+  default: 0,
+});
+
 export default {
   hideBannerHint,
   messageAttachmentsMap,
@@ -71,4 +82,6 @@ export default {
   queriesEnabled,
   isEditingBadges,
   chatBadges,
+  pendingNotificationQuestion,
+  notificationSubmitTrigger,
 };
