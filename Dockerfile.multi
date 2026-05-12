@@ -68,6 +68,7 @@ RUN npm run build
 FROM base AS client-package-build
 WORKDIR /app/packages/client
 COPY packages/client ./
+COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 RUN npm run build
 
 # Client build
