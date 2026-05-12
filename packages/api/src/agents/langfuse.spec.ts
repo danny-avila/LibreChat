@@ -38,6 +38,46 @@ describe('normalizeLangfuseConfig', () => {
       publicKey: 'pk-agent',
     });
   });
+
+  it('preserves existing non-secret fields when clearing only the secret', async () => {
+    const result = await normalizeLangfuseConfig(
+      {
+        secretKey: LANGFUSE_SECRET_CLEAR_VALUE,
+      },
+      {
+        enabled: true,
+        publicKey: 'pk-agent',
+        secretKey: '0123456789abcdef0123456789abcdef:736b2d6167656e74',
+        baseUrl: 'https://cloud.langfuse.com',
+      },
+    );
+
+    expect(result).toEqual({
+      enabled: true,
+      publicKey: 'pk-agent',
+      baseUrl: 'https://cloud.langfuse.com',
+    });
+  });
+
+  it('clears explicit blank non-secret fields while preserving absent fields', async () => {
+    const result = await normalizeLangfuseConfig(
+      {
+        publicKey: '',
+        secretKey: LANGFUSE_SECRET_CLEAR_VALUE,
+      },
+      {
+        enabled: true,
+        publicKey: 'pk-agent',
+        secretKey: '0123456789abcdef0123456789abcdef:736b2d6167656e74',
+        baseUrl: 'https://cloud.langfuse.com',
+      },
+    );
+
+    expect(result).toEqual({
+      enabled: true,
+      baseUrl: 'https://cloud.langfuse.com',
+    });
+  });
 });
 
 describe('redactLangfuseSecret', () => {

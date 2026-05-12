@@ -919,6 +919,45 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       });
     });
 
+    test('should preserve existing Langfuse settings when update only clears the secret', async () => {
+      const encryptedOriginal = await encryptStoredSecret('sk-original');
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          langfuse: {
+            enabled: true,
+            publicKey: 'pk-original',
+            secretKey: encryptedOriginal,
+            baseUrl: 'https://cloud.langfuse.com',
+          },
+        },
+      );
+
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        langfuse: {
+          secretKey: LANGFUSE_SECRET_CLEAR_VALUE,
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.langfuse).toEqual({
+        enabled: true,
+        publicKey: 'pk-original',
+        baseUrl: 'https://cloud.langfuse.com',
+      });
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.langfuse).toEqual({
+        enabled: true,
+        publicKey: 'pk-original',
+        baseUrl: 'https://cloud.langfuse.com',
+      });
+    });
+
     test('uploadAgentAvatarHandler should redact Langfuse secret in response', async () => {
       await Agent.updateOne(
         { id: existingAgentId },

@@ -12,6 +12,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 function toPlainObject(value: unknown): unknown {
   if (!isRecord(value) || typeof value.toObject !== 'function') {
     return value;
@@ -57,14 +61,24 @@ export async function normalizeLangfuseConfig(
   const existingLangfuse = isRecord(existingConfig) ? existingConfig : {};
   const normalized: LangfuseConfig = {};
 
-  if (typeof incoming.enabled === 'boolean') {
+  if (hasOwn(incoming, 'enabled') && typeof incoming.enabled === 'boolean') {
     normalized.enabled = incoming.enabled;
+  } else if (typeof existingLangfuse.enabled === 'boolean') {
+    normalized.enabled = existingLangfuse.enabled;
   }
 
   for (const key of ['publicKey', 'baseUrl'] as const) {
-    const value = incoming[key];
-    if (isNonEmptyString(value)) {
-      normalized[key] = value.trim();
+    if (hasOwn(incoming, key)) {
+      const value = incoming[key];
+      if (isNonEmptyString(value)) {
+        normalized[key] = value.trim();
+      }
+      continue;
+    }
+
+    const existingValue = existingLangfuse[key];
+    if (isNonEmptyString(existingValue)) {
+      normalized[key] = existingValue.trim();
     }
   }
 
