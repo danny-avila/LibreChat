@@ -214,6 +214,17 @@ export default defineConfig(({ command }) => ({
             if (normalizedId.includes('@headlessui')) {
               return 'headlessui';
             }
+            // Isolate RevenueCat so its (large) typescript-internal-esm bundle
+            // doesn't perturb vendor-chunk init order and TDZ-crash modules
+            // that consume React (forwardRef/createContext/useLayoutEffect).
+            // Only loaded on native via isNativePlatform() guard in
+            // src/hooks/Subscription/revenuecat.ts.
+            if (
+              normalizedId.includes('@revenuecat/purchases-capacitor') ||
+              normalizedId.includes('@revenuecat/purchases-typescript-internal-esm')
+            ) {
+              return 'revenuecat';
+            }
 
             // Everything else falls into a generic vendor chunk.
             return 'vendor';

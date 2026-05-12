@@ -1,34 +1,14 @@
 import { Capacitor } from '@capacitor/core';
-
-const importModule = async <T = any>(moduleName: string): Promise<T | null> => {
-  try {
-    const dynamicImport = new Function('name', 'return import(/* @vite-ignore */ name);') as (
-      name: string,
-    ) => Promise<T>;
-    return await dynamicImport(moduleName);
-  } catch (error) {
-    console.warn(`[RevenueCat] Failed to load ${moduleName}`, error);
-    return null;
-  }
-};
+import * as PurchasesCapacitor from '@revenuecat/purchases-capacitor';
+import * as PurchasesCapacitorUi from '@revenuecat/purchases-capacitor-ui';
 
 export const isNativePlatform = () => Capacitor.isNativePlatform?.() ?? false;
 
 export const getNativePlatform = () => Capacitor.getPlatform?.() ?? 'web';
 
-export const loadPurchasesModule = () => {
-  if (!isNativePlatform()) {
-    return Promise.resolve(null);
-  }
-  return importModule('@revenuecat/purchases-capacitor');
-};
+export const loadPurchasesModule = async () => (isNativePlatform() ? PurchasesCapacitor : null);
 
-export const loadPurchasesUiModule = () => {
-  if (!isNativePlatform()) {
-    return Promise.resolve(null);
-  }
-  return importModule('@revenuecat/purchases-capacitor-ui');
-};
+export const loadPurchasesUiModule = async () => (isNativePlatform() ? PurchasesCapacitorUi : null);
 
 export const getRevenueCatPublicSdkKey = (
   startupConfig?: Record<string, any> | null,

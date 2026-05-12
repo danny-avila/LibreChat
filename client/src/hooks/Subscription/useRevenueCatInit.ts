@@ -25,6 +25,15 @@ export default function useRevenueCatInit({
   const listenerRegisteredRef = useRef(false);
   const listenerIdRef = useRef<string | null>(null);
   const missingDependencyWarnedRef = useRef(false);
+  // Hold the latest callback identities in refs so the init effect can read
+  // them without re-firing every render. react-query mutations (which back
+  // refreshSubscription) return new object identity each render — putting them
+  // in the deps array of the init effect creates an infinite re-init loop on
+  // native after Purchases.configure() succeeds and triggers a state update.
+  const refreshSubscriptionRef = useRef(refreshSubscription);
+  const onMissingDependencyRef = useRef(onMissingDependency);
+  refreshSubscriptionRef.current = refreshSubscription;
+  onMissingDependencyRef.current = onMissingDependency;
 
   useEffect(() => {
     let cancelled = false;
@@ -43,7 +52,7 @@ export default function useRevenueCatInit({
       if (!purchasesModule?.Purchases) {
         if (!missingDependencyWarnedRef.current) {
           missingDependencyWarnedRef.current = true;
-          onMissingDependency?.();
+          onMissingDependencyRef.current?.();
         }
         return;
       }
@@ -55,7 +64,7 @@ export default function useRevenueCatInit({
         typeof Purchases.addCustomerInfoUpdateListener === 'function'
       ) {
         listenerIdRef.current = await Purchases.addCustomerInfoUpdateListener(() => {
-          void refreshSubscription();
+          void refreshSubscriptionRef.current();
         });
         listenerRegisteredRef.current = true;
       }
@@ -76,7 +85,7 @@ export default function useRevenueCatInit({
       }
 
       if (!cancelled) {
-        await refreshSubscription();
+        await refreshSubscriptionRef.current();
       }
     };
 
@@ -109,7 +118,9 @@ export default function useRevenueCatInit({
         initializedUserRef.current = null;
       }
     };
-  }, [enabled, onMissingDependency, refreshSubscription, startupConfig, userId]);
+    // Intentional: callbacks are accessed via refs to avoid re-init on every
+    // render. Effect re-fires only when enabled/userId/startupConfig change.
+  }, [enabled, userId, startupConfig]);
 
   return {
     isNative: isNativePlatform(),
