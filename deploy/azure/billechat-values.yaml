@@ -225,7 +225,14 @@ meilisearch:
 # RAG API (subchart)
 librechat-rag-api:
   enabled: true
-  embeddingsProvider: azure
+  rag:
+    configEnv:
+      DB_PORT: "5432"
+      EMBEDDINGS_PROVIDER: azure
+      EMBEDDINGS_MODEL: text-embedding-3-large
+      RAG_OPENAI_BASEURL: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/openai"
+      RAG_OPENAI_API_KEY: "override-via-pipeline"
+      OPENAI_API_VERSION: "2024-12-01-preview"
   image:
     repository: danny-avila/librechat-rag-api-dev-lite
     registry: registry.librechat.ai
