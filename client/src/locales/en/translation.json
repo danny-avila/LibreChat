@@ -1578,5 +1578,6 @@
   "com_farmer_validation_landholding_valid": "Landholding must be a valid number.",
   "com_farmer_validation_smartphones_integer": "Number of smartphones must be an integer",
   "com_farmer_validation_smartphones_range": "Number of smartphones must be between 0 and 20",
-  "com_user_message": "You"
+  "com_user_message": "You",
+  "com_banner_message": "The application is currently under development and it is provided only for testing and validation purposes"
 }

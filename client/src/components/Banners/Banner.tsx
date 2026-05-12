@@ -4,9 +4,11 @@ import { useRecoilState } from 'recoil';
 import { Button, cn } from '@librechat/client';
 import { useGetBannerQuery } from '~/data-provider';
 import store from '~/store';
+import { useLocalize } from '~/hooks';
 
 export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) => void }) => {
-  const { data: banner } = useGetBannerQuery();
+  const localize = useLocalize();
+  // const { data: banner } = useGetBannerQuery();
   const [hideBannerHint, setHideBannerHint] = useRecoilState<string[]>(store.hideBannerHint);
   const bannerRef = useRef<HTMLDivElement>(null);
 
@@ -14,27 +16,24 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
     if (onHeightChange && bannerRef.current) {
       onHeightChange(bannerRef.current.offsetHeight);
     }
-  }, [banner, hideBannerHint, onHeightChange]);
-
-  if (
-    !banner ||
-    (banner.bannerId && !banner.persistable && hideBannerHint.includes(banner.bannerId))
-  ) {
+  }, [hideBannerHint, onHeightChange]);
+  const bannerId = 'global-banner';
+  if (hideBannerHint.includes(bannerId)) {
     return null;
   }
 
-  const onClick = () => {
-    if (banner.persistable) {
-      return;
-    }
+  // const onClick = () => {
+  //   if (banner.persistable) {
+  //     return;
+  //   }
 
-    setHideBannerHint([...hideBannerHint, banner.bannerId]);
+  //   setHideBannerHint([...hideBannerHint, banner.bannerId]);
 
-    if (onHeightChange) {
-      onHeightChange(0);
-    }
-  };
-  const formattedMessage = banner.message.replace(/\n/g, '<br />');
+  //   if (onHeightChange) {
+  //     onHeightChange(0);
+  //   }
+  // };
+  const formattedMessage = localize('com_banner_message').replace(/\n/g, '<br />');
   return (
     <div
       ref={bannerRef}
@@ -43,8 +42,7 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
       <div id="banner-left-portal" className="z-30 flex min-w-[max-content] items-center"></div>
       <div
         className={cn(
-          'flex-1 whitespace-pre-line text-center text-sm text-black dark:text-white md:text-base lg:text-lg',
-          !banner.persistable && 'px-4',
+          'flex-1 whitespace-pre-line px-4 text-center text-sm text-black dark:text-white md:text-base lg:text-lg',
         )}
         dangerouslySetInnerHTML={{ __html: formattedMessage }}
       ></div>
