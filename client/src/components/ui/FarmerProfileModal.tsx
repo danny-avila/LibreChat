@@ -72,7 +72,7 @@ const FarmerProfileModal = ({
     watch,
     getValues,
     setValue,
-    formState: { errors, isValid },
+    formState: { errors },
   } = useForm<FarmerProfileForm>({ mode: 'onChange' });
 
   const { isLocating, locationError, getLocation } = useGeolocation({
@@ -829,7 +829,7 @@ const FarmerProfileModal = ({
             </button>
             <button
               type="submit"
-              disabled={!isValid || saveMutation.isLoading}
+              disabled={saveMutation.isLoading}
               className="inline-flex items-center justify-center rounded-lg bg-green-600 px-6 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-green-700 dark:hover:bg-green-800"
             >
               {saveMutation.isLoading ? `${localize('com_ui_submit')}...` : localize('com_ui_submit')}
