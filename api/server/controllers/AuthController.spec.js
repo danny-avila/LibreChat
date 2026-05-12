@@ -292,6 +292,10 @@ describe('refreshController – OpenID path', () => {
 
     expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
     expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(getUserById).toHaveBeenCalledWith(
+      'user-db-id',
+      '-password -__v -totpSecret -backupCodes -federatedTokens',
+    );
     expect(setCloudFrontAuthCookies).toHaveBeenCalledWith(req, res, user);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.send).toHaveBeenCalledWith({

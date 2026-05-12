@@ -26,6 +26,8 @@ const {
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
+const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
+
 const registrationController = async (req, res) => {
   try {
     const response = await registerUser(req.body);
@@ -135,7 +137,7 @@ const refreshController = async (req, res) => {
       const reusableSessionToken = getReusableOpenIDSessionToken(req.session?.openidTokens);
       const reuseUserId = reusableSessionToken ? getValidOpenIDReuseUserId(parsedCookies) : null;
       if (reuseUserId) {
-        const user = await getUserById(reuseUserId, '-password -__v -totpSecret -backupCodes');
+        const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);
         if (user) {
           const cloudFrontCookiesSet = setCloudFrontAuthCookies(req, res, user);
           logger.debug('[refreshController] OpenID session token reused', {
@@ -226,7 +228,7 @@ const refreshController = async (req, res) => {
 
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await getUserById(payload.id, '-password -__v -totpSecret -backupCodes');
+    const user = await getUserById(payload.id, AUTH_REFRESH_USER_PROJECTION);
     if (!user) {
       return res.status(401).redirect('/login');
     }
