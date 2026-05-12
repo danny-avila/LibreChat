@@ -13,7 +13,7 @@ import store from '~/store';
 const MessageAvatar = ({ iconData }: { iconData: TMessageIcon }) => (
   <div className="relative flex flex-shrink-0 flex-col items-end">
     <div className="pt-0.5">
-      <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+      <div className="flex items-center justify-center">
         <Icon iconData={iconData} />
       </div>
     </div>

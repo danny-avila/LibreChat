@@ -47,12 +47,12 @@ const MessageIcon = memo(
     );
 
     const isAssistantMessage = iconData?.isCreatedByUser !== true;
-    const hasCustomAvatar = Boolean(avatarURL);
 
-    // For non-user messages with custom assistant/agent avatar, render existing avatar/icon.
-    // Otherwise (any assistant reply without a custom avatar), use the CodeCan brand mark — bypass
-    // the default URL/Endpoint icon paths which wrap the logo in a circle.
-    if (isAssistantMessage && !hasCustomAvatar) {
+    // Every assistant reply uses the CodeCan brand mark — even when the
+    // backing Agent/Assistant has a custom avatar.filepath set. This keeps the
+    // chat icon consistent with the brand and avoids the default
+    // ConvoIconURL/Icon paths wrapping the avatar in a circle.
+    if (isAssistantMessage) {
       return <CodeCanBrandIcon size={28} radius={6} />;
     }
 

@@ -25,7 +25,10 @@ export default function Settings({ open, onOpenChange, initialTab = 'account' }:
 
   return (
     <Transition appear show={open}>
-      <Dialog as="div" className="relative z-50" onClose={onOpenChange}>
+      {/* z-[80] keeps the dialog above the mobile-nav panel (z-[64]) and its
+          backdrop (z-50). Without this, the dialog portals to <body> but the
+          sidebar panel sits on top, leaving the modal unclickable. */}
+      <Dialog as="div" className="relative z-[80]" onClose={onOpenChange}>
         <TransitionChild
           enter="ease-out duration-200"
           enterFrom="opacity-0"
@@ -48,7 +51,7 @@ export default function Settings({ open, onOpenChange, initialTab = 'account' }:
           <div className={cn('fixed inset-0 flex w-screen items-center justify-center p-4')}>
             <DialogPanel
               className={cn(
-                'min-h-[600px] overflow-hidden rounded-xl rounded-b-lg bg-background pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-2xl md:min-h-[373px] md:w-[680px]',
+                'min-h-[600px] w-full overflow-hidden rounded-xl rounded-b-lg bg-background pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-2xl md:min-h-[373px] md:w-[680px]',
               )}
             >
               <DialogTitle
@@ -112,7 +115,7 @@ export default function Settings({ open, onOpenChange, initialTab = 'account' }:
                     </Tabs.Trigger>
                   </Tabs.List>
                 </div>
-                <div className="max-h-[550px] overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">
+                <div className="max-h-[550px] w-full overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">
                   <Tabs.Content value="account" tabIndex={-1}>
                     <Account showSubscription={false} />
                   </Tabs.Content>
