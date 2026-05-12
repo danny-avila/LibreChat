@@ -96,7 +96,7 @@ export default function CreateSkillDialog({
           className="flex max-h-[80vh] min-w-0 flex-col gap-3 overflow-hidden p-1 sm:gap-4 sm:p-2"
         >
           <h2 className="text-lg font-bold text-text-primary">
-            {localize('com_ui_skill_write_instructions')}
+            {localize('com_ui_create_skill')}
           </h2>
 
           {/* Skill name */}

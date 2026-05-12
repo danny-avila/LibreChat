@@ -8,8 +8,16 @@ import { useLocalize } from '~/hooks';
 const permissions: PermissionConfig[] = [
   { permission: Permissions.USE, labelKey: 'com_ui_skills_allow_use' },
   { permission: Permissions.CREATE, labelKey: 'com_ui_skills_allow_create' },
-  { permission: Permissions.SHARE, labelKey: 'com_ui_skills_allow_share' },
-  { permission: Permissions.SHARE_PUBLIC, labelKey: 'com_ui_skills_allow_share_public' },
+  // V1 UX POP/BETC : partage interne + public sont conceptuellement
+  // enfants de "création" — indent visuel pour signaler la hiérarchie.
+  // Le disabling fonctionnel quand parent=off est volontairement non
+  // implémenté en V1, à traiter en atelier specs post-congé.
+  { permission: Permissions.SHARE, labelKey: 'com_ui_skills_allow_share', indent: true },
+  {
+    permission: Permissions.SHARE_PUBLIC,
+    labelKey: 'com_ui_skills_allow_share_public',
+    indent: true,
+  },
 ];
 
 const AdminSettings = () => {

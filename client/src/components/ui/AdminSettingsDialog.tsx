@@ -16,12 +16,17 @@ import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form
 import type { PermissionTypes } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import { useLocalize, useAuthContext, useRoleSelector } from '~/hooks';
+import { cn } from '~/utils';
 
 type FormValues = Record<Permissions, boolean>;
 
 export interface PermissionConfig {
   permission: Permissions;
   labelKey: TranslationKeys;
+  /** When true, the toggle row is visually indented to indicate it's
+   *  a child option dependent on a parent toggle above. Purely visual
+   *  (no disabled behavior). */
+  indent?: boolean;
 }
 
 export interface AdminSettingsDialogProps {
@@ -59,6 +64,7 @@ export interface AdminSettingsDialogProps {
 type LabelControllerProps = {
   label: string;
   permission: Permissions;
+  indent?: boolean;
   control: Control<FormValues, unknown, FormValues>;
   setValue: UseFormSetValue<FormValues>;
   getValues: UseFormGetValues<FormValues>;
@@ -69,9 +75,10 @@ const LabelController: React.FC<LabelControllerProps> = ({
   control,
   permission,
   label,
+  indent,
   onConfirm,
 }) => (
-  <div className="mb-4 flex items-center justify-between gap-2">
+  <div className={cn('mb-4 flex items-center justify-between gap-2', indent && 'pl-6')}>
     {label}
     <Controller
       name={permission}
@@ -196,7 +203,7 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
           {/* Permissions form */}
           <form onSubmit={handleSubmit(onSubmit)}>
             <div className="py-5">
-              {permissions.map(({ permission, labelKey }) => {
+              {permissions.map(({ permission, labelKey, indent }) => {
                 const label = localize(labelKey);
                 const needsConfirm =
                   selectedRole === SystemRoles.ADMIN &&
@@ -209,6 +216,7 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
                       control={control}
                       permission={permission}
                       label={label}
+                      indent={indent}
                       getValues={getValues}
                       setValue={setValue}
                       onConfirm={

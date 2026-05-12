@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react';
-import { Search, X } from 'lucide-react';
+import { Plus, Search, Upload, X } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import { Button } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useListSkillsQuery } from '~/data-provider';
 import { useDebounce, useHasAccess, useLocalize } from '~/hooks';
-import { CreateSkillMenu } from '../buttons';
+import { CreateSkillDialog, UploadSkillDialog } from '../dialogs';
 import SkillListPanel from '../lists/SkillList';
 import { cn } from '~/utils';
 
@@ -14,14 +15,19 @@ interface SkillsSidePanelProps {
 
 /**
  * Claude.ai–style skills sidebar panel.
- * Header: "Skills" title + search icon + create menu (+ dropdown).
- * Body: "My Skills" collapsible section with skill list.
+ * Header rangée 1 : titre "Skills" + icône recherche.
+ * Header rangée 2 : 2 boutons distincts "Créer un skill" (primaire) +
+ *                   "Importer un skill" (outline), pattern aligné sur
+ *                   AgentPanel (commit 179e586a0 — Épuration builder).
+ * Body : section "Mes Skills" collapsible avec la liste.
  */
 export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
   const localize = useLocalize();
   const { skillId: activeSkillId } = useParams();
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const debouncedSearch = useDebounce(searchTerm, 250);
 
   const hasCreateAccess = useHasAccess({
@@ -44,7 +50,7 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
         className,
       )}
     >
-      {/* Header — title+icons or inline search input */}
+      {/* Header rangée 1 — titre + bouton recherche (ou input plein largeur) */}
       <div className="flex items-center justify-between px-4 py-2">
         {searchOpen ? (
           <>
@@ -75,20 +81,43 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
             <h2 className="truncate text-lg font-bold text-text-primary">
               {localize('com_ui_skills')}
             </h2>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setSearchOpen(true)}
-                className="inline-flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
-                aria-label={localize('com_ui_search')}
-              >
-                <Search className="size-4" />
-              </button>
-              {hasCreateAccess && <CreateSkillMenu />}
-            </div>
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="inline-flex size-8 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+              aria-label={localize('com_ui_search')}
+            >
+              <Search className="size-4" />
+            </button>
           </>
         )}
       </div>
+
+      {/* Header rangée 2 — 2 boutons d'action (visible si permission CREATE) */}
+      {hasCreateAccess && !searchOpen && (
+        <div className="flex w-full gap-2 px-4 pb-2">
+          <Button
+            type="button"
+            variant="submit"
+            className="w-full justify-center"
+            onClick={() => setCreateOpen(true)}
+            aria-label={localize('com_ui_create_skill')}
+          >
+            <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+            {localize('com_ui_create_skill')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full justify-center"
+            onClick={() => setImportOpen(true)}
+            aria-label={localize('com_ui_skill_upload')}
+          >
+            <Upload className="mr-1 h-4 w-4" aria-hidden="true" />
+            {localize('com_ui_skill_upload')}
+          </Button>
+        </div>
+      )}
 
       {/* Skill list */}
       <div className="flex-1 overflow-y-auto px-4">
@@ -98,6 +127,9 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
           activeSkillId={activeSkillId}
         />
       </div>
+
+      <CreateSkillDialog isOpen={createOpen} setIsOpen={setCreateOpen} />
+      <UploadSkillDialog isOpen={importOpen} setIsOpen={setImportOpen} />
     </div>
   );
 }
