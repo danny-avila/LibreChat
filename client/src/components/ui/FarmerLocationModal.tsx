@@ -583,12 +583,40 @@ const FarmerLocationModal = ({
                         .filter(Boolean);
 
                       return (
-                        <SearchableMultiSelect
-                          options={config.options || []}
-                          value={selectedValues}
-                          onChange={(selected) => controllerField.onChange(selected.join(', '))}
-                          placeholder={config.selectPlaceholder ?? localize('com_ui_select_options')}
-                        />
+                        <>
+                          <SearchableMultiSelect
+                            options={config.options || []}
+                            value={selectedValues}
+                            onChange={(selected) => controllerField.onChange(selected.join(', '))}
+                            placeholder={
+                              config.selectPlaceholder ?? localize('com_ui_select_options')
+                            }
+                          />
+                          {selectedValues.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {selectedValues.map((crop) => (
+                                <span
+                                  key={crop}
+                                  className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                                >
+                                  {crop}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      controllerField.onChange(
+                                        selectedValues.filter((value) => value !== crop).join(', '),
+                                      )
+                                    }
+                                    className="rounded-full p-0.5 text-green-800 hover:bg-green-200 dark:text-green-300 dark:hover:bg-green-800/40"
+                                    aria-label={`Remove ${crop}`}
+                                  >
+                                    x
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </>
                       );
                     }}
                   />
