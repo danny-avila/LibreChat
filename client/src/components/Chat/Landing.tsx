@@ -7,14 +7,6 @@ import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
-import SuggestionGrid from './Landing/SuggestionGrid';
-
-// V1 UX POP/BETC : 4 cartes de suggestions sur landing pour orienter
-// l'usage agence (brainstorm créatif, analyse insight, rédaction
-// accroche, synthèse brief). Affichées en LLM direct uniquement, pane
-// principal (index=0). À affiner avec retours users. Repasser à false
-// pour cacher l'ensemble de la grille.
-const SHOW_LANDING_SUGGESTIONS = true;
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
@@ -35,13 +27,7 @@ function getTextSizeClass(text: string | undefined | null) {
   return 'text-lg sm:text-md';
 }
 
-export default function Landing({
-  index,
-  centerFormOnLanding,
-}: {
-  index: number;
-  centerFormOnLanding: boolean;
-}) {
+export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: boolean }) {
   const { conversation } = useChatContext();
   const agentsMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();
@@ -77,7 +63,6 @@ export default function Landing({
 
   const name = entity?.name ?? '';
   const description = (entity?.description || conversation?.greeting) ?? '';
-  const isLlmDirect = !!conversation?.endpoint && !isAgent && !isAssistant;
 
   const getGreeting = useCallback(() => {
     if (typeof startupConfig?.interface?.customWelcome === 'string') {
@@ -227,7 +212,6 @@ export default function Landing({
             {description}
           </div>
         )}
-        {SHOW_LANDING_SUGGESTIONS && isLlmDirect && index === 0 && <SuggestionGrid />}
       </div>
     </div>
   );
