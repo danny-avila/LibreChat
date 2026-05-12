@@ -103,6 +103,9 @@ describe('cloudfrontConfigSchema cross-field refinements', () => {
     });
     expect(result.success).toBe(false);
     if (!result.success) {
+      expect(result.error.issues[0].message).toContain(
+        'cloudfront.requireSignedAccess=true requires cloudfront.imageSigning="cookies"',
+      );
       expect(result.error.issues[0].path).toEqual(['requireSignedAccess']);
     }
   });
@@ -115,6 +118,9 @@ describe('cloudfrontConfigSchema cross-field refinements', () => {
     });
     expect(result.success).toBe(false);
     if (!result.success) {
+      expect(result.error.issues[0].message).toContain(
+        'cloudfront.requireSignedAccess=true requires cloudfront.imageSigning="cookies"',
+      );
       expect(result.error.issues[0].path).toEqual(['requireSignedAccess']);
     }
   });

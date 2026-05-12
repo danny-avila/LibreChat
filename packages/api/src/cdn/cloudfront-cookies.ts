@@ -341,7 +341,7 @@ export function setCloudFrontCookies(
       path: '/',
     });
 
-    logger.info(
+    logger.debug(
       `[setCloudFrontCookies] Issued signed CloudFront cookies (paths=${signedCookieSets.length}, expiresInSec=${cookieExpiry}).`,
     );
 

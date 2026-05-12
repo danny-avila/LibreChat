@@ -18,21 +18,21 @@ function initializeStrategy(strategy: FileSources, appConfig: AppConfig): void {
   } else if (strategy === FileSources.cloudfront) {
     const cloudfrontConfig = appConfig.cloudfront;
     if (!cloudfrontConfig) {
-      const message =
-        '[initializeFileStorage] CloudFront strategy requires cloudfront config in librechat.yaml';
-      logger.error(message);
+      logger.error(
+        '[initializeFileStorage] CloudFront strategy requires cloudfront config in librechat.yaml',
+      );
       return;
     }
     const initialized = initializeCloudFront(cloudfrontConfig);
     if (!initialized) {
-      const message =
-        '[initializeFileStorage] CloudFront initialization failed. CloudFront operations will not work.';
       if (cloudfrontConfig.requireSignedAccess === true) {
         throw new Error(
           '[initializeFileStorage] CloudFront initialization failed and cloudfront.requireSignedAccess=true; refusing to start.',
         );
       }
-      logger.error(message);
+      logger.error(
+        '[initializeFileStorage] CloudFront initialization failed. CloudFront operations will not work.',
+      );
     }
   }
 }

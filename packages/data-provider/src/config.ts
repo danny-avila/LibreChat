@@ -228,7 +228,7 @@ export const cloudfrontConfigSchema = z
   })
   .refine((data) => !data.requireSignedAccess || data.imageSigning === 'cookies', {
     message:
-      'requireSignedAccess=true requires imageSigning="cookies" (signed URL mode is not yet implemented)',
+      'cloudfront.requireSignedAccess=true requires cloudfront.imageSigning="cookies" (signed URL mode is not yet implemented)',
     path: ['requireSignedAccess'],
   })
   .optional();

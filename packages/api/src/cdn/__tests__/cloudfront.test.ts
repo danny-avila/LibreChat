@@ -154,9 +154,7 @@ describe('CloudFront CDN module', () => {
       it('returns false and logs strict failure when keys are missing', async () => {
         const { initializeCloudFront } = await load();
         expect(
-          initializeCloudFront(
-            makeConfig({ imageSigning: 'cookies', requireSignedAccess: true }),
-          ),
+          initializeCloudFront(makeConfig({ imageSigning: 'cookies', requireSignedAccess: true })),
         ).toBe(false);
         expect(mockLogger.error).toHaveBeenCalledWith(
           expect.stringContaining('Strict startup failure'),
@@ -174,7 +172,9 @@ describe('CloudFront CDN module', () => {
           initializeCloudFront(makeConfig({ imageSigning: 'none', requireSignedAccess: true })),
         ).toBe(false);
         expect(mockLogger.error).toHaveBeenCalledWith(
-          expect.stringContaining('requireSignedAccess=true requires imageSigning="cookies"'),
+          expect.stringContaining(
+            'cloudfront.requireSignedAccess=true requires cloudfront.imageSigning="cookies"',
+          ),
         );
       });
 
@@ -186,7 +186,9 @@ describe('CloudFront CDN module', () => {
           initializeCloudFront(makeConfig({ imageSigning: 'url', requireSignedAccess: true })),
         ).toBe(false);
         expect(mockLogger.error).toHaveBeenCalledWith(
-          expect.stringContaining('requireSignedAccess=true requires imageSigning="cookies"'),
+          expect.stringContaining(
+            'cloudfront.requireSignedAccess=true requires cloudfront.imageSigning="cookies"',
+          ),
         );
       });
     });
