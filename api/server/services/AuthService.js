@@ -412,12 +412,7 @@ const resetPassword = async (userId, token, password) => {
 const getPreviousCloudFrontScope = (req) =>
   parseCloudFrontCookieScope(req?.cookies?.[CLOUDFRONT_SCOPE_COOKIE]);
 
-const normalizeCloudFrontScopeValue = (value) => {
-  if (value == null) {
-    return value;
-  }
-  return value.toString?.() ?? value;
-};
+const normalizeCloudFrontScopeValue = (value) => (value == null ? undefined : String(value));
 
 const getCloudFrontScopeValue = (optionsValue, userValue, requestValue) =>
   normalizeCloudFrontScopeValue(optionsValue ?? userValue ?? requestValue);
@@ -533,7 +528,7 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
       sameSite: 'strict',
     });
 
-    setCloudFrontAuthCookies(req, res, user, { userId });
+    setCloudFrontAuthCookies(req, res, user, { userId: user?._id ?? userId });
 
     return token;
   } catch (error) {
@@ -643,6 +638,7 @@ const setOpenIDAuthTokens = (
         idToken: logoutIdToken,
         refreshToken: refreshToken,
         expiresAt: expirationDate.getTime(),
+        lastRefreshedAt: Date.now(),
       };
     } else {
       logger.warn('[setOpenIDAuthTokens] No session available, falling back to cookies');

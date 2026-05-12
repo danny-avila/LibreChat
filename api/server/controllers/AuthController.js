@@ -27,6 +27,8 @@ const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
+const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
+const OPENID_REUSE_MAX_SESSION_AGE_MS = 15 * 60 * 1000;
 
 const registrationController = async (req, res) => {
   try {
@@ -68,7 +70,19 @@ const getValidOpenIDReuseUserId = (parsedCookies) => {
   }
 };
 
+const isRecentOpenIDSessionRefresh = (openidTokens) => {
+  const lastRefreshedAt = Number(openidTokens?.lastRefreshedAt);
+  return (
+    Number.isFinite(lastRefreshedAt) &&
+    Date.now() - lastRefreshedAt <= OPENID_REUSE_MAX_SESSION_AGE_MS
+  );
+};
+
 const getReusableOpenIDSessionToken = (openidTokens) => {
+  if (!isRecentOpenIDSessionRefresh(openidTokens)) {
+    return null;
+  }
+
   const candidates = [
     { token: openidTokens?.idToken, type: 'id_token' },
     { token: openidTokens?.accessToken, type: 'access_token' },
@@ -79,8 +93,13 @@ const getReusableOpenIDSessionToken = (openidTokens) => {
     if (!candidate.token) {
       continue;
     }
+    /** Decode only: tokens are from the trusted server-side session; expiry gates reuse. */
     const decoded = jwt.decode(candidate.token);
-    if (decoded && typeof decoded === 'object' && decoded.exp > now) {
+    if (
+      decoded &&
+      typeof decoded === 'object' &&
+      decoded.exp > now + OPENID_REUSE_EXPIRY_BUFFER_SECONDS
+    ) {
       return candidate;
     }
   }
@@ -134,6 +153,11 @@ const refreshController = async (req, res) => {
     }
 
     try {
+      /**
+       * Reuse skips an IdP refresh only for recently-refreshed server-side tokens.
+       * Stale, missing, or near-expiry tokens fall through to refreshTokenGrant so
+       * upstream revocations and cookie/session extension are checked regularly.
+       */
       const reusableSessionToken = getReusableOpenIDSessionToken(req.session?.openidTokens);
       const reuseUserId = reusableSessionToken ? getValidOpenIDReuseUserId(parsedCookies) : null;
       if (reuseUserId) {
@@ -144,7 +168,6 @@ const refreshController = async (req, res) => {
             token_type: reusableSessionToken.type,
             has_id_token: Boolean(req.session?.openidTokens?.idToken),
             has_access_token: Boolean(req.session?.openidTokens?.accessToken),
-            cloudfront_cookies_attempted: true,
             cloudfront_cookies_set: cloudFrontCookiesSet,
           });
           return res.status(200).send({
@@ -237,7 +260,7 @@ const refreshController = async (req, res) => {
 
     if (process.env.NODE_ENV === 'CI') {
       const token = await setAuthTokens(userId, res, null, req);
-      return res.status(200).send({ token, user });
+      return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
     }
 
     /** Session with the hashed refresh token */
@@ -252,7 +275,7 @@ const refreshController = async (req, res) => {
     if (session && session.expiration > new Date()) {
       const token = await setAuthTokens(userId, res, session, req);
 
-      res.status(200).send({ token, user });
+      res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
     } else if (req?.query?.retry) {
       // Retrying from a refresh token request that failed (401)
       res.status(403).send('No session found');

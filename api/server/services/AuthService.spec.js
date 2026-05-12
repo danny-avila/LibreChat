@@ -188,6 +188,7 @@ describe('setOpenIDAuthTokens', () => {
       expect(req.session.openidTokens.accessToken).toBe('the-access-token');
       expect(req.session.openidTokens.idToken).toBe('the-id-token');
       expect(req.session.openidTokens.refreshToken).toBe('the-refresh-token');
+      expect(req.session.openidTokens.lastRefreshedAt).toEqual(expect.any(Number));
     });
 
     it('should preserve the existing session id_token when refresh omits one', () => {
@@ -709,6 +710,25 @@ describe('CloudFront cookie integration', () => {
         res,
         {
           userId: 'user-123',
+          tenantId: 'tenantA',
+        },
+        null,
+      );
+    });
+
+    it('uses the fetched user id as the canonical CloudFront user scope', async () => {
+      getUserById.mockResolvedValueOnce({
+        _id: { toString: () => 'canonical-user' },
+        tenantId: 'tenantA',
+      });
+      const res = mockResponse();
+
+      await setAuthTokens('input-user-id', res);
+
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: 'canonical-user',
           tenantId: 'tenantA',
         },
         null,
