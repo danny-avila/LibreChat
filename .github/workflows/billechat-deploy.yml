@@ -101,7 +101,9 @@ jobs:
 
       - name: Build Helm dependencies
         run: |
-          cd helm/librechat
+          cd helm/librechat-rag-api
+          helm dependency build
+          cd ../librechat
           helm dependency build
 
       - name: Deploy with Helm
