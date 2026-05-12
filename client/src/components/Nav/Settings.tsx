@@ -1,4 +1,3 @@
-/* eslint-disable i18next/no-literal-string */
 import React from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
@@ -51,16 +50,19 @@ export default function Settings({ open, onOpenChange, initialTab = 'account' }:
           <div className={cn('fixed inset-0 flex w-screen items-center justify-center p-4')}>
             <DialogPanel
               className={cn(
-                'min-h-[600px] w-full overflow-hidden rounded-xl rounded-b-lg bg-background pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-2xl md:min-h-[373px] md:w-[680px]',
+                'min-h-[600px] w-full overflow-hidden rounded-xl rounded-b-lg border border-border-light bg-surface-dialog pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-2xl md:min-h-[373px] md:w-[680px]',
               )}
             >
               <DialogTitle
-                className="mb-1 flex items-center justify-between p-6 pb-5 text-left"
+                className="mb-1 flex items-center justify-between border-b border-border-light px-6 py-5 text-left"
                 as="div"
               >
-                <h2 className="text-lg font-medium leading-6 text-text-primary">
-                  {localize('com_nav_settings')}
-                </h2>
+                <div className="flex items-center gap-3">
+                  <span className="h-6 w-[3px] rounded-sm bg-[var(--signal-amber)]" />
+                  <h2 className="text-xl font-semibold leading-6 tracking-tight text-text-primary">
+                    {localize('com_nav_settings')}
+                  </h2>
+                </div>
                 <button
                   type="button"
                   className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-border-xheavy focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-surface-primary dark:focus:ring-offset-surface-primary"
@@ -89,41 +91,28 @@ export default function Settings({ open, onOpenChange, initialTab = 'account' }:
                 onValueChange={(value) => setActiveTab(value as SettingsTab)}
                 className="flex flex-col"
               >
-                <div className="px-6">
-                  <Tabs.List className="mb-2 flex gap-2 border-b border-border-light pb-2">
-                    <Tabs.Trigger
-                      value="account"
-                      className={cn(
-                        'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                        activeTab === 'account'
-                          ? 'bg-surface-hover text-text-primary'
-                          : 'text-text-secondary hover:text-text-primary',
-                      )}
-                    >
-                      Account
-                    </Tabs.Trigger>
-                    <Tabs.Trigger
-                      value="subscription"
-                      className={cn(
-                        'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                        activeTab === 'subscription'
-                          ? 'bg-surface-hover text-text-primary'
-                          : 'text-text-secondary hover:text-text-primary',
-                      )}
-                    >
-                      Subscription
-                    </Tabs.Trigger>
-                    <Tabs.Trigger
-                      value="location"
-                      className={cn(
-                        'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                        activeTab === 'location'
-                          ? 'bg-surface-hover text-text-primary'
-                          : 'text-text-secondary hover:text-text-primary',
-                      )}
-                    >
-                      Location
-                    </Tabs.Trigger>
+                <div className="px-6 pt-5">
+                  <Tabs.List className="mb-2 flex gap-1 border-b border-border-light">
+                    {(
+                      [
+                        { value: 'account', label: 'Account' },
+                        { value: 'subscription', label: 'Subscription' },
+                        { value: 'location', label: 'Location' },
+                      ] as const
+                    ).map((tab) => (
+                      <Tabs.Trigger
+                        key={tab.value}
+                        value={tab.value}
+                        className={cn(
+                          'relative -mb-px px-3 pb-3 pt-1 text-xs font-bold uppercase tracking-[0.18em] transition-colors',
+                          activeTab === tab.value
+                            ? 'text-text-primary after:absolute after:inset-x-3 after:bottom-0 after:h-[2px] after:rounded-sm after:bg-[var(--signal-amber)]'
+                            : 'text-[var(--slate-500)] hover:text-text-primary',
+                        )}
+                      >
+                        {tab.label}
+                      </Tabs.Trigger>
+                    ))}
                   </Tabs.List>
                 </div>
                 <div className="max-h-[550px] w-full overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">

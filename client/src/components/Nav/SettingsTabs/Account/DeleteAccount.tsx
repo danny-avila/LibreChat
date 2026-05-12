@@ -45,8 +45,17 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
   return (
     <>
       <OGDialog open={isDialogOpen} onOpenChange={setDialogOpen}>
-        <div className="flex items-center justify-between">
-          <Label id="delete-account-label">{localize('com_nav_delete_account')}</Label>
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-border-light bg-surface-primary p-4">
+          <div className="flex items-center gap-3">
+            <span className="h-7 w-[3px] flex-none rounded-sm bg-[var(--signal-amber)]" />
+            <div>
+              <Label id="delete-account-label" className="text-sm font-semibold text-text-primary">
+                {localize('com_nav_delete_account')}
+              </Label>
+              {/* eslint-disable-next-line i18next/no-literal-string */}
+              <div className="font-mono text-[11px] text-[var(--slate-500)]">irreversible</div>
+            </div>
+          </div>
           <OGDialogTrigger asChild>
             <Button
               aria-labelledby="delete-account-label"
