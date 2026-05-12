@@ -1,6 +1,5 @@
 import React, { memo, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { useCloudFrontImageRetry } from '@librechat/client';
 import { icons } from '~/hooks/Endpoint/Icons';
 
 export const URLIcon = memo(
@@ -21,10 +20,9 @@ export const URLIcon = memo(
   }) => {
     const [imageError, setImageError] = useState(false);
 
-    const handleImageError = React.useCallback(() => {
+    const handleImageError = () => {
       setImageError(true);
-    }, []);
-    const cloudFrontRetry = useCloudFrontImageRetry(iconURL, handleImageError);
+    };
 
     const DefaultIcon: React.ElementType =
       endpoint && icons[endpoint] ? icons[endpoint]! : icons.unknown!;
@@ -50,11 +48,11 @@ export const URLIcon = memo(
     return (
       <div className={className} style={containerStyle}>
         <img
-          src={cloudFrontRetry.src}
+          src={iconURL}
           alt={altName ?? 'Icon'}
           style={imageStyle}
           className="object-cover"
-          onError={cloudFrontRetry.onError}
+          onError={handleImageError}
           loading="lazy"
           decoding="async"
           width={Number(containerStyle.width) || 20}

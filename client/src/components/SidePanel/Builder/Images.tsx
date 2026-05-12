@@ -1,7 +1,5 @@
 import { useRef } from 'react';
 import * as Popover from '@radix-ui/react-popover';
-import { useCloudFrontImageRetry } from '@librechat/client';
-import { useLocalize } from '~/hooks';
 
 export function NoImage() {
   return (
@@ -32,7 +30,6 @@ export const AssistantAvatar = ({
   url?: string;
   progress: number; // between 0 and 1
 }) => {
-  const cloudFrontRetry = useCloudFrontImageRetry(url);
   const radius = 55; // Radius of the SVG circle
   const circumference = 2 * Math.PI * radius;
 
@@ -46,12 +43,11 @@ export const AssistantAvatar = ({
     <div>
       <div className="relative h-20 w-20 overflow-hidden rounded-full">
         <img
-          src={cloudFrontRetry.src}
+          src={url}
           className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
           alt="GPT"
           width="80"
           height="80"
-          onError={cloudFrontRetry.onError}
           style={{ opacity: progress < 1 ? 0.4 : 1 }}
         />
         {progress < 1 && (
@@ -90,7 +86,6 @@ export function AvatarMenu({
 }: {
   handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
-  const localize = useLocalize();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const onItemClick = () => {
@@ -113,7 +108,7 @@ export function AvatarMenu({
           data-orientation="vertical"
           onClick={onItemClick}
         >
-          {localize('com_ui_upload_image')}
+          Upload Photo
         </div>
         {/* <Popover.Close
           role="menuitem"

@@ -118,7 +118,13 @@ function buildWebSearchConfig(appConfig) {
 
 function buildCloudFrontStartupConfig() {
   const config = getCloudFrontConfig();
-  if (config?.imageSigning !== 'cookies' || !config.domain) {
+  if (
+    config?.imageSigning !== 'cookies' ||
+    !config.domain ||
+    !config.cookieDomain ||
+    !config.privateKey ||
+    !config.keyPairId
+  ) {
     return undefined;
   }
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Skeleton, useCloudFrontImageRetry } from '@librechat/client';
+import { Skeleton } from '@librechat/client';
 import { apiBaseUrl } from 'librechat-data-provider';
 import DialogImage from './DialogImage';
 import { cn } from '~/utils';
@@ -62,12 +62,10 @@ const Image = ({
     const baseURL = apiBaseUrl();
     return `${baseURL}${imagePath}`;
   }, [imagePath]);
-  const cloudFrontRetry = useCloudFrontImageRetry(absoluteImageUrl);
-  const displayImageUrl = cloudFrontRetry.src || absoluteImageUrl;
 
   const downloadImage = async () => {
     try {
-      const response = await fetch(displayImageUrl);
+      const response = await fetch(absoluteImageUrl);
       if (!response.ok) {
         throw new Error(`Failed to fetch image: ${response.status}`);
       }
@@ -86,7 +84,7 @@ const Image = ({
     } catch (error) {
       console.error('Download failed:', error);
       const link = document.createElement('a');
-      link.href = displayImageUrl;
+      link.href = absoluteImageUrl;
       link.download = altText || 'image.png';
       document.body.appendChild(link);
       link.click();
@@ -123,9 +121,8 @@ const Image = ({
         {showSkeleton && <Skeleton className="absolute inset-0" aria-hidden="true" />}
         <img
           alt={altText}
-          src={displayImageUrl}
+          src={absoluteImageUrl}
           onLoad={() => paintedUrls.add(absoluteImageUrl)}
-          onError={cloudFrontRetry.onError}
           className={cn(
             'relative block text-transparent',
             hasDimensions
@@ -137,7 +134,7 @@ const Image = ({
       <DialogImage
         isOpen={isOpen}
         onOpenChange={setIsOpen}
-        src={displayImageUrl}
+        src={absoluteImageUrl}
         downloadImage={downloadImage}
         args={args}
         triggerRef={triggerRef}

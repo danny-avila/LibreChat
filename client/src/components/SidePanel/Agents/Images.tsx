@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, type ReactElement } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { DropdownPopup, Skeleton, useCloudFrontImageRetry } from '@librechat/client';
+import { DropdownPopup, Skeleton } from '@librechat/client';
 import type { MenuItemProps } from '~/common/menus';
 import { useLocalize } from '~/hooks';
 
@@ -28,7 +28,6 @@ export function NoImage() {
 
 export const AgentAvatarRender = ({ url }: { url?: string }) => {
   const [isLoaded, setIsLoaded] = useState(false);
-  const cloudFrontRetry = useCloudFrontImageRetry(url, () => setIsLoaded(false));
   useEffect(() => {
     setIsLoaded(false);
   }, [url]);
@@ -37,7 +36,7 @@ export const AgentAvatarRender = ({ url }: { url?: string }) => {
     <div>
       <div className="relative h-20 w-20 overflow-hidden rounded-full">
         <img
-          src={cloudFrontRetry.src}
+          src={url}
           className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
           alt="Agent avatar"
           width="80"
@@ -45,7 +44,7 @@ export const AgentAvatarRender = ({ url }: { url?: string }) => {
           loading="lazy"
           key={url || 'default-key'}
           onLoad={() => setIsLoaded(true)}
-          onError={cloudFrontRetry.onError}
+          onError={() => setIsLoaded(false)}
           style={{
             opacity: isLoaded ? 1 : 0,
             transition: 'opacity 0.2s ease-in-out',

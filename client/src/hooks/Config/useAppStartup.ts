@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import TagManager from 'react-gtm-module';
-import { configureCloudFrontCookieRefresh } from '@librechat/client';
+import { installCloudFrontImageRetry } from '@librechat/client';
 import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TStartupConfig, TUser } from 'librechat-data-provider';
 import { useMCPToolsQuery, useMCPServersQuery } from '~/data-provider';
@@ -78,7 +78,7 @@ export default function useAppStartup({
   }, [defaultPreset, setDefaultPreset, startupConfig?.modelSpecs?.list]);
 
   useEffect(() => {
-    configureCloudFrontCookieRefresh(startupConfig);
+    return installCloudFrontImageRetry(startupConfig);
   }, [startupConfig]);
 
   useEffect(() => {

@@ -1,17 +1,19 @@
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { fireEvent, waitFor } from '@testing-library/react';
+
+const mockRequestPost = jest.fn();
+
+jest.mock('librechat-data-provider', () => ({
+  request: {
+    post: (...args: unknown[]) => mockRequestPost(...args),
+  },
+}));
 
 import {
   isCloudFrontMediaUrl,
-  useCloudFrontImageRetry,
   refreshCloudFrontCookiesOnce,
+  installCloudFrontImageRetry,
   configureCloudFrontCookieRefresh,
 } from './cloudfront';
-
-type FetchResponse = {
-  ok: boolean;
-  json: () => Promise<{ ok: boolean }>;
-};
 
 const cloudFrontStartupConfig = {
   cloudFront: {
@@ -22,34 +24,9 @@ const cloudFrontStartupConfig = {
   },
 };
 
-function okResponse(): FetchResponse {
-  return {
-    ok: true,
-    json: async () => ({ ok: true }),
-  };
-}
-
-function TestImage({
-  src,
-  onFailure,
-}: {
-  src: string;
-  onFailure: React.ReactEventHandler<HTMLImageElement>;
-}) {
-  const retry = useCloudFrontImageRetry(src, onFailure);
-  return <img alt="media" src={retry.src} onError={retry.onError} />;
-}
-
 describe('CloudFront cookie refresh helpers', () => {
-  let fetchMock: jest.Mock<Promise<FetchResponse>, Parameters<typeof fetch>>;
-
   beforeEach(() => {
-    fetchMock = jest.fn<Promise<FetchResponse>, Parameters<typeof fetch>>();
-    Object.defineProperty(globalThis, 'fetch', {
-      configurable: true,
-      writable: true,
-      value: fetchMock,
-    });
+    mockRequestPost.mockReset();
     configureCloudFrontCookieRefresh(undefined);
     jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
   });
@@ -63,14 +40,14 @@ describe('CloudFront cookie refresh helpers', () => {
 
     await expect(refreshCloudFrontCookiesOnce()).resolves.toBe(false);
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockRequestPost).not.toHaveBeenCalled();
   });
 
   it('dedupes concurrent refresh calls', async () => {
-    let resolveFetch: ((value: FetchResponse) => void) | undefined;
-    fetchMock.mockReturnValue(
+    let resolveRefresh: ((value: { ok: boolean }) => void) | undefined;
+    mockRequestPost.mockReturnValue(
       new Promise((resolve) => {
-        resolveFetch = resolve;
+        resolveRefresh = resolve;
       }),
     );
     configureCloudFrontCookieRefresh(cloudFrontStartupConfig);
@@ -78,8 +55,9 @@ describe('CloudFront cookie refresh helpers', () => {
     const first = refreshCloudFrontCookiesOnce();
     const second = refreshCloudFrontCookiesOnce();
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    resolveFetch?.(okResponse());
+    expect(mockRequestPost).toHaveBeenCalledTimes(1);
+    expect(mockRequestPost).toHaveBeenCalledWith('/api/auth/cloudfront/refresh', {});
+    resolveRefresh?.({ ok: true });
     await expect(first).resolves.toBe(true);
     await expect(second).resolves.toBe(true);
   });
@@ -99,40 +77,48 @@ describe('CloudFront cookie refresh helpers', () => {
     ).toBe(false);
   });
 
-  it('retries a configured CloudFront image only once', async () => {
-    fetchMock.mockResolvedValue(okResponse());
-    configureCloudFrontCookieRefresh(cloudFrontStartupConfig);
+  it('retries a configured CloudFront image only once from the global listener', async () => {
+    mockRequestPost.mockResolvedValue({ ok: true });
+    const cleanup = installCloudFrontImageRetry(cloudFrontStartupConfig);
+    const img = document.createElement('img');
     const onFailure = jest.fn();
+    img.src = 'https://cdn.example.com/i/images/user/file.png';
+    img.addEventListener('error', onFailure);
+    document.body.appendChild(img);
 
-    render(
-      <TestImage src="https://cdn.example.com/i/images/user/file.png" onFailure={onFailure} />,
-    );
-
-    fireEvent.error(screen.getByAltText('media'));
+    fireEvent.error(img);
 
     await waitFor(() =>
-      expect(screen.getByAltText('media')).toHaveAttribute(
+      expect(img).toHaveAttribute(
         'src',
         'https://cdn.example.com/i/images/user/file.png?_cf_refresh=1700000000000',
       ),
     );
 
-    fireEvent.error(screen.getByAltText('media'));
+    fireEvent.error(img);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(mockRequestPost).toHaveBeenCalledTimes(1);
     expect(onFailure).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    img.remove();
   });
 
   it('does not retry arbitrary external images', () => {
-    fetchMock.mockResolvedValue(okResponse());
-    configureCloudFrontCookieRefresh(cloudFrontStartupConfig);
+    mockRequestPost.mockResolvedValue({ ok: true });
+    const cleanup = installCloudFrontImageRetry(cloudFrontStartupConfig);
+    const img = document.createElement('img');
     const onFailure = jest.fn();
+    img.src = 'https://example.com/photo.png';
+    img.addEventListener('error', onFailure);
+    document.body.appendChild(img);
 
-    render(<TestImage src="https://example.com/photo.png" onFailure={onFailure} />);
+    fireEvent.error(img);
 
-    fireEvent.error(screen.getByAltText('media'));
-
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockRequestPost).not.toHaveBeenCalled();
     expect(onFailure).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    img.remove();
   });
 });

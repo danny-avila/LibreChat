@@ -1,16 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-
-import type { SyntheticEvent } from 'react';
-import type { TStartupConfig } from 'librechat-data-provider';
+import { request, type TStartupConfig } from 'librechat-data-provider';
 
 type CloudFrontCookieRefreshConfig = NonNullable<
   NonNullable<TStartupConfig['cloudFront']>['cookieRefresh']
 >;
 
-type ImageErrorHandler = (event: SyntheticEvent<HTMLImageElement, Event>) => void;
-
 let cookieRefreshConfig: CloudFrontCookieRefreshConfig | undefined;
 let refreshPromise: Promise<boolean> | null = null;
+let removeImageErrorListener: (() => void) | null = null;
+const retriedImageSources = new WeakMap<HTMLImageElement, string>();
 
 function getRefreshConfig(
   startupConfig?: Pick<TStartupConfig, 'cloudFront'> | null,
@@ -60,6 +57,20 @@ export function withCloudFrontCacheBuster(url: string): string {
   return parsed.toString();
 }
 
+function getRetryKey(url: string): string {
+  const parsed = parseUrl(url);
+  if (!parsed) {
+    return url;
+  }
+
+  parsed.searchParams.delete('_cf_refresh');
+  return parsed.toString();
+}
+
+function dispatchImageError(img: HTMLImageElement): void {
+  img.dispatchEvent(new Event('error'));
+}
+
 export function refreshCloudFrontCookiesOnce(): Promise<boolean> {
   const config = getRefreshConfig();
   if (!config?.endpoint) {
@@ -70,19 +81,9 @@ export function refreshCloudFrontCookiesOnce(): Promise<boolean> {
     return refreshPromise;
   }
 
-  refreshPromise = fetch(config.endpoint, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { Accept: 'application/json' },
-  })
-    .then(async (response) => {
-      if (!response.ok) {
-        return false;
-      }
-
-      const payload = (await response.json()) as { ok?: boolean };
-      return payload.ok === true;
-    })
+  refreshPromise = request
+    .post(config.endpoint, {})
+    .then((payload: { ok?: boolean }) => payload.ok === true)
     .catch(() => false)
     .finally(() => {
       refreshPromise = null;
@@ -91,38 +92,57 @@ export function refreshCloudFrontCookiesOnce(): Promise<boolean> {
   return refreshPromise;
 }
 
-export function useCloudFrontImageRetry(src: string | undefined, onError?: ImageErrorHandler) {
-  const [imageSrc, setImageSrc] = useState(src ?? '');
-  const retriedSrcRef = useRef<string | null>(null);
+export function installCloudFrontImageRetry(
+  startupConfig?: Pick<TStartupConfig, 'cloudFront'> | null,
+): () => void {
+  configureCloudFrontCookieRefresh(startupConfig);
+  removeImageErrorListener?.();
+  removeImageErrorListener = null;
 
-  useEffect(() => {
-    setImageSrc(src ?? '');
-    retriedSrcRef.current = null;
-  }, [src]);
+  const config = getRefreshConfig();
+  if (typeof window === 'undefined' || !config?.endpoint || !config.domain) {
+    return () => undefined;
+  }
 
-  const handleError = useCallback(
-    async (event: SyntheticEvent<HTMLImageElement, Event>) => {
-      const originalSrc = src ?? '';
-      if (
-        !originalSrc ||
-        retriedSrcRef.current === originalSrc ||
-        !isCloudFrontMediaUrl(originalSrc)
-      ) {
-        onError?.(event);
+  const handleImageError = (event: Event) => {
+    const img = event.target;
+    if (!(img instanceof HTMLImageElement)) {
+      return;
+    }
+
+    const failedSrc = img.currentSrc || img.src || img.getAttribute('src') || '';
+    if (!isCloudFrontMediaUrl(failedSrc)) {
+      return;
+    }
+
+    const retryKey = getRetryKey(failedSrc);
+    if (retriedImageSources.get(img) === retryKey) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    retriedImageSources.set(img, retryKey);
+
+    void refreshCloudFrontCookiesOnce().then((refreshed) => {
+      if (!refreshed || !img.isConnected) {
+        dispatchImageError(img);
         return;
       }
 
-      retriedSrcRef.current = originalSrc;
-      const refreshed = await refreshCloudFrontCookiesOnce();
-      if (!refreshed) {
-        onError?.(event);
-        return;
-      }
+      img.src = withCloudFrontCacheBuster(failedSrc);
+    });
+  };
 
-      setImageSrc(withCloudFrontCacheBuster(originalSrc));
-    },
-    [onError, src],
-  );
+  window.addEventListener('error', handleImageError, true);
+  const cleanup = () => {
+    window.removeEventListener('error', handleImageError, true);
+    if (removeImageErrorListener === cleanup) {
+      removeImageErrorListener = null;
+    }
+  };
+  removeImageErrorListener = cleanup;
 
-  return { src: imageSrc, onError: handleError };
+  return cleanup;
 }

@@ -7,11 +7,11 @@ import type { TUser } from 'librechat-data-provider';
 const mockUseHasAccess = jest.fn();
 const mockUseMCPServersQuery = jest.fn();
 const mockUseMCPToolsQuery = jest.fn();
-const mockConfigureCloudFrontCookieRefresh = jest.fn();
+const mockInstallCloudFrontImageRetry = jest.fn(() => jest.fn());
 
 jest.mock('@librechat/client', () => ({
-  configureCloudFrontCookieRefresh: (startupConfig: unknown) =>
-    mockConfigureCloudFrontCookieRefresh(startupConfig),
+  installCloudFrontImageRetry: (startupConfig: unknown) =>
+    mockInstallCloudFrontImageRetry(startupConfig),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -58,7 +58,7 @@ const wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 describe('useAppStartup — MCP permission gating', () => {
   beforeEach(() => {
-    mockConfigureCloudFrontCookieRefresh.mockClear();
+    mockInstallCloudFrontImageRetry.mockClear();
     mockUseMCPServersQuery.mockReturnValue({ data: undefined, isLoading: false });
     mockUseMCPToolsQuery.mockReturnValue({ data: undefined, isLoading: false });
   });
@@ -126,5 +126,21 @@ describe('useAppStartup — MCP permission gating', () => {
     renderHook(() => useAppStartup({ startupConfig: undefined, user: mockUser }), { wrapper });
 
     expect(mockUseMCPToolsQuery).toHaveBeenCalledWith({ enabled: false });
+  });
+
+  it('installs CloudFront image retry from startup config', () => {
+    mockUseHasAccess.mockReturnValue(false);
+    const startupConfig = {
+      cloudFront: {
+        cookieRefresh: {
+          endpoint: '/api/auth/cloudfront/refresh',
+          domain: 'https://cdn.example.com',
+        },
+      },
+    } as never;
+
+    renderHook(() => useAppStartup({ startupConfig, user: mockUser }), { wrapper });
+
+    expect(mockInstallCloudFrontImageRetry).toHaveBeenCalledWith(startupConfig);
   });
 });

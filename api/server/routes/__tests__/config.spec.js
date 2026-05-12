@@ -198,6 +198,9 @@ describe('GET /api/config', () => {
       mockGetCloudFrontConfig.mockReturnValue({
         domain: 'https://cdn.example.com',
         imageSigning: 'cookies',
+        cookieDomain: '.example.com',
+        privateKey: 'test-private-key',
+        keyPairId: 'K123ABC',
       });
       const app = createApp(null);
 
@@ -216,6 +219,19 @@ describe('GET /api/config', () => {
       mockGetCloudFrontConfig.mockReturnValue({
         domain: 'https://cdn.example.com',
         imageSigning: 'url',
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('cloudFront');
+    });
+
+    it('should omit CloudFront cookie refresh when cookie mode cannot mint cookies', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetCloudFrontConfig.mockReturnValue({
+        domain: 'https://cdn.example.com',
+        imageSigning: 'cookies',
       });
       const app = createApp(null);
 
