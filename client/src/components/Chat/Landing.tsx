@@ -10,6 +10,7 @@ import { getIconEndpoint, getEntity } from '~/utils';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { modeState } from '~/store/mode';
 import { sub } from 'date-fns';
+import HelpOthersForm from './HelpOthersForm';
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
@@ -166,18 +167,11 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
 
   const helpOthersSubheader =
     'You’re not alone here. Let’s gather some information to get the process going 🙂';
-  const helpOthersBulletPoints = [
-    'Name',
-    'Age or Grade Level',
-    'Your Relationship to the Child (e.g., parent, teacher)',
-    'Does the child have any barriers such as learning disabilities, health conditions, language barriers or physical disabilities?',
-  ];
 
   if (mode === 'student') {
     //set greetingText to a default value for student mode
     greetingText = studentGreeting;
     subheaderText = helpOthersSubheader;
-    bulletPoints = helpOthersBulletPoints;
   } else if (mode === 'classroom') {
     greetingText = classroomGreeting;
 
@@ -197,7 +191,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
 
   return (
     <div
-      className={`flex h-full min-h-[7dvh] transform-gpu flex-col items-center justify-center pb-16 transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'} ${getDynamicMargin}`}
+      className={`flex h-full min-h-[7dvh] transform-gpu flex-col items-center ${mode === 'student' ? 'justify-start py-8' : 'justify-center pb-16'} transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'} ${getDynamicMargin}`}
     >
       <div ref={contentRef} className="flex flex-col items-center gap-0 p-2">
         <div
@@ -278,6 +272,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
         {subheaderText && (
           <p className="mt-3 max-w-prose text-sm font-medium text-text-primary">{subheaderText}</p>
         )}
+
+        {mode === 'student' && <HelpOthersForm />}
 
         {bulletPoints && (
           <div className="mt-3 w-full">

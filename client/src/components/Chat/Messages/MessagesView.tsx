@@ -19,14 +19,6 @@ export default function MessagesView({
   const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
 
-  const messagesTreeFiltered = useMemo(
-    () => _messagesTree?.filter((m) => m.text !== 'First Message') ?? [],
-    [_messagesTree],
-  );
-
-  // console.log(_messagesTree);
-  // console.log(messagesTreeFiltered);
-
   const {
     conversation,
     scrollableRef,
@@ -37,6 +29,19 @@ export default function MessagesView({
   } = useMessageScrolling(_messagesTree);
 
   const { conversationId } = conversation ?? {};
+
+  /* For help-others conversations, the first user message is the intake-form
+   * submission. Hide it from the chat view by descending to its children. */
+  const messagesTree = useMemo(() => {
+    if (conversation?.spec !== 'help-others' || !_messagesTree?.length) {
+      return _messagesTree;
+    }
+    const firstRoot = _messagesTree[0] as TMessage & { children?: TMessage[] };
+    if (firstRoot.isCreatedByUser && firstRoot.children?.length) {
+      return firstRoot.children;
+    }
+    return _messagesTree;
+  }, [_messagesTree, conversation?.spec]);
 
   return (
     <>
@@ -53,7 +58,7 @@ export default function MessagesView({
             }}
           >
             <div className="flex flex-col pb-9 dark:bg-transparent">
-              {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
+              {(messagesTree && messagesTree.length == 0) || messagesTree === null ? (
                 <div
                   className={cn(
                     'flex w-full items-center justify-center p-3 text-text-secondary',
@@ -67,7 +72,7 @@ export default function MessagesView({
                   <div ref={screenshotTargetRef}>
                     <MultiMessage
                       key={conversationId}
-                      messagesTree={_messagesTree}
+                      messagesTree={messagesTree}
                       messageId={conversationId ?? null}
                       setCurrentEditId={setCurrentEditId}
                       currentEditId={currentEditId ?? null}
