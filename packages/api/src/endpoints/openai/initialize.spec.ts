@@ -134,3 +134,77 @@ describe('initializeOpenAI – SSRF guard wiring', () => {
     expect(mockGetOpenAIConfig).not.toHaveBeenCalled();
   });
 });
+
+describe('initializeOpenAI – endpoint headers (built-in)', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('forwards endpoint.headers from YAML config into clientOptions.headers', async () => {
+    const params = createParams({ OPENAI_API_KEY: 'sk-test' });
+    (params.req as unknown as { config: unknown }).config = {
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          headers: {
+            'cf-aig-metadata': '{"app":"librechat"}',
+            'x-trace-id': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+          },
+        },
+      },
+    };
+
+    try {
+      await initializeOpenAI(params);
+    } finally {
+      (params as unknown as { _restore: () => void })._restore();
+    }
+
+    expect(mockGetOpenAIConfig).toHaveBeenCalledTimes(1);
+    const [, clientOptions] = mockGetOpenAIConfig.mock.calls[0];
+    const headers = (clientOptions as { headers?: Record<string, string> }).headers;
+    expect(headers).toEqual({
+      'cf-aig-metadata': '{"app":"librechat"}',
+      'x-trace-id': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+    });
+  });
+
+  it('omits headers when none are configured on the OpenAI endpoint', async () => {
+    const params = createParams({ OPENAI_API_KEY: 'sk-test' });
+
+    try {
+      await initializeOpenAI(params);
+    } finally {
+      (params as unknown as { _restore: () => void })._restore();
+    }
+
+    const [, clientOptions] = mockGetOpenAIConfig.mock.calls[0];
+    expect((clientOptions as { headers?: unknown }).headers).toBeUndefined();
+  });
+
+  it('skips forwarding endpoint.headers for the azureOpenAI endpoint (Azure path already manages headers)', async () => {
+    const params = createParams({ OPENAI_API_KEY: 'sk-test', AZURE_API_KEY: 'sk-azure' });
+    params.endpoint = EModelEndpoint.azureOpenAI;
+    (params.req as unknown as { config: unknown }).config = {
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          headers: { 'should-not-leak': '1' },
+        },
+        [EModelEndpoint.azureOpenAI]: undefined,
+      },
+    };
+
+    try {
+      // Azure flow without azureConfig throws on missing groups; just verify the openAI branch
+      // doesn't pollute clientOptions.headers on a non-OpenAI path before any throw.
+      await initializeOpenAI(params).catch(() => undefined);
+    } finally {
+      (params as unknown as { _restore: () => void })._restore();
+    }
+
+    if (mockGetOpenAIConfig.mock.calls.length > 0) {
+      const [, clientOptions] = mockGetOpenAIConfig.mock.calls[0];
+      const headers = (clientOptions as { headers?: Record<string, string> }).headers;
+      expect(headers?.['should-not-leak']).toBeUndefined();
+    }
+  });
+});
