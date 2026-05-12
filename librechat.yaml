@@ -4,18 +4,18 @@
 endpoints:
   custom:
     - name: "Jamun-Brain"
-      # The Kaggle API URL provided via environment variable
+      # The Kaggle API URL pointing to the GitHub-sourced model backend
       baseURL: "${KAGGLE_API_URL}"
       apiKey: "${KAGGLE_API_KEY}"
       models:
-        default: ["jamun-brain-model"]
+        default: ["jamun-brain-github"]
         fetch: true
       titleConvo: true
       titleModel: "current_model"
       # Bypass default filters and stop parameters
       dropParams: ["stop"]
       forcePrompt: true
-      iconURL: "https://raw.githubusercontent.com/danny-avila/LibreChat/main/client/public/assets/logo.png" # Placeholder
+      iconURL: "https://raw.githubusercontent.com/danny-avila/LibreChat/main/client/public/assets/logo.png"
 
 # MCP Servers configuration for Google Drive integration
 mcpServers:
