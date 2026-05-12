@@ -54,6 +54,7 @@ const {
   getCloudFrontConfig,
   parseCloudFrontCookieScope,
 } = require('@librechat/api');
+const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
 const {
   findUser,
@@ -188,9 +189,14 @@ describe('setOpenIDAuthTokens', () => {
       expect(req.session.openidTokens.accessToken).toBe('the-access-token');
       expect(req.session.openidTokens.idToken).toBe('the-id-token');
       expect(req.session.openidTokens.refreshToken).toBe('the-refresh-token');
+      expect(req.session.openidTokens.lastRefreshedAt).toEqual(expect.any(Number));
     });
 
-    it('should preserve the existing session id_token when refresh omits one', () => {
+    it('should return the existing unexpired session id_token when refresh omits one', () => {
+      const existingIdToken = jwt.sign(
+        { sub: 'user-123', exp: Math.floor(Date.now() / 1000) + 3600 },
+        'idp-signing-secret',
+      );
       const tokenset = {
         access_token: 'new-access-token',
         refresh_token: 'new-refresh-token',
@@ -198,7 +204,34 @@ describe('setOpenIDAuthTokens', () => {
       const req = mockRequest({
         openidTokens: {
           accessToken: 'old-access-token',
-          idToken: 'existing-id-token',
+          idToken: existingIdToken,
+          refreshToken: 'old-refresh-token',
+        },
+      });
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+      expect(result).toBe(existingIdToken);
+      expect(req.session.openidTokens.accessToken).toBe('new-access-token');
+      expect(req.session.openidTokens.idToken).toBe(existingIdToken);
+      expect(req.session.openidTokens.refreshToken).toBe('new-refresh-token');
+      expect(req.session.openidTokens.lastRefreshedAt).toEqual(expect.any(Number));
+    });
+
+    it('should fall back to access_token when the existing session id_token is expired', () => {
+      const expiredIdToken = jwt.sign(
+        { sub: 'user-123', exp: Math.floor(Date.now() / 1000) - 60 },
+        'idp-signing-secret',
+      );
+      const tokenset = {
+        access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
+      };
+      const req = mockRequest({
+        openidTokens: {
+          accessToken: 'old-access-token',
+          idToken: expiredIdToken,
           refreshToken: 'old-refresh-token',
         },
       });
@@ -207,9 +240,33 @@ describe('setOpenIDAuthTokens', () => {
       const result = setOpenIDAuthTokens(tokenset, req, res, 'user-123');
 
       expect(result).toBe('new-access-token');
+      expect(req.session.openidTokens.idToken).toBe(expiredIdToken);
       expect(req.session.openidTokens.accessToken).toBe('new-access-token');
-      expect(req.session.openidTokens.idToken).toBe('existing-id-token');
-      expect(req.session.openidTokens.refreshToken).toBe('new-refresh-token');
+    });
+
+    it('should fall back to access_token when the existing session id_token is near expiry', () => {
+      const nearExpiryIdToken = jwt.sign(
+        { sub: 'user-123', exp: Math.floor(Date.now() / 1000) + 10 },
+        'idp-signing-secret',
+      );
+      const tokenset = {
+        access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
+      };
+      const req = mockRequest({
+        openidTokens: {
+          accessToken: 'old-access-token',
+          idToken: nearExpiryIdToken,
+          refreshToken: 'old-refresh-token',
+        },
+      });
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+      expect(result).toBe('new-access-token');
+      expect(req.session.openidTokens.idToken).toBe(nearExpiryIdToken);
+      expect(req.session.openidTokens.accessToken).toBe('new-access-token');
     });
   });
 
@@ -709,6 +766,25 @@ describe('CloudFront cookie integration', () => {
         res,
         {
           userId: 'user-123',
+          tenantId: 'tenantA',
+        },
+        null,
+      );
+    });
+
+    it('uses the fetched user id as the canonical CloudFront user scope', async () => {
+      getUserById.mockResolvedValueOnce({
+        _id: { toString: () => 'canonical-user' },
+        tenantId: 'tenantA',
+      });
+      const res = mockResponse();
+
+      await setAuthTokens('input-user-id', res);
+
+      expect(setCloudFrontCookies).toHaveBeenCalledWith(
+        res,
+        {
+          userId: 'canonical-user',
           tenantId: 'tenantA',
         },
         null,

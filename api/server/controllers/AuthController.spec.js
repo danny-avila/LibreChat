@@ -43,13 +43,18 @@ const { logger } = require('@librechat/data-schemas');
 const { isEnabled, findOpenIDUser, buildOpenIDRefreshParams } = require('@librechat/api');
 const { graphTokenController, refreshController } = require('./AuthController');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
-const { setOpenIDAuthTokens, setCloudFrontAuthCookies } = require('~/server/services/AuthService');
+const {
+  setOpenIDAuthTokens,
+  setCloudFrontAuthCookies,
+  setAuthTokens,
+} = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
-const { getUserById, updateUser } = require('~/models');
+const { getUserById, findSession, updateUser } = require('~/models');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
 const ORIGINAL_JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
 describe('graphTokenController', () => {
   let req, res;
@@ -194,6 +199,28 @@ describe('refreshController – OpenID path', () => {
   };
 
   let req, res;
+  const idpSigningSecret = 'idp-signing-secret';
+
+  const makeSessionToken = (claims = {}) =>
+    jwt.sign(
+      {
+        sub: baseClaims.sub,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        ...claims,
+      },
+      idpSigningSecret,
+    );
+
+  const makeSignedUserId = (id = 'user-db-id', options = { expiresIn: '1h' }) =>
+    jwt.sign({ id }, process.env.JWT_REFRESH_SECRET, options);
+
+  const setOpenIDReuseCookies = (signedUserId = makeSignedUserId()) => {
+    req.headers.cookie = [
+      'token_provider=openid',
+      'refreshToken=stored-refresh',
+      `openid_user_id=${signedUserId}`,
+    ].join('; ');
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -248,6 +275,20 @@ describe('refreshController – OpenID path', () => {
     }
   });
 
+  /** Asserts the full OpenID refresh grant was triggered using default mock state. */
+  const expectOpenIDRefreshGrant = () => {
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'stored-refresh',
+      {},
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'stored-refresh',
+      tenantId: undefined,
+    });
+  };
+
   it('should call getOpenIdEmail with token claims and use result for findOpenIDUser', async () => {
     await refreshController(req, res);
 
@@ -263,23 +304,15 @@ describe('refreshController – OpenID path', () => {
   });
 
   it('reuses valid OpenID session tokens and refreshes CloudFront cookies', async () => {
-    const reusableIdToken = jwt.sign(
-      { sub: baseClaims.sub, exp: Math.floor(Date.now() / 1000) + 3600 },
-      'idp-signing-secret',
-    );
-    const signedUserId = jwt.sign({ id: 'user-db-id' }, process.env.JWT_REFRESH_SECRET, {
-      expiresIn: '1h',
-    });
-    req.headers.cookie = [
-      'token_provider=openid',
-      'refreshToken=stored-refresh',
-      `openid_user_id=${signedUserId}`,
-    ].join('; ');
+    const reusableIdToken = makeSessionToken();
+    const signedUserId = makeSignedUserId();
+    setOpenIDReuseCookies(signedUserId);
     req.session = {
       openidTokens: {
         accessToken: 'session-access-token',
         idToken: reusableIdToken,
         refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
       },
     };
     const user = {
@@ -316,7 +349,6 @@ describe('refreshController – OpenID path', () => {
       '[refreshController] OpenID session token reused',
       expect.objectContaining({
         token_type: 'id_token',
-        cloudfront_cookies_attempted: true,
         cloudfront_cookies_set: true,
       }),
     );
@@ -324,6 +356,184 @@ describe('refreshController – OpenID path', () => {
     expect(debugOutput).not.toContain(reusableIdToken);
     expect(debugOutput).not.toContain(signedUserId);
     expect(debugOutput).not.toContain('session-access-token');
+  });
+
+  it('falls through to full OpenID refresh when session tokens are expired', async () => {
+    const expiredToken = makeSessionToken({ exp: Math.floor(Date.now() / 1000) - 60 });
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: expiredToken,
+        idToken: expiredToken,
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('falls through to full OpenID refresh when session tokens are near expiry', async () => {
+    const nearExpiryToken = makeSessionToken({ exp: Math.floor(Date.now() / 1000) + 5 });
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: nearExpiryToken,
+        idToken: nearExpiryToken,
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('falls through to full OpenID refresh when session tokens have no exp claim', async () => {
+    const tokenWithoutExp = jwt.sign({ sub: baseClaims.sub }, idpSigningSecret);
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: tokenWithoutExp,
+        idToken: tokenWithoutExp,
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('falls through to full OpenID refresh when the signed reuse user cookie is invalid', async () => {
+    setOpenIDReuseCookies('tampered-cookie');
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('falls through to full OpenID refresh when the reuse user no longer exists', async () => {
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+      },
+    };
+    getUserById.mockResolvedValueOnce(null);
+
+    await refreshController(req, res);
+
+    expect(getUserById).toHaveBeenCalledWith(
+      'user-db-id',
+      '-password -__v -totpSecret -backupCodes -federatedTokens',
+    );
+    expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('falls through to full OpenID refresh when session tokens are stale', async () => {
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now() - 16 * 60 * 1000,
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('falls through to full OpenID refresh when session refresh timestamp is in the future', async () => {
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now() + 60 * 1000,
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('falls through to full OpenID refresh for pre-upgrade sessions without lastRefreshedAt', async () => {
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('sanitizes Mongoose-style user documents on the OpenID reuse path', async () => {
+    const reusableIdToken = makeSessionToken();
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: reusableIdToken,
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+      },
+    };
+    const userDocument = {
+      toObject: () => ({
+        ...defaultUser,
+        federatedTokens: { access_token: 'do-not-return' },
+      }),
+    };
+    getUserById.mockResolvedValue(userDocument);
+
+    await refreshController(req, res);
+
+    const sentPayload = res.send.mock.calls[0][0];
+    expect(setCloudFrontAuthCookies).toHaveBeenCalledWith(req, res, userDocument);
+    expect(sentPayload).toEqual({
+      token: reusableIdToken,
+      user: expect.objectContaining({
+        _id: 'user-db-id',
+        email: baseClaims.email,
+      }),
+    });
+    expect(sentPayload.user).not.toHaveProperty('password');
+    expect(sentPayload.user).not.toHaveProperty('federatedTokens');
   });
 
   it('should pass scope-only OpenID refresh params when OPENID_SCOPE is set', async () => {
@@ -527,5 +737,105 @@ describe('refreshController – OpenID path', () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.send).toHaveBeenCalledWith('Refresh token not provided');
+  });
+});
+
+describe('refreshController – LibreChat path', () => {
+  let req, res;
+  const refreshSecret = 'test-refresh-secret';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.JWT_REFRESH_SECRET = refreshSecret;
+    process.env.NODE_ENV = 'test';
+    setAuthTokens.mockResolvedValue('local-app-token');
+    findSession.mockResolvedValue({ expiration: new Date(Date.now() + 60_000) });
+
+    const refreshToken = jwt.sign({ id: 'local-user-id' }, refreshSecret, {
+      expiresIn: '1h',
+    });
+    req = {
+      headers: { cookie: `refreshToken=${refreshToken}` },
+      query: {},
+      session: {},
+    };
+    res = {
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn().mockReturnThis(),
+      redirect: jest.fn(),
+    };
+  });
+
+  afterAll(() => {
+    if (ORIGINAL_JWT_REFRESH_SECRET === undefined) {
+      delete process.env.JWT_REFRESH_SECRET;
+    } else {
+      process.env.JWT_REFRESH_SECRET = ORIGINAL_JWT_REFRESH_SECRET;
+    }
+
+    if (ORIGINAL_NODE_ENV === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+    }
+  });
+
+  it('sanitizes user documents before returning local refresh responses', async () => {
+    getUserById.mockResolvedValue({
+      toObject: () => ({
+        _id: 'local-user-id',
+        email: 'local@example.com',
+        password: 'hashed-password',
+        __v: 1,
+        totpSecret: 'totp-secret',
+        backupCodes: ['backup-code'],
+        federatedTokens: { access_token: 'do-not-return' },
+      }),
+    });
+
+    await refreshController(req, res);
+
+    const sentPayload = res.send.mock.calls[0][0];
+    expect(setAuthTokens).toHaveBeenCalledWith(
+      'local-user-id',
+      res,
+      { expiration: expect.any(Date) },
+      req,
+    );
+    expect(sentPayload).toEqual({
+      token: 'local-app-token',
+      user: {
+        _id: 'local-user-id',
+        email: 'local@example.com',
+      },
+    });
+  });
+
+  it('sanitizes user documents before returning CI refresh responses', async () => {
+    process.env.NODE_ENV = 'CI';
+    getUserById.mockResolvedValue({
+      toObject: () => ({
+        _id: 'local-user-id',
+        email: 'local@example.com',
+        password: 'hashed-password',
+        __v: 1,
+        totpSecret: 'totp-secret',
+        backupCodes: ['backup-code'],
+        federatedTokens: { access_token: 'do-not-return' },
+      }),
+    });
+
+    await refreshController(req, res);
+
+    const sentPayload = res.send.mock.calls[0][0];
+    expect(findSession).not.toHaveBeenCalled();
+    expect(setAuthTokens).toHaveBeenCalledWith('local-user-id', res, null, req);
+    expect(sentPayload).toEqual({
+      token: 'local-app-token',
+      user: {
+        _id: 'local-user-id',
+        email: 'local@example.com',
+      },
+    });
   });
 });

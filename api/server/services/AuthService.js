@@ -45,6 +45,23 @@ const domains = {
 };
 
 const genericVerificationMessage = 'Please check your email to verify your email address.';
+const OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
+
+const getUnexpiredOpenIDSessionIdToken = (idToken) => {
+  if (!idToken) {
+    return;
+  }
+
+  const decoded = jwt.decode(idToken);
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    decoded &&
+    typeof decoded === 'object' &&
+    decoded.exp > now + OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS
+  ) {
+    return idToken;
+  }
+};
 
 /**
  * Logout user
@@ -412,12 +429,7 @@ const resetPassword = async (userId, token, password) => {
 const getPreviousCloudFrontScope = (req) =>
   parseCloudFrontCookieScope(req?.cookies?.[CLOUDFRONT_SCOPE_COOKIE]);
 
-const normalizeCloudFrontScopeValue = (value) => {
-  if (value == null) {
-    return value;
-  }
-  return value.toString?.() ?? value;
-};
+const normalizeCloudFrontScopeValue = (value) => (value == null ? undefined : String(value));
 
 const getCloudFrontScopeValue = (optionsValue, userValue, requestValue) =>
   normalizeCloudFrontScopeValue(optionsValue ?? userValue ?? requestValue);
@@ -533,7 +545,7 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
       sameSite: 'strict',
     });
 
-    setCloudFrontAuthCookies(req, res, user, { userId });
+    setCloudFrontAuthCookies(req, res, user, { userId: user?._id ?? userId });
 
     return token;
   } catch (error) {
@@ -616,8 +628,11 @@ const setOpenIDAuthTokens = (
      * audience (e.g., Microsoft Graph API), which fails JWKS validation.
      * Falls back to access_token for providers where id_token is not available.
      */
-    const appAuthToken = tokenset.id_token || tokenset.access_token;
     const sessionIdToken = req.session?.openidTokens?.idToken;
+    const appAuthToken =
+      tokenset.id_token ||
+      getUnexpiredOpenIDSessionIdToken(sessionIdToken) ||
+      tokenset.access_token;
     const logoutIdToken = tokenset.id_token || sessionIdToken;
 
     /**
@@ -643,6 +658,7 @@ const setOpenIDAuthTokens = (
         idToken: logoutIdToken,
         refreshToken: refreshToken,
         expiresAt: expirationDate.getTime(),
+        lastRefreshedAt: Date.now(),
       };
     } else {
       logger.warn('[setOpenIDAuthTokens] No session available, falling back to cookies');
