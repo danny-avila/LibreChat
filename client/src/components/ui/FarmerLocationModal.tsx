@@ -13,7 +13,6 @@ import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
 import useGeolocation from '~/hooks/useGeolocation';
 import { useLocalize } from '~/hooks';
-import { SearchableMultiSelect } from '~/components/ui';
 import { STATES, DISTRICTS, INDIAN_LANGUAGES, CROPS } from '~/utils/metaData';
 import SearchableSelect from './SearchableSelect';
 import SearchableMultiSelect from './SearchableMultiSelect';
@@ -209,8 +208,6 @@ const FarmerLocationModal = ({
 
   const isLocationMissing = effectiveMissingFields.includes('location');
   const otherMissingFields = effectiveMissingFields.filter((f) => f !== 'location');
-  const isLocationMissing = missingFields.includes('location');
-  const otherMissingFields = missingFields.filter((f) => f !== 'location');
   const shouldShowCloseButton = isLocationMissing && otherMissingFields.length === 0;
 
   const handleOpenChange = (isOpen: boolean) => {
