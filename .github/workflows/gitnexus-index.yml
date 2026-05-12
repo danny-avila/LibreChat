@@ -25,7 +25,7 @@ on:
         type: string
         default: ''
       pr_ref:
-        description: 'PR head SHA or ref to check out (set by /gitnexus command)'
+        description: 'Optional PR head ref to check out; defaults to refs/pull/<pr_number>/head when pr_number is set'
         type: string
         default: ''
 
@@ -74,7 +74,7 @@ jobs:
               exit 1
             fi
             EXPECTED_REF="refs/pull/${PR_NUMBER}/head"
-            if [ "$PR_REF" != "$EXPECTED_REF" ]; then
+            if [ -n "$PR_REF" ] && [ "$PR_REF" != "$EXPECTED_REF" ]; then
               echo "::error::pr_ref must match ${EXPECTED_REF}"
               exit 1
             fi
@@ -169,7 +169,7 @@ jobs:
           # repo for every PR, so checkout works for fork PRs too. When
           # pr_ref is empty (native push/pull_request), fall back to the
           # default ref actions/checkout would use.
-          ref: ${{ inputs.pr_ref || '' }}
+          ref: ${{ inputs.pr_ref || (inputs.pr_number != '' && format('refs/pull/{0}/head', inputs.pr_number) || '') }}
           fetch-depth: 1
           persist-credentials: false
 
