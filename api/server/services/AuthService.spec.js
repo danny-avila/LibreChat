@@ -54,6 +54,7 @@ const {
   getCloudFrontConfig,
   parseCloudFrontCookieScope,
 } = require('@librechat/api');
+const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
 const {
   findUser,
@@ -191,7 +192,11 @@ describe('setOpenIDAuthTokens', () => {
       expect(req.session.openidTokens.lastRefreshedAt).toEqual(expect.any(Number));
     });
 
-    it('should return the existing session id_token when refresh omits one', () => {
+    it('should return the existing unexpired session id_token when refresh omits one', () => {
+      const existingIdToken = jwt.sign(
+        { sub: 'user-123', exp: Math.floor(Date.now() / 1000) + 3600 },
+        'idp-signing-secret',
+      );
       const tokenset = {
         access_token: 'new-access-token',
         refresh_token: 'new-refresh-token',
@@ -199,7 +204,7 @@ describe('setOpenIDAuthTokens', () => {
       const req = mockRequest({
         openidTokens: {
           accessToken: 'old-access-token',
-          idToken: 'existing-id-token',
+          idToken: existingIdToken,
           refreshToken: 'old-refresh-token',
         },
       });
@@ -207,11 +212,36 @@ describe('setOpenIDAuthTokens', () => {
 
       const result = setOpenIDAuthTokens(tokenset, req, res, 'user-123');
 
-      expect(result).toBe('existing-id-token');
+      expect(result).toBe(existingIdToken);
       expect(req.session.openidTokens.accessToken).toBe('new-access-token');
-      expect(req.session.openidTokens.idToken).toBe('existing-id-token');
+      expect(req.session.openidTokens.idToken).toBe(existingIdToken);
       expect(req.session.openidTokens.refreshToken).toBe('new-refresh-token');
       expect(req.session.openidTokens.lastRefreshedAt).toEqual(expect.any(Number));
+    });
+
+    it('should fall back to access_token when the existing session id_token is expired', () => {
+      const expiredIdToken = jwt.sign(
+        { sub: 'user-123', exp: Math.floor(Date.now() / 1000) - 60 },
+        'idp-signing-secret',
+      );
+      const tokenset = {
+        access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
+      };
+      const req = mockRequest({
+        openidTokens: {
+          accessToken: 'old-access-token',
+          idToken: expiredIdToken,
+          refreshToken: 'old-refresh-token',
+        },
+      });
+      const res = mockResponse();
+
+      const result = setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+      expect(result).toBe('new-access-token');
+      expect(req.session.openidTokens.idToken).toBe(expiredIdToken);
+      expect(req.session.openidTokens.accessToken).toBe('new-access-token');
     });
   });
 

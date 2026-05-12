@@ -45,6 +45,23 @@ const domains = {
 };
 
 const genericVerificationMessage = 'Please check your email to verify your email address.';
+const OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
+
+const getUnexpiredOpenIDSessionIdToken = (idToken) => {
+  if (!idToken) {
+    return;
+  }
+
+  const decoded = jwt.decode(idToken);
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    decoded &&
+    typeof decoded === 'object' &&
+    decoded.exp > now + OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS
+  ) {
+    return idToken;
+  }
+};
 
 /**
  * Logout user
@@ -612,7 +629,10 @@ const setOpenIDAuthTokens = (
      * Falls back to access_token for providers where id_token is not available.
      */
     const sessionIdToken = req.session?.openidTokens?.idToken;
-    const appAuthToken = tokenset.id_token || sessionIdToken || tokenset.access_token;
+    const appAuthToken =
+      tokenset.id_token ||
+      getUnexpiredOpenIDSessionIdToken(sessionIdToken) ||
+      tokenset.access_token;
     const logoutIdToken = tokenset.id_token || sessionIdToken;
 
     /**
