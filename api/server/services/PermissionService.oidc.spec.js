@@ -685,4 +685,108 @@ describe('syncUserOidcGroupsFromToken', () => {
       expect(Group.insertMany).toHaveBeenCalled();
     });
   });
+
+  describe('Multi-tenant scoping', () => {
+    beforeEach(() => {
+      process.env.OPENID_SYNC_GROUPS_FROM_TOKEN = 'true';
+    });
+
+    it('should scope find/update/insert to user.tenantId when present', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+        tenantId: 'tenant-a',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      expect(Group.find).toHaveBeenCalledWith(
+        {
+          tenantId: 'tenant-a',
+          idOnTheSource: { $in: ['admin'] },
+          source: 'oidc',
+        },
+        null,
+        {},
+      );
+      expect(Group.insertMany).toHaveBeenCalledWith(
+        [
+          {
+            name: 'admin',
+            idOnTheSource: 'admin',
+            source: 'oidc',
+            memberIds: ['user-123'],
+            tenantId: 'tenant-a',
+          },
+        ],
+        { ordered: false },
+      );
+      // Cleanup updateMany also tenant-scoped
+      expect(Group.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-a' }),
+        { $pull: { memberIds: 'user-123' } },
+        {},
+      );
+    });
+
+    it('should omit tenantId entirely when user has none (single-tenant deployments)', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      const findFilter = Group.find.mock.calls[0][0];
+      expect(findFilter).not.toHaveProperty('tenantId');
+
+      const insertedDoc = Group.insertMany.mock.calls[0][0][0];
+      expect(insertedDoc).not.toHaveProperty('tenantId');
+    });
+
+    it('should scope duplicate-key recovery query to tenantId', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+        tenantId: 'tenant-b',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn().mockResolvedValue([]);
+
+      const dupErr = new Error('E11000 duplicate key error');
+      dupErr.code = 11000;
+      Group.insertMany = jest.fn().mockRejectedValue(dupErr);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      expect(Group.updateMany).toHaveBeenNthCalledWith(
+        1,
+        {
+          tenantId: 'tenant-b',
+          idOnTheSource: { $in: ['admin'] },
+          source: 'oidc',
+        },
+        { $addToSet: { memberIds: 'user-123' } },
+        {},
+      );
+    });
+  });
 });

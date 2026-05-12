@@ -682,6 +682,9 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     const groupSource = process.env.OPENID_GROUP_SOURCE || 'oidc';
     const exclusionPattern = process.env.OPENID_GROUPS_EXCLUDE_PATTERN || null;
 
+    // Tenant-scope queries when user.tenantId is set; no-op for single-tenant deployments
+    const tenantFilter = user.tenantId ? { tenantId: user.tenantId } : {};
+
     // Extract groups from token
     let groupNames = extractGroupsFromToken(tokenset, claimPath, tokenKind, exclusionPattern);
 
@@ -712,6 +715,7 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
       const sessionOptions = session ? { session } : {};
       await Group.updateMany(
         {
+          ...tenantFilter,
           source: groupSource,
           memberIds: user.idOnTheSource,
         },
@@ -737,6 +741,7 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     // Bulk optimization: Fetch all existing groups in one query
     const existingGroups = await Group.find(
       {
+        ...tenantFilter,
         idOnTheSource: { $in: groupNames },
         source: groupSource,
       },
@@ -756,6 +761,7 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
           idOnTheSource: groupName,
           source: groupSource,
           memberIds: [user.idOnTheSource],
+          ...tenantFilter,
         });
       } else if (
         !existing.memberIds.some((memberId) => String(memberId) === String(user.idOnTheSource))
@@ -785,6 +791,7 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
           try {
             await Group.updateMany(
               {
+                ...tenantFilter,
                 idOnTheSource: { $in: createdNames },
                 source: groupSource,
               },
@@ -814,7 +821,7 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     if (groupsToUpdate.length > 0) {
       try {
         await Group.updateMany(
-          { _id: { $in: groupsToUpdate } },
+          { ...tenantFilter, _id: { $in: groupsToUpdate } },
           { $addToSet: { memberIds: user.idOnTheSource } },
           sessionOptions,
         );
@@ -836,6 +843,7 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     try {
       await Group.updateMany(
         {
+          ...tenantFilter,
           source: groupSource,
           memberIds: user.idOnTheSource,
           idOnTheSource: { $nin: groupNames },
