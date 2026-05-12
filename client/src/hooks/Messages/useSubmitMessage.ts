@@ -1,4 +1,5 @@
 import { v4 } from 'uuid';
+import posthog from 'posthog-js';
 import { useCallback } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Constants, replaceSpecialVars } from 'librechat-data-provider';
@@ -16,7 +17,7 @@ const appendIndex = (index: number, value?: string) => {
 export default function useSubmitMessage() {
   const { user } = useAuthContext();
   const methods = useChatFormContext();
-  const { ask, index, getMessages, setMessages, latestMessage } = useChatContext();
+  const { ask, index, getMessages, setMessages, latestMessage, conversation } = useChatContext();
   const { addedIndex, ask: askAdditional, conversation: addedConvo } = useAddedChatContext();
 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
@@ -45,6 +46,14 @@ export default function useSubmitMessage() {
       const overrideUserMessageId = hasAdded ? v4() : undefined;
       const rootIndex = addedIndex - 1;
       const clientTimestamp = new Date().toISOString();
+
+      posthog.capture('message_sent', {
+        conversation_id: conversation?.conversationId,
+        endpoint: conversation?.endpoint,
+        model: conversation?.model,
+        is_new_conversation: !rootMessages?.length,
+        text_length: data.text?.length ?? 0,
+      });
 
       ask({
         text: data.text,
@@ -76,6 +85,7 @@ export default function useSubmitMessage() {
       activeConvos,
       askAdditional,
       latestMessage,
+      conversation,
     ],
   );
 

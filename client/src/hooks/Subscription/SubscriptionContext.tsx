@@ -7,6 +7,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react';
+import posthog from 'posthog-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
 import { useToastContext } from '@librechat/client';
@@ -151,6 +152,12 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
     if (!subscriptionEnabled) {
       return;
     }
+
+    posthog.capture('subscription_upgrade_clicked', {
+      platform: isNative ? 'native' : 'web',
+      is_pro: subscriptionQuery.data?.isPro,
+      current_plan: subscriptionQuery.data?.currentPlan,
+    });
 
     if (isNative) {
       const apiKey = getRevenueCatPublicSdkKey(startupConfig as Record<string, any> | null);
