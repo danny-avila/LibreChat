@@ -31,12 +31,7 @@ export type TModelSpec = {
   showIconInMenu?: boolean;
   showIconInHeader?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
-  authType?: AuthType;
-  webSearch?: boolean;
-  fileSearch?: boolean;
-  executeCode?: boolean;
-  artifacts?: string | boolean;
-  mcpServers?: string[];
+  authType?: AuthType,
 };
 
 export const tModelSpecSchema = z.object({
@@ -52,11 +47,7 @@ export const tModelSpecSchema = z.object({
   showIconInHeader: z.boolean().optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
-  webSearch: z.boolean().optional(),
-  fileSearch: z.boolean().optional(),
-  executeCode: z.boolean().optional(),
-  artifacts: z.union([z.string(), z.boolean()]).optional(),
-  mcpServers: z.array(z.string()).optional(),
+
 });
 
 export const specsConfigSchema = z.object({
