@@ -1,8 +1,12 @@
-import { apiBaseUrl, request, type TStartupConfig } from 'librechat-data-provider';
+import { apiBaseUrl, getTokenHeader } from 'librechat-data-provider';
+import type { TStartupConfig } from 'librechat-data-provider';
 
 type CloudFrontCookieRefreshConfig = NonNullable<
   NonNullable<TStartupConfig['cloudFront']>['cookieRefresh']
 >;
+type CloudFrontCookieRefreshResponse = {
+  ok?: boolean;
+};
 
 let cookieRefreshConfig: CloudFrontCookieRefreshConfig | undefined;
 let refreshPromise: Promise<boolean> | null = null;
@@ -84,6 +88,32 @@ function getRefreshEndpoint(endpoint: string): string {
   return `${baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 }
 
+async function postCloudFrontCookieRefresh(endpoint: string): Promise<boolean> {
+  const authorization = getTokenHeader();
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
+
+  if (authorization) {
+    headers.Authorization = authorization;
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: '{}',
+  });
+
+  if (!response.ok) {
+    return false;
+  }
+
+  const payload = (await response.json()) as CloudFrontCookieRefreshResponse;
+  return payload.ok === true;
+}
+
 export function refreshCloudFrontCookiesOnce(): Promise<boolean> {
   const config = getRefreshConfig();
   if (!config?.endpoint) {
@@ -95,9 +125,7 @@ export function refreshCloudFrontCookiesOnce(): Promise<boolean> {
   }
 
   const endpoint = getRefreshEndpoint(config.endpoint);
-  refreshPromise = request
-    .post(endpoint, {})
-    .then((payload: { ok?: boolean }) => payload.ok === true)
+  refreshPromise = postCloudFrontCookieRefresh(endpoint)
     .catch(() => false)
     .finally(() => {
       refreshPromise = null;
