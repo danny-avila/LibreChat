@@ -51,6 +51,7 @@ export function permissionBitSupersets(requiredBits: number): readonly number[] 
   if (
     !Number.isInteger(requiredBits) ||
     requiredBits < 0 ||
+    requiredBits > MAX_PERM_BITS ||
     (requiredBits & ~MAX_PERM_BITS) !== 0
   ) {
     return EMPTY_SUPERSETS;

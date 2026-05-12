@@ -2,7 +2,12 @@ const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, findOpenIDUser, getOpenIdIssuer } = require('@librechat/api');
+const {
+  isEnabled,
+  findOpenIDUser,
+  getOpenIdIssuer,
+  buildOpenIDRefreshParams,
+} = require('@librechat/api');
 const {
   requestPasswordReset,
   setOpenIDAuthTokens,
@@ -78,12 +83,22 @@ const refreshController = async (req, res) => {
 
     try {
       const openIdConfig = getOpenIdConfig();
-      const refreshParams = process.env.OPENID_SCOPE ? { scope: process.env.OPENID_SCOPE } : {};
+      const refreshParams = buildOpenIDRefreshParams();
+      logger.debug('[refreshController] OpenID refresh params', {
+        has_scope: Boolean(process.env.OPENID_SCOPE),
+        has_refresh_audience: Boolean(process.env.OPENID_REFRESH_AUDIENCE),
+      });
       const tokenset = await openIdClient.refreshTokenGrant(
         openIdConfig,
         refreshToken,
         refreshParams,
       );
+      logger.debug('[refreshController] OpenID refresh succeeded', {
+        has_access_token: Boolean(tokenset.access_token),
+        has_id_token: Boolean(tokenset.id_token),
+        has_refresh_token: Boolean(tokenset.refresh_token),
+        expires_in: tokenset.expires_in,
+      });
       const claims = tokenset.claims();
       const openidIssuer = getOpenIdIssuer(claims, openIdConfig);
       const { user, error, migration } = await findOpenIDUser({
