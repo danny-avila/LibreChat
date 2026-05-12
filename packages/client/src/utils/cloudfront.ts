@@ -1,4 +1,4 @@
-import { request, type TStartupConfig } from 'librechat-data-provider';
+import { apiBaseUrl, request, type TStartupConfig } from 'librechat-data-provider';
 
 type CloudFrontCookieRefreshConfig = NonNullable<
   NonNullable<TStartupConfig['cloudFront']>['cookieRefresh']
@@ -71,6 +71,19 @@ function dispatchImageError(img: HTMLImageElement): void {
   img.dispatchEvent(new Event('error'));
 }
 
+function getRefreshEndpoint(endpoint: string): string {
+  if (/^https?:\/\//i.test(endpoint)) {
+    return endpoint;
+  }
+
+  const baseUrl = apiBaseUrl();
+  if (!baseUrl || endpoint === baseUrl || endpoint.startsWith(`${baseUrl}/`)) {
+    return endpoint;
+  }
+
+  return `${baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+}
+
 export function refreshCloudFrontCookiesOnce(): Promise<boolean> {
   const config = getRefreshConfig();
   if (!config?.endpoint) {
@@ -81,8 +94,9 @@ export function refreshCloudFrontCookiesOnce(): Promise<boolean> {
     return refreshPromise;
   }
 
+  const endpoint = getRefreshEndpoint(config.endpoint);
   refreshPromise = request
-    .post(config.endpoint, {})
+    .post(endpoint, {})
     .then((payload: { ok?: boolean }) => payload.ok === true)
     .catch(() => false)
     .finally(() => {

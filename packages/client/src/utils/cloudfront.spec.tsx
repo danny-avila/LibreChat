@@ -1,8 +1,10 @@
 import { fireEvent, waitFor } from '@testing-library/react';
 
 const mockRequestPost = jest.fn();
+const mockApiBaseUrl = jest.fn(() => '');
 
 jest.mock('librechat-data-provider', () => ({
+  apiBaseUrl: () => mockApiBaseUrl(),
   request: {
     post: (...args: unknown[]) => mockRequestPost(...args),
   },
@@ -27,6 +29,7 @@ const cloudFrontStartupConfig = {
 describe('CloudFront cookie refresh helpers', () => {
   beforeEach(() => {
     mockRequestPost.mockReset();
+    mockApiBaseUrl.mockReturnValue('');
     configureCloudFrontCookieRefresh(undefined);
     jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
   });
@@ -60,6 +63,16 @@ describe('CloudFront cookie refresh helpers', () => {
     resolveRefresh?.({ ok: true });
     await expect(first).resolves.toBe(true);
     await expect(second).resolves.toBe(true);
+  });
+
+  it('prefixes the refresh endpoint with the configured app base path', async () => {
+    mockApiBaseUrl.mockReturnValue('/chat');
+    mockRequestPost.mockResolvedValue({ ok: true });
+    configureCloudFrontCookieRefresh(cloudFrontStartupConfig);
+
+    await expect(refreshCloudFrontCookiesOnce()).resolves.toBe(true);
+
+    expect(mockRequestPost).toHaveBeenCalledWith('/chat/api/auth/cloudfront/refresh', {});
   });
 
   it('detects only the configured CloudFront domain', () => {
