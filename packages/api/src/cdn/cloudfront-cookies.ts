@@ -1,7 +1,7 @@
 import { getSignedCookies } from '@aws-sdk/cloudfront-signer';
 import { logger } from '@librechat/data-schemas';
 
-import type { Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 import { INLINE_AVATAR_PATH_PREFIX, INLINE_IMAGE_PATH_PREFIX } from '~/storage/constants';
 import { assertPathSegment } from '~/storage/validation';
@@ -23,7 +23,43 @@ export interface CloudFrontCookieScope {
   userId?: string | null;
   tenantId?: string | null;
   storageRegion?: string | null;
+  issuedAt?: number | null;
+  expiresAt?: number | null;
 }
+
+type CloudFrontScopeValue = string | number | { toString(): string } | null | undefined;
+
+type CloudFrontScopeUser = {
+  _id?: CloudFrontScopeValue;
+  id?: CloudFrontScopeValue;
+  tenantId?: CloudFrontScopeValue;
+  orgId?: CloudFrontScopeValue;
+  storageRegion?: CloudFrontScopeValue;
+};
+
+type CloudFrontCookieRequest = {
+  cookies?: Partial<Record<string, string>>;
+  user?: CloudFrontScopeUser | null;
+};
+
+type CloudFrontAuthCookieRefreshRequest = CloudFrontCookieRequest & {
+  cloudFrontAuthCookieRefreshResult?: CloudFrontAuthCookieRefreshResult;
+};
+
+export type CloudFrontAuthCookieRefreshResult = {
+  enabled: boolean;
+  attempted: boolean;
+  refreshed: boolean;
+  reason?: string;
+  expiresInSec?: number;
+  refreshAfterSec?: number;
+};
+
+type CloudFrontCookieRefreshOptions = CloudFrontCookieScope & {
+  orgId?: CloudFrontScopeValue;
+  force?: boolean;
+  refreshWindowSec?: number;
+};
 
 type CookieOptions = {
   domain: string;
@@ -106,6 +142,41 @@ function getPolicyScopes(
   ];
 }
 
+function getConfiguredCookieExpiry(): number {
+  const config = getCloudFrontConfig();
+  return config?.cookieExpiry ?? DEFAULT_COOKIE_EXPIRY;
+}
+
+export function getCloudFrontCookieRefreshWindowSec(cookieExpiry = getConfiguredCookieExpiry()) {
+  return Math.min(300, Math.floor(cookieExpiry / 4));
+}
+
+export function getCloudFrontCookieTiming() {
+  const expiresInSec = getConfiguredCookieExpiry();
+  const refreshWindowSec = getCloudFrontCookieRefreshWindowSec(expiresInSec);
+  return {
+    expiresInSec,
+    refreshAfterSec: Math.max(0, expiresInSec - refreshWindowSec),
+    refreshWindowSec,
+  };
+}
+
+function getEffectiveCloudFrontScope(
+  scope: CloudFrontCookieScope,
+  includeRegionInPath: boolean,
+): CloudFrontCookieScope {
+  const configuredStorageRegion =
+    scope.storageRegion ??
+    getCloudFrontConfig()?.storageRegion ??
+    s3Config.AWS_REGION ??
+    process.env.AWS_REGION;
+  const scopedStorageRegion = includeRegionInPath ? configuredStorageRegion : scope.storageRegion;
+  return {
+    ...scope,
+    ...(scopedStorageRegion ? { storageRegion: scopedStorageRegion } : {}),
+  };
+}
+
 function getScopeCookiePaths(
   scope: CloudFrontCookieScope,
   { includeTenantRoot = false }: { includeTenantRoot?: boolean } = {},
@@ -136,6 +207,8 @@ function encodeCloudFrontCookieScope(scope: CloudFrontCookieScope): string {
     userId: scope.userId ?? null,
     tenantId: scope.tenantId ?? null,
     storageRegion: scope.storageRegion ?? null,
+    issuedAt: scope.issuedAt ?? null,
+    expiresAt: scope.expiresAt ?? null,
   };
   return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }
@@ -152,6 +225,8 @@ export function parseCloudFrontCookieScope(
       userId?: unknown;
       tenantId?: unknown;
       storageRegion?: unknown;
+      issuedAt?: unknown;
+      expiresAt?: unknown;
     };
     const scope: CloudFrontCookieScope = {};
     if (typeof parsed.userId === 'string') {
@@ -163,10 +238,109 @@ export function parseCloudFrontCookieScope(
     if (typeof parsed.storageRegion === 'string') {
       scope.storageRegion = assertPolicyPathSegment('storageRegion', parsed.storageRegion);
     }
+    if (typeof parsed.issuedAt === 'number' && Number.isFinite(parsed.issuedAt)) {
+      scope.issuedAt = parsed.issuedAt;
+    }
+    if (typeof parsed.expiresAt === 'number' && Number.isFinite(parsed.expiresAt)) {
+      scope.expiresAt = parsed.expiresAt;
+    }
     return scope.userId ? scope : null;
   } catch {
     return null;
   }
+}
+
+function normalizeCloudFrontScopeValue(value: CloudFrontScopeValue): string | undefined {
+  if (value == null) {
+    return undefined;
+  }
+
+  const normalized = String(value);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function getCloudFrontScopeValue(
+  optionsValue: CloudFrontScopeValue,
+  userValue: CloudFrontScopeValue,
+  requestValue: CloudFrontScopeValue,
+): string | undefined {
+  return normalizeCloudFrontScopeValue(optionsValue ?? userValue ?? requestValue);
+}
+
+export function resolveCloudFrontCookieScope(
+  req: CloudFrontCookieRequest | null | undefined,
+  user: CloudFrontScopeUser | null | undefined,
+  options: CloudFrontCookieRefreshOptions = {},
+): CloudFrontCookieScope {
+  const storageRegion = getCloudFrontScopeValue(
+    options.storageRegion,
+    user?.storageRegion,
+    req?.user?.storageRegion,
+  );
+  return {
+    userId: getCloudFrontScopeValue(
+      options.userId,
+      user?._id ?? user?.id,
+      req?.user?._id ?? req?.user?.id,
+    ),
+    tenantId: getCloudFrontScopeValue(
+      options.tenantId ?? options.orgId,
+      user?.tenantId ?? user?.orgId,
+      req?.user?.tenantId ?? req?.user?.orgId,
+    ),
+    ...(storageRegion ? { storageRegion } : {}),
+  };
+}
+
+function getPreviousCloudFrontScope(
+  req: CloudFrontCookieRequest | null | undefined,
+): CloudFrontCookieScope | null {
+  return parseCloudFrontCookieScope(req?.cookies?.[CLOUDFRONT_SCOPE_COOKIE]);
+}
+
+function getCloudFrontCookieSkipReason(scope: CloudFrontCookieScope): string | null {
+  const config = getCloudFrontConfig();
+  if (!config || config.imageSigning !== 'cookies' || !config.privateKey || !config.keyPairId) {
+    return 'cloudfront_disabled';
+  }
+  if (!config.cookieDomain) {
+    return 'missing_cookie_domain';
+  }
+  if (!scope.userId) {
+    return 'missing_user_id';
+  }
+  return null;
+}
+
+function getScopeRefreshReason(
+  previousScope: CloudFrontCookieScope | null,
+  currentScope: CloudFrontCookieScope,
+  refreshWindowSec: number,
+): string | null {
+  if (!previousScope?.userId) {
+    return 'missing_scope';
+  }
+  if (previousScope.userId !== currentScope.userId) {
+    return 'user_scope_mismatch';
+  }
+  if ((previousScope.tenantId ?? null) !== (currentScope.tenantId ?? null)) {
+    return 'tenant_scope_mismatch';
+  }
+  if ((previousScope.storageRegion ?? null) !== (currentScope.storageRegion ?? null)) {
+    return 'storage_region_scope_mismatch';
+  }
+
+  const expiresAt = Number(previousScope.expiresAt);
+  if (!Number.isFinite(expiresAt)) {
+    return 'missing_expiry';
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (expiresAt - now <= refreshWindowSec) {
+    return 'near_expiry';
+  }
+
+  return null;
 }
 
 function clearCookiePaths(
@@ -215,7 +389,7 @@ export function clearCloudFrontCookies(res: Response, scope: CloudFrontCookieSco
     }
 
     clearCookiePaths(res, baseOptions, paths);
-    res.clearCookie(CLOUDFRONT_SCOPE_COOKIE, { ...baseOptions, path: '/' });
+    res.clearCookie(CLOUDFRONT_SCOPE_COOKIE, { ...baseOptions, httpOnly: false, path: '/' });
   } catch (error) {
     logger.warn('[clearCloudFrontCookies] Failed to clear cookies:', error);
   }
@@ -254,20 +428,15 @@ export function setCloudFrontCookies(
 
   try {
     const { keyPairId, privateKey } = config;
-    const cookieExpiry = config.cookieExpiry ?? DEFAULT_COOKIE_EXPIRY;
-    const expiresAtMs = Date.now() + cookieExpiry * 1000;
+    const cookieExpiry = getConfiguredCookieExpiry();
+    const issuedAtEpoch = Math.floor(Date.now() / 1000);
+    const expiresAtEpoch = issuedAtEpoch + cookieExpiry;
+    const expiresAtMs = expiresAtEpoch * 1000;
     const expiresAt = new Date(expiresAtMs);
-    const expiresAtEpoch = Math.floor(expiresAtMs / 1000);
 
     const cleanDomain = config.domain.replace(/\/+$/, '');
     const includeRegionInPath = config.includeRegionInPath ?? false;
-    const configuredStorageRegion =
-      scope.storageRegion ?? config.storageRegion ?? s3Config.AWS_REGION ?? process.env.AWS_REGION;
-    const scopedStorageRegion = includeRegionInPath ? configuredStorageRegion : scope.storageRegion;
-    const effectiveScope = {
-      ...scope,
-      ...(scopedStorageRegion ? { storageRegion: scopedStorageRegion } : {}),
-    };
+    const effectiveScope = getEffectiveCloudFrontScope(scope, includeRegionInPath);
     const policyScopes = getPolicyScopes(cleanDomain, effectiveScope, includeRegionInPath);
     const resourcesByPath = new Map<string, string[]>();
     for (const { resource, path } of policyScopes) {
@@ -336,8 +505,14 @@ export function setCloudFrontCookies(
         res.cookie(key, cookies[key], cookieOptions);
       }
     }
-    res.cookie(CLOUDFRONT_SCOPE_COOKIE, encodeCloudFrontCookieScope(effectiveScope), {
+    const scopeCookieValue = encodeCloudFrontCookieScope({
+      ...effectiveScope,
+      issuedAt: issuedAtEpoch,
+      expiresAt: expiresAtEpoch,
+    });
+    res.cookie(CLOUDFRONT_SCOPE_COOKIE, scopeCookieValue, {
       ...baseCookieOptions,
+      httpOnly: false,
       path: '/',
     });
 
@@ -350,4 +525,121 @@ export function setCloudFrontCookies(
     logger.error('[setCloudFrontCookies] Failed to generate signed cookies:', error);
     return false;
   }
+}
+
+export function maybeRefreshCloudFrontAuthCookies(
+  req: CloudFrontCookieRequest | null | undefined,
+  res: Response,
+  user: CloudFrontScopeUser | null | undefined,
+  options: CloudFrontCookieRefreshOptions = {},
+): CloudFrontAuthCookieRefreshResult {
+  try {
+    const config = getCloudFrontConfig();
+    const scope = resolveCloudFrontCookieScope(req, user, options);
+    const skipReason = getCloudFrontCookieSkipReason(scope);
+    const timing = getCloudFrontCookieTiming();
+
+    if (skipReason) {
+      logger.debug('[maybeRefreshCloudFrontAuthCookies] CloudFront auth cookies skipped', {
+        attempted: false,
+        refreshed: false,
+        reason: skipReason,
+        has_user_id: Boolean(scope.userId),
+        has_tenant_scope: Boolean(scope.tenantId),
+        has_storage_region: Boolean(scope.storageRegion),
+      });
+      return {
+        enabled: false,
+        attempted: false,
+        refreshed: false,
+        reason: skipReason,
+      };
+    }
+
+    const includeRegionInPath = config?.includeRegionInPath ?? false;
+    const effectiveScope = getEffectiveCloudFrontScope(scope, includeRegionInPath);
+    const previousScope = getPreviousCloudFrontScope(req);
+    const refreshWindowSec = options.refreshWindowSec ?? timing.refreshWindowSec;
+    const refreshReason = options.force
+      ? 'forced'
+      : getScopeRefreshReason(previousScope, effectiveScope, refreshWindowSec);
+
+    if (!refreshReason) {
+      logger.debug('[maybeRefreshCloudFrontAuthCookies] CloudFront auth cookies still fresh', {
+        attempted: false,
+        refreshed: false,
+        reason: 'fresh',
+        refresh_window_sec: refreshWindowSec,
+      });
+      return {
+        enabled: true,
+        attempted: false,
+        refreshed: false,
+        reason: 'fresh',
+        expiresInSec: timing.expiresInSec,
+        refreshAfterSec: timing.refreshAfterSec,
+      };
+    }
+
+    const cookiesSet = setCloudFrontCookies(res, effectiveScope, previousScope);
+    const logPayload = {
+      attempted: true,
+      refreshed: cookiesSet,
+      reason: cookiesSet ? refreshReason : 'set_failed',
+      refresh_window_sec: refreshWindowSec,
+      has_tenant_scope: Boolean(effectiveScope.tenantId),
+      has_storage_region: Boolean(effectiveScope.storageRegion),
+      has_previous_scope: Boolean(previousScope?.userId),
+    };
+
+    if (cookiesSet) {
+      logger.debug(
+        '[maybeRefreshCloudFrontAuthCookies] CloudFront auth cookies refreshed',
+        logPayload,
+      );
+    } else {
+      logger.warn(
+        '[maybeRefreshCloudFrontAuthCookies] CloudFront auth cookie refresh failed',
+        logPayload,
+      );
+    }
+
+    return {
+      enabled: true,
+      attempted: true,
+      refreshed: cookiesSet,
+      reason: cookiesSet ? refreshReason : 'set_failed',
+      expiresInSec: timing.expiresInSec,
+      refreshAfterSec: timing.refreshAfterSec,
+    };
+  } catch (error) {
+    logger.warn(
+      '[maybeRefreshCloudFrontAuthCookies] Failed to refresh CloudFront auth cookies:',
+      error,
+    );
+    return {
+      enabled: false,
+      attempted: false,
+      refreshed: false,
+      reason: 'error',
+    };
+  }
+}
+
+export function forceRefreshCloudFrontAuthCookies(
+  req: CloudFrontCookieRequest | null | undefined,
+  res: Response,
+  user: CloudFrontScopeUser | null | undefined,
+  options: CloudFrontCookieRefreshOptions = {},
+): CloudFrontAuthCookieRefreshResult {
+  return maybeRefreshCloudFrontAuthCookies(req, res, user, { ...options, force: true });
+}
+
+export function maybeRefreshCloudFrontAuthCookiesMiddleware(
+  req: CloudFrontAuthCookieRefreshRequest,
+  res: Response,
+  next: NextFunction,
+): void {
+  req.cloudFrontAuthCookieRefreshResult = maybeRefreshCloudFrontAuthCookies(req, res, req.user);
+  next();
 }

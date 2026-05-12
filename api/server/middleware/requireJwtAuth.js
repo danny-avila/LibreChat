@@ -1,7 +1,11 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const passport = require('passport');
-const { isEnabled, tenantContextMiddleware } = require('@librechat/api');
+const {
+  isEnabled,
+  tenantContextMiddleware,
+  maybeRefreshCloudFrontAuthCookiesMiddleware,
+} = require('@librechat/api');
 
 const hasPassportStrategy = (strategy) =>
   typeof passport._strategy === 'function' && passport._strategy(strategy) != null;
@@ -23,6 +27,8 @@ const getValidOpenIdReuseUserId = (parsedCookies) => {
 };
 
 const getAuthenticatedUserId = (user) => user?.id?.toString?.() ?? user?._id?.toString?.();
+const refreshCloudFrontCookies =
+  maybeRefreshCloudFrontAuthCookiesMiddleware ?? ((_req, _res, next) => next());
 
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse.
@@ -65,8 +71,13 @@ const requireJwtAuth = (req, res, next) => {
       }
       req.user = user;
       req.authStrategy = strategy;
-      // req.user is now populated by passport — set up tenant ALS context
-      tenantContextMiddleware(req, res, next);
+      refreshCloudFrontCookies(req, res, (refreshErr) => {
+        if (refreshErr) {
+          return next(refreshErr);
+        }
+        // req.user is now populated by passport — set up tenant ALS context
+        tenantContextMiddleware(req, res, next);
+      });
     })(req, res, next);
   };
 

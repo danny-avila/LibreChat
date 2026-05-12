@@ -1103,6 +1103,12 @@ export type TStartupConfig = {
     scraperProvider?: ScraperProviders;
     rerankerType?: RerankerTypes;
   };
+  cloudFront?: {
+    cookieRefresh?: {
+      endpoint: string;
+      domain: string;
+    };
+  };
   mcpServers?: Record<
     string,
     {
