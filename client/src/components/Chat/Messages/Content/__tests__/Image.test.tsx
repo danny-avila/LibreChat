@@ -18,6 +18,7 @@ jest.mock('@librechat/client', () => ({
   Skeleton: ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
     <div data-testid="skeleton" className={className} {...props} />
   ),
+  useCloudFrontImageRetry: (src: string) => ({ src, onError: jest.fn() }),
 }));
 
 jest.mock('../DialogImage', () => ({

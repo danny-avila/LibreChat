@@ -9,6 +9,7 @@ import {
   AzureMinimalIcon,
   GoogleMinimalIcon,
   CustomMinimalIcon,
+  useCloudFrontImageRetry,
 } from '@librechat/client';
 import type { IconMapProps, AgentIconMapProps, IconsRecord } from '~/common';
 import UnknownIcon from './UnknownIcon';
@@ -21,14 +22,16 @@ const AssistantAvatar = ({
   context,
   size,
 }: IconMapProps) => {
+  const cloudFrontRetry = useCloudFrontImageRetry(avatar);
   if (assistantName && avatar) {
     return (
       <img
-        src={avatar}
+        src={cloudFrontRetry.src}
         className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
         alt={assistantName}
         width="80"
         height="80"
+        onError={cloudFrontRetry.onError}
       />
     );
   } else if (assistantName) {
@@ -39,14 +42,16 @@ const AssistantAvatar = ({
 };
 
 const AgentAvatar = ({ className = '', avatar = '', agentName, size }: AgentIconMapProps) => {
+  const cloudFrontRetry = useCloudFrontImageRetry(avatar);
   if (agentName != null && agentName && avatar) {
     return (
       <img
-        src={avatar}
+        src={cloudFrontRetry.src}
         className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
         alt={agentName}
         width="80"
         height="80"
+        onError={cloudFrontRetry.onError}
       />
     );
   }

@@ -53,6 +53,7 @@ jest.mock('@librechat/api', () => {
   const { tenantStorage } = require('@librechat/data-schemas');
   return {
     isEnabled: jest.fn(() => false),
+    maybeRefreshCloudFrontAuthCookiesMiddleware: jest.fn((req, res, next) => next()),
     tenantContextMiddleware: (req, res, next) => {
       const tenantId = req.user?.tenantId;
       if (!tenantId) {
@@ -67,7 +68,7 @@ jest.mock('@librechat/api', () => {
 
 const requireJwtAuth = require('../requireJwtAuth');
 const { getTenantId } = require('@librechat/data-schemas');
-const { isEnabled } = require('@librechat/api');
+const { isEnabled, maybeRefreshCloudFrontAuthCookiesMiddleware } = require('@librechat/api');
 const passport = require('passport');
 
 const jwtSecret = 'test-refresh-secret';
@@ -108,6 +109,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     mockPassportError = null;
     mockRegisteredStrategies = new Set(['jwt']);
     isEnabled.mockReturnValue(false);
+    maybeRefreshCloudFrontAuthCookiesMiddleware.mockClear();
     passport.authenticate.mockClear();
     passport._strategy.mockClear();
     if (originalJwtSecret === undefined) {
@@ -132,6 +134,21 @@ describe('requireJwtAuth tenant context chaining', () => {
   it('sets ALS tenant context after passport auth succeeds', async () => {
     const tenantId = await runAuth({ tenantId: 'tenant-abc', role: 'user' });
     expect(tenantId).toBe('tenant-abc');
+  });
+
+  it('refreshes CloudFront auth cookies after passport auth succeeds', () => {
+    const req = mockReq({ tenantId: 'tenant-abc', role: 'user' });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).toHaveBeenCalledWith(
+      req,
+      res,
+      expect.any(Function),
+    );
+    expect(next).toHaveBeenCalled();
   });
 
   it('ALS tenant context is NOT set when user has no tenantId', async () => {

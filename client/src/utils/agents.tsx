@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Feather } from 'lucide-react';
-import { Skeleton } from '@librechat/client';
+import { Skeleton, useCloudFrontImageRetry } from '@librechat/client';
 import type t from 'librechat-data-provider';
 
 /**
@@ -33,6 +33,10 @@ const LazyAgentAvatar = ({
   imgClass: string;
 }) => {
   const [isLoaded, setIsLoaded] = useState(false);
+  const handleImageError = React.useCallback(() => {
+    setIsLoaded(false);
+  }, []);
+  const cloudFrontRetry = useCloudFrontImageRetry(url, handleImageError);
 
   useEffect(() => {
     setIsLoaded(false);
@@ -41,12 +45,12 @@ const LazyAgentAvatar = ({
   return (
     <>
       <img
-        src={url}
+        src={cloudFrontRetry.src}
         alt={alt}
         className={imgClass}
         loading="lazy"
         onLoad={() => setIsLoaded(true)}
-        onError={() => setIsLoaded(false)}
+        onError={cloudFrontRetry.onError}
         style={{
           opacity: isLoaded ? 1 : 0,
           transition: 'opacity 0.2s ease-in-out',

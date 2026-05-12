@@ -1,5 +1,5 @@
 const express = require('express');
-const { createSetBalanceConfig } = require('@librechat/api');
+const { createSetBalanceConfig, forceRefreshCloudFrontAuthCookies } = require('@librechat/api');
 const {
   resetPasswordRequestController,
   resetPasswordController,
@@ -42,6 +42,19 @@ router.post(
   loginController,
 );
 router.post('/refresh', refreshController);
+router.post('/cloudfront/refresh', middleware.requireJwtAuth, (req, res) => {
+  const result = forceRefreshCloudFrontAuthCookies(req, res, req.user);
+  if (!result.enabled) {
+    return res.sendStatus(404);
+  }
+
+  const status = result.refreshed ? 200 : 500;
+  return res.status(status).json({
+    ok: result.refreshed,
+    expiresInSec: result.expiresInSec,
+    refreshAfterSec: result.refreshAfterSec,
+  });
+});
 router.post(
   '/register',
   middleware.registerLimiter,

@@ -7,6 +7,12 @@ import type { TUser } from 'librechat-data-provider';
 const mockUseHasAccess = jest.fn();
 const mockUseMCPServersQuery = jest.fn();
 const mockUseMCPToolsQuery = jest.fn();
+const mockConfigureCloudFrontCookieRefresh = jest.fn();
+
+jest.mock('@librechat/client', () => ({
+  configureCloudFrontCookieRefresh: (startupConfig: unknown) =>
+    mockConfigureCloudFrontCookieRefresh(startupConfig),
+}));
 
 jest.mock('~/hooks', () => ({
   useHasAccess: (args: unknown) => mockUseHasAccess(args),
@@ -52,6 +58,7 @@ const wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 describe('useAppStartup — MCP permission gating', () => {
   beforeEach(() => {
+    mockConfigureCloudFrontCookieRefresh.mockClear();
     mockUseMCPServersQuery.mockReturnValue({ data: undefined, isLoading: false });
     mockUseMCPToolsQuery.mockReturnValue({ data: undefined, isLoading: false });
   });

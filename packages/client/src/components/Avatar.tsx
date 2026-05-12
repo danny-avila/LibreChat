@@ -3,6 +3,7 @@ import type { TUser } from 'librechat-data-provider';
 import { Skeleton } from './Skeleton';
 import { useAvatar } from '~/hooks';
 import { UserIcon } from '~/svgs';
+import { useCloudFrontImageRetry } from '~/utils';
 
 export interface AvatarProps {
   user?: TUser;
@@ -46,6 +47,7 @@ const Avatar: React.FC<AvatarProps> = ({
     setImageError(true);
     setImageLoaded(false);
   }, []);
+  const cloudFrontRetry = useCloudFrontImageRetry(imageSrc, handleImageError);
 
   const DefaultAvatar = useCallback(
     () => (
@@ -83,10 +85,10 @@ const Avatar: React.FC<AvatarProps> = ({
             display: imageLoaded ? 'block' : 'none',
           }}
           className={`rounded-full ${className}`}
-          src={imageSrc}
+          src={cloudFrontRetry.src}
           alt={altText}
           onLoad={handleImageLoad}
-          onError={handleImageError}
+          onError={cloudFrontRetry.onError}
         />
       </div>
     );

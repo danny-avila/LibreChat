@@ -12,6 +12,7 @@ import {
   AnthropicIcon,
   AzureMinimalIcon,
   CustomMinimalIcon,
+  useCloudFrontImageRetry,
 } from '@librechat/client';
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
@@ -58,6 +59,7 @@ function getGoogleModelName(model: string | null | undefined) {
 
 const MessageEndpointIcon: React.FC<IconProps> = (props) => {
   const { error, iconURL = '', endpoint, size = 30, model = '', assistantName, agentName } = props;
+  const cloudFrontRetry = useCloudFrontImageRetry(iconURL);
 
   const assistantsIcon = {
     icon: iconURL ? (
@@ -72,9 +74,10 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
         >
           <img
             className="shadow-stroke h-full w-full object-cover"
-            src={iconURL}
+            src={cloudFrontRetry.src}
             alt={assistantName}
             style={{ height: '80', width: '80' }}
+            onError={cloudFrontRetry.onError}
           />
         </div>
       </div>
@@ -101,9 +104,10 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
         >
           <img
             className="shadow-stroke h-full w-full object-cover"
-            src={iconURL}
+            src={cloudFrontRetry.src}
             alt={agentName}
             style={{ height: '80', width: '80' }}
+            onError={cloudFrontRetry.onError}
           />
         </div>
       </div>

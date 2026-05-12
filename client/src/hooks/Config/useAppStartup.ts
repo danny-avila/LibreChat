@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import TagManager from 'react-gtm-module';
+import { configureCloudFrontCookieRefresh } from '@librechat/client';
 import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TStartupConfig, TUser } from 'librechat-data-provider';
 import { useMCPToolsQuery, useMCPServersQuery } from '~/data-provider';
@@ -75,6 +76,10 @@ export default function useAppStartup({
       spec: defaultSpec.name,
     });
   }, [defaultPreset, setDefaultPreset, startupConfig?.modelSpecs?.list]);
+
+  useEffect(() => {
+    configureCloudFrontCookieRefresh(startupConfig);
+  }, [startupConfig]);
 
   useEffect(() => {
     if (startupConfig?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {
