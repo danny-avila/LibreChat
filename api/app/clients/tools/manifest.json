@@ -84,6 +84,19 @@
     ]
   },
   {
+    "name": "Keenable Search",
+    "pluginKey": "keenable_search",
+    "description": "Keenable is a search engine built for AI agents. Useful for answering questions about current events or anything beyond the model's training data.",
+    "icon": "assets/keenable.svg",
+    "authConfig": [
+      {
+        "authField": "KEENABLE_API_KEY",
+        "label": "Keenable API Key",
+        "description": "Get your API key from your Keenable account."
+      }
+    ]
+  },
+  {
     "name": "Calculator",
     "pluginKey": "calculator",
     "description": "Perform simple and complex mathematical calculations.",

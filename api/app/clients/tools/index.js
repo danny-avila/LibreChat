@@ -11,6 +11,7 @@ const GoogleSearchAPI = require('./structured/GoogleSearch');
 const TraversaalSearch = require('./structured/TraversaalSearch');
 const createOpenAIImageTools = require('./structured/OpenAIImageTools');
 const TavilySearchResults = require('./structured/TavilySearchResults');
+const KeenableSearch = require('./structured/KeenableSearch');
 const createGeminiImageTool = require('./structured/GeminiImageGen');
 
 module.exports = {
@@ -25,6 +26,7 @@ module.exports = {
   TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
+  KeenableSearch,
   createOpenAIImageTools,
   createGeminiImageTool,
 };
