@@ -218,6 +218,11 @@ describe('requireJwtAuth tenant context chaining', () => {
       { session: false },
       expect.any(Function),
     );
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).toHaveBeenCalledWith(
+      req,
+      res,
+      expect.any(Function),
+    );
   });
 
   it('does not authenticate OpenID JWT when the reuse cookie belongs to another user', () => {
@@ -253,6 +258,7 @@ describe('requireJwtAuth tenant context chaining', () => {
       { session: false },
       expect.any(Function),
     );
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
   });
 
   it('does not use OpenID JWT when the signed OpenID reuse cookie is missing', () => {
@@ -279,6 +285,7 @@ describe('requireJwtAuth tenant context chaining', () => {
       { session: false },
       expect.any(Function),
     );
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
   });
 
   it('does not use OpenID JWT when the OpenID reuse cookie is invalid', () => {
@@ -305,6 +312,7 @@ describe('requireJwtAuth tenant context chaining', () => {
       { session: false },
       expect.any(Function),
     );
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
   });
 
   it('skips OpenID JWT fallback when the strategy was not registered', async () => {
