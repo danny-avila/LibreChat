@@ -87,7 +87,7 @@ const updatePersonalizationController = async (req, res) => {
       return res.status(400).json({ message: 'displayName must be a string or null' });
     }
 
-    const value = (displayName ?? '').trim();
+    const value = displayName ?? '';
     if (value.length > MAX_DISPLAY_NAME_LENGTH) {
       return res.status(400).json({
         message: `displayName exceeds maximum length of ${MAX_DISPLAY_NAME_LENGTH}`,

@@ -35,7 +35,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { user } = useAuthContext();
   const localize = useLocalize();
-  const preferredDisplayName = user?.personalization?.displayName?.trim();
+  const preferredDisplayName = user?.personalization?.displayName;
   const userDisplayName = preferredDisplayName || user?.name;
 
   const [textHasMultipleLines, setTextHasMultipleLines] = useState(false);

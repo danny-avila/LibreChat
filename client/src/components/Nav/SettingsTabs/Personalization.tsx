@@ -43,7 +43,7 @@ export default function Personalization({
 
   const updatePersonalizationMutation = useUpdatePersonalizationMutation({
     onSuccess: (data) => {
-      const nextDisplayName = (data.personalization.displayName ?? '').trim();
+      const nextDisplayName = data.personalization.displayName ?? '';
       setSavedDisplayName(nextDisplayName);
       setDisplayName(nextDisplayName);
       showToast({
@@ -66,7 +66,7 @@ export default function Personalization({
   }, [user?.personalization?.memories]);
 
   useEffect(() => {
-    const nextDisplayName = (user?.personalization?.displayName ?? '').trim();
+    const nextDisplayName = user?.personalization?.displayName ?? '';
     setSavedDisplayName(nextDisplayName);
     setDisplayName(nextDisplayName);
   }, [user?.personalization?.displayName]);
