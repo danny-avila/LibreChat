@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'crypto';
 import { Router } from 'express';
 import { Registry, collectDefaultMetrics, Counter, Histogram } from 'prom-client';
 import { logger } from '@librechat/data-schemas';
-import type { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
 
 const PATH_NORMALIZATIONS: [RegExp, string][] = [
   [/\/api\/messages\/[^/]+/, '/api/messages/#id'],
@@ -18,7 +18,10 @@ const PATH_NORMALIZATIONS: [RegExp, string][] = [
 ];
 
 export const normalizePath = (rawPath: string): string =>
-  PATH_NORMALIZATIONS.reduce((p, [pattern, replacement]) => p.replace(pattern, replacement), rawPath);
+  PATH_NORMALIZATIONS.reduce(
+    (p, [pattern, replacement]) => p.replace(pattern, replacement),
+    rawPath,
+  );
 
 export interface PrometheusMetrics {
   metricsMiddleware: (req: Request, res: Response, next: NextFunction) => void;
@@ -55,7 +58,7 @@ export function createMetrics(): PrometheusMetrics {
   };
 
   const metricsRouter = Router();
-  metricsRouter.get('/', async (req: Request, res: Response) => {
+  const metricsHandler: RequestHandler = (req, res): void => {
     const secret = process.env.METRICS_SECRET;
     const auth = req.headers['authorization'];
     if (!secret || !auth) {
@@ -70,14 +73,20 @@ export function createMetrics(): PrometheusMetrics {
       res.status(401).end();
       return;
     }
-    try {
-      res.set('Content-Type', registry.contentType);
-      res.end(await registry.metrics());
-    } catch (err) {
-      logger.error('[metrics] Failed to collect metrics:', err);
-      res.status(500).end();
-    }
-  });
+
+    void registry
+      .metrics()
+      .then((metrics) => {
+        res.set('Content-Type', registry.contentType);
+        res.end(metrics);
+      })
+      .catch((err) => {
+        logger.error('[metrics] Failed to collect metrics:', err);
+        res.status(500).end();
+      });
+  };
+
+  metricsRouter.get('/', metricsHandler);
 
   return { metricsMiddleware, metricsRouter };
 }
