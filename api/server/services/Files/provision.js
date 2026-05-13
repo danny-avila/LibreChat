@@ -14,7 +14,6 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getStrategyFunctions } = require('./strategies');
 
 // TODO: check and potentially fix — concurrent temp file collision (deterministic path based on file_id)
-// TODO: check and potentially fix — query params not forwarded in checkSessionsAlive batch liveness check
 // TODO: check and potentially fix — direct mutation of shared file objects in provisionFiles callback
 // TODO: check and potentially fix — this file should be TypeScript in packages/api per CLAUDE.md rules
 
@@ -22,7 +21,7 @@ const axios = createAxiosInstance();
 
 /**
  * Loads the CODE_API_KEY for a user. Call once per request and pass the result
- * to provisionToCodeEnv / checkSessionsAlive to avoid redundant lookups.
+ * to checkSessionsAlive to avoid redundant lookups.
  *
  * @param {string} userId
  * @returns {Promise<string>} The CODE_API_KEY
@@ -34,16 +33,18 @@ async function loadCodeApiKey(userId) {
 
 /**
  * Provisions a file to the code execution environment.
- * Gets a read stream from our storage and uploads to the code env.
+ * Gets a read stream from our storage and uploads to the code env, persisting
+ * the resulting `codeEnvRef` so downstream readers (primeFiles, code env
+ * categorization) can locate the sandbox copy on subsequent turns.
  *
  * @param {object} params
  * @param {object} params.req - Express request object (needs req.user.id)
  * @param {import('librechat-data-provider').TFile} params.file - The file record from DB
- * @param {string} [params.entity_id] - Optional entity ID (agent_id)
- * @param {string} [params.apiKey] - Pre-loaded CODE_API_KEY (avoids redundant loadAuthValues)
- * @returns {Promise<{ fileIdentifier: string, fileUpdate: object }>} Result with deferred DB update
+ * @param {string} [params.entity_id] - Optional entity ID (agent_id); when present the ref
+ *   is scoped to `kind: 'agent'`, otherwise it falls back to `kind: 'user'`.
+ * @returns {Promise<{ codeEnvRef: object, fileUpdate: object }>} Result with deferred DB update
  */
-async function provisionToCodeEnv({ req, file, entity_id = '', apiKey }) {
+async function provisionToCodeEnv({ req, file, entity_id }) {
   const { getDownloadStream } = getStrategyFunctions(file.source);
   if (!getDownloadStream) {
     throw new Error(
@@ -51,25 +52,34 @@ async function provisionToCodeEnv({ req, file, entity_id = '', apiKey }) {
     );
   }
 
-  const resolvedApiKey = apiKey ?? (await loadCodeApiKey(req.user.id));
   const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
   const stream = await getDownloadStream(req, file.filepath);
 
-  const fileIdentifier = await uploadCodeEnvFile({
+  const kind = entity_id ? 'agent' : 'user';
+  const id = entity_id ?? req.user.id;
+
+  const uploaded = await uploadCodeEnvFile({
     req,
     stream,
     filename: file.filename,
-    apiKey: resolvedApiKey,
-    entity_id,
+    kind,
+    id,
   });
+
+  const codeEnvRef = {
+    kind,
+    id,
+    storage_session_id: uploaded.storage_session_id,
+    file_id: uploaded.file_id,
+  };
 
   logger.debug(
     `[provisionToCodeEnv] Provisioned file "${file.filename}" (${file.file_id}) to code env`,
   );
 
   return {
-    fileIdentifier,
-    fileUpdate: { file_id: file.file_id, metadata: { ...file.metadata, fileIdentifier } },
+    codeEnvRef,
+    fileUpdate: { file_id: file.file_id, metadata: { ...file.metadata, codeEnvRef } },
   };
 }
 
@@ -152,29 +162,22 @@ async function provisionToVectorDB({ req, file, entity_id, existingStream }) {
  * Check if a single code env file is still alive by querying its session.
  *
  * @param {object} params
- * @param {import('librechat-data-provider').TFile} params.file - File with metadata.fileIdentifier
+ * @param {import('librechat-data-provider').TFile} params.file - File with metadata.codeEnvRef
  * @param {string} params.apiKey - CODE_API_KEY
  * @returns {Promise<boolean>} true if the file is still accessible in the code env
  */
 async function checkCodeEnvFileAlive({ file, apiKey }) {
-  if (!file.metadata?.fileIdentifier) {
+  const ref = file.metadata?.codeEnvRef;
+  if (!ref?.storage_session_id || !ref?.file_id) {
     return false;
   }
 
   try {
     const baseURL = getCodeBaseURL();
-    const [filePath, queryString] = file.metadata.fileIdentifier.split('?');
-    const session_id = filePath.split('/')[0];
-
-    let queryParams = {};
-    if (queryString) {
-      queryParams = Object.fromEntries(new URLSearchParams(queryString).entries());
-    }
-
     const response = await axios({
       method: 'get',
-      url: `${baseURL}/files/${session_id}`,
-      params: { detail: 'summary', ...queryParams },
+      url: `${baseURL}/files/${ref.storage_session_id}`,
+      params: { detail: 'summary' },
       headers: {
         'User-Agent': 'LibreChat/1.0',
         'X-API-Key': apiKey,
@@ -184,7 +187,7 @@ async function checkCodeEnvFileAlive({ file, apiKey }) {
       timeout: 5000,
     });
 
-    const found = response.data?.some((f) => f.name?.startsWith(filePath));
+    const found = response.data?.some((f) => f.fileId === ref.file_id);
     return !!found;
   } catch (error) {
     logAxiosError({
@@ -196,11 +199,11 @@ async function checkCodeEnvFileAlive({ file, apiKey }) {
 }
 
 /**
- * Batch-check code env file liveness by session_id.
+ * Batch-check code env file liveness by `storage_session_id`.
  * Groups files by session, makes one API call per session.
  *
  * @param {object} params
- * @param {import('librechat-data-provider').TFile[]} params.files - Files with metadata.fileIdentifier
+ * @param {import('librechat-data-provider').TFile[]} params.files - Files with metadata.codeEnvRef
  * @param {string} params.apiKey - Pre-loaded CODE_API_KEY
  * @param {number} [params.staleSafeWindowMs=21600000] - Skip check if file updated within this window (default 6h)
  * @returns {Promise<Set<string>>} Set of file_ids that are confirmed alive
@@ -209,12 +212,13 @@ async function checkSessionsAlive({ files, apiKey, staleSafeWindowMs = 6 * 60 * 
   const aliveFileIds = new Set();
   const now = Date.now();
 
-  // Group files by session_id, skip recently-updated files (fast pre-filter)
-  /** @type {Map<string, Array<{ file_id: string; filePath: string }>>} */
+  // Group files by storage_session_id, skip recently-updated files (fast pre-filter)
+  /** @type {Map<string, Array<{ file_id: string; remoteFileId: string }>>} */
   const sessionGroups = new Map();
 
   for (const file of files) {
-    if (!file.metadata?.fileIdentifier) {
+    const ref = file.metadata?.codeEnvRef;
+    if (!ref?.storage_session_id || !ref?.file_id) {
       continue;
     }
 
@@ -224,13 +228,13 @@ async function checkSessionsAlive({ files, apiKey, staleSafeWindowMs = 6 * 60 * 
       continue;
     }
 
-    const [filePath] = file.metadata.fileIdentifier.split('?');
-    const session_id = filePath.split('/')[0];
-
-    if (!sessionGroups.has(session_id)) {
-      sessionGroups.set(session_id, []);
+    if (!sessionGroups.has(ref.storage_session_id)) {
+      sessionGroups.set(ref.storage_session_id, []);
     }
-    sessionGroups.get(session_id).push({ file_id: file.file_id, filePath });
+    sessionGroups.get(ref.storage_session_id).push({
+      file_id: file.file_id,
+      remoteFileId: ref.file_id,
+    });
   }
 
   // One API call per session (in parallel)
@@ -252,8 +256,8 @@ async function checkSessionsAlive({ files, apiKey, staleSafeWindowMs = 6 * 60 * 
         });
 
         const remoteFiles = response.data ?? [];
-        for (const { file_id, filePath } of fileEntries) {
-          if (remoteFiles.some((f) => f.name?.startsWith(filePath))) {
+        for (const { file_id, remoteFileId } of fileEntries) {
+          if (remoteFiles.some((f) => f.fileId === remoteFileId)) {
             aliveFileIds.add(file_id);
           }
         }

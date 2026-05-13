@@ -1,6 +1,11 @@
 import { primeResources } from './resources';
 import { logger } from '@librechat/data-schemas';
-import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
+import {
+  FileSources,
+  EModelEndpoint,
+  EToolResources,
+  AgentCapabilities,
+} from 'librechat-data-provider';
 import type { TAgentsEndpoint, TFile } from 'librechat-data-provider';
 import type { IUser, AppConfig } from '@librechat/data-schemas';
 import type { Request as ServerRequest } from 'express';
@@ -1574,7 +1579,7 @@ describe('primeResources', () => {
         object: 'file' as const,
         usage: 0,
         embedded: false,
-        source: 'local',
+        source: FileSources.local,
         llmDeliveryPath: 'provider',
         width: 100,
         height: 100,
@@ -1589,7 +1594,7 @@ describe('primeResources', () => {
         object: 'file' as const,
         usage: 0,
         embedded: false,
-        source: 'local',
+        source: FileSources.local,
         llmDeliveryPath: 'none',
       };
 
@@ -1604,7 +1609,7 @@ describe('primeResources', () => {
         agentId: 'agent1',
       });
 
-      const attachmentIds = result.attachments.map((f) => f.file_id);
+      const attachmentIds = result.attachments.map((f) => f?.file_id);
       expect(attachmentIds).toContain('provider-file');
       expect(attachmentIds).toContain('none-file');
     });
@@ -1620,7 +1625,7 @@ describe('primeResources', () => {
         object: 'file' as const,
         usage: 0,
         embedded: false,
-        source: 'local',
+        source: FileSources.local,
         llmDeliveryPath: 'none',
       };
 
@@ -1637,7 +1642,7 @@ describe('primeResources', () => {
         loadCodeApiKey: jest.fn().mockResolvedValue('code-key'),
       });
 
-      expect(result.attachments.map((f) => f.file_id)).toContain('none-file');
+      expect(result.attachments.map((f) => f?.file_id)).toContain('none-file');
       expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('none-file');
       expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toContain('none-file');
     });
@@ -1653,7 +1658,7 @@ describe('primeResources', () => {
         object: 'file' as const,
         usage: 0,
         embedded: false,
-        source: 'local',
+        source: FileSources.local,
       };
 
       const result = await primeResources({
@@ -1667,7 +1672,7 @@ describe('primeResources', () => {
         agentId: 'agent1',
       });
 
-      const attachmentIds = result.attachments.map((f) => f.file_id);
+      const attachmentIds = result.attachments.map((f) => f?.file_id);
       expect(attachmentIds).toContain('legacy-file');
     });
   });
