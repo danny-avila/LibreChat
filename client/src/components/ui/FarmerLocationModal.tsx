@@ -13,7 +13,7 @@ import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
 import useGeolocation from '~/hooks/useGeolocation';
 import { useLocalize } from '~/hooks';
-import { STATES, DISTRICTS, INDIAN_LANGUAGES, CROPS } from '~/utils/metaData';
+import { STATES, DISTRICTS, INDIAN_LANGUAGES, CROPS, KVKS } from '~/utils/metaData';
 import SearchableSelect from './SearchableSelect';
 import SearchableMultiSelect from './SearchableMultiSelect';
 
@@ -30,11 +30,13 @@ const FarmerLocationModal = ({
   onOpenChange,
   onComplete,
   missingFields = [],
+  initialData,
 }: {
   open: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onComplete: () => void;
   missingFields?: string[];
+  initialData?: Partial<IFarmerProfile>;
 }) => {
   const localize = useLocalize();
   const [submitError, setSubmitError] = useState('');
@@ -56,6 +58,7 @@ const FarmerLocationModal = ({
   } = useForm<FarmerLocationForm>({
     mode: 'onChange',
     shouldUnregister: true,
+    defaultValues: initialData,
   });
 
   useEffect(() => {
@@ -78,6 +81,7 @@ const FarmerLocationModal = ({
       'awarenessOfKCC',
       'usesAgriApps',
       'customDistrict',
+      'nearestKVK',
     ];
 
     const fieldsToUnregister = allFields.filter((f) => !effectiveMissingFields.includes(f as string));
@@ -88,9 +92,10 @@ const FarmerLocationModal = ({
     });
   }, [effectiveMissingFields, unregister, clearErrors]);
 
-  const watchedState = watch('state');
+  const watchedState = watch('state') || initialData?.state;
   const selectedState = watchedState;
-  const selectedDistrict = watch('district');
+  const watchedDistrict = watch('district') || initialData?.district;
+  const selectedDistrict = watchedDistrict;
   const selectedCropsRaw = watch('cropsCultivated');
   const selectedCropsList = selectedCropsRaw
     ? String(selectedCropsRaw)
@@ -124,6 +129,37 @@ const FarmerLocationModal = ({
   const districtOptions = matchedStateKey
     ? [...(DISTRICTS[matchedStateKey] ?? []), localize('com_farmer_option_other')]
     : [localize('com_farmer_option_other')];
+
+  const kvkOptions = useMemo(() => {
+    if (!selectedDistrict) {
+      return [];
+    }
+
+    // 1. Direct match
+    if (KVKS[selectedDistrict]) {
+      return KVKS[selectedDistrict];
+    }
+
+    // 2. Case-insensitive and normalized match
+    const normalizedSearch = selectedDistrict.toLowerCase().replace(/\s*\(.*\)/, '').trim();
+    const kvkKeys = Object.keys(KVKS);
+
+    // Try finding a key that contains the normalized district name or vice-versa
+    const matchedKey = kvkKeys.find((key) => {
+      const normalizedKey = key.toLowerCase().replace(/\s*\(.*\)/, '').trim();
+      return (
+        normalizedKey === normalizedSearch ||
+        normalizedKey.includes(normalizedSearch) ||
+        normalizedSearch.includes(normalizedKey)
+      );
+    });
+
+    if (matchedKey) {
+      return KVKS[matchedKey];
+    }
+
+    return (KVKS as any).Other || [];
+  }, [selectedDistrict]);
 
   const handleStateChange = (val: string) => {
     setValue('state', val, { shouldValidate: true });
@@ -321,6 +357,15 @@ const FarmerLocationModal = ({
     },
     awarenessOfKCC: { label: localize('com_farmer_label_awareness_kcc'), type: 'radio' },
     usesAgriApps: { label: localize('com_farmer_label_usage_agri_apps'), type: 'radio' },
+    nearestKVK: {
+      label: localize('com_farmer_label_nearest_kvk'),
+      type: 'searchable-select',
+      options: kvkOptions,
+      disabled: !selectedDistrict,
+      selectPlaceholder: !selectedDistrict
+        ? localize('com_farmer_placeholder_select_district_first')
+        : localize('com_farmer_placeholder_select_nearest_kvk'),
+    },
   };
 
   const getValidationRules = (field: string, label: string) => {
@@ -583,12 +628,40 @@ const FarmerLocationModal = ({
                         .filter(Boolean);
 
                       return (
-                        <SearchableMultiSelect
-                          options={config.options || []}
-                          value={selectedValues}
-                          onChange={(selected) => controllerField.onChange(selected.join(', '))}
-                          placeholder={config.selectPlaceholder ?? localize('com_ui_select_options')}
-                        />
+                        <>
+                          <SearchableMultiSelect
+                            options={config.options || []}
+                            value={selectedValues}
+                            onChange={(selected) => controllerField.onChange(selected.join(', '))}
+                            placeholder={
+                              config.selectPlaceholder ?? localize('com_ui_select_options')
+                            }
+                          />
+                          {selectedValues.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {selectedValues.map((crop) => (
+                                <span
+                                  key={crop}
+                                  className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                                >
+                                  {crop}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      controllerField.onChange(
+                                        selectedValues.filter((value) => value !== crop).join(', '),
+                                      )
+                                    }
+                                    className="rounded-full p-0.5 text-green-800 hover:bg-green-200 dark:text-green-300 dark:hover:bg-green-800/40"
+                                    aria-label={`Remove ${crop}`}
+                                  >
+                                    x
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </>
                       );
                     }}
                   />

@@ -99,7 +99,8 @@ const getTermsStatusController = async (req, res) => {
       'awarenessOfKCC',
       'usesAgriApps',
       'location',
-      'landhold'
+      'landhold',
+      'nearestKVK',
     ];
 
     const missingFields = [];
@@ -132,6 +133,7 @@ const getTermsStatusController = async (req, res) => {
       farmerLandholdCompleted: !missingFields.includes('landhold'),
       farmerNeedsUpdate,
       missingFields,
+      farmerProfile: user.farmerProfile,
     });
   } catch (error) {
     logger.error('Error fetching terms acceptance status:', error);

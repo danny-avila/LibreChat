@@ -70,9 +70,8 @@ const FarmerProfileModal = ({
     control,
     reset,
     watch,
-    getValues,
     setValue,
-    formState: { errors, isValid },
+    formState: { errors },
   } = useForm<FarmerProfileForm>({ mode: 'onChange' });
 
   const { isLocating, locationError, getLocation } = useGeolocation({
@@ -170,22 +169,14 @@ const FarmerProfileModal = ({
       .filter(Boolean)
     : [];
 
-  const updateCropsCultivated = (selected: string[]) => {
-    setValue('cropsCultivated', selected.join(', '), { shouldValidate: true });
-
-    const primaryCrop = getValues('primaryCrop');
-    const secondaryCrop = getValues('secondaryCrop');
-
-    if (primaryCrop && !selected.includes(primaryCrop)) {
-      setValue('primaryCrop', '', { shouldValidate: true });
-    }
-    if (secondaryCrop && !selected.includes(secondaryCrop)) {
-      setValue('secondaryCrop', '', { shouldValidate: true });
-    }
+  const removePrimaryCrop = (cropToRemove: string) => {
+    const updated = selectedPrimaryCropList.filter((crop) => crop !== cropToRemove);
+    setValue('primaryCrop', updated.join(', '), { shouldValidate: true });
   };
 
-  const removeSelectedCrop = (cropToRemove: string) => {
-    updateCropsCultivated(selectedCropsList.filter((crop) => crop !== cropToRemove));
+  const removeSecondaryCrop = (cropToRemove: string) => {
+    const updated = selectedSecondaryCropList.filter((crop) => crop !== cropToRemove);
+    setValue('secondaryCrop', updated.join(', '), { shouldValidate: true });
   };
 
   const saveMutation = useSaveFarmerProfileMutation({
@@ -677,6 +668,26 @@ const FarmerProfileModal = ({
                     }
                     placeholder={localize('com_ui_select_options')}
                   />
+                  {selectedPrimaryCropList.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {selectedPrimaryCropList.map((crop) => (
+                        <span
+                          key={crop}
+                          className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                        >
+                          {crop}
+                          <button
+                            type="button"
+                            onClick={() => removePrimaryCrop(crop)}
+                            className="rounded-full p-0.5 text-green-800 hover:bg-green-200 dark:text-green-300 dark:hover:bg-green-800/40"
+                            aria-label={`Remove ${crop}`}
+                          >
+                            x
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <input
                     type="hidden"
                     {...register('primaryCrop', {
@@ -696,6 +707,26 @@ const FarmerProfileModal = ({
                     }
                     placeholder={localize('com_ui_select_options')}
                   />
+                  {selectedSecondaryCropList.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {selectedSecondaryCropList.map((crop) => (
+                        <span
+                          key={crop}
+                          className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                        >
+                          {crop}
+                          <button
+                            type="button"
+                            onClick={() => removeSecondaryCrop(crop)}
+                            className="rounded-full p-0.5 text-green-800 hover:bg-green-200 dark:text-green-300 dark:hover:bg-green-800/40"
+                            aria-label={`Remove ${crop}`}
+                          >
+                            x
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <input
                     type="hidden"
                     {...register('secondaryCrop', {
@@ -829,7 +860,7 @@ const FarmerProfileModal = ({
             </button>
             <button
               type="submit"
-              disabled={!isValid || saveMutation.isLoading}
+              disabled={saveMutation.isLoading}
               className="inline-flex items-center justify-center rounded-lg bg-green-600 px-6 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-green-700 dark:hover:bg-green-800"
             >
               {saveMutation.isLoading ? `${localize('com_ui_submit')}...` : localize('com_ui_submit')}

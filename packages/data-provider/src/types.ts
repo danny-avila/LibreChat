@@ -12,6 +12,8 @@ import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
 import type { Agent } from './types/assistants';
+import type { IFarmerProfile } from './types/mutations';
+
 
 export * from './schemas';
 
@@ -634,6 +636,7 @@ export type TUserTermsResponse = {
   farmerLandholdCompleted?: boolean;
   farmerNeedsUpdate?: boolean;
   missingFields?: string[];
+  farmerProfile?: IFarmerProfile;
 };
 
 export type TAcceptTermsResponse = {
