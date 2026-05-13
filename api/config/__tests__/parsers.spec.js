@@ -315,6 +315,38 @@ describe('debugTraverse', () => {
     expect(tenantMatches.length).toBe(1);
   });
 
+  it('appends request context metadata for non-debug lines', () => {
+    const out = runFormatter(
+      buildInfo('info', {
+        tenantId: 'tenant-1',
+        userId: 'user-1',
+        requestId: 'req-1',
+      }),
+    );
+
+    expect(out).toContain('"tenantId":"tenant-1"');
+    expect(out).toContain('"userId":"user-1"');
+    expect(out).toContain('"requestId":"req-1"');
+  });
+
+  it('appends request context metadata for debug lines without object metadata', () => {
+    const info = {
+      level: 'debug',
+      message: 'prefix:',
+      timestamp: 'ts',
+      tenantId: 'tenant-1',
+      userId: 'user-1',
+      requestId: 'req-1',
+      [SPLAT_SYMBOL]: ['detailValueXYZ'],
+    };
+    const out = runFormatter(info);
+
+    expect(out).toContain('detailValueXYZ');
+    expect(out).toContain('"tenantId":"tenant-1"');
+    expect(out).toContain('"userId":"user-1"');
+    expect(out).toContain('"requestId":"req-1"');
+  });
+
   it('omits numeric splat-artifact keys from the traversed output', () => {
     const info = {
       level: 'error',

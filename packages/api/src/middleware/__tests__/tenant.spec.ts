@@ -1,5 +1,5 @@
 import { unlink } from 'fs/promises';
-import { getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import { getTenantId, getUserId, getRequestId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
 import type { ServerRequest } from '~/types/http';
 // Import directly from source file — _resetTenantMiddlewareStrictCache is intentionally
@@ -18,11 +18,18 @@ jest.mock('fs/promises', () => ({
 const unlinkMock = unlink as jest.MockedFunction<typeof unlink>;
 
 function mockReq(user?: Record<string, unknown>): ServerRequest {
-  return { user } as unknown as ServerRequest;
+  return { headers: {}, user } as unknown as ServerRequest;
 }
 
 function mockTenantReq(user?: Record<string, unknown>, tenantId?: string): ServerRequest {
-  return { user, tenantId } as unknown as ServerRequest;
+  return { headers: {}, user, tenantId } as unknown as ServerRequest;
+}
+
+function mockReqWithHeaders(
+  user: Record<string, unknown> | undefined,
+  headers: Record<string, string>,
+): ServerRequest {
+  return { headers, user } as unknown as ServerRequest;
 }
 
 function mockRes(): Response {
@@ -43,6 +50,23 @@ function runMiddleware(req: ServerRequest, res: Response): Promise<string | unde
   });
 }
 
+function runMiddlewareContext(req: ServerRequest, res: Response): Promise<{
+  tenantId?: string;
+  userId?: string;
+  requestId?: string;
+}> {
+  return new Promise((resolve) => {
+    const next: NextFunction = () => {
+      resolve({
+        tenantId: getTenantId(),
+        userId: getUserId(),
+        requestId: getRequestId(),
+      });
+    };
+    tenantContextMiddleware(req, res, next);
+  });
+}
+
 describe('tenantContextMiddleware', () => {
   afterEach(() => {
     _resetTenantMiddlewareStrictCache();
@@ -56,6 +80,22 @@ describe('tenantContextMiddleware', () => {
 
     const tenantId = await runMiddleware(req, res);
     expect(tenantId).toBe('tenant-x');
+  });
+
+  it('sets ALS user and request context for authenticated tenant requests', async () => {
+    const req = mockReqWithHeaders(
+      { id: 'user-123', tenantId: 'tenant-x', role: 'user' },
+      { 'x-request-id': 'req-abc' },
+    );
+    const res = mockRes();
+
+    const context = await runMiddlewareContext(req, res);
+
+    expect(context).toEqual({
+      tenantId: 'tenant-x',
+      userId: 'user-123',
+      requestId: 'req-abc',
+    });
   });
 
   it('is a no-op for unauthenticated requests (no user)', async () => {
@@ -72,6 +112,19 @@ describe('tenantContextMiddleware', () => {
 
     const tenantId = await runMiddleware(req, res);
     expect(tenantId).toBeUndefined();
+  });
+
+  it('keeps user context in non-strict single-tenant mode', async () => {
+    const req = mockReqWithHeaders({ id: 'single-user', role: 'user' }, { 'x-request-id': 'req-1' });
+    const res = mockRes();
+
+    const context = await runMiddlewareContext(req, res);
+
+    expect(context).toEqual({
+      tenantId: undefined,
+      userId: 'single-user',
+      requestId: 'req-1',
+    });
   });
 
   it('returns 403 when user has no tenantId in strict mode', async () => {
@@ -137,6 +190,34 @@ describe('restoreTenantContextFromReq', () => {
     });
 
     expect(tenantId).toBe('tenant-user');
+  });
+
+  it('restores user and request context alongside tenant context', async () => {
+    const req = mockReqWithHeaders(
+      { id: 'restore-user', tenantId: 'tenant-user', role: 'user' },
+      { 'x-correlation-id': 'corr-123' },
+    );
+    const res = mockRes();
+
+    const context = await new Promise<{
+      tenantId?: string;
+      userId?: string;
+      requestId?: string;
+    }>((resolve) => {
+      restoreTenantContextFromReq(req, res, () => {
+        resolve({
+          tenantId: getTenantId(),
+          userId: getUserId(),
+          requestId: getRequestId(),
+        });
+      });
+    });
+
+    expect(context).toEqual({
+      tenantId: 'tenant-user',
+      userId: 'restore-user',
+      requestId: 'corr-123',
+    });
   });
 
   it('prefers server-resolved req.tenantId over req.user.tenantId', async () => {
