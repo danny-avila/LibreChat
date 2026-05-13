@@ -313,12 +313,14 @@ export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
 
 export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
 
-export type TUpdateShareLinkRequest = Pick<TSharedLink, 'shareId'>;
+export type TUpdateShareLinkRequest = Pick<TSharedLink, 'shareId' | 'targetMessageId'>;
 
 export type TSharedLinkResponse = Pick<TSharedLink, 'shareId'> &
+  Pick<TSharedLink, 'targetMessageId'> &
   Pick<TConversation, 'conversationId'>;
 
-export type TSharedLinkGetResponse = TSharedLinkResponse & {
+export type TSharedLinkGetResponse = Omit<TSharedLinkResponse, 'shareId'> & {
+  shareId: string | null;
   success: boolean;
 };
 
