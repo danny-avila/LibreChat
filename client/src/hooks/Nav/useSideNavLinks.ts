@@ -35,6 +35,13 @@ import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
 
+// V1 UX POP/BETC : feature non exposée, à arbitrer en atelier specs
+// post-congé. Repasser à true si feature devient prio.
+const SHOW_PROMPTS_SIDEBAR_ITEM = false;
+// V1 UX POP/BETC : feature non exposée, à arbitrer en atelier specs
+// post-congé. Repasser à true si feature devient prio.
+const SHOW_MCP_SIDEBAR_ITEM = false;
+
 export default function useSideNavLinks({
   hidePanel,
   keyProvided,
@@ -140,7 +147,7 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToPrompts) {
+    if (SHOW_PROMPTS_SIDEBAR_ITEM && hasAccessToPrompts) {
       links.push({
         title: 'com_ui_prompts',
         label: '',
@@ -194,8 +201,9 @@ export default function useSideNavLinks({
     }
 
     if (
-      (hasAccessToUseMCPSettings && availableMCPServers && availableMCPServers.length > 0) ||
-      hasAccessToCreateMCP
+      SHOW_MCP_SIDEBAR_ITEM &&
+      ((hasAccessToUseMCPSettings && availableMCPServers && availableMCPServers.length > 0) ||
+        hasAccessToCreateMCP)
     ) {
       links.push({
         title: 'com_nav_setting_mcp',
