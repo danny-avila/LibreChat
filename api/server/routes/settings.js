@@ -7,6 +7,7 @@ const {
   getSkillStatesController,
   updateSkillStatesController,
 } = require('~/server/controllers/SkillStatesController');
+const { updatePersonalizationController } = require('~/server/controllers/UserController');
 const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
@@ -15,5 +16,6 @@ router.get('/favorites', requireJwtAuth, getFavoritesController);
 router.post('/favorites', requireJwtAuth, updateFavoritesController);
 router.get('/skills/active', requireJwtAuth, getSkillStatesController);
 router.post('/skills/active', requireJwtAuth, updateSkillStatesController);
+router.patch('/personalization', requireJwtAuth, updatePersonalizationController);
 
 module.exports = router;

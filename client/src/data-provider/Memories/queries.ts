@@ -74,6 +74,32 @@ export const useUpdateMemoryPreferencesMutation = (
   );
 };
 
+export type UpdatePersonalizationParams = { displayName: string | null };
+export type UpdatePersonalizationResponse = {
+  updated: boolean;
+  personalization: {
+    memories?: boolean;
+    displayName?: string;
+  };
+};
+
+export const useUpdatePersonalizationMutation = (
+  options?: UseMutationOptions<UpdatePersonalizationResponse, Error, UpdatePersonalizationParams>,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation<UpdatePersonalizationResponse, Error, UpdatePersonalizationParams>(
+    [MutationKeys.updatePersonalization],
+    (personalization: UpdatePersonalizationParams) => dataService.updatePersonalization(personalization),
+    {
+      ...options,
+      onSuccess: (...params) => {
+        queryClient.invalidateQueries([QueryKeys.user]);
+        options?.onSuccess?.(...params);
+      },
+    },
+  );
+};
+
 export type CreateMemoryParams = { key: string; value: string };
 export type CreateMemoryResponse = { created: boolean; memory: TUserMemory };
 
