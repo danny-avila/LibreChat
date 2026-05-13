@@ -1153,13 +1153,19 @@ const revertAgentVersionHandler = async (req, res) => {
       }
     }
 
-    if (updatedAgent.langfuse) {
-      const normalizedLangfuse = await normalizeLangfuseConfig(updatedAgent.langfuse, undefined, {
+    const revertVersion = existingAgent.versions?.[version_index];
+    if (revertVersion?.langfuse) {
+      const normalizedLangfuse = await normalizeLangfuseConfig(revertVersion.langfuse, undefined, {
         preserveIncomingEncrypted: true,
       });
       if (normalizedLangfuse) {
         revertUpdates.langfuse = normalizedLangfuse;
       }
+    } else if (existingAgent.langfuse) {
+      revertUpdates.$unset = {
+        ...(revertUpdates.$unset || {}),
+        langfuse: 1,
+      };
     }
 
     if (Object.keys(revertUpdates).length > 0) {

@@ -1366,6 +1366,46 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.langfuse.secretKey).not.toBe('sk-version');
       expect(await decryptStoredSecret(agentInDb.langfuse.secretKey)).toBe('sk-version');
     });
+
+    test('revertAgentVersionHandler should remove Langfuse when restored version lacks it', async () => {
+      const agentAuthorId = new mongoose.Types.ObjectId();
+      const encryptedOriginal = await encryptStoredSecret('sk-original');
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Current Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: agentAuthorId,
+        langfuse: {
+          enabled: true,
+          publicKey: 'pk-current',
+          secretKey: encryptedOriginal,
+          baseUrl: 'https://cloud.langfuse.com',
+        },
+        versions: [
+          {
+            name: 'Historical Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+          },
+        ],
+      });
+
+      mockReq.user.id = agentAuthorId.toString();
+      mockReq.params.id = agent.id;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.langfuse).toBeUndefined();
+
+      const agentInDb = await Agent.findOne({ id: agent.id }).lean();
+      expect(agentInDb.langfuse).toBeUndefined();
+      const latestVersion = agentInDb.versions[agentInDb.versions.length - 1];
+      expect(latestVersion.langfuse).toBeUndefined();
+    });
   });
 
   describe('Mass Assignment Attack Scenarios', () => {
