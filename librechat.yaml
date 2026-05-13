@@ -42,7 +42,7 @@ interface:
   termsOfService:
     externalUrl: 'https://codecan.ai/terms.html'
     openNewTab: true
-    modalAcceptance: true
+    modalAcceptance: false
     modalTitle: 'Terms of Service | CodeCan AI'
     modalContent: |
       # Terms of Service
