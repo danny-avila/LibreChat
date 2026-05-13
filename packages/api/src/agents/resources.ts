@@ -14,14 +14,13 @@ export type TFileUpdate = {
 
 /**
  * Function type for provisioning a file to the code execution environment.
- * @returns The fileIdentifier and a deferred DB update object
+ * @returns The codeEnvRef and a deferred DB update object
  */
 export type TProvisionToCodeEnv = (params: {
   req: ServerRequest & { user?: IUser };
   file: TFile;
   entity_id?: string;
-  apiKey?: string;
-}) => Promise<{ fileIdentifier: string; fileUpdate: TFileUpdate }>;
+}) => Promise<{ codeEnvRef: Record<string, unknown>; fileUpdate: TFileUpdate }>;
 
 /**
  * Function type for provisioning a file to the vector DB for file_search.
@@ -418,7 +417,7 @@ export const primeResources = async ({
         let aliveFileIds: Set<string> = new Set();
         if (needsCodeEnv && codeApiKey && checkSessionsAlive) {
           const filesWithIdentifiers = attachments.filter(
-            (f) => f?.metadata?.fileIdentifier && f.file_id,
+            (f) => f?.metadata?.codeEnvRef && f.file_id,
           );
           if (filesWithIdentifiers.length > 0) {
             aliveFileIds = await checkSessionsAlive({
@@ -442,15 +441,15 @@ export const primeResources = async ({
             codeApiKey &&
             !processedResourceFiles.has(`${EToolResources.execute_code}:${file.file_id}`)
           ) {
-            const hasFileIdentifier = !!file.metadata?.fileIdentifier;
-            const isStale = hasFileIdentifier && !aliveFileIds.has(file.file_id);
+            const hasCodeEnvRef = !!file.metadata?.codeEnvRef;
+            const isStale = hasCodeEnvRef && !aliveFileIds.has(file.file_id);
 
-            if (!hasFileIdentifier || isStale) {
+            if (!hasCodeEnvRef || isStale) {
               if (isStale) {
                 logger.info(
                   `[primeResources] Code env file expired for "${file.filename}" (${file.file_id}), will re-provision on tool use`,
                 );
-                file.metadata = { ...file.metadata, fileIdentifier: undefined };
+                file.metadata = { ...file.metadata, codeEnvRef: undefined };
               }
               codeEnvFiles.push(file);
             } else {
