@@ -228,10 +228,7 @@ const FileAttachmentGroup = memo(({ attachments }: { attachments: TAttachment[] 
     }
     return (
       <div className="my-2 flex flex-wrap items-center gap-2.5">
-        <FileAttachment
-          attachment={attachment}
-          key={renderAttachmentKey('file', attachment, 0)}
-        />
+        <FileAttachment attachment={attachment} key={renderAttachmentKey('file', attachment, 0)} />
       </div>
     );
   }
