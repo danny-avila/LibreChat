@@ -102,9 +102,7 @@ describe('Server metrics route', () => {
   it('returns 401 at /metrics when wrong token provided', async () => {
     process.env.METRICS_SECRET = 'test-secret';
 
-    const response = await request(app)
-      .get('/metrics')
-      .set('Authorization', 'Bearer wrong-token');
+    const response = await request(app).get('/metrics').set('Authorization', 'Bearer wrong-token');
 
     expect(response.status).toBe(401);
   });
@@ -112,9 +110,7 @@ describe('Server metrics route', () => {
   it('exposes Prometheus metrics at /metrics with correct bearer token', async () => {
     process.env.METRICS_SECRET = 'test-secret';
 
-    const response = await request(app)
-      .get('/metrics')
-      .set('Authorization', 'Bearer test-secret');
+    const response = await request(app).get('/metrics').set('Authorization', 'Bearer test-secret');
 
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toMatch(/text\/plain/);
