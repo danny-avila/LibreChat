@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import * as t from '~/mcp/types';
+import { isLeader } from '~/cluster';
 import { registryStatusCache } from '~/mcp/registry/cache/RegistryStatusCache';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
@@ -46,6 +47,33 @@ const mockLogger = logger as jest.Mocked<typeof logger>;
 const mockInspect = MCPServerInspector.inspect as jest.MockedFunction<
   typeof MCPServerInspector.inspect
 >;
+
+const withFollowerWaitEnv = async (
+  retryMs: string,
+  maxWaitMs: string,
+  callback: () => Promise<void>,
+): Promise<void> => {
+  const originalRetryMs = process.env.MCP_INIT_FOLLOWER_RETRY_MS;
+  const originalMaxWaitMs = process.env.MCP_INIT_FOLLOWER_MAX_WAIT_MS;
+  process.env.MCP_INIT_FOLLOWER_RETRY_MS = retryMs;
+  process.env.MCP_INIT_FOLLOWER_MAX_WAIT_MS = maxWaitMs;
+
+  try {
+    await callback();
+  } finally {
+    if (originalRetryMs == null) {
+      delete process.env.MCP_INIT_FOLLOWER_RETRY_MS;
+    } else {
+      process.env.MCP_INIT_FOLLOWER_RETRY_MS = originalRetryMs;
+    }
+
+    if (originalMaxWaitMs == null) {
+      delete process.env.MCP_INIT_FOLLOWER_MAX_WAIT_MS;
+    } else {
+      process.env.MCP_INIT_FOLLOWER_MAX_WAIT_MS = originalMaxWaitMs;
+    }
+  }
+};
 
 describe('MCPServersInitializer', () => {
   let mockConnection: jest.Mocked<MCPConnection>;
@@ -184,6 +212,7 @@ describe('MCPServersInitializer', () => {
     await registry.reset();
     MCPServersInitializer.resetProcessFlag();
     jest.clearAllMocks();
+    (isLeader as jest.MockedFunction<typeof isLeader>).mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -219,6 +248,115 @@ describe('MCPServersInitializer', () => {
       await MCPServersInitializer.initialize(testConfigs);
 
       expect(mockInspect).not.toHaveBeenCalled();
+    });
+
+    it('should re-initialize when the shared initialized status belongs to a different config', async () => {
+      await MCPServersInitializer.initialize(testConfigs);
+      expect(await registryStatusCache.isInitialized()).toBe(true);
+      const firstConfigHash = await registryStatusCache.getInitializedConfigHash();
+
+      const updatedConfigs: t.MCPServers = {
+        ...testConfigs,
+        new_server: {
+          type: 'stdio',
+          command: 'node',
+          args: ['new-server.js'],
+        },
+      };
+
+      jest.clearAllMocks();
+
+      await MCPServersInitializer.initialize(updatedConfigs);
+
+      expect(mockInspect).toHaveBeenCalledTimes(6);
+      expect(await registry.getServerConfig('new_server')).toBeDefined();
+      expect(await registryStatusCache.getInitializedConfigHash()).not.toBe(firstConfigHash);
+    });
+
+    it('should not let a follower accept stale initialized status from another config', async () => {
+      await MCPServersInitializer.initialize(testConfigs);
+
+      const updatedConfigs: t.MCPServers = {
+        ...testConfigs,
+        new_server: {
+          type: 'stdio',
+          command: 'node',
+          args: ['new-server.js'],
+        },
+      };
+      const mockIsLeader = isLeader as jest.MockedFunction<typeof isLeader>;
+      mockIsLeader.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+      jest.clearAllMocks();
+
+      await withFollowerWaitEnv('1', '50', async () => {
+        await MCPServersInitializer.initialize(updatedConfigs);
+      });
+
+      expect(mockInspect).toHaveBeenCalledTimes(6);
+      expect(mockIsLeader.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(await registry.getServerConfig('new_server')).toBeDefined();
+    });
+
+    it('should initialize locally when a stale follower wait is exhausted', async () => {
+      await MCPServersInitializer.initialize(testConfigs);
+
+      const updatedConfigs: t.MCPServers = {
+        ...testConfigs,
+        new_server: {
+          type: 'stdio',
+          command: 'node',
+          args: ['new-server.js'],
+        },
+      };
+      const mockIsLeader = isLeader as jest.MockedFunction<typeof isLeader>;
+      mockIsLeader.mockResolvedValue(false);
+
+      jest.clearAllMocks();
+
+      await withFollowerWaitEnv('1', '1', async () => {
+        await MCPServersInitializer.initialize(updatedConfigs);
+      });
+
+      expect(mockInspect).toHaveBeenCalledTimes(6);
+      expect(mockIsLeader).toHaveBeenCalled();
+      expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Timed out waiting'));
+      expect(await registry.getServerConfig('new_server')).toBeDefined();
+    });
+
+    it('should ignore invalid follower max wait env values', async () => {
+      await MCPServersInitializer.initialize(testConfigs);
+
+      const updatedConfigs: t.MCPServers = {
+        ...testConfigs,
+        new_server: {
+          type: 'stdio',
+          command: 'node',
+          args: ['new-server.js'],
+        },
+      };
+      const mockIsLeader = isLeader as jest.MockedFunction<typeof isLeader>;
+      mockIsLeader.mockResolvedValue(false);
+      const originalInitTimeoutMs = process.env.MCP_INIT_TIMEOUT_MS;
+      process.env.MCP_INIT_TIMEOUT_MS = '1';
+
+      jest.clearAllMocks();
+
+      try {
+        await withFollowerWaitEnv('1', 'not-a-number', async () => {
+          await MCPServersInitializer.initialize(updatedConfigs);
+        });
+      } finally {
+        if (originalInitTimeoutMs == null) {
+          delete process.env.MCP_INIT_TIMEOUT_MS;
+        } else {
+          process.env.MCP_INIT_TIMEOUT_MS = originalInitTimeoutMs;
+        }
+      }
+
+      expect(mockInspect).toHaveBeenCalledTimes(6);
+      expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Timed out waiting'));
+      expect(await registry.getServerConfig('new_server')).toBeDefined();
     });
 
     it('should process all server configs through inspector', async () => {

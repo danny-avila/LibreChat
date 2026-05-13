@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
 import { registryStatusCache as statusCache } from './cache/RegistryStatusCache';
@@ -6,8 +7,30 @@ import { sanitizeUrlForLogging } from '~/mcp/utils';
 import { withTimeout } from '~/utils';
 import { isLeader } from '~/cluster';
 
-const MCP_INIT_TIMEOUT_MS =
-  process.env.MCP_INIT_TIMEOUT_MS != null ? parseInt(process.env.MCP_INIT_TIMEOUT_MS) : 30_000;
+const DEFAULT_MCP_INIT_TIMEOUT_MS = 30_000;
+const DEFAULT_FOLLOWER_RETRY_MS = 3000;
+
+const parseDurationMs = (
+  value: string | undefined,
+  fallback: number,
+  allowZero = false,
+): number => {
+  if (value == null) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  if (allowZero) {
+    return parsed >= 0 ? parsed : fallback;
+  }
+  return parsed > 0 ? parsed : fallback;
+};
+
+type InitializeRegistryOptions = {
+  skipStatusLeaderCheck?: boolean;
+};
 
 /**
  * Handles initialization of MCP servers at application startup with distributed coordination.
@@ -37,35 +60,70 @@ export class MCPServersInitializer {
   }
 
   public static async initialize(rawConfigs: t.MCPServers): Promise<void> {
+    const configHash = MCPServersInitializer.configHash(rawConfigs);
     // On first call in this process, always reset and re-initialize
     // This ensures we don't use stale Redis data from previous runs
-    const isFirstCallThisProcess = !MCPServersInitializer.hasInitializedThisProcess;
-    // Set flag immediately so recursive calls (from followers) use Redis cache for coordination
+    let isFirstAttemptThisProcess = !MCPServersInitializer.hasInitializedThisProcess;
+    // Set flag immediately so follower retries use Redis cache for coordination
     MCPServersInitializer.hasInitializedThisProcess = true;
+    const followerWaitStartedAt = performance.now();
 
-    if (!isFirstCallThisProcess && (await statusCache.isInitialized())) return;
+    while (true) {
+      if (!isFirstAttemptThisProcess && (await statusCache.isInitializedFor(configHash))) {
+        return;
+      }
 
-    if (await isLeader()) {
-      // Leader performs initialization - always reset on first call
-      await statusCache.reset();
-      await MCPServersRegistry.getInstance().reset();
-      const serverNames = Object.keys(rawConfigs);
-      await Promise.allSettled(
-        serverNames.map((serverName) =>
-          withTimeout(
-            MCPServersInitializer.initializeServer(serverName, rawConfigs[serverName]),
-            MCP_INIT_TIMEOUT_MS,
-            `${MCPServersInitializer.prefix(serverName)} Server initialization timed out`,
-            logger.error,
-          ),
+      if (await isLeader()) {
+        await MCPServersInitializer.initializeRegistry(rawConfigs, configHash);
+        return;
+      }
+
+      const followerWaitMs = performance.now() - followerWaitStartedAt;
+      const followerMaxWaitMs = MCPServersInitializer.followerMaxWaitMs();
+      if (followerWaitMs >= followerMaxWaitMs) {
+        logger.warn(
+          '[MCP] Timed out waiting for leader to initialize registry for current config fingerprint; initializing on this instance',
+        );
+        await MCPServersInitializer.initializeRegistry(rawConfigs, configHash, {
+          skipStatusLeaderCheck: true,
+        });
+        return;
+      }
+
+      logger.debug(
+        '[MCP] Waiting for leader to initialize registry for current config fingerprint',
+      );
+      isFirstAttemptThisProcess = false;
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          Math.min(MCPServersInitializer.followerRetryMs(), followerMaxWaitMs - followerWaitMs),
         ),
       );
-      await statusCache.setInitialized(true);
-    } else {
-      // Followers try again after a delay if not initialized
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      await this.initialize(rawConfigs);
     }
+  }
+
+  private static async initializeRegistry(
+    rawConfigs: t.MCPServers,
+    configHash: string,
+    options?: InitializeRegistryOptions,
+  ): Promise<void> {
+    await statusCache.reset();
+    await MCPServersRegistry.getInstance().reset();
+    const serverNames = Object.keys(rawConfigs);
+    await Promise.allSettled(
+      serverNames.map((serverName) =>
+        withTimeout(
+          MCPServersInitializer.initializeServer(serverName, rawConfigs[serverName]),
+          MCPServersInitializer.initTimeoutMs(),
+          `${MCPServersInitializer.prefix(serverName)} Server initialization timed out`,
+          logger.error,
+        ),
+      ),
+    );
+    await statusCache.setInitialized(true, configHash, {
+      skipLeaderCheck: options?.skipStatusLeaderCheck,
+    });
   }
 
   /** Initializes a single server with all its metadata and adds it to appropriate collections */
@@ -109,5 +167,47 @@ export class MCPServersInitializer {
   // Returns formatted log prefix for server messages
   private static prefix(serverName: string): string {
     return `[MCP][${serverName}]`;
+  }
+
+  private static configHash(rawConfigs: t.MCPServers): string {
+    const registry = MCPServersRegistry.getInstance();
+    const fingerprint = {
+      rawConfigs,
+      allowedDomains: registry.getAllowedDomains() ?? null,
+      allowedAddresses: registry.getAllowedAddresses() ?? null,
+    };
+    return createHash('sha256')
+      .update(JSON.stringify(MCPServersInitializer.sortForHash(fingerprint)))
+      .digest('hex');
+  }
+
+  private static followerRetryMs(): number {
+    return parseDurationMs(process.env.MCP_INIT_FOLLOWER_RETRY_MS, DEFAULT_FOLLOWER_RETRY_MS);
+  }
+
+  private static followerMaxWaitMs(): number {
+    return parseDurationMs(
+      process.env.MCP_INIT_FOLLOWER_MAX_WAIT_MS,
+      MCPServersInitializer.initTimeoutMs() + MCPServersInitializer.followerRetryMs(),
+      true,
+    );
+  }
+
+  private static initTimeoutMs(): number {
+    return parseDurationMs(process.env.MCP_INIT_TIMEOUT_MS, DEFAULT_MCP_INIT_TIMEOUT_MS);
+  }
+
+  private static sortForHash(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => MCPServersInitializer.sortForHash(item));
+    }
+    if (value !== null && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, item]) => [key, MCPServersInitializer.sortForHash(item)]),
+      );
+    }
+    return value;
   }
 }
