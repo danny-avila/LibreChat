@@ -23,7 +23,7 @@ version: 2.0.3
 # It is recommended to use it with quotes.
 
 # renovate: image=registry.librechat.ai/danny-avila/librechat
-appVersion: "v0.8.5"
+appVersion: "v0.8.6-rc1"
 
 home: https://www.librechat.ai
 

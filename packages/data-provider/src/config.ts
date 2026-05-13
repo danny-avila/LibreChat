@@ -215,6 +215,7 @@ export const cloudfrontConfigSchema = z
       .optional(),
     storageRegion: z.string().min(1).optional(),
     includeRegionInPath: z.boolean().default(false),
+    requireSignedAccess: z.boolean().default(false),
   })
   .refine((data) => !data.invalidateOnDelete || !!data.distributionId, {
     message: 'distributionId is required when invalidateOnDelete is true',
@@ -224,6 +225,11 @@ export const cloudfrontConfigSchema = z
     message:
       'cookieDomain is required when imageSigning is "cookies" (e.g., ".example.com" for API at api.example.com and CDN at cdn.example.com)',
     path: ['cookieDomain'],
+  })
+  .refine((data) => !data.requireSignedAccess || data.imageSigning === 'cookies', {
+    message:
+      'cloudfront.requireSignedAccess=true requires cloudfront.imageSigning="cookies" (signed URL mode is not yet implemented)',
+    path: ['requireSignedAccess'],
   })
   .optional();
 
@@ -1096,6 +1102,12 @@ export type TStartupConfig = {
     searchProvider?: SearchProviders;
     scraperProvider?: ScraperProviders;
     rerankerType?: RerankerTypes;
+  };
+  cloudFront?: {
+    cookieRefresh?: {
+      endpoint: string;
+      domain: string;
+    };
   };
   mcpServers?: Record<
     string,
@@ -2120,9 +2132,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.5',
+  VERSION = 'v0.8.6-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.10',
+  CONFIG_VERSION = '1.3.11',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */

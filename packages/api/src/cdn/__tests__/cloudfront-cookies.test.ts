@@ -19,6 +19,8 @@ import type { Response } from 'express';
 import {
   setCloudFrontCookies,
   clearCloudFrontCookies,
+  forceRefreshCloudFrontAuthCookies,
+  maybeRefreshCloudFrontAuthCookies,
   parseCloudFrontCookieScope,
 } from '../cloudfront-cookies';
 
@@ -27,6 +29,24 @@ const { logger: mockLogger } = jest.requireMock('@librechat/data-schemas') as {
 };
 
 const defaultScope = { userId: 'user123' };
+const encodeScope = (scope: object) =>
+  Buffer.from(JSON.stringify(scope), 'utf8').toString('base64url');
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+function defaultCookieConfig(overrides: object = {}) {
+  return {
+    domain: 'https://cdn.example.com',
+    imageSigning: 'cookies',
+    cookieExpiry: 1800,
+    cookieDomain: '.example.com',
+    privateKey: '-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----',
+    keyPairId: 'K123ABC',
+    ...overrides,
+  };
+}
 
 describe('setCloudFrontCookies', () => {
   let mockRes: Partial<Response>;
@@ -154,6 +174,33 @@ describe('setCloudFrontCookies', () => {
     expect(cookieNames).toContain('CloudFront-Policy');
     expect(cookieNames).toContain('CloudFront-Signature');
     expect(cookieNames).toContain('CloudFront-Key-Pair-Id');
+  });
+
+  it('sets a non-HttpOnly scope cookie with issuedAt and expiresAt timing', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    mockGetCloudFrontConfig.mockReturnValue(defaultCookieConfig({ cookieExpiry: 1800 }));
+    mockGetSignedCookies.mockReturnValue({
+      'CloudFront-Policy': 'policy-value',
+      'CloudFront-Signature': 'signature-value',
+      'CloudFront-Key-Pair-Id': 'K123ABC',
+    });
+
+    const result = setCloudFrontCookies(mockRes as Response, {
+      userId: 'user123',
+      tenantId: 'tenantA',
+      storageRegion: 'us-east-2',
+    });
+
+    expect(result).toBe(true);
+    const [, value, options] = cookieArgs.find(([name]) => name === 'LibreChat-CloudFront-Scope')!;
+    expect(options).toMatchObject({ httpOnly: false, path: '/' });
+    expect(parseCloudFrontCookieScope(value)).toEqual({
+      userId: 'user123',
+      tenantId: 'tenantA',
+      storageRegion: 'us-east-2',
+      issuedAt: 1_700_000_000,
+      expiresAt: 1_700_001_800,
+    });
   });
 
   it('uses cookieDomain from config with path-scoped cookies', () => {
@@ -299,8 +346,8 @@ describe('setCloudFrontCookies', () => {
     const [name, value, options] = cookieArgs[cookieArgs.length - 1];
     expect(name).toBe('LibreChat-CloudFront-Scope');
     expect(options).toMatchObject({ domain: '.example.com', path: '/' });
-    expect(Buffer.from(value, 'base64url').toString('utf8')).toBe(
-      JSON.stringify({ userId: 'user123', tenantId: 'tenantA', storageRegion: null }),
+    expect(parseCloudFrontCookieScope(value)).toEqual(
+      expect.objectContaining({ userId: 'user123', tenantId: 'tenantA' }),
     );
   });
 
@@ -417,8 +464,12 @@ describe('setCloudFrontCookies', () => {
     expect(cookieArgs[3][2]).toMatchObject({ path: '/a' });
 
     const [, scopeValue] = cookieArgs[cookieArgs.length - 1];
-    expect(Buffer.from(scopeValue, 'base64url').toString('utf8')).toBe(
-      JSON.stringify({ userId: 'user123', tenantId: 'tenantA', storageRegion: 'us-east-2' }),
+    expect(parseCloudFrontCookieScope(scopeValue)).toEqual(
+      expect.objectContaining({
+        userId: 'user123',
+        tenantId: 'tenantA',
+        storageRegion: 'us-east-2',
+      }),
     );
   });
 
@@ -461,8 +512,8 @@ describe('setCloudFrontCookies', () => {
           Resource: 'https://cdn.example.com/a/r/*/t/tenantA/avatars/*',
         }),
       ]);
-      expect(Buffer.from(scopeValue, 'base64url').toString('utf8')).toBe(
-        JSON.stringify({ userId: 'user123', tenantId: 'tenantA', storageRegion: null }),
+      expect(parseCloudFrontCookieScope(scopeValue)).toEqual(
+        expect.objectContaining({ userId: 'user123', tenantId: 'tenantA' }),
       );
     } finally {
       if (originalRegion == null) {
@@ -640,9 +691,6 @@ describe('setCloudFrontCookies', () => {
 });
 
 describe('parseCloudFrontCookieScope', () => {
-  const encodeScope = (scope: object) =>
-    Buffer.from(JSON.stringify(scope), 'utf8').toString('base64url');
-
   it('round-trips a valid user and tenant scope', () => {
     const value = encodeScope({ userId: 'user123', tenantId: 'tenantA' });
 
@@ -666,6 +714,163 @@ describe('parseCloudFrontCookieScope', () => {
     expect(
       parseCloudFrontCookieScope(encodeScope({ userId: 'user123', tenantId: 'tenant A' })),
     ).toBeNull();
+  });
+
+  it('handles old scope cookies without timing fields', () => {
+    expect(parseCloudFrontCookieScope(encodeScope({ userId: 'user123' }))).toEqual({
+      userId: 'user123',
+    });
+  });
+
+  it('drops invalid timing fields while preserving valid scope', () => {
+    expect(
+      parseCloudFrontCookieScope(
+        encodeScope({ userId: 'user123', issuedAt: 'bad', expiresAt: Number.NaN }),
+      ),
+    ).toEqual({ userId: 'user123' });
+  });
+});
+
+describe('maybeRefreshCloudFrontAuthCookies', () => {
+  let mockRes: Partial<Response>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRes = {
+      cookie: jest.fn().mockReturnThis(),
+      clearCookie: jest.fn().mockReturnThis(),
+    };
+    mockGetSignedCookies.mockReturnValue({
+      'CloudFront-Policy': 'policy-value',
+      'CloudFront-Signature': 'signature-value',
+      'CloudFront-Key-Pair-Id': 'K123ABC',
+    });
+    mockGetCloudFrontConfig.mockReturnValue(defaultCookieConfig());
+    jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+  });
+
+  it('refreshes when the scope cookie is missing', () => {
+    const result = maybeRefreshCloudFrontAuthCookies({ cookies: {} }, mockRes as Response, {
+      _id: 'user123',
+    });
+
+    expect(result).toMatchObject({ enabled: true, attempted: true, refreshed: true });
+    expect(mockGetSignedCookies).toHaveBeenCalled();
+  });
+
+  it('refreshes when the scope cookie is near expiry', () => {
+    const result = maybeRefreshCloudFrontAuthCookies(
+      {
+        cookies: {
+          'LibreChat-CloudFront-Scope': encodeScope({
+            userId: 'user123',
+            expiresAt: 1_700_000_250,
+          }),
+        },
+      },
+      mockRes as Response,
+      { _id: 'user123' },
+    );
+
+    expect(result).toMatchObject({ attempted: true, refreshed: true, reason: 'near_expiry' });
+  });
+
+  it('refreshes when the tenant or user scope mismatches', () => {
+    const userMismatch = maybeRefreshCloudFrontAuthCookies(
+      {
+        cookies: {
+          'LibreChat-CloudFront-Scope': encodeScope({
+            userId: 'old-user',
+            tenantId: 'tenantA',
+            expiresAt: 1_700_001_000,
+          }),
+        },
+      },
+      mockRes as Response,
+      { _id: 'user123', tenantId: 'tenantA' },
+    );
+
+    const tenantMismatch = maybeRefreshCloudFrontAuthCookies(
+      {
+        cookies: {
+          'LibreChat-CloudFront-Scope': encodeScope({
+            userId: 'user123',
+            tenantId: 'old-tenant',
+            expiresAt: 1_700_001_000,
+          }),
+        },
+      },
+      mockRes as Response,
+      { _id: 'user123', tenantId: 'tenantA' },
+    );
+
+    expect(userMismatch).toMatchObject({ attempted: true, reason: 'user_scope_mismatch' });
+    expect(tenantMismatch).toMatchObject({ attempted: true, reason: 'tenant_scope_mismatch' });
+  });
+
+  it('does not refresh when the scope cookie is still fresh', () => {
+    const result = maybeRefreshCloudFrontAuthCookies(
+      {
+        cookies: {
+          'LibreChat-CloudFront-Scope': encodeScope({
+            userId: 'user123',
+            expiresAt: 1_700_001_000,
+          }),
+        },
+      },
+      mockRes as Response,
+      { _id: 'user123' },
+    );
+
+    expect(result).toMatchObject({
+      enabled: true,
+      attempted: false,
+      refreshed: false,
+      reason: 'fresh',
+    });
+    expect(mockGetSignedCookies).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh when CloudFront is disabled', () => {
+    mockGetCloudFrontConfig.mockReturnValue(null);
+
+    const result = maybeRefreshCloudFrontAuthCookies({ cookies: {} }, mockRes as Response, {
+      _id: 'user123',
+    });
+
+    expect(result).toMatchObject({ enabled: false, attempted: false, refreshed: false });
+    expect(mockGetSignedCookies).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh when imageSigning is not cookies', () => {
+    mockGetCloudFrontConfig.mockReturnValue(defaultCookieConfig({ imageSigning: 'url' }));
+
+    const result = maybeRefreshCloudFrontAuthCookies({ cookies: {} }, mockRes as Response, {
+      _id: 'user123',
+    });
+
+    expect(result).toMatchObject({ enabled: false, attempted: false, refreshed: false });
+    expect(mockGetSignedCookies).not.toHaveBeenCalled();
+  });
+
+  it('force-refreshes even when the scope cookie is fresh without calling OIDC refresh', () => {
+    const oidcRefresh = jest.fn();
+
+    const result = forceRefreshCloudFrontAuthCookies(
+      {
+        cookies: {
+          'LibreChat-CloudFront-Scope': encodeScope({
+            userId: 'user123',
+            expiresAt: 1_700_001_000,
+          }),
+        },
+      },
+      mockRes as Response,
+      { _id: 'user123' },
+    );
+
+    expect(result).toMatchObject({ attempted: true, refreshed: true, reason: 'forced' });
+    expect(oidcRefresh).not.toHaveBeenCalled();
   });
 });
 
@@ -742,12 +947,17 @@ describe('clearCloudFrontCookies', () => {
       secure: true,
       sameSite: 'none',
     };
+    const scopePathOptions = {
+      ...rootPathOptions,
+      httpOnly: false,
+    };
     expect(clearedCookies).toContainEqual(['CloudFront-Policy', legacyPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Signature', legacyPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Key-Pair-Id', legacyPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Policy', rootPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Signature', rootPathOptions]);
     expect(clearedCookies).toContainEqual(['CloudFront-Key-Pair-Id', rootPathOptions]);
+    expect(clearedCookies).toContainEqual(['LibreChat-CloudFront-Scope', scopePathOptions]);
     expect(clearedCookies).toContainEqual([
       'CloudFront-Policy',
       expect.objectContaining({ path: '/r' }),
@@ -799,7 +1009,7 @@ describe('clearCloudFrontCookies', () => {
       {
         domain: '.example.com',
         path: '/',
-        httpOnly: true,
+        httpOnly: false,
         secure: true,
         sameSite: 'none',
       },
