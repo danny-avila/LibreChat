@@ -1,6 +1,7 @@
 import { klona } from 'klona';
 import winston from 'winston';
 import traverse from '../utils/object-traverse';
+import { SYSTEM_TENANT_ID } from './tenantContext';
 import type { TraverseContext } from '../utils/object-traverse';
 
 const SPLAT_SYMBOL = Symbol.for('splat');
@@ -109,6 +110,9 @@ function formatRequestContext(metadata: Record<string, unknown>): string {
   const context: Partial<Record<(typeof LOG_CONTEXT_KEYS)[number], string>> = {};
   LOG_CONTEXT_KEYS.forEach((key) => {
     const value = metadata[key];
+    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
+      return;
+    }
     if (typeof value === 'string' && value) {
       context[key] = value;
     }
@@ -177,6 +181,9 @@ const debugTraverse = winston.format.printf(
       msgParts.push('\n{');
 
       const copy = klona(metadata);
+      if (copy.tenantId === SYSTEM_TENANT_ID) {
+        delete copy.tenantId;
+      }
       try {
         const traversal = traverse(copy);
         traversal.forEach(function (this: TraverseContext, value: unknown) {

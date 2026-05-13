@@ -30,6 +30,18 @@ describe('formatConsoleMeta', () => {
     expect(meta).toContain('"messagesToRefineCount":42');
   });
 
+  it('omits the system tenant sentinel from metadata trailers', () => {
+    const meta = formatConsoleMeta({
+      level: 'warn',
+      message: 'system task',
+      timestamp: 'ts',
+      tenantId: '__SYSTEM__',
+      userId: 'user-1',
+    });
+
+    expect(meta).toBe('{"userId":"user-1"}');
+  });
+
   it('ignores reserved winston keys but preserves legitimate fields like _id', () => {
     const meta = formatConsoleMeta({
       level: 'error',
@@ -327,6 +339,34 @@ describe('debugTraverse', () => {
     expect(out).toContain('"tenantId":"tenant-1"');
     expect(out).toContain('"userId":"user-1"');
     expect(out).toContain('"requestId":"req-1"');
+  });
+
+  it('does not append the system tenant sentinel as tenantId', () => {
+    const out = runFormatter(
+      buildInfo('info', {
+        tenantId: '__SYSTEM__',
+        userId: 'user-1',
+        requestId: 'req-1',
+      }),
+    );
+
+    expect(out).not.toContain('__SYSTEM__');
+    expect(out).not.toContain('"tenantId"');
+    expect(out).toContain('"userId":"user-1"');
+    expect(out).toContain('"requestId":"req-1"');
+  });
+
+  it('omits the system tenant sentinel from debug object metadata', () => {
+    const out = runFormatter(
+      buildInfo('debug', {
+        tenantId: '__SYSTEM__',
+        userId: 'user-1',
+      }),
+    );
+
+    expect(out).not.toContain('__SYSTEM__');
+    expect(out).not.toMatch(/tenantId:/);
+    expect(out).toContain('userId');
   });
 
   it('appends request context metadata for debug lines without object metadata', () => {

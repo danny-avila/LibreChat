@@ -19,6 +19,7 @@ const sensitiveKeys = [
 
 const NUMERIC_KEY_RE = /^\d+$/;
 const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'];
+const SYSTEM_TENANT_ID = '__SYSTEM__';
 
 /**
  * Redacts sensitive information from a console message and trims it to a specified length if provided.
@@ -123,6 +124,9 @@ function extractMetaObject(source) {
       continue;
     }
     const value = source[key];
+    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
+      continue;
+    }
     if (value === undefined || value === null || value === '') {
       continue;
     }
@@ -205,6 +209,9 @@ function formatRequestContext(info) {
   const context = {};
   for (const key of LOG_CONTEXT_KEYS) {
     const value = info[key];
+    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
+      continue;
+    }
     if (typeof value === 'string' && value) {
       context[key] = value;
     }
@@ -292,6 +299,9 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
     msg += '\n{';
 
     const copy = klona(metadata);
+    if (copy.tenantId === SYSTEM_TENANT_ID) {
+      delete copy.tenantId;
+    }
     traverse(copy).forEach(function (value) {
       if (typeof this?.key === 'symbol') {
         return;

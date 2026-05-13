@@ -1,7 +1,7 @@
 import winston from 'winston';
 import 'winston-daily-rotate-file';
 import { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat } from './parsers';
-import { getTenantId, getUserId, getRequestId } from './tenantContext';
+import { getTenantId, getUserId, getRequestId, SYSTEM_TENANT_ID } from './tenantContext';
 import { getLogDirectory } from './utils';
 
 const logDir = getLogDirectory();
@@ -27,9 +27,17 @@ const levels: winston.config.AbstractConfigSetLevels = {
 
 const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'] as const;
 
+function getLogTenantId(): string | undefined {
+  const tenantId = getTenantId();
+  return tenantId === SYSTEM_TENANT_ID ? undefined : tenantId;
+}
+
 const requestContextFormat = winston.format((info: winston.Logform.TransformableInfo) => {
+  if (info.tenantId === SYSTEM_TENANT_ID) {
+    delete info.tenantId;
+  }
   const context = {
-    tenantId: getTenantId(),
+    tenantId: getLogTenantId(),
     userId: getUserId(),
     requestId: getRequestId(),
   };
@@ -45,6 +53,9 @@ function formatRequestContext(info: winston.Logform.TransformableInfo): string {
   const context: Partial<Record<(typeof LOG_CONTEXT_KEYS)[number], string>> = {};
   LOG_CONTEXT_KEYS.forEach((key) => {
     const value = info[key];
+    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
+      return;
+    }
     if (typeof value === 'string' && value) {
       context[key] = value;
     }

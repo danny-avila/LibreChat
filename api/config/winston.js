@@ -2,7 +2,12 @@ const path = require('path');
 const fs = require('fs');
 const winston = require('winston');
 require('winston-daily-rotate-file');
-const { getTenantId, getUserId, getRequestId } = require('@librechat/data-schemas');
+const {
+  getTenantId,
+  getUserId,
+  getRequestId,
+  SYSTEM_TENANT_ID,
+} = require('@librechat/data-schemas');
 const {
   redactFormat,
   redactMessage,
@@ -66,9 +71,17 @@ const levels = {
 
 const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'];
 
+const getLogTenantId = () => {
+  const tenantId = getTenantId();
+  return tenantId === SYSTEM_TENANT_ID ? undefined : tenantId;
+};
+
 const requestContextFormat = winston.format((info) => {
+  if (info.tenantId === SYSTEM_TENANT_ID) {
+    delete info.tenantId;
+  }
   const context = {
-    tenantId: getTenantId(),
+    tenantId: getLogTenantId(),
     userId: getUserId(),
     requestId: getRequestId(),
   };
@@ -84,6 +97,9 @@ const formatRequestContext = (info) => {
   const context = {};
   LOG_CONTEXT_KEYS.forEach((key) => {
     const value = info[key];
+    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
+      return;
+    }
     if (typeof value === 'string' && value) {
       context[key] = value;
     }
