@@ -27,13 +27,21 @@ export function isKnownCustomProvider(provider?: string): boolean {
 }
 
 /**
- * Provider configuration map mapping providers to their initialization functions
+ * Provider configuration map mapping providers to their initialization functions.
+ *
+ * `Providers.VERTEXAI` shares `initializeGoogle` because the runtime distinction
+ * is auth-only — the agent flow may resolve `agent.provider` to `vertexai` when
+ * a service account is configured, but summarization (and other downstream
+ * resolvers) get the same lowercase enum value passed back. Without this
+ * mapping `getProviderConfig` throws "Provider vertexai not supported" and
+ * summarization falls back to the raw provider, dropping client overrides.
  */
 export const providerConfigMap: Record<string, InitializeFn> = {
   [Providers.XAI]: initializeCustom,
   [Providers.DEEPSEEK]: initializeCustom,
   [Providers.MOONSHOT]: initializeCustom,
   [Providers.OPENROUTER]: initializeCustom,
+  [Providers.VERTEXAI]: initializeGoogle,
   [EModelEndpoint.openAI]: initializeOpenAI,
   [EModelEndpoint.google]: initializeGoogle,
   [EModelEndpoint.bedrock]: initializeBedrock,
@@ -87,6 +95,41 @@ export function getProviderConfig({
 
   if (isKnownCustomProvider(overrideProvider) && !customEndpointConfig) {
     customEndpointConfig = getCustomEndpointConfig({ endpoint: provider, appConfig });
+    if (!customEndpointConfig && appConfig) {
+      /**
+       * Case-insensitive fallback for known custom providers only.
+       *
+       * The agent main flow looks up custom endpoints case-sensitively
+       * (case-preserving keys are how `loadCustomEndpointsConfig` lets
+       * users have e.g. `"OpenRouter"` and `"openrouter-staging"` as
+       * distinct entries). After it succeeds, `agent.provider` is
+       * normalized to the lowercase `Providers` enum value
+       * (e.g. `"openrouter"`). Downstream resolvers (summarization,
+       * title) re-enter `getProviderConfig` with that lowercase value,
+       * and the case-sensitive direct lookup misses configs whose
+       * `name` is camel-cased — the most common shape.
+       *
+       * Only fall back when the direct lookup already failed, so users
+       * with case-sensitive endpoint identity are unaffected — their
+       * exact-case match wins first. When multiple case-insensitive
+       * matches exist (e.g. both `OpenRouter` and `OPENROUTER`, neither
+       * lowercase), refuse to silently pick array-first; the caller's
+       * intent is ambiguous and either entry could route requests with
+       * different baseURL/apiKey.
+       */
+      const customEndpoints = appConfig.endpoints?.[EModelEndpoint.custom] ?? [];
+      const target = provider.toLowerCase();
+      const matches = customEndpoints.filter(
+        (endpointConfig) => (endpointConfig.name ?? '').toLowerCase() === target,
+      );
+      if (matches.length > 1) {
+        const names = matches.map((m) => m.name ?? '').join(', ');
+        throw new Error(
+          `Provider ${provider} is ambiguous: multiple custom endpoints match case-insensitively (${names}). Rename one or use the exact-case provider value.`,
+        );
+      }
+      customEndpointConfig = matches[0];
+    }
     if (!customEndpointConfig) {
       throw new Error(`Provider ${provider} not supported`);
     }

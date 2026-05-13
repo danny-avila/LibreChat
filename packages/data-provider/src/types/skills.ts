@@ -172,6 +172,8 @@ export type TSkillFile = {
   file_id: string;
   filename: string;
   filepath: string;
+  storageKey?: string;
+  storageRegion?: string;
   source: FileSources;
   mimeType: string;
   bytes: number;

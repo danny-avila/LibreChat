@@ -1,3 +1,4 @@
+import { FileSources } from 'librechat-data-provider';
 import type { TFilePreview } from 'librechat-data-provider';
 
 const mockGetFilePreview = jest.fn();
@@ -16,7 +17,9 @@ import {
   PREVIEW_MAX_CONSECUTIVE_ERRORS,
   _resetPreviewErrorCounter,
   fetchFilePreview,
+  isDirectDownloadSource,
   previewRefetchInterval,
+  revokeDownloadURL,
 } from '../queries';
 
 const q = (fileId: string) => ({ queryKey: ['filePreview' as const, fileId] });
@@ -93,5 +96,28 @@ describe('previewRefetchInterval', () => {
     }
     expect(previewRefetchInterval(undefined, q('fid-broken'))).toBe(false);
     expect(previewRefetchInterval(undefined, q('fid-healthy'))).toBe(2500);
+  });
+});
+
+describe('download URL helpers', () => {
+  it('uses direct download URLs only for strategies that implement them', () => {
+    expect(isDirectDownloadSource(FileSources.s3)).toBe(true);
+    expect(isDirectDownloadSource(FileSources.cloudfront)).toBe(true);
+    expect(isDirectDownloadSource(FileSources.local)).toBe(false);
+    expect(isDirectDownloadSource(FileSources.firebase)).toBe(false);
+    expect(isDirectDownloadSource(undefined)).toBe(false);
+  });
+
+  it('revokes only blob URLs', () => {
+    const originalRevokeObjectURL = window.URL.revokeObjectURL;
+    const revokeObjectURL = jest.fn();
+    window.URL.revokeObjectURL = revokeObjectURL;
+
+    revokeDownloadURL('https://cdn.example.com/file.pdf');
+    revokeDownloadURL('blob:https://app.example.com/id');
+
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:https://app.example.com/id');
+    window.URL.revokeObjectURL = originalRevokeObjectURL;
   });
 });

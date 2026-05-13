@@ -39,6 +39,12 @@ const file: Schema<IMongoFile> = new Schema(
       type: String,
       required: true,
     },
+    storageKey: {
+      type: String,
+    },
+    storageRegion: {
+      type: String,
+    },
     object: {
       type: String,
       required: true,
@@ -112,7 +118,23 @@ const file: Schema<IMongoFile> = new Schema(
     width: Number,
     height: Number,
     metadata: {
-      fileIdentifier: String,
+      codeEnvRef: {
+        type: new Schema(
+          {
+            kind: {
+              type: String,
+              enum: ['skill', 'agent', 'user'],
+              required: true,
+            },
+            id: { type: String, required: true },
+            storage_session_id: { type: String, required: true },
+            file_id: { type: String, required: true },
+            version: { type: Number },
+          },
+          { _id: false },
+        ),
+        default: undefined,
+      },
     },
     expiresAt: {
       type: Date,

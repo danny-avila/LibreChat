@@ -57,14 +57,16 @@ export async function loadDefaultInterface({
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
     mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
+    autoSubmitFromUrl: interfaceConfig?.autoSubmitFromUrl ?? defaults.autoSubmitFromUrl,
 
-    // Permissions - environment variables override YAML config
+    // Permissions and related settings - only include if explicitly configured
     bookmarks: interfaceConfig?.bookmarks,
     memories: shouldDisableMemories ? false : interfaceConfig?.memories,
     prompts: interfaceConfig?.prompts,
     multiConvo: interfaceConfig?.multiConvo,
     agents: agents,
     temporaryChat: interfaceConfig?.temporaryChat,
+    temporaryChatRetention: interfaceConfig?.temporaryChatRetention,
     runCode: interfaceConfig?.runCode,
     webSearch: interfaceConfig?.webSearch,
     fileSearch: getEnvBoolean('INTERFACE_FILE_SEARCH') ?? interfaceConfig?.fileSearch,

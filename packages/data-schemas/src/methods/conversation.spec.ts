@@ -680,7 +680,7 @@ describe('Conversation Operations', () => {
         createdAt,
         updatedAt,
       });
-      return Conversation.findOne({ conversationId }).lean();
+      return Conversation.findOne({ conversationId }).lean<IConversation>();
     };
 
     it('should not skip conversations at page boundaries', async () => {

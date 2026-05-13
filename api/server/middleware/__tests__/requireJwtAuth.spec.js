@@ -8,25 +8,42 @@
  * If the chaining is removed, these tests fail.
  */
 
-const { getTenantId } = require('@librechat/data-schemas');
+const jwt = require('jsonwebtoken');
 
 // ── Mocks ──────────────────────────────────────────────────────────────
 
 let mockPassportError = null;
+let mockRegisteredStrategies = new Set(['jwt']);
 
 jest.mock('passport', () => ({
-  authenticate: jest.fn(() => {
-    return (req, _res, done) => {
+  _strategy: jest.fn((strategy) => (mockRegisteredStrategies.has(strategy) ? {} : undefined)),
+  authenticate: jest.fn((strategy, _options, callback) => {
+    return (req, _res, _done) => {
       if (mockPassportError) {
-        return done(mockPassportError);
+        return callback(mockPassportError);
       }
-      if (req._mockUser) {
-        req.user = req._mockUser;
+      const strategyResult = req._mockStrategies?.[strategy];
+      if (strategyResult) {
+        return callback(
+          strategyResult.err ?? null,
+          strategyResult.user ?? false,
+          strategyResult.info,
+          strategyResult.status,
+        );
       }
-      done();
+      return callback(null, req._mockUser ?? false, { message: 'Unauthorized' }, 401);
     };
   }),
 }));
+
+jest.mock('@librechat/data-schemas', () => {
+  const { AsyncLocalStorage } = require('async_hooks');
+  const tenantStorage = new AsyncLocalStorage();
+  return {
+    getTenantId: () => tenantStorage.getStore()?.tenantId,
+    tenantStorage,
+  };
+});
 
 // Mock @librechat/api — the real tenantContextMiddleware is TS and cannot be
 // required directly from CJS tests. This thin wrapper mirrors the real logic
@@ -36,6 +53,7 @@ jest.mock('@librechat/api', () => {
   const { tenantStorage } = require('@librechat/data-schemas');
   return {
     isEnabled: jest.fn(() => false),
+    maybeRefreshCloudFrontAuthCookiesMiddleware: jest.fn((req, res, next) => next()),
     tenantContextMiddleware: (req, res, next) => {
       const tenantId = req.user?.tenantId;
       if (!tenantId) {
@@ -49,9 +67,18 @@ jest.mock('@librechat/api', () => {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 const requireJwtAuth = require('../requireJwtAuth');
+const { getTenantId } = require('@librechat/data-schemas');
+const { isEnabled, maybeRefreshCloudFrontAuthCookiesMiddleware } = require('@librechat/api');
+const passport = require('passport');
 
-function mockReq(user) {
-  return { headers: {}, _mockUser: user };
+const jwtSecret = 'test-refresh-secret';
+
+function mockReq(user, extra = {}) {
+  return { headers: {}, _mockUser: user, ...extra };
+}
+
+function signedOpenIdUserCookie(userId = 'user-openid') {
+  return jwt.sign({ id: userId }, jwtSecret);
 }
 
 function mockRes() {
@@ -72,8 +99,24 @@ function runAuth(user) {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 describe('requireJwtAuth tenant context chaining', () => {
+  const originalJwtSecret = process.env.JWT_REFRESH_SECRET;
+
+  beforeEach(() => {
+    process.env.JWT_REFRESH_SECRET = jwtSecret;
+  });
+
   afterEach(() => {
     mockPassportError = null;
+    mockRegisteredStrategies = new Set(['jwt']);
+    isEnabled.mockReturnValue(false);
+    maybeRefreshCloudFrontAuthCookiesMiddleware.mockClear();
+    passport.authenticate.mockClear();
+    passport._strategy.mockClear();
+    if (originalJwtSecret === undefined) {
+      delete process.env.JWT_REFRESH_SECRET;
+    } else {
+      process.env.JWT_REFRESH_SECRET = originalJwtSecret;
+    }
   });
 
   it('forwards passport errors to next() without entering tenant middleware', async () => {
@@ -93,14 +136,207 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(tenantId).toBe('tenant-abc');
   });
 
+  it('refreshes CloudFront auth cookies after passport auth succeeds', () => {
+    const req = mockReq({ tenantId: 'tenant-abc', role: 'user' });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).toHaveBeenCalledWith(
+      req,
+      res,
+      expect.any(Function),
+    );
+    expect(next).toHaveBeenCalled();
+  });
+
   it('ALS tenant context is NOT set when user has no tenantId', async () => {
     const tenantId = await runAuth({ role: 'user' });
     expect(tenantId).toBeUndefined();
   });
 
-  it('ALS tenant context is NOT set when user is undefined', async () => {
-    const tenantId = await runAuth(undefined);
-    expect(tenantId).toBeUndefined();
+  it('returns 401 when no strategy authenticates a user', async () => {
+    const req = mockReq(undefined);
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(getTenantId()).toBeUndefined();
+  });
+
+  it('does not fall back to OpenID JWT for bearer-only reuse requests', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      _mockStrategies: {
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
+        openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(req.authStrategy).toBeUndefined();
+    expect(passport.authenticate).toHaveBeenCalledTimes(1);
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'jwt',
+      { session: false },
+      expect.any(Function),
+    );
+  });
+
+  it('uses OpenID JWT before LibreChat JWT when the OpenID cookie is present', async () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      headers: { cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie()}` },
+      _mockStrategies: {
+        openidJwt: { user: { id: 'user-openid', tenantId: 'tenant-openid', role: 'user' } },
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
+      },
+    });
+    const res = mockRes();
+    const tenantId = await new Promise((resolve) => {
+      requireJwtAuth(req, res, () => {
+        resolve(getTenantId());
+      });
+    });
+
+    expect(tenantId).toBe('tenant-openid');
+    expect(req.authStrategy).toBe('openidJwt');
+    expect(res.status).not.toHaveBeenCalled();
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'openidJwt',
+      { session: false },
+      expect.any(Function),
+    );
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).toHaveBeenCalledWith(
+      req,
+      res,
+      expect.any(Function),
+    );
+  });
+
+  it('does not authenticate OpenID JWT when the reuse cookie belongs to another user', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      headers: {
+        cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie('user-a')}`,
+      },
+      _mockStrategies: {
+        openidJwt: { user: { id: 'user-b', tenantId: 'tenant-openid', role: 'user' } },
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(req.authStrategy).toBeUndefined();
+    expect(passport.authenticate).toHaveBeenCalledTimes(2);
+    expect(passport.authenticate).toHaveBeenNthCalledWith(
+      1,
+      'openidJwt',
+      { session: false },
+      expect.any(Function),
+    );
+    expect(passport.authenticate).toHaveBeenNthCalledWith(
+      2,
+      'jwt',
+      { session: false },
+      expect.any(Function),
+    );
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
+  });
+
+  it('does not use OpenID JWT when the signed OpenID reuse cookie is missing', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      headers: { cookie: 'token_provider=openid' },
+      _mockStrategies: {
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
+        openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(req.authStrategy).toBeUndefined();
+    expect(passport.authenticate).toHaveBeenCalledTimes(1);
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'jwt',
+      { session: false },
+      expect.any(Function),
+    );
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
+  });
+
+  it('does not use OpenID JWT when the OpenID reuse cookie is invalid', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      headers: { cookie: 'token_provider=openid; openid_user_id=invalid-jwt' },
+      _mockStrategies: {
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
+        openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(req.authStrategy).toBeUndefined();
+    expect(passport.authenticate).toHaveBeenCalledTimes(1);
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'jwt',
+      { session: false },
+      expect.any(Function),
+    );
+    expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
+  });
+
+  it('skips OpenID JWT fallback when the strategy was not registered', async () => {
+    isEnabled.mockReturnValue(true);
+    const req = mockReq(undefined, {
+      _mockStrategies: {
+        jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
+        openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(req.authStrategy).toBeUndefined();
+    expect(passport.authenticate).toHaveBeenCalledTimes(1);
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'jwt',
+      { session: false },
+      expect.any(Function),
+    );
   });
 
   it('concurrent requests get isolated tenant contexts', async () => {

@@ -35,6 +35,10 @@ export interface LoadToolDefinitionsParams {
   toolOptions?: AgentToolOptions;
   /** Whether deferred tools feature is enabled */
   deferredToolsEnabled?: boolean;
+  /** Whether programmatic tool calling is enabled */
+  programmaticToolsEnabled?: boolean;
+  /** Whether code execution is enabled and requested by this agent */
+  codeExecutionEnabled?: boolean;
 }
 
 export interface ActionToolDefinition {
@@ -71,7 +75,15 @@ export async function loadToolDefinitions(
   params: LoadToolDefinitionsParams,
   deps: LoadToolDefinitionsDeps,
 ): Promise<LoadToolDefinitionsResult> {
-  const { userId, agentId, tools, toolOptions = {}, deferredToolsEnabled = false } = params;
+  const {
+    userId,
+    agentId,
+    tools,
+    toolOptions = {},
+    deferredToolsEnabled = false,
+    programmaticToolsEnabled = false,
+    codeExecutionEnabled = false,
+  } = params;
   const { getOrFetchMCPServerTools, isBuiltInTool, getActionToolDefinitions } = deps;
 
   const emptyResult: LoadToolDefinitionsResult = {
@@ -191,6 +203,8 @@ export async function loadToolDefinitions(
     agentId,
     loadedTools,
     deferredToolsEnabled,
+    programmaticToolsEnabled,
+    codeExecutionEnabled,
     definitionsOnly: true,
     agentToolOptions: toolOptions,
   });

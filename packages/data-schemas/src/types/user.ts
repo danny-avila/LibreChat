@@ -1,5 +1,5 @@
+import type { RefillIntervalUnit, TUserFavorite } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
-import type { TUserFavorite } from 'librechat-data-provider';
 import { CursorPaginationParams } from '~/common';
 
 export interface IUser extends Document {
@@ -75,7 +75,7 @@ export interface BalanceConfig {
   startBalance?: number;
   autoRefillEnabled?: boolean;
   refillIntervalValue?: number;
-  refillIntervalUnit?: string;
+  refillIntervalUnit?: RefillIntervalUnit;
   refillAmount?: number;
 }
 

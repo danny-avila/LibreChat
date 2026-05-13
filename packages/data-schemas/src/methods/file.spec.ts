@@ -88,6 +88,84 @@ describe('File Methods', () => {
     });
   });
 
+  describe('claimCodeFile', () => {
+    it('claims code output files independently per tenant', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const tenantA = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-a',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+      const tenantB = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-b',
+        user: userId,
+        tenantId: 'tenant-b',
+      });
+      const tenantAAgain = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-a-new',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+
+      expect(tenantA.file_id).toBe('file-tenant-a');
+      expect(tenantA.tenantId).toBe('tenant-a');
+      expect(tenantB.file_id).toBe('file-tenant-b');
+      expect(tenantB.tenantId).toBe('tenant-b');
+      expect(tenantAAgain.file_id).toBe('file-tenant-a');
+    });
+
+    it('keeps non-tenant code output claims in the legacy namespace', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const legacy = await fileMethods.claimCodeFile({
+        filename: 'legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-file',
+        user: userId,
+      });
+      const tenant = await fileMethods.claimCodeFile({
+        filename: 'legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'tenant-file',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+
+      expect(legacy.file_id).toBe('legacy-file');
+      expect(legacy.tenantId).toBeNull();
+      expect(tenant.file_id).toBe('tenant-file');
+      expect(tenant.tenantId).toBe('tenant-a');
+    });
+
+    it('treats null tenantId as the legacy code output namespace', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const legacy = await fileMethods.claimCodeFile({
+        filename: 'nullable-legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-null-file',
+        user: userId,
+        tenantId: null,
+      });
+      const legacyAgain = await fileMethods.claimCodeFile({
+        filename: 'nullable-legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-null-file-new',
+        user: userId,
+      });
+
+      expect(legacy.file_id).toBe('legacy-null-file');
+      expect(legacyAgain.file_id).toBe('legacy-null-file');
+    });
+  });
+
   describe('findFileById', () => {
     it('should find a file by file_id', async () => {
       const fileId = uuidv4();
@@ -221,7 +299,14 @@ describe('File Methods', () => {
         type: 'text/x-python',
         bytes: 100,
         context: FileContext.execute_code,
-        metadata: { fileIdentifier: 'some-identifier' },
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'session-x',
+            file_id: codeFileId,
+          },
+        },
       });
 
       // execute_code files are explicitly excluded from getToolFilesByIds
@@ -230,6 +315,154 @@ describe('File Methods', () => {
       const files = await fileMethods.getToolFilesByIds([codeFileId], toolSet);
 
       expect(files).toHaveLength(0);
+    });
+  });
+
+  describe('getCodeGeneratedFiles', () => {
+    /* The function filters by `file_id IN threadFileIds` — the file_ids
+     * referenced by messages in the current conversation thread —
+     * rather than by `messageId IN threadMessageIds`. The change
+     * matters when a code-output file is shared across sibling branches
+     * (regenerations); the File record's own `messageId` points at
+     * whichever sibling FIRST created it (preserved deliberately by
+     * processCodeOutput for provenance), but `threadFileIds` reaches
+     * any sibling that references the file via `messages.files[]`. */
+
+    it('finds a code-output file referenced by the current thread', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId,
+        messageId: 'msg-original-creator',
+        filename: 'output.csv',
+        filepath: '/uploads/output.csv',
+        type: 'text/csv',
+        bytes: 100,
+        context: FileContext.execute_code,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles(conversationId, [fileId]);
+      expect(files).toHaveLength(1);
+      expect(files[0].file_id).toBe(fileId);
+    });
+
+    it('reaches a file whose creator messageId is on a sibling branch (regression)', async () => {
+      /* Branched-conversation case: sibling A creates the file (its
+       * messageId is preserved on the File record), sibling N
+       * recreates the same filename — claimCodeFile finds the existing
+       * record and the messageId stays at A. The current thread (parent
+       * = N) doesn't include A. Filtering by threadFileIds (which
+       * includes the file_id N's message references) reaches it. */
+      const userId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId,
+        /* The file's messageId points at sibling A — NOT in the
+         * current thread [siblingN, root]. The old `messageId IN`
+         * filter would have excluded the file here. */
+        messageId: 'siblingA',
+        filename: 'output.csv',
+        filepath: '/uploads/output.csv',
+        type: 'text/csv',
+        bytes: 100,
+        context: FileContext.execute_code,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles(conversationId, [fileId]);
+      expect(files).toHaveLength(1);
+      expect(files[0].file_id).toBe(fileId);
+    });
+
+    it('returns empty when threadFileIds is missing or empty', async () => {
+      const conversationId = uuidv4();
+      expect(await fileMethods.getCodeGeneratedFiles(conversationId)).toEqual([]);
+      expect(await fileMethods.getCodeGeneratedFiles(conversationId, [])).toEqual([]);
+    });
+
+    it('does not cross conversation boundaries even with matching file_id', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId: 'other-conv',
+        messageId: 'msg-creator',
+        filename: 'output.csv',
+        filepath: '/uploads/output.csv',
+        type: 'text/csv',
+        bytes: 100,
+        context: FileContext.execute_code,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles('this-conv', [fileId]);
+      expect(files).toEqual([]);
+    });
+
+    it('excludes non-execute_code files even when file_id matches', async () => {
+      /* `tool_resources.execute_code.file_ids` is the source of
+       * threadFileIds, but `messages.files[]` includes files of
+       * every context. The `context: execute_code` filter prevents
+       * a user-uploaded chat file from being mistakenly fetched via
+       * this function (it'd go through getUserCodeFiles instead). */
+      const userId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId,
+        messageId: 'msg-1',
+        filename: 'note.txt',
+        filepath: '/uploads/note.txt',
+        type: 'text/plain',
+        bytes: 100,
+        context: FileContext.message_attachment,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles(conversationId, [fileId]);
+      expect(files).toEqual([]);
     });
   });
 
@@ -608,6 +841,62 @@ describe('File Methods', () => {
         const file = await fileMethods.findFileById(fileId);
         expect(file?.filepath).toBe(`/new-path/${fileId}.txt`);
       }
+    });
+
+    it('should persist storage metadata when provided', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: 'region-file.txt',
+        filepath: '/old-path/file.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      await fileMethods.batchUpdateFiles([
+        {
+          file_id: fileId,
+          filepath: '/new-path/file.txt',
+          storageKey: 'i/r/us-east-2/images/user123/file.txt',
+          storageRegion: 'us-east-2',
+        },
+      ]);
+
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.filepath).toBe('/new-path/file.txt');
+      expect(file?.storageKey).toBe('i/r/us-east-2/images/user123/file.txt');
+      expect(file?.storageRegion).toBe('us-east-2');
+    });
+
+    it('should not overwrite existing storage metadata when omitted', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: 'existing-metadata.txt',
+        filepath: '/old-path/file.txt',
+        storageKey: 'r/eu-central-1/uploads/user123/file.txt',
+        storageRegion: 'eu-central-1',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      await fileMethods.batchUpdateFiles([
+        {
+          file_id: fileId,
+          filepath: '/new-path/file.txt',
+        },
+      ]);
+
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.filepath).toBe('/new-path/file.txt');
+      expect(file?.storageKey).toBe('r/eu-central-1/uploads/user123/file.txt');
+      expect(file?.storageRegion).toBe('eu-central-1');
     });
 
     it('should handle empty updates array gracefully', async () => {

@@ -15,9 +15,11 @@ const {
   ResourceType,
   EModelEndpoint,
   PermissionBits,
+  MAX_SUBAGENT_DEPTH,
   isAgentsEndpoint,
   getResponseSender,
   AgentCapabilities,
+  MAX_SUBAGENT_GRAPH_NODES,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
 const {
@@ -109,6 +111,18 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
 
   /** @type {Array<UsageMetadata>} */
   const collectedUsage = [];
+  /**
+   * Vertex Gemini 3 thought signatures captured from `chat_model_end` events,
+   * keyed by `tool_call_id`. Persisted on
+   * `responseMessage.metadata.thoughtSignatures` so subsequent conversation
+   * turns can restore each signature onto the right reconstructed AIMessage's
+   * `additional_kwargs.signatures` and avoid 400s when resuming after a tool
+   * round-trip without a final text reply. Always allocated; capture path
+   * is a no-op for providers that don't emit signatures (OpenAI, Anthropic,
+   * Bedrock, etc.).
+   * @type {Record<string, string>}
+   */
+  const collectedThoughtSignatures = {};
   /** @type {ArtifactPromises} */
   const artifactPromises = [];
   const { contentParts, aggregateContent } = createContentAggregator();
@@ -215,6 +229,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     aggregateContent,
     toolEndCallback,
     collectedUsage,
+    collectedThoughtSignatures,
     streamId,
     subagentAggregatorsByToolCallId,
   });
@@ -579,24 +594,19 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           defaultActiveOnShare,
         },
         {
-          getAgent: db.getAgent,
-          checkPermission,
-          logViolation,
-          db: {
-            getFiles: db.getFiles,
-            getUserKey: db.getUserKey,
-            getMessages: db.getMessages,
-            getConvoFiles: db.getConvoFiles,
-            updateFilesUsage: db.updateFilesUsage,
-            getUserKeyValues: db.getUserKeyValues,
-            getUserCodeFiles: db.getUserCodeFiles,
-            getToolFilesByIds: db.getToolFilesByIds,
-            getCodeGeneratedFiles: db.getCodeGeneratedFiles,
-            filterFilesByAgentAccess,
-            listSkillsByAccess: db.listSkillsByAccess,
-            listAlwaysApplySkills: db.listAlwaysApplySkills,
-            getSkillByName: db.getSkillByName,
-          },
+          getFiles: db.getFiles,
+          getUserKey: db.getUserKey,
+          getMessages: db.getMessages,
+          getConvoFiles: db.getConvoFiles,
+          updateFilesUsage: db.updateFilesUsage,
+          getUserKeyValues: db.getUserKeyValues,
+          getUserCodeFiles: db.getUserCodeFiles,
+          getToolFilesByIds: db.getToolFilesByIds,
+          getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+          filterFilesByAgentAccess,
+          listSkillsByAccess: db.listSkillsByAccess,
+          listAlwaysApplySkills: db.listAlwaysApplySkills,
+          getSkillByName: db.getSkillByName,
         },
       );
       agentConfigs.set(agentId, config);
@@ -629,6 +639,25 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  silently break nested delegation like A → B → C where B is only
    *  a subagent of A. */
   const pureSubagentIds = new Set();
+  const subagentGraphIds = new Set();
+  const loadedSubagentConfigIds = new Set();
+
+  const assertSubagentGraphRoom = (agentId) => {
+    if (subagentGraphIds.has(agentId)) {
+      return;
+    }
+    if (subagentGraphIds.size >= MAX_SUBAGENT_GRAPH_NODES) {
+      logger.warn('[initializeClient] Subagent graph node limit exceeded', {
+        agentId,
+        primaryAgentId: primaryConfig.id,
+        loadedSubagentCount: subagentGraphIds.size,
+        maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+      });
+      throw new Error(
+        `Subagent graph exceeds the maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents.`,
+      );
+    }
+  };
 
   /**
    * Loads `subagentAgentConfigs` for a single agent config. Shared
@@ -638,10 +667,26 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    * gets them honored at runtime. Self-spawn works regardless (no DB
    * lookup needed). Pruning decisions are deferred to `pureSubagentIds`.
    */
-  const loadSubagentsFor = async (config) => {
+  const loadSubagentsFor = async (config, depth = 0) => {
     const sub = config.subagents;
     if (!subagentsCapabilityEnabled || !sub?.enabled) {
       config.subagentAgentConfigs = [];
+      return;
+    }
+
+    if (loadedSubagentConfigIds.has(config.id)) {
+      if ((config.subagentAgentConfigs?.length ?? 0) > 0 && depth >= MAX_SUBAGENT_DEPTH) {
+        logger.warn('[initializeClient] Subagent graph depth limit exceeded', {
+          agentId: config.id,
+          primaryAgentId: primaryConfig.id,
+          depth,
+          maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+          childCount: config.subagentAgentConfigs.length,
+        });
+        throw new Error(
+          `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${config.id}.`,
+        );
+      }
       return;
     }
 
@@ -656,6 +701,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           : [],
       ),
     );
+
+    if (explicitSubagentIds.length > 0 && depth >= MAX_SUBAGENT_DEPTH) {
+      logger.warn('[initializeClient] Subagent graph depth limit exceeded', {
+        agentId: config.id,
+        primaryAgentId: primaryConfig.id,
+        depth,
+        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+        childCount: explicitSubagentIds.length,
+      });
+      throw new Error(
+        `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${config.id}.`,
+      );
+    }
+
+    loadedSubagentConfigIds.add(config.id);
 
     /** @type {Array<Object>} */
     const resolved = [];
@@ -672,9 +732,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         continue;
       }
 
+      assertSubagentGraphRoom(subagentId);
       const subagentConfig = await loadAgentById(subagentId);
       if (!subagentConfig) continue;
 
+      subagentGraphIds.add(subagentConfig.id ?? subagentId);
       resolved.push(subagentConfig);
 
       if (!edgeAgentIds.has(subagentId)) {
@@ -685,35 +747,32 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     config.subagentAgentConfigs = resolved;
   };
 
-  /** BFS across the primary's subagent tree so nested chains like
-   *  A → B → C get resolved before any pruning. Each config is
-   *  visited once. */
-  const visitedConfigIds = new Set();
-  const pending = [primaryConfig];
-  while (pending.length > 0) {
-    const cfg = pending.shift();
-    if (!cfg || visitedConfigIds.has(cfg.id)) continue;
-    visitedConfigIds.add(cfg.id);
-    await loadSubagentsFor(cfg);
-    for (const child of cfg.subagentAgentConfigs ?? []) {
-      if (child?.id && !visitedConfigIds.has(child.id)) {
-        pending.push(child);
+  const maxResolvedDepthByConfigId = new Map();
+
+  /** BFS across subagent trees so nested chains like A → B → C get
+   *  resolved before any pruning. Agent configs are loaded once, but
+   *  overlapping roots can still be revisited at deeper path depths so
+   *  the depth guard observes the deepest reachable subagent path. */
+  const resolveSubagentTrees = async (rootConfigs) => {
+    const pending = rootConfigs.map((cfg) => ({ cfg, depth: 0 }));
+    for (let index = 0; index < pending.length; index++) {
+      const { cfg, depth } = pending[index];
+      if (!cfg?.id) continue;
+      const previousDepth = maxResolvedDepthByConfigId.get(cfg.id);
+      if (previousDepth != null && previousDepth >= depth) continue;
+      maxResolvedDepthByConfigId.set(cfg.id, depth);
+      await loadSubagentsFor(cfg, depth);
+      for (const child of cfg.subagentAgentConfigs ?? []) {
+        const childDepth = depth + 1;
+        const previousChildDepth = child?.id ? maxResolvedDepthByConfigId.get(child.id) : undefined;
+        if (child?.id && (previousChildDepth == null || previousChildDepth < childDepth)) {
+          pending.push({ cfg: child, depth: childDepth });
+        }
       }
     }
-  }
-  /** Handoff targets still in the map that weren't visited via the
-   *  primary's subagent tree also need their subagents resolved. */
-  for (const [id, cfg] of agentConfigs.entries()) {
-    if (id === primaryConfig.id || visitedConfigIds.has(id)) continue;
-    visitedConfigIds.add(id);
-    await loadSubagentsFor(cfg);
-    for (const child of cfg.subagentAgentConfigs ?? []) {
-      if (child?.id && !visitedConfigIds.has(child.id)) {
-        visitedConfigIds.add(child.id);
-        await loadSubagentsFor(child);
-      }
-    }
-  }
+  };
+
+  await resolveSubagentTrees([primaryConfig, ...agentConfigs.values()]);
 
   /** Drop pure-subagent entries now that every reachable config has
    *  had its subagents resolved. They stay in `agentToolContexts` so
@@ -785,6 +844,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     agentConfigs,
     eventHandlers,
     collectedUsage,
+    collectedThoughtSignatures,
     aggregateContent,
     artifactPromises,
     primeInvokedSkills: handlePrimeInvokedSkills,

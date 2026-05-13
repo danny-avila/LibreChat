@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "v0.8.5",
+  "version": "v0.8.6-rc1",
   "description": "",
   "type": "module",
   "scripts": {
@@ -83,7 +83,7 @@
     "lodash": "^4.17.23",
     "lucide-react": "^0.394.0",
     "match-sorter": "^8.1.0",
-    "mermaid": "^11.14.0",
+    "mermaid": "^11.15.0",
     "micromark-extension-llm-math": "^3.1.0",
     "qrcode.react": "^4.2.0",
     "rc-input-number": "^7.4.2",
@@ -122,9 +122,9 @@
   },
   "devDependencies": {
     "@babel/plugin-transform-runtime": "^7.22.15",
-    "@babel/preset-env": "^7.22.15",
+    "@babel/preset-env": "^7.29.5",
     "@babel/preset-react": "^7.22.15",
-    "@babel/preset-typescript": "^7.22.15",
+    "@babel/preset-typescript": "^7.28.5",
     "@happy-dom/jest-environment": "^20.8.9",
     "@tanstack/react-query-devtools": "^4.29.0",
     "@testing-library/dom": "^9.3.0",

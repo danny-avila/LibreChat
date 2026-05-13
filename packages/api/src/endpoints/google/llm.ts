@@ -19,6 +19,26 @@ const googleThinkingLevels = new Set<GoogleThinkingLevel>([
   'HIGH',
 ]);
 
+const vertexMultiRegionEndpoints = new Map([
+  ['eu', 'aiplatform.eu.rep.googleapis.com'],
+  ['us', 'aiplatform.us.rep.googleapis.com'],
+  ['global', 'aiplatform.googleapis.com'],
+]);
+
+const blockedModelOptionParams = [
+  'apiKey',
+  'baseUrl',
+  'baseURL',
+  'endpoint',
+  'authOptions',
+  'customHeaders',
+  'headers',
+] as const;
+
+type BlockedModelOptionParam = (typeof blockedModelOptionParams)[number];
+type GoogleModelOptions = Partial<t.GoogleParameters> &
+  Partial<Record<BlockedModelOptionParam, unknown>>;
+
 /** Known Google/Vertex AI parameters that map directly to the client config */
 export const knownGoogleParams = new Set([
   'model',
@@ -42,6 +62,7 @@ export const knownGoogleParams = new Set([
   'streamUsage',
   'apiKey',
   'baseUrl',
+  'endpoint',
   'location',
   'authOptions',
 ]);
@@ -93,6 +114,74 @@ function normalizeGoogleThinkingLevel(value: unknown): GoogleThinkingLevel | und
     return undefined;
   }
   return normalized;
+}
+
+function getVertexMultiRegionEndpoint(location: string): string | undefined {
+  return vertexMultiRegionEndpoints.get(location);
+}
+
+function sanitizeModelOptions(modelOptions: Partial<t.GoogleParameters> | undefined) {
+  const sanitizedOptions: GoogleModelOptions = { ...(modelOptions ?? {}) };
+  blockedModelOptionParams.forEach((param) => {
+    delete sanitizedOptions[param];
+  });
+  return sanitizedOptions;
+}
+
+function isAllowedVertexEndpoint(endpoint: string): boolean {
+  if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(endpoint)) {
+    return false;
+  }
+
+  if (endpoint === 'aiplatform.googleapis.com') {
+    return true;
+  }
+
+  if (/^[a-z0-9-]+-aiplatform\.googleapis\.com$/.test(endpoint)) {
+    return true;
+  }
+
+  if (/^aiplatform-[a-z0-9-]+\.p\.googleapis\.com$/.test(endpoint)) {
+    return true;
+  }
+
+  if (/^[a-z0-9-]+-aiplatform-restricted\.p\.googleapis\.com$/.test(endpoint)) {
+    return true;
+  }
+
+  return /^aiplatform\.[a-z0-9-]+\.rep\.googleapis\.com$/.test(endpoint);
+}
+
+function hasAllowedVertexEndpoint(config: Record<string, unknown>): boolean {
+  const endpoint = config.endpoint;
+  if (endpoint === undefined) {
+    return false;
+  }
+
+  if (typeof endpoint !== 'string' || endpoint.trim() !== endpoint || endpoint.length === 0) {
+    delete config.endpoint;
+    return false;
+  }
+
+  const normalizedEndpoint = endpoint.toLowerCase();
+  if (!isAllowedVertexEndpoint(normalizedEndpoint)) {
+    delete config.endpoint;
+    return false;
+  }
+
+  config.endpoint = normalizedEndpoint;
+  return true;
+}
+
+function applyVertexMultiRegionEndpoint(config: VertexAIClientOptions & { endpoint?: string }) {
+  const location = config.location;
+  if (typeof location !== 'string') {
+    return;
+  }
+  const multiRegionEndpoint = getVertexMultiRegionEndpoint(location);
+  if (multiRegionEndpoint) {
+    config.endpoint = multiRegionEndpoint;
+  }
 }
 
 export function getSafetySettings(
@@ -179,11 +268,11 @@ export function getGoogleConfig(
     thinking = googleSettings.thinking.default,
     thinkingBudget = googleSettings.thinkingBudget.default,
     ...modelOptions
-  } = options.modelOptions || {};
+  } = sanitizeModelOptions(options.modelOptions);
 
   let enableWebSearch = web_search;
 
-  const llmConfig: GoogleClientOptions | VertexAIClientOptions = removeNullishValues(
+  const llmConfig = removeNullishValues(
     {
       ...(modelOptions || {}),
       model: modelOptions?.model ?? '',
@@ -194,7 +283,10 @@ export function getGoogleConfig(
       maxOutputTokens: modelOptions?.maxOutputTokens ?? undefined,
     },
     true,
-  );
+  ) as GoogleClientOptions | VertexAIClientOptions;
+  const initialConfig = llmConfig as Record<string, unknown>;
+  let hasCustomVertexEndpoint = hasAllowedVertexEndpoint(initialConfig);
+  let shouldSyncVertexEndpoint = true;
 
   /** Used only for Safety Settings */
   llmConfig.safetySettings = getSafetySettings(llmConfig.model);
@@ -213,7 +305,8 @@ export function getGoogleConfig(
       credentials: { ...serviceKey },
       projectId: project_id,
     };
-    (llmConfig as VertexAIClientOptions).location = process.env.GOOGLE_LOC || 'us-central1';
+    const location = process.env.GOOGLE_LOC || 'us-central1';
+    (llmConfig as VertexAIClientOptions).location = location;
   } else if (apiKey && provider === Providers.GOOGLE) {
     llmConfig.apiKey = apiKey;
   } else {
@@ -311,6 +404,9 @@ export function getGoogleConfig(
       if (knownGoogleParams.has(key)) {
         /** Route known Google params to llmConfig only if undefined */
         applyDefaultParams(llmConfig as Record<string, unknown>, { [key]: value });
+        if (key === 'endpoint') {
+          hasCustomVertexEndpoint = hasAllowedVertexEndpoint(llmConfig as Record<string, unknown>);
+        }
       }
       /** Leave other params for transform to handle - they might be OpenAI params */
     }
@@ -330,6 +426,9 @@ export function getGoogleConfig(
       if (knownGoogleParams.has(key)) {
         /** Route known Google params to llmConfig */
         (llmConfig as Record<string, unknown>)[key] = value;
+        if (key === 'endpoint') {
+          hasCustomVertexEndpoint = hasAllowedVertexEndpoint(llmConfig as Record<string, unknown>);
+        }
       }
       /** Leave other params for transform to handle - they might be OpenAI params */
     }
@@ -343,10 +442,19 @@ export function getGoogleConfig(
         return;
       }
 
+      if (param === 'endpoint') {
+        shouldSyncVertexEndpoint = false;
+        hasCustomVertexEndpoint = false;
+      }
+
       if (param in llmConfig) {
         delete (llmConfig as Record<string, unknown>)[param];
       }
     });
+  }
+
+  if (provider === Providers.VERTEXAI && shouldSyncVertexEndpoint && !hasCustomVertexEndpoint) {
+    applyVertexMultiRegionEndpoint(llmConfig as VertexAIClientOptions & { endpoint?: string });
   }
 
   const tools: GoogleAIToolType[] = [];

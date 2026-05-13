@@ -44,7 +44,10 @@ const logoutController = async (req, res) => {
     res.clearCookie('openid_id_token');
     res.clearCookie('openid_user_id');
     res.clearCookie('token_provider');
-    clearCloudFrontCookies(res);
+    clearCloudFrontCookies(res, {
+      userId: req.user?.id ?? req.user?._id?.toString?.(),
+      tenantId: req.user?.tenantId,
+    });
     const response = { message };
     if (
       isOpenIdUser &&

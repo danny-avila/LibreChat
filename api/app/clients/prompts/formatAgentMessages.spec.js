@@ -362,4 +362,153 @@ describe('formatAgentMessages', () => {
     );
     expect(hasErrorContent).toBe(false);
   });
+
+  describe('Vertex Gemini thoughtSignatures persistence (issue #13006 follow-up)', () => {
+    const SIG_A = 'AY89a1/sigA==';
+    const SIG_B = 'AY89a1/sigB==';
+
+    it('restores additional_kwargs.signatures onto the AIMessage that owns the tool_call', () => {
+      const payload = [
+        { role: 'user', content: 'list files' },
+        {
+          role: 'assistant',
+          metadata: { thoughtSignatures: { t1: SIG_A } },
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: '', tool_call_ids: ['t1'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't1', name: 'bash', args: '{}', output: 'ok' },
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+
+      const assistant = result.find((m) => m instanceof AIMessage);
+      expect(assistant.tool_calls).toHaveLength(1);
+      expect(assistant.additional_kwargs?.signatures).toEqual([SIG_A]);
+    });
+
+    it('attaches signatures per-step in multi-step tool turns (codex review fix)', () => {
+      // Reproduces the Codex P1 concern: an assistant turn where the agent
+      // loop made two LLM cycles, each emitting its own tool_call. Each step
+      // must carry its OWN signature on resume — Vertex validates per-step,
+      // not per-turn.
+      const payload = [
+        { role: 'user', content: 'do two things' },
+        {
+          role: 'assistant',
+          metadata: { thoughtSignatures: { t1: SIG_A, t2: SIG_B } },
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'first', tool_call_ids: ['t1'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't1', name: 'a', args: '{}', output: 'okA' },
+            },
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'second', tool_call_ids: ['t2'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't2', name: 'b', args: '{}', output: 'okB' },
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      const aiMessages = result.filter((m) => m instanceof AIMessage);
+      expect(aiMessages).toHaveLength(2);
+      expect(aiMessages[0].tool_calls).toHaveLength(1);
+      expect(aiMessages[0].additional_kwargs?.signatures).toEqual([SIG_A]);
+      expect(aiMessages[1].tool_calls).toHaveLength(1);
+      expect(aiMessages[1].additional_kwargs?.signatures).toEqual([SIG_B]);
+    });
+
+    it('preserves tool_call ordering when signatures are partial', () => {
+      // Mixed case: only some tool_calls have stored signatures. Position-
+      // aligned array (with empty placeholders) lets the agents-side
+      // dispatcher attach the correct signature to the correct functionCall.
+      const payload = [
+        { role: 'user', content: 'two parallel tools' },
+        {
+          role: 'assistant',
+          metadata: { thoughtSignatures: { t2: SIG_B } },
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: '', tool_call_ids: ['t1', 't2'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't1', name: 'a', args: '{}', output: 'okA' },
+            },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't2', name: 'b', args: '{}', output: 'okB' },
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      const assistant = result.find((m) => m instanceof AIMessage);
+      expect(assistant.additional_kwargs?.signatures).toEqual(['', SIG_B]);
+    });
+
+    it('no-op when metadata.thoughtSignatures is absent', () => {
+      const payload = [
+        { role: 'user', content: 'hi' },
+        {
+          role: 'assistant',
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: '', tool_call_ids: ['t1'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't1', name: 'bash', args: '{}', output: 'ok' },
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      const assistant = result.find((m) => m instanceof AIMessage);
+      expect(assistant.additional_kwargs?.signatures).toBeUndefined();
+    });
+
+    it('no-op when assistant message has no tool_calls', () => {
+      const payload = [
+        { role: 'user', content: 'hi' },
+        {
+          role: 'assistant',
+          metadata: { thoughtSignatures: { t1: SIG_A } },
+          content: 'plain text reply',
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      const assistant = result.find((m) => m instanceof AIMessage);
+      expect(assistant.additional_kwargs?.signatures).toBeUndefined();
+    });
+
+    it('no-op when no tool_call has a corresponding stored signature', () => {
+      // The persisted map exists but addresses different tool_call_ids
+      // (e.g., the previous turn's signatures, somehow leaked). Don't
+      // fabricate empty arrays onto the AIMessage.
+      const payload = [
+        { role: 'user', content: 'hi' },
+        {
+          role: 'assistant',
+          metadata: { thoughtSignatures: { unrelated_id: SIG_A } },
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: '', tool_call_ids: ['t1'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't1', name: 'bash', args: '{}', output: 'ok' },
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      const assistant = result.find((m) => m instanceof AIMessage);
+      expect(assistant.additional_kwargs?.signatures).toBeUndefined();
+    });
+  });
 });

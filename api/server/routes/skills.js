@@ -6,6 +6,9 @@ const {
   createSkillsHandlers,
   createImportHandler,
   generateCheckAccess,
+  getStorageMetadata,
+  resolveRequestTenantId,
+  restoreTenantContextFromReq,
 } = require('@librechat/api');
 const { isValidObjectIdString, logger } = require('@librechat/data-schemas');
 const {
@@ -13,6 +16,7 @@ const {
   PermissionTypes,
   Permissions,
   FileContext,
+  mergeFileConfig,
 } = require('librechat-data-provider');
 const {
   createSkill,
@@ -49,6 +53,11 @@ const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
 
 const memoryStorage = multer.memoryStorage();
 
+function getSkillImportSizeLimit(req) {
+  const fileConfig = mergeFileConfig(req.config?.fileConfig);
+  return fileConfig.skills?.fileSizeLimit ?? MAX_IMPORT_SIZE;
+}
+
 const skillImportFilter = (_req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
   if (ALLOWED_EXTENSIONS.has(ext)) {
@@ -59,11 +68,12 @@ const skillImportFilter = (_req, file, cb) => {
   }
 };
 
-const skillUpload = multer({
-  storage: memoryStorage,
-  fileFilter: skillImportFilter,
-  limits: { fileSize: MAX_IMPORT_SIZE },
-});
+const skillUpload = (req, res, next) =>
+  multer({
+    storage: memoryStorage,
+    fileFilter: skillImportFilter,
+    limits: { fileSize: getSkillImportSizeLimit(req) },
+  }).single('file')(req, res, next);
 
 // Per-file upload (for adding individual files to an existing skill)
 const MAX_SINGLE_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -132,16 +142,23 @@ function resolveSkillStorage(req, { isImage = false } = {}) {
 // Import handler (zip/md/skill → create skill + files)
 // ---------------------------------------------------------------------------
 const importHandler = createImportHandler({
+  limits: (req) => ({
+    maxZipBytes: getSkillImportSizeLimit(req),
+  }),
   createSkill,
   getSkillById,
   deleteSkill,
   upsertSkillFile,
-  saveBuffer: (req, { userId, buffer, fileName, basePath, isImage }) => {
+  saveBuffer: (req, { userId, buffer, fileName, basePath, isImage, tenantId }) => {
+    const requestTenantId = tenantId ?? resolveRequestTenantId(req);
     const storage = resolveSkillStorage(req, { isImage });
-    return storage.saveBuffer({ userId, buffer, fileName, basePath }).then((filepath) => ({
-      filepath,
-      source: storage.source,
-    }));
+    return storage
+      .saveBuffer({ userId, buffer, fileName, basePath, tenantId: requestTenantId })
+      .then((filepath) => ({
+        filepath,
+        source: storage.source,
+        ...getStorageMetadata({ filepath, source: storage.source }),
+      }));
   },
   deleteFile: (req, file) => {
     const { deleteFile } = getStrategyFunctions(file.source);
@@ -181,6 +198,8 @@ async function uploadFileHandler(req, res) {
       return res.status(400).json({ error: 'Invalid file path' });
     }
 
+    const tenantId = resolveRequestTenantId(req);
+
     // Look up existing file before saving — needed to clean up old blob on replace
     const existingFile = await getSkillFileByPath(skillId, relativePath);
 
@@ -195,7 +214,9 @@ async function uploadFileHandler(req, res) {
       buffer: file.buffer,
       fileName: storageFileName,
       basePath: 'uploads',
+      tenantId,
     });
+    const storageMetadata = getStorageMetadata({ filepath, source: storage.source });
 
     let result;
     try {
@@ -205,18 +226,20 @@ async function uploadFileHandler(req, res) {
         file_id: fileId,
         filename,
         filepath,
+        ...storageMetadata,
         source: storage.source,
         mimeType: file.mimetype || 'application/octet-stream',
         bytes: file.size,
         isExecutable: false,
         author: req.user._id,
+        tenantId,
       });
     } catch (dbError) {
       // Clean up the stored blob so it doesn't leak on DB failure
       try {
         const { deleteFile } = getStrategyFunctions(storage.source);
         if (deleteFile) {
-          await deleteFile(req, { filepath });
+          await deleteFile(req, { filepath, user: req.user.id, tenantId });
         }
       } catch (cleanupErr) {
         logger.error('[uploadFile] Failed to clean up orphaned blob:', cleanupErr);
@@ -228,9 +251,11 @@ async function uploadFileHandler(req, res) {
     if (existingFile && existingFile.filepath !== filepath) {
       const { deleteFile: delOld } = getStrategyFunctions(existingFile.source);
       if (delOld) {
-        delOld(req, { filepath: existingFile.filepath }).catch((e) =>
-          logger.error('[uploadFile] Old blob cleanup failed:', e),
-        );
+        delOld(req, {
+          filepath: existingFile.filepath,
+          user: existingFile.author ?? req.user.id,
+          tenantId: existingFile.tenantId ?? tenantId,
+        }).catch((e) => logger.error('[uploadFile] Old blob cleanup failed:', e));
       }
     }
 
@@ -254,7 +279,8 @@ router.post(
   checkSkillCreate,
   fileUploadIpLimiter,
   fileUploadUserLimiter,
-  skillUpload.single('file'),
+  skillUpload,
+  restoreTenantContextFromReq,
   importHandler,
 );
 
@@ -294,6 +320,7 @@ router.post(
   fileUploadIpLimiter,
   fileUploadUserLimiter,
   singleFileUpload.single('file'),
+  restoreTenantContextFromReq,
   uploadFileHandler,
 );
 

@@ -46,6 +46,7 @@ function createOAuthHandler(redirectUri = domains.client) {
         /** Get refresh token from tokenset for OpenID users */
         const refreshToken =
           req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token;
+        const expiresAt = Date.now() + sessionExpiry;
 
         const callbackUrl = new URL(redirectUri);
         const exchangeCode = await generateAdminExchangeCode(
@@ -55,6 +56,7 @@ function createOAuthHandler(redirectUri = domains.client) {
           refreshToken,
           callbackUrl.origin,
           req.pkceChallenge,
+          expiresAt,
         );
         callbackUrl.searchParams.set('code', exchangeCode);
         logger.info(`[OAuth] Admin panel redirect with exchange code for user: ${req.user.email}`);
@@ -68,9 +70,12 @@ function createOAuthHandler(redirectUri = domains.client) {
         isEnabled(process.env.OPENID_REUSE_TOKENS) === true
       ) {
         await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
-        setOpenIDAuthTokens(req.user.tokenset, req, res, req.user._id.toString());
+        setOpenIDAuthTokens(req.user.tokenset, req, res, {
+          userId: req.user._id.toString(),
+          tenantId: req.user.tenantId,
+        });
       } else {
-        await setAuthTokens(req.user._id, res);
+        await setAuthTokens(req.user._id, res, null, req);
       }
       res.redirect(redirectUri);
     } catch (err) {

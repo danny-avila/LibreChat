@@ -1,3 +1,4 @@
+import { Constants } from 'librechat-data-provider';
 import { parseToolName, getToolDisplayLabel, TOOL_FRIENDLY_NAME_KEYS } from '../toolLabels';
 
 describe('parseToolName', () => {
@@ -58,6 +59,18 @@ describe('getToolDisplayLabel', () => {
      *  which is what the real `useLocalize` would resolve at render time. */
     expect(getToolDisplayLabel('web_search', identityLocalize)).toBe(
       TOOL_FRIENDLY_NAME_KEYS.web_search,
+    );
+  });
+
+  it('returns the code translation key for bash PTC tool calls', () => {
+    expect(getToolDisplayLabel(Constants.BASH_PROGRAMMATIC_TOOL_CALLING, identityLocalize)).toBe(
+      TOOL_FRIENDLY_NAME_KEYS[Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+    );
+  });
+
+  it('returns the code translation key for bash_tool calls', () => {
+    expect(getToolDisplayLabel('bash_tool', identityLocalize)).toBe(
+      TOOL_FRIENDLY_NAME_KEYS.bash_tool,
     );
   });
 
