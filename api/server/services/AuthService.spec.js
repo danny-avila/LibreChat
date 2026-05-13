@@ -576,13 +576,9 @@ describe('CloudFront cookie integration', () => {
 
       expect(result).toBe(false);
       expect(setCloudFrontCookies).not.toHaveBeenCalled();
-      expect(logger.debug).toHaveBeenCalledWith(
+      expect(logger.debug).not.toHaveBeenCalledWith(
         '[setCloudFrontAuthCookies] CloudFront auth cookies skipped',
-        expect.objectContaining({
-          attempted: false,
-          set: false,
-          reason: 'cloudfront_disabled',
-        }),
+        expect.any(Object),
       );
     });
 
