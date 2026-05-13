@@ -15,6 +15,7 @@
     "user-stats": "node config/user-stats.js",
     "rebuild:package-lock": "node config/packages",
     "reinstall": "node config/update.js -l -g",
+    "clean:install:build": "rm -rf node_modules && npm install && bun run build:packages && cd client && bun run build",
     "b:reinstall": "bun config/update.js -b -l -g",
     "reinstall:docker": "node config/update.js -d -g",
     "update:local": "node config/update.js -l",

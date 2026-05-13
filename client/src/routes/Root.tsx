@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import DevDebugOverlayLoader from '~/components/Dev/DevDebugOverlayLoader';
 import type { ContextType } from '~/common';
 import { Banner } from '~/components/Banners';
 import { MobileNav, Nav } from '~/components/Nav';
@@ -78,6 +79,7 @@ export default function Root() {
                     <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
                       <MobileNav setNavVisible={setNavVisible} />
                       <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
+                      <DevDebugOverlayLoader />
                     </div>
                   </div>
                 </div>

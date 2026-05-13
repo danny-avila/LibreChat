@@ -706,6 +706,21 @@ export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage
   return request.get(endpoints.messages({ conversationId }));
 }
 
+/** Single message from API (includes fields omitted from SSE final payload, e.g. tokenCount). */
+export function getMessageByConvoAndId(
+  conversationId: string,
+  messageId: string,
+): Promise<unknown> {
+  if (
+    !messageId ||
+    conversationId === config.Constants.NEW_CONVO ||
+    conversationId === config.Constants.PENDING_CONVO
+  ) {
+    return Promise.reject(new Error('Invalid conversationId or messageId'));
+  }
+  return request.get(endpoints.messages({ conversationId, messageId }));
+}
+
 export function getPrompt(id: string): Promise<{ prompt: t.TPrompt }> {
   return request.get(endpoints.getPrompt(id));
 }

@@ -734,7 +734,26 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
-    const metadata = this.agentIdMap ? { agentIdMap: this.agentIdMap } : undefined;
+    const usage = this.usage;
+    const usageMetadata =
+      usage && typeof usage === 'object'
+        ? {
+            // Keep the shape compatible with common providers and our debug parser.
+            input_tokens: usage.input_tokens ?? 0,
+            output_tokens: usage.output_tokens ?? 0,
+            total_tokens: Number(usage.input_tokens ?? 0) + Number(usage.output_tokens ?? 0),
+            prompt_tokens: usage.input_tokens ?? 0,
+            completion_tokens: usage.output_tokens ?? 0,
+          }
+        : undefined;
+
+    const metadata =
+      this.agentIdMap || usageMetadata
+        ? {
+            ...(this.agentIdMap ? { agentIdMap: this.agentIdMap } : {}),
+            ...(usageMetadata ? { usage: usageMetadata } : {}),
+          }
+        : undefined;
 
     return { completion, metadata };
   }
