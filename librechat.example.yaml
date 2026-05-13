@@ -146,6 +146,12 @@ interface:
   #   share: false
   #   public: false
   # MCP Servers configuration example
+  # Shared Links configuration
+  # Controls user permissions for shared links (e.g. sharing conversations via link)
+  # sharedLinks:
+  #   create: false
+  #   share: true
+  #   public: true # Allows users to toggle "share with everyone" for their links. Whether anonymous access is permitted is controlled by ALLOW_SHARED_LINKS_PUBLIC.
   # mcpServers:
     # Controls user permissions for MCP (Model Context Protocol) server management
     # - use: Allow users to use configured MCP servers

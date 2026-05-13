@@ -336,6 +336,35 @@ export class AccessControlService {
   }
 
   /**
+   * Check if a resource has a PUBLIC AclEntry (accessible to everyone).
+   * Unlike checkPermission, this does not require a user context.
+   */
+  public async hasPublicAccess({
+    resourceType,
+    resourceId,
+  }: {
+    resourceType: ResourceType;
+    resourceId: string | Types.ObjectId;
+  }): Promise<boolean> {
+    try {
+      this.validateResourceType(resourceType);
+      const entry = await this._aclModel
+        .findOne({
+          principalType: PrincipalType.PUBLIC,
+          resourceType,
+          resourceId,
+        })
+        .lean();
+      return entry != null;
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`[PermissionService.hasPublicAccess] Error: ${error.message}`);
+      }
+      return false;
+    }
+  }
+
+  /**
    * Validates that the resourceType is one of the supported enum values
    * @param {string} resourceType - The resource type to validate
    * @throws {Error} If resourceType is not valid

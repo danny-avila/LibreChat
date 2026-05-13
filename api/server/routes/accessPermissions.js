@@ -82,6 +82,12 @@ const checkResourcePermissionAccess = (requiredPermission) => (req, res, next) =
       resourceIdParam: 'resourceId',
       idResolver: getSkillById,
     });
+  } else if (resourceType === ResourceType.SHARED_LINK) {
+    middleware = canAccessResource({
+      resourceType: ResourceType.SHARED_LINK,
+      requiredPermission,
+      resourceIdParam: 'resourceId',
+    });
   } else {
     return res.status(400).json({
       error: 'Bad Request',

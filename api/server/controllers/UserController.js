@@ -7,6 +7,7 @@ const {
   MCPTokenStorage,
   normalizeHttpError,
   extractWebSearchEnvVars,
+  deleteAllSharedLinksWithCleanup,
 } = require('@librechat/api');
 const {
   Tools,
@@ -323,7 +324,7 @@ const deleteUserController = async (req, res) => {
     }
     await deleteUserPluginAuth(user.id, null, true);
     await db.deleteUserById(user.id);
-    await db.deleteAllSharedLinks(user.id);
+    await deleteAllSharedLinksWithCleanup(user.id);
     await deleteUserFiles(req);
     await db.deleteFiles(null, user.id);
     await db.deleteToolCalls(user.id);

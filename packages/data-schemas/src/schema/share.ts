@@ -7,7 +7,6 @@ export interface ISharedLink extends Document {
   messages?: Types.ObjectId[];
   shareId?: string;
   targetMessageId?: string;
-  isPublic: boolean;
   createdAt?: Date;
   updatedAt?: Date;
   tenantId?: string;
@@ -36,10 +35,6 @@ const shareSchema: Schema<ISharedLink> = new Schema(
       type: String,
       required: false,
       index: true,
-    },
-    isPublic: {
-      type: Boolean,
-      default: true,
     },
     tenantId: {
       type: String,

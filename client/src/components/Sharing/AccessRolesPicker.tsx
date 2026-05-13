@@ -6,7 +6,7 @@ import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
 import { useGetAccessRolesQuery } from 'librechat-data-provider/react-query';
 import type { AccessRole } from 'librechat-data-provider';
 import type * as t from '~/common';
-import { cn, getRoleLocalizationKeys } from '~/utils';
+import { cn, getRoleLocalizationKeys, RESOURCE_CONFIGS } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 interface AccessRolesPickerProps {
@@ -37,6 +37,12 @@ export default function AccessRolesPicker({
     };
   };
 
+  const ownerRoleId = RESOURCE_CONFIGS[resourceType]?.defaultOwnerRoleId;
+  const filteredRoles =
+    resourceType === ResourceType.SHARED_LINK
+      ? (accessRoles || []).filter((role) => role.accessRoleId !== ownerRoleId)
+      : accessRoles || [];
+
   const selectedRole = accessRoles?.find((role) => role.accessRoleId === selectedRoleId);
   const selectedRoleInfo = selectedRole ? getLocalizedRoleInfo(selectedRole.accessRoleId) : null;
 
@@ -44,7 +50,7 @@ export default function AccessRolesPicker({
     return <Skeleton className="h-10 w-24 rounded-lg" />;
   }
 
-  const dropdownItems: t.MenuItemProps[] = accessRoles.map((role: AccessRole) => {
+  const dropdownItems: t.MenuItemProps[] = filteredRoles.map((role: AccessRole) => {
     const localizedInfo = getLocalizedRoleInfo(role.accessRoleId);
     return {
       id: role.accessRoleId,

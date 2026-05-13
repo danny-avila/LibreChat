@@ -9,7 +9,6 @@ export interface ISharedLink {
   messages?: Types.ObjectId[];
   shareId?: string;
   targetMessageId?: string;
-  isPublic: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -22,7 +21,6 @@ export interface SharedLinksResult {
   links: Array<{
     shareId: string;
     title: string;
-    isPublic: boolean;
     createdAt: Date;
     conversationId: string;
   }>;
@@ -35,30 +33,33 @@ export interface SharedMessagesResult {
   messages: Array<IMessage>;
   shareId: string;
   title?: string;
-  isPublic: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
 export interface CreateShareResult {
+  _id?: string;
   shareId: string;
   conversationId: string;
   targetMessageId?: string;
 }
 
 export interface UpdateShareResult {
+  _id?: string;
   shareId: string;
   conversationId: string;
   targetMessageId?: string;
 }
 
 export interface DeleteShareResult {
+  _id?: string;
   success: boolean;
   shareId: string;
   message: string;
 }
 
 export interface GetShareLinkResult {
+  _id?: string;
   shareId: string | null;
   targetMessageId?: string;
   success: boolean;

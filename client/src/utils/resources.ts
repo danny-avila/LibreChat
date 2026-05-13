@@ -71,6 +71,16 @@ export const RESOURCE_CONFIGS: Record<ResourceType, ResourceConfig> = {
       `Manage permissions for ${name && name !== '' ? name : 'skill'}`,
     getCopyUrlMessage: () => 'Skill URL copied',
   },
+  [ResourceType.SHARED_LINK]: {
+    resourceType: ResourceType.SHARED_LINK,
+    defaultViewerRoleId: AccessRoleIds.SHARED_LINK_VIEWER,
+    defaultEditorRoleId: AccessRoleIds.SHARED_LINK_VIEWER,
+    defaultOwnerRoleId: AccessRoleIds.SHARED_LINK_OWNER,
+    getResourceName: (name?: string) => name || 'shared link',
+    getShareMessage: (name?: string) => name || 'shared link',
+    getManageMessage: (name?: string) => `Manage access for ${name || 'shared link'}`,
+    getCopyUrlMessage: () => 'Share link copied',
+  },
 };
 
 export const getResourceConfig = (resourceType: ResourceType): ResourceConfig | undefined => {

@@ -12,6 +12,8 @@ module.exports = {
     })),
     logAxiosError: jest.fn(),
     restoreTenantContextFromReq: jest.fn((req, res, next) => next()),
+    deleteConvoSharedLinksWithCleanup: jest.fn(),
+    deleteAllSharedLinksWithCleanup: jest.fn(),
     ...overrides,
   }),
 
