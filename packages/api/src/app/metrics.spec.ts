@@ -5,6 +5,8 @@ describe('normalizePath', () => {
   it.each([
     // Known high-cardinality routes
     ['/api/messages/507f1f77bcf86cd799439011', '/api/messages/#id'],
+    ['/api/messages/507f1f77bcf86cd799439011/507f1f77bcf86cd799439012', '/api/messages/#id/#id'],
+    ['/api/messages/artifact/507f1f77bcf86cd799439012', '/api/messages/artifact/#id'],
     ['/api/convos/507f1f77bcf86cd799439011', '/api/convos/#id'],
     ['/api/files/507f1f77bcf86cd799439011', '/api/files/#id'],
     ['/api/agents/507f1f77bcf86cd799439011', '/api/agents/#id'],
@@ -37,6 +39,8 @@ describe('normalizePath', () => {
     ['/avatars/user-123/avatar-1700000000000.png', '/avatars/#path'],
     ['/t/tenant-a/images/user-123/avatar-1700000000000.png', '/t/#path'],
     ['/unknown/shareId-with_nanoidChars', '/#path'],
+    ['/api/messages/507f1f77bcf86cd799439011/user-generated-value/extra', '/api/#path'],
+    ['/api/messages/artifact/507f1f77bcf86cd799439012/user-generated-value', '/api/#path'],
   ])('normalizes %s -> %s', (input: string, normalized: string) => {
     expect(normalizePath(input)).toBe(normalized);
   });

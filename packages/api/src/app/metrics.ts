@@ -5,6 +5,8 @@ import { logger } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 
 const PATH_NORMALIZATIONS: [RegExp, string][] = [
+  [/^\/api\/messages\/artifact\/[^/]+(?=\/|$)/, '/api/messages/artifact/#id'],
+  [/^\/api\/messages\/[^/]+\/[^/]+(?=\/|$)/, '/api/messages/#id/#id'],
   [/^\/api\/convos\/[^/]+\/messages\/[^/]+(?=\/|$)/, '/api/convos/#id/messages/#id'],
   [/^\/api\/messages\/[^/]+(?=\/|$)/, '/api/messages/#id'],
   [/^\/api\/convos\/[^/]+(?=\/|$)/, '/api/convos/#id'],
@@ -21,6 +23,30 @@ const PATH_NORMALIZATIONS: [RegExp, string][] = [
 ];
 
 const STATIC_PATHS = new Set(['/', '/health', '/metrics', '/api/auth/login', '/api/config']);
+
+const LOW_CARDINALITY_PATHS: RegExp[] = [
+  /^\/api\/messages\/#id$/,
+  /^\/api\/messages\/#id\/#id$/,
+  /^\/api\/messages\/artifact\/#id$/,
+  /^\/api\/convos\/#id$/,
+  /^\/api\/convos\/#id\/messages\/#id$/,
+  /^\/api\/(files|agents|assistants|tags|tools|runs|sessions)\/#id$/,
+  /^\/api\/share\/#token$/,
+  /^\/share\/#id(?:\/edit)?$/,
+];
+
+const isLowCardinalityPath = (path: string): boolean =>
+  STATIC_PATHS.has(path) || LOW_CARDINALITY_PATHS.some((pattern) => pattern.test(path));
+
+const normalizeKnownPath = (path: string): string => {
+  for (const [pattern, replacement] of PATH_NORMALIZATIONS) {
+    if (pattern.test(path)) {
+      return path.replace(pattern, replacement);
+    }
+  }
+
+  return path;
+};
 
 const normalizeUnknownPath = (path: string): string => {
   if (STATIC_PATHS.has(path)) {
@@ -49,12 +75,9 @@ const normalizeUnknownPath = (path: string): string => {
 export const normalizePath = (rawPath: string): string => {
   const [pathWithoutQuery] = rawPath.split('?');
   const path = pathWithoutQuery.startsWith('/') ? pathWithoutQuery : `/${pathWithoutQuery}`;
-  const normalized = PATH_NORMALIZATIONS.reduce(
-    (p, [pattern, replacement]) => p.replace(pattern, replacement),
-    path || '/',
-  );
+  const normalized = normalizeKnownPath(path || '/');
 
-  if (normalized !== path) {
+  if (isLowCardinalityPath(normalized)) {
     return normalized;
   }
 
