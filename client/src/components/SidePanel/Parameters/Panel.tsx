@@ -2,6 +2,12 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import keyBy from 'lodash/keyBy';
 import { RotateCcw } from 'lucide-react';
 import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from '@librechat/client';
+import {
   excludedKeys,
   paramSettings,
   getSettingsKeys,
@@ -16,6 +22,88 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import { componentMapping } from './components';
 import { useChatContext } from '~/Providers';
 import { logger } from '~/utils';
+
+// V1 UX POP/BETC : refonte light du panel Paramètres modèle :
+// - 4 params essentiels visibles (Instructions perso, Nom perso, Température)
+// - Reste des params LLM techniques en accordéon "Réglages avancés" replié
+// - Tooltips pédagogiques FR hardcodés (atelier specs post-congé pour
+//   i18n EN propre + composant Créativité 3-presets).
+// Pattern aligné sur builder Agent ModelPanel.tsx.
+const ESSENTIAL_PARAM_KEYS = ['promptPrefix', 'modelLabel', 'chatGptLabel', 'temperature'];
+
+interface ParamOverride {
+  label?: string;
+  description?: string;
+}
+
+const PARAM_OVERRIDES: Record<string, ParamOverride> = {
+  promptPrefix: {
+    label: 'Instructions personnalisées',
+    description:
+      "Décris comment Vermeer doit te répondre par défaut (ton, format, expertise…). Ces instructions s'appliquent à toutes tes conversations.",
+  },
+  maxContextTokens: {
+    description:
+      "Quantité maximale de texte que l'IA peut prendre en compte dans une conversation (historique + ta question). Plus c'est élevé, plus l'IA se souvient, mais plus c'est coûteux. Laisse 'Système' pour la valeur recommandée.",
+  },
+  max_tokens: {
+    description:
+      "Longueur maximale d'une réponse de l'IA. Utile pour limiter les réponses très longues. Laisse 'Système' pour la valeur recommandée.",
+  },
+  temperature: {
+    label: 'Créativité',
+    description:
+      "Influence le ton et l'originalité des réponses. Valeurs basses = précis et déterministe. Valeurs hautes = plus créatif et varié. Laisse vide pour la valeur recommandée.",
+  },
+  top_p: {
+    description:
+      "Filtre les mots improbables avant de choisir la réponse. 1.00 = aucun filtre. Plus bas = réponses plus prudentes. À utiliser en alternative à la Température.",
+  },
+  frequency_penalty: {
+    description:
+      "Décourage l'IA de répéter les mêmes mots. 0 = aucune pénalité. Plus haut = vocabulaire plus varié, mais peut sembler forcé.",
+  },
+  presence_penalty: {
+    description:
+      "Encourage l'IA à introduire de nouveaux sujets. 0 = aucune pénalité. Plus haut = l'IA évite de revenir sur ce qu'elle a déjà dit.",
+  },
+  stop: {
+    description:
+      "Mots ou phrases qui font stopper l'IA dès qu'elle les écrit. Utile pour des cas techniques (génération de code, formats stricts).",
+  },
+  resendFiles: {
+    description:
+      "Re-télécharge les fichiers attachés à chaque message. Désactiver pour économiser des tokens si l'IA n'a pas besoin de re-voir les fichiers à chaque échange.",
+  },
+  imageDetail: {
+    description:
+      "Niveau de détail avec lequel l'IA analyse les images attachées. 'Automatique' s'adapte au contenu. 'Élevé' coûte plus mais voit les détails fins.",
+  },
+  reasoning_effort: {
+    description:
+      "Pour les modèles à raisonnement (o1, o3, etc.). Plus l'effort est élevé, plus l'IA prend de temps à réfléchir, et plus la réponse est solide sur des tâches complexes.",
+  },
+  useResponsesApi: {
+    description:
+      "Active la nouvelle API Responses d'OpenAI. À laisser désactivé sauf indication de l'équipe technique.",
+  },
+  reasoning_summary: {
+    description:
+      "Affiche un résumé de la chaîne de pensée du modèle quand il raisonne. 'Non défini' = comportement par défaut du modèle.",
+  },
+  verbosity: {
+    description:
+      "Niveau de détail dans les réponses. 'Aucun' = comportement par défaut. À augmenter si tu veux des explications systématiquement plus longues.",
+  },
+  disableStreaming: {
+    description:
+      "Par défaut, l'IA écrit sa réponse mot par mot en temps réel. Activer pour recevoir la réponse en une seule fois, à la fin.",
+  },
+  fileTokenLimit: {
+    description:
+      "Taille maximale (en tokens) d'un fichier que l'IA peut traiter. Laisse 'Système' pour la valeur recommandée.",
+  },
+};
 
 // V1 UX POP/BETC : 2 mécanismes Recherche web actuellement cassés
 // (services tiers nécessitent clés admin non posées, et natif LLM
@@ -59,8 +147,38 @@ export default function Parameters() {
     return defaultParams
       .filter((param) => param != null)
       .filter((param) => SHOW_USER_WEB_SEARCH_SETTING || param.key !== 'web_search')
-      .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
+      .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param)
+      .map((param) => {
+        const override = PARAM_OVERRIDES[param.key];
+        if (!override) {
+          return param;
+        }
+        return {
+          ...param,
+          ...(override.label != null && { label: override.label, labelCode: false }),
+          ...(override.description != null && {
+            description: override.description,
+            descriptionCode: false,
+          }),
+        } as SettingDefinition;
+      });
   }, [endpointType, endpointsConfig, model, provider]);
+
+  const { essentialParams, advancedParams } = useMemo(() => {
+    const essentialByKey = new Map<string, SettingDefinition>();
+    const advanced: SettingDefinition[] = [];
+    for (const param of parameters) {
+      if (ESSENTIAL_PARAM_KEYS.includes(param.key)) {
+        essentialByKey.set(param.key, param);
+      } else {
+        advanced.push(param);
+      }
+    }
+    const ordered = ESSENTIAL_PARAM_KEYS.map((k) => essentialByKey.get(k)).filter(
+      (p): p is SettingDefinition => p != null,
+    );
+    return { essentialParams: ordered, advancedParams: advanced };
+  }, [parameters]);
 
   useEffect(() => {
     if (!parameters) {
@@ -153,35 +271,48 @@ export default function Parameters() {
     return null;
   }
 
+  const renderParam = (setting: SettingDefinition) => {
+    const Component = componentMapping[setting.component];
+    if (!Component) {
+      return null;
+    }
+    const { key, default: defaultValue, ...rest } = setting;
+    if (key === 'region' && bedrockRegions.length) {
+      rest.options = bedrockRegions;
+    }
+    return (
+      <Component
+        key={key}
+        settingKey={key}
+        defaultValue={defaultValue}
+        {...rest}
+        setOption={setOption}
+        conversation={conversation}
+      />
+    );
+  };
+
   return (
     <div className="h-auto max-w-full px-3 pb-3 pt-2">
-      <div className="grid grid-cols-2 gap-4">
-        {' '}
-        {/* This is the parent element containing all settings */}
-        {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}
-        {parameters.map((setting) => {
-          const Component = componentMapping[setting.component];
-          if (!Component) {
-            return null;
-          }
-          const { key, default: defaultValue, ...rest } = setting;
+      {/* Section visible : paramètres essentiels (Instructions, Nom, Température) */}
+      {essentialParams.length > 0 && (
+        <div className="grid grid-cols-2 gap-4">{essentialParams.map(renderParam)}</div>
+      )}
 
-          if (key === 'region' && bedrockRegions.length) {
-            rest.options = bedrockRegions;
-          }
+      {/* Accordéon "Réglages avancés" replié par défaut : tous les autres params LLM */}
+      {advancedParams.length > 0 && (
+        <Accordion type="single" collapsible className="mt-4 w-full">
+          <AccordionItem value="advanced-settings" className="border-b-0">
+            <AccordionTrigger className="text-sm font-medium text-text-primary hover:no-underline">
+              {localize('com_ui_advanced_settings')}
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="grid grid-cols-2 gap-4 pt-2">{advancedParams.map(renderParam)}</div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
 
-          return (
-            <Component
-              key={key}
-              settingKey={key}
-              defaultValue={defaultValue}
-              {...rest}
-              setOption={setOption}
-              conversation={conversation}
-            />
-          );
-        })}
-      </div>
       <div className="mt-4 flex justify-center">
         <button
           type="button"
@@ -189,7 +320,7 @@ export default function Parameters() {
           className="btn btn-neutral flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
         >
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
-          {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
+          {localize('com_ui_reset')}
         </button>
       </div>
       <div className="mt-2 flex justify-center">
