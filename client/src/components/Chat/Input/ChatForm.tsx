@@ -25,7 +25,6 @@ import { cn, removeFocusRings } from '~/utils';
 import { hideAccessoryBar, showAccessoryBar } from '~/utils/keyboard';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
-import AudioRecorder from './AudioRecorder';
 import StreamAudio from './StreamAudio';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -51,7 +50,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
   const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
 
-  const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
   const chatDirection = useRecoilValue(store.chatDirection);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
@@ -296,17 +294,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
                     removeFocusRings,
                   )}
                 />
-                {SpeechToText && (
-                  <div className="order-3">
-                    <AudioRecorder
-                      methods={methods}
-                      ask={submitMessage}
-                      textAreaRef={textAreaRef}
-                      disabled={disableInputs || isNotAppendable}
-                      isSubmitting={isSubmitting}
-                    />
-                  </div>
-                )}
                 <div className={`order-4 ${isRTL ? 'ml-1.5' : 'mr-1.5'}`}>
                   {(isSubmitting || isSubmittingAdded) && (showStopButton || showStopAdded) ? (
                     <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
