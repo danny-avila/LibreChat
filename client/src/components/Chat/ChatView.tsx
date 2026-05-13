@@ -83,8 +83,10 @@ function ChatView({ index = 0 }: { index?: number }) {
               <>
                 <div
                   className={cn(
-                    'flex flex-1 flex-col overflow-hidden',
-                    isLandingPage ? 'items-center justify-end sm:justify-center' : 'min-h-0',
+                    'flex min-h-0 flex-1 flex-col',
+                    isLandingPage
+                      ? 'items-center overflow-y-auto sm:justify-center'
+                      : 'overflow-hidden',
                   )}
                 >
                   <div

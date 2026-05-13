@@ -9,6 +9,7 @@ const { checkDomainAllowed, loginLimiter, logHeaders, checkBan } = require('~/se
 const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const { getAppConfig } = require('~/server/services/Config');
+const { putExchange } = require('~/cache/nativeOAuthExchange');
 const { Balance } = require('~/db/models');
 
 const setBalanceConfig = createSetBalanceConfig({
@@ -26,6 +27,56 @@ const domains = {
 router.use(logHeaders);
 router.use(loginLimiter);
 
+/**
+ * Native deep-link URL scheme the iOS/Android Capacitor apps register.
+ * Matches the iOS Info.plist CFBundleURLSchemes entry and the Android
+ * intent-filter we will add later.
+ */
+const NATIVE_REDIRECT_SCHEME = 'ai.codecan.app';
+const NATIVE_REDIRECT_PATH = '/oauth/callback';
+const OAUTH_PLATFORM_COOKIE = 'oauth_platform';
+const OAUTH_PLATFORM_COOKIE_TTL_MS = 10 * 60 * 1000;
+const ALLOWED_NATIVE_PLATFORMS = new Set(['ios', 'android']);
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+const buildNativeRedirect = (params) => {
+  const url = new URL(`${NATIVE_REDIRECT_SCHEME}://${NATIVE_REDIRECT_PATH.replace(/^\//, '')}`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value != null) {
+      url.searchParams.set(key, value);
+    }
+  }
+  return url.toString();
+};
+
+/**
+ * If the start route was hit with ?platform=ios|android, stash that on a
+ * short-lived cookie so the success / failure handlers further along the
+ * OAuth round trip can recognize the native caller and redirect into the
+ * custom URL scheme instead of the web SPA.
+ */
+const markNativePlatform = (req, res, next) => {
+  const platform = typeof req.query.platform === 'string' ? req.query.platform : null;
+  if (platform && ALLOWED_NATIVE_PLATFORMS.has(platform)) {
+    res.cookie(OAUTH_PLATFORM_COOKIE, platform, {
+      maxAge: OAUTH_PLATFORM_COOKIE_TTL_MS,
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+    });
+  }
+  next();
+};
+
+const clearPlatformCookie = (res) => {
+  res.clearCookie(OAUTH_PLATFORM_COOKIE, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+  });
+};
+
 const oauthHandler = async (req, res, next) => {
   try {
     if (res.headersSent) {
@@ -36,16 +87,42 @@ const oauthHandler = async (req, res, next) => {
     if (req.banned) {
       return;
     }
+
+    const nativePlatform = req.cookies?.[OAUTH_PLATFORM_COOKIE];
+    const isNative = ALLOWED_NATIVE_PLATFORMS.has(nativePlatform);
+
+    let token;
+    let refreshToken = null;
+    let refreshTokenExpires = null;
+
     if (
       req.user &&
       req.user.provider == 'openid' &&
       isEnabled(process.env.OPENID_REUSE_TOKENS) === true
     ) {
       await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
-      setOpenIDAuthTokens(req.user.tokenset, res, req.user._id.toString());
+      token = setOpenIDAuthTokens(req.user.tokenset, res, req.user._id.toString());
     } else {
-      await setAuthTokens(req.user._id, res);
+      const result = await setAuthTokens(req.user._id, res, null, { returnRefresh: isNative });
+      if (isNative && result && typeof result === 'object') {
+        ({ token, refreshToken, refreshTokenExpires } = result);
+      } else {
+        token = result;
+      }
     }
+
+    if (isNative) {
+      clearPlatformCookie(res);
+      const exchangeCode = await putExchange({
+        userId: req.user._id.toString(),
+        token,
+        refreshToken,
+        refreshTokenExpires,
+        provider: req.user.provider || null,
+      });
+      return res.redirect(buildNativeRedirect({ code: exchangeCode }));
+    }
+
     res.redirect(domains.client);
   } catch (err) {
     logger.error('Error in setting authentication tokens:', err);
@@ -60,6 +137,12 @@ router.get('/error', (req, res) => {
     message: errorMessage,
   });
 
+  const nativePlatform = req.cookies?.[OAUTH_PLATFORM_COOKIE];
+  if (ALLOWED_NATIVE_PLATFORMS.has(nativePlatform)) {
+    clearPlatformCookie(res);
+    return res.redirect(buildNativeRedirect({ error: ErrorTypes.AUTH_FAILED }));
+  }
+
   res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
 });
 
@@ -68,6 +151,7 @@ router.get('/error', (req, res) => {
  */
 router.get(
   '/google',
+  markNativePlatform,
   passport.authenticate('google', {
     scope: ['openid', 'profile', 'email'],
     session: false,
@@ -92,6 +176,7 @@ router.get(
  */
 router.get(
   '/facebook',
+  markNativePlatform,
   passport.authenticate('facebook', {
     scope: ['public_profile'],
     profileFields: ['id', 'email', 'name'],
@@ -116,7 +201,7 @@ router.get(
 /**
  * OpenID Routes
  */
-router.get('/openid', (req, res, next) => {
+router.get('/openid', markNativePlatform, (req, res, next) => {
   return passport.authenticate('openid', {
     session: false,
     state: randomState(),
@@ -140,6 +225,7 @@ router.get(
  */
 router.get(
   '/github',
+  markNativePlatform,
   passport.authenticate('github', {
     scope: ['user:email', 'read:user'],
     session: false,
@@ -164,6 +250,7 @@ router.get(
  */
 router.get(
   '/discord',
+  markNativePlatform,
   passport.authenticate('discord', {
     scope: ['identify', 'email'],
     session: false,

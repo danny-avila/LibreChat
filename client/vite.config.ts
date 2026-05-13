@@ -225,6 +225,19 @@ export default defineConfig(({ command }) => ({
             ) {
               return 'revenuecat';
             }
+            // Isolate native-auth plugins for the same reason — adding them
+            // to the generic `vendor` chunk introduced a circular init and
+            // TDZ-crashed codemirror-core / React's forwardRef on app boot.
+            // Only loaded on native via Capacitor.isNativePlatform() guards
+            // in src/utils/nativeAuth.ts.
+            if (
+              normalizedId.includes('@capacitor-community/apple-sign-in') ||
+              normalizedId.includes('@capacitor/app') ||
+              normalizedId.includes('@capacitor/browser') ||
+              normalizedId.includes('@capacitor/preferences')
+            ) {
+              return 'native-auth';
+            }
 
             // Everything else falls into a generic vendor chunk.
             return 'vendor';

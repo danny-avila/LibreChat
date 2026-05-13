@@ -21,9 +21,11 @@ const registrationController = async (req, res) => {
     const { status, message, user: registeredUser } = response;
 
     if (registeredUser) {
-      const { password: _p, __v, ...user } = registeredUser.toObject
-        ? registeredUser.toObject()
-        : registeredUser;
+      const {
+        password: _p,
+        __v,
+        ...user
+      } = registeredUser.toObject ? registeredUser.toObject() : registeredUser;
       user.id = user._id.toString();
       const token = await setAuthTokens(registeredUser._id, res);
       return res.status(status).send({ token, user });
@@ -70,7 +72,15 @@ const resetPasswordController = async (req, res) => {
 };
 
 const refreshController = async (req, res) => {
-  const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
+  const cookieRefreshToken = req.headers.cookie
+    ? cookies.parse(req.headers.cookie).refreshToken
+    : null;
+  const bodyRefreshToken =
+    req.body && typeof req.body.refreshToken === 'string' ? req.body.refreshToken : null;
+  const refreshToken = cookieRefreshToken || bodyRefreshToken;
+  /** Native callers send the refresh token in the body and consume the JSON
+   *  response — they don't have cross-origin cookie access. */
+  const isBodyAuth = !cookieRefreshToken && !!bodyRefreshToken;
   const token_provider = req.headers.cookie
     ? cookies.parse(req.headers.cookie).token_provider
     : null;
@@ -123,7 +133,7 @@ const refreshController = async (req, res) => {
     );
 
     if (session && session.expiration > new Date()) {
-      const token = await setAuthTokens(userId, res, session);
+      const result = await setAuthTokens(userId, res, session, { returnRefresh: isBodyAuth });
 
       // trigger OAuth MCP server reconnection asynchronously (best effort)
       void getOAuthReconnectionManager()
@@ -132,7 +142,15 @@ const refreshController = async (req, res) => {
           logger.error('Error reconnecting OAuth MCP servers:', err);
         });
 
-      res.status(200).send({ token, user });
+      if (isBodyAuth && result && typeof result === 'object') {
+        return res.status(200).send({
+          token: result.token,
+          refreshToken: result.refreshToken,
+          expiresAt: result.refreshTokenExpires,
+          user,
+        });
+      }
+      res.status(200).send({ token: result, user });
     } else if (req?.query?.retry) {
       // Retrying from a refresh token request that failed (401)
       res.status(403).send('No session found');
