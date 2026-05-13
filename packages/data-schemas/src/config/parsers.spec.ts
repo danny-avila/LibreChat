@@ -3,7 +3,13 @@ import { debugTraverse } from './parsers';
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
 
-function runFormatter(info: Record<string | symbol, unknown>): string {
+type FormatterInfo = Record<string | symbol, unknown> & {
+  level: string;
+  message: string;
+  timestamp: string;
+};
+
+function runFormatter(info: FormatterInfo): string {
   const transformed = debugTraverse.transform(info);
   if (transformed && typeof transformed === 'object') {
     const message = (transformed as Record<string | symbol, unknown>)[MESSAGE_SYMBOL];
@@ -12,7 +18,7 @@ function runFormatter(info: Record<string | symbol, unknown>): string {
   return String(transformed);
 }
 
-function buildInfo(level: string, meta: Record<string, unknown>): Record<string | symbol, unknown> {
+function buildInfo(level: string, meta: Record<string, unknown>): FormatterInfo {
   return {
     level,
     message: 'test',
