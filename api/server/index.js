@@ -13,6 +13,7 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
   apiNotFound,
+  createMetrics,
   ErrorController,
   memoryDiagnostics,
   performStartupChecks,
@@ -20,9 +21,8 @@ const {
   GenerationJobManager,
   createStreamServices,
   initializeFileStorage,
-  updateInterfacePermissions,
   preAuthTenantMiddleware,
-  createMetrics,
+  updateInterfacePermissions,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
