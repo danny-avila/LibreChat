@@ -688,6 +688,14 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     // Extract groups from token
     let groupNames = extractGroupsFromToken(tokenset, claimPath, tokenKind, exclusionPattern);
 
+    // null = extraction failed; preserve memberships (mirrors syncUserEntraGroupMemberships)
+    if (groupNames === null) {
+      logger.warn(
+        `[PermissionService.syncUserOidcGroupsFromToken] Group extraction failed for user ${user.email}; preserving existing memberships`,
+      );
+      return;
+    }
+
     // Security: Limit maximum number of groups to prevent DoS attacks
     const MAX_GROUPS_PER_USER = parseInt(process.env.OPENID_MAX_GROUPS_PER_USER, 10) || 100;
     if (groupNames.length > MAX_GROUPS_PER_USER) {
@@ -702,9 +710,9 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
       groupNames = groupNames.slice(0, MAX_GROUPS_PER_USER);
     }
 
-    if (!groupNames || groupNames.length === 0) {
+    if (groupNames.length === 0) {
       logger.info(
-        `[PermissionService.syncUserOidcGroupsFromToken] No groups found for user ${user.email}`,
+        `[PermissionService.syncUserOidcGroupsFromToken] No groups in token for user ${user.email}; removing from all OIDC groups`,
         {
           claimPath,
           tokenKind,

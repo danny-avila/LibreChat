@@ -355,6 +355,58 @@ describe('syncUserOidcGroupsFromToken', () => {
       expect(Group.insertMany).not.toHaveBeenCalled();
     });
 
+    it('should preserve existing memberships when extractGroupsFromToken returns null (extraction failure)', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(null);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      expect(Group.find).not.toHaveBeenCalled();
+      expect(Group.insertMany).not.toHaveBeenCalled();
+      expect(Group.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('should distinguish null (failure) from [] (legitimate empty)', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      // null = extraction failure -> no destructive ops
+      extractGroupsFromToken.mockReturnValue(null);
+      await syncUserOidcGroupsFromToken(user, tokenset);
+      expect(Group.updateMany).not.toHaveBeenCalled();
+
+      jest.clearAllMocks();
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      // [] = legitimately empty -> purge memberships
+      extractGroupsFromToken.mockReturnValue([]);
+      await syncUserOidcGroupsFromToken(user, tokenset);
+      expect(Group.updateMany).toHaveBeenCalledWith(
+        { source: 'oidc', memberIds: 'user-123' },
+        { $pull: { memberIds: 'user-123' } },
+        {},
+      );
+    });
+
     it('should use custom group source', async () => {
       process.env.OPENID_GROUP_SOURCE = 'oidc';
 

@@ -233,21 +233,21 @@ describe('extractGroupsFromToken', () => {
     expect(result).toEqual(['admin', 'user']);
   });
 
-  it('should return empty array for invalid tokenset', () => {
+  it('should return null for invalid tokenset (extraction failure)', () => {
     const result = extractGroupsFromToken(null, 'groups');
-    expect(result).toEqual([]);
+    expect(result).toBeNull();
   });
 
-  it('should return empty array when token is missing', () => {
+  it('should return null when token is missing (extraction failure)', () => {
     const tokenset = {
       id_token: 'id.jwt.token',
     };
 
     const result = extractGroupsFromToken(tokenset, 'groups', 'access');
-    expect(result).toEqual([]);
+    expect(result).toBeNull();
   });
 
-  it('should return empty array when claim is not found', () => {
+  it('should return null when claim is not found (extraction failure)', () => {
     const tokenset = {
       access_token: 'access.jwt.token',
     };
@@ -257,6 +257,19 @@ describe('extractGroupsFromToken', () => {
     });
 
     const result = extractGroupsFromToken(tokenset, 'nonexistent.claim');
+    expect(result).toBeNull();
+  });
+
+  it('should return empty array when claim resolves to empty array (legitimate empty)', () => {
+    const tokenset = {
+      access_token: 'access.jwt.token',
+    };
+
+    jwtDecode.mockReturnValue({
+      groups: [],
+    });
+
+    const result = extractGroupsFromToken(tokenset, 'groups');
     expect(result).toEqual([]);
   });
 
@@ -273,7 +286,7 @@ describe('extractGroupsFromToken', () => {
     expect(result).toEqual(['admin', 'user']);
   });
 
-  it('should handle extraction errors gracefully', () => {
+  it('should return null when decode throws (extraction failure)', () => {
     const tokenset = {
       access_token: 'invalid.token',
     };
@@ -283,7 +296,7 @@ describe('extractGroupsFromToken', () => {
     });
 
     const result = extractGroupsFromToken(tokenset, 'groups');
-    expect(result).toEqual([]);
+    expect(result).toBeNull();
   });
 
   it('should handle Keycloak realm roles', () => {

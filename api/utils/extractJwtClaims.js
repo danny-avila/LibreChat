@@ -169,12 +169,22 @@ function shouldExcludeGroup(groupName, exclusionPattern) {
 }
 
 /**
- * Extracts groups from JWT token for OIDC group synchronization
+ * Extracts groups from JWT token for OIDC group synchronization.
+ *
+ * Return values:
+ *   null      - extraction failed (invalid tokenset, missing/undecodable token,
+ *               wrong claim path, unexpected exception). Callers should treat
+ *               this as "cannot determine memberships" and avoid destructive
+ *               operations like purging existing memberships.
+ *   []        - extraction succeeded but the token contains no groups (user
+ *               legitimately has no roles assigned). Callers may purge.
+ *   string[]  - groups successfully extracted.
+ *
  * @param {Object} tokenset - OpenID token set containing access_token and id_token
  * @param {string} claimPath - Dot-notation path to groups/roles claim
  * @param {string} tokenKind - Which token to extract from ('access' or 'id')
  * @param {string|null} exclusionPattern - Optional exclusion pattern for filtering groups
- * @returns {Array<string>} Array of sanitized group names
+ * @returns {Array<string>|null} Sanitized group names, or null on extraction failure
  */
 function extractGroupsFromToken(
   tokenset,
@@ -185,34 +195,40 @@ function extractGroupsFromToken(
   try {
     if (!tokenset || typeof tokenset !== 'object') {
       logger.warn('[extractGroupsFromToken] Invalid tokenset provided');
-      return [];
+      return null;
     }
 
     const token = tokenKind === 'id' ? tokenset.id_token : tokenset.access_token;
 
     if (!token) {
       logger.warn(`[extractGroupsFromToken] ${tokenKind} token not found in tokenset`);
-      return [];
+      return null;
     }
 
     const claimValues = extractClaimFromToken(token, claimPath);
 
-    if (!claimValues || claimValues.length === 0) {
+    // null -> token couldn't be decoded or claim path didn't resolve -> failure
+    if (claimValues === null) {
+      logger.warn(
+        `[extractGroupsFromToken] Could not resolve claim '${claimPath}' in ${tokenKind} token`,
+      );
+      return null;
+    }
+
+    // [] -> claim resolved but no values -> user legitimately has no groups
+    if (claimValues.length === 0) {
       logger.debug(
         `[extractGroupsFromToken] No groups found in ${tokenKind} token at path: ${claimPath}`,
       );
       return [];
     }
 
-    // Sanitize all group names
     const sanitizedGroups = claimValues.map(sanitizeGroupName).filter((name) => name.length > 0);
 
-    // Apply exclusion filter
     const filteredGroups = exclusionPattern
       ? sanitizedGroups.filter((g) => !shouldExcludeGroup(g, exclusionPattern))
       : sanitizedGroups;
 
-    // Remove duplicates
     const uniqueGroups = [...new Set(filteredGroups)];
 
     const excludedCount = sanitizedGroups.length - filteredGroups.length;
@@ -231,7 +247,7 @@ function extractGroupsFromToken(
     return uniqueGroups;
   } catch (error) {
     logger.error('[extractGroupsFromToken] Error extracting groups from token:', error);
-    return [];
+    return null;
   }
 }
 
