@@ -958,6 +958,36 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       });
     });
 
+    test('should remove Langfuse config when update clears the only stored field', async () => {
+      const encryptedOriginal = await encryptStoredSecret('sk-original');
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          langfuse: {
+            secretKey: encryptedOriginal,
+          },
+        },
+      );
+
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        langfuse: {
+          secretKey: LANGFUSE_SECRET_CLEAR_VALUE,
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.langfuse).toBeUndefined();
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.langfuse).toBeUndefined();
+      const latestVersion = agentInDb.versions[agentInDb.versions.length - 1];
+      expect(latestVersion.langfuse).toBeUndefined();
+    });
+
     test('uploadAgentAvatarHandler should redact Langfuse secret in response', async () => {
       await Agent.updateOne(
         { id: existingAgentId },

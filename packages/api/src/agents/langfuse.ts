@@ -84,7 +84,7 @@ export async function normalizeLangfuseConfig(
 
   const incomingSecret = incoming.secretKey;
   if (incomingSecret === LANGFUSE_SECRET_CLEAR_VALUE) {
-    return normalized;
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 
   if (isNonEmptyString(incomingSecret)) {

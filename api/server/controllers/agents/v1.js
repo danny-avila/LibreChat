@@ -566,12 +566,20 @@ const updateAgentHandler = async (req, res) => {
     }
 
     if (updateData.langfuse) {
-      updateData.langfuse = await normalizeLangfuseConfig(
+      const normalizedLangfuse = await normalizeLangfuseConfig(
         updateData.langfuse,
         existingAgent.langfuse,
       );
-      if (!updateData.langfuse) {
+      if (normalizedLangfuse) {
+        updateData.langfuse = normalizedLangfuse;
+      } else {
         delete updateData.langfuse;
+        if (existingAgent.langfuse) {
+          updateData.$unset = {
+            ...(updateData.$unset || {}),
+            langfuse: 1,
+          };
+        }
       }
     }
 

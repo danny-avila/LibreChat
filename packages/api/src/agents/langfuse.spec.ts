@@ -59,6 +59,19 @@ describe('normalizeLangfuseConfig', () => {
     });
   });
 
+  it('returns undefined when clearing the only stored field', async () => {
+    const result = await normalizeLangfuseConfig(
+      {
+        secretKey: LANGFUSE_SECRET_CLEAR_VALUE,
+      },
+      {
+        secretKey: '0123456789abcdef0123456789abcdef:736b2d6167656e74',
+      },
+    );
+
+    expect(result).toBeUndefined();
+  });
+
   it('clears explicit blank non-secret fields while preserving absent fields', async () => {
     const result = await normalizeLangfuseConfig(
       {
