@@ -250,13 +250,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       if (needsCode && provisionState.codeEnvFiles.length > 0 && provisionState.codeApiKey) {
         const results = await Promise.allSettled(
           provisionState.codeEnvFiles.map(async (file) => {
-            const { fileIdentifier, fileUpdate } = await provisionToCodeEnv({
+            const { codeEnvRef, fileUpdate } = await provisionToCodeEnv({
               req,
               file,
               entity_id: agentId,
-              apiKey: provisionState.codeApiKey,
             });
-            file.metadata = { ...file.metadata, fileIdentifier };
+            file.metadata = { ...file.metadata, codeEnvRef };
             pendingUpdates.push(fileUpdate);
           }),
         );
