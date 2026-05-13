@@ -1,7 +1,6 @@
 import type { Document, Types } from 'mongoose';
 import type { PrincipalType } from 'librechat-data-provider';
-
-export type AuditAction = 'grant_assigned' | 'grant_removed';
+import type { AuditAction } from './admin';
 
 export type AuditLog = {
   action: AuditAction;

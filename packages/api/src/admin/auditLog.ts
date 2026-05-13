@@ -1,11 +1,6 @@
 import { PrincipalType } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
-import type {
-  AdminAuditLogEntryWire,
-  AuditAction,
-  AuditLogPage,
-  RecordAuditEntryInput,
-} from '@librechat/data-schemas';
+import type { AdminAuditLogEntryWire, AuditAction, AuditLogPage } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 
@@ -15,11 +10,14 @@ const CSV_BOM = '﻿';
 const VALID_ACTIONS = new Set<AuditAction>(['grant_assigned', 'grant_removed']);
 const VALID_PRINCIPAL_TYPES = new Set<string>(Object.values(PrincipalType));
 
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z?)?$/;
+// Accepts `YYYY-MM-DD` (interpreted as UTC by the downstream Date parse) or a
+// full ISO 8601 / RFC 3339 timestamp that includes either `Z` or a `±HH:MM`
+// offset. Local-time strings without a zone are rejected so every input maps
+// to an unambiguous instant.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/;
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 
 export interface AdminAuditLogDeps {
-  recordAuditEntry: (input: RecordAuditEntryInput) => Promise<unknown>;
   listAuditLogPage: (
     tenantId: string | undefined,
     filters: {
@@ -253,16 +251,36 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps) {
       res.setHeader('Content-Disposition', `attachment; filename="audit-log-${filenameStamp}.csv"`);
       res.setHeader('Cache-Control', 'no-store');
 
-      res.write(CSV_BOM);
-      res.write(formatCsvHeader());
-      res.write('\r\n');
+      // Stop pulling rows from Mongo as soon as the client disconnects so a
+      // cancelled download doesn't pin a cursor open or burn through memory.
+      let clientAborted = false;
+      const markAborted = () => {
+        clientAborted = true;
+      };
+      res.once('close', markAborted);
+      req.once('aborted', markAborted);
 
-      await streamAuditLogEntries(caller.tenantId, filters.value, (entry) => {
-        res.write(formatCsvRow(entry));
-        res.write('\r\n');
+      // Wait for `drain` when the kernel/socket buffer is full so we never
+      // queue an unbounded amount of CSV in Node memory for slow consumers.
+      const writeChunk = (chunk: string): Promise<void> => {
+        if (clientAborted) return Promise.resolve();
+        if (res.write(chunk)) return Promise.resolve();
+        return new Promise<void>((resolve) => res.once('drain', () => resolve()));
+      };
+
+      await writeChunk(CSV_BOM);
+      await writeChunk(formatCsvHeader());
+      await writeChunk('\r\n');
+
+      await streamAuditLogEntries(caller.tenantId, filters.value, async (entry) => {
+        if (clientAborted) return;
+        await writeChunk(formatCsvRow(entry));
+        await writeChunk('\r\n');
       });
 
-      res.end();
+      res.removeListener('close', markAborted);
+      req.removeListener('aborted', markAborted);
+      if (!clientAborted) res.end();
     } catch (err) {
       logger.error('[adminAuditLog] export error:', err);
       if (!res.headersSent) {

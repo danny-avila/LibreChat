@@ -51,15 +51,20 @@ const auditLogSchema = new Schema<IAuditLog>(
       type: String,
       required: false,
       validate: {
-        validator: (v: unknown) => v !== null && v !== '',
-        message: 'tenantId must be a non-empty string or omitted entirely — never null or empty',
+        validator: (v: unknown) => typeof v === 'string' && v.trim().length > 0,
+        message:
+          'tenantId must be a non-empty string or omitted entirely — never null, empty, or a non-string value',
       },
     },
   },
   { timestamps: true },
 );
 
-/** Primary listing: tenant + newest-first + tiebreak on _id for keyset pagination. */
+/**
+ * Primary listing: tenant + newest-first sort with `_id` as a deterministic
+ * tiebreak for offset pagination so adjacent pages never duplicate or skip rows
+ * when two entries share a `createdAt` timestamp.
+ */
 auditLogSchema.index({ tenantId: 1, createdAt: -1, _id: -1 });
 
 /** Target facet: filter by who was affected. */

@@ -54,7 +54,7 @@ function createDeps(overrides: Partial<AdminGrantsDeps> = {}): AdminGrantsDeps {
     getCapabilitiesForPrincipal: jest.fn().mockResolvedValue([]),
     getCapabilitiesForPrincipals: jest.fn().mockResolvedValue([]),
     grantCapability: jest.fn().mockResolvedValue(mockGrant()),
-    revokeCapability: jest.fn().mockResolvedValue(undefined),
+    revokeCapability: jest.fn().mockResolvedValue({ deletedCount: 1 }),
     getUserPrincipals: jest.fn().mockResolvedValue([
       { principalType: PrincipalType.USER, principalId: new Types.ObjectId() },
       { principalType: PrincipalType.ROLE, principalId: 'admin' },
@@ -969,7 +969,7 @@ describe('createAdminGrantsHandlers', () => {
 
     it('returns 200 idempotently even if the grant does not exist', async () => {
       const deps = createDeps({
-        revokeCapability: jest.fn().mockResolvedValue(undefined),
+        revokeCapability: jest.fn().mockResolvedValue({ deletedCount: 1 }),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: validParams });

@@ -50,7 +50,7 @@ export interface AdminGrantsDeps {
     principalId: string | Types.ObjectId;
     capability: SystemCapability;
     tenantId?: string;
-  }) => Promise<void>;
+  }) => Promise<{ deletedCount: number }>;
   getUserPrincipals: (params: {
     userId: string;
     role?: string | null;
@@ -445,19 +445,24 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      await revokeCapability({
+      const revokeResult = await revokeCapability({
         principalType: principalType as PrincipalType,
         principalId,
         capability: capability as SystemCapability,
         tenantId,
       });
-      await emitAudit({
-        action: 'grant_removed',
-        caller,
-        principalType: principalType as PrincipalType,
-        principalId,
-        capability: capability as SystemCapability,
-      });
+      // Only emit the audit entry when a grant document was actually deleted —
+      // a no-op revoke (the grant never existed) must not appear in the audit
+      // trail or the forensic record becomes misleading.
+      if (revokeResult?.deletedCount > 0) {
+        await emitAudit({
+          action: 'grant_removed',
+          caller,
+          principalType: principalType as PrincipalType,
+          principalId,
+          capability: capability as SystemCapability,
+        });
+      }
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminGrants] revokeGrant error:', error);

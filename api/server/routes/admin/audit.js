@@ -10,7 +10,6 @@ const router = express.Router();
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
 const handlers = createAdminAuditLogHandlers({
-  recordAuditEntry: db.recordAuditEntry,
   listAuditLogPage: db.listAuditLogPage,
   findAuditLogEntry: db.findAuditLogEntry,
   streamAuditLogEntries: db.streamAuditLogEntries,
