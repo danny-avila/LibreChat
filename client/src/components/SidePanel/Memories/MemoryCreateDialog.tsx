@@ -120,7 +120,7 @@ export default function MemoryCreateDialog({
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
                 onKeyDown={handleKeyPress}
-                placeholder={localize('com_ui_enter_key')}
+                placeholder={localize('com_ui_memory_key_placeholder')}
                 className="w-full"
               />
               <p className="text-xs text-text-secondary">{localize('com_ui_memory_key_hint')}</p>
@@ -134,7 +134,7 @@ export default function MemoryCreateDialog({
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 onKeyDown={handleKeyPress}
-                placeholder={localize('com_ui_enter_value')}
+                placeholder={localize('com_ui_memory_value_placeholder')}
                 className="min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy"
                 rows={4}
               />
