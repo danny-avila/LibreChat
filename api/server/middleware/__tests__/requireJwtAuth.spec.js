@@ -58,8 +58,7 @@ jest.mock('@librechat/api', () => {
     return trimmed || undefined;
   };
   const getUserId = (user) =>
-    normalizeContextValue(user?.id?.toString?.()) ??
-    normalizeContextValue(user?._id?.toString?.());
+    normalizeContextValue(user?.id?.toString?.()) ?? normalizeContextValue(user?._id?.toString?.());
   const getRequestId = (req) =>
     normalizeContextValue(req.requestId) ??
     normalizeContextValue(req.id) ??
