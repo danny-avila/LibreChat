@@ -91,6 +91,7 @@ export const LangSelector = ({
 
   const languageOptions: LanguageOption[] = [
     { value: 'auto', label: localize('com_nav_lang_auto') },
+    { value: 'en-US', label: localize('com_nav_lang_english') },
     { value: 'as-IN', label: localize('com_nav_lang_assamese') },
     { value: 'bn-IN', label: localize('com_nav_lang_bengali') },
     { value: 'gu-IN', label: localize('com_nav_lang_gujarati') },
