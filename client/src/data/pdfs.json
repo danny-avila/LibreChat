@@ -10,5 +10,45 @@
   "nbc2020": {
     "displayName": "National Building Code of Canada 2020",
     "pdfPath": "/pdfs/nbc2020.pdf"
+  },
+  "alberta": {
+    "displayName": "National Building Code — 2023 Alberta Edition",
+    "pdfPath": "/pdfs/alberta.pdf"
+  },
+  "british_columbia": {
+    "displayName": "BC Building Code 2024",
+    "pdfPath": "/pdfs/british_columbia.pdf"
+  },
+  "quebec": {
+    "displayName": "Quebec Construction Code Chapter I — Building",
+    "pdfPath": "/pdfs/quebec.pdf"
+  },
+  "manitoba": {
+    "displayName": "Manitoba Building Code (M.R. 78/2023)",
+    "pdfPath": "/pdfs/manitoba.pdf"
+  },
+  "saskatchewan": {
+    "displayName": "Saskatchewan Building Code Regulations",
+    "pdfPath": "/pdfs/saskatchewan.pdf"
+  },
+  "nova_scotia": {
+    "displayName": "Nova Scotia Building Code Regulations",
+    "pdfPath": "/pdfs/nova_scotia.pdf"
+  },
+  "prince_edward_island": {
+    "displayName": "PEI Building Code Regulations",
+    "pdfPath": "/pdfs/prince_edward_island.pdf"
+  },
+  "newfoundland": {
+    "displayName": "Newfoundland & Labrador Fire and Life Safety Guidance",
+    "pdfPath": "/pdfs/newfoundland.pdf"
+  },
+  "yukon": {
+    "displayName": "Yukon Building Standards Regulation",
+    "pdfPath": "/pdfs/yukon.pdf"
+  },
+  "nunavut": {
+    "displayName": "Nunavut Building Code Regulations",
+    "pdfPath": "/pdfs/nunavut.pdf"
   }
 }

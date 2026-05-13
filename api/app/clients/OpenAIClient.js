@@ -654,8 +654,11 @@ class OpenAIClient extends BaseClient {
       'tools',
       'tool_choice',
       'tool_resources',
-      // Responses-API-only field; Chat Completions returns 400 if forwarded.
+      // Responses-API-only fields; Chat Completions returns 400 if forwarded.
       'previous_response_id',
+      'reasoning',
+      'text',
+      'verbosity',
     ];
     this.options.dropParams = [...new Set([...(originalDropParams || []), ...titleDropParams])];
 
