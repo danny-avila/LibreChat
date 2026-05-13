@@ -731,7 +731,7 @@ modelSpecs:
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
       preset:
         endpoint: "anthropic"
-        model: "claude-sonnet-4-6"
+        model: "claude-sonnet-4-5-20250929"
         modelLabel: "AjraSakha"
         promptPrefix:  *ffv_prompt
 
