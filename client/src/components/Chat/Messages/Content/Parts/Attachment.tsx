@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, AlertCircle, Download } from 'lucide-react';
+import { Loader2, AlertCircle, Download, ChevronDown, Files as FilesIcon } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { ToolArtifactType } from '~/utils/artifacts';
@@ -20,7 +20,7 @@ import Image from '~/components/Chat/Messages/Content/Image';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
 import ToolArtifactCard from './ToolArtifactCard';
 import { useAttachmentLink } from './LogLink';
-import { useLocalize, useAttachmentPreviewSync } from '~/hooks';
+import { useLocalize, useAttachmentPreviewSync, useExpandCollapse } from '~/hooks';
 import { cn, getFileType } from '~/utils';
 
 const COLLAPSED_MAX_HEIGHT = 320;
@@ -196,6 +196,97 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
     </div>
   );
 });
+
+const FileAttachmentGroup = memo(({ attachments }: { attachments: TAttachment[] }) => {
+  const localize = useLocalize();
+  const panelId = useId();
+  const [isExpanded, setIsExpanded] = useState(false);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
+  const visibleAttachments = useMemo(
+    () => attachments.filter((attachment) => Boolean(attachment.filepath)),
+    [attachments],
+  );
+  const count = visibleAttachments.length;
+  const summary = useMemo(() => {
+    const names = visibleAttachments.map((attachment) => displayFilename(attachment.filename));
+    if (names.length <= 2) {
+      return names.join(', ');
+    }
+    return `${names.slice(0, 2).join(', ')} ${localize('com_ui_plus_n_more', {
+      0: String(names.length - 2),
+    })}`;
+  }, [visibleAttachments, localize]);
+
+  if (count === 0) {
+    return null;
+  }
+
+  if (count === 1) {
+    const [attachment] = visibleAttachments;
+    if (!attachment) {
+      return null;
+    }
+    return (
+      <div className="my-2 flex flex-wrap items-center gap-2.5">
+        <FileAttachment
+          attachment={attachment}
+          key={renderAttachmentKey('file', attachment, 0)}
+        />
+      </div>
+    );
+  }
+
+  const fileCount = localize('com_ui_n_files', { 0: String(count) });
+  const buttonLabel = isExpanded
+    ? localize('com_ui_hide_n_files', { 0: String(count) })
+    : localize('com_ui_show_n_files', { 0: String(count) });
+
+  return (
+    <div className="my-2 w-full max-w-full">
+      <button
+        type="button"
+        aria-expanded={isExpanded}
+        aria-controls={panelId}
+        aria-label={buttonLabel}
+        onClick={() => setIsExpanded((prev) => !prev)}
+        className={cn(
+          'inline-flex w-full max-w-full items-center gap-2 rounded-lg py-1 pr-2 text-sm',
+          'text-text-secondary transition-colors hover:text-text-primary',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+        )}
+      >
+        <FilesIcon className="size-4 shrink-0" aria-hidden="true" />
+        <span className="shrink-0 font-medium">{fileCount}</span>
+        {summary.length > 0 && (
+          <span className="min-w-0 truncate text-left text-xs font-normal" title={summary}>
+            {'— '}
+            {summary}
+          </span>
+        )}
+        <ChevronDown
+          className={cn(
+            'ml-auto size-4 shrink-0 transition-transform duration-200 ease-out',
+            isExpanded && 'rotate-180',
+          )}
+          aria-hidden="true"
+        />
+      </button>
+      <div id={panelId} style={expandStyle}>
+        <div className="overflow-hidden" ref={expandRef} aria-hidden={!isExpanded}>
+          <div className="flex flex-wrap items-center gap-2.5 pt-2">
+            {visibleAttachments.map((attachment, index) => (
+              <FileAttachment
+                attachment={attachment}
+                key={renderAttachmentKey('file', attachment, index)}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+FileAttachmentGroup.displayName = 'FileAttachmentGroup';
 
 const TextAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
   const localize = useLocalize();
@@ -451,18 +542,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
 
   return (
     <>
-      {fileAttachments.length > 0 && (
-        <div className="my-2 flex flex-wrap items-center gap-2.5">
-          {fileAttachments.map((attachment, index) =>
-            attachment.filepath ? (
-              <FileAttachment
-                attachment={attachment}
-                key={renderAttachmentKey('file', attachment, index)}
-              />
-            ) : null,
-          )}
-        </div>
-      )}
+      {fileAttachments.length > 0 && <FileAttachmentGroup attachments={fileAttachments} />}
       {(resolvedPanel.length > 0 || pendingPanel.length > 0) && (
         <div className="my-2 flex flex-wrap items-center gap-2">
           {resolvedPanel.map(({ attachment, type }, index) => (

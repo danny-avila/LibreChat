@@ -16,6 +16,10 @@ jest.mock('~/hooks', () => ({
    * routing tests don't exercise the preview flow itself — stub it
    * to a no-op so it doesn't blow up jsdom rendering. */
   useAttachmentPreviewSync: () => ({ status: 'ready', previewError: undefined, isPolling: false }),
+  useExpandCollapse: (isExpanded: boolean) => ({
+    style: { display: 'grid', gridTemplateRows: isExpanded ? '1fr' : '0fr' },
+    ref: { current: null },
+  }),
 }));
 
 jest.mock('../LogLink', () => ({
@@ -716,12 +720,41 @@ describe('AttachmentGroup routing', () => {
       bytes: 1024,
     } as Partial<TAttachment>);
     const { container } = renderWith(<AttachmentGroup attachments={[empty, real]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_show_n_files' }));
     const chips = Array.from(container.querySelectorAll('[data-testid="file-container"]'));
     expect(chips.length).toBe(2);
     const filenames = chips.map((c) => c.textContent ?? '');
     // Real chip must render before the empty placeholder.
     expect(filenames[0]).toMatch(/archive\.zip/);
     expect(filenames[1]).toMatch(/placeholder\.zip/);
+  });
+
+  it('keeps multiple plain files in their own collapsed group while images render outwardly', () => {
+    const first = baseAttachment({
+      file_id: 'file-a',
+      filename: 'a.zip',
+      type: 'application/zip',
+    } as Partial<TAttachment>);
+    const second = baseAttachment({
+      file_id: 'file-b',
+      filename: 'b.zip',
+      type: 'application/zip',
+    } as Partial<TAttachment>);
+    const image = baseAttachment({
+      file_id: 'image-a',
+      filename: 'preview.png',
+      type: 'image/png',
+      width: 16,
+      height: 16,
+    } as Partial<TAttachment>);
+
+    renderWith(<AttachmentGroup attachments={[first, second, image]} />);
+
+    const toggle = screen.getByRole('button', { name: 'com_ui_show_n_files' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    expect(panel?.firstElementChild).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByTestId('image')).toBeInTheDocument();
   });
 
   it('passes a non-dotfile filename through to FileContainer unchanged', () => {
