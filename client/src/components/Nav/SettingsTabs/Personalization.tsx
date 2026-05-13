@@ -43,7 +43,7 @@ export default function Personalization({
 
   const updatePersonalizationMutation = useUpdatePersonalizationMutation({
     onSuccess: (data) => {
-      const nextDisplayName = data.personalization.displayName ?? '';
+      const nextDisplayName = (data.personalization.displayName ?? '').trim();
       setSavedDisplayName(nextDisplayName);
       setDisplayName(nextDisplayName);
       showToast({
@@ -66,7 +66,7 @@ export default function Personalization({
   }, [user?.personalization?.memories]);
 
   useEffect(() => {
-    const nextDisplayName = user?.personalization?.displayName ?? '';
+    const nextDisplayName = (user?.personalization?.displayName ?? '').trim();
     setSavedDisplayName(nextDisplayName);
     setDisplayName(nextDisplayName);
   }, [user?.personalization?.displayName]);
@@ -78,7 +78,7 @@ export default function Personalization({
 
   const trimmedDisplayName = displayName.trim();
   const isDisplayNameTooLong = trimmedDisplayName.length > MAX_DISPLAY_NAME_LENGTH;
-  const isDisplayNameChanged = trimmedDisplayName !== savedDisplayName.trim();
+  const isDisplayNameChanged = trimmedDisplayName !== savedDisplayName;
 
   const handleSaveDisplayName = () => {
     if (isDisplayNameTooLong || !isDisplayNameChanged) {

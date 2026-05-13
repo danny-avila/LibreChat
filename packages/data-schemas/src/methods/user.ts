@@ -244,11 +244,6 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     displayName: string | null,
   ): Promise<IUser | null> {
     const User = mongoose.models.User;
-    const user = await User.findById(userId);
-    if (!user) {
-      return null;
-    }
-
     const value = displayName?.trim() ?? '';
     const updateOperation =
       value.length > 0
