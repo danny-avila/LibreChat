@@ -78,7 +78,10 @@ export default function JurisdictionPicker({
           <span className="h-px flex-1 bg-[rgba(11,47,91,0.08)] dark:bg-white/[0.08]" />
         </div>
       )}
-      <div className="flex w-full flex-col gap-2">
+      <div
+        className="-mx-2 flex max-h-[min(60vh,520px)] w-[calc(100%+1rem)] flex-col gap-2 overflow-y-auto px-2"
+        style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
+      >
         {catalog.jurisdictions.map((j) => {
           const selected = j.id === pendingId;
           return (
