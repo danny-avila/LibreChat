@@ -1,4 +1,5 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useWatch } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
@@ -133,6 +134,19 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
+
+  const location = useLocation();
+  const autoQuestionRef = useRef<string>('');
+  useEffect(() => {
+    const state = location.state as { autoQuestion?: string } | null;
+    const autoQuestion = state?.autoQuestion;
+    if (!autoQuestion || autoQuestionRef.current === autoQuestion) return;
+    autoQuestionRef.current = autoQuestion;
+    // Clear the state so refreshing doesn't resubmit
+    window.history.replaceState({ ...window.history.state, usr: null }, '');
+    const timer = setTimeout(() => submitMessage({ text: autoQuestion }), 500);
+    return () => clearTimeout(timer);
+  }, [location.state, submitMessage]);
 
   const handleKeyUp = useHandleKeyUp({
     index,
