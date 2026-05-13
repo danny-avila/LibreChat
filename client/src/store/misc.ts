@@ -5,6 +5,8 @@ import { BadgeItem } from '~/common';
 
 const hideBannerHint = atomWithLocalStorage('hideBannerHint', [] as string[]);
 
+const dismissedAnnouncements = atomWithLocalStorage('dismissedAnnouncements', [] as string[]);
+
 const messageAttachmentsMap = atom<Record<string, TAttachment[] | undefined>>({
   key: 'messageAttachmentsMap',
   default: {},
@@ -29,6 +31,7 @@ const chatBadges = atomWithLocalStorage<Pick<BadgeItem, 'id'>[]>('chatBadges', [
 
 export default {
   hideBannerHint,
+  dismissedAnnouncements,
   messageAttachmentsMap,
   queriesEnabled,
   isEditingBadges,

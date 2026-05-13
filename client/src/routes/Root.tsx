@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useRecoilState } from 'recoil';
 import { Outlet } from 'react-router-dom';
 import DevDebugOverlayLoader from '~/components/Dev/DevDebugOverlayLoader';
 import type { ContextType } from '~/common';
 import { Banner } from '~/components/Banners';
 import { MobileNav, Nav } from '~/components/Nav';
+import AnnouncementModal from '~/components/ui/AnnouncementModal';
 import TermsAndConditionsModal from '~/components/ui/TermsAndConditionsModal';
 import { useGetStartupConfig, useHealthCheck, useUserTermsQuery } from '~/data-provider';
 import {
@@ -21,6 +23,7 @@ import {
   PromptGroupsProvider,
   SetConvoProvider,
 } from '~/Providers';
+import store from '~/store';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -40,6 +43,9 @@ export default function Root() {
   const fileMap = useFileMap({ isAuthenticated });
 
   const { data: config } = useGetStartupConfig();
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useRecoilState<string[]>(
+    store.dismissedAnnouncements,
+  );
   const { data: termsData } = useUserTermsQuery({
     enabled: isAuthenticated && config?.interface?.termsOfService?.modalAcceptance === true,
   });
@@ -59,6 +65,23 @@ export default function Root() {
   const handleDeclineTerms = () => {
     setShowTerms(false);
     logout('/login?redirect=false');
+  };
+
+  const announcement = config?.interface?.announcement;
+  const isAnnouncementEligible =
+    announcement?.id != null &&
+    announcement.id !== '' &&
+    !dismissedAnnouncements.includes(announcement.id);
+  const showAnnouncementModal = isAnnouncementEligible && !showTerms;
+
+  const handleDismissAnnouncement = () => {
+    if (
+      announcement?.id != null &&
+      announcement.id !== '' &&
+      !dismissedAnnouncements.includes(announcement.id)
+    ) {
+      setDismissedAnnouncements([...dismissedAnnouncements, announcement.id]);
+    }
   };
 
   if (!isAuthenticated) {
@@ -93,6 +116,13 @@ export default function Root() {
                     modalContent={config.interface.termsOfService.modalContent}
                   />
                 )}
+                {showAnnouncementModal === true && announcement != null ? (
+                  <AnnouncementModal
+                    open={showAnnouncementModal}
+                    announcement={announcement}
+                    onDismiss={handleDismissAnnouncement}
+                  />
+                ) : null}
               </PromptGroupsProvider>
             </AgentsMapContext.Provider>
           </AssistantsMapContext.Provider>

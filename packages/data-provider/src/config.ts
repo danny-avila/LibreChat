@@ -522,73 +522,89 @@ const mcpServersSchema = z.object({
 
 export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 
-export const interfaceSchema = z
-  .object({
-    privacyPolicy: z
-      .object({
-        externalUrl: z.string().optional(),
-        openNewTab: z.boolean().optional(),
-      })
-      .optional(),
-    termsOfService: termsOfServiceSchema.optional(),
-    customWelcome: z.string().optional(),
-    mcpServers: mcpServersSchema.optional(),
-    endpointsMenu: z.boolean().optional(),
-    modelSelect: z.boolean().optional(),
-    parameters: z.boolean().optional(),
-    sidePanel: z.boolean().optional(),
-    multiConvo: z.boolean().optional(),
-    bookmarks: z.boolean().optional(),
-    memories: z.boolean().optional(),
-    presets: z.boolean().optional(),
-    prompts: z.boolean().optional(),
-    agents: z.boolean().optional(),
-    temporaryChat: z.boolean().optional(),
-    temporaryChatRetention: z.number().min(1).max(8760).optional(),
-    runCode: z.boolean().optional(),
-    webSearch: z.boolean().optional(),
-    peoplePicker: z
-      .object({
-        users: z.boolean().optional(),
-        groups: z.boolean().optional(),
-        roles: z.boolean().optional(),
-      })
-      .optional(),
-    marketplace: z
-      .object({
-        use: z.boolean().optional(),
-      })
-      .optional(),
-    fileSearch: z.boolean().optional(),
-    fileCitations: z.boolean().optional(),
-  })
-  .default({
-    endpointsMenu: true,
-    modelSelect: true,
-    parameters: true,
-    sidePanel: true,
-    presets: true,
-    multiConvo: true,
-    bookmarks: true,
-    memories: true,
-    prompts: true,
-    agents: true,
-    temporaryChat: true,
-    runCode: true,
-    webSearch: true,
-    peoplePicker: {
-      users: true,
-      groups: true,
-      roles: true,
-    },
-    marketplace: {
-      use: false,
-    },
-    fileSearch: true,
-    fileCitations: true,
-  });
+const announcementModelSchema = z.object({
+  name: z.string(),
+  badge: z.string().optional(),
+  description: z.string().optional(),
+});
 
-export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
+const announcementSchema = z.object({
+  id: z.string(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  models: z.array(announcementModelSchema).optional(),
+});
+
+export type TAnnouncementConfig = z.infer<typeof announcementSchema>;
+
+const interfaceBaseSchema = z.object({
+  privacyPolicy: z
+    .object({
+      externalUrl: z.string().optional(),
+      openNewTab: z.boolean().optional(),
+    })
+    .optional(),
+  termsOfService: termsOfServiceSchema.optional(),
+  announcement: announcementSchema.optional(),
+  customWelcome: z.string().optional(),
+  mcpServers: mcpServersSchema.optional(),
+  endpointsMenu: z.boolean().optional(),
+  modelSelect: z.boolean().optional(),
+  parameters: z.boolean().optional(),
+  sidePanel: z.boolean().optional(),
+  multiConvo: z.boolean().optional(),
+  bookmarks: z.boolean().optional(),
+  memories: z.boolean().optional(),
+  presets: z.boolean().optional(),
+  prompts: z.boolean().optional(),
+  agents: z.boolean().optional(),
+  temporaryChat: z.boolean().optional(),
+  temporaryChatRetention: z.number().min(1).max(8760).optional(),
+  runCode: z.boolean().optional(),
+  webSearch: z.boolean().optional(),
+  peoplePicker: z
+    .object({
+      users: z.boolean().optional(),
+      groups: z.boolean().optional(),
+      roles: z.boolean().optional(),
+    })
+    .optional(),
+  marketplace: z
+    .object({
+      use: z.boolean().optional(),
+    })
+    .optional(),
+  fileSearch: z.boolean().optional(),
+  fileCitations: z.boolean().optional(),
+});
+
+export const interfaceSchema = interfaceBaseSchema.default({
+  endpointsMenu: true,
+  modelSelect: true,
+  parameters: true,
+  sidePanel: true,
+  presets: true,
+  multiConvo: true,
+  bookmarks: true,
+  memories: true,
+  prompts: true,
+  agents: true,
+  temporaryChat: true,
+  runCode: true,
+  webSearch: true,
+  peoplePicker: {
+    users: true,
+    groups: true,
+    roles: true,
+  },
+  marketplace: {
+    use: false,
+  },
+  fileSearch: true,
+  fileCitations: true,
+});
+
+export type TInterfaceConfig = z.infer<typeof interfaceBaseSchema>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
 export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
 
