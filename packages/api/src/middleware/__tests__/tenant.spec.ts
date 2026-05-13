@@ -1,5 +1,11 @@
 import { unlink } from 'fs/promises';
-import { getTenantId, getUserId, getRequestId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import {
+  getTenantId,
+  getUserId,
+  getRequestId,
+  SYSTEM_TENANT_ID,
+  logger,
+} from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
 import type { ServerRequest } from '~/types/http';
 // Import directly from source file — _resetTenantMiddlewareStrictCache is intentionally
@@ -72,6 +78,7 @@ describe('tenantContextMiddleware', () => {
     _resetTenantMiddlewareStrictCache();
     delete process.env.TENANT_ISOLATION_STRICT;
     unlinkMock.mockClear();
+    jest.restoreAllMocks();
   });
 
   it('sets ALS tenant context for authenticated requests with tenantId', async () => {
@@ -175,6 +182,7 @@ describe('restoreTenantContextFromReq', () => {
     _resetTenantMiddlewareStrictCache();
     delete process.env.TENANT_ISOLATION_STRICT;
     unlinkMock.mockClear();
+    jest.restoreAllMocks();
   });
 
   it('restores ALS tenant context from req.user.tenantId', async () => {
@@ -264,6 +272,37 @@ describe('restoreTenantContextFromReq', () => {
     await restoreTenantContextFromReq(req, res, next);
 
     expect(unlinkMock).toHaveBeenCalledWith('/tmp/no-tenant-upload');
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('keeps request context while cleaning up rejected strict-mode uploads', async () => {
+    process.env.TENANT_ISOLATION_STRICT = 'true';
+    _resetTenantMiddlewareStrictCache();
+    unlinkMock.mockRejectedValueOnce(new Error('unlink failed'));
+    let observedContext: { userId?: string; requestId?: string } | undefined;
+    jest.spyOn(logger, 'error').mockImplementation(() => {
+      observedContext = {
+        userId: getUserId(),
+        requestId: getRequestId(),
+      };
+      return logger;
+    });
+
+    const req = {
+      ...mockReqWithHeaders({ id: 'strict-user', role: 'user' }, { 'x-request-id': 'req-strict' }),
+      file: { path: '/tmp/no-tenant-upload' },
+    } as ServerRequest;
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await restoreTenantContextFromReq(req, res, next);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      '[restoreTenantContextFromReq] Failed to delete rejected upload:',
+      expect.objectContaining({ path: '/tmp/no-tenant-upload' }),
+    );
+    expect(observedContext).toEqual({ userId: 'strict-user', requestId: 'req-strict' });
     expect(res.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
   });

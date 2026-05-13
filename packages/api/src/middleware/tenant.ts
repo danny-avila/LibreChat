@@ -206,6 +206,19 @@ async function rejectRequestWithUploadCleanup(
   res.status(403).json({ error: message });
 }
 
+function rejectRequestWithUploadCleanupInContext(
+  context: TenantContext,
+  req: ServerRequest,
+  res: Response,
+  message: string,
+): Promise<void> {
+  const rejectRequest = () => rejectRequestWithUploadCleanup(req, res, message);
+  if (!hasTenantContext(context)) {
+    return rejectRequest();
+  }
+  return tenantStorage.run(context, rejectRequest);
+}
+
 /**
  * Re-enters tenant ALS from the server-resolved request tenant.
  *
@@ -223,7 +236,8 @@ export function restoreTenantContextFromReq(
 
   if (!tenantId) {
     if (isStrict()) {
-      return rejectRequestWithUploadCleanup(
+      return rejectRequestWithUploadCleanupInContext(
+        context,
         req,
         res,
         'Tenant context required in strict isolation mode',
