@@ -107,6 +107,22 @@ describe('Server metrics route', () => {
     expect(response.status).toBe(401);
   });
 
+  it('returns 401 at /metrics when the bearer scheme is omitted', async () => {
+    process.env.METRICS_SECRET = 'test-secret';
+
+    const response = await request(app).get('/metrics').set('Authorization', 'test-secret');
+
+    expect(response.status).toBe(401);
+  });
+
+  it('returns 401 at /metrics for non-bearer auth schemes', async () => {
+    process.env.METRICS_SECRET = 'test-secret';
+
+    const response = await request(app).get('/metrics').set('Authorization', 'Basic test-secret');
+
+    expect(response.status).toBe(401);
+  });
+
   it('exposes Prometheus metrics at /metrics with correct bearer token', async () => {
     process.env.METRICS_SECRET = 'test-secret';
 

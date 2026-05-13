@@ -103,7 +103,13 @@ export function createMetrics(): PrometheusMetrics {
       res.status(401).end();
       return;
     }
-    const token = auth.replace(/^bearer\s+/i, '');
+    const bearerToken = auth.match(/^bearer\s+(.+)$/i);
+    if (!bearerToken) {
+      res.status(401).end();
+      return;
+    }
+
+    const token = bearerToken[1];
     const encode = (s: string) => new TextEncoder().encode(s);
     const expected = encode(secret);
     const actual = encode(token);
