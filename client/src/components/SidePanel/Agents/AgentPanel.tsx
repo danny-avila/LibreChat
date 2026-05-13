@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, LayoutGrid } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -24,7 +25,7 @@ import {
 } from '~/data-provider';
 import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
-import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
+import { useSelectAgent, useLocalize, useAuthContext, useShowMarketplace } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
@@ -215,6 +216,8 @@ export const isAvatarUploadOnlyDirty = (
 export default function AgentPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
+  const navigate = useNavigate();
+  const showAgentMarketplace = useShowMarketplace();
   const { showToast } = useToastContext();
   const {
     activePanel,
@@ -519,6 +522,18 @@ export default function AgentPanel() {
                 {localize('com_ui_my_agents')}
               </Button>
             </div>
+            {showAgentMarketplace && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-center"
+                onClick={() => navigate('/agents')}
+                aria-label={localize('com_agents_marketplace')}
+              >
+                <LayoutGrid className="mr-1 h-4 w-4" aria-hidden="true" />
+                {localize('com_agents_marketplace')}
+              </Button>
+            )}
             {showAgentList && (
               <div className="w-full">
                 <AgentSelect
