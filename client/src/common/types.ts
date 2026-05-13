@@ -676,7 +676,19 @@ export type LanguageCode =
   | 'sl'
   | 'bo'
   | 'uk-UA'
-  | 'pa';
+  | 'pa'
+  | 'as-IN'
+  | 'bn-IN'
+  | 'gu-IN'
+  | 'hi-IN'
+  | 'kn-IN'
+  | 'ml-IN'
+  | 'mr-IN'
+  | 'or-IN'
+  | 'sa-IN'
+  | 'ta-IN'
+  | 'te-IN'
+  | 'ur-IN'
 
 export type LanguageOption = {
   value: LanguageCode;
