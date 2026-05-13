@@ -237,6 +237,11 @@ if (cluster.isMaster) {
    * Each worker runs a full Express server instance
    */
   const app = express();
+  /**
+   * The master may assign the sweep worker before or after this worker has
+   * loaded app config. These flags join the IPC assignment with config
+   * availability and ensure the background sweep starts only once.
+   */
   let shouldStartExpiredFileSweep = false;
   let expiredFileSweepOptions = null;
   let expiredFileSweepStarted = false;

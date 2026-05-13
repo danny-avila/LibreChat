@@ -1,28 +1,6 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, buildRetentionVisibilityFilter } = require('@librechat/data-schemas');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const activeExpirationFilter = () => ({
-  $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }, { expiredAt: { $gt: new Date() } }],
-});
-
-const legacyPermanentFilter = () => ({
-  $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
-});
-
-const meiliIndexableFilter = () => ({
-  $or: [
-    { isTemporary: false, ...activeExpirationFilter() },
-    {
-      isTemporary: { $exists: false },
-      ...legacyPermanentFilter(),
-    },
-    {
-      isTemporary: null,
-      ...legacyPermanentFilter(),
-    },
-  ],
-});
 
 /**
  * Batch update documents in chunks to avoid timeouts on weak instances
@@ -49,7 +27,7 @@ async function batchResetMeiliFlags(collection) {
     while (hasMore) {
       const docs = await collection
         .find(
-          { ...meiliIndexableFilter(), _meiliIndex: { $ne: false } },
+          { ...buildRetentionVisibilityFilter(), _meiliIndex: { $ne: false } },
           { projection: { _id: 1 } },
         )
         .limit(BATCH_SIZE)

@@ -58,6 +58,8 @@ const saveConvo = (...args: Parameters<ConversationMethods['saveConvo']>) =>
   methods.saveConvo(...args) as Promise<IConversation | null>;
 const getConvo = (...args: Parameters<ConversationMethods['getConvo']>) =>
   methods.getConvo(...args);
+const getConvoRetention = (...args: Parameters<ConversationMethods['getConvoRetention']>) =>
+  methods.getConvoRetention(...args);
 const getConvoTitle = (...args: Parameters<ConversationMethods['getConvoTitle']>) =>
   methods.getConvoTitle(...args);
 const getConvoFiles = (...args: Parameters<ConversationMethods['getConvoFiles']>) =>
@@ -700,6 +702,24 @@ describe('Conversation Operations', () => {
     it('should return null if conversation not found', async () => {
       const result = await getConvo('user123', 'non-existent-id');
       expect(result).toBeNull();
+    });
+  });
+
+  describe('getConvoRetention', () => {
+    it('should retrieve only retention fields for a user conversation', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        title: 'Test Conversation',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: new Date('2030-01-01T00:00:00.000Z'),
+      });
+
+      const result = await getConvoRetention('user123', mockConversationData.conversationId);
+
+      expect(result?.expiredAt).toEqual(new Date('2030-01-01T00:00:00.000Z'));
+      expect(result).not.toHaveProperty('title');
+      expect(result).not.toHaveProperty('messages');
     });
   });
 

@@ -4,6 +4,7 @@ import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import logger from '~/config/winston';
+import { activeExpirationFilter } from '~/utils/retention';
 
 class ShareServiceError extends Error {
   code: string;
@@ -28,10 +29,6 @@ const anonymizeConvoId = memoizedAnonymizeId('convo');
 const anonymizeAssistantId = memoizedAnonymizeId('a');
 const anonymizeMessageId = (id: string) =>
   id === Constants.NO_PARENT ? id : memoizedAnonymizeId('msg')(id);
-
-const activeShareExpirationFilter = () => ({
-  $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }, { expiredAt: { $gt: new Date() } }],
-});
 
 function anonymizeConvo(conversation: Partial<t.IConversation> & Partial<t.ISharedLink>) {
   if (!conversation) {
@@ -168,7 +165,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
       const share = (await SharedLink.findOne({
         shareId,
         isPublic: true,
-        ...activeShareExpirationFilter(),
+        ...activeExpirationFilter<t.ISharedLink>(),
       })
         .populate({
           path: 'messages',
@@ -226,7 +223,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
       const query: FilterQuery<t.ISharedLink> = {
         user,
         isPublic,
-        ...activeShareExpirationFilter(),
+        ...activeExpirationFilter<t.ISharedLink>(),
       };
 
       if (pageParam) {
@@ -372,7 +369,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
           conversationId,
           user,
           isPublic: true,
-          ...activeShareExpirationFilter(),
+          ...activeExpirationFilter<t.ISharedLink>(),
           ...(targetMessageId && { targetMessageId }),
         })
           .select('-_id -__v -user')
@@ -457,7 +454,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         conversationId,
         user,
         isPublic: true,
-        ...activeShareExpirationFilter(),
+        ...activeExpirationFilter<t.ISharedLink>(),
       })
         .select('shareId -_id')
         .lean()) as { shareId?: string } | null;

@@ -109,11 +109,27 @@ describe('retention helpers', () => {
     expect(result).toEqual({ expiredAt: expirationDate });
   });
 
-  it('fails closed when conversation lookup throws', async () => {
+  it('returns no retention fields when conversation lookup throws without explicit temporary intent', async () => {
     const error = new Error('database unavailable');
     dependencies.getConvo.mockRejectedValue(error);
 
     const result = await getRetentionExpiry(request(), dependencies);
+
+    expect(result).toEqual({});
+    expect(dependencies.logger?.error).toHaveBeenCalledWith(
+      '[getRetentionExpiry] Error checking conversation retention:',
+      error,
+    );
+  });
+
+  it('applies retention when explicit temporary intent is present and conversation lookup throws', async () => {
+    const error = new Error('database unavailable');
+    dependencies.getConvo.mockRejectedValue(error);
+
+    const result = await getRetentionExpiry(
+      request({ body: { conversationId: 'convo-1', isTemporary: true } }),
+      dependencies,
+    );
 
     expect(result).toEqual({ expiredAt: expirationDate });
     expect(dependencies.logger?.error).toHaveBeenCalledWith(
@@ -122,8 +138,11 @@ describe('retention helpers', () => {
     );
   });
 
-  it('returns expiredAt null when expiration creation throws', async () => {
+  it('returns a fallback expiration when expiration creation throws', async () => {
     const error = new Error('bad config');
+    const nowSpy = jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(new Date('2026-01-01T00:00:00.000Z').getTime());
     dependencies.createExpirationDate.mockImplementation(() => {
       throw error;
     });
@@ -133,11 +152,26 @@ describe('retention helpers', () => {
       dependencies,
     );
 
-    expect(result).toEqual({ expiredAt: null });
+    expect(result).toEqual({ expiredAt: new Date('2026-01-31T00:00:00.000Z') });
     expect(dependencies.logger?.error).toHaveBeenCalledWith(
       '[getRetentionExpiry] Error creating file expiration date:',
       error,
     );
+    nowSpy.mockRestore();
+  });
+
+  it('memoizes retention lookup per request object', async () => {
+    dependencies.getConvo.mockResolvedValue({
+      expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    const req = request();
+
+    const first = await getRetentionExpiry(req, dependencies);
+    const second = await getRetentionExpiry(req, dependencies);
+
+    expect(first).toEqual({ expiredAt: expirationDate });
+    expect(second).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.getConvo).toHaveBeenCalledTimes(1);
   });
 
   it('returns no retention fields when req is null or undefined', async () => {

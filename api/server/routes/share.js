@@ -175,6 +175,10 @@ router.patch('/:shareId', requireJwtAuth, async (req, res) => {
         expiredAt = await getSharedLinkExpiration(req, existing.conversationId);
       }
     }
+    if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
+      return res.status(404).end();
+    }
+
     const updatedShare = await updateSharedLink(req.user.id, req.params.shareId, expiredAt);
     if (updatedShare) {
       res.status(200).json(updatedShare);

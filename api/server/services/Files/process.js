@@ -15,7 +15,6 @@ const {
   checkOpenAIStorage,
   removeNullishValues,
   isAssistantsEndpoint,
-  defaultAssistantsVersion,
   getEndpointFileConfig,
   documentParserMimeTypes,
 } = require('librechat-data-provider');
@@ -25,6 +24,8 @@ const {
   parseText,
   processAudioFile,
   getStorageMetadata,
+  sweepExpiredFiles: sweepExpiredFilesWithDeps,
+  startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
 const {
   convertImage,
@@ -42,8 +43,6 @@ const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
 const db = require('~/models');
-
-const DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * Creates a modular file upload wrapper that ensures filename sanitization
@@ -76,7 +75,7 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
  * @param {MongoFile} params.file - The file object to delete.
  * @param {Function} params.deleteFile - The delete file function.
  * @param {Promise[]} params.promises - The array of promises to await.
- * @param {string[]} params.resolvedFileIds - File IDs whose storage delete succeeded.
+ * @param {Set<string>} params.resolvedFileIds - File IDs whose storage delete succeeded.
  * @param {Set<string>} params.failedFileIds - File IDs whose storage delete failed.
  * @param {OpenAI | undefined} [params.openai] - If an OpenAI file, the initialized OpenAI client.
  */
@@ -102,7 +101,7 @@ function enqueueDeleteOperation({
               logger.error('Error deleting file from OpenAI source', err);
               reject(err);
             } else {
-              resolvedFileIds.push(file.file_id);
+              resolvedFileIds.add(file.file_id);
               resolve(result);
             }
           },
@@ -113,7 +112,7 @@ function enqueueDeleteOperation({
     // Add directly to promises
     promises.push(
       deleteFile(req, file)
-        .then(() => resolvedFileIds.push(file.file_id))
+        .then(() => resolvedFileIds.add(file.file_id))
         .catch((err) => {
           failedFileIds.add(file.file_id);
           logger.error('Error deleting file', err);
@@ -140,7 +139,7 @@ function enqueueDeleteOperation({
  */
 const processDeleteRequest = async ({ req, files }) => {
   const appConfig = req.config;
-  const resolvedFileIds = [];
+  const resolvedFileIds = new Set();
   const failedFileIds = new Set();
   const deletionMethods = {};
   const promises = [];
@@ -183,7 +182,7 @@ const processDeleteRequest = async ({ req, files }) => {
     }
 
     if (source === FileSources.text) {
-      resolvedFileIds.push(file.file_id);
+      resolvedFileIds.add(file.file_id);
       continue;
     }
 
@@ -247,113 +246,21 @@ const processDeleteRequest = async ({ req, files }) => {
   }
 
   await Promise.allSettled(promises);
-  await db.deleteFiles(resolvedFileIds);
-
-  if (resolvedFileIds.length > 0) {
+  const deletedFileIds = [...resolvedFileIds];
+  if (deletedFileIds.length > 0) {
+    await db.deleteFiles(deletedFileIds);
     try {
-      await db.removeAgentResourceFilesFromAllAgents({ file_ids: resolvedFileIds });
+      await db.removeAgentResourceFilesFromAllAgents({ file_ids: deletedFileIds });
     } catch (error) {
       logger.error('Error cleaning up orphaned agent file references', error);
     }
   }
 
   return {
-    deletedFileIds: resolvedFileIds,
+    deletedFileIds,
     failedFileIds: [...failedFileIds],
   };
 };
-
-function getFileRetentionSweepInterval() {
-  const interval = process.env.FILE_RETENTION_SWEEP_INTERVAL_MS;
-  if (interval == null || interval.trim() === '') {
-    return DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS;
-  }
-
-  const value = Number(interval);
-  if (!Number.isFinite(value) || value < 0 || (value > 0 && value < 1)) {
-    return DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS;
-  }
-  return value;
-}
-
-function getExpiredFileEndpoint(source) {
-  return source === FileSources.azure ? EModelEndpoint.azureAssistants : EModelEndpoint.assistants;
-}
-
-function hasExpiredFileEndpointConfig(appConfig, source) {
-  if (source === FileSources.azure) {
-    return Boolean(appConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants);
-  }
-
-  return Boolean(appConfig?.endpoints?.[EModelEndpoint.assistants]);
-}
-
-function getConfiguredExpiredFileAssistantVersion({ appConfig, source, endpoint }) {
-  const endpointVersion = appConfig?.endpoints?.[endpoint]?.version;
-  if (endpointVersion != null) {
-    return endpointVersion;
-  }
-
-  if (source === FileSources.azure) {
-    const azureAssistantsConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants;
-    if (typeof azureAssistantsConfig === 'object' && azureAssistantsConfig?.version != null) {
-      return azureAssistantsConfig.version;
-    }
-  }
-
-  return undefined;
-}
-
-function getExpiredFileAssistantVersion({ appConfig, source, endpoint }) {
-  const configuredVersion = getConfiguredExpiredFileAssistantVersion({
-    appConfig,
-    source,
-    endpoint,
-  });
-  const fallbackVersion =
-    defaultAssistantsVersion[endpoint] ?? defaultAssistantsVersion.assistants ?? 2;
-
-  return String(configuredVersion ?? fallbackVersion).replace(/^v/, '');
-}
-
-function createExpiredFileSweepRequest({ appConfig, file, userId }) {
-  const source = file.source ?? FileSources.local;
-  const endpoint = getExpiredFileEndpoint(source);
-  const version = getExpiredFileAssistantVersion({ appConfig, source, endpoint });
-  const baseUrl = `/api/assistants/v${version}`;
-
-  return {
-    baseUrl,
-    originalUrl: `${baseUrl}/files`,
-    path: '/files',
-    method: 'DELETE',
-    headers: {},
-    query: {},
-    params: {},
-    config: appConfig,
-    body: {
-      endpoint,
-      version,
-    },
-    user: {
-      id: userId,
-      tenantId: file.tenantId,
-    },
-  };
-}
-
-async function resolveExpiredFileSweepConfig({ appConfig, file, loadAppConfig }) {
-  const source = file.source ?? FileSources.local;
-  if (
-    !checkOpenAIStorage(source) ||
-    hasExpiredFileEndpointConfig(appConfig, source) ||
-    typeof loadAppConfig !== 'function'
-  ) {
-    return appConfig;
-  }
-
-  return (await loadAppConfig()) ?? appConfig;
-}
 
 /**
  * Deletes expired file storage before removing the corresponding File records.
@@ -367,81 +274,20 @@ async function resolveExpiredFileSweepConfig({ appConfig, file, loadAppConfig })
  * @param {() => Promise<AppConfig>} [params.loadAppConfig]
  * @returns {Promise<{ scanned: number, deleted: number, failed: number }>}
  */
-async function sweepExpiredFiles({ appConfig, limit = 100, loadAppConfig } = {}) {
-  const files = (await db.getExpiredFiles(limit)) ?? [];
-  let resolvedAppConfig = appConfig;
-  let deleted = 0;
-  let failed = 0;
-
-  for (const file of files) {
-    const userId = file.user?.toString?.() ?? file.user;
-    if (!userId) {
-      logger.warn(`[sweepExpiredFiles] Skipping expired file without user: ${file.file_id}`);
-      failed++;
-      continue;
-    }
-
-    try {
-      resolvedAppConfig = await resolveExpiredFileSweepConfig({
-        appConfig: resolvedAppConfig,
-        file,
-        loadAppConfig,
-      });
-      const req = createExpiredFileSweepRequest({ appConfig: resolvedAppConfig, file, userId });
-      const { failedFileIds } = await processDeleteRequest({ req, files: [file] });
-      if (failedFileIds.includes(file.file_id)) {
-        failed++;
-        continue;
-      }
-
-      const remaining = await db.findFileById(file.file_id);
-      if (remaining) {
-        failed++;
-      } else {
-        deleted++;
-      }
-    } catch (error) {
-      failed++;
-      logger.error(`[sweepExpiredFiles] Error deleting expired file ${file.file_id}:`, error);
-    }
-  }
-
-  if (deleted > 0 || failed > 0) {
-    logger.info(
-      `[sweepExpiredFiles] Processed ${files.length} expired files: ${deleted} deleted, ${failed} failed`,
-    );
-  }
-
-  return { scanned: files.length, deleted, failed };
+async function sweepExpiredFiles(options = {}) {
+  return sweepExpiredFilesWithDeps(options, {
+    getExpiredFiles: db.getExpiredFiles,
+    processDeleteRequest,
+    logger,
+  });
 }
 
-function startExpiredFileSweep({ appConfig, loadAppConfig } = {}) {
-  const intervalMs = getFileRetentionSweepInterval();
-  if (intervalMs === 0) {
-    logger.info('[sweepExpiredFiles] Disabled by FILE_RETENTION_SWEEP_INTERVAL_MS=0');
-    return null;
-  }
-
-  let isSweeping = false;
-  const runSweep = async () => {
-    if (isSweeping) {
-      return;
-    }
-
-    isSweeping = true;
-    try {
-      await runAsSystem(() => sweepExpiredFiles({ appConfig, loadAppConfig }));
-    } catch (error) {
-      logger.error('[sweepExpiredFiles] Background sweep failed:', error);
-    } finally {
-      isSweeping = false;
-    }
-  };
-
-  runSweep();
-  const interval = setInterval(runSweep, intervalMs);
-  interval.unref?.();
-  return interval;
+function startExpiredFileSweep(options = {}) {
+  return startExpiredFileSweepWithDeps(options, {
+    sweepExpiredFiles,
+    runAsSystem,
+    logger,
+  });
 }
 
 /**
@@ -1406,7 +1252,6 @@ function filterFile({ req, image, isAvatar }) {
 
 module.exports = {
   filterFile,
-  getRetentionExpiry,
   processFileURL,
   saveBase64Image,
   processImageFile,

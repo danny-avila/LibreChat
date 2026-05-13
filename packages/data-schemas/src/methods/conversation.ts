@@ -1,6 +1,7 @@
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
 import { RetentionMode } from 'librechat-data-provider';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 import type { AppConfig, IConversation } from '~/types';
@@ -48,6 +49,10 @@ export interface ConversationMethods {
     convoMap: Record<string, unknown>;
   }>;
   getConvo(user: string, conversationId: string): Promise<IConversation | null>;
+  getConvoRetention(
+    user: string,
+    conversationId: string,
+  ): Promise<Pick<IConversation, 'expiredAt'> | null>;
   getConvoTitle(user: string, conversationId: string): Promise<string | null>;
   deleteConvos(
     user: string,
@@ -67,26 +72,7 @@ export function createConversationMethods(
   }
 
   function getVisibleConversationRetentionFilter(): FilterQuery<IConversation> {
-    return {
-      $or: [
-        {
-          isTemporary: false,
-          $or: [
-            { expiredAt: null },
-            { expiredAt: { $exists: false } },
-            { expiredAt: { $gt: new Date() } },
-          ],
-        },
-        {
-          isTemporary: { $exists: false },
-          $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
-        },
-        {
-          isTemporary: null,
-          $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
-        },
-      ],
-    } as FilterQuery<IConversation>;
+    return buildRetentionVisibilityFilter<IConversation>();
   }
 
   /**
@@ -115,6 +101,24 @@ export function createConversationMethods(
     } catch (error) {
       logger.error('[getConvo] Error getting single conversation', error);
       throw new Error('Error getting single conversation');
+    }
+  }
+
+  /**
+   * Retrieves only the retention deadline for a conversation.
+   */
+  async function getConvoRetention(
+    user: string,
+    conversationId: string,
+  ): Promise<Pick<IConversation, 'expiredAt'> | null> {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOne({ user, conversationId }, 'expiredAt').lean<
+        Pick<IConversation, 'expiredAt'>
+      >();
+    } catch (error) {
+      logger.error('[getConvoRetention] Error getting conversation retention fields', error);
+      throw new Error('Error getting conversation retention fields');
     }
   }
 
@@ -224,7 +228,7 @@ export function createConversationMethods(
         } catch (err) {
           logger.error('Error creating temporary chat expiration date:', err);
           logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
-          update.expiredAt = null;
+          update.expiredAt = createFallbackRetentionDate();
         }
       } else if (isTemporary === true) {
         update.isTemporary = true;
@@ -233,7 +237,7 @@ export function createConversationMethods(
         } catch (err) {
           logger.error('Error creating temporary chat expiration date:', err);
           logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
-          update.expiredAt = null;
+          update.expiredAt = createFallbackRetentionDate();
         }
       } else if (isTemporary === false) {
         update.isTemporary = false;
@@ -557,6 +561,7 @@ export function createConversationMethods(
     getConvosByCursor,
     getConvosQueried,
     getConvo,
+    getConvoRetention,
     getConvoTitle,
     deleteConvos,
   };

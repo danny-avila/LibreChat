@@ -2,6 +2,7 @@ import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import { RetentionMode } from 'librechat-data-provider';
 import logger from '~/config/winston';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import { createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import type { AppConfig, IMessage } from '~/types';
 
@@ -107,7 +108,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         } catch (err) {
           logger.error('Error creating temporary chat expiration date:', err);
           logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
-          update.expiredAt = null;
+          update.expiredAt = createFallbackRetentionDate();
         }
       } else if (isTemporary === true) {
         update.isTemporary = true;
@@ -116,7 +117,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         } catch (err) {
           logger.error('Error creating temporary chat expiration date:', err);
           logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
-          update.expiredAt = null;
+          update.expiredAt = createFallbackRetentionDate();
         }
       } else if (isTemporary === false) {
         update.isTemporary = false;

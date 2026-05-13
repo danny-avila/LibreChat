@@ -141,20 +141,16 @@ describe('share routes retention', () => {
     );
   });
 
-  it('keeps updated shares on the parent expiration when the retained conversation expired', async () => {
+  it('rejects updated shares when the retained conversation expired', async () => {
     mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
     mongoose.models.Conversation.findOne.mockReturnValue(lean(expiredRetainedConvo));
     updateSharedLink.mockResolvedValue({ shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(404);
     expect(createTempChatExpirationDate).not.toHaveBeenCalled();
-    expect(updateSharedLink).toHaveBeenCalledWith(
-      'user-123',
-      'share-123',
-      expiredRetainedConvo.expiredAt,
-    );
+    expect(updateSharedLink).not.toHaveBeenCalled();
   });
 
   it('clears updated share expiration when the conversation is no longer retained', async () => {

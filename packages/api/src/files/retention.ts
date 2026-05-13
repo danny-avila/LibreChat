@@ -3,6 +3,8 @@ import type { AppConfig } from '@librechat/data-schemas';
 
 type InterfaceConfig = AppConfig['interfaceConfig'];
 
+const FALLBACK_RETENTION_HOURS = 24 * 30;
+
 export type RetentionConversation = {
   expiredAt?: Date | string | number | null;
 };
@@ -18,6 +20,10 @@ export type RetentionRequest = {
   };
   config?: {
     interfaceConfig?: InterfaceConfig;
+  };
+  _retentionExpiry?: {
+    key: string;
+    promise: Promise<RetentionExpiry>;
   };
 };
 
@@ -62,11 +68,19 @@ const createRetentionExpiry = (
     return { expiredAt: createExpirationDate(req?.config?.interfaceConfig) };
   } catch (err) {
     logger?.error('[getRetentionExpiry] Error creating file expiration date:', err);
-    return { expiredAt: null };
+    return { expiredAt: new Date(Date.now() + FALLBACK_RETENTION_HOURS * 60 * 60 * 1000) };
   }
 };
 
-export async function getRetentionExpiry(
+const getRetentionCacheKey = (req: RetentionRequest): string =>
+  [
+    req.config?.interfaceConfig?.retentionMode ?? '',
+    req.user?.id ?? '',
+    req.body?.conversationId ?? '',
+    String(req.body?.isTemporary ?? ''),
+  ].join('|');
+
+async function computeRetentionExpiry(
   req: RetentionRequest | null | undefined,
   dependencies: RetentionDependencies,
 ): Promise<RetentionExpiry> {
@@ -97,7 +111,10 @@ export async function getRetentionExpiry(
         '[getRetentionExpiry] Error checking conversation retention:',
         err,
       );
-      return createRetentionExpiry(req, dependencies);
+      if (isRetentionTruthy(req?.body?.isTemporary)) {
+        return createRetentionExpiry(req, dependencies);
+      }
+      return {};
     }
   }
 
@@ -106,6 +123,24 @@ export async function getRetentionExpiry(
   }
 
   return createRetentionExpiry(req, dependencies);
+}
+
+export async function getRetentionExpiry(
+  req: RetentionRequest | null | undefined,
+  dependencies: RetentionDependencies,
+): Promise<RetentionExpiry> {
+  if (!req) {
+    return {};
+  }
+
+  const key = getRetentionCacheKey(req);
+  if (req._retentionExpiry?.key === key) {
+    return req._retentionExpiry.promise;
+  }
+
+  const promise = computeRetentionExpiry(req, dependencies);
+  req._retentionExpiry = { key, promise };
+  return promise;
 }
 
 export const createMinimalRetentionRequest = (

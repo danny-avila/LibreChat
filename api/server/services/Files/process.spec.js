@@ -6,60 +6,178 @@ jest.mock('@librechat/data-schemas', () => ({
   createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
 }));
 
-jest.mock('@librechat/agents', () => ({}));
+jest.mock('@librechat/agents', () => ({
+  Providers: {
+    XAI: 'xai',
+    DEEPSEEK: 'deepseek',
+    MOONSHOT: 'moonshot',
+    OPENROUTER: 'openrouter',
+    VERTEXAI: 'vertexai',
+  },
+}));
 
-jest.mock('@librechat/api', () => ({
-  sanitizeFilename: jest.fn((n) => n),
-  parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
-  processAudioFile: jest.fn(),
-  getStorageMetadata: jest.fn(() => ({})),
-  getRetentionExpiry: jest.fn(async (req) => {
-    const { RetentionMode } = require('librechat-data-provider');
-    const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
-    const db = require('~/models');
-    const createExpiry = () => {
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    Providers: actual.Providers,
+    mergeFileConfig: jest.fn(),
+  };
+});
+
+jest.mock('@librechat/api', () => {
+  const { FileSources, EModelEndpoint, checkOpenAIStorage, defaultAssistantsVersion } =
+    jest.requireActual('librechat-data-provider');
+  const defaultSweepInterval = 60 * 60 * 1000;
+
+  const getSweepInterval = () => {
+    const interval = process.env.FILE_RETENTION_SWEEP_INTERVAL_MS;
+    if (interval == null || interval.trim() === '') {
+      return defaultSweepInterval;
+    }
+    const value = Number(interval);
+    return !Number.isFinite(value) || value < 0 || (value > 0 && value < 1)
+      ? defaultSweepInterval
+      : value;
+  };
+
+  const getExpiredFileEndpoint = (source) =>
+    source === FileSources.azure ? EModelEndpoint.azureAssistants : EModelEndpoint.assistants;
+
+  const hasEndpointConfig = (appConfig, source) =>
+    source === FileSources.azure
+      ? Boolean(appConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants)
+      : Boolean(appConfig?.endpoints?.[EModelEndpoint.assistants]);
+
+  const getAssistantVersion = ({ appConfig, source, endpoint }) => {
+    const endpointVersion = appConfig?.endpoints?.[endpoint]?.version;
+    if (endpointVersion != null) {
+      return String(endpointVersion).replace(/^v/, '');
+    }
+    if (source === FileSources.azure) {
+      const azureAssistantsConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants;
+      if (typeof azureAssistantsConfig === 'object' && azureAssistantsConfig?.version != null) {
+        return String(azureAssistantsConfig.version).replace(/^v/, '');
+      }
+    }
+    return String(
+      defaultAssistantsVersion[endpoint] ?? defaultAssistantsVersion.assistants ?? 2,
+    ).replace(/^v/, '');
+  };
+
+  const createSweepReq = ({ appConfig, file, userId }) => {
+    const source = file.source ?? FileSources.local;
+    const endpoint = getExpiredFileEndpoint(source);
+    const version = getAssistantVersion({ appConfig, source, endpoint });
+    const baseUrl = `/api/assistants/v${version}`;
+    return {
+      baseUrl,
+      originalUrl: `${baseUrl}/files`,
+      path: '/files',
+      method: 'DELETE',
+      headers: {},
+      query: {},
+      params: {},
+      config: appConfig,
+      body: { endpoint, version },
+      user: { id: userId, tenantId: file.tenantId },
+    };
+  };
+
+  const sweepExpiredFiles = async (
+    { appConfig, limit = 100, loadAppConfig } = {},
+    { getExpiredFiles, processDeleteRequest, logger },
+  ) => {
+    const files = (await getExpiredFiles(limit)) ?? [];
+    let resolvedAppConfig = appConfig;
+    let deleted = 0;
+    let failed = 0;
+
+    for (const file of files) {
+      const userId = file.user?.toString?.() ?? file.user;
+      if (!userId) {
+        logger.warn(`[sweepExpiredFiles] Skipping expired file without user: ${file.file_id}`);
+        failed++;
+        continue;
+      }
+
       try {
-        return { expiredAt: createTempChatExpirationDate(req?.config?.interfaceConfig) };
-      } catch (err) {
-        logger.error('[getRetentionExpiry] Error creating file expiration date:', err);
-        return { expiredAt: null };
+        const source = file.source ?? FileSources.local;
+        if (
+          checkOpenAIStorage(source) &&
+          !hasEndpointConfig(resolvedAppConfig, source) &&
+          typeof loadAppConfig === 'function'
+        ) {
+          resolvedAppConfig = (await loadAppConfig()) ?? resolvedAppConfig;
+        }
+        const req = createSweepReq({ appConfig: resolvedAppConfig, file, userId });
+        const { deletedFileIds, failedFileIds } = await processDeleteRequest({
+          req,
+          files: [file],
+        });
+        if (failedFileIds.includes(file.file_id)) {
+          failed++;
+        } else if (deletedFileIds.includes(file.file_id)) {
+          deleted++;
+        } else {
+          failed++;
+          logger.error(
+            `[sweepExpiredFiles] Delete request finished without resolving expired file ${file.file_id}`,
+          );
+        }
+      } catch (error) {
+        failed++;
+        logger.error(`[sweepExpiredFiles] Error deleting expired file ${file.file_id}:`, error);
+      }
+    }
+
+    if (deleted > 0 || failed > 0) {
+      logger.info(
+        `[sweepExpiredFiles] Processed ${files.length} expired files: ${deleted} deleted, ${failed} failed`,
+      );
+    }
+
+    return { scanned: files.length, deleted, failed };
+  };
+
+  const startExpiredFileSweep = (options = {}, { sweepExpiredFiles, runAsSystem, logger }) => {
+    const intervalMs = getSweepInterval();
+    if (intervalMs === 0) {
+      logger.info('[sweepExpiredFiles] Disabled by FILE_RETENTION_SWEEP_INTERVAL_MS=0');
+      return null;
+    }
+
+    let isSweeping = false;
+    const runSweep = async () => {
+      if (isSweeping) {
+        return;
+      }
+      isSweeping = true;
+      try {
+        await runAsSystem(() => sweepExpiredFiles(options));
+      } catch (error) {
+        logger.error('[sweepExpiredFiles] Background sweep failed:', error);
+      } finally {
+        isSweeping = false;
       }
     };
 
-    if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
-      return createExpiry();
-    }
+    runSweep();
+    const interval = setInterval(runSweep, intervalMs);
+    interval.unref?.();
+    return interval;
+  };
 
-    const conversationId = req?.body?.conversationId;
-    if (conversationId && req?.user?.id) {
-      try {
-        const convo = await db.getConvo(req.user.id, conversationId);
-        if (convo?.expiredAt != null) {
-          const expiredAt =
-            convo.expiredAt instanceof Date ? convo.expiredAt : new Date(convo.expiredAt);
-          if (!Number.isNaN(expiredAt.getTime())) {
-            return expiredAt > new Date() ? createExpiry() : { expiredAt };
-          }
-        }
-        if (convo) {
-          return {};
-        }
-      } catch (err) {
-        logger.error('[getRetentionExpiry] Error checking conversation retention:', err);
-        return createExpiry();
-      }
-    }
-
-    return req?.body?.isTemporary === true || req?.body?.isTemporary === 'true'
-      ? createExpiry()
-      : {};
-  }),
-}));
-
-jest.mock('librechat-data-provider', () => ({
-  ...jest.requireActual('librechat-data-provider'),
-  mergeFileConfig: jest.fn(),
-}));
+  return {
+    sanitizeFilename: jest.fn((n) => n),
+    parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
+    processAudioFile: jest.fn(),
+    getStorageMetadata: jest.fn(() => ({})),
+    getRetentionExpiry: jest.fn(() => ({})),
+    sweepExpiredFiles,
+    startExpiredFileSweep,
+  };
+});
 
 jest.mock('~/server/services/Files/images', () => ({
   convertImage: jest.fn(),
@@ -116,7 +234,7 @@ jest.mock('~/server/services/Files/Audio/STTService', () => ({
   STTService: { getInstance: jest.fn() },
 }));
 
-const { createTempChatExpirationDate } = require('@librechat/data-schemas');
+const { getRetentionExpiry } = require('@librechat/api');
 const {
   EToolResources,
   FileSources,
@@ -146,6 +264,12 @@ const ODS_MIME = 'application/vnd.oasis.opendocument.spreadsheet';
 const ODT_MIME = 'application/vnd.oasis.opendocument.text';
 const ODP_MIME = 'application/vnd.oasis.opendocument.presentation';
 const ODG_MIME = 'application/vnd.oasis.opendocument.graphics';
+
+const flushPromises = async () => {
+  for (let i = 0; i < 10; i++) {
+    await Promise.resolve();
+  }
+};
 
 const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null } = {}) => ({
   user: { id: 'user-123', tenantId: 'tenant-a' },
@@ -592,6 +716,9 @@ describe('processFileURL', () => {
   });
 
   it('applies retention metadata for generated images when retention mode is all', async () => {
+    getRetentionExpiry.mockResolvedValueOnce({
+      expiredAt: new Date('2030-01-01T00:00:00.000Z'),
+    });
     const saveURL = jest.fn().mockResolvedValue({
       filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
       bytes: 512,
@@ -631,9 +758,8 @@ describe('processFileURL', () => {
     });
     const getFileURL = jest.fn();
     getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
-    db.getConvo.mockResolvedValue({
-      isTemporary: false,
-      expiredAt: new Date('2029-01-01T00:00:00.000Z'),
+    getRetentionExpiry.mockResolvedValueOnce({
+      expiredAt: new Date('2030-01-01T00:00:00.000Z'),
     });
 
     await processFileURL({
@@ -651,7 +777,6 @@ describe('processFileURL', () => {
       },
     });
 
-    expect(db.getConvo).toHaveBeenCalledWith('user-123', 'convo-123');
     expect(db.createFile).toHaveBeenCalledWith(
       expect.objectContaining({
         expiredAt: new Date('2030-01-01T00:00:00.000Z'),
@@ -669,10 +794,7 @@ describe('processFileURL', () => {
     });
     const getFileURL = jest.fn();
     getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
-    db.getConvo.mockResolvedValue({
-      isTemporary: false,
-      expiredAt: parentExpiredAt,
-    });
+    getRetentionExpiry.mockResolvedValueOnce({ expiredAt: parentExpiredAt });
 
     await processFileURL({
       fileStrategy: FileSources.cloudfront,
@@ -689,7 +811,6 @@ describe('processFileURL', () => {
       },
     });
 
-    expect(createTempChatExpirationDate).not.toHaveBeenCalled();
     expect(db.createFile).toHaveBeenCalledWith(
       expect.objectContaining({
         expiredAt: parentExpiredAt,
@@ -784,7 +905,6 @@ describe('sweepExpiredFiles', () => {
         tenantId: 'tenant-a',
       },
     ]);
-    db.findFileById.mockResolvedValue(null);
     db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
 
     const result = await sweepExpiredFiles({
@@ -814,7 +934,6 @@ describe('sweepExpiredFiles', () => {
         tenantId: 'tenant-a',
       },
     ]);
-    db.findFileById.mockResolvedValue(null);
     db.deleteFiles.mockResolvedValue({ deletedCount: 0 });
 
     const result = await sweepExpiredFiles({
@@ -872,7 +991,6 @@ describe('sweepExpiredFiles', () => {
           tenantId: 'tenant-a',
         },
       ]);
-      db.findFileById.mockResolvedValue(null);
       db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
 
       const result = await sweepExpiredFiles({
@@ -933,16 +1051,12 @@ describe('startExpiredFileSweep', () => {
       appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
     });
 
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushPromises();
     expect(interval).not.toBeNull();
     expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
 
     jest.advanceTimersByTime(60 * 60 * 1000);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushPromises();
     expect(db.getExpiredFiles).toHaveBeenCalledTimes(2);
 
     clearInterval(interval);
@@ -957,22 +1071,16 @@ describe('startExpiredFileSweep', () => {
       appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
     });
 
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushPromises();
     expect(interval).not.toBeNull();
     expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
 
     jest.advanceTimersByTime(1);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushPromises();
     expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
 
     jest.advanceTimersByTime(60 * 60 * 1000);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushPromises();
     expect(db.getExpiredFiles).toHaveBeenCalledTimes(2);
 
     clearInterval(interval);
@@ -993,19 +1101,18 @@ describe('startExpiredFileSweep', () => {
       appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
     });
 
-    await Promise.resolve();
+    await flushPromises();
     expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
 
     jest.advanceTimersByTime(30);
-    await Promise.resolve();
+    await flushPromises();
     expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
 
     resolveSweep();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushPromises();
 
     jest.advanceTimersByTime(10);
-    await Promise.resolve();
+    await flushPromises();
     expect(db.getExpiredFiles).toHaveBeenCalledTimes(2);
 
     clearInterval(interval);

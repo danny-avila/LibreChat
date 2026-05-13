@@ -10,7 +10,7 @@ const db = require('~/models');
  */
 async function getRetentionExpiry(req) {
   return getRetentionExpiryWithDeps(req, {
-    getConvo: db.getConvo,
+    getConvo: db.getConvoRetention ?? db.getConvo,
     createExpirationDate: createTempChatExpirationDate,
     logger,
   });

@@ -1063,6 +1063,7 @@ describe('importLibreChatConvo', () => {
       expect(message.expiredAt).toBeInstanceOf(Date);
       expect(result.conversation.isTemporary).toBe(false);
       expect(result.conversation.expiredAt).toBeInstanceOf(Date);
+      expect(result.conversation.expiredAt).toBe(message.expiredAt);
     });
   });
 });

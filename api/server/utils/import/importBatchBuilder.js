@@ -1,5 +1,9 @@
 const { v4: uuidv4 } = require('uuid');
-const { logger, createTempChatExpirationDate } = require('@librechat/data-schemas');
+const {
+  logger,
+  createFallbackRetentionDate,
+  createTempChatExpirationDate,
+} = require('@librechat/data-schemas');
 const {
   EModelEndpoint,
   Constants,
@@ -33,22 +37,29 @@ class ImportBatchBuilder {
     this.interfaceConfig = interfaceConfig;
     this.conversations = [];
     this.messages = [];
+    this.retentionFields = undefined;
   }
 
   getRetentionFields() {
+    if (this.retentionFields !== undefined) {
+      return this.retentionFields;
+    }
+
     if (this.interfaceConfig?.retentionMode !== RetentionMode.ALL) {
-      return {};
+      this.retentionFields = {};
+      return this.retentionFields;
     }
 
     try {
-      return {
+      this.retentionFields = {
         isTemporary: false,
         expiredAt: createTempChatExpirationDate(this.interfaceConfig),
       };
     } catch (error) {
       logger.error('[ImportBatchBuilder] Error creating import expiration date:', error);
-      return { isTemporary: false, expiredAt: null };
+      this.retentionFields = { isTemporary: false, expiredAt: createFallbackRetentionDate() };
     }
+    return this.retentionFields;
   }
 
   /**

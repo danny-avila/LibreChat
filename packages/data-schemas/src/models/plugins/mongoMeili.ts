@@ -13,6 +13,7 @@ import type {
 } from 'mongoose';
 import type { IConversation, IMessage } from '~/types';
 import logger from '~/config/meiliLogger';
+import { buildRetentionVisibilityFilter, legacyPermanentExpirationFilter } from '~/utils/retention';
 
 interface MongoMeiliOptions {
   host: string;
@@ -95,35 +96,14 @@ const getSyncConfig = () => ({
 const hasSchemaPath = (schema: Schema, path: string): boolean =>
   Object.prototype.hasOwnProperty.call(schema.obj, path);
 
-const activeExpirationQuery = () => ({
-  $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }, { expiredAt: { $gt: new Date() } }],
-});
-
 const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
 
 const buildIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
   if (!hasSchemaPath(schema, 'isTemporary')) {
-    return hasSchemaPath(schema, 'expiredAt')
-      ? { $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }] }
-      : {};
+    return hasSchemaPath(schema, 'expiredAt') ? legacyPermanentExpirationFilter() : {};
   }
 
-  return {
-    $or: [
-      {
-        isTemporary: false,
-        ...activeExpirationQuery(),
-      },
-      {
-        isTemporary: { $exists: false },
-        $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
-      },
-      {
-        isTemporary: null,
-        $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
-      },
-    ],
-  };
+  return buildRetentionVisibilityFilter();
 };
 
 const hasActiveExpiration = (expiredAt?: Date | null): boolean =>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import debounce from 'lodash/debounce';
-import { useRecoilValue } from 'recoil';
+import { useRecoilCallback } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import { TerminalSquareIcon, Check, X } from 'lucide-react';
 import { Spinner, TooltipAnchor, useToastContext } from '@librechat/client';
@@ -25,7 +25,12 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
 
     const { messageId, conversationId, partIndex } = useMessageContext();
     const normalizedLang = useMemo(() => normalizeLanguage(lang), [lang]);
-    const isTemporary = useRecoilValue(store.isTemporary);
+    const getIsTemporary = useRecoilCallback(
+      ({ snapshot }) =>
+        () =>
+          snapshot.getPromise(store.isTemporary),
+      [],
+    );
 
     const handleExecute = useCallback(async () => {
       const codeString: string = codeRef.current?.textContent ?? '';
@@ -45,7 +50,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
         conversationId: conversationId ?? '',
         lang: normalizedLang,
         code: codeString,
-        isTemporary,
+        isTemporary: await getIsTemporary(),
       });
     }, [
       codeRef,
@@ -55,7 +60,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
       blockIndex,
       conversationId,
       normalizedLang,
-      isTemporary,
+      getIsTemporary,
     ]);
 
     const debouncedExecute = useMemo(
