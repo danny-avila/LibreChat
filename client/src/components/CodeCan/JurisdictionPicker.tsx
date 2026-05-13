@@ -22,8 +22,8 @@ export default function JurisdictionPicker({
   const { data: catalog, isLoading } = useJurisdictionsQuery();
   const { showToast } = useToastContext();
 
-  const currentId =
-    user?.personalization?.jurisdiction ?? catalog?.selected ?? catalog?.default ?? null;
+  const savedId = user?.personalization?.jurisdiction ?? catalog?.selected ?? null;
+  const currentId = savedId ?? catalog?.default ?? null;
   const [pendingId, setPendingId] = useState<string | null>(currentId);
 
   useEffect(() => {
@@ -54,7 +54,13 @@ export default function JurisdictionPicker({
   }
 
   const handleSelect = (id: string) => {
-    if (id === pendingId || mutation.isLoading) {
+    if (mutation.isLoading) {
+      return;
+    }
+    // Only skip the save when the user has already confirmed this choice on the server.
+    // The "Active" pre-selection for new users is just a visual default — clicking it
+    // must still persist so `hasPickedJurisdiction` flips and the picker dismisses.
+    if (id === savedId) {
       return;
     }
     setPendingId(id);
