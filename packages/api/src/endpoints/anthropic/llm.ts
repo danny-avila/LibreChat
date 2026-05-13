@@ -2,7 +2,7 @@ import { Dispatcher, ProxyAgent } from 'undici';
 import { AnthropicClientOptions } from '@librechat/agents';
 import { anthropicSettings, removeNullishValues } from 'librechat-data-provider';
 import type { AnthropicLLMConfigResult, AnthropicConfigOptions } from '~/types/anthropic';
-import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning } from './helpers';
+import { checkPromptCacheSupport, getClaudeHeaders, configureReasoning, needsAdaptiveThinking } from './helpers';
 
 /** Known Anthropic parameters that map directly to the client config */
 export const knownAnthropicParams = new Set([
@@ -91,10 +91,17 @@ function getLLMConfig(
 
   requestOptions = configureReasoning(requestOptions, systemOptions);
 
-  if (!/claude-3[-.]7/.test(mergedOptions.model)) {
-    requestOptions.topP = mergedOptions.topP;
-    requestOptions.topK = mergedOptions.topK;
-  } else if (requestOptions.thinking == null) {
+  const isAdaptiveModel = needsAdaptiveThinking(mergedOptions.model ?? '');
+  const hasThinking = requestOptions.thinking != null;
+
+  if (/claude-3[-.]7/.test(mergedOptions.model)) {
+    if (!hasThinking) {
+      requestOptions.topP = mergedOptions.topP;
+      requestOptions.topK = mergedOptions.topK;
+    }
+  } else if (isAdaptiveModel && hasThinking) {
+    // adaptive thinking models don't support topP/topK while thinking is active
+  } else {
     requestOptions.topP = mergedOptions.topP;
     requestOptions.topK = mergedOptions.topK;
   }

@@ -99,7 +99,7 @@ const tokenValues = Object.assign(
     deepseek: { prompt: 0.28, completion: 0.42 },
     command: { prompt: 0.38, completion: 0.38 },
     gemma: { prompt: 0.02, completion: 0.04 }, // Base pattern (using gemma-3n-e4b pricing)
-    gemini: { prompt: 0.5, completion: 1.5 },
+    gemini: { prompt: 2, completion: 12 },
     'gpt-oss': { prompt: 0.05, completion: 0.2 },
     // Specific model variants (check FIRST - more specific patterns at end)
     // o-series: generic BEFORE specific so the specific variant wins in reverse iteration
@@ -130,6 +130,7 @@ const tokenValues = Object.assign(
     'gpt-5.1-codex-mini': { prompt: 0.25, completion: 2 },
     'gpt-5.2': { prompt: 1.75, completion: 14 },
     'gpt-5.4': { prompt: 2.5, completion: 15 },
+    'gpt-5.5': { prompt: 5, completion: 30 },
     'claude-instant': { prompt: 0.8, completion: 2.4 },
     'claude-2': { prompt: 8, completion: 24 },
     'claude-2.1': { prompt: 8, completion: 24 },
@@ -146,6 +147,8 @@ const tokenValues = Object.assign(
     'claude-opus-4-5': { prompt: 5, completion: 25 },
     'claude-opus-4-6': { prompt: 5, completion: 25 },
     'claude-opus-4.6': { prompt: 5, completion: 25 },
+    'claude-opus-4-7': { prompt: 5, completion: 25 },
+    'claude-opus-4.7': { prompt: 5, completion: 25 },
     'claude-sonnet-4-5': { prompt: 3, completion: 15 },
     'claude-sonnet-4-6': { prompt: 3, completion: 15 },
     'command-r': { prompt: 0.5, completion: 1.5 },
@@ -175,6 +178,7 @@ const tokenValues = Object.assign(
     'gemini-3-pro': { prompt: 2, completion: 12 },
     'gemini-3-pro-image': { prompt: 2, completion: 120 },
     'gemini-3.1-pro': { prompt: 2, completion: 12 },
+    'gemini-3.1-flash-lite': { prompt: 0.25, completion: 1.5 },
     'gemini-3.1-flash-lite-preview': { prompt: 0.25, completion: 1.5 },
     'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
     grok: { prompt: 2.0, completion: 10.0 }, // Base pattern defaults to grok-2
@@ -191,7 +195,9 @@ const tokenValues = Object.assign(
     'grok-3-mini': { prompt: 0.3, completion: 0.5 },
     'grok-3-mini-fast': { prompt: 0.6, completion: 4 },
     'grok-4': { prompt: 3.0, completion: 15.0 },
-    'grok-4-1-fast': { prompt: 0.2, completion: 0.5 }, // covers reasoning & non-reasoning variants
+    'grok-4-1-fast-reasoning': { prompt: 0.2, completion: 0.5 }, // covers reasoning & non-reasoning variants
+    'grok-4-1-fast-non-reasoning': { prompt: 1.25, completion: 2.5 },
+    'grok-4.3': { prompt: 1.25, completion: 2.5 },
     'grok-code-fast': { prompt: 0.2, completion: 1.5 },
     codestral: { prompt: 0.3, completion: 0.9 },
     'ministral-3b': { prompt: 0.04, completion: 0.04 },
@@ -267,6 +273,9 @@ const cacheTokenValues = {
   'claude-opus-4': { write: 18.75, read: 1.5 },
   'claude-opus-4-6': { write: 6.25, read: 0.5 },
   'claude-opus-4.6': { write: 6.25, read: 0.5 },
+  'claude-opus-4-7': { write: 6.25, read: 0.5 },
+  'claude-opus-4.7': { write: 6.25, read: 0.5 },
+  'gpt-5.5': { write: 5.0, read: 0.5 },
 };
 
 /**

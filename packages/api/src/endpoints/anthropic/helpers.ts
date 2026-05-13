@@ -69,6 +69,29 @@ function getClaudeHeaders(
 }
 
 /**
+ * Checks if a model uses the newer "adaptive" thinking API format
+ * (models with generation 4+ and minor version >= 6, e.g. claude-opus-4-7, claude-sonnet-4-6)
+ * @param {string} modelName
+ * @returns {boolean}
+ */
+function needsAdaptiveThinking(modelName: string): boolean {
+  const match = modelName.match(/claude-(?:sonnet|opus|haiku)-([4-9])-(\d+)/);
+  if (!match) return false;
+  return parseInt(match[2], 10) >= 6;
+}
+
+/**
+ * Maps a thinking budget (tokens) to an Anthropic effort level string
+ * @param {number} budget
+ * @returns {'low' | 'medium' | 'high'}
+ */
+function budgetToEffort(budget: number): 'low' | 'medium' | 'high' {
+  if (budget <= 1024) return 'low';
+  if (budget <= 8000) return 'medium';
+  return 'high';
+}
+
+/**
  * Configures reasoning-related options for Claude models
  * @param {AnthropicClientOptions & { max_tokens?: number }} anthropicInput The request options object
  * @param {Object} extendedOptions Additional client configuration options
@@ -83,12 +106,26 @@ function configureReasoning(
   const updatedOptions = { ...anthropicInput };
   const currentMaxTokens = updatedOptions.max_tokens ?? updatedOptions.maxTokens;
 
-  if (
+  const isThinkingModel =
     extendedOptions.thinking &&
     updatedOptions?.model &&
     (/claude-3[-.]7/.test(updatedOptions.model) ||
-      /claude-(?:sonnet|opus|haiku)-[4-9]/.test(updatedOptions.model))
-  ) {
+      /claude-(?:sonnet|opus|haiku)-[4-9]/.test(updatedOptions.model));
+
+  if (isThinkingModel && needsAdaptiveThinking(updatedOptions.model ?? '')) {
+    // Newer Claude 4.x models (e.g. claude-opus-4-7, claude-sonnet-4-6) use the adaptive API:
+    // thinking.type = "adaptive" + top-level output_config.effort
+    const budget = extendedOptions.thinkingBudget ?? 2000;
+    (updatedOptions as Record<string, unknown>).thinking = { type: 'adaptive' };
+    if (updatedOptions.invocationKwargs) {
+      (updatedOptions.invocationKwargs as Record<string, unknown>).output_config = {
+        effort: budgetToEffort(budget),
+      };
+    }
+    return updatedOptions;
+  }
+
+  if (isThinkingModel) {
     updatedOptions.thinking = {
       ...updatedOptions.thinking,
       type: 'enabled',
@@ -129,4 +166,4 @@ function configureReasoning(
   return updatedOptions;
 }
 
-export { checkPromptCacheSupport, getClaudeHeaders, configureReasoning };
+export { checkPromptCacheSupport, getClaudeHeaders, configureReasoning, needsAdaptiveThinking };

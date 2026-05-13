@@ -79,6 +79,7 @@ const debugBillingRates: Record<string, { prompt: number; completion: number }> 
   'claude-opus-4.6': { prompt: 5, completion: 25 },
   'claude-sonnet-4-5': { prompt: 3, completion: 15 },
   'claude-sonnet-4-6': { prompt: 3, completion: 15 },
+  'claude-opus-4-7': { prompt: 5, completion: 25 },
   // ── Command ───────────────────────────────────────────────────────────────────────────
   'command-r': { prompt: 0.5, completion: 1.5 },
   'command-r-plus': { prompt: 3, completion: 15 },
@@ -121,6 +122,7 @@ const debugBillingRates: Record<string, { prompt: number; completion: number }> 
   'grok-3-mini-fast': { prompt: 0.6, completion: 4 },
   'grok-4': { prompt: 3.0, completion: 15.0 },
   'grok-4-1-fast': { prompt: 0.2, completion: 0.5 },
+  'grok-4.3': { prompt: 1.25, completion: 2.5 },
   'grok-code-fast': { prompt: 0.2, completion: 1.5 },
   // ── Mistral ───────────────────────────────────────────────────────────────────────────
   'mistral-nemo': { prompt: 0.15, completion: 0.15 },
@@ -367,14 +369,8 @@ function calcRealUsd(
     // callbacks.js normalises: input_tokens = input_tokens ?? prompt_tokens
     // recordCollectedUsage reads input_token_details for cache fields.
     if (isAgents) {
-      const input = Math.max(
-        0,
-        Number(usageObj.input_tokens ?? usageObj.prompt_tokens) || 0,
-      );
-      const compl = Math.max(
-        0,
-        Number(usageObj.output_tokens ?? usageObj.completion_tokens) || 0,
-      );
+      const input = Math.max(0, Number(usageObj.input_tokens ?? usageObj.prompt_tokens) || 0);
+      const compl = Math.max(0, Number(usageObj.output_tokens ?? usageObj.completion_tokens) || 0);
       const details = usageObj.input_token_details;
       const cacheW =
         details && typeof details === 'object'
@@ -402,8 +398,7 @@ function calcRealUsd(
     }
 
     // ── OpenAI / xAI direct (prompt_tokens / completion_tokens) ─────────
-    const hasOpenAIKeys =
-      usageObj.prompt_tokens != null || usageObj.completion_tokens != null;
+    const hasOpenAIKeys = usageObj.prompt_tokens != null || usageObj.completion_tokens != null;
     if (hasOpenAIKeys) {
       const p = Math.max(0, Number(usageObj.prompt_tokens) || 0);
       const c = Math.max(0, Number(usageObj.completion_tokens) || 0);
@@ -418,8 +413,7 @@ function calcRealUsd(
     }
 
     // ── Anthropic / Google direct (input_tokens / output_tokens) ─────────
-    const hasAnthropicKeys =
-      usageObj.input_tokens != null || usageObj.output_tokens != null;
+    const hasAnthropicKeys = usageObj.input_tokens != null || usageObj.output_tokens != null;
     if (hasAnthropicKeys) {
       const input = Math.max(0, Number(usageObj.input_tokens) || 0);
       // Anthropic stores cache in root-level keys (not inside input_token_details)
@@ -556,6 +550,11 @@ export default function DevDebugOverlayPanel() {
     return calcRealUsd(usageObj, billingMatch, tokenTotal, isAgentsEndpoint_);
   }, [usageKeysSource, billingMatch, tokenTotal, isAgentsEndpoint_]);
 
+  const creditsLastAssistant = useMemo(
+    () => (realUsdResult !== null ? realUsdResult.usd * TOKENS_PER_USD : null),
+    [realUsdResult],
+  );
+
   const lines = [
     'LibreChat dev debug',
     `Toggle: Ctrl+Shift+.  ·  localStorage: ${DEV_DEBUG_OVERLAY_STORAGE_KEY}`,
@@ -574,10 +573,9 @@ export default function DevDebugOverlayPanel() {
     }`,
     `tokensLastAssistant: ${tokenTotal !== null ? String(tokenTotal) : '—'}`,
     `usdLastAssistant: ${
-      realUsdResult !== null
-        ? `$${realUsdResult.usd.toFixed(6)}  (${realUsdResult.label})`
-        : '—'
+      realUsdResult !== null ? `$${realUsdResult.usd.toFixed(6)}  (${realUsdResult.label})` : '—'
     }`,
+    `creditsLastAssistant: ${creditsLastAssistant !== null ? creditsLastAssistant.toFixed(2) : '—'}`,
   ];
 
   return (
