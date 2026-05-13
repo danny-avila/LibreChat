@@ -233,8 +233,9 @@ export function restoreTenantContextFromReq(
 ): void | Promise<void> {
   const tenantId = resolveRequestTenantId(req as RequestTenantSource);
   const context = buildTenantContext(req, tenantId);
+  const resolvedTenantId = context.tenantId;
 
-  if (!tenantId) {
+  if (!resolvedTenantId) {
     if (isStrict()) {
       return rejectRequestWithUploadCleanupInContext(
         context,
@@ -247,7 +248,7 @@ export function restoreTenantContextFromReq(
     return;
   }
 
-  if (tenantId === SYSTEM_TENANT_ID) {
+  if (resolvedTenantId === SYSTEM_TENANT_ID) {
     logger.warn('[restoreTenantContextFromReq] Rejected system tenant for request route', {
       path: req.path,
     });

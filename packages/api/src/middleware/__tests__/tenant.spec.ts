@@ -56,7 +56,10 @@ function runMiddleware(req: ServerRequest, res: Response): Promise<string | unde
   });
 }
 
-function runMiddlewareContext(req: ServerRequest, res: Response): Promise<{
+function runMiddlewareContext(
+  req: ServerRequest,
+  res: Response,
+): Promise<{
   tenantId?: string;
   userId?: string;
   requestId?: string;
@@ -122,7 +125,10 @@ describe('tenantContextMiddleware', () => {
   });
 
   it('keeps user context in non-strict single-tenant mode', async () => {
-    const req = mockReqWithHeaders({ id: 'single-user', role: 'user' }, { 'x-request-id': 'req-1' });
+    const req = mockReqWithHeaders(
+      { id: 'single-user', role: 'user' },
+      { 'x-request-id': 'req-1' },
+    );
     const res = mockRes();
 
     const context = await runMiddlewareContext(req, res);
@@ -315,6 +321,37 @@ describe('restoreTenantContextFromReq', () => {
     await restoreTenantContextFromReq(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects a normalized system tenant sentinel for request-owned work', async () => {
+    const req = mockTenantReq({ role: 'user' }, ` ${SYSTEM_TENANT_ID} `);
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await restoreTenantContextFromReq(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'System tenant is not allowed for request-scoped routes',
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects blank server-resolved tenant IDs in strict mode', async () => {
+    process.env.TENANT_ISOLATION_STRICT = 'true';
+    _resetTenantMiddlewareStrictCache();
+
+    const req = mockTenantReq({ role: 'user' }, '   ');
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await restoreTenantContextFromReq(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.stringContaining('Tenant context required') }),
+    );
     expect(next).not.toHaveBeenCalled();
   });
 
