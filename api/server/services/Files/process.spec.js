@@ -1049,12 +1049,15 @@ describe('processAgentFileUpload', () => {
       getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
       mergeFileConfig.mockReturnValue({
         ...makeFileConfig(),
-        legacyFileUploadUX: true,
+        endpoints: {
+          [EModelEndpoint.agents]: { legacyFileUploadUX: true },
+        },
         defaultLLMDeliveryPath: {
           fallback: 'none',
         },
       });
       const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+      req.body.endpoint = EModelEndpoint.agents;
 
       await processAgentFileUpload({
         req,
@@ -1079,7 +1082,9 @@ describe('processAgentFileUpload', () => {
 
     test('persists llmDeliveryPath none for explicit execute_code uploads', async () => {
       const { createFile } = require('~/models');
-      const codeUpload = jest.fn().mockResolvedValue('session-1/file.csv');
+      const codeUpload = jest
+        .fn()
+        .mockResolvedValue({ storage_session_id: 'sess-csv', file_id: 'fid-csv' });
       const storageUpload = jest.fn().mockResolvedValue({
         filepath: '/uploads/user-123/file-uuid-123__upload.bin',
         bytes: 128,
@@ -1119,7 +1124,14 @@ describe('processAgentFileUpload', () => {
           filepath: '/uploads/user-123/file-uuid-123__upload.bin',
           source: FileSources.local,
           type: 'text/csv',
-          metadata: { fileIdentifier: 'session-1/file.csv' },
+          metadata: {
+            codeEnvRef: {
+              kind: 'agent',
+              id: 'agent-abc',
+              storage_session_id: 'sess-csv',
+              file_id: 'fid-csv',
+            },
+          },
           llmDeliveryPath: 'none',
         }),
         true,
@@ -1266,13 +1278,16 @@ describe('processImageFile', () => {
     });
     mergeFileConfig.mockReturnValue({
       ...makeFileConfig(),
-      legacyFileUploadUX: true,
+      endpoints: {
+        [EModelEndpoint.agents]: { legacyFileUploadUX: true },
+      },
       defaultLLMDeliveryPath: {
         overrides: { 'image/*': 'none' },
       },
     });
     getStrategyFunctions.mockReturnValue({ handleImageUpload });
     const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
 
     await processImageFile({
       req,
