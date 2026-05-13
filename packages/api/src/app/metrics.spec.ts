@@ -12,7 +12,7 @@ describe('normalizePath', () => {
     ['/api/share/some-token-value', '/api/share/#token'],
     ['/share/shareId-with_nanoidChars', '/share/#id'],
     ['/share/shareId-with_nanoidChars/edit', '/share/#id/edit'],
-    // Catch-all: ObjectId in unknown routes (lower and upper case)
+    // Known API routes with dynamic IDs
     ['/api/tags/507f1f77bcf86cd799439011', '/api/tags/#id'],
     ['/api/tags/507F1F77BCF86CD799439011', '/api/tags/#id'],
     ['/api/tools/507f1f77bcf86cd799439011', '/api/tools/#id'],
@@ -31,6 +31,12 @@ describe('normalizePath', () => {
     ['/health', '/health'],
     ['/metrics', '/metrics'],
     ['/', '/'],
+    // Unknown/user-generated routes collapse into bounded label buckets
+    ['/api/not-a-real-route/user-generated-value', '/api/#path'],
+    ['/images/user-123/avatar-1700000000000.png', '/images/#path'],
+    ['/avatars/user-123/avatar-1700000000000.png', '/avatars/#path'],
+    ['/t/tenant-a/images/user-123/avatar-1700000000000.png', '/t/#path'],
+    ['/unknown/shareId-with_nanoidChars', '/#path'],
   ])('normalizes %s -> %s', (input: string, normalized: string) => {
     expect(normalizePath(input)).toBe(normalized);
   });

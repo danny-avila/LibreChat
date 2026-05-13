@@ -5,24 +5,61 @@ import { logger } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 
 const PATH_NORMALIZATIONS: [RegExp, string][] = [
-  [/\/api\/messages\/[^/]+/, '/api/messages/#id'],
-  [/\/api\/convos\/[^/]+/, '/api/convos/#id'],
-  [/\/api\/files\/[^/]+/, '/api/files/#id'],
-  [/\/api\/agents\/[^/]+/, '/api/agents/#id'],
-  [/\/api\/assistants\/[^/]+/, '/api/assistants/#id'],
-  [/\/api\/share\/[^/]+/, '/api/share/#token'],
+  [/^\/api\/convos\/[^/]+\/messages\/[^/]+(?=\/|$)/, '/api/convos/#id/messages/#id'],
+  [/^\/api\/messages\/[^/]+(?=\/|$)/, '/api/messages/#id'],
+  [/^\/api\/convos\/[^/]+(?=\/|$)/, '/api/convos/#id'],
+  [/^\/api\/files\/[^/]+(?=\/|$)/, '/api/files/#id'],
+  [/^\/api\/agents\/[^/]+(?=\/|$)/, '/api/agents/#id'],
+  [/^\/api\/assistants\/[^/]+(?=\/|$)/, '/api/assistants/#id'],
+  [/^\/api\/share\/[^/]+(?=\/|$)/, '/api/share/#token'],
   [/^\/share\/[^/]+(?=\/|$)/, '/share/#id'],
-  /** Catch-all: MongoDB ObjectId (24 hex chars) */
-  [/\/[0-9a-f]{24}(?=\/|$)/gi, '/#id'],
-  /** Catch-all: UUID v4 */
-  [/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi, '/#id'],
+  [/^\/api\/(tags|tools|runs|sessions)\/[0-9a-f]{24}(?=\/|$)/i, '/api/$1/#id'],
+  [
+    /^\/api\/(tools|sessions)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/i,
+    '/api/$1/#id',
+  ],
 ];
 
-export const normalizePath = (rawPath: string): string =>
-  PATH_NORMALIZATIONS.reduce(
+const STATIC_PATHS = new Set(['/', '/health', '/metrics', '/api/auth/login', '/api/config']);
+
+const normalizeUnknownPath = (path: string): string => {
+  if (STATIC_PATHS.has(path)) {
+    return path;
+  }
+
+  if (path === '/api' || path.startsWith('/api/')) {
+    return '/api/#path';
+  }
+
+  if (path === '/images' || path.startsWith('/images/')) {
+    return '/images/#path';
+  }
+
+  if (path === '/avatars' || path.startsWith('/avatars/')) {
+    return '/avatars/#path';
+  }
+
+  if (path === '/t' || path.startsWith('/t/')) {
+    return '/t/#path';
+  }
+
+  return '/#path';
+};
+
+export const normalizePath = (rawPath: string): string => {
+  const [pathWithoutQuery] = rawPath.split('?');
+  const path = pathWithoutQuery.startsWith('/') ? pathWithoutQuery : `/${pathWithoutQuery}`;
+  const normalized = PATH_NORMALIZATIONS.reduce(
     (p, [pattern, replacement]) => p.replace(pattern, replacement),
-    rawPath,
+    path || '/',
   );
+
+  if (normalized !== path) {
+    return normalized;
+  }
+
+  return normalizeUnknownPath(path);
+};
 
 export interface PrometheusMetrics {
   metricsMiddleware: (req: Request, res: Response, next: NextFunction) => void;
