@@ -26,7 +26,10 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
   const [scale, setScale] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const pageInputRef = useRef<HTMLInputElement>(null);
   const [containerWidth, setContainerWidth] = useState<number>(0);
+  const [isEditingPage, setIsEditingPage] = useState(false);
+  const [pageInput, setPageInput] = useState('');
 
   useLayoutEffect(() => {
     const node = canvasRef.current;
@@ -47,14 +50,14 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !isEditingPage) {
         onClose?.();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, isEditingPage]);
 
   const canGoPrev = useMemo(() => pageNumber > 1, [pageNumber]);
   const canGoNext = useMemo(
@@ -76,6 +79,31 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
 
   const goPrev = () => canGoPrev && setPageNumber((prev) => prev - 1);
   const goNext = () => canGoNext && setPageNumber((prev) => prev + 1);
+
+  const startEditingPage = () => {
+    setPageInput(String(pageNumber));
+    setIsEditingPage(true);
+  };
+
+  const commitPageInput = () => {
+    const parsed = parseInt(pageInput, 10);
+    if (!Number.isNaN(parsed) && numPages) {
+      const clamped = Math.min(Math.max(parsed, 1), numPages);
+      setPageNumber(clamped);
+    }
+    setIsEditingPage(false);
+  };
+
+  const cancelPageInput = () => {
+    setIsEditingPage(false);
+  };
+
+  useEffect(() => {
+    if (isEditingPage) {
+      pageInputRef.current?.focus();
+      pageInputRef.current?.select();
+    }
+  }, [isEditingPage]);
 
   const viewer = (
     <div
@@ -160,15 +188,54 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
           >
             <ChevronLeft size={18} />
           </button>
-          <div className="flex flex-1 flex-col items-center">
-            <div className="font-mono text-[12px] font-bold text-ink-800 dark:text-dm-text">
-              {numPages ? `${pageNumber} / ${numPages}` : `${pageNumber}`}
-            </div>
-            {}
-            <div className="mt-0.5 text-[10px] text-cc-slate-500 dark:text-dm-text-mute">
-              Tap to jump to page
-            </div>
-          </div>
+          {isEditingPage && numPages ? (
+            <form
+              className="flex flex-1 flex-col items-center"
+              onSubmit={(event) => {
+                event.preventDefault();
+                commitPageInput();
+              }}
+            >
+              <div className="flex items-baseline justify-center font-mono text-[12px] font-bold text-ink-800 dark:text-dm-text">
+                <input
+                  ref={pageInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={pageInput}
+                  onChange={(event) => setPageInput(event.target.value.replace(/[^0-9]/g, ''))}
+                  onBlur={commitPageInput}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      cancelPageInput();
+                    }
+                  }}
+                  aria-label={`Go to page (1 to ${numPages})`}
+                  className="w-12 rounded-[6px] border border-[rgba(11,47,91,0.20)] bg-white px-1 text-center font-mono text-[12px] font-bold text-ink-800 outline-none focus:border-ink-800 focus:ring-1 focus:ring-ink-800 dark:border-white/[0.20] dark:bg-dm-surface2 dark:text-dm-text dark:focus:border-white/40 dark:focus:ring-white/40"
+                />
+                <span className="ml-1">/ {numPages}</span>
+              </div>
+              <div className="mt-0.5 text-[10px] text-cc-slate-500 dark:text-dm-text-mute">
+                Enter to go, Esc to cancel
+              </div>
+            </form>
+          ) : (
+            <button
+              type="button"
+              onClick={startEditingPage}
+              disabled={!numPages}
+              className="flex flex-1 flex-col items-center rounded-[10px] px-2 py-1 transition hover:bg-[rgba(11,47,91,0.06)] disabled:opacity-60 dark:hover:bg-white/[0.06]"
+              aria-label="Jump to page"
+            >
+              <div className="font-mono text-[12px] font-bold text-ink-800 dark:text-dm-text">
+                {numPages ? `${pageNumber} / ${numPages}` : `${pageNumber}`}
+              </div>
+              <div className="mt-0.5 text-[10px] text-cc-slate-500 dark:text-dm-text-mute">
+                Tap to jump to page
+              </div>
+            </button>
+          )}
           <button
             type="button"
             onClick={goNext}
