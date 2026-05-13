@@ -1,0 +1,52 @@
+node_modules/
+test_bundle/
+#=====================================================================#
+#                         LibreChat Configuration                       #
+#=====================================================================#
+
+HOST=localhost
+PORT=3080
+MONGO_URI=mongodb://127.0.0.1:27017/LibreChat
+DOMAIN_CLIENT=http://localhost:3080
+DOMAIN_SERVER=http://localhost:3080
+DEBUG_LOGGING=true
+
+#===================================================#
+#                     Endpoints                     #
+#===================================================#
+
+# আপনার সক্রিয় মডেলগুলো এখানে এনাবল করা হলো
+ENDPOINTS=openAI,anthropic,google,deepseek
+
+#============#
+#   OpenAI   #
+#============#
+OPENAI_API_KEY=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
+
+#============#
+# Anthropic  #
+#============#
+# আপনার Claude API Key এখানে বসানো হয়েছে
+ANTHROPIC_API_KEY=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
+
+#============#
+#   Google   #
+#============#
+# আপনার Gemini API Key এখানে বসানো হয়েছে
+GOOGLE_KEY=AIzaSyAh8H-qMvHlgP8nz6Rc0cIo8W_wS-UDz8s
+
+#============#
+#  DeepSeek  #
+#============#
+# আপনার DeepSeek API Key এখানে বসানো হয়েছে
+DEEPSEEK_API_KEY=sk-254b8fe132e94eecad8301cc305bd051
+
+#===================================================#
+#                  User & Security                  #
+#===================================================#
+
+ALLOW_REGISTRATION=true
+JWT_SECRET=16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
+JWT_REFRESH_SECRET=eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418
+CREDS_KEY=f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0
+CREDS_IV=e2341419ec3dd3d19b13a1a87fafcbfb
