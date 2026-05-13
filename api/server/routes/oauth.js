@@ -10,6 +10,7 @@ const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionS
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const { getAppConfig } = require('~/server/services/Config');
 const { putExchange } = require('~/cache/nativeOAuthExchange');
+const { putState, consumeState } = require('~/cache/oauthState');
 const { Balance } = require('~/db/models');
 
 const setBalanceConfig = createSetBalanceConfig({
@@ -55,6 +56,12 @@ const buildNativeRedirect = (params) => {
  * short-lived cookie so the success / failure handlers further along the
  * OAuth round trip can recognize the native caller and redirect into the
  * custom URL scheme instead of the web SPA.
+ *
+ * The cookie is a fallback. The primary mechanism is the OAuth `state`
+ * parameter (see `withNativePlatformState`), which survives the full
+ * round trip including Apple's cross-site POST callback where Lax cookies
+ * get stripped and iOS WebView cookie isolation that occasionally drops
+ * cookies across redirects.
  */
 const markNativePlatform = (req, res, next) => {
   const platform = typeof req.query.platform === 'string' ? req.query.platform : null;
@@ -67,6 +74,65 @@ const markNativePlatform = (req, res, next) => {
     });
   }
   next();
+};
+
+/**
+ * Wraps `passport.authenticate(strategy, options)` so that native callers
+ * (?platform=ios|android) get a server-issued `state` token forwarded to
+ * the OAuth provider. The provider round-trips it back, and oauthHandler
+ * consumes it to recover the platform without relying on cookies.
+ *
+ * For web callers (no platform query param), behaves identically to a
+ * direct call to `passport.authenticate`.
+ */
+const withNativePlatformState =
+  (strategyName, options = {}) =>
+  async (req, res, next) => {
+    let state;
+    try {
+      const platform = typeof req.query.platform === 'string' ? req.query.platform : null;
+      if (platform && ALLOWED_NATIVE_PLATFORMS.has(platform)) {
+        state = await putState({ platform });
+      }
+    } catch (err) {
+      logger.warn(`[oauth:${strategyName}] failed to mint native state`, {
+        message: err.message,
+      });
+    }
+    return passport.authenticate(strategyName, {
+      session: false,
+      ...options,
+      ...(state ? { state } : {}),
+    })(req, res, next);
+  };
+
+/**
+ * Resolves the native platform marker from the strongest available source:
+ *   1. OAuth `state` (round-tripped through the provider) — most reliable.
+ *   2. `oauth_platform` cookie — fallback for any flow where state didn't
+ *      survive (shouldn't happen, but defensive).
+ * Returns one of 'ios' | 'android' | null.
+ */
+const resolveNativePlatform = async (req) => {
+  const stateValue =
+    (req.query && typeof req.query.state === 'string' && req.query.state) ||
+    (req.body && typeof req.body.state === 'string' && req.body.state) ||
+    null;
+  if (stateValue) {
+    try {
+      const payload = await consumeState(stateValue);
+      if (payload && ALLOWED_NATIVE_PLATFORMS.has(payload.platform)) {
+        return payload.platform;
+      }
+    } catch (err) {
+      logger.warn('[resolveNativePlatform] consume state failed', { message: err.message });
+    }
+  }
+  const cookieValue = req.cookies?.[OAUTH_PLATFORM_COOKIE];
+  if (ALLOWED_NATIVE_PLATFORMS.has(cookieValue)) {
+    return cookieValue;
+  }
+  return null;
 };
 
 const clearPlatformCookie = (res) => {
@@ -88,8 +154,8 @@ const oauthHandler = async (req, res, next) => {
       return;
     }
 
-    const nativePlatform = req.cookies?.[OAUTH_PLATFORM_COOKIE];
-    const isNative = ALLOWED_NATIVE_PLATFORMS.has(nativePlatform);
+    const nativePlatform = await resolveNativePlatform(req);
+    const isNative = nativePlatform !== null;
 
     let token;
     let refreshToken = null;
@@ -130,15 +196,15 @@ const oauthHandler = async (req, res, next) => {
   }
 };
 
-router.get('/error', (req, res) => {
+router.get('/error', async (req, res) => {
   /** A single error message is pushed by passport when authentication fails. */
   const errorMessage = req.session?.messages?.pop() || 'Unknown error';
   logger.error('Error in OAuth authentication:', {
     message: errorMessage,
   });
 
-  const nativePlatform = req.cookies?.[OAUTH_PLATFORM_COOKIE];
-  if (ALLOWED_NATIVE_PLATFORMS.has(nativePlatform)) {
+  const nativePlatform = await resolveNativePlatform(req);
+  if (nativePlatform) {
     clearPlatformCookie(res);
     return res.redirect(buildNativeRedirect({ error: ErrorTypes.AUTH_FAILED }));
   }
@@ -152,9 +218,8 @@ router.get('/error', (req, res) => {
 router.get(
   '/google',
   markNativePlatform,
-  passport.authenticate('google', {
+  withNativePlatformState('google', {
     scope: ['openid', 'profile', 'email'],
-    session: false,
   }),
 );
 
@@ -177,10 +242,9 @@ router.get(
 router.get(
   '/facebook',
   markNativePlatform,
-  passport.authenticate('facebook', {
+  withNativePlatformState('facebook', {
     scope: ['public_profile'],
     profileFields: ['id', 'email', 'name'],
-    session: false,
   }),
 );
 
@@ -226,9 +290,8 @@ router.get(
 router.get(
   '/github',
   markNativePlatform,
-  passport.authenticate('github', {
+  withNativePlatformState('github', {
     scope: ['user:email', 'read:user'],
-    session: false,
   }),
 );
 
@@ -251,9 +314,8 @@ router.get(
 router.get(
   '/discord',
   markNativePlatform,
-  passport.authenticate('discord', {
+  withNativePlatformState('discord', {
     scope: ['identify', 'email'],
-    session: false,
   }),
 );
 
