@@ -72,6 +72,37 @@ describe('normalizeLangfuseConfig', () => {
     expect(result).toBeUndefined();
   });
 
+  it('clears an explicit enabled override when null is sent', async () => {
+    const result = await normalizeLangfuseConfig(
+      {
+        enabled: null,
+      },
+      {
+        enabled: false,
+      },
+    );
+
+    expect(result).toBeUndefined();
+  });
+
+  it('preserves credentials while clearing an explicit enabled override', async () => {
+    const result = await normalizeLangfuseConfig(
+      {
+        enabled: null,
+      },
+      {
+        enabled: false,
+        publicKey: 'pk-agent',
+        secretKey: '0123456789abcdef0123456789abcdef:736b2d6167656e74',
+      },
+    );
+
+    expect(result).toEqual({
+      publicKey: 'pk-agent',
+      secretKey: '0123456789abcdef0123456789abcdef:736b2d6167656e74',
+    });
+  });
+
   it('clears explicit blank non-secret fields while preserving absent fields', async () => {
     const result = await normalizeLangfuseConfig(
       {

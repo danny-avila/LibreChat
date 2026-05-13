@@ -61,9 +61,10 @@ export async function normalizeLangfuseConfig(
   const existingLangfuse = isRecord(existingConfig) ? existingConfig : {};
   const normalized: LangfuseConfig = {};
 
+  const shouldClearEnabled = hasOwn(incoming, 'enabled') && incoming.enabled === null;
   if (hasOwn(incoming, 'enabled') && typeof incoming.enabled === 'boolean') {
     normalized.enabled = incoming.enabled;
-  } else if (typeof existingLangfuse.enabled === 'boolean') {
+  } else if (!shouldClearEnabled && typeof existingLangfuse.enabled === 'boolean') {
     normalized.enabled = existingLangfuse.enabled;
   }
 

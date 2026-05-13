@@ -143,6 +143,31 @@ describe('composeAgentUpdatePayload', () => {
     });
   });
 
+  it('sends null Langfuse enabled to clear an explicit override', () => {
+    const form = createForm();
+    form.agent = {
+      id: 'agent_123',
+      langfuse: {
+        enabled: false,
+      },
+    } as Agent;
+    form.langfuse = {
+      enabled: null,
+      publicKey: '',
+      secretKey: '',
+      baseUrl: '',
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.langfuse).toEqual({
+      enabled: null,
+      publicKey: '',
+      secretKey: '',
+      baseUrl: '',
+    });
+  });
+
   it('sends the Langfuse secret clear sentinel when requested', () => {
     const form = createForm();
     form.agent = {

@@ -95,7 +95,11 @@ export const agentSubagentsSchema = z
   })
   .optional();
 
-export const agentLangfuseSchema = langfuseConfigSchema.optional();
+export const agentLangfuseSchema = langfuseConfigSchema
+  .extend({
+    enabled: z.union([z.boolean(), z.null()]).optional(),
+  })
+  .optional();
 
 /** Base agent schema with all common fields */
 export const agentBaseSchema = z.object({

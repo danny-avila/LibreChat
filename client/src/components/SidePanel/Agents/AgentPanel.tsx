@@ -65,11 +65,13 @@ function composeLangfusePayload(
   };
   if (typeof langfuse.enabled === 'boolean') {
     normalized.enabled = langfuse.enabled;
+  } else if (langfuse.enabled === null) {
+    normalized.enabled = null;
   }
 
   const hasCredentialValue =
     normalized.publicKey !== '' || normalized.secretKey !== '' || normalized.baseUrl !== '';
-  const hasExplicitEnabled = typeof normalized.enabled === 'boolean';
+  const hasExplicitEnabled = typeof normalized.enabled === 'boolean' || normalized.enabled === null;
 
   if (!hasExplicitEnabled && !hasCredentialValue) {
     return undefined;

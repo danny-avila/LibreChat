@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Activity, Eye, EyeOff, X } from 'lucide-react';
+import { Activity, Eye, EyeOff, RotateCcw, X } from 'lucide-react';
 import { Input, Label, Switch } from '@librechat/client';
 import { LANGFUSE_SECRET_CLEAR_VALUE } from 'librechat-data-provider';
 import type { ControllerRenderProps } from 'react-hook-form';
@@ -11,7 +11,7 @@ interface AgentLangfuseProps {
 }
 
 const fieldDefaults = {
-  enabled: undefined as boolean | undefined,
+  enabled: undefined as boolean | null | undefined,
   publicKey: '',
   secretKey: '',
   baseUrl: '',
@@ -22,15 +22,19 @@ export default function AgentLangfuse({ field }: AgentLangfuseProps) {
   const [showSecret, setShowSecret] = useState(false);
   const value = useMemo(() => ({ ...fieldDefaults, ...(field.value ?? {}) }), [field.value]);
   const enabled = value.enabled === true;
+  const hasEnabledOverride = typeof value.enabled === 'boolean';
   let statusKey = 'com_ui_agent_langfuse_inherited';
-  if (typeof value.enabled === 'boolean') {
+  if (hasEnabledOverride) {
     statusKey = enabled ? 'com_ui_agent_langfuse_enabled' : 'com_ui_agent_langfuse_disabled';
   }
   const secretMarkedForClear = value.secretKey === LANGFUSE_SECRET_CLEAR_VALUE;
   const secretInputValue = secretMarkedForClear ? '' : value.secretKey;
+  const hasCredentialValue =
+    value.publicKey !== '' || secretInputValue !== '' || value.baseUrl !== '';
+  const showConfigFields = enabled || hasCredentialValue || secretMarkedForClear;
 
   const updateField = useCallback(
-    (key: keyof typeof fieldDefaults, next: string | boolean | undefined) => {
+    (key: keyof typeof fieldDefaults, next: string | boolean | null | undefined) => {
       field.onChange({
         ...value,
         [key]: next,
@@ -42,6 +46,10 @@ export default function AgentLangfuse({ field }: AgentLangfuseProps) {
   const toggleClearSecret = useCallback(() => {
     updateField('secretKey', secretMarkedForClear ? '' : LANGFUSE_SECRET_CLEAR_VALUE);
   }, [secretMarkedForClear, updateField]);
+
+  const inheritEnabled = useCallback(() => {
+    updateField('enabled', null);
+  }, [updateField]);
 
   const enableId = 'agent-langfuse-enable-toggle';
 
@@ -65,6 +73,16 @@ export default function AgentLangfuse({ field }: AgentLangfuseProps) {
           <span className="rounded-full border border-border-light px-2 py-0.5 text-xs font-medium text-text-secondary">
             {localize(statusKey)}
           </span>
+          {hasEnabledOverride && (
+            <button
+              type="button"
+              onClick={inheritEnabled}
+              className="inline-flex items-center gap-1 text-xs font-medium text-text-secondary transition-colors hover:text-text-primary"
+            >
+              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+              {localize('com_ui_agent_langfuse_use_inherited')}
+            </button>
+          )}
           <Switch
             id={enableId}
             checked={enabled}
@@ -74,7 +92,7 @@ export default function AgentLangfuse({ field }: AgentLangfuseProps) {
         </div>
       </div>
 
-      {enabled && (
+      {showConfigFields && (
         <div className="mt-3 space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor="agent-langfuse-public-key" className="text-xs font-medium">

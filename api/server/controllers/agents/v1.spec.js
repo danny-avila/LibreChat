@@ -988,6 +988,36 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(latestVersion.langfuse).toBeUndefined();
     });
 
+    test('should remove Langfuse config when update clears only enabled inheritance override', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          langfuse: {
+            enabled: false,
+          },
+        },
+      );
+
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        langfuse: {
+          enabled: null,
+          publicKey: '',
+          secretKey: '',
+          baseUrl: '',
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.langfuse).toBeUndefined();
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.langfuse).toBeUndefined();
+    });
+
     test('uploadAgentAvatarHandler should redact Langfuse secret in response', async () => {
       await Agent.updateOne(
         { id: existingAgentId },

@@ -717,6 +717,7 @@
   "com_ui_agent_langfuse_public_key_placeholder": "Enter your Public Key",
   "com_ui_agent_langfuse_secret_key": "Secret Key",
   "com_ui_agent_langfuse_secret_key_placeholder": "Leave blank to keep current key",
+  "com_ui_agent_langfuse_use_inherited": "Use inherited",
   "com_ui_agent_subagents": "Subagents",
   "com_ui_agent_subagents_add": "Add subagent",
   "com_ui_agent_subagents_agents": "Additional subagents",
