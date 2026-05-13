@@ -139,6 +139,7 @@ const startServer = async () => {
   app.use('/oauth', routes.oauth);
   /* API Endpoints */
   app.use('/api/auth', routes.auth);
+  app.use('/api/auth', routes.oauthNative);
   app.use('/api/admin', routes.admin);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);

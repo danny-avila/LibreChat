@@ -1,8 +1,16 @@
 PODS:
   - Capacitor (8.3.1):
     - CapacitorCordova
+  - CapacitorApp (8.1.0):
+    - Capacitor
+  - CapacitorBrowser (8.0.3):
+    - Capacitor
+  - CapacitorCommunityAppleSignIn (7.1.0):
+    - Capacitor
   - CapacitorCordova (8.3.1)
   - CapacitorKeyboard (8.0.3):
+    - Capacitor
+  - CapacitorPreferences (8.0.1):
     - Capacitor
   - PurchasesHybridCommon (17.55.1):
     - RevenueCat (= 5.67.1)
@@ -21,8 +29,12 @@ PODS:
 
 DEPENDENCIES:
   - "Capacitor (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorApp (from `../../node_modules/@capacitor/app`)"
+  - "CapacitorBrowser (from `../../node_modules/@capacitor/browser`)"
+  - "CapacitorCommunityAppleSignIn (from `../../node_modules/@capacitor-community/apple-sign-in`)"
   - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorKeyboard (from `../../node_modules/@capacitor/keyboard`)"
+  - "CapacitorPreferences (from `../../node_modules/@capacitor/preferences`)"
   - "RevenuecatPurchasesCapacitor (from `../../node_modules/@revenuecat/purchases-capacitor`)"
   - "RevenuecatPurchasesCapacitorUi (from `../../node_modules/@revenuecat/purchases-capacitor-ui`)"
 
@@ -36,10 +48,18 @@ SPEC REPOS:
 EXTERNAL SOURCES:
   Capacitor:
     :path: "../../node_modules/@capacitor/ios"
+  CapacitorApp:
+    :path: "../../node_modules/@capacitor/app"
+  CapacitorBrowser:
+    :path: "../../node_modules/@capacitor/browser"
+  CapacitorCommunityAppleSignIn:
+    :path: "../../node_modules/@capacitor-community/apple-sign-in"
   CapacitorCordova:
     :path: "../../node_modules/@capacitor/ios"
   CapacitorKeyboard:
     :path: "../../node_modules/@capacitor/keyboard"
+  CapacitorPreferences:
+    :path: "../../node_modules/@capacitor/preferences"
   RevenuecatPurchasesCapacitor:
     :path: "../../node_modules/@revenuecat/purchases-capacitor"
   RevenuecatPurchasesCapacitorUi:
@@ -47,8 +67,12 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   Capacitor: 46dbaa89c1d1cd121b9fc2dc839c1f39cc49e326
+  CapacitorApp: 449ffe26375e96f8aaaee625ac6e01e5c57c8650
+  CapacitorBrowser: c987c73d09d8bd3b5ec13f06338b1e14d5d2be69
+  CapacitorCommunityAppleSignIn: 271cb2860576fd2961508bbfa7a82117d93eadca
   CapacitorCordova: 9010447fe25e869705fcf525e5f490facde87608
   CapacitorKeyboard: 31c8285d92c9d1410071d52449f16d2c6673b6f4
+  CapacitorPreferences: cca2021f386efb75947c850334447d9ff22b14f1
   PurchasesHybridCommon: ecd9d7c586287625f1225b8de5e24c1021502270
   PurchasesHybridCommonUI: 3056a3d261529f6adb8f74ecc3ab7f1cc0d3fab4
   RevenueCat: 9357239a9f0978285e68983637b8a602e65c94f0
@@ -56,6 +80,6 @@ SPEC CHECKSUMS:
   RevenuecatPurchasesCapacitorUi: dc2ec0d97638ebe4ac0078452f5c212b1525ea1c
   RevenueCatUI: 6f9291da540f98baf405b5bdfc46b2d5547b704a
 
-PODFILE CHECKSUM: 69d193b698ff2baecb8eede0f5dda019f8cd27fd
+PODFILE CHECKSUM: cbfa6d9befb94d620b57b8e5214ae8e9b08075fd
 
 COCOAPODS: 1.16.2

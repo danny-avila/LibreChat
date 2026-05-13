@@ -103,6 +103,10 @@
   },
   "homepage": "https://librechat.ai/",
   "dependencies": {
+    "@capacitor-community/apple-sign-in": "^7.1.0",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.3",
+    "@capacitor/preferences": "^8.0.1",
     "@revenuecat/purchases-capacitor": "^12.3.0",
     "@revenuecat/purchases-capacitor-ui": "^12.3.2"
   },

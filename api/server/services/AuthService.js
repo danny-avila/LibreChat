@@ -371,7 +371,7 @@ const resetPassword = async (userId, token, password) => {
  * @param {ISession | null} [session=null]
  * @returns
  */
-const setAuthTokens = async (userId, res, _session = null) => {
+const setAuthTokens = async (userId, res, _session = null, options = {}) => {
   try {
     let session = _session;
     let refreshToken;
@@ -402,6 +402,10 @@ const setAuthTokens = async (userId, res, _session = null) => {
       secure: isProduction,
       sameSite: 'strict',
     });
+
+    if (options && options.returnRefresh) {
+      return { token, refreshToken, refreshTokenExpires };
+    }
     return token;
   } catch (error) {
     logger.error('[setAuthTokens] Error in setting authentication tokens:', error);
