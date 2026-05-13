@@ -679,7 +679,19 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     // Get configuration
     const claimPath = process.env.OPENID_GROUPS_CLAIM_PATH || 'realm_access.roles';
     const tokenKind = process.env.OPENID_GROUPS_TOKEN_KIND || 'access';
-    const groupSource = process.env.OPENID_GROUP_SOURCE || 'oidc';
+    // Reject reserved sources owned by other sync paths (would corrupt their groups)
+    const RESERVED_GROUP_SOURCES = ['entra', 'local'];
+    const configuredSource = process.env.OPENID_GROUP_SOURCE;
+    let groupSource = 'oidc';
+    if (configuredSource) {
+      if (RESERVED_GROUP_SOURCES.includes(configuredSource)) {
+        logger.warn(
+          `[PermissionService.syncUserOidcGroupsFromToken] OPENID_GROUP_SOURCE='${configuredSource}' is reserved; falling back to 'oidc'`,
+        );
+      } else {
+        groupSource = configuredSource;
+      }
+    }
     const exclusionPattern = process.env.OPENID_GROUPS_EXCLUDE_PATTERN || null;
 
     // Tenant-scope queries when user.tenantId is set; no-op for single-tenant deployments
@@ -696,8 +708,10 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
       return;
     }
 
-    // Security: Limit maximum number of groups to prevent DoS attacks
-    const MAX_GROUPS_PER_USER = parseInt(process.env.OPENID_MAX_GROUPS_PER_USER, 10) || 100;
+    // Cap groups; reject non-positive values so slice(0, N) can't chop from the end
+    const parsedMaxGroups = parseInt(process.env.OPENID_MAX_GROUPS_PER_USER, 10);
+    const MAX_GROUPS_PER_USER =
+      Number.isFinite(parsedMaxGroups) && parsedMaxGroups > 0 ? parsedMaxGroups : 100;
     if (groupNames.length > MAX_GROUPS_PER_USER) {
       logger.warn(
         `[PermissionService.syncUserOidcGroupsFromToken] User ${user.email} has ${groupNames.length} groups, limiting to ${MAX_GROUPS_PER_USER}`,

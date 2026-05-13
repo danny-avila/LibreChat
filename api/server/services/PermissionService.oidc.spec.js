@@ -630,6 +630,148 @@ describe('syncUserOidcGroupsFromToken', () => {
       expect(insertCall.length).toBe(100);
     });
 
+    it('should fall back to default limit when OPENID_MAX_GROUPS_PER_USER is negative', async () => {
+      process.env.OPENID_MAX_GROUPS_PER_USER = '-5';
+
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      const manyGroups = Array.from({ length: 150 }, (_, i) => `group${i}`);
+      extractGroupsFromToken.mockReturnValue(manyGroups);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      const insertCall = Group.insertMany.mock.calls[0][0];
+      expect(insertCall.length).toBe(100);
+    });
+
+    it('should fall back to default limit when OPENID_MAX_GROUPS_PER_USER is zero', async () => {
+      process.env.OPENID_MAX_GROUPS_PER_USER = '0';
+
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      const manyGroups = Array.from({ length: 150 }, (_, i) => `group${i}`);
+      extractGroupsFromToken.mockReturnValue(manyGroups);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      const insertCall = Group.insertMany.mock.calls[0][0];
+      expect(insertCall.length).toBe(100);
+    });
+
+    it('should fall back to default limit when OPENID_MAX_GROUPS_PER_USER is non-numeric', async () => {
+      process.env.OPENID_MAX_GROUPS_PER_USER = 'abc';
+
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      const manyGroups = Array.from({ length: 150 }, (_, i) => `group${i}`);
+      extractGroupsFromToken.mockReturnValue(manyGroups);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      const insertCall = Group.insertMany.mock.calls[0][0];
+      expect(insertCall.length).toBe(100);
+    });
+
+    it("should reject reserved 'entra' value for OPENID_GROUP_SOURCE and fall back to 'oidc'", async () => {
+      process.env.OPENID_GROUP_SOURCE = 'entra';
+
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      expect(Group.insertMany).toHaveBeenCalledWith(
+        [
+          {
+            name: 'admin',
+            idOnTheSource: 'admin',
+            source: 'oidc',
+            memberIds: ['user-123'],
+          },
+        ],
+        { ordered: false },
+      );
+    });
+
+    it("should reject reserved 'local' value for OPENID_GROUP_SOURCE and fall back to 'oidc'", async () => {
+      process.env.OPENID_GROUP_SOURCE = 'local';
+
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      expect(Group.insertMany).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ source: 'oidc' })]),
+        { ordered: false },
+      );
+    });
+
+    it('should accept non-reserved custom values for OPENID_GROUP_SOURCE', async () => {
+      process.env.OPENID_GROUP_SOURCE = 'keycloak';
+
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+      Group.find = jest.fn().mockResolvedValue([]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await syncUserOidcGroupsFromToken(user, tokenset);
+
+      expect(Group.insertMany).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ source: 'keycloak' })]),
+        { ordered: false },
+      );
+    });
+
     it('should pass exclusion pattern to extractGroupsFromToken', async () => {
       process.env.OPENID_GROUPS_EXCLUDE_PATTERN = 'system-role,regex:^test-.*';
 
