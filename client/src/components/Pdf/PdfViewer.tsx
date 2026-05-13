@@ -17,6 +17,8 @@ type PdfViewerProps = {
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 3;
 const SCALE_STEP = 0.2;
+const MAX_PAGE_WIDTH = 900;
+const CANVAS_PADDING_X = 24;
 
 export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: PdfViewerProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
@@ -29,7 +31,10 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
   useLayoutEffect(() => {
     const node = canvasRef.current;
     if (!node || typeof ResizeObserver === 'undefined') return;
-    const update = () => setContainerWidth(node.clientWidth);
+    const update = () => {
+      const available = Math.max(node.clientWidth - CANVAS_PADDING_X, 0);
+      setContainerWidth(Math.min(available, MAX_PAGE_WIDTH));
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(node);
@@ -89,7 +94,7 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
           className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-white/10 text-white transition hover:bg-white/20 dark:bg-white/[0.06] dark:hover:bg-white/[0.10]"
           aria-label="Close PDF viewer"
         >
-          <ChevronLeft size={20} />
+          <X size={20} />
         </button>
         <div className="flex min-w-0 flex-1 flex-col items-center text-center">
           <div className="truncate text-[14px] font-semibold leading-tight text-white dark:text-dm-text">
@@ -101,23 +106,15 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
             </div>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={zoomIn}
-          disabled={scale >= MAX_SCALE}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-white/10 text-white transition hover:bg-white/20 disabled:opacity-40 dark:bg-white/[0.06] dark:hover:bg-white/[0.10]"
-          aria-label="Zoom in"
-        >
-          <Plus size={18} />
-        </button>
+        <div className="h-9 w-9" aria-hidden="true" />
       </header>
 
       <div
         ref={canvasRef}
-        className="relative flex min-h-0 flex-1 flex-col items-center overflow-auto px-3 py-4"
+        className="relative min-h-0 flex-1 overflow-auto overscroll-contain px-3 py-4 [-webkit-overflow-scrolling:touch]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="overflow-hidden rounded-[14px] border border-[rgba(11,47,91,0.06)] bg-white shadow-[0_1px_0_rgba(11,47,91,0.04),0_12px_28px_-16px_rgba(11,47,91,0.18)] dark:border-white/[0.04] dark:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.5)]">
+        <div className="mx-auto w-fit overflow-hidden rounded-[14px] border border-[rgba(11,47,91,0.06)] bg-white shadow-[0_1px_0_rgba(11,47,91,0.04),0_12px_28px_-16px_rgba(11,47,91,0.18)] dark:border-white/[0.04] dark:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.5)]">
           <Document
             file={fileUrl}
             onLoadSuccess={handleDocumentLoad}
@@ -193,11 +190,12 @@ export default function PdfViewer({ fileUrl, initialPage = 1, onClose, title }: 
           </button>
           <button
             type="button"
-            onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-[rgba(11,47,91,0.06)] text-ink-800 transition hover:bg-[rgba(11,47,91,0.10)] dark:bg-white/[0.06] dark:text-dm-text dark:hover:bg-white/[0.10]"
-            aria-label="Close PDF viewer"
+            onClick={zoomIn}
+            disabled={scale >= MAX_SCALE}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-[rgba(11,47,91,0.06)] text-ink-800 transition hover:bg-[rgba(11,47,91,0.10)] disabled:opacity-40 dark:bg-white/[0.06] dark:text-dm-text dark:hover:bg-white/[0.10]"
+            aria-label="Zoom in"
           >
-            <X size={18} />
+            <Plus size={18} />
           </button>
         </div>
       </div>
