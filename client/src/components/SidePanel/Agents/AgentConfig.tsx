@@ -39,7 +39,6 @@ import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AdminSettings from './AdminSettings';
-import FileContext from './FileContext';
 import SearchForm from './Search/Form';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
@@ -310,8 +309,6 @@ export default function AgentConfig() {
           </label>
           <AgentCategorySelector className="w-full" />
         </div>
-        {/* Instructions */}
-        <Instructions />
         {/* Model and Provider */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="provider">
@@ -341,34 +338,27 @@ export default function AgentConfig() {
             </div>
           </button>
         </div>
-        {/* === SECTION 3 : Actions de l'agent (Accordion replié par défaut) === */}
-        {(webSearchEnabled || fileSearchEnabled || contextEnabled) && (
+        {/* Instructions */}
+        <Instructions />
+        {/* Fichiers de référence */}
+        {fileSearchEnabled && (
+          <div className="mb-4">
+            <label className={labelClass}>{localize('com_ui_reference_files')}</label>
+            <FileSearch agent_id={agent_id} files={knowledge_files} />
+          </div>
+        )}
+        {/* === SECTION 3 : Recherche web (Accordion replié par défaut) === */}
+        {webSearchEnabled && (
           <Accordion type="single" collapsible className="mb-4 w-full">
             <AccordionItem value="agent-actions" className="border-b-0">
               <AccordionTrigger className="text-sm font-medium text-text-primary hover:no-underline">
                 <div className="flex items-center gap-2">
-                  <span>{localize('com_ui_agent_essential_capabilities')}</span>
-                  <TooltipAnchor
-                    description={localize('com_ui_agent_actions_desc')}
-                    className="inline-flex"
-                    render={
-                      <Info
-                        className="size-4 text-text-secondary"
-                        aria-label={localize('com_ui_agent_actions_desc')}
-                      />
-                    }
-                  />
+                  <span>{localize('com_ui_web_search')}</span>
                 </div>
               </AccordionTrigger>
               <AccordionContent>
                 <div className="flex flex-col gap-3 pt-2">
-                  {webSearchEnabled && <SearchForm />}
-                  {fileSearchEnabled && (
-                    <FileSearch agent_id={agent_id} files={knowledge_files} />
-                  )}
-                  {contextEnabled && (
-                    <FileContext agent_id={agent_id} files={context_files} />
-                  )}
+                  <SearchForm />
                 </div>
               </AccordionContent>
             </AccordionItem>

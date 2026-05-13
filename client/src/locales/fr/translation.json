@@ -1106,6 +1106,8 @@
   "com_ui_quality": "Qualité",
   "com_ui_read_aloud": "Lire à haute voix",
   "com_ui_redirecting_to_provider": "Redirection en cours vers {{0}}, veuillez patienter...",
+  "com_ui_drop_files_here": "Glissez vos fichiers ici",
+  "com_ui_reference_files": "Fichiers de référence",
   "com_ui_reference_saved_memories": "Indexer les Souvenirs enregistrés",
   "com_ui_reference_saved_memories_description": "Autoriser l'assistant à accéder aux index des données mémorisées enregistrées et à les utiliser pour répondre",
   "com_ui_refresh": "Rafraichir",

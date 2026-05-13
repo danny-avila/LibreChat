@@ -1,8 +1,8 @@
-import { memo, useMemo, useRef, useState } from 'react';
-import { Folder } from 'lucide-react';
+import { memo, useMemo, useRef, useState, useEffect } from 'react';
+import { Folder, Upload } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { useFormContext } from 'react-hook-form';
-import { SharePointIcon, AttachmentIcon, DropdownPopup } from '@librechat/client';
+import { SharePointIcon, DropdownPopup } from '@librechat/client';
 import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
@@ -11,7 +11,6 @@ import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useGetStartupConfig } from '~/data-provider';
-import FileSearchCheckbox from './FileSearchCheckbox';
 import { isEphemeralAgent } from '~/common';
 
 function FileSearch({
@@ -22,7 +21,10 @@ function FileSearch({
   files?: [string, ExtendedFile][];
 }) {
   const localize = useLocalize();
-  const { watch } = useFormContext<AgentForm>();
+  const { watch, setValue } = useFormContext<AgentForm>();
+  useEffect(() => {
+    setValue(AgentCapabilities.file_search, true);
+  }, [setValue]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
   const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
@@ -111,28 +113,18 @@ function FileSearch({
     },
   ];
 
+  const dropzoneClassName =
+    'flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border-light px-4 py-6 text-text-secondary transition-colors hover:border-border-heavy hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50';
+
   const menuTrigger = (
-    <Ariakit.MenuButton
-      disabled={disabledUploadButton}
-      className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
-    >
-      <div className="flex w-full items-center justify-center gap-1">
-        <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-        {localize('com_ui_upload_file_search')}
-      </div>
+    <Ariakit.MenuButton disabled={disabledUploadButton} className={dropzoneClassName}>
+      <Upload className="h-6 w-6" aria-hidden="true" />
+      <span className="text-sm font-medium">{localize('com_ui_drop_files_here')}</span>
     </Ariakit.MenuButton>
   );
 
   return (
     <div className="w-full">
-      <div className="mb-1.5 flex items-center gap-2">
-        <span>
-          <label className="text-token-text-primary block text-sm font-medium">
-            {localize('com_assistants_file_search')}
-          </label>
-        </span>
-      </div>
-      <FileSearchCheckbox />
       <div className="flex flex-col gap-3">
         {/* File Search (RAG API) Files */}
         <FileRow
@@ -158,13 +150,11 @@ function FileSearch({
             <button
               type="button"
               disabled={disabledUploadButton}
-              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
+              className={dropzoneClassName}
               onClick={handleButtonClick}
             >
-              <div className="flex w-full items-center justify-center gap-1">
-                <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-                {localize('com_ui_upload_file_search')}
-              </div>
+              <Upload className="h-6 w-6" aria-hidden="true" />
+              <span className="text-sm font-medium">{localize('com_ui_drop_files_here')}</span>
             </button>
           )}
           <input
