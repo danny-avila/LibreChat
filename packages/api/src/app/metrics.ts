@@ -11,6 +11,7 @@ const PATH_NORMALIZATIONS: [RegExp, string][] = [
   [/\/api\/agents\/[^/]+/, '/api/agents/#id'],
   [/\/api\/assistants\/[^/]+/, '/api/assistants/#id'],
   [/\/api\/share\/[^/]+/, '/api/share/#token'],
+  [/^\/share\/[^/]+(?=\/|$)/, '/share/#id'],
   /** Catch-all: MongoDB ObjectId (24 hex chars) */
   [/\/[0-9a-f]{24}(?=\/|$)/gi, '/#id'],
   /** Catch-all: UUID v4 */
