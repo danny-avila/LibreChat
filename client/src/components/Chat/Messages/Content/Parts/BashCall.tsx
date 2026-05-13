@@ -18,15 +18,19 @@ export default function BashCall({
   args,
   output = '',
   attachments,
+  commandField = 'command',
+  hideAttachments = false,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
+  commandField?: string;
+  hideAttachments?: boolean;
 }) {
   const localize = useLocalize();
-  const command = useMemo(() => parseJsonField(args, 'command'), [args]);
+  const command = useMemo(() => parseJsonField(args, commandField), [args, commandField]);
   const isWritingCommand = !command || !areToolCallArgsComplete(args);
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
@@ -110,7 +114,9 @@ export default function BashCall({
           </div>
         </div>
       </div>
-      {attachments && attachments.length > 0 && <AttachmentGroup attachments={attachments} />}
+      {!hideAttachments && attachments && attachments.length > 0 && (
+        <AttachmentGroup attachments={attachments} />
+      )}
     </>
   );
 }

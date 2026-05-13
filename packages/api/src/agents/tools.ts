@@ -65,6 +65,13 @@ export interface RegisterCodeExecutionToolsParams {
    */
   includeBash: boolean;
   /**
+   * When `true`, `read_file` tells the model about skill-file paths
+   * (`{skillName}/{path}`). When `false`, it is described only as a
+   * code-execution sandbox reader so execute-code-only agents don't get
+   * prompted to discover skills that are not enabled for the run.
+   */
+  includeSkillFileInstructions?: boolean;
+  /**
    * When `true`, the registered `bash_tool` description includes the
    * LLM-facing `{{tool<idx>turn<turn>}}` reference syntax guide so the
    * model knows it can substitute prior tool outputs in subsequent
@@ -80,11 +87,11 @@ export interface RegisterCodeExecutionToolsResult {
 }
 
 /**
- * Hoisted module-level definition for `read_file` so
+ * Hoisted module-level definition for skill-aware `read_file` so
  * `registerCodeExecutionTools` doesn't re-allocate on every call. The
- * shape is derived entirely from a static `@librechat/agents` export —
- * no per-request state — so a single frozen object is safe to share
- * across every agent init.
+ * shape is derived from a static `@librechat/agents` export — no
+ * per-request state — so a single frozen object is safe to share across
+ * every agent init.
  */
 const READ_FILE_DEF: LCTool = Object.freeze({
   name: ReadFileToolDefinition.name,
@@ -92,6 +99,47 @@ const READ_FILE_DEF: LCTool = Object.freeze({
   parameters: ReadFileToolDefinition.parameters as unknown as LCTool['parameters'],
   responseFormat: ReadFileToolDefinition.responseFormat,
 }) as LCTool;
+
+const CODE_READ_FILE_DESCRIPTION = `Read the contents of a file from the code-execution sandbox or from prior code-execution output. Returns text content with line numbers for easy reference.
+
+BEHAVIOR:
+- Text files: returned with numbered lines.
+- Large text files are truncated around 256KB with a note to use bash_tool for the full content.
+- Binary files and formats that are not safe to serialize as text may return an error. Use bash_tool to inspect or process them.
+
+CONSTRAINTS:
+- Only files produced by code execution or attached to the code-execution sandbox are accessible.
+- Use paths returned by tool output or paths under /mnt/data/.
+- Do not guess file paths. Use bash_tool to inspect available sandbox files when needed.`;
+
+const CODE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+  type: 'object',
+  properties: {
+    file_path: {
+      type: 'string',
+      description:
+        'Path to a file from code execution output, such as "/mnt/data/result.csv" or another path returned by the execution tool.',
+    },
+  },
+  required: ['file_path'],
+}) as LCTool['parameters'];
+
+const CODE_READ_FILE_DEF: LCTool = Object.freeze({
+  name: ReadFileToolDefinition.name,
+  description: CODE_READ_FILE_DESCRIPTION,
+  parameters: CODE_READ_FILE_PARAMETERS,
+  responseFormat: ReadFileToolDefinition.responseFormat,
+}) as LCTool;
+
+function buildReadFileDef(includeSkillFileInstructions: boolean): LCTool {
+  return includeSkillFileInstructions ? READ_FILE_DEF : CODE_READ_FILE_DEF;
+}
+
+function isCodeOnlyReadFileDef(def: LCTool | undefined): boolean {
+  return (
+    def?.name === ReadFileToolDefinition.name && def?.description === CODE_READ_FILE_DESCRIPTION
+  );
+}
 
 /**
  * The `bash_tool` description varies along exactly one axis — whether
@@ -122,9 +170,11 @@ function buildBashToolDef(opts: { enableToolOutputReferences: boolean }): LCTool
 }
 
 /**
- * Idempotently registers the skill-flavored code-execution tool pair
- * (`bash_tool` + `read_file`) into the run's tool registry and
- * tool-definition list.
+ * Idempotently registers the code-execution tool pair (`bash_tool` +
+ * `read_file`) into the run's tool registry and tool-definition list.
+ * `read_file` can be registered with a code-only description first and
+ * upgraded to the skill-aware description later in the same run if
+ * skills are actually injected.
  *
  * Replaces the legacy `CodeExecutionToolDefinition` / `execute_code`
  * registration. `execute_code` as a capability name and as an
@@ -136,19 +186,46 @@ function buildBashToolDef(opts: { enableToolOutputReferences: boolean }): LCTool
 export function registerCodeExecutionTools(
   params: RegisterCodeExecutionToolsParams,
 ): RegisterCodeExecutionToolsResult {
-  const { toolRegistry, toolDefinitions, includeBash, enableToolOutputReferences = false } = params;
+  const {
+    toolRegistry,
+    toolDefinitions,
+    includeBash,
+    includeSkillFileInstructions = true,
+    enableToolOutputReferences = false,
+  } = params;
 
+  const readFileDef = buildReadFileDef(includeSkillFileInstructions);
   const candidates: LCTool[] = includeBash
-    ? [READ_FILE_DEF, buildBashToolDef({ enableToolOutputReferences })]
-    : [READ_FILE_DEF];
+    ? [readFileDef, buildBashToolDef({ enableToolOutputReferences })]
+    : [readFileDef];
 
-  const existingNames = new Set((toolDefinitions ?? []).map((d) => d.name));
+  const inputDefinitions = toolDefinitions ?? [];
+  let workingDefinitions = inputDefinitions;
 
   const registered: string[] = [];
   const newDefs: LCTool[] = [];
   for (const def of candidates) {
+    const existingIndex = workingDefinitions.findIndex((d) => d.name === def.name);
+    const existingDef = existingIndex >= 0 ? workingDefinitions[existingIndex] : undefined;
+    const registryDef = toolRegistry?.get(def.name);
+    if (
+      def.name === ReadFileToolDefinition.name &&
+      includeSkillFileInstructions &&
+      (isCodeOnlyReadFileDef(existingDef) || isCodeOnlyReadFileDef(registryDef))
+    ) {
+      if (isCodeOnlyReadFileDef(existingDef)) {
+        workingDefinitions =
+          workingDefinitions === inputDefinitions ? [...inputDefinitions] : workingDefinitions;
+        workingDefinitions[existingIndex] = def;
+      }
+      if (isCodeOnlyReadFileDef(registryDef)) {
+        toolRegistry?.set(def.name, def);
+      }
+      continue;
+    }
+
     const inRegistry = toolRegistry?.has(def.name) === true;
-    const inDefs = existingNames.has(def.name);
+    const inDefs = existingIndex >= 0;
     if (inRegistry || inDefs) {
       continue;
     }
@@ -158,15 +235,15 @@ export function registerCodeExecutionTools(
   }
 
   /**
-   * Skip the array spread on the common second-call no-op path (both tools
-   * already registered by the first caller in the same run). Returns the
-   * input array by reference; callers treat the return value as immutable.
+   * Skip the array spread on the common second-call path when no tools were
+   * newly registered. Returns the input array by reference unless an existing
+   * code-only `read_file` definition was upgraded above.
    */
   if (newDefs.length === 0) {
-    return { toolDefinitions: toolDefinitions ?? [], registered };
+    return { toolDefinitions: workingDefinitions, registered };
   }
   return {
-    toolDefinitions: [...(toolDefinitions ?? []), ...newDefs],
+    toolDefinitions: [...workingDefinitions, ...newDefs],
     registered,
   };
 }

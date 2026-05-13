@@ -1,4 +1,5 @@
 import { EToolResources } from './assistants';
+import type { CodeEnvRef } from '../codeEnvRef';
 
 export enum FileSources {
   local = 'local',
@@ -50,6 +51,9 @@ export type FileConfig = {
   endpoints: {
     [key: string]: EndpointFileConfig;
   };
+  skills?: {
+    fileSizeLimit?: number;
+  };
   fileTokenLimit?: number;
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
@@ -75,6 +79,9 @@ export type FileConfigInput = {
   endpoints?: {
     [key: string]: EndpointFileConfig;
   };
+  skills?: {
+    fileSizeLimit?: number;
+  };
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
   clientImageResize?: {
@@ -99,6 +106,9 @@ export type TFile = {
   _id?: string;
   __v?: number;
   user: string;
+  tenantId?: string;
+  storageRegion?: string;
+  storageKey?: string;
   conversationId?: string;
   message?: string;
   file_id: string;
@@ -141,7 +151,15 @@ export type TFile = {
    * Suitable for tooltip text but not user-facing prose.
    */
   previewError?: string;
-  metadata?: { fileIdentifier?: string };
+  metadata?: {
+    fileIdentifier?: string;
+    /**
+     * Structured form of `fileIdentifier`. Persisted alongside the
+     * legacy string during the dual-write transition; readers should
+     * resolve via `resolveCodeEnvRef`.
+     */
+    codeEnvRef?: CodeEnvRef;
+  };
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };
@@ -174,6 +192,13 @@ export type TFilePreview = {
 
 export type AvatarUploadResponse = {
   url: string;
+};
+
+export type FileDownloadURLResponse = {
+  url: string;
+  filename: string;
+  type: string;
+  metadata: Partial<TFile>;
 };
 
 export type SpeechToTextResponse = {
@@ -220,6 +245,8 @@ export type DeleteFilesResponse = {
 export type BatchFile = {
   file_id: string;
   filepath: string;
+  storageRegion?: string;
+  storageKey?: string;
   embedded: boolean;
   source: FileSources;
   temp_file_id?: string;

@@ -1,6 +1,12 @@
+import { logger } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
-import { EModelEndpoint, FileSources } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  FileSources,
+  MAX_SUBAGENT_DEPTH,
+  MAX_SUBAGENT_RUN_CONFIGS,
+} from 'librechat-data-provider';
 import { createRun } from '~/agents/run';
 
 // Mock winston logger
@@ -19,6 +25,16 @@ jest.mock('winston', () => ({
 jest.mock('~/utils/env', () => ({
   resolveHeaders: jest.fn((opts: { headers: unknown }) => opts?.headers ?? {}),
   createSafeUser: jest.fn(() => ({})),
+}));
+
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  logger: {
+    debug: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    info: jest.fn(),
+  },
 }));
 
 // Mock Run.create to capture the graphConfig it receives
@@ -51,6 +67,57 @@ function makeAgent(
     toolContextMap: {},
     ...overrides,
   };
+}
+
+type TestRunAgent = ReturnType<typeof makeAgent> & {
+  subagentAgentConfigs?: TestRunAgent[];
+};
+
+function makeSubagentChain(hops: number): TestRunAgent {
+  const agents = Array.from({ length: hops + 1 }, (_, index) =>
+    makeAgent({
+      id: `agent_chain_${index}`,
+      name: `Chain ${index}`,
+    }),
+  ) as TestRunAgent[];
+
+  for (let index = 0; index < hops; index++) {
+    const child = agents[index + 1];
+    agents[index].subagents = { enabled: true, allowSelf: false, agent_ids: [child.id] };
+    agents[index].subagentAgentConfigs = [child];
+  }
+
+  return agents[0];
+}
+
+function makeLayeredSubagentDag(width: number, depth: number): TestRunAgent {
+  const root = makeAgent({ id: 'agent_dag_root', name: 'DAG Root' }) as TestRunAgent;
+  const layers: TestRunAgent[][] = [[root]];
+
+  for (let level = 1; level <= depth; level++) {
+    layers.push(
+      Array.from({ length: width }, (_, index) =>
+        makeAgent({
+          id: `agent_dag_${level}_${index}`,
+          name: `DAG ${level}.${index}`,
+        }),
+      ) as TestRunAgent[],
+    );
+  }
+
+  for (let level = 0; level < depth; level++) {
+    const children = layers[level + 1];
+    for (const agent of layers[level]) {
+      agent.subagents = {
+        enabled: true,
+        allowSelf: false,
+        agent_ids: children.map((child) => child.id),
+      };
+      agent.subagentAgentConfigs = children;
+    }
+  }
+
+  return root;
 }
 
 /** Helper: call createRun and return the captured agentInputs array */
@@ -939,6 +1006,48 @@ describe('subagentConfigs', () => {
     };
     expect(childInputs.initialSummary).toBeUndefined();
     expect(childInputs.discoveredTools).toBeUndefined();
+  });
+
+  it('rejects subagent graphs deeper than MAX_SUBAGENT_DEPTH before Run.create', async () => {
+    await expect(
+      createRun({
+        agents: [makeSubagentChain(MAX_SUBAGENT_DEPTH + 1)] as never,
+        signal: new AbortController().signal,
+        streaming: true,
+        streamUsage: true,
+      }),
+    ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[createRun] Subagent graph depth limit exceeded',
+      expect.objectContaining({
+        agentId: `agent_chain_${MAX_SUBAGENT_DEPTH + 1}`,
+        depth: MAX_SUBAGENT_DEPTH + 1,
+        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+      }),
+    );
+    expect(Run.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects layered DAGs that exceed MAX_SUBAGENT_RUN_CONFIGS expanded entries', async () => {
+    await expect(
+      createRun({
+        agents: [makeLayeredSubagentDag(3, MAX_SUBAGENT_DEPTH)] as never,
+        signal: new AbortController().signal,
+        streaming: true,
+        streamUsage: true,
+      }),
+    ).rejects.toThrow(`maximum of ${MAX_SUBAGENT_RUN_CONFIGS} expanded entries`);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[createRun] Subagent run configuration limit exceeded',
+      expect.objectContaining({
+        expandedConfigCount: MAX_SUBAGENT_RUN_CONFIGS + 1,
+        maxSubagentRunConfigs: MAX_SUBAGENT_RUN_CONFIGS,
+        rootAgentIds: ['agent_dag_root'],
+      }),
+    );
+    expect(Run.create).not.toHaveBeenCalled();
   });
 });
 

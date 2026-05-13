@@ -6,8 +6,10 @@ import type * as t from './types';
 import { ContentTypes } from './types/runs';
 import {
   openAISchema,
+  openRouterSchema,
   googleSchema,
   EModelEndpoint,
+  Providers,
   anthropicSchema,
   assistantSchema,
   // agentsSchema,
@@ -20,6 +22,7 @@ import { alternateName } from './config';
 
 type EndpointSchema =
   | typeof openAISchema
+  | typeof openRouterSchema
   | typeof googleSchema
   | typeof anthropicSchema
   | typeof assistantSchema
@@ -27,17 +30,37 @@ type EndpointSchema =
   | typeof bedrockInputSchema;
 
 export type EndpointSchemaKey = EModelEndpoint;
+type EndpointSchemaLookupKey = EModelEndpoint | Providers.OPENROUTER;
 
-const endpointSchemas: Record<EndpointSchemaKey, EndpointSchema> = {
+const endpointSchemas: Record<EndpointSchemaLookupKey, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
+  [Providers.OPENROUTER]: openRouterSchema,
   [EModelEndpoint.google]: googleSchema,
   [EModelEndpoint.anthropic]: anthropicSchema,
   [EModelEndpoint.assistants]: assistantSchema,
   [EModelEndpoint.azureAssistants]: assistantSchema,
   [EModelEndpoint.agents]: compactAgentsSchema,
   [EModelEndpoint.bedrock]: bedrockInputSchema,
+};
+
+const isEndpointSchemaLookupKey = (value?: string | null): value is EndpointSchemaLookupKey =>
+  value != null && Object.prototype.hasOwnProperty.call(endpointSchemas, value);
+
+const getFallbackEndpointSchema = <TSchema>(
+  schemas: Record<EndpointSchemaLookupKey, TSchema>,
+  endpointType?: EndpointSchemaKey | null,
+  defaultParamsEndpoint?: string | null,
+): TSchema | undefined => {
+  if (!endpointType) {
+    return undefined;
+  }
+
+  const overrideSchema = isEndpointSchemaLookupKey(defaultParamsEndpoint)
+    ? schemas[defaultParamsEndpoint]
+    : undefined;
+  return overrideSchema ?? schemas[endpointType];
 };
 
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
@@ -152,17 +175,15 @@ export const parseConvo = ({
   possibleValues?: TPossibleValues;
   defaultParamsEndpoint?: string | null;
 }) => {
-  let schema = endpointSchemas[endpoint] as EndpointSchema | undefined;
+  const primarySchema = endpointSchemas[endpoint] as EndpointSchema | undefined;
 
-  if (!schema && !endpointType) {
+  if (!primarySchema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema) {
-    const overrideSchema = defaultParamsEndpoint
-      ? endpointSchemas[defaultParamsEndpoint as EndpointSchemaKey]
-      : undefined;
-    schema = overrideSchema ?? (endpointType ? endpointSchemas[endpointType] : undefined);
   }
 
+  const schema =
+    primarySchema ??
+    getFallbackEndpointSchema(endpointSchemas, endpointType, defaultParamsEndpoint);
   const convo = schema?.parse(conversation) as s.TConversation | undefined;
   const { models } = possibleValues ?? {};
 
@@ -289,13 +310,15 @@ type CompactEndpointSchema =
   | typeof compactAssistantSchema
   | typeof compactAgentsSchema
   | typeof compactGoogleSchema
+  | typeof openRouterSchema
   | typeof anthropicSchema
   | typeof bedrockInputSchema;
 
-const compactEndpointSchemas: Record<EndpointSchemaKey, CompactEndpointSchema> = {
+const compactEndpointSchemas: Record<EndpointSchemaLookupKey, CompactEndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
+  [Providers.OPENROUTER]: openRouterSchema,
   [EModelEndpoint.assistants]: compactAssistantSchema,
   [EModelEndpoint.azureAssistants]: compactAssistantSchema,
   [EModelEndpoint.agents]: compactAgentsSchema,
@@ -321,16 +344,15 @@ export const parseCompactConvo = ({
     throw new Error(`undefined endpoint: ${endpoint}`);
   }
 
-  let schema = compactEndpointSchemas[endpoint] as CompactEndpointSchema | undefined;
+  const primarySchema = compactEndpointSchemas[endpoint] as CompactEndpointSchema | undefined;
 
-  if (!schema && !endpointType) {
+  if (!primarySchema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema) {
-    const overrideSchema = defaultParamsEndpoint
-      ? compactEndpointSchemas[defaultParamsEndpoint as EndpointSchemaKey]
-      : undefined;
-    schema = overrideSchema ?? (endpointType ? compactEndpointSchemas[endpointType] : undefined);
   }
+
+  const schema =
+    primarySchema ??
+    getFallbackEndpointSchema(compactEndpointSchemas, endpointType, defaultParamsEndpoint);
 
   if (!schema) {
     throw new Error(`Unknown endpointType: ${endpointType}`);

@@ -127,7 +127,7 @@ describe('primeResources', () => {
           embedded: false,
           usage: 0,
           metadata: {
-            fileIdentifier: 'python-script',
+            codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'fid' },
           },
         },
       ];
@@ -328,7 +328,7 @@ describe('primeResources', () => {
           embedded: false,
           usage: 0,
           metadata: {
-            fileIdentifier: 'python-script',
+            codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'fid' },
           },
         },
       ];
@@ -542,7 +542,7 @@ describe('primeResources', () => {
         embedded: false,
         usage: 0,
         metadata: {
-          fileIdentifier: 'python-script',
+          codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'fid' },
         },
       };
 
@@ -713,7 +713,7 @@ describe('primeResources', () => {
         embedded: false,
         usage: 0,
         metadata: {
-          fileIdentifier: 'python-script',
+          codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'fid' },
         },
       };
 
@@ -728,7 +728,7 @@ describe('primeResources', () => {
         embedded: false,
         usage: 0,
         metadata: {
-          fileIdentifier: 'python-script',
+          codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'fid' },
         },
       };
 
@@ -878,7 +878,7 @@ describe('primeResources', () => {
         embedded: false,
         usage: 0,
         metadata: {
-          fileIdentifier: 'python-script',
+          codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'fid' },
         },
       };
 
@@ -1128,7 +1128,7 @@ describe('primeResources', () => {
           embedded: false,
           usage: 0,
           metadata: {
-            fileIdentifier: 'python-script',
+            codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'fid' },
           },
         },
         {

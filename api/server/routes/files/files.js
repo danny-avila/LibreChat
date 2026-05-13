@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
+  logAxiosError,
   refreshS3FileUrls,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
@@ -29,7 +30,7 @@ const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
-const { cleanFileName } = require('~/server/utils/files');
+const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
 const db = require('~/models');
@@ -106,7 +107,9 @@ router.get('/agent/:agent_id', async (req, res) => {
       return res.status(200).json([]);
     }
 
-    const files = await db.getFiles({ file_id: { $in: agentFileIds } }, null, { text: 0 });
+    const files = await db.getFiles({ file_id: { $in: agentFileIds }, user: agent.author }, null, {
+      text: 0,
+    });
 
     res.status(200).json(files);
   } catch (error) {
@@ -164,7 +167,7 @@ router.delete('/', async (req, res) => {
       }
     }
 
-    if (nonOwnedFiles.length === 0) {
+    if (dbFiles.length > 0 && nonOwnedFiles.length === 0) {
       await processDeleteRequest({ req, files: ownedFiles });
       logger.debug(
         `[/files] Files deleted successfully: ${ownedFiles
@@ -187,6 +190,7 @@ router.delete('/', async (req, res) => {
         fileIds: nonOwnedFileIds,
         agentId: req.body.agent_id,
         isDelete: true,
+        files: nonOwnedFiles,
       });
 
       for (const file of nonOwnedFiles) {
@@ -214,9 +218,30 @@ router.delete('/', async (req, res) => {
       });
 
       const toolResourceFiles = agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
-      const agentFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
+      const agentFiles = files
+        .filter((f) => toolResourceFiles.includes(f.file_id))
+        .map((file) => ({ tool_resource: req.body.tool_resource, file_id: file.file_id }));
+      const hasAgentEditAccess =
+        agent.author?.toString() === req.user.id.toString() ||
+        (await checkPermission({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          requiredPermission: PermissionBits.EDIT,
+        }));
+      const unauthorizedFiles = hasAgentEditAccess ? [] : agentFiles;
+      if (unauthorizedFiles.length > 0) {
+        return res.status(403).json({
+          message: 'You can only delete files you have access to',
+          unauthorizedFiles: unauthorizedFiles.map((file) => file.file_id),
+        });
+      }
 
-      await processDeleteRequest({ req, files: agentFiles });
+      await db.removeAgentResourceFiles({
+        agent_id: req.body.agent_id,
+        files: agentFiles,
+      });
       res.status(200).json({ message: 'File associations removed successfully from agent' });
       return;
     }
@@ -285,12 +310,30 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
       return res.status(501).send('Not Implemented');
     }
 
+    /* Code-output downloads are always user-private — `processCodeOutput`
+     * persists every code-execution artifact under
+     * `metadata.codeEnvRef.kind === 'user'` regardless of which skill
+     * the run invoked. Pass `kind: 'user'` + `id: <userId>` so codeapi's
+     * `sessionAuth` resolves the matching `<tenant>:user:<userId>`
+     * sessionKey; without these query params it 400s with
+     * "kind must be one of: skill, agent, user". */
     /** @type {AxiosResponse<ReadableStream> | undefined} */
-    const response = await getDownloadStream(`${session_id}/${fileId}`);
+    const response = await getDownloadStream(
+      `${session_id}/${fileId}`,
+      {
+        kind: 'user',
+        id: req.user.id,
+      },
+      req,
+    );
     res.set(response.headers);
     response.data.pipe(res);
   } catch (error) {
-    logger.error('Error downloading file:', error);
+    /* `logAxiosError` redacts buffer/stream response bodies — without
+     * it, a stream-typed axios failure dumps the entire `Readable`'s
+     * internal state (megabytes of socket + readableState) into the
+     * log line. Plain `logger.error(error)` would do that here. */
+    logAxiosError({ message: 'Error downloading code-output file', error });
     res.status(500).send('Error downloading file');
   }
 });
@@ -375,6 +418,106 @@ router.get('/:file_id/preview', fileAccess, async (req, res) => {
   }
 });
 
+/**
+ * Returns a strategy-managed signed URL for an already-authorized file record.
+ */
+const getDirectDownloadURL = async ({
+  req,
+  file,
+  customFilename = cleanFileName(file.filename),
+}) => {
+  const { getDownloadURL } = getStrategyFunctions(file.source);
+  if (!getDownloadURL) {
+    return null;
+  }
+
+  return getDownloadURL({
+    req,
+    file,
+    customFilename,
+    contentType: file.type || 'application/octet-stream',
+  });
+};
+
+// Security allowlist: excludes internal ids, owner/tenant identifiers, and extracted text.
+// `filepath` stays included because cached TFile records need it for previews/deletes.
+const DOWNLOAD_METADATA_FIELDS = [
+  'conversationId',
+  'message',
+  'file_id',
+  'temp_file_id',
+  'bytes',
+  'model',
+  'embedded',
+  'filename',
+  'filepath',
+  'storageKey',
+  'storageRegion',
+  'object',
+  'type',
+  'usage',
+  'context',
+  'source',
+  'filterSource',
+  'width',
+  'height',
+  'expiresAt',
+  'preview',
+  'textFormat',
+  'status',
+  'previewError',
+  'createdAt',
+  'updatedAt',
+];
+
+const getDownloadFileMetadata = (file) => {
+  const rawFile = typeof file.toObject === 'function' ? file.toObject() : file;
+  return DOWNLOAD_METADATA_FIELDS.reduce((metadata, field) => {
+    if (rawFile[field] !== undefined) {
+      metadata[field] = rawFile[field];
+    }
+    return metadata;
+  }, {});
+};
+
+router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
+  try {
+    const { userId, file_id } = req.params;
+    logger.debug(`File download URL requested by user ${userId}: ${file_id}`);
+
+    const file = req.fileAccess.file;
+    if (checkOpenAIStorage(file.source) && !file.model) {
+      logger.warn(
+        `File download URL requested by user ${userId} has no associated model: ${file_id}`,
+      );
+      return res.status(400).send('The model used when creating this file is not available');
+    }
+
+    const filename = cleanFileName(file.filename);
+    const downloadURL = checkOpenAIStorage(file.source)
+      ? null
+      : await getDirectDownloadURL({ req, file, customFilename: filename });
+
+    if (!downloadURL) {
+      logger.debug(
+        `File download URL requested by user ${userId} is not supported for source: ${file.source}`,
+      );
+      return res.status(501).send('Not Implemented');
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({
+      url: downloadURL,
+      filename,
+      type: file.type || 'application/octet-stream',
+      metadata: getDownloadFileMetadata(file),
+    });
+  } catch (error) {
+    logger.error('[DOWNLOAD URL ROUTE] Error generating file download URL:', error);
+    res.status(500).send('Error generating file download URL');
+  }
+});
+
 router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   try {
     const { userId, file_id } = req.params;
@@ -388,19 +531,21 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       return res.status(400).send('The model used when creating this file is not available');
     }
 
-    const { getDownloadStream } = getStrategyFunctions(file.source);
-    if (!getDownloadStream) {
+    const { getDownloadStream, getDownloadURL } = getStrategyFunctions(file.source);
+    if (!getDownloadStream && !getDownloadURL) {
       logger.warn(
-        `File download requested by user ${userId} has no stream method implemented: ${file.source}`,
+        `File download requested by user ${userId} has no download method implemented: ${file.source}`,
       );
       return res.status(501).send('Not Implemented');
     }
 
     const setHeaders = () => {
-      const cleanedFilename = cleanFileName(file.filename);
-      res.setHeader('Content-Disposition', `attachment; filename="${cleanedFilename}"`);
+      res.setHeader('Content-Disposition', getContentDisposition(file.filename));
       res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('X-File-Metadata', JSON.stringify(file));
+      res.setHeader(
+        'X-File-Metadata',
+        encodeURIComponent(JSON.stringify(getDownloadFileMetadata(file))),
+      );
     };
 
     if (checkOpenAIStorage(file.source)) {
@@ -427,7 +572,29 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
       stream.pipe(res);
     } else {
-      const fileStream = await getDownloadStream(req, file.filepath);
+      if (getDownloadURL && req.query.direct === 'true') {
+        try {
+          const downloadURL = await getDirectDownloadURL({ req, file });
+          if (downloadURL) {
+            res.setHeader('Cache-Control', 'no-store');
+            return res.redirect(302, downloadURL);
+          }
+        } catch (error) {
+          logger.warn(
+            '[DOWNLOAD ROUTE] Falling back to stream after URL generation failed:',
+            error,
+          );
+        }
+      }
+
+      if (!getDownloadStream) {
+        logger.warn(
+          `File download requested by user ${userId} has no stream method implemented: ${file.source}`,
+        );
+        return res.status(501).send('Not Implemented');
+      }
+
+      const fileStream = await getDownloadStream(req, file.storageKey || file.filepath);
 
       fileStream.on('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);

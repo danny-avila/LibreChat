@@ -1,7 +1,29 @@
 const express = require('express');
 const request = require('supertest');
+const JSZip = require('jszip');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    mergeFileConfig: jest.fn((dynamic) => {
+      const skillFileSizeLimit = dynamic?.skills?.fileSizeLimit;
+      return {
+        ...actual.fileConfig,
+        ...dynamic,
+        skills: {
+          ...(actual.fileConfig.skills ?? { fileSizeLimit: 50 * 1024 * 1024 }),
+          ...(skillFileSizeLimit !== undefined
+            ? { fileSizeLimit: skillFileSizeLimit * 1024 * 1024 }
+            : {}),
+        },
+      };
+    }),
+  };
+});
+
 const {
   SystemRoles,
   ResourceType,
@@ -9,6 +31,8 @@ const {
   PrincipalType,
   PermissionBits,
 } = require('librechat-data-provider');
+
+let mockFileConfig;
 
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
@@ -22,6 +46,7 @@ jest.mock('~/server/middleware/config/app', () => (req, _res, next) => {
   req.config = {
     fileStrategy: 'local',
     paths: { uploads: '/tmp/uploads', images: '/tmp/images' },
+    fileConfig: mockFileConfig,
   };
   next();
 });
@@ -126,6 +151,7 @@ afterEach(async () => {
   await SkillFile.deleteMany({});
   await AclEntry.deleteMany({});
   currentTestUser = testUsers.owner;
+  mockFileConfig = undefined;
 });
 
 afterAll(async () => {
@@ -295,6 +321,77 @@ describe('Skill routes', () => {
       expect(a.status).toBe(201);
       const b = await createSkillAsOwner();
       expect(b.status).toBe(409);
+    });
+  });
+
+  describe('POST /api/skills/import', () => {
+    it('enforces fileConfig.skills.fileSizeLimit before import handling', async () => {
+      mockFileConfig = {
+        skills: {
+          fileSizeLimit: 1,
+        },
+      };
+
+      const res = await request(app)
+        .post('/api/skills/import')
+        .attach('file', Buffer.alloc(2 * 1024 * 1024), {
+          filename: 'too-large.skill',
+          contentType: 'application/zip',
+        });
+
+      const { mergeFileConfig } = require('librechat-data-provider');
+      expect(mergeFileConfig).toHaveBeenCalledWith(mockFileConfig);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/file too large/i);
+    });
+
+    it('persists storage metadata for imported skill files', async () => {
+      const savedFilepath =
+        'https://cdn.example.com/r/us-east-2/uploads/user123/imported-script.sh';
+      const saveBuffer = jest.fn().mockResolvedValue(savedFilepath);
+      const { getFileStrategy } = require('~/server/utils/getFileStrategy');
+      const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+      getFileStrategy.mockReturnValueOnce('cloudfront');
+      getStrategyFunctions.mockReturnValueOnce({ saveBuffer });
+
+      const zip = new JSZip();
+      zip.file(
+        'SKILL.md',
+        [
+          '---',
+          'name: imported-skill',
+          'description: Imported skill description for route tests.',
+          '---',
+          '# Imported Skill',
+        ].join('\n'),
+      );
+      zip.file('scripts/imported-script.sh', 'echo imported');
+      const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+      const res = await request(app).post('/api/skills/import').attach('file', buffer, {
+        filename: 'imported-skill.skill',
+        contentType: 'application/zip',
+      });
+
+      expect(res.status).toBe(201);
+      expect(saveBuffer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: testUsers.owner._id.toString(),
+          basePath: 'uploads',
+        }),
+      );
+
+      const savedFile = await SkillFile.findOne({
+        relativePath: 'scripts/imported-script.sh',
+      }).lean();
+      expect(savedFile).toEqual(
+        expect.objectContaining({
+          filepath: savedFilepath,
+          source: 'cloudfront',
+          storageKey: 'r/us-east-2/uploads/user123/imported-script.sh',
+          storageRegion: 'us-east-2',
+        }),
+      );
     });
   });
 

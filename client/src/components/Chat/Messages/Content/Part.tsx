@@ -30,6 +30,7 @@ import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
 import Image from './Image';
+import { isBashProgrammaticToolCall } from './routing';
 
 type PartProps = {
   part?: TMessageContentParts;
@@ -38,6 +39,7 @@ type PartProps = {
   showCursor: boolean;
   isCreatedByUser: boolean;
   attachments?: TAttachment[];
+  hideAttachments?: boolean;
 };
 
 const Part = memo(function Part({
@@ -47,6 +49,7 @@ const Part = memo(function Part({
   isLast,
   showCursor,
   isCreatedByUser,
+  hideAttachments,
 }: PartProps) {
   if (!part) {
     return null;
@@ -130,10 +133,23 @@ const Part = memo(function Part({
 
     const isToolCall =
       'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
-    if (
+    if (isToolCall && isBashProgrammaticToolCall(toolCall.name, toolCall.args)) {
+      return (
+        <BashCall
+          args={toolCall.args}
+          output={toolCall.output ?? ''}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          attachments={attachments}
+          commandField="code"
+          hideAttachments={hideAttachments}
+        />
+      );
+    } else if (
       isToolCall &&
       (toolCall.name === Tools.execute_code ||
-        toolCall.name === Constants.PROGRAMMATIC_TOOL_CALLING)
+        toolCall.name === Constants.PROGRAMMATIC_TOOL_CALLING ||
+        toolCall.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING)
     ) {
       return (
         <ExecuteCode
@@ -142,6 +158,7 @@ const Part = memo(function Part({
           output={toolCall.output ?? ''}
           initialProgress={toolCall.progress ?? 0.1}
           args={toolCall.args}
+          hideAttachments={hideAttachments}
         />
       );
     } else if (
@@ -158,6 +175,7 @@ const Part = memo(function Part({
           args={typeof toolCall.args === 'string' ? toolCall.args : ''}
           output={toolCall.output ?? ''}
           attachments={attachments}
+          hideAttachments={hideAttachments}
         />
       );
     } else if (isToolCall && toolCall.name === 'skill') {
@@ -168,6 +186,7 @@ const Part = memo(function Part({
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
           attachments={attachments}
+          hideAttachments={hideAttachments}
         />
       );
     } else if (isToolCall && toolCall.name === Constants.SUBAGENT) {
@@ -191,6 +210,7 @@ const Part = memo(function Part({
           isSubmitting={isSubmitting}
           attachments={attachments}
           persistedContent={persistedContent}
+          hideAttachments={hideAttachments}
         />
       );
     } else if (isToolCall && toolCall.name === 'read_file') {
@@ -201,9 +221,10 @@ const Part = memo(function Part({
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
           attachments={attachments}
+          hideAttachments={hideAttachments}
         />
       );
-    } else if (isToolCall && toolCall.name === 'bash_tool') {
+    } else if (isToolCall && toolCall.name === Tools.bash_tool) {
       return (
         <BashCall
           args={toolCall.args}
@@ -211,6 +232,7 @@ const Part = memo(function Part({
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
           attachments={attachments}
+          hideAttachments={hideAttachments}
         />
       );
     } else if (isToolCall && toolCall.name === Tools.web_search) {
@@ -245,6 +267,7 @@ const Part = memo(function Part({
           attachments={attachments}
           auth={toolCall.auth}
           isLast={isLast}
+          hideAttachments={hideAttachments}
         />
       );
     } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
@@ -302,6 +325,7 @@ const Part = memo(function Part({
           name={toolCall.function.name}
           output={toolCall.function.output}
           isLast={isLast}
+          hideAttachments={hideAttachments}
         />
       );
     }

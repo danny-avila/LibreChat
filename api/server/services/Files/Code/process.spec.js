@@ -62,6 +62,7 @@ jest.mock('@librechat/api', () => {
     sanitizeArtifactPath: jest.fn((name) => name),
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
+    getCodeApiAuthHeaders: jest.fn(async () => ({})),
     withTimeout: (...args) => passthroughWithTimeout(...args),
     hasOfficeHtmlPath: (...args) => mockHasOfficeHtmlPath(...args),
     /**
@@ -84,6 +85,17 @@ jest.mock('@librechat/api', () => {
      * test overrides via `mockGetExtractedTextFormat.mockReturnValue`
      * if a case needs to assert the 'html' value. */
     getExtractedTextFormat: (...args) => mockGetExtractedTextFormat(...args),
+    getStorageMetadata: jest.fn(() => ({})),
+    /* Identity helpers mirror codeapi's validator. The real impl
+     * lives in `packages/api/src/files/code/identity.ts` with its
+     * own dedicated `identity.spec.ts`; here we just stub the
+     * download-query builder since `processCodeOutput` calls it on
+     * every output download. */
+    buildCodeEnvDownloadQuery: jest.fn(({ kind, id, version }) => {
+      const params = new URLSearchParams({ kind, id });
+      if (version != null) params.set('version', String(version));
+      return `?${params.toString()}`;
+    }),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
   };
@@ -137,7 +149,12 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { determineFileType } = require('~/server/utils');
 const { logger } = require('@librechat/data-schemas');
-const { codeServerHttpAgent, codeServerHttpsAgent } = require('@librechat/api');
+const {
+  codeServerHttpAgent,
+  codeServerHttpsAgent,
+  getCodeApiAuthHeaders,
+  getStorageMetadata,
+} = require('@librechat/api');
 
 const { processCodeOutput, getSessionInfo, readSandboxFile, primeFiles } = require('./process');
 
@@ -220,6 +237,24 @@ describe('Code Process', () => {
   });
 
   describe('processCodeOutput', () => {
+    it('forwards Code API auth headers when downloading generated output', async () => {
+      getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer codeapi-token' });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      await processCodeOutput(baseParams);
+
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'get',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer codeapi-token',
+            'User-Agent': 'LibreChat/1.0',
+          }),
+        }),
+      );
+    });
+
     describe('image file processing', () => {
       it('should process image files using convertImage', async () => {
         const imageParams = { ...baseParams, name: 'chart.png' };
@@ -243,6 +278,29 @@ describe('Code Process', () => {
         expect(result.type).toBe('image/webp');
         expect(result.context).toBe(FileContext.execute_code);
         expect(result.filename).toBe('chart.png');
+      });
+
+      it('persists tenantId on image code output records when present', async () => {
+        const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
+        const imageBuffer = Buffer.alloc(500);
+        mockAxios.mockResolvedValue({ data: imageBuffer });
+        convertImage.mockResolvedValue({
+          filepath: '/t/tenantA/images/user-123/mock-uuid-1234.webp',
+        });
+
+        await processCodeOutput({
+          ...baseParams,
+          req: tenantReq,
+          name: 'chart.png',
+        });
+
+        expect(mockClaimCodeFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+        );
+        expect(createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+          true,
+        );
       });
 
       it('should update existing image file with cache-busted filepath', async () => {
@@ -294,6 +352,97 @@ describe('Code Process', () => {
         expect(result.type).toBe('text/plain');
         expect(result.filepath).toBe('/uploads/saved-file.txt');
         expect(result.bytes).toBe(100);
+      });
+
+      it.each([
+        [
+          'slides.pptx',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        ],
+        ['sheet.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        [
+          'document.docx',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ],
+      ])('preserves stored metadata for code-generated office file %s', async (name, mime) => {
+        const cloudfrontReq = {
+          ...mockReq,
+          user: { ...mockReq.user, tenantId: 'tenantA' },
+          config: { ...mockReq.config, fileStrategy: 'cloudfront' },
+        };
+        const smallBuffer = Buffer.alloc(100);
+        const filepath = `https://cdn.example.com/r/us-east-2/t/tenantA/uploads/user-123/mock-uuid-1234__${name}`;
+        const storageKey = `r/us-east-2/t/tenantA/uploads/user-123/mock-uuid-1234__${name}`;
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+        determineFileType.mockResolvedValue({ mime });
+        mockHasOfficeHtmlPath.mockReturnValueOnce(true);
+        getStorageMetadata.mockReturnValueOnce({ storageKey, storageRegion: 'us-east-2' });
+        const mockSaveBuffer = jest.fn().mockResolvedValue(filepath);
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        const { file: result, finalize } = await processCodeOutput({
+          ...baseParams,
+          req: cloudfrontReq,
+          name,
+        });
+
+        expect(mockSaveBuffer).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: 'user-123',
+            basePath: 'uploads',
+            tenantId: 'tenantA',
+          }),
+        );
+        expect(result).toMatchObject({
+          file_id: 'mock-uuid-1234',
+          user: 'user-123',
+          tenantId: 'tenantA',
+          source: 'cloudfront',
+          filename: name,
+          filepath,
+          storageKey,
+          storageRegion: 'us-east-2',
+          status: 'pending',
+        });
+        expect(createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            file_id: 'mock-uuid-1234',
+            user: 'user-123',
+            tenantId: 'tenantA',
+            source: 'cloudfront',
+            storageKey,
+            storageRegion: 'us-east-2',
+          }),
+          true,
+        );
+        expect(typeof finalize).toBe('function');
+      });
+
+      it('passes and persists tenantId for non-image code output records', async () => {
+        const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+
+        const mockSaveBuffer = jest
+          .fn()
+          .mockResolvedValue('/t/tenantA/uploads/user-123/mock-file-path.txt');
+        getStrategyFunctions.mockReturnValue({ saveBuffer: mockSaveBuffer });
+
+        await processCodeOutput({
+          ...baseParams,
+          req: tenantReq,
+        });
+
+        expect(mockClaimCodeFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+        );
+        expect(mockSaveBuffer).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+        );
+        expect(createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ tenantId: 'tenantA' }),
+          true,
+        );
       });
 
       it('preserves nested directory paths in the DB record while flattening the storage key', async () => {
@@ -544,6 +693,9 @@ describe('Code Process', () => {
 
         const { file: result } = await processCodeOutput(baseParams);
 
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Falling back to Code API download URL for strategy local'),
+        );
         expect(result.filepath).toContain('/api/files/code/download/session-123/file-id-123');
         expect(result.conversationId).toBe('conv-123');
         expect(result.messageId).toBe('msg-123');
@@ -590,15 +742,66 @@ describe('Code Process', () => {
     });
 
     describe('metadata and file properties', () => {
-      it('should include fileIdentifier in metadata', async () => {
+      it('should include codeEnvRef in metadata with kind: user', async () => {
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
 
         const { file: result } = await processCodeOutput(baseParams);
 
         expect(result.metadata).toEqual({
-          fileIdentifier: 'session-123/file-id-123',
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'session-123',
+            file_id: 'file-id-123',
+          },
         });
+      });
+
+      /* Phase C lock-in: outputs are ALWAYS user-scoped, never skill-scoped.
+       * Even when an execution turn invoked a skill (so input files were
+       * `kind: 'skill'` shared cross-user), the resulting output bucket
+       * tags `kind: 'user'` with the requesting user's id. This prevents
+       * cross-user leakage of artifacts a skill may have generated for
+       * one user — each user gets their own output sessionKey on codeapi.
+       *
+       * Drift hazard: someone reading the simple user-derivation may
+       * later think "we should respect input kind for outputs too" and
+       * widen output scope to match input scope. This test pins the
+       * intentional asymmetry so that change requires updating the test
+       * (and re-reading the rationale). */
+      it('outputs are user-scoped regardless of which skill the execution invoked', async () => {
+        const smallBuffer = Buffer.alloc(100);
+        mockAxios.mockResolvedValue({ data: smallBuffer });
+
+        const userA = { ...mockReq, user: { id: 'user-A' } };
+        const userB = { ...mockReq, user: { id: 'user-B' } };
+
+        const { file: outputA } = await processCodeOutput({ ...baseParams, req: userA });
+        const { file: outputB } = await processCodeOutput({ ...baseParams, req: userB });
+
+        // Each user's output ref is keyed by their own user id. The
+        // `id` field tracks the requesting user, never the skill.
+        expect(outputA.metadata.codeEnvRef).toEqual({
+          kind: 'user',
+          id: 'user-A',
+          storage_session_id: 'session-123',
+          file_id: 'file-id-123',
+        });
+        expect(outputB.metadata.codeEnvRef).toEqual({
+          kind: 'user',
+          id: 'user-B',
+          storage_session_id: 'session-123',
+          file_id: 'file-id-123',
+        });
+
+        // No skill identity leaks into the output ref under any property.
+        const refA = outputA.metadata.codeEnvRef;
+        const refB = outputB.metadata.codeEnvRef;
+        expect(refA.kind).not.toBe('skill');
+        expect(refB.kind).not.toBe('skill');
+        expect(refA).not.toHaveProperty('version');
+        expect(refB).not.toHaveProperty('version');
       });
 
       it('should set correct context for code-generated files', async () => {
@@ -816,13 +1019,46 @@ describe('Code Process', () => {
           data: [{ name: 'sess/fid', lastModified: new Date().toISOString() }],
         });
 
-        await getSessionInfo('sess/fid', 'api-key');
+        await getSessionInfo({
+          kind: 'user',
+          id: 'user-1',
+          storage_session_id: 'sess',
+          file_id: 'fid',
+        });
 
         const callConfig = mockAxios.mock.calls[0][0];
         expect(callConfig.httpAgent).toBe(codeServerHttpAgent);
         expect(callConfig.httpsAgent).toBe(codeServerHttpsAgent);
         expect(callConfig.httpAgent.keepAlive).toBe(false);
         expect(callConfig.httpsAgent.keepAlive).toBe(false);
+      });
+
+      it('forwards Code API auth headers when checking session object freshness', async () => {
+        getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer freshness-token' });
+        mockAxios.mockResolvedValue({
+          data: { lastModified: '2024-01-01T00:00:00Z' },
+        });
+
+        await getSessionInfo(
+          {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'session-123',
+            file_id: 'file-123',
+          },
+          mockReq,
+        );
+
+        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            method: 'get',
+            headers: expect.objectContaining({
+              Authorization: 'Bearer freshness-token',
+              'User-Agent': 'LibreChat/1.0',
+            }),
+          }),
+        );
       });
     });
 
@@ -1281,6 +1517,24 @@ describe('Code Process', () => {
         expect(call.httpAgent).toBe(codeServerHttpAgent);
         expect(call.httpsAgent).toBe(codeServerHttpsAgent);
       });
+
+      it('forwards Code API auth headers when reading from the sandbox', async () => {
+        getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer sandbox-token' });
+        mockAxios.mockResolvedValueOnce({ data: { stdout: 'x', stderr: '' } });
+
+        await readSandboxFile({ file_path: '/mnt/data/x.txt', req: mockReq });
+
+        expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(mockReq);
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            method: 'post',
+            headers: expect.objectContaining({
+              Authorization: 'Bearer sandbox-token',
+              'User-Agent': 'LibreChat/1.0',
+            }),
+          }),
+        );
+      });
     });
 
     describe('response handling', () => {
@@ -1393,8 +1647,8 @@ describe('Code Process', () => {
      * `getStrategyFunctions(FileSources.execute_code)` for the code-env
      * upload — both go through the same factory in production.
      */
-    function setupReuploadMocks(newFileIdentifier) {
-      const handleFileUpload = jest.fn().mockResolvedValue(newFileIdentifier);
+    function setupReuploadMocks(newRef) {
+      const handleFileUpload = jest.fn().mockResolvedValue(newRef);
       const getDownloadStream = jest.fn().mockResolvedValue('mock-stream');
       getStrategyFunctions.mockImplementation((source) => {
         if (source === 'execute_code') return { handleFileUpload };
@@ -1408,7 +1662,7 @@ describe('Code Process', () => {
       return { handleFileUpload, getDownloadStream };
     }
 
-    it('seed receives FRESH session_id + id parsed off the new fileIdentifier on reupload', async () => {
+    it('seed receives FRESH (storage_session_id, file_id) from the reupload response', async () => {
       const dbFile = {
         file_id: 'librechat-file-id',
         filename: 'sentinel.txt',
@@ -1417,12 +1671,17 @@ describe('Code Process', () => {
         context: 'execute_code',
         metadata: {
           /* Stale sandbox ref — this is what `getSessionInfo` will 404 on. */
-          fileIdentifier: 'OLD_SESSION/OLD_ID',
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'OLD_SESSION',
+            file_id: 'OLD_ID',
+          },
         },
       };
       getFiles.mockResolvedValue([dbFile]);
 
-      setupReuploadMocks('NEW_SESSION/NEW_ID');
+      setupReuploadMocks({ storage_session_id: 'NEW_SESSION', file_id: 'NEW_ID' });
 
       const result = await primeFiles({
         req: { user: { id: 'user-123', role: 'USER' } },
@@ -1435,22 +1694,82 @@ describe('Code Process', () => {
       // The seed list (consumed by buildInitialToolSessions) MUST carry
       // the post-reupload ids — not the stale pre-reupload ones.
       expect(result.files).toEqual([
-        { id: 'NEW_ID', session_id: 'NEW_SESSION', name: 'sentinel.txt' },
+        {
+          id: 'NEW_ID',
+          /* `resource_id` carries the codeEnvRef.id (= original
+           * userId for kind: 'user'), threaded onto the in-memory
+           * file ref for codeapi's sessionKey re-derivation. */
+          resource_id: 'user-123',
+          storage_session_id: 'NEW_SESSION',
+          name: 'sentinel.txt',
+          kind: 'user',
+        },
       ]);
     });
 
-    it('persists the new fileIdentifier on the DB record (existing behavior, regression-locked)', async () => {
+    /* Phase C / option α (codeapi #1455): reupload preserves the
+     * resource identity from the existing ref so codeapi re-buckets
+     * under the same sessionKey shape. Without this, a skill-cache-miss
+     * reupload lands in the user bucket and is no longer cross-user
+     * shareable. */
+    it('reupload forwards kind/id (and version when skill) from the existing ref', async () => {
       const dbFile = {
         file_id: 'librechat-file-id',
         filename: 'sentinel.txt',
         filepath: '/uploads/sentinel.txt',
         source: 'local',
         context: 'execute_code',
-        metadata: { fileIdentifier: 'OLD_SESSION/OLD_ID' },
+        metadata: {
+          codeEnvRef: {
+            kind: 'skill',
+            id: 'skill-99',
+            storage_session_id: 'OLD_SESSION',
+            file_id: 'OLD_ID',
+            version: 4,
+          },
+        },
       };
       getFiles.mockResolvedValue([dbFile]);
 
-      setupReuploadMocks('NEW_SESSION/NEW_ID');
+      const { handleFileUpload } = setupReuploadMocks({
+        storage_session_id: 'NEW_SESSION',
+        file_id: 'NEW_ID',
+      });
+
+      await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: { file_ids: ['librechat-file-id'], files: [] },
+        },
+        agentId: 'agent-id',
+      });
+
+      expect(handleFileUpload).toHaveBeenCalledTimes(1);
+      const uploadArgs = handleFileUpload.mock.calls[0][0];
+      expect(uploadArgs.kind).toBe('skill');
+      expect(uploadArgs.id).toBe('skill-99');
+      expect(uploadArgs.version).toBe(4);
+    });
+
+    it('persists fresh codeEnvRef (kind/id preserved) on the DB record after reupload', async () => {
+      const dbFile = {
+        file_id: 'librechat-file-id',
+        filename: 'sentinel.txt',
+        filepath: '/uploads/sentinel.txt',
+        source: 'local',
+        context: 'execute_code',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'OLD_SESSION',
+            file_id: 'OLD_ID',
+          },
+        },
+      };
+      getFiles.mockResolvedValue([dbFile]);
+
+      setupReuploadMocks({ storage_session_id: 'NEW_SESSION', file_id: 'NEW_ID' });
 
       await primeFiles({
         req: { user: { id: 'user-123', role: 'USER' } },
@@ -1463,19 +1782,69 @@ describe('Code Process', () => {
       expect(updateFile).toHaveBeenCalledWith(
         expect.objectContaining({
           file_id: 'librechat-file-id',
-          metadata: expect.objectContaining({ fileIdentifier: 'NEW_SESSION/NEW_ID' }),
+          metadata: expect.objectContaining({
+            codeEnvRef: {
+              kind: 'user',
+              id: 'user-123',
+              storage_session_id: 'NEW_SESSION',
+              file_id: 'NEW_ID',
+            },
+          }),
         }),
       );
     });
+
+    it('reads codeEnvRef directly when present (skipping reupload)', async () => {
+      const dbFile = {
+        file_id: 'librechat-file-id',
+        filename: 'sentinel.txt',
+        filepath: '/uploads/sentinel.txt',
+        source: 'local',
+        context: 'execute_code',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'STRUCT_SESSION',
+            file_id: 'STRUCT_ID',
+          },
+        },
+      };
+      getFiles.mockResolvedValue([dbFile]);
+      filterFilesByAgentAccess.mockImplementation(({ files }) => Promise.resolve(files));
+      // getSessionInfo returns a fresh timestamp so reupload is skipped.
+      mockAxios.mockResolvedValue({ data: { lastModified: new Date().toISOString() } });
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: { file_ids: ['librechat-file-id'], files: [] },
+        },
+        agentId: 'agent-id',
+      });
+
+      expect(updateFile).not.toHaveBeenCalled();
+      expect(result.files).toEqual([
+        {
+          id: 'STRUCT_ID',
+          /* `resource_id` from the persisted codeEnvRef.id — for
+           * `kind: 'user'` this is informational (codeapi derives
+           * sessionKey from auth context) but threaded for shape
+           * uniformity with shared kinds. */
+          resource_id: 'user-123',
+          storage_session_id: 'STRUCT_SESSION',
+          name: 'sentinel.txt',
+          kind: 'user',
+        },
+      ]);
+    });
   });
 
-  describe('primeFiles toolContext surfaces preview status to the LLM', () => {
-    /* When a prior-turn code-execution file's HTML preview never resolved
-     * (still pending, or failed), the agent context for this turn must
-     * carry that signal so the model can tell the user "you can still
-     * download it, but the preview isn't available." Otherwise the model
-     * would refer to the file as if everything is fine and the user gets
-     * a confusing UI mismatch. */
+  describe('primeFiles toolContext for model-visible code files', () => {
+    /* User-visible code-env input files keep their `/mnt/data` context and
+     * preview lifecycle hints. Prior-turn generated artifacts are still
+     * primed into the sandbox, but no longer repeated in model-visible
+     * instructions every turn. */
 
     const { getStrategyFunctions } = require('~/server/services/Files/strategies');
     const { getFiles } = require('~/models');
@@ -1487,8 +1856,15 @@ describe('Code Process', () => {
         filename: `data-${overrides.status ?? 'ready'}.xlsx`,
         filepath: `/uploads/${overrides.status ?? 'ready'}.xlsx`,
         source: 'local',
-        context: 'execute_code',
-        metadata: { fileIdentifier: 'CURRENT_SESSION/CURRENT_ID' },
+        context: FileContext.message_attachment,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'CURRENT_SESSION',
+            file_id: 'CURRENT_ID',
+          },
+        },
         ...overrides,
       };
     }
@@ -1502,6 +1878,33 @@ describe('Code Process', () => {
       getStrategyFunctions.mockReturnValue({});
       filterFilesByAgentAccess.mockImplementation(({ files }) => Promise.resolve(files));
     }
+
+    it('does not include generated code files in model-visible toolContext', async () => {
+      setupSessionInfoOk();
+      getFiles.mockResolvedValue([
+        makeFile({
+          context: FileContext.execute_code,
+          filename: 'generated.html',
+        }),
+      ]);
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: { execute_code: { file_ids: ['fid-ready'], files: [] } },
+        agentId: 'agent-id',
+      });
+
+      expect(result.toolContext).toBe('');
+      expect(result.files).toEqual([
+        {
+          id: 'CURRENT_ID',
+          resource_id: 'user-123',
+          storage_session_id: 'CURRENT_SESSION',
+          name: 'generated.html',
+          kind: 'user',
+        },
+      ]);
+    });
 
     it('annotates a pending file with "(preview not yet generated)"', async () => {
       setupSessionInfoOk();

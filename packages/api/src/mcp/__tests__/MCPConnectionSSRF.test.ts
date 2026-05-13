@@ -687,7 +687,7 @@ describe('MCP SSRF protection – 307/308 redirect to private IP', () => {
     }
   });
 
-  it('should keep using the original SSRF-safe dispatcher when protection is already on', async () => {
+  it('should switch to a no-exemption SSRF-safe dispatcher when protection is already on', async () => {
     const capture = await createHeaderCaptureServer();
     try {
       const rebindUrl = new URL(capture.url);
@@ -696,9 +696,13 @@ describe('MCP SSRF protection – 307/308 redirect to private IP', () => {
       mockedResolveHostnameSSRF.mockResolvedValueOnce(false);
       mockedCreateSSRFSafeUndiciConnect.mockClear();
       const lookup = createRebindBlockingLookup();
-      mockedCreateSSRFSafeUndiciConnect.mockReturnValueOnce({
-        lookup,
-      } as ReturnType<typeof createSSRFSafeUndiciConnect>);
+      mockedCreateSSRFSafeUndiciConnect
+        .mockReturnValueOnce({
+          lookup,
+        } as ReturnType<typeof createSSRFSafeUndiciConnect>)
+        .mockReturnValueOnce({
+          lookup,
+        } as ReturnType<typeof createSSRFSafeUndiciConnect>);
 
       conn = new MCPConnection({
         serverName: 'redirect-rebinding-block-protection-on',
@@ -708,7 +712,8 @@ describe('MCP SSRF protection – 307/308 redirect to private IP', () => {
 
       await expectRebindSSRFRejection(conn.connect());
       expect(server.redirectHit).toBe(true);
-      expect(mockedCreateSSRFSafeUndiciConnect).toHaveBeenCalledTimes(1);
+      expect(mockedCreateSSRFSafeUndiciConnect).toHaveBeenCalledTimes(2);
+      expect(mockedCreateSSRFSafeUndiciConnect.mock.calls[1]).toEqual([]);
       expect(lookup).toHaveBeenCalled();
       expect(lookup.mock.calls.some(([hostname]) => hostname === 'rebind.test')).toBe(true);
       expect(capture.receivedHeaders).toHaveLength(0);
@@ -1034,6 +1039,7 @@ describe('MCP SSRF protection – WebSocket DNS resolution', () => {
     expect(mockedResolveHostnameSSRF).toHaveBeenCalledWith(
       expect.stringContaining('evil.example.com'),
       null,
+      '8080',
     );
   });
 
@@ -1050,6 +1056,7 @@ describe('MCP SSRF protection – WebSocket DNS resolution', () => {
     expect(mockedResolveHostnameSSRF).toHaveBeenCalledWith(
       expect.stringContaining('allowlisted.example.com'),
       null,
+      '8080',
     );
   });
 

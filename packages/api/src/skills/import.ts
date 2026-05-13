@@ -12,6 +12,7 @@ import type {
   CreateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
+import { resolveRequestTenantId } from '~/middleware/tenant';
 
 /** Security limits for zip processing. */
 const MAX_ZIP_BYTES = 50 * 1024 * 1024; // 50 MB compressed
@@ -19,6 +20,13 @@ const MAX_DECOMPRESSED_BYTES = 500 * 1024 * 1024; // 500 MB total decompressed
 const MAX_ENTRIES = 500;
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const SKILL_MD = 'SKILL.md';
+
+export interface ImportLimits {
+  maxZipBytes: number;
+  maxDecompressedBytes: number;
+  maxEntries: number;
+  maxSingleFileBytes: number;
+}
 
 /** Strip surrounding YAML quotes (single or double) from a scalar value. */
 function unquoteYaml(value: string): string {
@@ -156,6 +164,7 @@ function isDuplicateKeyError(error: unknown): boolean {
 }
 
 export interface ImportSkillDeps {
+  limits?: Partial<ImportLimits> | ((req: ServerRequest) => Partial<ImportLimits> | undefined);
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
@@ -168,8 +177,9 @@ export interface ImportSkillDeps {
       fileName: string;
       basePath?: string;
       isImage?: boolean;
+      tenantId?: string;
     },
-  ) => Promise<{ filepath: string; source: string }>;
+  ) => Promise<{ filepath: string; source: string; storageKey?: string; storageRegion?: string }>;
   deleteFile?: (
     req: Request,
     file: { filepath: string; source: string; [key: string]: unknown },
@@ -185,6 +195,7 @@ export interface ImportSkillDeps {
 }
 
 interface ServerRequest extends Request {
+  tenantId?: string;
   user: {
     id: string;
     _id: Types.ObjectId;
@@ -237,12 +248,28 @@ export function createImportHandler(deps: ImportSkillDeps) {
   };
 }
 
+function getImportLimits(limits?: Partial<ImportLimits>): ImportLimits {
+  return {
+    maxZipBytes: limits?.maxZipBytes ?? MAX_ZIP_BYTES,
+    maxDecompressedBytes: limits?.maxDecompressedBytes ?? MAX_DECOMPRESSED_BYTES,
+    maxEntries: limits?.maxEntries ?? MAX_ENTRIES,
+    maxSingleFileBytes: limits?.maxSingleFileBytes ?? MAX_SINGLE_FILE_BYTES,
+  };
+}
+
+function resolveImportLimits(
+  limits: ImportSkillDeps['limits'],
+  req: ServerRequest,
+): Partial<ImportLimits> | undefined {
+  return typeof limits === 'function' ? limits(req) : limits;
+}
+
 /** Resolve author metadata from the request user. */
 function getAuthorInfo(req: ServerRequest) {
   const user = req.user;
   const authorId = (user._id ?? user.id) as unknown as Types.ObjectId;
   const authorName = user.name ?? user.username ?? 'Unknown';
-  const tenantId = user.tenantId;
+  const tenantId = resolveRequestTenantId(req);
   return { authorId, authorName, tenantId };
 }
 
@@ -333,11 +360,14 @@ async function handleZip(
   file: Express.Multer.File,
 ) {
   const userId = req.user.id;
+  const limits = getImportLimits(resolveImportLimits(deps.limits, req));
 
   const zipBuffer = file.buffer;
 
-  if (zipBuffer.length > MAX_ZIP_BYTES) {
-    return res.status(400).json({ error: `File too large (max ${MAX_ZIP_BYTES / 1024 / 1024}MB)` });
+  if (zipBuffer.length > limits.maxZipBytes) {
+    return res
+      .status(400)
+      .json({ error: `File too large (max ${limits.maxZipBytes / 1024 / 1024}MB)` });
   }
 
   let zip: JSZip;
@@ -348,8 +378,8 @@ async function handleZip(
   }
   const entries = Object.keys(zip.files);
 
-  if (entries.length > MAX_ENTRIES) {
-    return res.status(400).json({ error: `Too many files in archive (max ${MAX_ENTRIES})` });
+  if (entries.length > limits.maxEntries) {
+    return res.status(400).json({ error: `Too many files in archive (max ${limits.maxEntries})` });
   }
 
   // Find SKILL.md — at root or one level deep
@@ -376,7 +406,7 @@ async function handleZip(
   const declaredSize =
     (skillMdEntry as unknown as { _data?: { uncompressedSize?: number } })?._data
       ?.uncompressedSize ?? 0;
-  if (declaredSize > MAX_SINGLE_FILE_BYTES) {
+  if (declaredSize > limits.maxSingleFileBytes) {
     return res
       .status(400)
       .json({ error: `SKILL.md too large (${Math.round(declaredSize / 1024 / 1024)}MB)` });
@@ -385,7 +415,7 @@ async function handleZip(
   if (!skillMdContent) {
     return res.status(400).json({ error: 'Could not read SKILL.md from archive' });
   }
-  if (Buffer.byteLength(skillMdContent, 'utf-8') > MAX_SINGLE_FILE_BYTES) {
+  if (Buffer.byteLength(skillMdContent, 'utf-8') > limits.maxSingleFileBytes) {
     return res.status(400).json({ error: 'SKILL.md exceeds maximum file size' });
   }
 
@@ -460,8 +490,8 @@ async function handleZip(
     try {
       // Stream-decompress with hard byte cap. JSZip's nodeStream decompresses
       // incrementally so we can abort mid-entry without buffering the full file.
-      const perFileLimit = MAX_SINGLE_FILE_BYTES;
-      const cumulativeLimit = MAX_DECOMPRESSED_BYTES - totalDecompressed;
+      const perFileLimit = limits.maxSingleFileBytes;
+      const cumulativeLimit = limits.maxDecompressedBytes - totalDecompressed;
       const effectiveLimit = Math.min(perFileLimit, cumulativeLimit);
 
       if (effectiveLimit <= 0) {
@@ -481,7 +511,11 @@ async function handleZip(
 
       await new Promise<void>((resolve, reject) => {
         entryStream.on('data', (chunk: Buffer) => {
+          if (exceededLimit) {
+            return;
+          }
           entryBytes += chunk.length;
+          totalDecompressed += chunk.length;
           if (entryBytes > effectiveLimit) {
             exceededLimit = true;
             if ('destroy' in entryStream && typeof entryStream.destroy === 'function') {
@@ -509,7 +543,6 @@ async function handleZip(
       }
 
       const fileBuffer = Buffer.concat(chunks);
-      totalDecompressed += fileBuffer.length;
 
       const fileId = crypto.randomUUID();
       const filename = path.basename(relativePath);
@@ -518,12 +551,13 @@ async function handleZip(
       const mimeType = guessMimeType(filename);
 
       // Save to file storage (strategy-aware)
-      const { filepath, source } = await deps.saveBuffer(req, {
+      const { filepath, source, storageKey, storageRegion } = await deps.saveBuffer(req, {
         userId,
         buffer: fileBuffer,
         fileName: storageFileName,
         basePath: 'uploads',
         isImage: mimeType.startsWith('image/'),
+        tenantId,
       });
 
       // Upsert the SkillFile DB record (runs path validation internally).
@@ -535,6 +569,8 @@ async function handleZip(
           file_id: fileId,
           filename,
           filepath,
+          storageKey,
+          storageRegion,
           source,
           mimeType,
           bytes: fileBuffer.length,
@@ -545,7 +581,14 @@ async function handleZip(
       } catch (dbError) {
         if (deps.deleteFile) {
           await deps
-            .deleteFile(req, { filepath, source })
+            .deleteFile(req, {
+              filepath,
+              storageKey,
+              storageRegion,
+              source,
+              user: authorId,
+              tenantId,
+            })
             .catch((e) =>
               logger.error(`[importSkill] Orphan cleanup failed for ${relativePath}:`, e),
             );

@@ -697,6 +697,13 @@ export const getFileDownload = async (userId: string, file_id: string): Promise<
   });
 };
 
+export const getFileDownloadURL = async (
+  userId: string,
+  file_id: string,
+): Promise<f.FileDownloadURLResponse> => {
+  return request.get(`${endpoints.files()}/download-url/${userId}/${file_id}`);
+};
+
 export const getCodeOutputDownload = async (url: string): Promise<AxiosResponse> => {
   return request.getResponse(url, {
     responseType: 'blob',

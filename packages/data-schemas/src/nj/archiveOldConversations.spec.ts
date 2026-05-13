@@ -42,7 +42,7 @@ async function insertConvo({
   await Conversation.collection.insertOne(doc);
   return Conversation.findOne({
     conversationId: doc.conversationId,
-  }).lean() as Promise<IConversation>;
+  }).lean() as unknown as IConversation;
 }
 
 describe('archiveOldConversations', () => {

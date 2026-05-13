@@ -50,6 +50,34 @@ function inputTokensIncludesCache(provider?: string): boolean {
   return provider != null && SUBSET_PROVIDERS.has(provider);
 }
 
+/**
+ * Resolves `completionTokens` for billing, repairing providers whose
+ * `usage_metadata.output_tokens` undercounts.
+ *
+ * The documented `UsageMetadata` contract (`@langchain/core`) is
+ * `total_tokens === input_tokens + output_tokens`. Compliant providers
+ * (OpenAI, Anthropic, Google API via agents' `CustomChatGoogleGenerativeAI`)
+ * include any reasoning/thinking tokens inside `output_tokens` already,
+ * so the invariant holds.
+ *
+ * Vertex AI Gemini through `@langchain/google-common`'s streaming path
+ * emits `output_tokens = candidatesTokenCount` and drops `thoughtsTokenCount`,
+ * leaving `total - input > output`. When that gap shows up we use the
+ * invariant to recover the correct billable output (`total - input`).
+ * Compliant providers have a zero gap, so this is a no-op for them.
+ *
+ * Tracked in: https://github.com/danny-avila/LibreChat/issues/13006
+ */
+function resolveCompletionTokens(usage: UsageMetadata): number {
+  const output = Number(usage.output_tokens) || 0;
+  const total = Number(usage.total_tokens) || 0;
+  const input = Number(usage.input_tokens) || 0;
+  if (total > input + output) {
+    return total - input;
+  }
+  return output;
+}
+
 interface SplitUsage {
   /** Non-cached input portion — what gets billed at the standard input rate */
   inputOnly: number;
@@ -57,6 +85,8 @@ interface SplitUsage {
   cacheRead: number;
   /** Total prompt tokens including cached portion */
   totalInput: number;
+  /** Output tokens for billing (includes reasoning when omitted from `output_tokens`) */
+  completion: number;
 }
 
 function splitUsage(usage: UsageMetadata): SplitUsage {
@@ -67,12 +97,14 @@ function splitUsage(usage: UsageMetadata): SplitUsage {
   const cacheRead =
     Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
   const rawInput = Number(usage.input_tokens) || 0;
+  const completion = resolveCompletionTokens(usage);
   if (inputTokensIncludesCache(usage.provider)) {
     return {
       inputOnly: Math.max(0, rawInput - cacheCreation - cacheRead),
       cacheCreation,
       cacheRead,
       totalInput: rawInput,
+      completion,
     };
   }
   return {
@@ -80,6 +112,7 @@ function splitUsage(usage: UsageMetadata): SplitUsage {
     cacheCreation,
     cacheRead,
     totalInput: rawInput + cacheCreation + cacheRead,
+    completion,
   };
 }
 
@@ -161,9 +194,9 @@ export async function recordCollectedUsage(
         continue;
       }
 
-      const { inputOnly, cacheCreation, cacheRead } = splitUsage(usage);
+      const { inputOnly, cacheCreation, cacheRead, completion } = splitUsage(usage);
 
-      total_output_tokens += Number(usage.output_tokens) || 0;
+      total_output_tokens += completion;
 
       const txMetadata: TxMetadata = {
         user,
@@ -187,7 +220,7 @@ export async function recordCollectedUsage(
                     write: cacheCreation,
                     read: cacheRead,
                   },
-                  completionTokens: usage.output_tokens,
+                  completionTokens: completion,
                 },
                 pricing,
               )
@@ -195,7 +228,7 @@ export async function recordCollectedUsage(
                 txMetadata,
                 {
                   promptTokens: inputOnly,
-                  completionTokens: usage.output_tokens,
+                  completionTokens: completion,
                 },
                 pricing,
               );
@@ -211,7 +244,7 @@ export async function recordCollectedUsage(
               write: cacheCreation,
               read: cacheRead,
             },
-            completionTokens: usage.output_tokens,
+            completionTokens: completion,
           })
           .catch((err) => {
             logger.error(
@@ -225,7 +258,7 @@ export async function recordCollectedUsage(
       deps
         .spendTokens(txMetadata, {
           promptTokens: inputOnly,
-          completionTokens: usage.output_tokens,
+          completionTokens: completion,
         })
         .catch((err) => {
           logger.error(

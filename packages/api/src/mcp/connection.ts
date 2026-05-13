@@ -188,6 +188,14 @@ function buildFetchInit(
   };
 }
 
+function getUrlPort(url: URL | string): string {
+  const parsed = typeof url === 'string' ? new URL(url) : url;
+  if (parsed.port) return parsed.port;
+  if (parsed.protocol === 'http:' || parsed.protocol === 'ws:') return '80';
+  if (parsed.protocol === 'https:' || parsed.protocol === 'wss:') return '443';
+  return '';
+}
+
 /**
  * Drops credential-bearing headers when a 307/308 redirect crosses an origin
  * boundary. Removes the always-forbidden set plus any caller-supplied secret
@@ -570,13 +578,14 @@ export class MCPConnection extends EventEmitter {
     timeout?: number,
     sseBodyTimeout?: number,
     configuredSecretHeaderKeys?: ReadonlySet<string>,
+    baseUrl?: string,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
+    const basePort = baseUrl ? getUrlPort(baseUrl) : '';
     const ssrfConnect = this.useSSRFProtection
-      ? createSSRFSafeUndiciConnect(this.allowedAddresses)
+      ? createSSRFSafeUndiciConnect(this.allowedAddresses, basePort)
       : undefined;
     const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
     /** Capture only the fields needed by the fetch closure; see factory note above. */
-    const useSSRFProtection = this.useSSRFProtection;
     const agents = this.agents;
     const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
     const postAgent = new Agent({
@@ -705,12 +714,14 @@ export class MCPConnection extends EventEmitter {
           };
         }
 
-        if (!useSSRFProtection && isCrossOriginRedirect) {
+        if (isCrossOriginRedirect) {
           /**
            * Once a server-controlled cross-origin hop is seen, keep the safe
            * dispatcher for the rest of this redirect chain. Restoring the
            * original dispatcher on a later hop back to the original origin
-           * would re-open the allowlist-mode rebinding gap.
+           * would re-open the allowlist-mode rebinding gap. When the original
+           * dispatcher carries `allowedAddresses`, this also prevents a
+           * redirect from inheriting that port-scoped exemption.
            */
           currentInit = {
             ...currentInit,
@@ -773,8 +784,13 @@ export class MCPConnection extends EventEmitter {
            * small TOCTOU window. This is an SDK limitation — the transport accepts
            * only a URL with no custom DNS lookup hook.
            */
-          const wsHostname = new URL(options.url).hostname;
-          const isSSRF = await resolveHostnameSSRF(wsHostname, this.allowedAddresses);
+          const wsUrl = new URL(options.url);
+          const wsHostname = wsUrl.hostname;
+          const isSSRF = await resolveHostnameSSRF(
+            wsHostname,
+            this.allowedAddresses,
+            getUrlPort(wsUrl),
+          );
           if (isSSRF) {
             throw new Error(
               `SSRF protection: WebSocket host "${wsHostname}" resolved to a private/reserved IP address`,
@@ -806,7 +822,7 @@ export class MCPConnection extends EventEmitter {
            */
           const sseTimeout = this.timeout || SSE_CONNECT_TIMEOUT;
           const ssrfConnect = this.useSSRFProtection
-            ? createSSRFSafeUndiciConnect(this.allowedAddresses)
+            ? createSSRFSafeUndiciConnect(this.allowedAddresses, getUrlPort(url))
             : undefined;
           const sseAgent = new Agent({
             bodyTimeout: sseTimeout,
@@ -844,6 +860,7 @@ export class MCPConnection extends EventEmitter {
               sseTimeout,
               undefined,
               sseConfiguredSecretHeaderKeys,
+              options.url,
             ) as unknown as FetchLike,
           });
 
@@ -886,6 +903,7 @@ export class MCPConnection extends EventEmitter {
               this.timeout,
               this.sseReadTimeout || DEFAULT_SSE_READ_TIMEOUT,
               httpConfiguredSecretHeaderKeys,
+              options.url,
             ) as unknown as FetchLike,
           });
 

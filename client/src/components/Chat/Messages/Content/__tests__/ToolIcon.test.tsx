@@ -1,6 +1,10 @@
 import { Constants, actionDelimiter } from 'librechat-data-provider';
 import { getToolIconType } from '../ToolOutput/ToolIcon';
 
+jest.mock('~/utils', () => ({
+  cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
+}));
+
 describe('getToolIconType - ACTN-01: Action delimiter detection', () => {
   it('returns "action" for tool name containing actionDelimiter', () => {
     const toolName = `get_weather${actionDelimiter}weather---api---com`;
@@ -46,15 +50,21 @@ describe('getToolIconType - SKILL-01: Skill tool icon types', () => {
     expect(getToolIconType('bash_tool')).toBe('bash_tool');
   });
 
+  it('returns "bash_tool" for bash PTC tool calls', () => {
+    expect(getToolIconType(Constants.BASH_PROGRAMMATIC_TOOL_CALLING)).toBe('bash_tool');
+  });
+
   it('skill types take priority over the "generic" fallback', () => {
     expect(getToolIconType('skill')).not.toBe('generic');
     expect(getToolIconType('read_file')).not.toBe('generic');
     expect(getToolIconType('bash_tool')).not.toBe('generic');
+    expect(getToolIconType(Constants.BASH_PROGRAMMATIC_TOOL_CALLING)).not.toBe('generic');
   });
 
   it('skill types take priority over the "action" fallback', () => {
     expect(getToolIconType('skill')).not.toBe('action');
     expect(getToolIconType('read_file')).not.toBe('action');
     expect(getToolIconType('bash_tool')).not.toBe('action');
+    expect(getToolIconType(Constants.BASH_PROGRAMMATIC_TOOL_CALLING)).not.toBe('action');
   });
 });

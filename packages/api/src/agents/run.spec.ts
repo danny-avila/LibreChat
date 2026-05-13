@@ -1,5 +1,7 @@
+import { Providers } from '@librechat/agents';
 import { ToolMessage, AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
-import { extractDiscoveredToolsFromHistory } from './run';
+
+import { extractDiscoveredToolsFromHistory, getReasoningKey } from './run';
 
 describe('extractDiscoveredToolsFromHistory', () => {
   it('extracts tool names from tool_search JSON output', () => {
@@ -129,5 +131,19 @@ describe('extractDiscoveredToolsFromHistory', () => {
 
     // Should handle gracefully
     expect(discovered.size).toBe(0);
+  });
+});
+
+describe('getReasoningKey', () => {
+  it('detects OpenRouter baseURL case-insensitively', () => {
+    const llmConfig = {
+      configuration: {
+        baseURL: 'https://gateway.example/v1/OpenRouter',
+      },
+    } as Parameters<typeof getReasoningKey>[1];
+
+    const reasoningKey = getReasoningKey(Providers.OPENAI, llmConfig);
+
+    expect(reasoningKey).toBe('reasoning');
   });
 });
