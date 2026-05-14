@@ -249,5 +249,24 @@ describe('auditLog methods', () => {
       expect(count).toBe(3);
       expect(seen.length).toBe(3);
     });
+
+    it('stops after maxRows entries even if more remain', async () => {
+      for (let i = 0; i < 10; i++) {
+        await methods.recordAuditEntry(baseInput({ capability: `manage:cap-${i}` }));
+      }
+
+      const seen: string[] = [];
+      const count = await methods.streamAuditLogEntries(
+        'tenant-a',
+        {},
+        (entry) => {
+          seen.push(entry.capability);
+        },
+        { maxRows: 4 },
+      );
+
+      expect(count).toBe(4);
+      expect(seen.length).toBe(4);
+    });
   });
 });

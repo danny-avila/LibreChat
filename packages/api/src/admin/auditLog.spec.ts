@@ -534,5 +534,40 @@ describe('createAdminAuditLogHandlers', () => {
       expect(json.mock.calls[0][0].error).toMatch(/from/);
       expect(deps.streamAuditLogEntries).not.toHaveBeenCalled();
     });
+
+    it('passes a maxRows cap into the stream call', async () => {
+      const deps = createDeps();
+      const handlers = createAdminAuditLogHandlers(deps);
+      const ctx = createCsvContext();
+
+      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
+
+      const optionsArg = (deps.streamAuditLogEntries as jest.Mock).mock.calls[0][3];
+      expect(optionsArg).toEqual(
+        expect.objectContaining({ maxRows: expect.any(Number) }),
+      );
+      expect(optionsArg.maxRows).toBeGreaterThan(0);
+    });
+
+    it('closes the response cleanly when the stream throws after headers are sent', async () => {
+      const entry = mockEntry();
+      const deps = createDeps({
+        streamAuditLogEntries: jest.fn(async (_t, _f, onEntry) => {
+          await (onEntry as (e: AdminAuditLogEntry) => Promise<void>)(entry);
+          throw new Error('cursor exploded mid-stream');
+        }),
+      });
+      const handlers = createAdminAuditLogHandlers(deps);
+      const ctx = createCsvContext();
+      /** Headers were already sent by the BOM / header write before the throw,
+       * so the catch block must use res.end() instead of trying to send JSON. */
+      (ctx.res as unknown as { headersSent: boolean }).headersSent = true;
+
+      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
+
+      expect(ctx.endCalled()).toBe(true);
+      const statusMock = (ctx.res as unknown as { status: jest.Mock }).status;
+      expect(statusMock).not.toHaveBeenCalled();
+    });
   });
 });

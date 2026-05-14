@@ -1,5 +1,10 @@
 import { PrincipalType } from 'librechat-data-provider';
-import { AUDIT_ACTIONS, logger, MAX_AUDIT_LOG_LIMIT } from '@librechat/data-schemas';
+import {
+  AUDIT_ACTIONS,
+  logger,
+  MAX_AUDIT_EXPORT_ROWS,
+  MAX_AUDIT_LOG_LIMIT,
+} from '@librechat/data-schemas';
 import type {
   AdminAuditLogEntry,
   AuditAction,
@@ -37,7 +42,7 @@ export interface AdminAuditLogDeps {
     tenantId: string | undefined,
     filters: Omit<AuditLogFilters, 'offset' | 'limit'>,
     onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
-    options?: { isCancelled?: () => boolean },
+    options?: { isCancelled?: () => boolean; maxRows?: number },
   ) => Promise<number>;
 }
 
@@ -360,7 +365,7 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps) {
           await writeChunk(formatCsvRow(entry));
           await writeChunk('\r\n');
         },
-        { isCancelled },
+        { isCancelled, maxRows: MAX_AUDIT_EXPORT_ROWS },
       );
 
       res.removeListener('close', markAborted);

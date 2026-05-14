@@ -10,6 +10,13 @@ import logger from '~/config/winston';
 
 const DEFAULT_LIMIT = 100;
 export const MAX_AUDIT_LOG_LIMIT = 500;
+/**
+ * Upper bound on rows emitted by the CSV export stream. At 100k rows per
+ * tenant per export request, a careless admin script (or a hostile auditor)
+ * can keep a cursor and a Node worker busy without saturating either; beyond
+ * that, exports should be sliced by `from`/`to`.
+ */
+export const MAX_AUDIT_EXPORT_ROWS = 100_000;
 const MAX_SEARCH_LENGTH = 200;
 
 export interface AuditLogMethods {
@@ -26,7 +33,7 @@ export interface AuditLogMethods {
     tenantId: string | undefined,
     filters: Omit<AuditLogFilters, 'offset' | 'limit'>,
     onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
-    options?: { isCancelled?: () => boolean },
+    options?: { isCancelled?: () => boolean; maxRows?: number },
   ) => Promise<number>;
 }
 
@@ -54,6 +61,17 @@ function tenantFilter(tenantId?: string): FilterQuery<IAuditLog> {
     : { tenantId: { $exists: false } };
 }
 
+/**
+ * Builds the Mongo `find` filter for audit-log queries. Tenant scoping is
+ * always applied first and uses the compound `{ tenantId, createdAt, _id }`
+ * index. The substring regex filters below (`actorName`, `targetName`,
+ * `capability`, `search`) are case-insensitive and therefore cannot use a
+ * standard B-tree index: within the tenant slice they degrade to a partition
+ * scan. For deployments where the audit log grows past hundreds of thousands
+ * of entries per tenant, consider a text index or storing lowercased shadow
+ * fields. Today's primary listing combines `tenantId` with `createdAt`
+ * pagination, so the scan stays bounded by the user-chosen date window.
+ */
 function buildFilter(
   tenantId: string | undefined,
   filters: AuditLogFilters,
@@ -177,7 +195,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
     tenantId: string | undefined,
     filters: Omit<AuditLogFilters, 'offset' | 'limit'>,
     onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
-    options?: { isCancelled?: () => boolean },
+    options?: { isCancelled?: () => boolean; maxRows?: number },
   ): Promise<number> {
     const AuditLog = mongoose.models.AuditLog as Model<IAuditLog>;
     const query = buildFilter(tenantId, filters);
@@ -187,10 +205,15 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
       .cursor({ batchSize: 500 });
 
     const isCancelled = options?.isCancelled;
+    const maxRows = options?.maxRows;
     let count = 0;
     try {
       for await (const doc of cursor) {
         if (isCancelled?.()) {
+          await cursor.close();
+          break;
+        }
+        if (maxRows != null && count >= maxRows) {
           await cursor.close();
           break;
         }
