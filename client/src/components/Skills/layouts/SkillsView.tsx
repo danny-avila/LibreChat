@@ -6,15 +6,15 @@ import { useHasAccess, useAuthContext, useLocalize } from '~/hooks';
 import SkillFileViewer from '~/components/Skills/display/SkillFileViewer';
 import SkillDetail from '~/components/Skills/display/SkillDetail';
 import SkillState from '~/components/Skills/display/SkillState';
-import { SkillForm } from '~/components/Skills/forms';
+import { CreateSkillForm, SkillForm } from '~/components/Skills/forms';
 
 /**
- * Skill detail / edit route content.
+ * Skill detail / edit / create route content.
  *
  * Reader-first: the default `/skills/:skillId` shows the read-only
  * `SkillDetail` view (rendered markdown, metadata, source toggle).
  * Edit is reached via `/skills/:skillId/edit` or the Edit button.
- * Create is a dialog triggered from the sidebar, not a route.
+ * Create is reached via `/skills/new`.
  */
 export default function SkillsView() {
   const { skillId } = useParams();
@@ -26,7 +26,12 @@ export default function SkillsView() {
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.USE,
   });
+  const hasCreateAccess = useHasAccess({
+    permissionType: PermissionTypes.SKILLS,
+    permission: Permissions.CREATE,
+  });
 
+  const isCreate = location.pathname.endsWith('/new');
   const isEdit = location.pathname.endsWith('/edit');
 
   const rolesLoaded = user?.role != null && roles?.[user.role] != null;
@@ -42,6 +47,14 @@ export default function SkillsView() {
     return <Navigate to="/c/new" replace />;
   }
 
+  if (isCreate && !hasCreateAccess) {
+    return <Navigate to="/skills" replace />;
+  }
+
+  if (isCreate) {
+    return <CreateView />;
+  }
+
   // No skill selected — empty state
   if (!skillId) {
     return (
@@ -55,6 +68,14 @@ export default function SkillsView() {
   }
 
   return isEdit ? <EditView skillId={skillId} /> : <DetailView skillId={skillId} />;
+}
+
+function CreateView() {
+  return (
+    <div className="flex h-full w-full flex-col overflow-y-auto bg-presentation">
+      <CreateSkillForm />
+    </div>
+  );
 }
 
 /** Read-only detail view — the default when clicking a skill. */
