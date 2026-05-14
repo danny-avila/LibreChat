@@ -2,14 +2,27 @@ import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
 import * as Menu from '@ariakit/react/menu';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
-import { Ellipsis, Share2, Copy, Archive, Pen, Trash } from 'lucide-react';
+import { Ellipsis, Share2, Copy, Archive, Pen, Trash, BookmarkPlusIcon } from 'lucide-react';
+import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
+import type { MenuItemProps } from '~/common';
 import {
   useDuplicateConversationMutation,
   useGetStartupConfig,
   useArchiveConvoMutation,
+  useConversationTagsQuery,
+  useTagConversationMutation,
 } from '~/data-provider';
-import { useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
+import {
+  useLocalize,
+  useNavigateToConvo,
+  useNewConvo,
+  useHasAccess,
+  useBookmarkSuccess,
+} from '~/hooks';
+import { BookmarkContext } from '~/Providers/BookmarkContext';
+import { BookmarkEditDialog } from '~/components/Bookmarks';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
 import DeleteButton from './DeleteButton';
@@ -19,6 +32,8 @@ import { cn } from '~/utils';
 function ConvoOptions({
   conversationId,
   title,
+  tags,
+  isTemporary,
   retainView,
   renameHandler,
   isPopoverActive,
@@ -27,6 +42,8 @@ function ConvoOptions({
 }: {
   conversationId: string | null;
   title: string | null;
+  tags?: string[];
+  isTemporary?: boolean;
   retainView: () => void;
   renameHandler: (e: MouseEvent) => void;
   isPopoverActive: boolean;
@@ -43,12 +60,50 @@ function ConvoOptions({
   const { conversationId: currentConvoId } = useParams();
   const { newConversation } = useNewConvo();
 
+  const hasAccessToBookmarks = useHasAccess({
+    permissionType: PermissionTypes.BOOKMARKS,
+    permission: Permissions.USE,
+  });
+
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const newBookmarkRef = useRef<HTMLButtonElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showBookmarkDialog, setShowBookmarkDialog] = useState(false);
 
   const archiveConvoMutation = useArchiveConvoMutation();
+
+  const { data: bookmarks } = useConversationTagsQuery({
+    enabled: hasAccessToBookmarks === true && !isTemporary,
+  });
+  const updateConvoTags = useBookmarkSuccess(conversationId ?? '');
+  const tagMutation = useTagConversationMutation(conversationId ?? '', {
+    onSuccess: (newTags) => updateConvoTags(newTags),
+    onError: () => {
+      showToast({
+        message: localize('com_ui_bookmarks_create_error'),
+        severity: NotificationSeverity.ERROR,
+      });
+    },
+  });
+
+  const handleBookmarkToggle = useCallback(
+    (tag: string) => {
+      if (!conversationId) {
+        return;
+      }
+      const knownTags = (bookmarks ?? []).map((b) => b.tag);
+      const filteredTags = (tags ?? []).filter((t) => knownTags.includes(t));
+      const newTags = filteredTags.includes(tag)
+        ? filteredTags.filter((t) => t !== tag)
+        : [...filteredTags, tag];
+      tagMutation.mutate({ tags: newTags, tag });
+    },
+    [conversationId, bookmarks, tags, tagMutation],
+  );
+
+  const showBookmarkMenu = hasAccessToBookmarks === true && !isTemporary && conversationId != null;
 
   const duplicateConversation = useDuplicateConversationMutation({
     onSuccess: (data) => {
@@ -128,6 +183,36 @@ function ConvoOptions({
     });
   }, [conversationId, duplicateConversation]);
 
+  const bookmarkSubItems: MenuItemProps[] = useMemo(() => {
+    const items: MenuItemProps[] = [
+      {
+        id: '%___new___bookmark___%',
+        label: localize('com_ui_bookmarks_new'),
+        icon: <BookmarkPlusIcon className="icon-sm mr-2 text-text-primary" />,
+        hideOnClick: false,
+        ref: newBookmarkRef,
+        render: (props) => <button {...props} />,
+        onClick: () => setShowBookmarkDialog(true),
+      },
+    ];
+    (bookmarks ?? []).forEach((bookmark) => {
+      const isSelected = (tags ?? []).includes(bookmark.tag);
+      items.push({
+        id: `convo-options-tag-${bookmark.tag}`,
+        label: bookmark.tag,
+        hideOnClick: false,
+        icon: isSelected ? (
+          <BookmarkFilledIcon className="icon-sm mr-2 text-text-primary" />
+        ) : (
+          <BookmarkIcon className="icon-sm mr-2 text-text-primary" />
+        ),
+        onClick: () => handleBookmarkToggle(bookmark.tag),
+        disabled: tagMutation.isLoading,
+      });
+    });
+    return items;
+  }, [bookmarks, tags, localize, handleBookmarkToggle, tagMutation.isLoading]);
+
   const dropdownItems = useMemo(
     () => [
       {
@@ -143,6 +228,13 @@ function ConvoOptions({
         label: localize('com_ui_rename'),
         onClick: renameHandler,
         icon: <Pen className="icon-sm mr-2 text-text-primary" />,
+      },
+      {
+        label: localize('com_ui_bookmarks'),
+        icon: <BookmarkIcon className="icon-sm mr-2 text-text-primary" />,
+        show: showBookmarkMenu,
+        hideOnClick: false,
+        subItems: bookmarkSubItems,
       },
       {
         label: localize('com_ui_duplicate'),
@@ -178,6 +270,8 @@ function ConvoOptions({
       handleShareClick,
       startupConfig,
       renameHandler,
+      showBookmarkMenu,
+      bookmarkSubItems,
       handleDuplicateClick,
       isDuplicateLoading,
       handleArchiveClick,
@@ -189,7 +283,7 @@ function ConvoOptions({
   const menuId = useId();
 
   return (
-    <>
+    <BookmarkContext.Provider value={{ bookmarks: bookmarks ?? [] }}>
       <DropdownPopup
         portal={true}
         mountByState={true}
@@ -222,7 +316,7 @@ function ConvoOptions({
         }
         items={dropdownItems}
         menuId={menuId}
-        className="z-30"
+        className="z-[70]"
       />
       {showShareDialog && (
         <ShareButton
@@ -243,15 +337,33 @@ function ConvoOptions({
           setShowDeleteDialog={setShowDeleteDialog}
         />
       )}
-    </>
+      {showBookmarkDialog && (
+        <BookmarkEditDialog
+          tags={tags}
+          open={showBookmarkDialog}
+          setTags={updateConvoTags}
+          setOpen={setShowBookmarkDialog}
+          triggerRef={newBookmarkRef}
+          conversationId={conversationId ?? ''}
+          context="ConvoOptions - BookmarkEditDialog"
+        />
+      )}
+    </BookmarkContext.Provider>
   );
 }
 
 export default memo(ConvoOptions, (prevProps, nextProps) => {
+  const prevTags = prevProps.tags ?? [];
+  const nextTags = nextProps.tags ?? [];
+  const tagsEqual =
+    prevTags === nextTags ||
+    (prevTags.length === nextTags.length && prevTags.every((t, i) => t === nextTags[i]));
   return (
     prevProps.conversationId === nextProps.conversationId &&
     prevProps.title === nextProps.title &&
     prevProps.isPopoverActive === nextProps.isPopoverActive &&
-    prevProps.isActiveConvo === nextProps.isActiveConvo
+    prevProps.isActiveConvo === nextProps.isActiveConvo &&
+    prevProps.isTemporary === nextProps.isTemporary &&
+    tagsEqual
   );
 });

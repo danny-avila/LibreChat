@@ -28,7 +28,8 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const { conversationId, title = '' } = conversation;
+  const { conversationId, title = '', tags, expiredAt } = conversation;
+  const isTemporary = expiredAt != null;
 
   const [titleInput, setTitleInput] = useState(title || '');
   const [renaming, setRenaming] = useState(false);
@@ -118,6 +119,8 @@ export default function Conversation({ conversation, retainView, toggleNav }: Co
 
   const convoOptionsProps = {
     title,
+    tags,
+    isTemporary,
     retainView,
     renameHandler: handleRename,
     isActiveConvo,
