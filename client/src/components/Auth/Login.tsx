@@ -6,6 +6,7 @@ import type { TLoginLayoutContext } from '~/common';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { markAuthSeen } from '~/utils/firstVisitFlag';
 import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
@@ -22,6 +23,12 @@ function Login() {
 
   // Persist the disable flag locally so that once detected, auto-redirect stays disabled.
   const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
+
+  // Flip the first-visit flag so subsequent cold starts go straight to /login
+  // instead of /register.
+  useEffect(() => {
+    markAuthSeen();
+  }, []);
 
   useEffect(() => {
     const oauthError = searchParams?.get('error');

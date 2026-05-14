@@ -141,6 +141,9 @@ const finalizeSession = ({
     void writeNativeRefreshToken(refreshToken);
   }
   persistSessionForBootstrap(token, user);
+  // After the full reload AuthContext re-mounts, reads `registrationAuth`
+  // from sessionStorage and calls setUserContext({ isAuthenticated: true }),
+  // which sets the first-visit flag in one place.
   window.location.href = '/c/new';
 };
 

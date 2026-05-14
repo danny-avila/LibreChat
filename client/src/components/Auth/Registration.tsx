@@ -1,17 +1,23 @@
 import { useForm } from 'react-hook-form';
-import React, { useContext, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useRegisterUserMutation } from 'librechat-data-provider/react-query';
 import type { TRegisterUser, TRegisterUserResponse, TError } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
+import { markAuthSeen } from '~/utils/firstVisitFlag';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { ErrorMessage } from './ErrorMessage';
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
   const localize = useLocalize();
+
+  // Flip the first-visit flag so subsequent cold starts go straight to /login.
+  useEffect(() => {
+    markAuthSeen();
+  }, []);
   const { theme } = useContext(ThemeContext);
   const { startupConfig, startupConfigError, isFetching } = useOutletContext<TLoginLayoutContext>();
 
