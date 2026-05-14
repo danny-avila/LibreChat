@@ -119,12 +119,17 @@ function registerShutdownHandlers(): void {
   const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
   registeredSignals = signals.map((signal) => {
     const listener: NodeJS.SignalsListener = () => {
+      const shouldReraiseSignal = process.listenerCount(signal) === 0;
       shutdownTelemetry()
         .catch((error) => {
           const message = error instanceof Error ? error.message : String(error);
           emitWarning(`OpenTelemetry shutdown failed: ${message}`);
         })
-        .finally(() => process.exit(0));
+        .finally(() => {
+          if (shouldReraiseSignal) {
+            process.kill(process.pid, signal);
+          }
+        });
     };
     process.once(signal, listener);
     return { signal, listener };
