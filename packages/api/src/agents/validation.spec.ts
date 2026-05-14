@@ -81,3 +81,41 @@ describe('agentUpdateSchema with subagents', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('agentUpdateSchema with Langfuse', () => {
+  it('accepts HTTPS baseUrl values', () => {
+    const result = agentUpdateSchema.safeParse({
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-test',
+        secretKey: 'sk-test',
+        baseUrl: 'https://cloud.langfuse.com',
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts env var baseUrl refs', () => {
+    const result = agentUpdateSchema.safeParse({
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-test',
+        secretKey: 'sk-test',
+        baseUrl: '${LANGFUSE_BASE_URL}',
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects direct non-HTTPS baseUrl values', () => {
+    const result = agentUpdateSchema.safeParse({
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-test',
+        secretKey: 'sk-test',
+        baseUrl: 'http://169.254.169.254/latest/meta-data/',
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+});

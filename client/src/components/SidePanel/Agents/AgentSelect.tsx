@@ -130,6 +130,17 @@ function AgentSelect({
           return;
         }
 
+        if (name === 'langfuse' && typeof value === 'object' && value !== null) {
+          const langfuse = value as NonNullable<AgentForm['langfuse']>;
+          formValues[name] = {
+            enabled: typeof langfuse.enabled === 'boolean' ? langfuse.enabled : undefined,
+            publicKey: typeof langfuse.publicKey === 'string' ? langfuse.publicKey : '',
+            secretKey: '',
+            baseUrl: typeof langfuse.baseUrl === 'string' ? langfuse.baseUrl : '',
+          };
+          return;
+        }
+
         if (name === 'tool_options' && typeof value === 'object' && value !== null) {
           formValues[name] = value;
           return;

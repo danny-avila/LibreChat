@@ -466,6 +466,60 @@ describe('allowedAddressesSchema', () => {
   });
 });
 
+describe('langfuse config', () => {
+  it('accepts tenant-level Langfuse config with env var refs', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      langfuse: {
+        enabled: true,
+        publicKey: '${LANGFUSE_PUBLIC_KEY}',
+        secretKey: '${LANGFUSE_SECRET_KEY}',
+        baseUrl: '${LANGFUSE_BASE_URL}',
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an explicit HTTPS Langfuse base URL', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-test',
+        secretKey: 'sk-test',
+        baseUrl: 'https://cloud.langfuse.com',
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects direct non-HTTPS Langfuse base URLs', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-test',
+        secretKey: 'sk-test',
+        baseUrl: 'http://169.254.169.254/latest/meta-data/',
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects malformed direct Langfuse base URLs', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-test',
+        secretKey: 'sk-test',
+        baseUrl: 'not a url',
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('webSearchSchema', () => {
   it('accepts Tavily string modes for answer and raw content options', () => {
     const result = webSearchSchema.parse({

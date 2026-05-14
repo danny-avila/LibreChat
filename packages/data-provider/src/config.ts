@@ -9,6 +9,7 @@ import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
 import { REFILL_INTERVAL_UNITS } from './balance';
+import { extractVariableName } from './utils';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -470,6 +471,8 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
 ];
+
+export const LANGFUSE_SECRET_CLEAR_VALUE = '__LIBRECHAT_CLEAR_LANGFUSE_SECRET__';
 
 const LOCAL_REMOTE_OIDC_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
@@ -1333,6 +1336,30 @@ export const summarizationConfigSchema = z.object({
 
 export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
+const langfuseBaseUrlSchema = z.string().refine(
+  (value) => {
+    const trimmed = value.trim();
+    if (trimmed === '' || extractVariableName(trimmed) != null) {
+      return true;
+    }
+    try {
+      return new URL(trimmed).protocol === 'https:';
+    } catch {
+      return false;
+    }
+  },
+  { message: 'Langfuse baseUrl must be an HTTPS URL or an env var reference' },
+);
+
+export const langfuseConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  publicKey: z.string().optional(),
+  secretKey: z.string().optional(),
+  baseUrl: langfuseBaseUrlSchema.optional(),
+});
+
+export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
+
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
 export const configSchema = z.object({
@@ -1342,6 +1369,7 @@ export const configSchema = z.object({
   webSearch: webSearchSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
+  langfuse: langfuseConfigSchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),

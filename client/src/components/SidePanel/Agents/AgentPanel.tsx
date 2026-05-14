@@ -51,6 +51,35 @@ function getUpdateToastMessage(
   return localize('com_assistants_update_success_name', { name: name ?? localize('com_ui_agent') });
 }
 
+function composeLangfusePayload(
+  langfuse: AgentForm['langfuse'],
+): AgentForm['langfuse'] | undefined {
+  if (!langfuse) {
+    return undefined;
+  }
+
+  const normalized: NonNullable<AgentForm['langfuse']> = {
+    publicKey: langfuse.publicKey?.trim() ?? '',
+    secretKey: langfuse.secretKey?.trim() ?? '',
+    baseUrl: langfuse.baseUrl?.trim() ?? '',
+  };
+  if (typeof langfuse.enabled === 'boolean') {
+    normalized.enabled = langfuse.enabled;
+  } else if (langfuse.enabled === null) {
+    normalized.enabled = null;
+  }
+
+  const hasCredentialValue =
+    normalized.publicKey !== '' || normalized.secretKey !== '' || normalized.baseUrl !== '';
+  const hasExplicitEnabled = typeof normalized.enabled === 'boolean' || normalized.enabled === null;
+
+  if (!hasExplicitEnabled && !hasCredentialValue) {
+    return undefined;
+  }
+
+  return normalized;
+}
+
 /**
  * Normalizes the payload sent to the agent update/create endpoints.
  * Handles avatar reset requests for persistent agents independently of avatar uploads.
@@ -78,6 +107,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     tool_options,
     skills,
     skills_enabled,
+    langfuse,
     avatar_action: avatarActionState,
   } = data;
 
@@ -86,6 +116,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
   const model = _model ?? '';
   const provider =
     (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
+  const langfusePayload = composeLangfusePayload(langfuse);
 
   return {
     payload: {
@@ -107,6 +138,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       tool_options,
       skills,
       skills_enabled,
+      langfuse: langfusePayload,
       ...(shouldResetAvatar ? { avatar: null } : {}),
     },
     provider,

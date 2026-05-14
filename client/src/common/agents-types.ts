@@ -4,6 +4,7 @@ import type {
   AgentSubagentsConfig,
   AgentToolOptions,
   SupportContact,
+  LangfuseConfig,
   AgentProvider,
   GraphEdge,
   Agent,
@@ -28,6 +29,10 @@ export type TAgentCapabilities = {
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
 };
 
+type AgentLangfuseFormConfig = Omit<LangfuseConfig, 'enabled'> & {
+  enabled?: boolean | null;
+};
+
 export type AgentForm = {
   agent?: TAgentOption;
   id: string;
@@ -46,6 +51,7 @@ export type AgentForm = {
   agent_ids?: string[];
   edges?: GraphEdge[];
   subagents?: AgentSubagentsConfig;
+  langfuse?: AgentLangfuseFormConfig;
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
   recursion_limit?: number;
   support_contact?: SupportContact;

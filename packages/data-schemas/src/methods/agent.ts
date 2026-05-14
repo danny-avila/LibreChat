@@ -57,6 +57,15 @@ function extractMCPServerNames(tools: string[] | undefined | null): string[] {
   return Array.from(serverNames);
 }
 
+function removeUnsetFields(target: Record<string, unknown>, unsetUpdates: unknown): void {
+  if (!unsetUpdates || typeof unsetUpdates !== 'object' || Array.isArray(unsetUpdates)) {
+    return;
+  }
+  for (const key of Object.keys(unsetUpdates)) {
+    delete target[key];
+  }
+}
+
 /**
  * Check if a version already exists in the versions array, excluding timestamp and author fields.
  */
@@ -84,13 +93,20 @@ function isDuplicateVersion(
     'actionsHash',
   ];
 
-  const { $push: _$push, $pull: _$pull, $addToSet: _$addToSet, ...directUpdates } = updateData;
+  const {
+    $push: _$push,
+    $pull: _$pull,
+    $addToSet: _$addToSet,
+    $unset,
+    ...directUpdates
+  } = updateData;
 
-  if (Object.keys(directUpdates).length === 0 && !actionsHash) {
+  if (Object.keys(directUpdates).length === 0 && !$unset && !actionsHash) {
     return null;
   }
 
   const wouldBeVersion = { ...currentData, ...directUpdates } as Record<string, unknown>;
+  removeUnsetFields(wouldBeVersion, $unset);
   const lastVersion = versions[versions.length - 1] as Record<string, unknown>;
 
   if (actionsHash && lastVersion.actionsHash !== actionsHash) {
@@ -310,7 +326,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
         author: _author,
         ...versionData
       } = currentAgent.toObject() as unknown as Record<string, unknown>;
-      const { $push, $pull, $addToSet, ...directUpdates } = updateData;
+      const { $push, $pull, $addToSet, $unset, ...directUpdates } = updateData;
 
       // Sync mcpServerNames when tools are updated
       if ((directUpdates as Record<string, unknown>).tools !== undefined) {
@@ -348,7 +364,12 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
 
       const shouldCreateVersion =
         !skipVersioning &&
-        (forceVersion || Object.keys(directUpdates).length > 0 || $push || $pull || $addToSet);
+        (forceVersion ||
+          Object.keys(directUpdates).length > 0 ||
+          $push ||
+          $pull ||
+          $addToSet ||
+          $unset);
 
       if (shouldCreateVersion) {
         const duplicateVersion = isDuplicateVersion(
@@ -372,6 +393,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
         ...directUpdates,
         updatedAt: new Date(),
       };
+      removeUnsetFields(versionEntry, $unset);
 
       if (actionsHash) {
         versionEntry.actionsHash = actionsHash;

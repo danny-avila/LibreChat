@@ -1,10 +1,11 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, decryptV2 } from '@librechat/data-schemas';
 import { Run, Providers, Constants } from '@librechat/agents';
 import {
   KnownEndpoints,
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_RUN_CONFIGS,
   extractEnvVariable,
+  extractVariableName,
   providerEndpointMap,
   normalizeEndpointName,
 } from 'librechat-data-provider';
@@ -24,6 +25,7 @@ import type {
 } from '@librechat/agents';
 import type {
   Agent,
+  LangfuseConfig,
   AgentModelParameters,
   AgentSubagentsConfig,
   SummarizationConfig,
@@ -35,6 +37,7 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { isUserProvided } from '~/utils/common';
+import { ENCRYPTED_V2_VALUE, isNonEmptyString } from './langfuse';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -272,10 +275,6 @@ type RunAgent = Omit<Agent, 'tools'> & {
   subagents?: AgentSubagentsConfig;
 };
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 const UNRESOLVED_ENV_VAR_PLACEHOLDER = /\$\{[^}]+\}/;
 
 function hasUnresolvedPlaceholder(value: string): boolean {
@@ -284,6 +283,105 @@ function hasUnresolvedPlaceholder(value: string): boolean {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+type EffectiveLangfuseConfig =
+  | {
+      enabled: true;
+      publicKey: string;
+      secretKey: string;
+      baseUrl?: string;
+    }
+  | {
+      enabled: false;
+    };
+
+async function resolveLangfuseValue(
+  agentValue?: string,
+  tenantValue?: string,
+  options: { encrypted?: boolean; agentId?: string } = {},
+): Promise<string | undefined> {
+  const isAgentValue = isNonEmptyString(agentValue);
+  let rawValue: string | undefined;
+  if (isAgentValue) {
+    rawValue = agentValue;
+  } else if (isNonEmptyString(tenantValue)) {
+    rawValue = tenantValue;
+  }
+  if (!rawValue) {
+    return undefined;
+  }
+
+  let value = rawValue;
+  let decrypted = false;
+  if (options.encrypted === true && isAgentValue && ENCRYPTED_V2_VALUE.test(value)) {
+    try {
+      value = decodeURIComponent(await decryptV2(value));
+      decrypted = true;
+    } catch (error) {
+      logger.warn(
+        `[createRun] Langfuse tracing disabled for agent ${
+          options.agentId ?? 'unknown'
+        }; failed to decrypt secretKey: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+  }
+
+  const shouldResolveEnv = !decrypted || extractVariableName(value) != null;
+  const resolved = shouldResolveEnv ? extractEnvVariable(value) : value.trim();
+  if (!isNonEmptyString(resolved) || (shouldResolveEnv && hasUnresolvedPlaceholder(resolved))) {
+    return undefined;
+  }
+
+  return resolved;
+}
+
+export async function resolveEffectiveLangfuseConfig(
+  agent: RunAgent,
+  appConfig?: AppConfig,
+): Promise<EffectiveLangfuseConfig | undefined> {
+  const tenantLangfuse = appConfig?.langfuse;
+  const agentLangfuse = agent.langfuse;
+
+  if (!tenantLangfuse && !agentLangfuse) {
+    return undefined;
+  }
+
+  const enabled = agentLangfuse?.enabled ?? tenantLangfuse?.enabled;
+  if (enabled !== true) {
+    return { enabled: false };
+  }
+
+  const [publicKey, secretKey, baseUrl] = await Promise.all([
+    resolveLangfuseValue(agentLangfuse?.publicKey, tenantLangfuse?.publicKey),
+    resolveLangfuseValue(agentLangfuse?.secretKey, tenantLangfuse?.secretKey, {
+      encrypted: true,
+      agentId: agent.id,
+    }),
+    resolveLangfuseValue(agentLangfuse?.baseUrl, tenantLangfuse?.baseUrl),
+  ]);
+
+  if (!publicKey || !secretKey) {
+    const missingFields = [
+      !publicKey ? 'publicKey' : undefined,
+      !secretKey ? 'secretKey' : undefined,
+    ].filter(Boolean);
+
+    logger.warn(
+      `[createRun] Langfuse tracing disabled for agent ${agent.id}; missing or unresolved ${missingFields.join(
+        ', ',
+      )}`,
+    );
+    return { enabled: false };
+  }
+
+  return {
+    enabled: true,
+    publicKey,
+    secretKey,
+    ...(baseUrl ? { baseUrl } : {}),
+  };
 }
 
 const nullableAgentModelParameterKeys = [
@@ -625,14 +723,14 @@ function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
  * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
  * array when subagents are disabled or no spawn targets are available.
  */
-function buildSubagentConfigs(
+async function buildSubagentConfigs(
   agent: RunAgent,
   agentInput: AgentInputs,
-  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
+  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => Promise<AgentInputs>,
   state: SubagentBuildState,
   ancestors: Set<string> = new Set(),
   depth = 0,
-): SubagentConfig[] {
+): Promise<SubagentConfig[]> {
   if (!agent.subagents?.enabled) {
     return [];
   }
@@ -682,7 +780,7 @@ function buildSubagentConfigs(
      * skips both the field stamping and the registry mutation at the
      * source so children truly start fresh.
      */
-    const childInputs = toInput(child, { isSubagent: true });
+    const childInputs = await toInput(child, { isSubagent: true });
     /**
      * Recursively resolve the child's own spawn targets so multi-level
      * delegation (A → B → C) works. Without this, a child whose own
@@ -691,7 +789,7 @@ function buildSubagentConfigs(
      * `subagentConfigs`, and that only runs for the outer agents in
      * `agents[]`. Cycle-safe via `nextAncestors`.
      */
-    const grandchildConfigs = buildSubagentConfigs(
+    const grandchildConfigs = await buildSubagentConfigs(
       child,
       childInputs,
       toInput,
@@ -786,7 +884,10 @@ export async function createRun({
       ? extractDiscoveredToolsFromHistory(messages)
       : new Set<string>();
 
-  const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
+  const buildAgentInput = async (
+    agent: RunAgent,
+    opts: { isSubagent?: boolean } = {},
+  ): Promise<AgentInputs> => {
     const isSubagent = opts.isSubagent === true;
     const provider =
       (providerEndpointMap[
@@ -909,7 +1010,8 @@ export async function createRun({
     );
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
-    return {
+    const langfuse = await resolveEffectiveLangfuseConfig(agent, appConfig);
+    const agentInput: AgentInputs & { langfuse?: LangfuseConfig } = {
       provider,
       reasoningKey,
       toolDefinitions,
@@ -930,6 +1032,10 @@ export async function createRun({
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
     };
+    if (langfuse) {
+      agentInput.langfuse = langfuse;
+    }
+    return agentInput;
   };
 
   const agentInputs: AgentInputs[] = [];
@@ -938,8 +1044,8 @@ export async function createRun({
     rootAgentIds: agents.map((agent) => agent.id),
   };
   for (const agent of agents) {
-    const agentInput = buildAgentInput(agent);
-    const subagentConfigs = buildSubagentConfigs(
+    const agentInput = await buildAgentInput(agent);
+    const subagentConfigs = await buildSubagentConfigs(
       agent,
       agentInput,
       buildAgentInput,

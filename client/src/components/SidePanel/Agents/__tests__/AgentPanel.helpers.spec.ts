@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 import { describe, it, expect, jest } from '@jest/globals';
-import { Constants, type Agent } from 'librechat-data-provider';
+import { Constants, LANGFUSE_SECRET_CLEAR_VALUE, type Agent } from 'librechat-data-provider';
 import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import {
@@ -28,6 +28,7 @@ const createForm = (): AgentForm => ({
   recursion_limit: undefined,
   category: 'general',
   support_contact: undefined,
+  langfuse: undefined,
   artifacts: '',
   execute_code: false,
   file_search: false,
@@ -63,6 +64,135 @@ describe('composeAgentUpdatePayload', () => {
     const { payload } = composeAgentUpdatePayload(form, 'agent_123');
 
     expect(payload.avatar).toBeUndefined();
+  });
+
+  it('includes normalized Langfuse config fields', () => {
+    const form = createForm();
+    form.langfuse = {
+      enabled: true,
+      publicKey: ' pk-test ',
+      secretKey: ' sk-test ',
+      baseUrl: ' https://langfuse.test ',
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.langfuse).toEqual({
+      enabled: true,
+      publicKey: 'pk-test',
+      secretKey: 'sk-test',
+      baseUrl: 'https://langfuse.test',
+    });
+  });
+
+  it('omits blank inherited Langfuse defaults to preserve tenant inheritance', () => {
+    const form = createForm();
+    form.langfuse = {
+      enabled: undefined,
+      publicKey: '',
+      secretKey: '',
+      baseUrl: '',
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.langfuse).toBeUndefined();
+  });
+
+  it('keeps an explicit blank disabled Langfuse override', () => {
+    const form = createForm();
+    form.langfuse = {
+      enabled: false,
+      publicKey: '',
+      secretKey: '',
+      baseUrl: '',
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.langfuse).toEqual({
+      enabled: false,
+      publicKey: '',
+      secretKey: '',
+      baseUrl: '',
+    });
+  });
+
+  it('preserves undefined Langfuse enabled so tenant inheritance survives routine saves', () => {
+    const form = createForm();
+    form.agent = {
+      id: 'agent_123',
+      langfuse: {
+        publicKey: 'pk-existing',
+        secretKey: '',
+      },
+    } as Agent;
+    form.langfuse = {
+      enabled: undefined,
+      publicKey: 'pk-existing',
+      secretKey: '',
+      baseUrl: '',
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.langfuse).toEqual({
+      publicKey: 'pk-existing',
+      secretKey: '',
+      baseUrl: '',
+    });
+  });
+
+  it('sends null Langfuse enabled to clear an explicit override', () => {
+    const form = createForm();
+    form.agent = {
+      id: 'agent_123',
+      langfuse: {
+        enabled: false,
+      },
+    } as Agent;
+    form.langfuse = {
+      enabled: null,
+      publicKey: '',
+      secretKey: '',
+      baseUrl: '',
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.langfuse).toEqual({
+      enabled: null,
+      publicKey: '',
+      secretKey: '',
+      baseUrl: '',
+    });
+  });
+
+  it('sends the Langfuse secret clear sentinel when requested', () => {
+    const form = createForm();
+    form.agent = {
+      id: 'agent_123',
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-existing',
+        secretKey: '',
+      },
+    } as Agent;
+    form.langfuse = {
+      enabled: true,
+      publicKey: 'pk-existing',
+      secretKey: LANGFUSE_SECRET_CLEAR_VALUE,
+      baseUrl: '',
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.langfuse).toEqual({
+      enabled: true,
+      publicKey: 'pk-existing',
+      secretKey: LANGFUSE_SECRET_CLEAR_VALUE,
+      baseUrl: '',
+    });
   });
 });
 

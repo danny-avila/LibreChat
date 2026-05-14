@@ -7,6 +7,15 @@ version: 1.3.11
 # Cache settings: Set to true to enable caching
 cache: true
 
+# Tenant-level Langfuse tracing defaults (optional)
+# Prefer environment-variable references here so secrets are not stored directly in this file.
+# Agents can override these values from the agent editor when needed.
+# langfuse:
+#   enabled: true
+#   publicKey: '${LANGFUSE_PUBLIC_KEY}'
+#   secretKey: '${LANGFUSE_SECRET_KEY}'
+#   baseUrl: '${LANGFUSE_BASE_URL}'
+
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)
 # fileStrategy: "s3"

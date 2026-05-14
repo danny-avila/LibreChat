@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { MAX_SUBAGENTS, ViolationTypes, ErrorTypes } from 'librechat-data-provider';
+import {
+  MAX_SUBAGENTS,
+  ErrorTypes,
+  ViolationTypes,
+  langfuseConfigSchema,
+} from 'librechat-data-provider';
 import type { Agent, TModelsConfig } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 
@@ -90,6 +95,12 @@ export const agentSubagentsSchema = z
   })
   .optional();
 
+export const agentLangfuseSchema = langfuseConfigSchema
+  .extend({
+    enabled: z.union([z.boolean(), z.null()]).optional(),
+  })
+  .optional();
+
 /** Base agent schema with all common fields */
 export const agentBaseSchema = z.object({
   name: z.string().nullable().optional(),
@@ -111,6 +122,7 @@ export const agentBaseSchema = z.object({
   tool_resources: agentToolResourcesSchema,
   tool_options: agentToolOptionsSchema,
   subagents: agentSubagentsSchema,
+  langfuse: agentLangfuseSchema,
   support_contact: agentSupportContactSchema,
   category: z.string().optional(),
 });

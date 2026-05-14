@@ -6,7 +6,9 @@ const {
   refreshS3Url,
   agentCreateSchema,
   agentUpdateSchema,
+  redactLangfuseSecret,
   refreshListAvatars,
+  normalizeLangfuseConfig,
   collectEdgeAgentIds,
   mergeAgentOcrConversion,
   MAX_AVATAR_REFRESH_AGENTS,
@@ -284,6 +286,13 @@ const createAgentHandler = async (req, res) => {
       agentData.model_parameters = removeNullishValues(agentData.model_parameters, true);
     }
 
+    if (agentData.langfuse) {
+      agentData.langfuse = await normalizeLangfuseConfig(agentData.langfuse);
+      if (!agentData.langfuse) {
+        delete agentData.langfuse;
+      }
+    }
+
     const { id: userId, role: userRole } = req.user;
 
     if (agentData.tool_resources) {
@@ -389,7 +398,7 @@ const createAgentHandler = async (req, res) => {
       );
     }
 
-    res.status(201).json(agent);
+    res.status(201).json(redactLangfuseSecret(agent));
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.error('[/Agents] Validation error', error.errors);
@@ -471,8 +480,8 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
       });
     }
 
-    // EDIT permission: Full agent details including sensitive configuration
-    return res.status(200).json(agent);
+    // EDIT permission: Full agent details, with write-only Langfuse secret redacted.
+    return res.status(200).json(redactLangfuseSecret(agent));
   } catch (error) {
     logger.error('[/Agents/:id] Error retrieving agent', error);
     res.status(500).json({ error: error.message });
@@ -556,6 +565,24 @@ const updateAgentHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
+    if (updateData.langfuse) {
+      const normalizedLangfuse = await normalizeLangfuseConfig(
+        updateData.langfuse,
+        existingAgent.langfuse,
+      );
+      if (normalizedLangfuse) {
+        updateData.langfuse = normalizedLangfuse;
+      } else {
+        delete updateData.langfuse;
+        if (existingAgent.langfuse) {
+          updateData.$unset = {
+            ...(updateData.$unset || {}),
+            langfuse: 1,
+          };
+        }
+      }
+    }
+
     // Convert legacy OCR tool resource to context format in existing agent
     const ocrConversion = mergeAgentOcrConversion(existingAgent, updateData);
     if (ocrConversion.tool_resources) {
@@ -615,7 +642,7 @@ const updateAgentHandler = async (req, res) => {
       delete updatedAgent.author;
     }
 
-    return res.json(updatedAgent);
+    return res.json(redactLangfuseSecret(updatedAgent));
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.error('[/Agents/:id] Validation error', error.errors);
@@ -794,7 +821,7 @@ const duplicateAgentHandler = async (req, res) => {
     }
 
     return res.status(201).json({
-      agent: newAgent,
+      agent: redactLangfuseSecret(newAgent),
       actions: newActionsList,
     });
   } catch (error) {
@@ -948,7 +975,7 @@ const getListAgentsHandler = async (req, res) => {
         // Silently ignore mapping errors
         void e;
       }
-      return agent;
+      return redactLangfuseSecret(agent);
     });
 
     return res.json(data);
@@ -1042,7 +1069,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       logger.error('[/:agent_id/avatar] Error invalidating avatar refresh cache', cacheErr);
     }
 
-    res.status(201).json(updatedAgent);
+    res.status(201).json(redactLangfuseSecret(updatedAgent));
   } catch (error) {
     const message = 'An error occurred while updating the Agent Avatar';
     logger.error(
@@ -1126,6 +1153,21 @@ const revertAgentVersionHandler = async (req, res) => {
       }
     }
 
+    const revertVersion = existingAgent.versions?.[version_index];
+    if (revertVersion?.langfuse) {
+      const normalizedLangfuse = await normalizeLangfuseConfig(revertVersion.langfuse, undefined, {
+        preserveIncomingEncrypted: true,
+      });
+      if (normalizedLangfuse) {
+        revertUpdates.langfuse = normalizedLangfuse;
+      }
+    } else if (existingAgent.langfuse) {
+      revertUpdates.$unset = {
+        ...(revertUpdates.$unset || {}),
+        langfuse: 1,
+      };
+    }
+
     if (Object.keys(revertUpdates).length > 0) {
       updatedAgent = await db.updateAgent({ id }, revertUpdates, { updatingUserId: req.user.id });
     }
@@ -1138,7 +1180,7 @@ const revertAgentVersionHandler = async (req, res) => {
       delete updatedAgent.author;
     }
 
-    return res.json(updatedAgent);
+    return res.json(redactLangfuseSecret(updatedAgent));
   } catch (error) {
     logger.error('[/agents/:id/revert] Error reverting Agent version', error);
     res.status(500).json({ error: error.message });
