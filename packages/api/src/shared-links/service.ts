@@ -37,9 +37,9 @@ export async function autoMigrateLegacyLink(share: RawSharedLink): Promise<void>
   const resourceId = shareId.toString();
   let ownerGranted = false;
   let publicGranted = false;
-
+  let existingOwner = false;
   if (share.user) {
-    const existingOwner = await getAclService().checkPermission({
+    existingOwner = await getAclService().checkPermission({
       userId: share.user,
       resourceType: ResourceType.SHARED_LINK,
       resourceId,
@@ -56,6 +56,7 @@ export async function autoMigrateLegacyLink(share: RawSharedLink): Promise<void>
           accessRoleId: AccessRoleIds.SHARED_LINK_OWNER,
           grantedBy: share.user,
         });
+        existingOwner = true;
         ownerGranted = true;
       } catch (err) {
         logger.error('[autoMigrateLegacyLink] Failed to grant OWNER', {
@@ -65,8 +66,8 @@ export async function autoMigrateLegacyLink(share: RawSharedLink): Promise<void>
       }
     }
   }
-
-  if (share.isPublic !== false && share.user) {
+  const needsPublicGrant = share.isPublic !== false && !!share.user;
+  if (needsPublicGrant) {
     const hasPublic = await getAclService().hasPublicAccess({
       resourceType: ResourceType.SHARED_LINK,
       resourceId,
@@ -80,7 +81,7 @@ export async function autoMigrateLegacyLink(share: RawSharedLink): Promise<void>
           resourceType: ResourceType.SHARED_LINK,
           resourceId,
           accessRoleId: AccessRoleIds.SHARED_LINK_VIEWER,
-          grantedBy: share.user,
+          grantedBy: share.user!,
         });
         publicGranted = true;
       } catch (err) {
@@ -89,11 +90,23 @@ export async function autoMigrateLegacyLink(share: RawSharedLink): Promise<void>
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    } else {
+      publicGranted = true;
     }
   }
 
-  // Raw driver bypasses Mongoose strict mode, which strips $unset of
-  // fields absent from the schema. isPublic was removed from the schema.
+  const ownerOk = existingOwner || !share.user;
+  const publicOk = publicGranted || !needsPublicGrant;
+
+  if (!ownerOk || !publicOk) {
+    logger.warn('[autoMigrateLegacyLink] Grants incomplete, keeping isPublic for retry', {
+      shareId: share.shareId,
+      ownerOk,
+      publicOk,
+    });
+    return;
+  }
+
   await mongoose.connection
     .db!.collection('sharedlinks')
     .updateOne({ _id: shareId }, { $unset: { isPublic: 1 } });

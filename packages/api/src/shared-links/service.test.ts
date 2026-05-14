@@ -112,6 +112,30 @@ describe('autoMigrateLegacyLink', () => {
     expect(rawDoc).not.toHaveProperty('isPublic');
   });
 
+  test('preserves isPublic when grant fails, allowing retry on next access', async () => {
+    const link = await createLegacyLink(true);
+    const AccessRole = mongoose.models.AccessRole;
+    await AccessRole.deleteOne({ accessRoleId: AccessRoleIds.SHARED_LINK_OWNER });
+
+    try {
+      await autoMigrateLegacyLink({
+        _id: link._id,
+        conversationId: link.conversationId,
+        user: userId,
+        shareId: link.shareId,
+        isPublic: true,
+      });
+
+      const rawDoc = await mongoose.connection
+        .db!.collection('sharedlinks')
+        .findOne({ _id: link._id });
+      expect(rawDoc).toHaveProperty('isPublic');
+    } finally {
+      const methods = createMethods(mongoose);
+      await methods.seedDefaultRoles();
+    }
+  });
+
   test('is idempotent — does not duplicate ACL entries on repeated calls', async () => {
     const link = await createLegacyLink(true);
     const args = {
