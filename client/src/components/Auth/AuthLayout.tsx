@@ -1,6 +1,6 @@
 /* eslint-disable i18next/no-literal-string */
 import { useEffect } from 'react';
-import { CodeCanBrandIcon, ThemeSelector } from '@librechat/client';
+import { CodeCanBrandIcon } from '@librechat/client';
 import { TStartupConfig } from 'librechat-data-provider';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import { TranslationKeys, useLocalize } from '~/hooks';
@@ -94,9 +94,6 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-dm-ambient">
       <Banner />
       <DisplayError />
-      <div className="absolute bottom-0 left-0 z-10 md:m-4">
-        <ThemeSelector />
-      </div>
 
       <div className="flex flex-grow items-start justify-center pt-10 sm:items-center sm:pt-0">
         <div className="w-full max-w-[420px] px-5 pb-8 pt-6 sm:px-6 sm:py-8">
