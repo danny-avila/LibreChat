@@ -160,6 +160,7 @@ export type TFile = {
      */
     codeEnvRef?: CodeEnvRef;
   };
+  pinned?: boolean;
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };

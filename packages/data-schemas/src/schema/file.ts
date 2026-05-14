@@ -144,6 +144,9 @@ const file: Schema<IMongoFile> = new Schema(
       type: String,
       index: true,
     },
+    pinned: {
+      type: Boolean,
+    },
   },
   {
     timestamps: true,

@@ -289,6 +289,7 @@ export const fileDownload = (userId: string, fileId: string) =>
  * poll while background HTML extraction is in flight. See PR #12957. */
 export const filePreview = (fileId: string) =>
   `${BASE_URL}/api/files/${encodeURIComponent(fileId)}/preview`;
+export const fileUpdate = (fileId: string) => `${BASE_URL}/api/files/${encodeURIComponent(fileId)}`;
 export const fileConfig = () => `${BASE_URL}/api/files/config`;
 export const agentFiles = (agentId: string) => `${BASE_URL}/api/files/agent/${agentId}`;
 

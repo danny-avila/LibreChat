@@ -75,4 +75,5 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   createdAt?: Date;
   updatedAt?: Date;
   tenantId?: string;
+  pinned?: boolean;
 }

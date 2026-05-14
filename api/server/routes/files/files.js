@@ -128,6 +128,8 @@ router.get('/config', async (req, res) => {
   }
 });
 
+router.use('/', require('../../../nj/routes/files/files'));
+
 router.delete('/', async (req, res) => {
   try {
     const { files: _files } = req.body;

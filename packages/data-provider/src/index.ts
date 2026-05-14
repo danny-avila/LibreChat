@@ -51,3 +51,6 @@ export * from './feedback';
 export * from './parameterSettings';
 /* code-execution sandbox */
 export * from './codeEnvRef';
+
+/* NJ: custom code for ourselves */
+export * from './nj/files';
