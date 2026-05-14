@@ -1,11 +1,15 @@
 const express = require('express');
-const { isEnabled, getBalanceConfig, getCloudFrontConfig } = require('@librechat/api');
+const {
+  isEnabled,
+  getBalanceConfig,
+  getCloudFrontConfig,
+  sanitizeModelSpecs,
+} = require('@librechat/api');
 const { defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
-const { PRIVATE_MODEL_SPEC_PRESET_FIELDS } = require('~/server/utils/modelSpecs');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -134,32 +138,6 @@ function buildCloudFrontStartupConfig() {
       endpoint: '/api/auth/cloudfront/refresh',
       domain: config.domain,
     },
-  };
-}
-
-function sanitizeModelSpecs(modelSpecs) {
-  if (!modelSpecs?.list || !Array.isArray(modelSpecs.list)) {
-    return modelSpecs;
-  }
-
-  return {
-    ...modelSpecs,
-    list: modelSpecs.list.map((modelSpec) => {
-      const preset = modelSpec?.preset;
-      if (!preset || typeof preset !== 'object') {
-        return modelSpec;
-      }
-
-      const sanitizedPreset = { ...preset };
-      for (const field of PRIVATE_MODEL_SPEC_PRESET_FIELDS) {
-        delete sanitizedPreset[field];
-      }
-
-      return {
-        ...modelSpec,
-        preset: sanitizedPreset,
-      };
-    }),
   };
 }
 

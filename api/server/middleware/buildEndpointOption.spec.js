@@ -42,6 +42,7 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   handleError: jest.fn(),
 }));
 

@@ -1,11 +1,16 @@
-const { handleError } = require('@librechat/api');
+const {
+  handleError,
+  applyModelSpecPreset,
+  findModelSpecByName,
+  isModelSpecEndpointMatch,
+  resolveModelSpecPromptPrefixVariables,
+} = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
   EndpointURLs,
   EModelEndpoint,
   isAgentsEndpoint,
   parseCompactConvo,
-  replaceSpecialVars,
   getDefaultParamsEndpoint,
 } = require('librechat-data-provider');
 const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
@@ -13,105 +18,12 @@ const assistants = require('~/server/services/Endpoints/assistants');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const agents = require('~/server/services/Endpoints/agents');
 const { updateFilesUsage } = require('~/models');
-const { PRIVATE_MODEL_SPEC_PRESET_FIELDS } = require('~/server/utils/modelSpecs');
 
 const buildFunction = {
   [EModelEndpoint.agents]: agents.buildOptions,
   [EModelEndpoint.assistants]: assistants.buildOptions,
   [EModelEndpoint.azureAssistants]: azureAssistants.buildOptions,
 };
-
-function hasValue(field, value) {
-  if (value == null || value === '') {
-    return false;
-  }
-
-  if (!Array.isArray(value)) {
-    return true;
-  }
-
-  if (field === 'examples') {
-    return value.some((example) => {
-      const input = example?.input?.content;
-      const output = example?.output?.content;
-      return Boolean(input || output);
-    });
-  }
-
-  return value.length > 0;
-}
-
-function mergeModelSpecPreset(modelSpec, parsedBody, { includePresetDefaults = false } = {}) {
-  const preset = modelSpec?.preset;
-  if (!preset || typeof preset !== 'object') {
-    return { conversation: parsedBody, appliedPrivateFields: new Set() };
-  }
-
-  const merged = {
-    ...(includePresetDefaults ? preset : {}),
-    ...parsedBody,
-    spec: modelSpec.name,
-  };
-  const appliedPrivateFields = new Set();
-
-  for (const field of PRIVATE_MODEL_SPEC_PRESET_FIELDS) {
-    if (!Object.prototype.hasOwnProperty.call(preset, field)) {
-      continue;
-    }
-
-    if (includePresetDefaults) {
-      appliedPrivateFields.add(field);
-      continue;
-    }
-
-    if (!hasValue(field, parsedBody[field])) {
-      merged[field] = preset[field];
-      appliedPrivateFields.add(field);
-    }
-  }
-
-  return { conversation: merged, appliedPrivateFields };
-}
-
-function parseModelSpecPreset({
-  modelSpec,
-  parsedBody,
-  endpoint,
-  endpointType,
-  defaultParamsEndpoint,
-  includePresetDefaults,
-}) {
-  const { conversation, appliedPrivateFields } = mergeModelSpecPreset(modelSpec, parsedBody, {
-    includePresetDefaults,
-  });
-  const reparsedBody = parseCompactConvo({
-    endpoint,
-    endpointType,
-    conversation,
-    defaultParamsEndpoint,
-  });
-
-  if (modelSpec.iconURL != null && modelSpec.iconURL !== '') {
-    reparsedBody.iconURL = modelSpec.iconURL;
-  }
-
-  return { parsedBody: reparsedBody, appliedPrivateFields };
-}
-
-function resolvePromptPrefixVariables(parsedBody, user, now) {
-  if (typeof parsedBody.promptPrefix !== 'string') {
-    return parsedBody;
-  }
-
-  return {
-    ...parsedBody,
-    promptPrefix: replaceSpecialVars({
-      text: parsedBody.promptPrefix,
-      user,
-      now,
-    }),
-  };
-}
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
@@ -154,17 +66,17 @@ async function buildEndpointOption(req, res, next) {
       return handleError(res, { text: 'No model spec selected' });
     }
 
-    const currentModelSpec = list.find((s) => s.name === spec);
+    const currentModelSpec = findModelSpecByName({ list }, spec);
     if (!currentModelSpec) {
       return handleError(res, { text: 'Invalid model spec' });
     }
 
-    if (endpoint !== currentModelSpec.preset.endpoint) {
+    if (!isModelSpecEndpointMatch(currentModelSpec, endpoint)) {
       return handleError(res, { text: 'Model spec mismatch' });
     }
 
     try {
-      const result = parseModelSpecPreset({
+      const result = applyModelSpecPreset({
         modelSpec: currentModelSpec,
         parsedBody: currentModelSpec.preset,
         endpoint,
@@ -179,14 +91,14 @@ async function buildEndpointOption(req, res, next) {
       return handleError(res, { text: 'Error parsing model spec' });
     }
   } else if (parsedBody.spec && appConfig.modelSpecs?.list) {
-    const modelSpec = appConfig.modelSpecs.list.find((s) => s.name === parsedBody.spec);
+    const modelSpec = findModelSpecByName(appConfig.modelSpecs, parsedBody.spec);
     if (modelSpec) {
-      if (endpoint !== modelSpec.preset?.endpoint) {
+      if (!isModelSpecEndpointMatch(modelSpec, endpoint)) {
         return handleError(res, { text: 'Model spec mismatch' });
       }
 
       try {
-        const result = parseModelSpecPreset({
+        const result = applyModelSpecPreset({
           modelSpec,
           parsedBody,
           endpoint,
@@ -203,7 +115,11 @@ async function buildEndpointOption(req, res, next) {
   }
 
   if (!isAgents && appliedModelSpecPrivateFields.has('promptPrefix')) {
-    parsedBody = resolvePromptPrefixVariables(parsedBody, req.user, req.body.clientTimestamp);
+    parsedBody = resolveModelSpecPromptPrefixVariables(
+      parsedBody,
+      req.user,
+      req.body.clientTimestamp,
+    );
   }
 
   try {
