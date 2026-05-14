@@ -3,7 +3,16 @@ import { SpanStatusCode, trace } from '@opentelemetry/api';
 import type { NextFunction, Response } from 'express';
 import type { Span } from '@opentelemetry/api';
 import type { ServerRequest } from '~/types';
+import { getTelemetryRequestSpan } from './sdk';
 import { telemetryErrorMiddleware, telemetryMiddleware } from './middleware';
+
+jest.mock('./sdk', () => ({
+  getTelemetryRequestSpan: jest.fn(),
+}));
+
+const mockGetTelemetryRequestSpan = getTelemetryRequestSpan as jest.MockedFunction<
+  typeof getTelemetryRequestSpan
+>;
 
 interface MockResponse extends EventEmitter {
   statusCode: number;
@@ -63,6 +72,10 @@ function createRequest(overrides: Partial<ServerRequest> = {}): ServerRequest {
   } as ServerRequest;
 }
 
+afterEach(() => {
+  mockGetTelemetryRequestSpan.mockReset();
+});
+
 describe('telemetryMiddleware', () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -75,6 +88,33 @@ describe('telemetryMiddleware', () => {
     telemetryMiddleware(createRequest(), createResponse() as Response, next);
 
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the stored request span for deferred completion attributes', () => {
+    const activeSpan = createSpan();
+    const requestSpan = createSpan();
+    const req = createRequest();
+    const res = createResponse(202);
+    const next: NextFunction = jest.fn();
+    mockGetTelemetryRequestSpan.mockReturnValue(requestSpan);
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(activeSpan);
+
+    telemetryMiddleware(req, res as Response, next);
+    res.emit('finish');
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(trace.getActiveSpan).not.toHaveBeenCalled();
+    expect(activeSpan.setAttributes).not.toHaveBeenCalled();
+    expect(requestSpan.setAttributes).toHaveBeenCalledWith({
+      'http.request.method': 'POST',
+    });
+    expect(requestSpan.setAttributes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        'http.response.status_code': 202,
+        'http.route': '/api/messages/:conversationId',
+        'url.path': '/api/messages/:conversationId',
+      }),
+    );
   });
 
   it('records safe route and identity attributes without body content', () => {
@@ -139,6 +179,28 @@ describe('telemetryMiddleware', () => {
       'enduser.id': 'late-user',
       'librechat.tenant.id': 'late-tenant',
     });
+  });
+
+  it('does not derive tenant identity from request headers', () => {
+    const span = createSpan();
+    const req = createRequest({
+      headers: {
+        'x-tenant-id': 'spoofed-tenant',
+      },
+      user: undefined,
+    });
+    const res = createResponse(200);
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
+
+    telemetryMiddleware(req, res as Response, jest.fn());
+    res.emit('finish');
+
+    expect(span.setAttributes).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        'librechat.tenant.id': 'spoofed-tenant',
+      }),
+    );
+    expect(JSON.stringify(span.setAttributes.mock.calls)).not.toContain('spoofed-tenant');
   });
 
   it('ignores health checks', () => {

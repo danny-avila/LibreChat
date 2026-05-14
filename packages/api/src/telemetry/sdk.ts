@@ -2,9 +2,9 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
-import type { IncomingMessage } from 'node:http';
+import { IncomingMessage } from 'node:http';
 import type { NodeSDKConfiguration } from '@opentelemetry/sdk-node';
-import type { Attributes } from '@opentelemetry/api';
+import type { Span, Attributes } from '@opentelemetry/api';
 import type { TelemetryConfig, TelemetryStatus } from './config';
 import { getTelemetryConfig } from './config';
 
@@ -24,6 +24,7 @@ let pendingSdk: NodeSDK | undefined;
 let startPromise: Promise<void> | undefined;
 let status: TelemetryStatus = 'stopped';
 let registeredSignals: RegisteredSignal[] = [];
+let requestSpans = new WeakMap<IncomingMessage, Span>();
 
 function isBunRuntime(): boolean {
   return Reflect.get(globalThis, 'Bun') != null;
@@ -64,6 +65,11 @@ function createSdk(config: TelemetryConfig): NodeSDK {
             client: { requestHeaders: [], responseHeaders: [] },
             server: { requestHeaders: [], responseHeaders: [] },
           },
+          requestHook: (span: Span, request: object) => {
+            if (request instanceof IncomingMessage) {
+              requestSpans.set(request, span);
+            }
+          },
           ignoreIncomingRequestHook: (request: IncomingMessage) =>
             shouldIgnoreIncomingRequest(request, config.healthPath),
         },
@@ -84,6 +90,10 @@ function createSdk(config: TelemetryConfig): NodeSDK {
   };
 
   return new NodeSDK(sdkConfig);
+}
+
+export function getTelemetryRequestSpan(request: IncomingMessage): Span | undefined {
+  return requestSpans.get(request);
 }
 
 function startSdk(sdk: NodeSDK): void | Promise<void> {
@@ -218,5 +228,6 @@ export function resetTelemetryForTests(): void {
   pendingSdk = undefined;
   startPromise = undefined;
   status = 'stopped';
+  requestSpans = new WeakMap<IncomingMessage, Span>();
   unregisterShutdownHandlers();
 }

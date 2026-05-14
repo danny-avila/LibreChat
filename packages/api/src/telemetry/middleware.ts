@@ -1,7 +1,8 @@
 import { SpanStatusCode, trace } from '@opentelemetry/api';
-import type { NextFunction, Response } from 'express';
 import type { Span, Attributes } from '@opentelemetry/api';
+import type { NextFunction, Response } from 'express';
 import type { ServerRequest } from '~/types';
+import { getTelemetryRequestSpan } from './sdk';
 
 const CLIENT_CLOSED_REQUEST_STATUS_CODE = 499;
 
@@ -10,7 +11,7 @@ function getUserId(req: ServerRequest): string | undefined {
 }
 
 function getTenantId(req: ServerRequest): string | undefined {
-  return req.user?.tenantId ?? req.headers['x-tenant-id']?.toString();
+  return req.user?.tenantId;
 }
 
 function isHealthPath(req: ServerRequest): boolean {
@@ -94,7 +95,7 @@ export function telemetryMiddleware(req: ServerRequest, res: Response, next: Nex
     return;
   }
 
-  const span = trace.getActiveSpan();
+  const span = getTelemetryRequestSpan(req) ?? trace.getActiveSpan();
   if (!span) {
     next();
     return;

@@ -1,10 +1,22 @@
+import { Socket } from 'node:net';
+import { IncomingMessage } from 'node:http';
+import type { Span } from '@opentelemetry/api';
+
+interface InstrumentationOptions {
+  '@opentelemetry/instrumentation-http'?: {
+    requestHook?: (span: Span, request: object) => void;
+  };
+}
+
 const mockStart = jest.fn();
 const mockShutdown = jest.fn();
 const mockNodeSDK = jest.fn(() => ({
   start: mockStart,
   shutdown: mockShutdown,
 }));
-const mockGetNodeAutoInstrumentations = jest.fn(() => ['instrumentation']);
+const mockGetNodeAutoInstrumentations = jest.fn((_options?: InstrumentationOptions) => [
+  'instrumentation',
+]);
 const mockResourceFromAttributes = jest.fn((attributes: object) => ({ attributes }));
 
 jest.mock(
@@ -46,13 +58,19 @@ async function flushSignalShutdown(): Promise<void> {
 
 describe('telemetry SDK lifecycle', () => {
   let emitWarningSpy: jest.SpyInstance;
+  let getTelemetryRequestSpan: (typeof import('./sdk'))['getTelemetryRequestSpan'];
   let initializeTelemetry: (typeof import('./sdk'))['initializeTelemetry'];
   let resetTelemetryForTests: (typeof import('./sdk'))['resetTelemetryForTests'];
   let shutdownTelemetry: (typeof import('./sdk'))['shutdownTelemetry'];
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    ({ initializeTelemetry, resetTelemetryForTests, shutdownTelemetry } = await import('./sdk'));
+    ({
+      getTelemetryRequestSpan,
+      initializeTelemetry,
+      resetTelemetryForTests,
+      shutdownTelemetry,
+    } = await import('./sdk'));
     resetTelemetryForTests();
     Reflect.deleteProperty(globalThis, 'Bun');
     emitWarningSpy = jest.spyOn(process, 'emitWarning').mockImplementation(() => true);
@@ -128,6 +146,23 @@ describe('telemetry SDK lifecycle', () => {
         '@opentelemetry/instrumentation-winston': { enabled: false },
       }),
     );
+  });
+
+  it('tracks HTTP server request spans for completion updates', () => {
+    const span = {} as Span;
+    const request = new IncomingMessage(new Socket());
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockGetNodeAutoInstrumentations.mock.calls[0]?.[0];
+    const requestHook =
+      instrumentationOptions?.['@opentelemetry/instrumentation-http']?.requestHook;
+
+    if (!requestHook) {
+      throw new Error('HTTP instrumentation requestHook was not configured');
+    }
+
+    requestHook(span, request);
+
+    expect(getTelemetryRequestSpan(request)).toBe(span);
   });
 
   it('reflects lifecycle status from the controller getter', async () => {
