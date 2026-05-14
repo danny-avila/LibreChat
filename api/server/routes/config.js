@@ -19,6 +19,14 @@ const publicSharedLinksEnabled =
 
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
+const PRIVATE_MODEL_SPEC_PRESET_FIELDS = [
+  'promptPrefix',
+  'instructions',
+  'additional_instructions',
+  'system',
+  'context',
+  'examples',
+];
 
 function isBirthday() {
   const today = new Date();
@@ -136,6 +144,32 @@ function buildCloudFrontStartupConfig() {
   };
 }
 
+function sanitizeModelSpecs(modelSpecs) {
+  if (!modelSpecs?.list || !Array.isArray(modelSpecs.list)) {
+    return modelSpecs;
+  }
+
+  return {
+    ...modelSpecs,
+    list: modelSpecs.list.map((modelSpec) => {
+      const preset = modelSpec?.preset;
+      if (!preset || typeof preset !== 'object') {
+        return modelSpec;
+      }
+
+      const sanitizedPreset = { ...preset };
+      for (const field of PRIVATE_MODEL_SPEC_PRESET_FIELDS) {
+        delete sanitizedPreset[field];
+      }
+
+      return {
+        ...modelSpec,
+        preset: sanitizedPreset,
+      };
+    }),
+  };
+}
+
 router.get('/', async function (req, res) {
   try {
     const sharedPayload = buildSharedPayload();
@@ -181,7 +215,7 @@ router.get('/', async function (req, res) {
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       interface: appConfig?.interfaceConfig,
       turnstile: appConfig?.turnstileConfig,
-      modelSpecs: appConfig?.modelSpecs,
+      modelSpecs: sanitizeModelSpecs(appConfig?.modelSpecs),
       balance: balanceConfig,
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,
       staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,

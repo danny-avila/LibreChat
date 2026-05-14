@@ -5,6 +5,7 @@ const {
   EModelEndpoint,
   isAgentsEndpoint,
   parseCompactConvo,
+  replaceSpecialVars,
   getDefaultParamsEndpoint,
 } = require('librechat-data-provider');
 const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
@@ -13,11 +14,101 @@ const { getEndpointsConfig } = require('~/server/services/Config');
 const agents = require('~/server/services/Endpoints/agents');
 const { updateFilesUsage } = require('~/models');
 
+const PRIVATE_MODEL_SPEC_PRESET_FIELDS = [
+  'promptPrefix',
+  'instructions',
+  'additional_instructions',
+  'system',
+  'context',
+  'examples',
+];
+
 const buildFunction = {
   [EModelEndpoint.agents]: agents.buildOptions,
   [EModelEndpoint.assistants]: assistants.buildOptions,
   [EModelEndpoint.azureAssistants]: azureAssistants.buildOptions,
 };
+
+function hasValue(field, value) {
+  if (value == null || value === '') {
+    return false;
+  }
+
+  if (!Array.isArray(value)) {
+    return true;
+  }
+
+  if (field === 'examples') {
+    return value.some((example) => {
+      const input = example?.input?.content;
+      const output = example?.output?.content;
+      return Boolean(input || output);
+    });
+  }
+
+  return value.length > 0;
+}
+
+function mergeModelSpecPreset(modelSpec, parsedBody) {
+  const preset = modelSpec?.preset;
+  if (!preset || typeof preset !== 'object') {
+    return parsedBody;
+  }
+
+  const merged = {
+    ...preset,
+    ...parsedBody,
+    spec: modelSpec.name,
+  };
+
+  for (const field of PRIVATE_MODEL_SPEC_PRESET_FIELDS) {
+    if (
+      Object.prototype.hasOwnProperty.call(preset, field) &&
+      !hasValue(field, parsedBody[field])
+    ) {
+      merged[field] = preset[field];
+    }
+  }
+
+  return merged;
+}
+
+function parseModelSpecPreset({
+  modelSpec,
+  parsedBody,
+  endpoint,
+  endpointType,
+  defaultParamsEndpoint,
+}) {
+  const conversation = mergeModelSpecPreset(modelSpec, parsedBody);
+  const reparsedBody = parseCompactConvo({
+    endpoint,
+    endpointType,
+    conversation,
+    defaultParamsEndpoint,
+  });
+
+  if (modelSpec.iconURL != null && modelSpec.iconURL !== '') {
+    reparsedBody.iconURL = modelSpec.iconURL;
+  }
+
+  return reparsedBody;
+}
+
+function resolvePromptPrefixVariables(parsedBody, user, now) {
+  if (typeof parsedBody.promptPrefix !== 'string') {
+    return parsedBody;
+  }
+
+  return {
+    ...parsedBody,
+    promptPrefix: replaceSpecialVars({
+      text: parsedBody.promptPrefix,
+      user,
+      now,
+    }),
+  };
+}
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
@@ -67,27 +158,36 @@ async function buildEndpointOption(req, res, next) {
     }
 
     try {
-      currentModelSpec.preset.spec = spec;
-      parsedBody = parseCompactConvo({
+      parsedBody = parseModelSpecPreset({
+        modelSpec: currentModelSpec,
+        parsedBody: currentModelSpec.preset,
         endpoint,
         endpointType,
-        conversation: currentModelSpec.preset,
         defaultParamsEndpoint,
       });
-      if (currentModelSpec.iconURL != null && currentModelSpec.iconURL !== '') {
-        parsedBody.iconURL = currentModelSpec.iconURL;
-      }
     } catch (error) {
       logger.error(`Error parsing model spec for endpoint ${endpoint}`, error);
       return handleError(res, { text: 'Error parsing model spec' });
     }
   } else if (parsedBody.spec && appConfig.modelSpecs?.list) {
-    // Non-enforced mode: if spec is selected, derive iconURL from model spec
     const modelSpec = appConfig.modelSpecs.list.find((s) => s.name === parsedBody.spec);
-    if (modelSpec?.iconURL) {
-      parsedBody.iconURL = modelSpec.iconURL;
+    if (modelSpec) {
+      try {
+        parsedBody = parseModelSpecPreset({
+          modelSpec,
+          parsedBody,
+          endpoint,
+          endpointType,
+          defaultParamsEndpoint,
+        });
+      } catch (error) {
+        logger.error(`Error parsing model spec for endpoint ${endpoint}`, error);
+        return handleError(res, { text: 'Error parsing model spec' });
+      }
     }
   }
+
+  parsedBody = resolvePromptPrefixVariables(parsedBody, req.user, req.body.clientTimestamp);
 
   try {
     const isAgents =
