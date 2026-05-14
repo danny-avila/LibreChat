@@ -697,6 +697,7 @@ export type LanguageCode =
   | 'sat-IN'
   | 'sd-IN'
   | 'ne-IN'
+  | 'mn-IN'
 
 export type LanguageOption = {
   value: LanguageCode;

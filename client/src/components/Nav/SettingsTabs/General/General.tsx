@@ -113,6 +113,7 @@ export const LangSelector = ({
     { value: 'sat-IN', label: localize('com_nav_lang_santali') },
     { value: 'sd-IN', label: localize('com_nav_lang_sindhi') },
     { value: 'ne-IN', label: localize('com_nav_lang_nepali') },
+    { value: 'mn-IN', label: localize('com_nav_lang_manipuri') },
   ];
 
   const labelId = 'language-selector-label';
