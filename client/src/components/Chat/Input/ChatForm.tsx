@@ -360,20 +360,21 @@ const ChatForm = memo(function ChatForm({
                   setFilesLoading={setFilesLoading}
                 />
               </div>
-              {!hideBadgeRow && (
-                <BadgeRow
-                  showEphemeralBadges={
-                    !!endpoint && !isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint)
-                  }
-                  isSubmitting={isSubmitting}
-                  conversationId={conversationId}
-                  specName={conversation?.spec}
-                  onChange={setBadges}
-                  isInChat={
-                    Array.isArray(conversation?.messages) && conversation.messages.length >= 1
-                  }
-                />
-              )}
+              <BadgeRow
+                showEphemeralBadges={
+                  !!endpoint &&
+                  !hideBadgeRow &&
+                  !isAgentsEndpoint(endpoint) &&
+                  !isAssistantsEndpoint(endpoint)
+                }
+                isSubmitting={isSubmitting}
+                conversationId={conversationId}
+                specName={conversation?.spec}
+                onChange={setBadges}
+                isInChat={
+                  Array.isArray(conversation?.messages) && conversation.messages.length >= 1
+                }
+              />
               <div className="mx-auto flex" />
               {SpeechToText && (
                 <AudioRecorder
