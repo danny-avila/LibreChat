@@ -1,5 +1,6 @@
 const express = require('express');
 const { createAdminGrantsHandlers, getCachedPrincipals } = require('@librechat/api');
+const { PrincipalType } = require('librechat-data-provider');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -22,10 +23,17 @@ const handlers = createAdminGrantsHandlers({
   getCachedPrincipals,
   checkRoleExists: async (name) => (await db.getRoleByName(name)) != null,
   recordAuditEntry: db.recordAuditEntry,
-  resolveUserName: async (userId) => {
+  resolveTargetName: async (principalType, principalId) => {
     try {
-      const user = await db.getUserById(userId, 'name username email');
-      return user?.name || user?.username || user?.email || null;
+      if (principalType === PrincipalType.USER) {
+        const user = await db.getUserById(principalId, 'name username email');
+        return user?.name || user?.username || user?.email || null;
+      }
+      if (principalType === PrincipalType.GROUP) {
+        const group = await db.findGroupById(principalId, { name: 1 });
+        return group?.name || null;
+      }
+      return null;
     } catch {
       return null;
     }

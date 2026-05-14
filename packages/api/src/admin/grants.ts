@@ -79,8 +79,16 @@ export interface AdminGrantsDeps {
   checkRoleExists?: (roleId: string) => Promise<boolean>;
   /** Optional audit emission. Failure is logged but does not roll back the grant. */
   recordAuditEntry?: (input: RecordAuditEntryInput) => Promise<void>;
-  /** Resolves a User document's display name from its id (for audit actor name). */
-  resolveUserName?: (userId: string | Types.ObjectId) => Promise<string | null>;
+  /**
+   * Resolves the human-readable target name for USER/GROUP principals (ROLE
+   * principals already carry their name in `principalId`). Returning `null`
+   * falls back to the principalId string, so callers do not need to throw on
+   * a missing lookup.
+   */
+  resolveTargetName?: (
+    principalType: PrincipalType,
+    principalId: string,
+  ) => Promise<string | null>;
 }
 
 /** Currently ROLE-only; Record/Set structure preserved for future principal-type expansion. */
@@ -107,28 +115,38 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     getCachedPrincipals,
     checkRoleExists,
     recordAuditEntry,
-    resolveUserName,
+    resolveTargetName,
   } = deps;
 
   async function emitAudit(args: {
     action: AuditAction;
-    caller: { userId: string; role: string; tenantId?: string };
+    caller: { userId: string; actorName: string; role: string; tenantId?: string };
     principalType: PrincipalType;
     principalId: string;
     capability: SystemCapability;
   }): Promise<void> {
     if (!recordAuditEntry) return;
+    /**
+     * For ROLE principals, `principalId` is the role name (the SystemGrant
+     * model stores names, not ObjectIds, for ROLE). For USER and GROUP, it is
+     * an ObjectId hex string; resolving a display name requires a lookup, and
+     * the dep is responsible for it. Falling back to `principalId` keeps the
+     * audit row intelligible (just less friendly) when the lookup misses.
+     */
+    let targetName = args.principalId;
+    if (args.principalType !== PrincipalType.ROLE && resolveTargetName) {
+      try {
+        const resolved = await resolveTargetName(args.principalType, args.principalId);
+        if (resolved) targetName = resolved;
+      } catch (err) {
+        logger.error('[adminGrants] target name resolution failed', err);
+      }
+    }
     try {
-      const actorName = resolveUserName
-        ? ((await resolveUserName(args.caller.userId)) ?? args.caller.userId)
-        : args.caller.userId;
-      // For ROLE principals the principalId IS the human-readable name; for USER/GROUP
-      // the same string is the id, and the display name lookup happens in a later iteration.
-      const targetName = args.principalId;
       await recordAuditEntry({
         action: args.action,
         actorId: args.caller.userId,
-        actorName,
+        actorName: args.caller.actorName,
         targetPrincipalType: args.principalType,
         targetPrincipalId: args.principalId,
         targetName,
@@ -136,7 +154,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         tenantId: args.caller.tenantId,
       });
     } catch (err) {
-      // Audit failure must not roll back the grant — log and move on.
+      /** Audit failure must not roll back the grant: log and move on. */
       logger.error('[adminGrants] audit write failed', err);
     }
   }
@@ -155,7 +173,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
 
   function resolveUser(
     req: ServerRequest,
-  ): { userId: string; role: string; tenantId?: string } | null {
+  ): { userId: string; role: string; actorName: string; tenantId?: string } | null {
     const user = req.user;
     if (!user) {
       return null;
@@ -164,7 +182,10 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     if (!userId || !user.role) {
       return null;
     }
-    return { userId, role: user.role, tenantId: user.tenantId };
+    /** JWT-loaded `req.user` already carries name/username/email, so the actor
+     * display name is available without a database round-trip. */
+    const actorName = user.name || user.username || user.email || userId;
+    return { userId, role: user.role, actorName, tenantId: user.tenantId };
   }
 
   async function resolvePrincipals(user: {
