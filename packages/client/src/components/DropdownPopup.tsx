@@ -128,9 +128,6 @@ const Menu: React.FC<MenuProps> = ({
                   key={`${keyPrefix ?? ''}${index}-${item.id ?? ''}`}
                   gutter={12}
                   portal={true}
-                  className={className}
-                  itemClassName={itemClassName}
-                  iconClassName={iconClassName}
                 />
               </Ariakit.MenuProvider>
             );
