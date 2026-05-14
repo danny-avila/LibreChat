@@ -3,6 +3,8 @@ import type { NextFunction, Response } from 'express';
 import type { Span, Attributes } from '@opentelemetry/api';
 import type { ServerRequest } from '~/types';
 
+const CLIENT_CLOSED_REQUEST_STATUS_CODE = 499;
+
 function getUserId(req: ServerRequest): string | undefined {
   return req.user?.id;
 }
@@ -63,17 +65,24 @@ function setCompletionAttributes(
   req: ServerRequest,
   res: Response,
   start: bigint,
+  aborted = false,
 ): void {
-  const statusCode = res.statusCode;
+  const statusCode = aborted ? CLIENT_CLOSED_REQUEST_STATUS_CODE : res.statusCode;
   const routePath = getRoutePath(req);
-  span.setAttributes({
+  const attributes: Attributes = {
     'http.route': routePath,
     'http.response.status_code': statusCode,
     'librechat.request.duration_ms': getElapsedMilliseconds(start),
     'url.path': routePath,
-  });
+  };
 
-  if (statusCode >= 500) {
+  if (aborted) {
+    attributes['librechat.request.aborted'] = true;
+  }
+
+  span.setAttributes(attributes);
+
+  if (aborted || statusCode >= 500) {
     span.setStatus({ code: SpanStatusCode.ERROR });
   }
 }
@@ -105,8 +114,16 @@ export function telemetryMiddleware(req: ServerRequest, res: Response, next: Nex
     setCompletionAttributes(span, req, res, start);
   };
 
+  const close = () => {
+    if (completed) {
+      return;
+    }
+    completed = true;
+    setCompletionAttributes(span, req, res, start, !res.writableEnded);
+  };
+
   res.once('finish', complete);
-  res.once('close', complete);
+  res.once('close', close);
   next();
 }
 

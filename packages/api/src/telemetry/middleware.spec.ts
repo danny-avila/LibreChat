@@ -7,6 +7,7 @@ import { telemetryErrorMiddleware, telemetryMiddleware } from './middleware';
 
 interface MockResponse extends EventEmitter {
   statusCode: number;
+  writableEnded: boolean;
 }
 
 function createSpan(): jest.Mocked<Span> {
@@ -34,6 +35,7 @@ function createSpan(): jest.Mocked<Span> {
 function createResponse(statusCode = 200): MockResponse {
   const res = new EventEmitter() as MockResponse;
   res.statusCode = statusCode;
+  res.writableEnded = false;
   return res;
 }
 
@@ -174,6 +176,23 @@ describe('telemetryMiddleware', () => {
     res.emit('close');
 
     expect(span.setAttributes).toHaveBeenCalledTimes(3);
+  });
+
+  it('marks client disconnects before finish as aborted errors', () => {
+    const span = createSpan();
+    const res = createResponse(200);
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
+
+    telemetryMiddleware(createRequest(), res as Response, jest.fn());
+    res.emit('close');
+
+    expect(span.setAttributes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        'http.response.status_code': 499,
+        'librechat.request.aborted': true,
+      }),
+    );
+    expect(span.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
   });
 });
 
