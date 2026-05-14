@@ -14,9 +14,16 @@ if (isTelemetryEnabled()) {
     telemetryMiddleware,
     telemetryErrorMiddleware,
   } = require('@librechat/api/telemetry');
+  const controller = initializeTelemetry();
 
   module.exports = {
-    ...initializeTelemetry(),
+    get enabled() {
+      return controller.enabled;
+    },
+    get status() {
+      return controller.status;
+    },
+    shutdown: controller.shutdown,
     telemetryMiddleware,
     telemetryErrorMiddleware,
   };

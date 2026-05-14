@@ -15,6 +15,7 @@ describe('telemetry bootstrap', () => {
     process.env = originalEnv;
     jest.dontMock('dotenv');
     jest.dontMock('@librechat/api/telemetry');
+    jest.resetModules();
   });
 
   it('does not load OpenTelemetry packages by default', () => {
@@ -51,11 +52,17 @@ describe('telemetry bootstrap', () => {
 
   it('loads and exposes telemetry middleware when tracing is enabled', () => {
     process.env.OTEL_TRACING_ENABLED = 'true';
+    let enabled = true;
+    let status = 'starting';
     const telemetryMiddleware = jest.fn();
     const telemetryErrorMiddleware = jest.fn();
     const initializeTelemetry = jest.fn(() => ({
-      enabled: true,
-      status: 'started',
+      get enabled() {
+        return enabled;
+      },
+      get status() {
+        return status;
+      },
       shutdown: jest.fn(),
     }));
     jest.doMock(
@@ -72,8 +79,13 @@ describe('telemetry bootstrap', () => {
 
     expect(initializeTelemetry).toHaveBeenCalledTimes(1);
     expect(telemetry.enabled).toBe(true);
-    expect(telemetry.status).toBe('started');
+    expect(telemetry.status).toBe('starting');
     expect(telemetry.telemetryMiddleware).toBe(telemetryMiddleware);
     expect(telemetry.telemetryErrorMiddleware).toBe(telemetryErrorMiddleware);
+
+    enabled = false;
+    status = 'failed';
+    expect(telemetry.enabled).toBe(false);
+    expect(telemetry.status).toBe('failed');
   });
 });
