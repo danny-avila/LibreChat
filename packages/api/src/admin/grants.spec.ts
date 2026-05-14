@@ -967,9 +967,11 @@ describe('createAdminGrantsHandlers', () => {
       capability: SystemCapabilities.READ_USERS,
     };
 
-    it('returns 200 idempotently even if the grant does not exist', async () => {
+    it('returns 200 idempotently and skips audit emission when the grant does not exist', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = createDeps({
-        revokeCapability: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+        revokeCapability: jest.fn().mockResolvedValue({ deletedCount: 0 }),
+        recordAuditEntry,
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: validParams });
@@ -978,6 +980,9 @@ describe('createAdminGrantsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
+      /** A no-op revoke must not produce an audit row. The whole point of the
+       * `deletedCount > 0` gate is to avoid logging fictitious revocations. */
+      expect(recordAuditEntry).not.toHaveBeenCalled();
     });
 
     it('revokes a grant and returns 200', async () => {
@@ -1163,6 +1168,83 @@ describe('createAdminGrantsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(500);
       expect(json).toHaveBeenCalledWith({ error: 'Failed to revoke grant' });
+    });
+  });
+
+  describe('audit emission', () => {
+    const assignBody = {
+      principalType: PrincipalType.ROLE,
+      principalId: 'editor',
+      capability: SystemCapabilities.READ_USERS,
+    };
+
+    function reqUser(overrides: { name?: string; username?: string; email?: string } = {}) {
+      return {
+        _id: new Types.ObjectId(),
+        role: 'admin',
+        tenantId: 'tenant-1',
+        ...overrides,
+      } as { _id: Types.ObjectId; role: string; tenantId?: string };
+    }
+
+    it('emits a grant_assigned entry after a successful assignment', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({ recordAuditEntry });
+      const handlers = createAdminGrantsHandlers(deps);
+      const user = reqUser({ name: 'Alice Admin' });
+      const { req, res } = createReqRes({ body: assignBody, user });
+
+      await handlers.assignGrant(req, res);
+
+      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'grant_assigned',
+          actorId: user._id.toString(),
+          actorName: 'Alice Admin',
+          targetPrincipalType: PrincipalType.ROLE,
+          targetPrincipalId: 'editor',
+          /** ROLE targets carry the human-readable name in `principalId`, so the audit
+           * row stores it directly. */
+          targetName: 'editor',
+          capability: SystemCapabilities.READ_USERS,
+          tenantId: 'tenant-1',
+        }),
+      );
+    });
+
+    it('emits a grant_removed entry when deletedCount > 0', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        revokeCapability: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+        recordAuditEntry,
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const user = reqUser({ username: 'alice' });
+      const { req, res } = createReqRes({ params: assignBody, user });
+
+      await handlers.revokeGrant(req, res);
+
+      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'grant_removed',
+          actorName: 'alice',
+          targetPrincipalType: PrincipalType.ROLE,
+          targetPrincipalId: 'editor',
+          targetName: 'editor',
+        }),
+      );
+    });
+
+    it('does not emit when recordAuditEntry is not configured', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status } = createReqRes({ body: assignBody, user: reqUser() });
+
+      await handlers.assignGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(201);
     });
   });
 });

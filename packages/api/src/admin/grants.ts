@@ -79,16 +79,6 @@ export interface AdminGrantsDeps {
   checkRoleExists?: (roleId: string) => Promise<boolean>;
   /** Optional audit emission. Failure is logged but does not roll back the grant. */
   recordAuditEntry?: (input: RecordAuditEntryInput) => Promise<void>;
-  /**
-   * Resolves the human-readable target name for USER/GROUP principals (ROLE
-   * principals already carry their name in `principalId`). Returning `null`
-   * falls back to the principalId string, so callers do not need to throw on
-   * a missing lookup.
-   */
-  resolveTargetName?: (
-    principalType: PrincipalType,
-    principalId: string,
-  ) => Promise<string | null>;
 }
 
 /** Currently ROLE-only; Record/Set structure preserved for future principal-type expansion. */
@@ -115,7 +105,6 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     getCachedPrincipals,
     checkRoleExists,
     recordAuditEntry,
-    resolveTargetName,
   } = deps;
 
   async function emitAudit(args: {
@@ -126,30 +115,20 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     capability: SystemCapability;
   }): Promise<void> {
     if (!recordAuditEntry) return;
-    /**
-     * For ROLE principals, `principalId` is the role name (the SystemGrant
-     * model stores names, not ObjectIds, for ROLE). For USER and GROUP, it is
-     * an ObjectId hex string; resolving a display name requires a lookup, and
-     * the dep is responsible for it. Falling back to `principalId` keeps the
-     * audit row intelligible (just less friendly) when the lookup misses.
-     */
-    let targetName = args.principalId;
-    if (args.principalType !== PrincipalType.ROLE && resolveTargetName) {
-      try {
-        const resolved = await resolveTargetName(args.principalType, args.principalId);
-        if (resolved) targetName = resolved;
-      } catch (err) {
-        logger.error('[adminGrants] target name resolution failed', err);
-      }
-    }
     try {
+      /** The grants surface is ROLE-only today (see `MANAGE_CAPABILITY_BY_TYPE`),
+       * and SystemGrant stores the human-readable role name in `principalId` for
+       * ROLE principals, so the audit row's `targetName` is just `principalId`.
+       * When USER and GROUP grants are enabled, a `resolveTargetName` dep should
+       * be added here to look up the display name; until then it would be dead
+       * code. */
       await recordAuditEntry({
         action: args.action,
         actorId: args.caller.userId,
         actorName: args.caller.actorName,
         targetPrincipalType: args.principalType,
         targetPrincipalId: args.principalId,
-        targetName,
+        targetName: args.principalId,
         capability: args.capability,
         tenantId: args.caller.tenantId,
       });
