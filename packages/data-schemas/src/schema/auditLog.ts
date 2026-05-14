@@ -1,5 +1,6 @@
 import { Schema } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
+import { AUDIT_ACTIONS } from '~/types/admin';
 import type { IAuditLog } from '~/types';
 
 /**
@@ -12,7 +13,7 @@ const auditLogSchema = new Schema<IAuditLog>(
   {
     action: {
       type: String,
-      enum: ['grant_assigned', 'grant_removed'],
+      enum: [...AUDIT_ACTIONS],
       required: true,
       immutable: true,
     },

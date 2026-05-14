@@ -3,9 +3,13 @@ import type { PrincipalType } from 'librechat-data-provider';
 import type { AdminAuditLogEntry, AuditAction } from './admin';
 
 /**
- * AuditLog is an append-only collection — no `updatedAt`, no mutations.
+ * AuditLog is an append-only collection: no `updatedAt`, no mutations.
  * See `~/schema/auditLog` for the enforcement (immutable fields plus
  * pre-update / pre-delete / pre-save hooks).
+ *
+ * `createdAt` is always set by Mongoose at insert time, so this type
+ * intentionally declares it required. The `IAuditLog` intersection adds
+ * the document identity (`_id`).
  */
 export type AuditLog = {
   action: AuditAction;
@@ -19,13 +23,12 @@ export type AuditLog = {
   /** Absent = platform-operator audit; present = tenant-scoped audit */
   tenantId?: string;
   /** Mongoose auto-managed via `timestamps: { createdAt: true, updatedAt: false }` */
-  createdAt?: Date;
+  createdAt: Date;
 };
 
 export type IAuditLog = AuditLog &
   Document & {
     _id: Types.ObjectId;
-    createdAt: Date;
   };
 
 export interface RecordAuditEntryInput {

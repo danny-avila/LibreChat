@@ -5,7 +5,12 @@ import {
   SystemCapabilities,
   expandImplications,
 } from '@librechat/data-schemas';
-import type { ISystemGrant, SystemCapability } from '@librechat/data-schemas';
+import type {
+  AuditAction,
+  ISystemGrant,
+  RecordAuditEntryInput,
+  SystemCapability,
+} from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ResolvedPrincipal } from '~/types/principal';
@@ -73,16 +78,7 @@ export interface AdminGrantsDeps {
   }) => ResolvedPrincipal[] | undefined;
   checkRoleExists?: (roleId: string) => Promise<boolean>;
   /** Optional audit emission. Failure is logged but does not roll back the grant. */
-  recordAuditEntry?: (input: {
-    action: 'grant_assigned' | 'grant_removed';
-    actorId: string | Types.ObjectId;
-    actorName: string;
-    targetPrincipalType: PrincipalType;
-    targetPrincipalId: string | Types.ObjectId;
-    targetName: string;
-    capability: string;
-    tenantId?: string;
-  }) => Promise<unknown>;
+  recordAuditEntry?: (input: RecordAuditEntryInput) => Promise<void>;
   /** Resolves a User document's display name from its id (for audit actor name). */
   resolveUserName?: (userId: string | Types.ObjectId) => Promise<string | null>;
 }
@@ -115,7 +111,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
   } = deps;
 
   async function emitAudit(args: {
-    action: 'grant_assigned' | 'grant_removed';
+    action: AuditAction;
     caller: { userId: string; role: string; tenantId?: string };
     principalType: PrincipalType;
     principalId: string;

@@ -1,5 +1,5 @@
 import { PrincipalType } from 'librechat-data-provider';
-import { logger, MAX_AUDIT_LOG_LIMIT } from '@librechat/data-schemas';
+import { AUDIT_ACTIONS, logger, MAX_AUDIT_LOG_LIMIT } from '@librechat/data-schemas';
 import type {
   AdminAuditLogEntry,
   AuditAction,
@@ -12,7 +12,7 @@ import type { ServerRequest } from '~/types/http';
 const FORMULA_PREFIX = /^[=+\-@\t\r]/;
 const CSV_BOM = '﻿';
 
-const VALID_ACTIONS = new Set<AuditAction>(['grant_assigned', 'grant_removed']);
+const VALID_ACTIONS = new Set<AuditAction>(AUDIT_ACTIONS);
 const VALID_PRINCIPAL_TYPES = new Set<string>(Object.values(PrincipalType));
 
 /**
@@ -154,16 +154,7 @@ function formatCsvRow(entry: AdminAuditLogEntry): string {
   return CSV_COLUMNS.map((c) => escapeCsvCell(String(entry[c.key] ?? ''))).join(',');
 }
 
-interface ParsedFilters {
-  search?: string;
-  action?: AuditAction[];
-  from?: Date;
-  to?: Date;
-  actorQuery?: string;
-  targetPrincipalType?: PrincipalType;
-  targetQuery?: string;
-  capability?: string;
-}
+type ParsedFilters = Omit<AuditLogFilters, 'offset' | 'limit'>;
 
 interface AuditLogQuery {
   search?: string;

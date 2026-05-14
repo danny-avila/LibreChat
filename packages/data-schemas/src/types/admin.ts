@@ -65,8 +65,13 @@ export type AdminConfigDeleteResponse = {
   success: boolean;
 };
 
+/** Single source of truth for the audit-action enum. Both the Mongoose schema
+ * enum and the HTTP handler's whitelist consume this constant so they cannot
+ * drift apart. */
+export const AUDIT_ACTIONS = ['grant_assigned', 'grant_removed'] as const;
+
 /** Audit action types for grant changes. */
-export type AuditAction = 'grant_assigned' | 'grant_removed';
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
 /** SystemGrant document as returned by the admin API. */
 export type AdminSystemGrant = {

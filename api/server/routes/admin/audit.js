@@ -18,6 +18,7 @@ const handlers = createAdminAuditLogHandlers({
 router.use(requireJwtAuth, requireAuditLogRead);
 
 router.get('/', handlers.listAuditLog);
+/** `/export.csv` MUST precede `/:id` so it isn't matched as `{ id: 'export.csv' }`. */
 router.get('/export.csv', handlers.exportAuditLogCsv);
 router.get('/:id', handlers.getAuditLogEntry);
 
