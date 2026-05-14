@@ -47,7 +47,9 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await AuditLog.deleteMany({});
+  // AuditLog enforces append-only via pre-hooks, so reset between tests by
+  // dropping the collection at the raw driver level (bypasses model hooks).
+  await AuditLog.collection.deleteMany({});
 });
 
 describe('auditLog methods', () => {
@@ -171,6 +173,45 @@ describe('auditLog methods', () => {
       await methods.recordAuditEntry(baseInput({ actorName: 'risky.dot+plus' }));
       const page = await methods.listAuditLogPage('tenant-a', { search: 'risky.dot+plus' });
       expect(page.total).toBe(1);
+    });
+  });
+
+  describe('append-only enforcement', () => {
+    it('rejects updateOne against any audit entry', async () => {
+      const doc = await methods.recordAuditEntry(baseInput());
+      await expect(
+        AuditLog.updateOne({ _id: doc!._id }, { capability: 'tampered' }),
+      ).rejects.toThrow(/append-only/);
+    });
+
+    it('rejects findOneAndUpdate against any audit entry', async () => {
+      const doc = await methods.recordAuditEntry(baseInput());
+      await expect(
+        AuditLog.findOneAndUpdate({ _id: doc!._id }, { capability: 'tampered' }),
+      ).rejects.toThrow(/append-only/);
+    });
+
+    it('rejects deleteOne against any audit entry', async () => {
+      const doc = await methods.recordAuditEntry(baseInput());
+      await expect(AuditLog.deleteOne({ _id: doc!._id })).rejects.toThrow(/append-only/);
+    });
+
+    it('rejects deleteMany', async () => {
+      await methods.recordAuditEntry(baseInput());
+      await expect(AuditLog.deleteMany({})).rejects.toThrow(/append-only/);
+    });
+
+    it('rejects a second save() on an existing document', async () => {
+      const doc = await methods.recordAuditEntry(baseInput());
+      const persisted = (await AuditLog.findById(doc!._id))!;
+      persisted.capability = 'tampered';
+      await expect(persisted.save()).rejects.toThrow(/append-only/);
+    });
+
+    it('does not stamp updatedAt on new documents', async () => {
+      const doc = await methods.recordAuditEntry(baseInput());
+      const raw = await AuditLog.collection.findOne({ _id: doc!._id });
+      expect(raw && Object.prototype.hasOwnProperty.call(raw, 'updatedAt')).toBe(false);
     });
   });
 

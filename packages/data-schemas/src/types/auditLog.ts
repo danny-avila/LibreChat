@@ -2,6 +2,11 @@ import type { Document, Types } from 'mongoose';
 import type { PrincipalType } from 'librechat-data-provider';
 import type { AdminAuditLogEntry, AuditAction } from './admin';
 
+/**
+ * AuditLog is an append-only collection — no `updatedAt`, no mutations.
+ * See `~/schema/auditLog` for the enforcement (immutable fields plus
+ * pre-update / pre-delete / pre-save hooks).
+ */
 export type AuditLog = {
   action: AuditAction;
   actorId: Types.ObjectId;
@@ -13,16 +18,14 @@ export type AuditLog = {
   capability: string;
   /** Absent = platform-operator audit; present = tenant-scoped audit */
   tenantId?: string;
-  /** Mongoose auto-managed via { timestamps: true } */
+  /** Mongoose auto-managed via `timestamps: { createdAt: true, updatedAt: false }` */
   createdAt?: Date;
-  updatedAt?: Date;
 };
 
 export type IAuditLog = AuditLog &
   Document & {
     _id: Types.ObjectId;
     createdAt: Date;
-    updatedAt: Date;
   };
 
 export interface RecordAuditEntryInput {
