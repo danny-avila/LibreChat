@@ -24,6 +24,7 @@ export {
   validateSkillFrontmatter,
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
+  MAX_AUDIT_LOG_LIMIT,
 } from './methods';
 export type * from './types';
 export type * from './methods';

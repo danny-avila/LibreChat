@@ -1,5 +1,5 @@
 import { PrincipalType } from 'librechat-data-provider';
-import { logger } from '@librechat/data-schemas';
+import { logger, MAX_AUDIT_LOG_LIMIT } from '@librechat/data-schemas';
 import type {
   AdminAuditLogEntry,
   AuditAction,
@@ -23,7 +23,6 @@ const VALID_PRINCIPAL_TYPES = new Set<string>(Object.values(PrincipalType));
  */
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/;
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
-const MAX_LIMIT = 500;
 
 export interface AdminAuditLogDeps {
   listAuditLogPage: (
@@ -94,7 +93,8 @@ function parseLimit(
   const n = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10);
   if (!Number.isFinite(n)) return { ok: false, error: 'limit must be a number' };
   if (n < 1) return { ok: false, error: 'limit must be >= 1' };
-  if (n > MAX_LIMIT) return { ok: false, error: `limit must be <= ${MAX_LIMIT}` };
+  if (n > MAX_AUDIT_LOG_LIMIT)
+    return { ok: false, error: `limit must be <= ${MAX_AUDIT_LOG_LIMIT}` };
   return { ok: true, value: Math.floor(n) };
 }
 

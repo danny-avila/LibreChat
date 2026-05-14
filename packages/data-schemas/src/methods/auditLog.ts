@@ -9,7 +9,7 @@ import type {
 import logger from '~/config/winston';
 
 const DEFAULT_LIMIT = 100;
-export const MAX_LIMIT = 500;
+export const MAX_AUDIT_LOG_LIMIT = 500;
 const MAX_SEARCH_LENGTH = 200;
 
 export interface AuditLogMethods {
@@ -96,7 +96,7 @@ function buildFilter(
 
 function clampLimit(limit?: number): number {
   if (!limit || Number.isNaN(limit) || limit < 1) return DEFAULT_LIMIT;
-  return Math.min(Math.floor(limit), MAX_LIMIT);
+  return Math.min(Math.floor(limit), MAX_AUDIT_LOG_LIMIT);
 }
 
 export function createAuditLogMethods(mongoose: typeof import('mongoose')): AuditLogMethods {
