@@ -149,9 +149,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
       textAreaRef.current.value = autoQuestion;
     }
     methods.setValue('text', autoQuestion, { shouldValidate: true });
-    const timer = setTimeout(() => submitMessage({ text: autoQuestion }), 800);
+    // Trigger the submit button click (same path as manual send)
+    const timer = setTimeout(() => submitButtonRef.current?.click(), 800);
     return () => clearTimeout(timer);
-  }, [location.state, submitMessage, methods]);
+  }, [location.state, methods]);
 
   const handleKeyUp = useHandleKeyUp({
     index,
