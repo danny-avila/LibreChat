@@ -689,6 +689,14 @@ export type LanguageCode =
   | 'ta-IN'
   | 'te-IN'
   | 'ur-IN'
+  | 'as2-IN'
+  | 'as3-IN'
+  | 'ks-IN'
+  | 'kok-IN'
+  | 'mai-IN'
+  | 'sat-IN'
+  | 'sd-IN'
+  | 'ne-IN'
 
 export type LanguageOption = {
   value: LanguageCode;

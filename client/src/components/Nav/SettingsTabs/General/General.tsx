@@ -105,6 +105,14 @@ export const LangSelector = ({
     { value: 'ta-IN', label: localize('com_nav_lang_tamil') },
     { value: 'te-IN', label: localize('com_nav_lang_telugu') },
     { value: 'ur-IN', label: localize('com_nav_lang_urdu') },
+    { value: 'as2-IN', label: localize('com_nav_lang_bodo') },
+    { value: 'as3-IN', label: localize('com_nav_lang_dogri') },
+    { value: 'ks-IN', label: localize('com_nav_lang_kashmiri') },
+    { value: 'kok-IN', label: localize('com_nav_lang_konkani') },
+    { value: 'mai-IN', label: localize('com_nav_lang_maithili') },
+    { value: 'sat-IN', label: localize('com_nav_lang_santali') },
+    { value: 'sd-IN', label: localize('com_nav_lang_sindhi') },
+    { value: 'ne-IN', label: localize('com_nav_lang_nepali') },
   ];
 
   const labelId = 'language-selector-label';
