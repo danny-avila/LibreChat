@@ -53,6 +53,15 @@ import translationSa_IN from './sa-IN/translation.json';
 import translationTa_IN from './ta-IN/translation.json';
 import translationTe_IN from './te-IN/translation.json';
 import translationUr_IN from './ur-IN/translation.json';
+import translationas2_IN from './as2-IN/translation.json';
+import translationas3_IN from './as3-IN/translation.json';
+import translationks_IN from './ks-IN/translation.json';
+import translationkok_IN from './kok-IN/translation.json';
+import translationmai_IN from './mai-IN/translation.json';
+import translationsat_IN from './sat-IN/translation.json';
+import translationsd_IN from './sd-IN/translation.json';
+import translationne_IN from './ne-IN/translation.json';
+import translationmn_IN from './mn-IN/translation.json';
 
 export const defaultNS = 'translation';
 
@@ -107,6 +116,15 @@ export const resources = {
   'ta-IN': { translation: translationTa_IN },
   'te-IN': { translation: translationTe_IN },
   'ur-IN': { translation: translationUr_IN },
+  'as2-IN': { translation: translationas2_IN },
+  'as3-IN': { translation: translationas3_IN },
+  'ks-IN': { translation: translationks_IN },
+  'kok-IN': { translation: translationkok_IN },
+  'mai-IN': { translation: translationmai_IN },
+  'sat-IN': { translation: translationsat_IN },
+  'sd-IN': { translation: translationsd_IN },
+  'ne-IN': { translation: translationne_IN },
+  'mn-IN': { translation: translationmn_IN },
 } as const;
 
 i18n
