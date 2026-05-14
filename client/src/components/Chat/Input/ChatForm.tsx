@@ -21,13 +21,13 @@ import {
   useSubmitMessage,
   useFocusChatEffect,
 } from '~/hooks';
-import { mainTextareaId, BadgeItem } from '~/common';
+import PendingManualSkillsChips from './PendingManualSkillsChips';
+import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import { useGetStartupConfig } from '~/data-provider';
+import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
-import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import TextareaHeader from './TextareaHeader';
-import PendingManualSkillsChips from './PendingManualSkillsChips';
 import SkillsCommand from './SkillsCommand';
 import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
