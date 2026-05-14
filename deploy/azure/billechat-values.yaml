@@ -42,6 +42,10 @@ librechat:
     # Azure AI Foundry — API key overridden via pipeline
     AZURE_AI_FOUNDRY_API_KEY: "override-via-pipeline"
 
+    # Anthropic via Azure AI Foundry
+    ANTHROPIC_API_KEY: "override-via-pipeline"
+    ANTHROPIC_REVERSE_PROXY: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/anthropic/v1/messages"
+
     # RAG
     RAG_OPENAI_BASEURL: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/openai"
     RAG_OPENAI_API_KEY: "override-via-pipeline"
