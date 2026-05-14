@@ -77,12 +77,27 @@ function parseActionFilter(raw: unknown):
   return { ok: true, value: arr as AuditAction[] };
 }
 
-function parseIsoDate(raw: unknown): { ok: true; value?: Date } | { ok: false; error: string } {
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Parses a filter date. `boundary` controls how a bare `YYYY-MM-DD` is widened:
+ * `start` leaves it at the beginning of the day (00:00:00.000Z, the default for
+ * `from`), `end` snaps it to 23:59:59.999Z so that a `to=2025-01-15` filter
+ * actually includes everything that occurred on January 15 instead of cutting
+ * off at midnight. Full ISO timestamps are honored exactly regardless.
+ */
+function parseIsoDate(
+  raw: unknown,
+  boundary: 'start' | 'end' = 'start',
+): { ok: true; value?: Date } | { ok: false; error: string } {
   if (raw == null || raw === '') return { ok: true, value: undefined };
   if (typeof raw !== 'string') return { ok: false, error: 'Date must be a string' };
   if (!ISO_DATE_RE.test(raw)) return { ok: false, error: 'Date must be ISO 8601' };
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return { ok: false, error: 'Invalid date' };
+  if (boundary === 'end' && DATE_ONLY_RE.test(raw)) {
+    d.setUTCHours(23, 59, 59, 999);
+  }
   return { ok: true, value: d };
 }
 
@@ -208,10 +223,13 @@ function readTargetQuery(query: AuditLogQuery): string | undefined {
 function parseFilters(
   query: AuditLogQuery,
 ): { ok: true; value: ParsedFilters } | { ok: false; error: string } {
-  const from = parseIsoDate(query.from);
+  const from = parseIsoDate(query.from, 'start');
   if (!from.ok) return { ok: false, error: `from: ${from.error}` };
-  const to = parseIsoDate(query.to);
+  const to = parseIsoDate(query.to, 'end');
   if (!to.ok) return { ok: false, error: `to: ${to.error}` };
+  if (from.value && to.value && from.value > to.value) {
+    return { ok: false, error: '`from` must be earlier than `to`' };
+  }
   const action = parseActionFilter(query.action);
   if (!action.ok) return { ok: false, error: action.error };
   const targetPrincipalType = parsePrincipalType(query.targetPrincipalType);

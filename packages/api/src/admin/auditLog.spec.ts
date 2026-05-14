@@ -184,6 +184,43 @@ describe('createAdminAuditLogHandlers', () => {
       expect(status).toHaveBeenCalledWith(200);
     });
 
+    it('widens a date-only `to` filter to the end of the day UTC', async () => {
+      const deps = createDeps();
+      const handlers = createAdminAuditLogHandlers(deps);
+      const { req, res } = createReqRes({ query: { to: '2025-01-15' } });
+
+      await handlers.listAuditLog(req, res);
+
+      const filtersArg = (deps.listAuditLogPage as jest.Mock).mock.calls[0][1];
+      expect(filtersArg.to).toBeInstanceOf(Date);
+      expect((filtersArg.to as Date).toISOString()).toBe('2025-01-15T23:59:59.999Z');
+    });
+
+    it('leaves a full ISO `to` timestamp exact (no day-boundary widening)', async () => {
+      const deps = createDeps();
+      const handlers = createAdminAuditLogHandlers(deps);
+      const { req, res } = createReqRes({ query: { to: '2025-01-15T08:30:00Z' } });
+
+      await handlers.listAuditLog(req, res);
+
+      const filtersArg = (deps.listAuditLogPage as jest.Mock).mock.calls[0][1];
+      expect((filtersArg.to as Date).toISOString()).toBe('2025-01-15T08:30:00.000Z');
+    });
+
+    it('rejects when `from` is later than `to`', async () => {
+      const deps = createDeps();
+      const handlers = createAdminAuditLogHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        query: { from: '2025-12-31', to: '2025-01-01' },
+      });
+
+      await handlers.listAuditLog(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json.mock.calls[0][0].error).toMatch(/from.*to/);
+      expect(deps.listAuditLogPage).not.toHaveBeenCalled();
+    });
+
     it('rejects limit > 500 with 400', async () => {
       const deps = createDeps();
       const handlers = createAdminAuditLogHandlers(deps);
