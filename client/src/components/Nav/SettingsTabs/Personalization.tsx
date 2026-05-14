@@ -121,7 +121,9 @@ export default function Personalization({
           <Button
             onClick={handleSaveDisplayName}
             disabled={
-              updatePersonalizationMutation.isLoading || isDisplayNameTooLong || !isDisplayNameChanged
+              updatePersonalizationMutation.isLoading ||
+              isDisplayNameTooLong ||
+              !isDisplayNameChanged
             }
           >
             {localize('com_ui_save')}
