@@ -1,5 +1,5 @@
 # Dockerfile.multi
-# v0.8.5
+# v0.8.6-rc1
 
 # Set configurable max-old-space-size with default
 ARG NODE_MAX_OLD_SPACE_SIZE=6144
@@ -68,6 +68,7 @@ RUN npm run build
 FROM base AS client-package-build
 WORKDIR /app/packages/client
 COPY packages/client ./
+COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 RUN npm run build
 
 # Client build
