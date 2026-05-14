@@ -1349,7 +1349,7 @@
   "com_ui_reference_saved_memories": "Reference saved memories",
   "com_ui_reference_saved_memories_description": "Allow the assistant to reference and use your saved memories when responding",
   "com_ui_how_to_address": "How to address you",
-  "com_ui_how_to_address_label": "How should LibreChat address you?",
+  "com_ui_how_to_address_label": "What should LibreChat call you?",
   "com_ui_how_to_address_description": "Leave blank to use your account name.",
   "com_ui_how_to_address_placeholder": "e.g. Ben",
   "com_ui_how_to_address_max_length": "Preferred name must be 100 characters or less.",
