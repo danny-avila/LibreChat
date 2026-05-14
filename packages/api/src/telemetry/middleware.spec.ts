@@ -113,6 +113,34 @@ describe('telemetryMiddleware', () => {
     expect(capturedAttributes).not.toContain('do-not-capture-this-api-key');
   });
 
+  it('records identity attributes populated by downstream middleware', () => {
+    const span = createSpan();
+    const req = createRequest({
+      headers: {},
+      user: undefined,
+    });
+    const res = createResponse(200);
+    const next: NextFunction = jest.fn(() => {
+      req.user = {
+        id: 'late-user',
+        tenantId: 'late-tenant',
+      } as ServerRequest['user'];
+    });
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
+
+    telemetryMiddleware(req, res as Response, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(span.setAttributes).toHaveBeenCalledTimes(1);
+
+    res.emit('finish');
+
+    expect(span.setAttributes).toHaveBeenCalledWith({
+      'enduser.id': 'late-user',
+      'librechat.tenant.id': 'late-tenant',
+    });
+  });
+
   it('ignores health checks', () => {
     const span = createSpan();
     const next = jest.fn();
@@ -211,6 +239,10 @@ describe('telemetryErrorMiddleware', () => {
 
     expect(span.recordException).toHaveBeenCalledWith(error);
     expect(span.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
+    expect(span.setAttributes).toHaveBeenCalledWith({
+      'enduser.id': 'user-1',
+      'librechat.tenant.id': 'tenant-1',
+    });
     expect(span.setAttributes).toHaveBeenCalledWith({
       'error.type': 'TypeError',
       'http.route': '/api/messages/:conversationId',

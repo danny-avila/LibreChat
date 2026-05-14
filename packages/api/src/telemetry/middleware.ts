@@ -80,6 +80,7 @@ function setCompletionAttributes(
     attributes['librechat.request.aborted'] = true;
   }
 
+  setIdentityAttributes(span, req);
   span.setAttributes(attributes);
 
   if (aborted || statusCode >= 500) {
@@ -103,7 +104,6 @@ export function telemetryMiddleware(req: ServerRequest, res: Response, next: Nex
   span.setAttributes({
     'http.request.method': req.method,
   });
-  setIdentityAttributes(span, req);
 
   let completed = false;
   const complete = () => {
@@ -138,6 +138,7 @@ export function telemetryErrorMiddleware(
     const routePath = getRoutePath(req);
     span.recordException(err);
     span.setStatus({ code: SpanStatusCode.ERROR });
+    setIdentityAttributes(span, req);
     span.setAttributes({
       'error.type': err.name || err.constructor.name,
       'http.route': routePath,
