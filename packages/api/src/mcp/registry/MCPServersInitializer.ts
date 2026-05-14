@@ -159,9 +159,25 @@ export class MCPServersInitializer {
     logger.info(`${prefix} OAuth Required: ${config.requiresOAuth}`);
     logger.info(`${prefix} Capabilities: ${config.capabilities}`);
     logger.info(`${prefix} Tools: ${config.tools}`);
-    logger.info(`${prefix} Server Instructions: ${config.serverInstructions}`);
+    logger.info(
+      `${prefix} Server Instructions: ${MCPServersInitializer.formatInstructionsForLogging(
+        config.serverInstructions,
+      )}`,
+    );
     logger.info(`${prefix} Initialized in: ${config.initDuration ?? 'N/A'}ms`);
     logger.info(`${prefix} -------------------------------------------------┘`);
+  }
+
+  private static formatInstructionsForLogging(instructions?: string | boolean): string {
+    if (!instructions) {
+      return 'N/A';
+    }
+
+    if (typeof instructions !== 'string') {
+      return 'configured';
+    }
+
+    return `configured (${instructions.length} chars)`;
   }
 
   // Returns formatted log prefix for server messages

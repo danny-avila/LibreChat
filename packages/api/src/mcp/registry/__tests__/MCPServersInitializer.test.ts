@@ -458,6 +458,17 @@ describe('MCPServersInitializer', () => {
       );
     });
 
+    it('should not log raw server instructions', async () => {
+      await MCPServersInitializer.initialize(testConfigs);
+
+      expect(mockLogger.info).not.toHaveBeenCalledWith(
+        expect.stringContaining('Instructions for file_tools_server'),
+      );
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('[MCP][file_tools_server] Server Instructions: configured'),
+      );
+    });
+
     it('should use Promise.allSettled for parallel server initialization', async () => {
       const allSettledSpy = jest.spyOn(Promise, 'allSettled');
 
