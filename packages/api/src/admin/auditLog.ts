@@ -15,7 +15,10 @@ import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 
 const FORMULA_PREFIX = /^[=+\-@\t\r]/;
-const CSV_BOM = '﻿';
+/** UTF-8 BOM, written first so Excel recognizes the encoding on import. Spelled
+ * as a Unicode escape so readers can see the constant in editors that hide
+ * the zero-width glyph. */
+const CSV_BOM = '\uFEFF';
 
 const VALID_ACTIONS = new Set<AuditAction>(AUDIT_ACTIONS);
 const VALID_PRINCIPAL_TYPES = new Set<string>(Object.values(PrincipalType));

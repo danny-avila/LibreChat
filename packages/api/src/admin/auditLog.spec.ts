@@ -423,7 +423,7 @@ describe('createAdminAuditLogHandlers', () => {
 
       await handlers.exportAuditLogCsv(ctx.req, ctx.res);
 
-      expect(ctx.chunks[0]).toBe('﻿');
+      expect(ctx.chunks[0]).toBe('\uFEFF');
       expect(ctx.chunks).toContain('\r\n');
       expect(ctx.endCalled()).toBe(true);
     });

@@ -450,7 +450,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
       // Only emit the audit entry when a grant document was actually deleted —
       // a no-op revoke (the grant never existed) must not appear in the audit
       // trail or the forensic record becomes misleading.
-      if (revokeResult?.deletedCount > 0) {
+      if (revokeResult.deletedCount > 0) {
         await emitAudit({
           action: 'grant_removed',
           caller,
