@@ -313,6 +313,23 @@ describe('telemetryErrorMiddleware', () => {
     expect(next).toHaveBeenCalledWith(error);
   });
 
+  it('records exceptions on the stored request span when available', () => {
+    const activeSpan = createSpan();
+    const requestSpan = createSpan();
+    const error = new TypeError('boom');
+    const next = jest.fn();
+    mockGetTelemetryRequestSpan.mockReturnValue(requestSpan);
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(activeSpan);
+
+    telemetryErrorMiddleware(error, createRequest(), createResponse() as Response, next);
+
+    expect(trace.getActiveSpan).not.toHaveBeenCalled();
+    expect(activeSpan.recordException).not.toHaveBeenCalled();
+    expect(requestSpan.recordException).toHaveBeenCalledWith(error);
+    expect(requestSpan.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
+    expect(next).toHaveBeenCalledWith(error);
+  });
+
   it('forwards the error without an active span', () => {
     const error = new Error('boom');
     const next = jest.fn();

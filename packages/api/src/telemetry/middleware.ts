@@ -134,7 +134,7 @@ export function telemetryErrorMiddleware(
   _res: Response,
   next: NextFunction,
 ): void {
-  const span = trace.getActiveSpan();
+  const span = getTelemetryRequestSpan(req) ?? trace.getActiveSpan();
   if (span) {
     const routePath = getRoutePath(req);
     span.recordException(err);
