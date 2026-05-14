@@ -71,7 +71,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
       const customWelcome = startupConfig.interface.customWelcome;
       // Replace {{user.name}} with actual user name if available
       if (userDisplayName && customWelcome.includes('{{user.name}}')) {
-        return customWelcome.replace(/{{user.name}}/g, userDisplayName);
+        return customWelcome.replace(/{{user.name}}/g, () => userDisplayName);
       }
       return customWelcome;
     }
