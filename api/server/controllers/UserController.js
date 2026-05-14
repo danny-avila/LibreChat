@@ -87,14 +87,15 @@ const updatePersonalizationController = async (req, res) => {
       return res.status(400).json({ message: 'displayName must be a string or null' });
     }
 
-    const value = displayName ?? '';
+    const normalizedDisplayName = typeof displayName === 'string' ? displayName.trim() : null;
+    const value = normalizedDisplayName ?? '';
     if (value.length > MAX_DISPLAY_NAME_LENGTH) {
       return res.status(400).json({
         message: `displayName exceeds maximum length of ${MAX_DISPLAY_NAME_LENGTH}`,
       });
     }
 
-    const user = await db.updateUserDisplayName(req.user.id, displayName);
+    const user = await db.updateUserDisplayName(req.user.id, normalizedDisplayName);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
