@@ -44,7 +44,7 @@ librechat:
 
     # Anthropic via Azure AI Foundry
     ANTHROPIC_API_KEY: "override-via-pipeline"
-    ANTHROPIC_REVERSE_PROXY: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/anthropic/v1/messages"
+    ANTHROPIC_REVERSE_PROXY: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/anthropic"
 
     # RAG
     RAG_OPENAI_BASEURL: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/openai"
