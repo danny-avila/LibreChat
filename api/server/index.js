@@ -1,4 +1,4 @@
-require('dotenv').config();
+const telemetry = require('./telemetry');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
@@ -25,22 +25,22 @@ const {
   updateInterfacePermissions,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
-const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const {
-  getRoleByName,
   updateAccessPermissions,
-  seedDatabase,
   sweepOrphanedPreviews,
+  getRoleByName,
+  seedDatabase,
 } = require('~/models');
+const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
+const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
-const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
@@ -146,6 +146,10 @@ const startServer = async () => {
   app.use(staticCache(appConfig.paths.fonts));
   app.use(staticCache(appConfig.paths.assets));
 
+  if (telemetry.enabled) {
+    app.use(telemetry.telemetryMiddleware);
+  }
+
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
   }
@@ -227,6 +231,10 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
+  /** Record trace errors before the final error controller. */
+  if (telemetry.enabled) {
+    app.use(telemetry.telemetryErrorMiddleware);
+  }
   /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
   app.use(ErrorController);
 
