@@ -13,15 +13,7 @@ const assistants = require('~/server/services/Endpoints/assistants');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const agents = require('~/server/services/Endpoints/agents');
 const { updateFilesUsage } = require('~/models');
-
-const PRIVATE_MODEL_SPEC_PRESET_FIELDS = [
-  'promptPrefix',
-  'instructions',
-  'additional_instructions',
-  'system',
-  'context',
-  'examples',
-];
+const { PRIVATE_MODEL_SPEC_PRESET_FIELDS } = require('~/server/utils/modelSpecs');
 
 const buildFunction = {
   [EModelEndpoint.agents]: agents.buildOptions,
@@ -49,28 +41,36 @@ function hasValue(field, value) {
   return value.length > 0;
 }
 
-function mergeModelSpecPreset(modelSpec, parsedBody) {
+function mergeModelSpecPreset(modelSpec, parsedBody, { includePresetDefaults = false } = {}) {
   const preset = modelSpec?.preset;
   if (!preset || typeof preset !== 'object') {
-    return parsedBody;
+    return { conversation: parsedBody, appliedPrivateFields: new Set() };
   }
 
   const merged = {
-    ...preset,
+    ...(includePresetDefaults ? preset : {}),
     ...parsedBody,
     spec: modelSpec.name,
   };
+  const appliedPrivateFields = new Set();
 
   for (const field of PRIVATE_MODEL_SPEC_PRESET_FIELDS) {
-    if (
-      Object.prototype.hasOwnProperty.call(preset, field) &&
-      !hasValue(field, parsedBody[field])
-    ) {
+    if (!Object.prototype.hasOwnProperty.call(preset, field)) {
+      continue;
+    }
+
+    if (includePresetDefaults) {
+      appliedPrivateFields.add(field);
+      continue;
+    }
+
+    if (!hasValue(field, parsedBody[field])) {
       merged[field] = preset[field];
+      appliedPrivateFields.add(field);
     }
   }
 
-  return merged;
+  return { conversation: merged, appliedPrivateFields };
 }
 
 function parseModelSpecPreset({
@@ -79,8 +79,11 @@ function parseModelSpecPreset({
   endpoint,
   endpointType,
   defaultParamsEndpoint,
+  includePresetDefaults,
 }) {
-  const conversation = mergeModelSpecPreset(modelSpec, parsedBody);
+  const { conversation, appliedPrivateFields } = mergeModelSpecPreset(modelSpec, parsedBody, {
+    includePresetDefaults,
+  });
   const reparsedBody = parseCompactConvo({
     endpoint,
     endpointType,
@@ -92,7 +95,7 @@ function parseModelSpecPreset({
     reparsedBody.iconURL = modelSpec.iconURL;
   }
 
-  return reparsedBody;
+  return { parsedBody: reparsedBody, appliedPrivateFields };
 }
 
 function resolvePromptPrefixVariables(parsedBody, user, now) {
@@ -112,6 +115,8 @@ function resolvePromptPrefixVariables(parsedBody, user, now) {
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
+  const isAgents =
+    isAgentsEndpoint(endpoint) || req.baseUrl.startsWith(EndpointURLs[EModelEndpoint.agents]);
 
   let endpointsConfig;
   try {
@@ -139,6 +144,7 @@ async function buildEndpointOption(req, res, next) {
   }
 
   const appConfig = req.config;
+  let appliedModelSpecPrivateFields = new Set();
   if (appConfig.modelSpecs?.list?.length && appConfig.modelSpecs?.enforce) {
     /** @type {{ list: TModelSpec[] }}*/
     const { list } = appConfig.modelSpecs;
@@ -158,13 +164,16 @@ async function buildEndpointOption(req, res, next) {
     }
 
     try {
-      parsedBody = parseModelSpecPreset({
+      const result = parseModelSpecPreset({
         modelSpec: currentModelSpec,
         parsedBody: currentModelSpec.preset,
         endpoint,
         endpointType,
         defaultParamsEndpoint,
+        includePresetDefaults: true,
       });
+      parsedBody = result.parsedBody;
+      appliedModelSpecPrivateFields = result.appliedPrivateFields;
     } catch (error) {
       logger.error(`Error parsing model spec for endpoint ${endpoint}`, error);
       return handleError(res, { text: 'Error parsing model spec' });
@@ -172,14 +181,20 @@ async function buildEndpointOption(req, res, next) {
   } else if (parsedBody.spec && appConfig.modelSpecs?.list) {
     const modelSpec = appConfig.modelSpecs.list.find((s) => s.name === parsedBody.spec);
     if (modelSpec) {
+      if (endpoint !== modelSpec.preset?.endpoint) {
+        return handleError(res, { text: 'Model spec mismatch' });
+      }
+
       try {
-        parsedBody = parseModelSpecPreset({
+        const result = parseModelSpecPreset({
           modelSpec,
           parsedBody,
           endpoint,
           endpointType,
           defaultParamsEndpoint,
         });
+        parsedBody = result.parsedBody;
+        appliedModelSpecPrivateFields = result.appliedPrivateFields;
       } catch (error) {
         logger.error(`Error parsing model spec for endpoint ${endpoint}`, error);
         return handleError(res, { text: 'Error parsing model spec' });
@@ -187,11 +202,11 @@ async function buildEndpointOption(req, res, next) {
     }
   }
 
-  parsedBody = resolvePromptPrefixVariables(parsedBody, req.user, req.body.clientTimestamp);
+  if (!isAgents && appliedModelSpecPrivateFields.has('promptPrefix')) {
+    parsedBody = resolvePromptPrefixVariables(parsedBody, req.user, req.body.clientTimestamp);
+  }
 
   try {
-    const isAgents =
-      isAgentsEndpoint(endpoint) || req.baseUrl.startsWith(EndpointURLs[EModelEndpoint.agents]);
     const builder = isAgents
       ? (...args) => buildFunction[EModelEndpoint.agents](req, ...args)
       : buildFunction[endpointType ?? endpoint];

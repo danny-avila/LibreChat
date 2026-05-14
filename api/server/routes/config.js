@@ -5,6 +5,7 @@ const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-sch
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
+const { PRIVATE_MODEL_SPEC_PRESET_FIELDS } = require('~/server/utils/modelSpecs');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -19,14 +20,6 @@ const publicSharedLinksEnabled =
 
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
-const PRIVATE_MODEL_SPEC_PRESET_FIELDS = [
-  'promptPrefix',
-  'instructions',
-  'additional_instructions',
-  'system',
-  'context',
-  'examples',
-];
 
 function isBirthday() {
   const today = new Date();

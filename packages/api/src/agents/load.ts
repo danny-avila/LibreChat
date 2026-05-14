@@ -91,7 +91,8 @@ export async function loadEphemeralAgent(
   }
 
   const requestPromptPrefix = req.body?.promptPrefix;
-  const modelPromptPrefix = (model_parameters as ModelParametersWithPromptPrefix).promptPrefix;
+  const { promptPrefix: modelPromptPrefix, ...safeModelParameters } =
+    model_parameters as ModelParametersWithPromptPrefix;
   const instructions =
     typeof modelPromptPrefix === 'string' ? modelPromptPrefix : requestPromptPrefix;
 
@@ -126,7 +127,7 @@ export async function loadEphemeralAgent(
     id: ephemeralId,
     instructions,
     provider: endpoint,
-    model_parameters,
+    model_parameters: safeModelParameters as AgentModelParameters,
     model,
     tools,
   };

@@ -250,6 +250,7 @@ describe('loadAgent', () => {
     );
 
     expect(result?.instructions).toBe('Server-side model spec instructions');
+    expect(result?.model_parameters).not.toHaveProperty('promptPrefix');
   });
 
   test('should handle ephemeral agent with undefined ephemeralAgent in body', async () => {
