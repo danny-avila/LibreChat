@@ -1,6 +1,7 @@
 const express = require('express');
 const webpush = require('web-push');
 const { Message, User } = require('~/db/models');
+const Notification = require('~/db/notification');
 const { logger } = require('@librechat/data-schemas');
 
 const router = express.Router();
@@ -72,7 +73,7 @@ router.post('/notifications', async (req, res) => {
       });
     }
 
-   // const userId = "69da2a7207752c2de1b2b372"; // ⚠️ hardcoded (be careful)
+  //  const userId = "69cd061cd64d4be60a4d6575"; // ⚠️ hardcoded (be careful)
      const userId = message.user;
 
     const user = await User.findById(userId).lean();
@@ -83,10 +84,25 @@ router.post('/notifications', async (req, res) => {
       });
     }
 
-    if (!user.pushSubscriptions || user.pushSubscriptions.length === 0) {
-      return res.status(400).json({
-        message: 'User has no push subscriptions',
+    const displayQuestion = originalQuestion || question;
+    // const conversationId = message?.conversationId ?? null;
+
+    // 🔔 Create in-app notification
+    try {
+      await Notification.create({
         userId,
+        originalQuestion: displayQuestion,
+      });
+    } catch (notifErr) {
+      logger.error('Failed to create in-app notification:', notifErr);
+    }
+
+    if (!user.pushSubscriptions || user.pushSubscriptions.length === 0) {
+      return res.status(200).json({
+        message: 'No push subscriptions; in-app notification created',
+        successCount: 0,
+        failureCount: 0,
+        total: 0,
       });
     }
 
@@ -95,9 +111,6 @@ router.post('/notifications', async (req, res) => {
         message: 'Web push not configured (VAPID issue)',
       });
     }
-
-    const displayQuestion = originalQuestion || question;
-    const conversationId = message.conversationId;
 
     let successCount = 0;
     let failureCount = 0;
@@ -114,7 +127,7 @@ router.post('/notifications', async (req, res) => {
           title: 'Your answer is ready!',
           body: `Your question "${displayQuestion}" was recently answered.`,
           icon: '/assets/annam-logo.png',
-          url: `${clientDomain}/c/${conversationId}`,
+          url: clientDomain,
         });
 
         logger.info(`[PUSH-DEBUG] Attempting send to endpoint (last 15 chars): ${sub.endpoint.slice(-15)}`);

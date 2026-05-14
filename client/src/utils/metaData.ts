@@ -1408,7 +1408,7 @@ export const KVKS: Record<string, string[]> = {
   "Moga": [
     "Krishi Vigyan Kendra - VPO. Budh Singh Wala, Distt. Moga-142 001"
   ],
-  "Roopnagar": [
+  "Rupnagar": [
     "Krishi Vigyan Kendra - PAU RRS, Haveli Kalan, Ropar Distt. Roopnagar-140001"
   ],
   "Ludhiana": [
