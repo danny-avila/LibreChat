@@ -133,6 +133,12 @@ const userSchema = new Schema<IUser>(
           type: Boolean,
           default: true,
         },
+        displayName: {
+          type: String,
+          trim: true,
+          maxlength: 100,
+          default: undefined,
+        },
       },
       default: {},
     },
