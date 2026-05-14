@@ -729,7 +729,7 @@ describe('AttachmentGroup routing', () => {
     expect(filenames[1]).toMatch(/placeholder\.zip/);
   });
 
-  it('keeps multiple plain files in their own collapsed group while images render outwardly', () => {
+  it('keeps multiple downloadable files in their own collapsed group while images render outwardly', () => {
     const first = baseAttachment({
       file_id: 'file-a',
       filename: 'a.zip',
@@ -740,6 +740,12 @@ describe('AttachmentGroup routing', () => {
       filename: 'b.zip',
       type: 'application/zip',
     } as Partial<TAttachment>);
+    const json = baseAttachment({
+      file_id: 'file-c',
+      filename: 'c.json',
+      type: 'application/json',
+      text: '{"c":true}',
+    } as Partial<TAttachment>);
     const image = baseAttachment({
       file_id: 'image-a',
       filename: 'preview.png',
@@ -748,12 +754,13 @@ describe('AttachmentGroup routing', () => {
       height: 16,
     } as Partial<TAttachment>);
 
-    renderWith(<AttachmentGroup attachments={[first, second, image]} />);
+    const { container } = renderWith(<AttachmentGroup attachments={[first, second, json, image]} />);
 
     const toggle = screen.getByRole('button', { name: 'com_ui_show_n_files' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
     expect(panel?.firstElementChild).toHaveAttribute('aria-hidden', 'true');
+    expect(container.querySelector('pre')).toBeNull();
     expect(screen.getByTestId('image')).toBeInTheDocument();
   });
 
@@ -859,9 +866,13 @@ describe('AttachmentGroup routing', () => {
     expect(screen.getByText('index.html')).toBeInTheDocument();
     // Mermaid render
     expect(screen.getByTestId('mermaid-render')).toBeInTheDocument();
-    // Inline text fallback for JSON (CSV now goes to SPREADSHEET)
-    expect(container.querySelector('pre')).not.toBeNull();
-    // FileContainer for the plain zip (and potentially others)
-    expect(screen.getAllByTestId('file-container').length).toBeGreaterThan(0);
+    // JSON and plain zip are both downloadable file outputs, so they collapse together.
+    expect(container.querySelector('pre')).toBeNull();
+    expect(screen.getByRole('button', { name: 'com_ui_show_n_files' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    // FileContainer chips are still mounted inside the collapsed panel.
+    expect(screen.getAllByTestId('file-container').length).toBeGreaterThanOrEqual(2);
   });
 });

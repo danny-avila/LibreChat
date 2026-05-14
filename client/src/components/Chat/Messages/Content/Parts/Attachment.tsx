@@ -537,9 +537,23 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   mermaidArtifacts.sort(bySalience);
   imageAttachments.sort(bySalience);
 
+  const downloadableTextAttachments = textAttachments.filter((attachment) =>
+    Boolean(attachment.filepath),
+  );
+  const textOnlyAttachments = textAttachments.filter((attachment) => !attachment.filepath);
+  const groupDownloadableFiles = fileAttachments.length + downloadableTextAttachments.length > 1;
+  const groupedFileAttachments = groupDownloadableFiles
+    ? [...fileAttachments, ...downloadableTextAttachments].sort(bySalience)
+    : fileAttachments;
+  const visibleTextAttachments = groupDownloadableFiles
+    ? textOnlyAttachments
+    : textAttachments;
+
   return (
     <>
-      {fileAttachments.length > 0 && <FileAttachmentGroup attachments={fileAttachments} />}
+      {groupedFileAttachments.length > 0 && (
+        <FileAttachmentGroup attachments={groupedFileAttachments} />
+      )}
       {(resolvedPanel.length > 0 || pendingPanel.length > 0) && (
         <div className="my-2 flex flex-wrap items-center gap-2">
           {resolvedPanel.map(({ attachment, type }, index) => (
@@ -569,9 +583,9 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
           ))}
         </div>
       )}
-      {textAttachments.length > 0 && (
+      {visibleTextAttachments.length > 0 && (
         <div className="my-2 flex flex-col gap-3">
-          {textAttachments.map((attachment, index) => (
+          {visibleTextAttachments.map((attachment, index) => (
             <TextAttachment
               attachment={attachment}
               key={renderAttachmentKey('text', attachment, index)}
