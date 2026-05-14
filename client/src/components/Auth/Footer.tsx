@@ -47,7 +47,10 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
   const footerElements = [privacyPolicyRender, termsOfServiceRender, codeCanRender].filter(Boolean);
 
   return (
-    <div className="align-end m-4 flex flex-col items-center gap-2" role="contentinfo">
+    <div
+      className="align-end mx-4 mb-[max(env(safe-area-inset-bottom),1rem)] mt-4 flex flex-col items-center gap-2"
+      role="contentinfo"
+    >
       <div className="flex flex-wrap justify-center gap-x-2 gap-y-1">
         {footerElements.map((contentRender, index) => {
           const isLastElement = index === footerElements.length - 1;
