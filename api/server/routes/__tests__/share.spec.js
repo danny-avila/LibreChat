@@ -137,6 +137,7 @@ describe('share routes retention', () => {
     expect(updateSharedLink).toHaveBeenCalledWith(
       'user-123',
       'share-123',
+      undefined,
       new Date('2030-01-01T00:00:00.000Z'),
     );
   });
@@ -163,7 +164,7 @@ describe('share routes retention', () => {
     const response = await request(buildApp()).patch('/api/share/share-123');
 
     expect(response.status).toBe(200);
-    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', null);
+    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null);
   });
 
   it('preserves updated share expiration when the conversation cannot be found', async () => {
@@ -174,7 +175,7 @@ describe('share routes retention', () => {
     const response = await request(buildApp()).patch('/api/share/share-123');
 
     expect(response.status).toBe(200);
-    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined);
+    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, undefined);
   });
 
   it('clears updated share expiration when creating a new expiration throws', async () => {
@@ -190,6 +191,33 @@ describe('share routes retention', () => {
 
     expect(response.status).toBe(200);
     expect(logger.error).toHaveBeenCalledWith('Error creating shared link expiration date:', error);
-    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', null);
+    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null);
+  });
+
+  it('updates share target message while applying retention expiration', async () => {
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mongoose.models.Conversation.findOne.mockReturnValue(lean(retainedConvo));
+    updateSharedLink.mockResolvedValue({ shareId: 'share-456', targetMessageId: 'msg-456' });
+
+    const response = await request(buildApp())
+      .patch('/api/share/share-123')
+      .send({ targetMessageId: 'msg-456' });
+
+    expect(response.status).toBe(200);
+    expect(updateSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'share-123',
+      'msg-456',
+      new Date('2030-01-01T00:00:00.000Z'),
+    );
+  });
+
+  it('rejects non-string target message updates', async () => {
+    const response = await request(buildApp())
+      .patch('/api/share/share-123')
+      .send({ targetMessageId: 123 });
+
+    expect(response.status).toBe(400);
+    expect(updateSharedLink).not.toHaveBeenCalled();
   });
 });

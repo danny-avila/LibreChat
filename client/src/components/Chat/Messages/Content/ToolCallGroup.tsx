@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown, Users } from 'lucide-react';
-import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
+import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
   TAttachment,
   TMessageContentParts,
@@ -15,9 +15,11 @@ import { StackedToolIcons } from './ToolOutput';
 import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
 import store from '~/store';
+import { isBashProgrammaticToolCall } from './routing';
 
 interface ToolMeta {
   name: string;
+  iconName: string;
   hasOutput: boolean;
 }
 
@@ -39,21 +41,31 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
      *  so the group header flips from "Running N agents" to "Ran N
      *  agents" on completion even when the child returned no text. */
     const completed = !!tc.output || tc.progress === 1;
-    return { name: tc.name ?? '', hasOutput: completed };
+    const name = tc.name ?? '';
+    const iconName = isBashProgrammaticToolCall(name, tc.args) ? Tools.bash_tool : name;
+    return { name, iconName, hasOutput: completed };
   }
 
   if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
     const ci = (toolCall as { code_interpreter?: { outputs?: unknown[] } }).code_interpreter;
-    return { name: 'code_interpreter', hasOutput: (ci?.outputs?.length ?? 0) > 0 };
+    return {
+      name: 'code_interpreter',
+      iconName: 'code_interpreter',
+      hasOutput: (ci?.outputs?.length ?? 0) > 0,
+    };
   }
 
   if (toolCall.type === ToolCallTypes.RETRIEVAL || toolCall.type === ToolCallTypes.FILE_SEARCH) {
-    return { name: 'file_search', hasOutput: !!(toolCall as { output?: string }).output };
+    return {
+      name: 'file_search',
+      iconName: 'file_search',
+      hasOutput: !!(toolCall as { output?: string }).output,
+    };
   }
 
   if (toolCall.type === ToolCallTypes.FUNCTION && ToolCallTypes.FUNCTION in toolCall) {
     const fn = (toolCall as FunctionToolCall).function;
-    return { name: fn.name, hasOutput: !!fn.output };
+    return { name: fn.name, iconName: fn.name, hasOutput: !!fn.output };
   }
 
   return null;
@@ -86,6 +98,7 @@ export default function ToolCallGroup({
     [toolMetadata],
   );
   const toolNames = useMemo(() => toolMetadata.map((m) => m?.name ?? ''), [toolMetadata]);
+  const iconToolNames = useMemo(() => toolMetadata.map((m) => m?.iconName ?? ''), [toolMetadata]);
 
   /** Subagent tool calls get their own label verb ("Running/Ran N agents")
    *  since "Used N tools" reads oddly when the "tools" are actually child
@@ -182,7 +195,7 @@ export default function ToolCallGroup({
           </div>
         ) : (
           <StackedToolIcons
-            toolNames={toolNames}
+            toolNames={iconToolNames}
             mcpIconMap={mcpIconMap}
             maxIcons={4}
             isAnimating={!allCompleted && isSubmitting}

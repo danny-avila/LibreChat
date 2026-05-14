@@ -29,6 +29,11 @@ export interface RefreshTokenset {
   claims: () => AdminRefreshClaims;
 }
 
+export interface OpenIDRefreshParams {
+  scope?: string;
+  audience?: string;
+}
+
 export interface MintedToken {
   /** Bearer the admin panel will send on subsequent requests. */
   token: string;
@@ -112,6 +117,20 @@ export class AdminRefreshError extends Error {
     super(message);
     this.name = 'AdminRefreshError';
   }
+}
+
+export function buildOpenIDRefreshParams(): OpenIDRefreshParams {
+  const params: OpenIDRefreshParams = {};
+
+  if (process.env.OPENID_SCOPE) {
+    params.scope = process.env.OPENID_SCOPE;
+  }
+
+  if (process.env.OPENID_REFRESH_AUDIENCE) {
+    params.audience = process.env.OPENID_REFRESH_AUDIENCE;
+  }
+
+  return params;
 }
 
 async function resolveAdminUser(

@@ -5,6 +5,7 @@ const { User, Balance } = require('@librechat/data-schemas').createModels(mongoo
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
+const { getAppConfig } = require('~/server/services/Config');
 
 (async () => {
   await connect();
@@ -31,7 +32,8 @@ const connect = require('./connect');
     // console.purple(`[DEBUG] Args Length: ${process.argv.length}`);
   }
 
-  const balanceConfig = getBalanceConfig();
+  const appConfig = await getAppConfig();
+  const balanceConfig = getBalanceConfig(appConfig);
   if (!balanceConfig?.enabled) {
     console.red('Error: Balance is not enabled. Use librechat.yaml to enable it');
     silentExit(1);

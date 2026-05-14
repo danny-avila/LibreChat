@@ -374,6 +374,7 @@ describe('agentsEndpointSchema', () => {
         auth: {
           oidc: {
             enabled: true,
+            audience: 'remote-agent-api',
           },
         },
       },
@@ -384,6 +385,7 @@ describe('agentsEndpointSchema', () => {
           oidc: {
             enabled: true,
             issuer: 'my-realm',
+            audience: 'remote-agent-api',
           },
         },
       },
@@ -393,6 +395,21 @@ describe('agentsEndpointSchema', () => {
     expect(invalidIssuer.success).toBe(false);
   });
 
+  it('requires an audience when remote OIDC auth is enabled', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('requires HTTPS remote OIDC issuer and JWKS URLs outside localhost', () => {
     const insecureIssuer = agentsEndpointSchema.safeParse({
       remoteApi: {
@@ -400,6 +417,7 @@ describe('agentsEndpointSchema', () => {
           oidc: {
             enabled: true,
             issuer: 'http://auth.example.com',
+            audience: 'remote-agent-api',
           },
         },
       },
@@ -410,6 +428,7 @@ describe('agentsEndpointSchema', () => {
           oidc: {
             enabled: true,
             issuer: 'https://auth.example.com',
+            audience: 'remote-agent-api',
             jwksUri: 'http://auth.example.com/jwks',
           },
         },
@@ -427,6 +446,7 @@ describe('agentsEndpointSchema', () => {
           oidc: {
             enabled: true,
             issuer: 'http://localhost:8080/realms/test',
+            audience: 'remote-agent-api',
             jwksUri: 'http://127.0.0.1:8080/realms/test/protocol/openid-connect/certs',
           },
         },
@@ -443,6 +463,7 @@ describe('agentsEndpointSchema', () => {
           oidc: {
             enabled: true,
             issuer: 'https://auth.example.com',
+            audience: 'remote-agent-api',
             scope: 'remote_agent,admin',
           },
         },
@@ -746,11 +767,15 @@ describe('specsConfigSchema', () => {
         {
           name: 'spec-1',
           label: 'Spec 1',
+          hideBadgeRow: true,
           preset: { endpoint: EModelEndpoint.openAI },
         },
       ],
     });
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list[0].hideBadgeRow).toBe(true);
+    }
   });
 
   it('still rejects null list', () => {

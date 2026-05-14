@@ -1027,6 +1027,7 @@ export type TConversation = z.infer<typeof tConversationSchema> & {
 export const tSharedLinkSchema = z.object({
   conversationId: z.string(),
   shareId: z.string(),
+  targetMessageId: z.string().optional(),
   messages: z.array(z.string()),
   isPublic: z.boolean(),
   title: z.string(),

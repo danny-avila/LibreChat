@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { ContentTypes } from 'librechat-data-provider';
+import { Tools, Constants, ContentTypes } from 'librechat-data-provider';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import { render, screen } from '@testing-library/react';
 import ToolCallGroup from '../ToolCallGroup';
@@ -29,7 +29,9 @@ jest.mock('~/hooks/MCP', () => ({
 }));
 
 jest.mock('../ToolOutput', () => ({
-  StackedToolIcons: () => <span data-testid="stacked-icons" />,
+  StackedToolIcons: ({ toolNames }: { toolNames: string[] }) => (
+    <span data-testid="stacked-icons" data-tool-names={toolNames.join(',')} />
+  ),
   getMCPServerName: () => '',
 }));
 
@@ -40,7 +42,10 @@ jest.mock('lucide-react', () => ({
 
 jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
-  getToolDisplayLabel: (name: string) => name,
+  getToolDisplayLabel: (name: string) =>
+    ['execute_code', 'bash_tool', 'run_tools_with_code', 'run_tools_with_bash'].includes(name)
+      ? 'Code'
+      : name,
 }));
 
 jest.mock('../Parts', () => ({
@@ -49,13 +54,18 @@ jest.mock('../Parts', () => ({
   ),
 }));
 
-const makePart = (id: string, output = 'done'): TMessageContentParts =>
+const makePart = (
+  id: string,
+  output = 'done',
+  name = 'fetch_image',
+  args: string | Record<string, unknown> = '{}',
+): TMessageContentParts =>
   ({
     type: ContentTypes.TOOL_CALL,
     [ContentTypes.TOOL_CALL]: {
       id,
-      name: 'fetch_image',
-      args: '{}',
+      name,
+      args,
       output,
     },
   }) as unknown as TMessageContentParts;
@@ -142,5 +152,32 @@ describe('ToolCallGroup image hoisting', () => {
 
     const collapsible = outer.querySelector('[style]');
     expect(collapsible?.contains(attachmentGroup)).toBe(false);
+  });
+
+  it('summarizes mixed bash PTC and bash_tool calls as one Code tool family', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [
+        {
+          part: makePart('t1', 'ptc done', Constants.PROGRAMMATIC_TOOL_CALLING, {
+            code: 'echo via ptc',
+          }),
+          idx: 0,
+        },
+        {
+          part: makePart('t2', 'bash done', Tools.bash_tool, {
+            command: 'echo via bash',
+          }),
+          idx: 1,
+        },
+      ],
+    });
+
+    expect(screen.getByText('— Code')).toBeInTheDocument();
+    expect(screen.queryByText(/Code, bash_tool/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('stacked-icons')).toHaveAttribute(
+      'data-tool-names',
+      'bash_tool,bash_tool',
+    );
   });
 });

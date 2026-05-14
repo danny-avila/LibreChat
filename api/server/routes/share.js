@@ -129,6 +129,7 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
     return res.status(200).json({
       success: share.success,
       shareId: share.shareId,
+      targetMessageId: share.targetMessageId,
       conversationId: req.params.conversationId,
     });
   } catch (error) {
@@ -164,6 +165,11 @@ router.post('/:conversationId', requireJwtAuth, async (req, res) => {
 
 router.patch('/:shareId', requireJwtAuth, async (req, res) => {
   try {
+    const { targetMessageId } = req.body ?? {};
+    if (targetMessageId !== undefined && typeof targetMessageId !== 'string') {
+      return res.status(400).json({ message: 'targetMessageId must be a string' });
+    }
+
     let expiredAt = await getSharedLinkExpiration(req);
     if (expiredAt == null) {
       const SharedLink = mongoose.models.SharedLink;
@@ -179,7 +185,12 @@ router.patch('/:shareId', requireJwtAuth, async (req, res) => {
       return res.status(404).end();
     }
 
-    const updatedShare = await updateSharedLink(req.user.id, req.params.shareId, expiredAt);
+    const updatedShare = await updateSharedLink(
+      req.user.id,
+      req.params.shareId,
+      targetMessageId,
+      expiredAt,
+    );
     if (updatedShare) {
       res.status(200).json(updatedShare);
     } else {

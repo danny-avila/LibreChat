@@ -422,7 +422,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         ...(expiredAt && { expiredAt }),
       });
 
-      return { shareId, conversationId };
+      return { shareId, conversationId, targetMessageId };
     } catch (error) {
       if (error instanceof ShareServiceError) {
         throw error;
@@ -456,14 +456,19 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         isPublic: true,
         ...activeExpirationFilter<t.ISharedLink>(),
       })
-        .select('shareId -_id')
-        .lean()) as { shareId?: string } | null;
+        .select('shareId targetMessageId -_id')
+        .sort({ updatedAt: -1 })
+        .lean()) as { shareId?: string; targetMessageId?: string } | null;
 
       if (!share) {
         return { shareId: null, success: false };
       }
 
-      return { shareId: share.shareId || null, success: true };
+      return {
+        shareId: share.shareId || null,
+        targetMessageId: share.targetMessageId,
+        success: true,
+      };
     } catch (error) {
       logger.error('[getSharedLink] Error getting shared link', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -480,6 +485,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
   async function updateSharedLink(
     user: string,
     shareId: string,
+    targetMessageId?: string,
     expiredAt?: Date | null,
   ): Promise<t.UpdateShareResult> {
     if (!user || !shareId) {
@@ -503,11 +509,13 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
 
       const newShareId = nanoid();
       const hasNewExpiration = expiredAt instanceof Date;
+      const resolvedTargetMessageId = targetMessageId ?? share.targetMessageId;
       const update = {
         $set: {
           messages: updatedMessages,
           user,
           shareId: newShareId,
+          ...(resolvedTargetMessageId && { targetMessageId: resolvedTargetMessageId }),
           ...(hasNewExpiration && { expiredAt }),
         },
         ...(expiredAt === null ? { $unset: { expiredAt: 1 } } : {}),
@@ -525,7 +533,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
 
       anonymizeConvo(updatedShare);
 
-      return { shareId: newShareId, conversationId: updatedShare.conversationId };
+      return {
+        shareId: newShareId,
+        conversationId: updatedShare.conversationId,
+        targetMessageId: updatedShare.targetMessageId,
+      };
     } catch (error) {
       logger.error('[updateSharedLink] Error updating shared link', {
         error: error instanceof Error ? error.message : 'Unknown error',
