@@ -1,5 +1,33 @@
 require('dotenv').config();
 
-const { initializeTelemetry } = require('@librechat/api/telemetry');
+function isTruthy(value) {
+  return value?.trim().toLowerCase() === 'true';
+}
 
-module.exports = initializeTelemetry();
+function isTelemetryEnabled() {
+  return isTruthy(process.env.OTEL_TRACING_ENABLED) && !isTruthy(process.env.OTEL_SDK_DISABLED);
+}
+
+if (isTelemetryEnabled()) {
+  const {
+    initializeTelemetry,
+    telemetryMiddleware,
+    telemetryErrorMiddleware,
+  } = require('@librechat/api/telemetry');
+
+  module.exports = {
+    ...initializeTelemetry(),
+    telemetryMiddleware,
+    telemetryErrorMiddleware,
+  };
+} else {
+  module.exports = {
+    enabled: false,
+    get status() {
+      return 'disabled';
+    },
+    shutdown: async () => {},
+    telemetryMiddleware: (_req, _res, next) => next(),
+    telemetryErrorMiddleware: (err, _req, _res, next) => next(err),
+  };
+}

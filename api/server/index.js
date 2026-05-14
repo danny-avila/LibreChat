@@ -1,5 +1,4 @@
-require('./telemetry');
-require('dotenv').config();
+const telemetry = require('./telemetry');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
@@ -11,7 +10,6 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
-const { telemetryMiddleware, telemetryErrorMiddleware } = require('@librechat/api/telemetry');
 const {
   isEnabled,
   apiNotFound,
@@ -137,7 +135,6 @@ const startServer = async () => {
   app.use(mongoSanitize());
   app.use(cors());
   app.use(cookieParser());
-  app.use(telemetryMiddleware);
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
@@ -148,6 +145,10 @@ const startServer = async () => {
   app.use(staticCache(appConfig.paths.dist));
   app.use(staticCache(appConfig.paths.fonts));
   app.use(staticCache(appConfig.paths.assets));
+
+  if (telemetry.enabled) {
+    app.use(telemetry.telemetryMiddleware);
+  }
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
@@ -231,7 +232,9 @@ const startServer = async () => {
   });
 
   /** Record trace errors before the final error controller. */
-  app.use(telemetryErrorMiddleware);
+  if (telemetry.enabled) {
+    app.use(telemetry.telemetryErrorMiddleware);
+  }
   /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
   app.use(ErrorController);
 

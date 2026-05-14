@@ -112,7 +112,6 @@ describe('telemetryMiddleware', () => {
       expect.objectContaining({
         'http.response.status_code': 202,
         'http.route': '/api/messages/:conversationId',
-        'url.path': '/api/messages/:conversationId',
       }),
     );
   });
@@ -139,7 +138,6 @@ describe('telemetryMiddleware', () => {
       expect.objectContaining({
         'http.response.status_code': 201,
         'http.route': '/api/messages/:conversationId',
-        'url.path': '/api/messages/:conversationId',
       }),
     );
 
@@ -239,7 +237,27 @@ describe('telemetryMiddleware', () => {
       expect.objectContaining({
         'http.route': '/api/*',
         'http.response.status_code': 404,
-        'url.path': '/api/*',
+      }),
+    );
+  });
+
+  it('uses a low-cardinality fallback for unmatched SPA routes', () => {
+    const span = createSpan();
+    const req = createRequest({
+      baseUrl: '',
+      path: '/chat/conversation-id',
+      route: undefined,
+    });
+    const res = createResponse(200);
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
+
+    telemetryMiddleware(req, res as Response, jest.fn());
+    res.emit('finish');
+
+    expect(span.setAttributes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        'http.route': 'spa_fallback',
+        'http.response.status_code': 200,
       }),
     );
   });
@@ -308,7 +326,6 @@ describe('telemetryErrorMiddleware', () => {
     expect(span.setAttributes).toHaveBeenCalledWith({
       'error.type': 'TypeError',
       'http.route': '/api/messages/:conversationId',
-      'url.path': '/api/messages/:conversationId',
     });
     expect(next).toHaveBeenCalledWith(error);
   });
@@ -328,6 +345,42 @@ describe('telemetryErrorMiddleware', () => {
     expect(requestSpan.recordException).toHaveBeenCalledWith(error);
     expect(requestSpan.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
     expect(next).toHaveBeenCalledWith(error);
+  });
+
+  it('handles non-Error values without throwing', () => {
+    const span = createSpan();
+    const next = jest.fn();
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
+
+    telemetryErrorMiddleware('boom', createRequest(), createResponse() as Response, next);
+
+    expect(span.recordException).toHaveBeenCalledWith('boom');
+    expect(span.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
+    expect(span.setAttributes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        'error.type': 'string',
+        'http.route': '/api/messages/:conversationId',
+      }),
+    );
+    expect(next).toHaveBeenCalledWith('boom');
+  });
+
+  it('handles null error values without throwing', () => {
+    const span = createSpan();
+    const next = jest.fn();
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue(span);
+
+    telemetryErrorMiddleware(null, createRequest(), createResponse() as Response, next);
+
+    expect(span.recordException).not.toHaveBeenCalled();
+    expect(span.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
+    expect(span.setAttributes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        'error.type': 'null',
+        'http.route': '/api/messages/:conversationId',
+      }),
+    );
+    expect(next).toHaveBeenCalledWith(null);
   });
 
   it('forwards the error without an active span', () => {

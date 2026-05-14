@@ -3,8 +3,20 @@ import type { Span, Attributes } from '@opentelemetry/api';
 import type { NextFunction, Response } from 'express';
 import type { ServerRequest } from '~/types';
 import { getTelemetryRequestSpan } from './sdk';
+import { DEFAULT_HEALTH_PATH } from './config';
 
 const CLIENT_CLOSED_REQUEST_STATUS_CODE = 499;
+
+type ExpressErrorValue =
+  | Error
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | object
+  | null
+  | undefined;
 
 function getUserId(req: ServerRequest): string | undefined {
   return req.user?.id;
@@ -15,7 +27,7 @@ function getTenantId(req: ServerRequest): string | undefined {
 }
 
 function isHealthPath(req: ServerRequest): boolean {
-  return req.path === '/health';
+  return req.path === DEFAULT_HEALTH_PATH;
 }
 
 function isApiPath(req: ServerRequest): boolean {
@@ -39,13 +51,14 @@ function getRoutePath(req: ServerRequest): string {
   return 'spa_fallback';
 }
 
-function getElapsedMilliseconds(start: bigint): number {
-  return Number(process.hrtime.bigint() - start) / 1_000_000;
-}
-
 function setIdentityAttributes(span: Span, req: ServerRequest): void {
   const userId = getUserId(req);
   const tenantId = getTenantId(req);
+
+  if (!userId && !tenantId) {
+    return;
+  }
+
   const attributes: Attributes = {};
 
   if (userId) {
@@ -56,16 +69,13 @@ function setIdentityAttributes(span: Span, req: ServerRequest): void {
     attributes['librechat.tenant.id'] = tenantId;
   }
 
-  if (Object.keys(attributes).length > 0) {
-    span.setAttributes(attributes);
-  }
+  span.setAttributes(attributes);
 }
 
 function setCompletionAttributes(
   span: Span,
   req: ServerRequest,
   res: Response,
-  start: bigint,
   aborted = false,
 ): void {
   const statusCode = aborted ? CLIENT_CLOSED_REQUEST_STATUS_CODE : res.statusCode;
@@ -73,8 +83,6 @@ function setCompletionAttributes(
   const attributes: Attributes = {
     'http.route': routePath,
     'http.response.status_code': statusCode,
-    'librechat.request.duration_ms': getElapsedMilliseconds(start),
-    'url.path': routePath,
   };
 
   if (aborted) {
@@ -101,7 +109,6 @@ export function telemetryMiddleware(req: ServerRequest, res: Response, next: Nex
     return;
   }
 
-  const start = process.hrtime.bigint();
   span.setAttributes({
     'http.request.method': req.method,
   });
@@ -112,7 +119,7 @@ export function telemetryMiddleware(req: ServerRequest, res: Response, next: Nex
       return;
     }
     completed = true;
-    setCompletionAttributes(span, req, res, start);
+    setCompletionAttributes(span, req, res);
   };
 
   const close = () => {
@@ -120,7 +127,7 @@ export function telemetryMiddleware(req: ServerRequest, res: Response, next: Nex
       return;
     }
     completed = true;
-    setCompletionAttributes(span, req, res, start, !res.writableEnded);
+    setCompletionAttributes(span, req, res, !res.writableEnded);
   };
 
   res.once('finish', complete);
@@ -129,7 +136,7 @@ export function telemetryMiddleware(req: ServerRequest, res: Response, next: Nex
 }
 
 export function telemetryErrorMiddleware(
-  err: Error,
+  err: ExpressErrorValue,
   req: ServerRequest,
   _res: Response,
   next: NextFunction,
@@ -137,15 +144,28 @@ export function telemetryErrorMiddleware(
   const span = getTelemetryRequestSpan(req) ?? trace.getActiveSpan();
   if (span) {
     const routePath = getRoutePath(req);
-    span.recordException(err);
+    if (err) {
+      span.recordException(err instanceof Error ? err : String(err));
+    }
     span.setStatus({ code: SpanStatusCode.ERROR });
     setIdentityAttributes(span, req);
     span.setAttributes({
-      'error.type': err.name || err.constructor.name,
+      'error.type': getErrorType(err),
       'http.route': routePath,
-      'url.path': routePath,
     });
   }
 
   next(err);
+}
+
+function getErrorType(err: ExpressErrorValue): string {
+  if (err instanceof Error) {
+    return err.name || err.constructor.name;
+  }
+
+  if (err === null) {
+    return 'null';
+  }
+
+  return typeof err;
 }

@@ -56,20 +56,29 @@ describe('Telemetry wiring', () => {
       .map((line) => line.trim())
       .find(Boolean);
 
-    expect(firstStatement).toBe("require('./telemetry');");
+    expect(firstStatement).toBe("const telemetry = require('./telemetry');");
   });
 
-  it('mounts telemetry middleware before routes and telemetry errors before ErrorController', () => {
-    const telemetryMiddlewareIndex = source.indexOf('app.use(telemetryMiddleware);');
+  it('mounts telemetry middleware after static assets and before routes', () => {
+    const telemetryMiddlewareIndex = source.indexOf('app.use(telemetry.telemetryMiddleware);');
+    const staticAssetsIndex = source.indexOf('app.use(staticCache(appConfig.paths.assets));');
     const apiRoutesIndex = source.indexOf("app.use('/api/auth'");
-    const telemetryErrorMiddlewareIndex = source.indexOf('app.use(telemetryErrorMiddleware);');
-    const errorControllerIndex = source.indexOf('app.use(ErrorController);');
 
     expect(telemetryMiddlewareIndex).toBeGreaterThan(-1);
+    expect(staticAssetsIndex).toBeGreaterThan(-1);
     expect(apiRoutesIndex).toBeGreaterThan(-1);
+    expect(staticAssetsIndex).toBeLessThan(telemetryMiddlewareIndex);
+    expect(telemetryMiddlewareIndex).toBeLessThan(apiRoutesIndex);
+  });
+
+  it('mounts telemetry error middleware before ErrorController', () => {
+    const telemetryErrorMiddlewareIndex = source.indexOf(
+      'app.use(telemetry.telemetryErrorMiddleware);',
+    );
+    const errorControllerIndex = source.indexOf('app.use(ErrorController);');
+
     expect(telemetryErrorMiddlewareIndex).toBeGreaterThan(-1);
     expect(errorControllerIndex).toBeGreaterThan(-1);
-    expect(telemetryMiddlewareIndex).toBeLessThan(apiRoutesIndex);
     expect(telemetryErrorMiddlewareIndex).toBeLessThan(errorControllerIndex);
   });
 });

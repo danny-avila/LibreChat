@@ -1,18 +1,26 @@
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { resourceFromAttributes } from '@opentelemetry/resources';
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { IncomingMessage } from 'node:http';
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { resourceFromAttributes } from '@opentelemetry/resources';
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
+import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici';
+import { IORedisInstrumentation } from '@opentelemetry/instrumentation-ioredis';
+import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
+import { MongoDBInstrumentation } from '@opentelemetry/instrumentation-mongodb';
+import { MongooseInstrumentation } from '@opentelemetry/instrumentation-mongoose';
+import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import type { NodeSDKConfiguration } from '@opentelemetry/sdk-node';
 import type { Span, Attributes } from '@opentelemetry/api';
 import type { TelemetryConfig, TelemetryStatus } from './config';
 import { getTelemetryConfig } from './config';
 
 export interface TelemetryController {
-  enabled: boolean;
+  readonly enabled: boolean;
   readonly status: TelemetryStatus;
   shutdown: () => Promise<void>;
 }
+
+const WARNING_CODE = 'LIBRECHAT_OTEL';
+const SIGNAL_SHUTDOWN_TIMEOUT_MS = 5_000;
 
 interface RegisteredSignal {
   signal: NodeJS.Signals;
@@ -22,6 +30,7 @@ interface RegisteredSignal {
 let activeSdk: NodeSDK | undefined;
 let pendingSdk: NodeSDK | undefined;
 let startPromise: Promise<void> | undefined;
+let shutdownPromise: Promise<void> | undefined;
 let status: TelemetryStatus = 'stopped';
 let registeredSignals: RegisteredSignal[] = [];
 let requestSpans = new WeakMap<IncomingMessage, Span>();
@@ -50,42 +59,24 @@ function createSdk(config: TelemetryConfig): NodeSDK {
   const sdkConfig: Partial<NodeSDKConfiguration> = {
     resource: resourceFromAttributes(getResourceAttributes(config)),
     instrumentations: [
-      getNodeAutoInstrumentations({
-        '@opentelemetry/instrumentation-fs': {
-          enabled: false,
+      new HttpInstrumentation({
+        headersToSpanAttributes: {
+          client: { requestHeaders: [], responseHeaders: [] },
+          server: { requestHeaders: [], responseHeaders: [] },
         },
-        '@opentelemetry/instrumentation-bunyan': {
-          enabled: false,
+        requestHook: (span: Span, request: object) => {
+          if (request instanceof IncomingMessage) {
+            requestSpans.set(request, span);
+          }
         },
-        '@opentelemetry/instrumentation-graphql': {
-          enabled: false,
-        },
-        '@opentelemetry/instrumentation-http': {
-          headersToSpanAttributes: {
-            client: { requestHeaders: [], responseHeaders: [] },
-            server: { requestHeaders: [], responseHeaders: [] },
-          },
-          requestHook: (span: Span, request: object) => {
-            if (request instanceof IncomingMessage) {
-              requestSpans.set(request, span);
-            }
-          },
-          ignoreIncomingRequestHook: (request: IncomingMessage) =>
-            shouldIgnoreIncomingRequest(request, config.healthPath),
-        },
-        '@opentelemetry/instrumentation-openai': {
-          enabled: false,
-        },
-        '@opentelemetry/instrumentation-pino': {
-          enabled: false,
-        },
-        '@opentelemetry/instrumentation-runtime-node': {
-          enabled: false,
-        },
-        '@opentelemetry/instrumentation-winston': {
-          enabled: false,
-        },
+        ignoreIncomingRequestHook: (request: IncomingMessage) =>
+          shouldIgnoreIncomingRequest(request, config.healthPath),
       }),
+      new ExpressInstrumentation(),
+      new MongoDBInstrumentation(),
+      new MongooseInstrumentation(),
+      new IORedisInstrumentation(),
+      new UndiciInstrumentation(),
     ],
   };
 
@@ -96,17 +87,31 @@ export function getTelemetryRequestSpan(request: IncomingMessage): Span | undefi
   return requestSpans.get(request);
 }
 
+/**
+ * NodeSDK.start has been synchronous in some supported OpenTelemetry versions
+ * and promise-returning in others, so the lifecycle wrapper accepts either form.
+ */
 function startSdk(sdk: NodeSDK): void | Promise<void> {
   return (sdk as NodeSDK & { start: () => void | Promise<void> }).start();
 }
 
 function emitWarning(message: string): void {
-  process.emitWarning(message, { code: 'LIBRECHAT_OTEL' });
+  process.emitWarning(message, { code: WARNING_CODE });
 }
 
-function makeController(enabled: boolean): TelemetryController {
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isControllerEnabled(): boolean {
+  return status === 'starting' || status === 'started';
+}
+
+function makeController(): TelemetryController {
   return {
-    enabled,
+    get enabled() {
+      return isControllerEnabled();
+    },
     get status() {
       return status;
     },
@@ -130,10 +135,9 @@ function registerShutdownHandlers(): void {
   registeredSignals = signals.map((signal) => {
     const listener: NodeJS.SignalsListener = () => {
       const shouldReraiseSignal = process.listenerCount(signal) === 0;
-      shutdownTelemetry()
+      withTimeout(shutdownTelemetry(), SIGNAL_SHUTDOWN_TIMEOUT_MS)
         .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error);
-          emitWarning(`OpenTelemetry shutdown failed: ${message}`);
+          emitWarning(`OpenTelemetry shutdown failed: ${getErrorMessage(error)}`);
         })
         .finally(() => {
           if (shouldReraiseSignal) {
@@ -146,15 +150,31 @@ function registerShutdownHandlers(): void {
   });
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error(`timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    timeout.unref?.();
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  });
+}
+
 export function initializeTelemetry(env: NodeJS.ProcessEnv = process.env): TelemetryController {
   if (activeSdk || pendingSdk) {
-    return makeController(true);
+    return makeController();
   }
 
   const config = getTelemetryConfig(env);
   if (!config.enabled || isBunRuntime()) {
     status = 'disabled';
-    return makeController(false);
+    return makeController();
   }
 
   try {
@@ -176,8 +196,7 @@ export function initializeTelemetry(env: NodeJS.ProcessEnv = process.env): Telem
           if (pendingSdk === sdk) {
             pendingSdk = undefined;
             status = 'failed';
-            const message = error instanceof Error ? error.message : String(error);
-            emitWarning(`OpenTelemetry initialization failed: ${message}`);
+            emitWarning(`OpenTelemetry initialization failed: ${getErrorMessage(error)}`);
           }
         });
       startPromise = pendingStart;
@@ -186,22 +205,21 @@ export function initializeTelemetry(env: NodeJS.ProcessEnv = process.env): Telem
           startPromise = undefined;
         }
       });
-      return makeController(true);
+      return makeController();
     }
 
     activeSdk = sdk;
     status = 'started';
     registerShutdownHandlers();
-    return makeController(true);
+    return makeController();
   } catch (error) {
     status = 'failed';
-    const message = error instanceof Error ? error.message : String(error);
-    emitWarning(`OpenTelemetry initialization failed: ${message}`);
-    return makeController(false);
+    emitWarning(`OpenTelemetry initialization failed: ${getErrorMessage(error)}`);
+    return makeController();
   }
 }
 
-export async function shutdownTelemetry(): Promise<void> {
+async function performShutdownTelemetry(): Promise<void> {
   if (startPromise) {
     await startPromise;
   }
@@ -223,11 +241,34 @@ export async function shutdownTelemetry(): Promise<void> {
   }
 }
 
-export function resetTelemetryForTests(): void {
-  activeSdk = undefined;
-  pendingSdk = undefined;
-  startPromise = undefined;
-  status = 'stopped';
-  requestSpans = new WeakMap<IncomingMessage, Span>();
-  unregisterShutdownHandlers();
+export function shutdownTelemetry(): Promise<void> {
+  if (!shutdownPromise) {
+    shutdownPromise = performShutdownTelemetry().finally(() => {
+      shutdownPromise = undefined;
+    });
+  }
+
+  return shutdownPromise;
+}
+
+export async function resetTelemetryForTests(): Promise<void> {
+  try {
+    if (startPromise) {
+      await startPromise.catch(() => undefined);
+    }
+
+    if (shutdownPromise) {
+      await shutdownPromise.catch(() => undefined);
+    } else if (activeSdk) {
+      await Promise.resolve(activeSdk.shutdown()).catch(() => undefined);
+    }
+  } finally {
+    activeSdk = undefined;
+    pendingSdk = undefined;
+    startPromise = undefined;
+    shutdownPromise = undefined;
+    status = 'stopped';
+    requestSpans = new WeakMap<IncomingMessage, Span>();
+    unregisterShutdownHandlers();
+  }
 }

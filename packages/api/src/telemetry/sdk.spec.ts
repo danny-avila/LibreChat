@@ -2,10 +2,8 @@ import { Socket } from 'node:net';
 import { IncomingMessage } from 'node:http';
 import type { Span } from '@opentelemetry/api';
 
-interface InstrumentationOptions {
-  '@opentelemetry/instrumentation-http'?: {
-    requestHook?: (span: Span, request: object) => void;
-  };
+interface HttpInstrumentationOptions {
+  requestHook?: (span: Span, request: object) => void;
 }
 
 const mockStart = jest.fn();
@@ -14,9 +12,15 @@ const mockNodeSDK = jest.fn(() => ({
   start: mockStart,
   shutdown: mockShutdown,
 }));
-const mockGetNodeAutoInstrumentations = jest.fn((_options?: InstrumentationOptions) => [
-  'instrumentation',
-]);
+const mockExpressInstrumentation = jest.fn(() => ({ name: 'express' }));
+const mockHttpInstrumentation = jest.fn((options?: HttpInstrumentationOptions) => ({
+  name: 'http',
+  options,
+}));
+const mockIORedisInstrumentation = jest.fn(() => ({ name: 'ioredis' }));
+const mockMongoDBInstrumentation = jest.fn(() => ({ name: 'mongodb' }));
+const mockMongooseInstrumentation = jest.fn(() => ({ name: 'mongoose' }));
+const mockUndiciInstrumentation = jest.fn(() => ({ name: 'undici' }));
 const mockResourceFromAttributes = jest.fn((attributes: object) => ({ attributes }));
 
 jest.mock(
@@ -28,9 +32,49 @@ jest.mock(
 );
 
 jest.mock(
-  '@opentelemetry/auto-instrumentations-node',
+  '@opentelemetry/instrumentation-express',
   () => ({
-    getNodeAutoInstrumentations: mockGetNodeAutoInstrumentations,
+    ExpressInstrumentation: mockExpressInstrumentation,
+  }),
+  { virtual: true },
+);
+
+jest.mock(
+  '@opentelemetry/instrumentation-http',
+  () => ({
+    HttpInstrumentation: mockHttpInstrumentation,
+  }),
+  { virtual: true },
+);
+
+jest.mock(
+  '@opentelemetry/instrumentation-ioredis',
+  () => ({
+    IORedisInstrumentation: mockIORedisInstrumentation,
+  }),
+  { virtual: true },
+);
+
+jest.mock(
+  '@opentelemetry/instrumentation-mongodb',
+  () => ({
+    MongoDBInstrumentation: mockMongoDBInstrumentation,
+  }),
+  { virtual: true },
+);
+
+jest.mock(
+  '@opentelemetry/instrumentation-mongoose',
+  () => ({
+    MongooseInstrumentation: mockMongooseInstrumentation,
+  }),
+  { virtual: true },
+);
+
+jest.mock(
+  '@opentelemetry/instrumentation-undici',
+  () => ({
+    UndiciInstrumentation: mockUndiciInstrumentation,
   }),
   { virtual: true },
 );
@@ -65,19 +109,15 @@ describe('telemetry SDK lifecycle', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    ({
-      getTelemetryRequestSpan,
-      initializeTelemetry,
-      resetTelemetryForTests,
-      shutdownTelemetry,
-    } = await import('./sdk'));
-    resetTelemetryForTests();
+    ({ getTelemetryRequestSpan, initializeTelemetry, resetTelemetryForTests, shutdownTelemetry } =
+      await import('./sdk'));
+    await resetTelemetryForTests();
     Reflect.deleteProperty(globalThis, 'Bun');
     emitWarningSpy = jest.spyOn(process, 'emitWarning').mockImplementation(() => true);
   });
 
-  afterEach(() => {
-    resetTelemetryForTests();
+  afterEach(async () => {
+    await resetTelemetryForTests();
     emitWarningSpy.mockRestore();
     Reflect.deleteProperty(globalThis, 'Bun');
   });
@@ -129,32 +169,27 @@ describe('telemetry SDK lifecycle', () => {
     expect(mockResourceFromAttributes).toHaveBeenCalledWith({
       'service.name': 'librechat-test',
     });
-    expect(mockGetNodeAutoInstrumentations).toHaveBeenCalledWith(
+    expect(mockHttpInstrumentation).toHaveBeenCalledWith(
       expect.objectContaining({
-        '@opentelemetry/instrumentation-bunyan': { enabled: false },
-        '@opentelemetry/instrumentation-fs': { enabled: false },
-        '@opentelemetry/instrumentation-graphql': { enabled: false },
-        '@opentelemetry/instrumentation-http': expect.objectContaining({
-          headersToSpanAttributes: {
-            client: { requestHeaders: [], responseHeaders: [] },
-            server: { requestHeaders: [], responseHeaders: [] },
-          },
-        }),
-        '@opentelemetry/instrumentation-openai': { enabled: false },
-        '@opentelemetry/instrumentation-pino': { enabled: false },
-        '@opentelemetry/instrumentation-runtime-node': { enabled: false },
-        '@opentelemetry/instrumentation-winston': { enabled: false },
+        headersToSpanAttributes: {
+          client: { requestHeaders: [], responseHeaders: [] },
+          server: { requestHeaders: [], responseHeaders: [] },
+        },
       }),
     );
+    expect(mockExpressInstrumentation).toHaveBeenCalledTimes(1);
+    expect(mockMongoDBInstrumentation).toHaveBeenCalledTimes(1);
+    expect(mockMongooseInstrumentation).toHaveBeenCalledTimes(1);
+    expect(mockIORedisInstrumentation).toHaveBeenCalledTimes(1);
+    expect(mockUndiciInstrumentation).toHaveBeenCalledTimes(1);
   });
 
   it('tracks HTTP server request spans for completion updates', () => {
     const span = {} as Span;
     const request = new IncomingMessage(new Socket());
     initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
-    const instrumentationOptions = mockGetNodeAutoInstrumentations.mock.calls[0]?.[0];
-    const requestHook =
-      instrumentationOptions?.['@opentelemetry/instrumentation-http']?.requestHook;
+    const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
+    const requestHook = instrumentationOptions?.requestHook;
 
     if (!requestHook) {
       throw new Error('HTTP instrumentation requestHook was not configured');
@@ -171,6 +206,7 @@ describe('telemetry SDK lifecycle', () => {
     expect(controller.status).toBe('started');
     await controller.shutdown();
     expect(controller.status).toBe('stopped');
+    expect(controller.enabled).toBe(false);
   });
 
   it('handles async SDK start failures without throwing', async () => {
@@ -181,6 +217,7 @@ describe('telemetry SDK lifecycle', () => {
     expect(controller.enabled).toBe(true);
     expect(controller.status).toBe('starting');
     await controller.shutdown();
+    expect(controller.enabled).toBe(false);
     expect(controller.status).toBe('failed');
     expect(emitWarningSpy).toHaveBeenCalledWith(
       'OpenTelemetry initialization failed: async start failed',
@@ -211,6 +248,23 @@ describe('telemetry SDK lifecycle', () => {
     expect(mockShutdown).toHaveBeenCalledTimes(1);
   });
 
+  it('coalesces concurrent shutdown calls', async () => {
+    let resolveShutdown: () => void = () => undefined;
+    mockShutdown.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveShutdown = resolve;
+      }),
+    );
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+
+    const firstShutdown = shutdownTelemetry();
+    const secondShutdown = shutdownTelemetry();
+    expect(mockShutdown).toHaveBeenCalledTimes(1);
+
+    resolveShutdown();
+    await Promise.all([firstShutdown, secondShutdown]);
+  });
+
   it('keeps the active SDK available when shutdown fails', async () => {
     mockShutdown.mockRejectedValueOnce(new Error('shutdown failed'));
     const controller = initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
@@ -223,30 +277,54 @@ describe('telemetry SDK lifecycle', () => {
     expect(controller.status).toBe('stopped');
   });
 
-  it('does not force process exit when another signal handler is registered', async () => {
-    const otherHandler = jest.fn();
+  it.each<NodeJS.Signals>(['SIGTERM', 'SIGINT'])(
+    'does not force process exit when another %s handler is registered',
+    async (signal) => {
+      const otherHandler = jest.fn();
+      const killSpy = jest.spyOn(process, 'kill').mockImplementation(() => true);
+      initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+      process.once(signal, otherHandler);
+
+      process.emit(signal, signal);
+      await flushSignalShutdown();
+
+      expect(mockShutdown).toHaveBeenCalledTimes(1);
+      expect(otherHandler).toHaveBeenCalledTimes(1);
+      expect(killSpy).not.toHaveBeenCalled();
+
+      killSpy.mockRestore();
+    },
+  );
+
+  it.each<NodeJS.Signals>(['SIGTERM', 'SIGINT'])(
+    'reraises the shutdown %s signal when telemetry is the only signal handler',
+    async (signal) => {
+      const killSpy = jest.spyOn(process, 'kill').mockImplementation(() => true);
+      initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+
+      process.emit(signal, signal);
+      await flushSignalShutdown();
+
+      expect(mockShutdown).toHaveBeenCalledTimes(1);
+      expect(killSpy).toHaveBeenCalledWith(process.pid, signal);
+
+      killSpy.mockRestore();
+    },
+  );
+
+  it('warns and reraises the signal when shutdown rejects', async () => {
+    mockShutdown.mockRejectedValueOnce(new Error('signal shutdown failed'));
     const killSpy = jest.spyOn(process, 'kill').mockImplementation(() => true);
     initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
-    process.once('SIGTERM', otherHandler);
 
     process.emit('SIGTERM', 'SIGTERM');
     await flushSignalShutdown();
 
     expect(mockShutdown).toHaveBeenCalledTimes(1);
-    expect(otherHandler).toHaveBeenCalledTimes(1);
-    expect(killSpy).not.toHaveBeenCalled();
-
-    killSpy.mockRestore();
-  });
-
-  it('reraises the shutdown signal when telemetry is the only signal handler', async () => {
-    const killSpy = jest.spyOn(process, 'kill').mockImplementation(() => true);
-    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
-
-    process.emit('SIGTERM', 'SIGTERM');
-    await flushSignalShutdown();
-
-    expect(mockShutdown).toHaveBeenCalledTimes(1);
+    expect(emitWarningSpy).toHaveBeenCalledWith(
+      'OpenTelemetry shutdown failed: signal shutdown failed',
+      { code: 'LIBRECHAT_OTEL' },
+    );
     expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGTERM');
 
     killSpy.mockRestore();
