@@ -198,4 +198,28 @@ describe('AttachmentGroup', () => {
     expect(container.querySelector('pre')).toBeNull();
     expect(screen.getAllByTestId('file-container').length).toBeGreaterThan(0);
   });
+
+  it('does not collapse a single downloadable text preview with a non-downloadable placeholder', () => {
+    const attachments = [
+      textAttachment({
+        file_id: 'placeholder',
+        filename: 'placeholder.zip',
+        filepath: '',
+        type: 'application/zip',
+        text: undefined as unknown as string,
+      }),
+      textAttachment({
+        file_id: 'json',
+        filename: 'output.json',
+        filepath: '/files/output.json',
+        text: '{"ok":true}',
+      }),
+    ] as TAttachment[];
+
+    const { container } = render(<AttachmentGroup attachments={attachments} />);
+
+    expect(screen.queryByRole('button', { name: 'com_ui_show_n_files' })).not.toBeInTheDocument();
+    expect(container.querySelector('pre')?.textContent).toBe('{"ok":true}');
+    expect(screen.getByTestId('file-container')).toHaveTextContent('output.json');
+  });
 });

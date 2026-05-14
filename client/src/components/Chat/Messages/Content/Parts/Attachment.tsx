@@ -589,14 +589,18 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   mermaidArtifacts.sort(bySalience);
   imageAttachments.sort(bySalience);
 
+  const downloadableFileAttachments = fileAttachments.filter((attachment) =>
+    Boolean(attachment.filepath),
+  );
   const downloadableTextAttachments = textAttachments.filter((attachment) =>
     Boolean(attachment.filepath),
   );
   const textOnlyAttachments = textAttachments.filter((attachment) => !attachment.filepath);
-  const groupDownloadableFiles = fileAttachments.length + downloadableTextAttachments.length > 1;
+  const groupDownloadableFiles =
+    downloadableFileAttachments.length + downloadableTextAttachments.length > 1;
   const groupedFileAttachments = groupDownloadableFiles
-    ? [...fileAttachments, ...downloadableTextAttachments].sort(bySalience)
-    : fileAttachments;
+    ? [...downloadableFileAttachments, ...downloadableTextAttachments].sort(bySalience)
+    : downloadableFileAttachments;
   const visibleTextAttachments = groupDownloadableFiles ? textOnlyAttachments : textAttachments;
 
   return (
