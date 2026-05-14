@@ -61,10 +61,9 @@ describe('SkillsView', () => {
   });
 
   it('renders the create skill form for /skills/new', () => {
-    const router = createMemoryRouter(
-      [{ path: '/skills/new', element: <SkillsView /> }],
-      { initialEntries: ['/skills/new'] },
-    );
+    const router = createMemoryRouter([{ path: '/skills/new', element: <SkillsView /> }], {
+      initialEntries: ['/skills/new'],
+    });
 
     render(<RouterProvider router={router} />);
 
