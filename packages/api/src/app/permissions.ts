@@ -481,28 +481,36 @@ export async function updateInterfacePermissions({
           : {}),
       },
       [PermissionTypes.SHARED_LINKS]: {
-        ...((typeof interfaceConfig?.sharedLinks === 'object' &&
+        ...(typeof interfaceConfig?.sharedLinks === 'boolean' ||
+        (typeof interfaceConfig?.sharedLinks === 'object' &&
           'create' in interfaceConfig.sharedLinks) ||
         !existingPermissions?.[PermissionTypes.SHARED_LINKS]
           ? {
               [Permissions.CREATE]: getPermissionValue(
-                getConfigCreate(loadedInterface.sharedLinks),
+                typeof loadedInterface.sharedLinks === 'boolean'
+                  ? loadedInterface.sharedLinks
+                  : getConfigCreate(loadedInterface.sharedLinks),
                 defaultPerms[PermissionTypes.SHARED_LINKS]?.[Permissions.CREATE],
                 sharedLinksDefaultCreate ?? true,
               ),
             }
           : {}),
-        ...((typeof interfaceConfig?.sharedLinks === 'object' &&
+        ...(typeof interfaceConfig?.sharedLinks === 'boolean' ||
+        (typeof interfaceConfig?.sharedLinks === 'object' &&
           ('share' in interfaceConfig.sharedLinks || 'public' in interfaceConfig.sharedLinks)) ||
         !existingPermissions?.[PermissionTypes.SHARED_LINKS]
           ? {
               [Permissions.SHARE]: getPermissionValue(
-                getConfigShare(loadedInterface.sharedLinks),
+                typeof loadedInterface.sharedLinks === 'boolean'
+                  ? loadedInterface.sharedLinks
+                  : getConfigShare(loadedInterface.sharedLinks),
                 defaultPerms[PermissionTypes.SHARED_LINKS]?.[Permissions.SHARE],
                 sharedLinksDefaultShare,
               ),
               [Permissions.SHARE_PUBLIC]: getPermissionValue(
-                getConfigPublic(loadedInterface.sharedLinks),
+                typeof loadedInterface.sharedLinks === 'boolean'
+                  ? loadedInterface.sharedLinks
+                  : getConfigPublic(loadedInterface.sharedLinks),
                 defaultPerms[PermissionTypes.SHARED_LINKS]?.[Permissions.SHARE_PUBLIC],
                 sharedLinksDefaultPublic,
               ),
