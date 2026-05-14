@@ -59,10 +59,17 @@ const MemoizedConvo = memo(
     return <Convo conversation={conversation} retainView={retainView} toggleNav={toggleNav} />;
   },
   (prevProps, nextProps) => {
+    const prevTags = prevProps.conversation.tags ?? [];
+    const nextTags = nextProps.conversation.tags ?? [];
+    const tagsEqual =
+      prevTags === nextTags ||
+      (prevTags.length === nextTags.length && prevTags.every((t, i) => t === nextTags[i]));
     return (
       prevProps.conversation.conversationId === nextProps.conversation.conversationId &&
       prevProps.conversation.title === nextProps.conversation.title &&
-      prevProps.conversation.endpoint === nextProps.conversation.endpoint
+      prevProps.conversation.endpoint === nextProps.conversation.endpoint &&
+      prevProps.conversation.expiredAt === nextProps.conversation.expiredAt &&
+      tagsEqual
     );
   },
 );
