@@ -11,6 +11,7 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { telemetryMiddleware, telemetryErrorMiddleware } = require('@librechat/api/telemetry');
 const {
   isEnabled,
   apiNotFound,
@@ -25,24 +26,23 @@ const {
   preAuthTenantMiddleware,
   updateInterfacePermissions,
 } = require('@librechat/api');
-const { telemetryMiddleware, telemetryErrorMiddleware } = require('@librechat/api/telemetry');
 const { connectDb, indexSync } = require('~/db');
-const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const {
-  getRoleByName,
   updateAccessPermissions,
-  seedDatabase,
   sweepOrphanedPreviews,
+  getRoleByName,
+  seedDatabase,
 } = require('~/models');
+const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
+const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
-const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
