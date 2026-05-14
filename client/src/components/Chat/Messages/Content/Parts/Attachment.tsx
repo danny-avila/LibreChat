@@ -216,6 +216,18 @@ const FileAttachmentGroup = memo(({ attachments }: { attachments: TAttachment[] 
       0: String(names.length - 2),
     })}`;
   }, [visibleAttachments, localize]);
+  const groupedAttachments = useMemo(() => {
+    const files: TAttachment[] = [];
+    const textPreviews: TAttachment[] = [];
+    for (const attachment of visibleAttachments) {
+      if (isTextAttachment(attachment)) {
+        textPreviews.push(attachment);
+        continue;
+      }
+      files.push(attachment);
+    }
+    return { files, textPreviews };
+  }, [visibleAttachments]);
 
   if (count === 0) {
     return null;
@@ -270,11 +282,22 @@ const FileAttachmentGroup = memo(({ attachments }: { attachments: TAttachment[] 
       </button>
       <div id={panelId} style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef} aria-hidden={!isExpanded}>
-          <div className="flex flex-wrap items-center gap-2.5 pt-2">
-            {visibleAttachments.map((attachment, index) => (
-              <FileAttachment
+          <div className="flex flex-col gap-2.5 pt-2">
+            {groupedAttachments.files.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2.5">
+                {groupedAttachments.files.map((attachment, index) => (
+                  <FileAttachment
+                    attachment={attachment}
+                    key={renderAttachmentKey('file', attachment, index)}
+                  />
+                ))}
+              </div>
+            )}
+            {groupedAttachments.textPreviews.map((attachment, index) => (
+              <TextAttachment
                 attachment={attachment}
-                key={renderAttachmentKey('file', attachment, index)}
+                showFileChip={false}
+                key={renderAttachmentKey('text', attachment, index)}
               />
             ))}
           </div>
@@ -285,92 +308,121 @@ const FileAttachmentGroup = memo(({ attachments }: { attachments: TAttachment[] 
 });
 FileAttachmentGroup.displayName = 'FileAttachmentGroup';
 
-const TextAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
-  const localize = useLocalize();
-  const preId = useId();
-  const preRef = useRef<HTMLPreElement>(null);
-  const [isVisible, setIsVisible] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  // Decided once after layout: does the text actually overflow the collapsed
-  // height? Char count is a poor proxy (a 100-char file with many newlines can
-  // overflow; 800 chars of dense single-line text may not), so we measure.
-  const [overflowed, setOverflowed] = useState(false);
-  const file = attachment as TFile & TAttachmentMetadata;
-  const { handleDownload } = useAttachmentLink({
-    href: attachment.filepath ?? '',
-    filename: attachment.filename ?? '',
-    file_id: file.file_id,
-    user: file.user,
-    source: file.source,
-  });
-  const extension = attachment.filename?.split('.').pop();
-  const text = file.text ?? '';
+const TextAttachment = memo(
+  ({
+    attachment,
+    showFileChip = true,
+  }: {
+    attachment: Partial<TAttachment>;
+    showFileChip?: boolean;
+  }) => {
+    const localize = useLocalize();
+    const preId = useId();
+    const preRef = useRef<HTMLPreElement>(null);
+    const [isVisible, setIsVisible] = useState(false);
+    const [expanded, setExpanded] = useState(false);
+    // Decided once after layout: does the text actually overflow the collapsed
+    // height? Char count is a poor proxy (a 100-char file with many newlines can
+    // overflow; 800 chars of dense single-line text may not), so we measure.
+    const [overflowed, setOverflowed] = useState(false);
+    const file = attachment as TFile & TAttachmentMetadata;
+    const { handleDownload } = useAttachmentLink({
+      href: attachment.filepath ?? '',
+      filename: attachment.filename ?? '',
+      file_id: file.file_id,
+      user: file.user,
+      source: file.source,
+    });
+    const extension = attachment.filename?.split('.').pop();
+    const text = file.text ?? '';
+    const visibleFilename = displayFilename(attachment.filename);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setIsVisible(true), 50);
-    return () => clearTimeout(timer);
-  }, []);
+    useEffect(() => {
+      const timer = setTimeout(() => setIsVisible(true), 50);
+      return () => clearTimeout(timer);
+    }, []);
 
-  useLayoutEffect(() => {
-    const el = preRef.current;
-    if (!el) {
-      return;
-    }
-    setOverflowed(el.scrollHeight > COLLAPSED_MAX_HEIGHT + 1);
-  }, [text]);
+    useLayoutEffect(() => {
+      const el = preRef.current;
+      if (!el) {
+        return;
+      }
+      setOverflowed(el.scrollHeight > COLLAPSED_MAX_HEIGHT + 1);
+    }, [text]);
 
-  const isClamped = overflowed && !expanded;
+    const isClamped = overflowed && !expanded;
 
-  return (
-    <div
-      className={cn(
-        'text-attachment-container flex w-full flex-col gap-1.5',
-        'transition-all duration-300 ease-out',
-        isVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0',
-      )}
-      style={{
-        transformOrigin: 'center top',
-        willChange: 'opacity, transform',
-        WebkitFontSmoothing: 'subpixel-antialiased',
-      }}
-    >
-      {attachment.filepath && (
-        <FileContainer
-          file={attachment}
-          onClick={handleDownload}
-          overrideType={extension}
-          displayName={displayFilename(attachment.filename)}
-          containerClassName="max-w-fit"
-          buttonClassName="bg-surface-secondary hover:cursor-pointer hover:bg-surface-hover active:bg-surface-secondary focus:bg-surface-hover hover:border-border-heavy active:border-border-heavy"
-        />
-      )}
-      <div className="rounded-lg bg-surface-secondary p-4">
-        <pre
-          id={preId}
-          ref={preRef}
-          className={cn(
-            'whitespace-pre-wrap break-words font-mono text-sm leading-6 text-text-primary',
-            isClamped ? 'overflow-hidden' : 'overflow-auto',
-          )}
-          style={isClamped ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
-        >
-          {text}
-        </pre>
-        {overflowed && (
-          <button
-            type="button"
-            onClick={() => setExpanded((prev) => !prev)}
-            aria-expanded={expanded}
-            aria-controls={preId}
-            className="mt-2 text-xs text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
-          >
-            {expanded ? localize('com_ui_collapse') : localize('com_ui_show_all')}
-          </button>
+    return (
+      <div
+        className={cn(
+          'text-attachment-container flex w-full flex-col gap-1.5',
+          'transition-all duration-300 ease-out',
+          isVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0',
         )}
+        style={{
+          transformOrigin: 'center top',
+          willChange: 'opacity, transform',
+          WebkitFontSmoothing: 'subpixel-antialiased',
+        }}
+      >
+        {attachment.filepath && showFileChip && (
+          <FileContainer
+            file={attachment}
+            onClick={handleDownload}
+            overrideType={extension}
+            displayName={displayFilename(attachment.filename)}
+            containerClassName="max-w-fit"
+            buttonClassName="bg-surface-secondary hover:cursor-pointer hover:bg-surface-hover active:bg-surface-secondary focus:bg-surface-hover hover:border-border-heavy active:border-border-heavy"
+          />
+        )}
+        <div className="overflow-hidden rounded-lg bg-surface-secondary">
+          {!showFileChip && (
+            <div className="flex items-center justify-between gap-2 border-b border-border-light px-3 py-2">
+              <span className="min-w-0 truncate text-sm font-medium" title={visibleFilename}>
+                {visibleFilename}
+              </span>
+              {attachment.filepath && (
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  aria-label={`${localize('com_ui_download')} ${visibleFilename}`}
+                  title={localize('com_ui_download')}
+                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+                >
+                  <Download className="size-4" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          )}
+          <div className="p-4">
+            <pre
+              id={preId}
+              ref={preRef}
+              className={cn(
+                'whitespace-pre-wrap break-words font-mono text-sm leading-6 text-text-primary',
+                isClamped ? 'overflow-hidden' : 'overflow-auto',
+              )}
+              style={isClamped ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
+            >
+              {text}
+            </pre>
+            {overflowed && (
+              <button
+                type="button"
+                onClick={() => setExpanded((prev) => !prev)}
+                aria-expanded={expanded}
+                aria-controls={preId}
+                className="mt-2 text-xs text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+              >
+                {expanded ? localize('com_ui_collapse') : localize('com_ui_show_all')}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
-  );
-});
+    );
+  },
+);
 
 const ImageAttachment = memo(({ attachment }: { attachment: TAttachment }) => {
   const [isLoaded, setIsLoaded] = useState(false);

@@ -762,8 +762,15 @@ describe('AttachmentGroup routing', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
     expect(panel?.firstElementChild).toHaveAttribute('aria-hidden', 'true');
-    expect(container.querySelector('pre')).toBeNull();
     expect(screen.getByTestId('image')).toBeInTheDocument();
+    expect(screen.getAllByTestId('file-container').map((chip) => chip.textContent)).not.toContain(
+      'c.json',
+    );
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('c.json')).toBeInTheDocument();
+    expect(container.querySelector('pre')?.textContent).toBe('{"c":true}');
   });
 
   it('passes a non-dotfile filename through to FileContainer unchanged', () => {
@@ -869,12 +876,14 @@ describe('AttachmentGroup routing', () => {
     // Mermaid render
     expect(screen.getByTestId('mermaid-render')).toBeInTheDocument();
     // JSON and plain zip are both downloadable file outputs, so they collapse together.
-    expect(container.querySelector('pre')).toBeNull();
-    expect(screen.getByRole('button', { name: 'com_ui_show_n_files' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
-    // FileContainer chips are still mounted inside the collapsed panel.
-    expect(screen.getAllByTestId('file-container').length).toBeGreaterThanOrEqual(2);
+    const toggle = screen.getByRole('button', { name: 'com_ui_show_n_files' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const chipLabels = screen.getAllByTestId('file-container').map((chip) => chip.textContent);
+    expect(chipLabels).toContain('archive.zip');
+    expect(chipLabels).not.toContain('data.json');
+
+    fireEvent.click(toggle);
+    expect(screen.getByText('data.json')).toBeInTheDocument();
+    expect(container.querySelector('pre')?.textContent).toBe('{"a":1}');
   });
 });
