@@ -7,7 +7,7 @@ const db = require('~/models');
 
 const router = express.Router();
 
-const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
+const requireAuditLogRead = requireCapability(SystemCapabilities.READ_AUDIT_LOG);
 
 const handlers = createAdminAuditLogHandlers({
   listAuditLogPage: db.listAuditLogPage,
@@ -15,7 +15,7 @@ const handlers = createAdminAuditLogHandlers({
   streamAuditLogEntries: db.streamAuditLogEntries,
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireJwtAuth, requireAuditLogRead);
 
 router.get('/', handlers.listAuditLog);
 router.get('/export.csv', handlers.exportAuditLogCsv);
