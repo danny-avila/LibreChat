@@ -13,6 +13,7 @@ import { useRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import { setTokenHeader, SystemRoles } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
+import { markAuthSeen, routeForUnauthenticated } from '~/utils/firstVisitFlag';
 import {
   useGetRole,
   useGetUserQuery,
@@ -57,6 +58,12 @@ const AuthContextProvider = ({
         //@ts-ignore - ok for token to be undefined initially
         setTokenHeader(token);
         setIsAuthenticated(isAuthenticated);
+        if (isAuthenticated) {
+          // Sticky per-device marker: once the user has authenticated on this
+          // install we treat them as a returning user, so future cold starts
+          // route to /login rather than /register.
+          markAuthSeen();
+        }
 
         // Use a custom redirect if set
         const finalRedirect = logoutRedirectRef.current || redirect;
@@ -91,7 +98,7 @@ const AuthContextProvider = ({
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
       doSetError(resError.message);
-      navigate('/login', { replace: true });
+      navigate(routeForUnauthenticated(), { replace: true });
     },
   });
   const logoutUser = useLogoutUserMutation({
@@ -100,7 +107,7 @@ const AuthContextProvider = ({
         token: undefined,
         isAuthenticated: false,
         user: undefined,
-        redirect: data.redirect ?? '/login',
+        redirect: data.redirect ?? routeForUnauthenticated(),
       });
     },
     onError: (error) => {
@@ -109,7 +116,7 @@ const AuthContextProvider = ({
         token: undefined,
         isAuthenticated: false,
         user: undefined,
-        redirect: '/login',
+        redirect: routeForUnauthenticated(),
       });
     },
   });
@@ -146,7 +153,7 @@ const AuthContextProvider = ({
           if (authConfig?.test === true) {
             return;
           }
-          navigate('/login');
+          navigate(routeForUnauthenticated());
         }
       },
       onError: (error) => {
@@ -154,7 +161,7 @@ const AuthContextProvider = ({
         if (authConfig?.test === true) {
           return;
         }
-        navigate('/login');
+        navigate(routeForUnauthenticated());
       },
     });
   }, []);
@@ -164,7 +171,7 @@ const AuthContextProvider = ({
       setUser(userQuery.data);
     } else if (userQuery.isError) {
       doSetError((userQuery.error as Error).message);
-      navigate('/login', { replace: true });
+      navigate(routeForUnauthenticated(), { replace: true });
     }
     if (error != null && error && isAuthenticated) {
       doSetError(undefined);

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '~/hooks';
+import { routeForUnauthenticated } from '~/utils/firstVisitFlag';
 
 export default function useAuthRedirect() {
   const { user, isAuthenticated } = useAuthContext();
@@ -9,7 +10,7 @@ export default function useAuthRedirect() {
   useEffect(() => {
     const timeout = setTimeout(() => {
       if (!isAuthenticated) {
-        navigate('/login', { replace: true });
+        navigate(routeForUnauthenticated(), { replace: true });
       }
     }, 300);
 
