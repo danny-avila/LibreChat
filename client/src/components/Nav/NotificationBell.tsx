@@ -1,8 +1,13 @@
 import { useState, useRef, useEffect, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 import { Bell } from 'lucide-react';
+import { useNewConvo } from '~/hooks';
+import { clearMessagesCache } from '~/utils';
 import useNotifications from '~/hooks/useNotifications';
+import store from '~/store';
 
 function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -10,6 +15,9 @@ function NotificationBell() {
   const { notifications, unreadCount, markAsVisited, markAllVisited, fetchNotifications } =
     useNotifications();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { newConversation: newConvo } = useNewConvo();
+  const { conversation } = store.useCreateConversationAtom(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -85,6 +93,9 @@ function NotificationBell() {
                   onClick={() => {
                     markAsVisited(n._id);
                     setOpen(false);
+                    clearMessagesCache(queryClient, conversation?.conversationId);
+                    queryClient.invalidateQueries([QueryKeys.messages]);
+                    newConvo();
                     navigate('/c/new', { state: { autoQuestion: n.originalQuestion } });
                   }}
                   className={`cursor-pointer border-b border-border-light px-4 py-3 last:border-0 hover:bg-surface-active-alt ${

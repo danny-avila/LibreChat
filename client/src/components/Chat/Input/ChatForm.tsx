@@ -144,9 +144,14 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     autoQuestionRef.current = autoQuestion;
     // Clear the state so refreshing doesn't resubmit
     window.history.replaceState({ ...window.history.state, usr: null }, '');
-    const timer = setTimeout(() => submitMessage({ text: autoQuestion }), 500);
+    // Set DOM value directly so it visually appears in the textarea
+    if (textAreaRef.current) {
+      textAreaRef.current.value = autoQuestion;
+    }
+    methods.setValue('text', autoQuestion, { shouldValidate: true });
+    const timer = setTimeout(() => submitMessage({ text: autoQuestion }), 800);
     return () => clearTimeout(timer);
-  }, [location.state, submitMessage]);
+  }, [location.state, submitMessage, methods]);
 
   const handleKeyUp = useHandleKeyUp({
     index,
