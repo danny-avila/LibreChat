@@ -20,6 +20,7 @@ export interface TelemetryController {
 }
 
 const WARNING_CODE = 'LIBRECHAT_OTEL';
+const REDACTED_QUERY_VALUE = '[REDACTED]';
 const SIGNAL_SHUTDOWN_TIMEOUT_MS = 5_000;
 
 interface RegisteredSignal {
@@ -41,6 +42,57 @@ function isBunRuntime(): boolean {
 
 function shouldIgnoreIncomingRequest(request: IncomingMessage, healthPath: string): boolean {
   return request.url === healthPath || request.url?.startsWith(`${healthPath}?`) === true;
+}
+
+function getIncomingUrlInfo(request: IncomingMessage): { hasQuery: boolean; pathname: string } {
+  const rawUrl = request.url ?? '/';
+
+  try {
+    const parsedUrl = new URL(rawUrl, 'http://localhost');
+    return {
+      hasQuery: parsedUrl.search.length > 1,
+      pathname: parsedUrl.pathname || '/',
+    };
+  } catch {
+    const queryIndex = rawUrl.indexOf('?');
+    return {
+      hasQuery: queryIndex >= 0 && queryIndex < rawUrl.length - 1,
+      pathname: queryIndex >= 0 ? rawUrl.slice(0, queryIndex) || '/' : rawUrl || '/',
+    };
+  }
+}
+
+function getLowCardinalityUrlPath(pathname: string, healthPath: string): string {
+  if (pathname === healthPath) {
+    return healthPath;
+  }
+
+  if (pathname === '/api' || pathname.startsWith('/api/')) {
+    return '/api/*';
+  }
+
+  return 'spa_fallback';
+}
+
+function getSanitizedIncomingUrlAttributes(
+  request: IncomingMessage,
+  healthPath: string,
+): Attributes {
+  const { hasQuery, pathname } = getIncomingUrlInfo(request);
+  const safePath = getLowCardinalityUrlPath(pathname, healthPath);
+  const safeTarget = hasQuery ? `${safePath}?${REDACTED_QUERY_VALUE}` : safePath;
+  const attributes: Attributes = {
+    'http.target': safeTarget,
+    'http.url': safeTarget,
+    'url.full': safeTarget,
+    'url.path': safePath,
+  };
+
+  if (hasQuery) {
+    attributes['url.query'] = REDACTED_QUERY_VALUE;
+  }
+
+  return attributes;
 }
 
 function getResourceAttributes(config: TelemetryConfig): Attributes {
@@ -69,6 +121,8 @@ function createSdk(config: TelemetryConfig): NodeSDK {
             requestSpans.set(request, span);
           }
         },
+        startIncomingSpanHook: (request: IncomingMessage) =>
+          getSanitizedIncomingUrlAttributes(request, config.healthPath),
         ignoreIncomingRequestHook: (request: IncomingMessage) =>
           shouldIgnoreIncomingRequest(request, config.healthPath),
       }),

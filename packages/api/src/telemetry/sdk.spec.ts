@@ -4,6 +4,7 @@ import type { Span } from '@opentelemetry/api';
 
 interface HttpInstrumentationOptions {
   requestHook?: (span: Span, request: object) => void;
+  startIncomingSpanHook?: (request: IncomingMessage) => Record<string, string>;
 }
 
 const mockStart = jest.fn();
@@ -198,6 +199,30 @@ describe('telemetry SDK lifecycle', () => {
     requestHook(span, request);
 
     expect(getTelemetryRequestSpan(request)).toBe(span);
+  });
+
+  it('redacts incoming URL attributes before HTTP spans are exported', () => {
+    const request = new IncomingMessage(new Socket());
+    request.url = '/oauth/callback?code=secret-code&state=secret-state';
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
+    const startIncomingSpanHook = instrumentationOptions?.startIncomingSpanHook;
+
+    if (!startIncomingSpanHook) {
+      throw new Error('HTTP instrumentation startIncomingSpanHook was not configured');
+    }
+
+    const attributes = startIncomingSpanHook(request);
+
+    expect(attributes).toEqual({
+      'http.target': 'spa_fallback?[REDACTED]',
+      'http.url': 'spa_fallback?[REDACTED]',
+      'url.full': 'spa_fallback?[REDACTED]',
+      'url.path': 'spa_fallback',
+      'url.query': '[REDACTED]',
+    });
+    expect(JSON.stringify(attributes)).not.toContain('secret-code');
+    expect(JSON.stringify(attributes)).not.toContain('secret-state');
   });
 
   it('reflects lifecycle status from the controller getter', async () => {
