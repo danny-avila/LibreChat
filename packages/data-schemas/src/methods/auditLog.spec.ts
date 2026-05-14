@@ -2,7 +2,8 @@ import mongoose, { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
-import { createAuditLogMethods, type RecordAuditEntryInput } from './auditLog';
+import type { RecordAuditEntryInput } from '~/types';
+import { createAuditLogMethods } from './auditLog';
 import auditLogSchema from '~/schema/auditLog';
 
 jest.mock('~/config/winston', () => ({
@@ -106,11 +107,30 @@ describe('auditLog methods', () => {
       expect(page.total).toBe(2);
     });
 
-    it('partial-matches the actorId param against actorName', async () => {
+    it('partial-matches the actorQuery param against actorName', async () => {
       await methods.recordAuditEntry(baseInput({ actorName: 'Charlotte Auditor' }));
-      const page = await methods.listAuditLogPage('tenant-a', { actorId: 'charlotte' });
+      const page = await methods.listAuditLogPage('tenant-a', { actorQuery: 'charlotte' });
       expect(page.total).toBe(1);
       expect(page.entries[0]?.actorName).toBe('Charlotte Auditor');
+    });
+
+    it('partial-matches the targetQuery param against targetName', async () => {
+      await methods.recordAuditEntry(baseInput({ targetName: 'Daphne Director' }));
+      const page = await methods.listAuditLogPage('tenant-a', { targetQuery: 'daphne' });
+      expect(page.total).toBe(1);
+      expect(page.entries[0]?.targetName).toBe('Daphne Director');
+    });
+
+    it('treats empty-string tenantId as platform-level (not a literal `""` tenant match)', async () => {
+      const page = await methods.listAuditLogPage('', {});
+      expect(page.total).toBe(1);
+      expect(page.entries[0]?.capability).toBe('access:admin');
+    });
+
+    it('treats whitespace-only tenantId as platform-level', async () => {
+      const page = await methods.listAuditLogPage('   ', {});
+      expect(page.total).toBe(1);
+      expect(page.entries[0]?.capability).toBe('access:admin');
     });
 
     it('partial-matches the capability filter case-insensitively', async () => {
@@ -166,6 +186,27 @@ describe('auditLog methods', () => {
       });
       expect(count).toBe(2);
       expect(new Set(collected)).toEqual(new Set(['manage:users', 'manage:roles']));
+    });
+
+    it('stops iterating and closes the cursor when isCancelled becomes true', async () => {
+      for (let i = 0; i < 10; i++) {
+        await methods.recordAuditEntry(baseInput({ capability: `manage:cap-${i}` }));
+      }
+
+      let cancelled = false;
+      const seen: string[] = [];
+      const count = await methods.streamAuditLogEntries(
+        'tenant-a',
+        {},
+        (entry) => {
+          seen.push(entry.capability);
+          if (seen.length >= 3) cancelled = true;
+        },
+        { isCancelled: () => cancelled },
+      );
+
+      expect(count).toBe(3);
+      expect(seen.length).toBe(3);
     });
   });
 });

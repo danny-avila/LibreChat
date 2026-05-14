@@ -1,6 +1,11 @@
 import { PrincipalType } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
-import type { AdminAuditLogEntryWire, AuditAction, AuditLogPage } from '@librechat/data-schemas';
+import type {
+  AdminAuditLogEntry,
+  AuditAction,
+  AuditLogFilters,
+  AuditLogPage,
+} from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 
@@ -10,37 +15,30 @@ const CSV_BOM = '﻿';
 const VALID_ACTIONS = new Set<AuditAction>(['grant_assigned', 'grant_removed']);
 const VALID_PRINCIPAL_TYPES = new Set<string>(Object.values(PrincipalType));
 
-// Accepts `YYYY-MM-DD` (interpreted as UTC by the downstream Date parse) or a
-// full ISO 8601 / RFC 3339 timestamp that includes either `Z` or a `±HH:MM`
-// offset. Local-time strings without a zone are rejected so every input maps
-// to an unambiguous instant.
+/**
+ * Accepts `YYYY-MM-DD` (interpreted as UTC by the downstream Date parse) or a
+ * full ISO 8601 / RFC 3339 timestamp that includes either `Z` or a `±HH:MM`
+ * offset. Local-time strings without a zone are rejected so every input maps
+ * to an unambiguous instant.
+ */
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/;
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
+const MAX_LIMIT = 500;
 
 export interface AdminAuditLogDeps {
   listAuditLogPage: (
     tenantId: string | undefined,
-    filters: {
-      search?: string;
-      action?: AuditAction[];
-      from?: Date;
-      to?: Date;
-      actorId?: string;
-      targetPrincipalType?: PrincipalType;
-      targetPrincipalId?: string;
-      capability?: string;
-      offset?: number;
-      limit?: number;
-    },
+    filters: AuditLogFilters,
   ) => Promise<AuditLogPage>;
   findAuditLogEntry: (
     tenantId: string | undefined,
     id: string,
-  ) => Promise<AdminAuditLogEntryWire | null>;
+  ) => Promise<AdminAuditLogEntry | null>;
   streamAuditLogEntries: (
     tenantId: string | undefined,
-    filters: Parameters<AdminAuditLogDeps['listAuditLogPage']>[1],
-    onEntry: (entry: AdminAuditLogEntryWire) => void | Promise<void>,
+    filters: Omit<AuditLogFilters, 'offset' | 'limit'>,
+    onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
+    options?: { isCancelled?: () => boolean },
   ) => Promise<number>;
 }
 
@@ -65,11 +63,19 @@ function asStringArray(v: unknown): string[] | undefined {
   return undefined;
 }
 
-function parseActionFilter(raw: unknown): AuditAction[] | undefined {
+function parseActionFilter(raw: unknown):
+  | {
+      ok: true;
+      value: AuditAction[] | undefined;
+    }
+  | { ok: false; error: string } {
   const arr = asStringArray(raw);
-  if (!arr || arr.length === 0) return undefined;
-  const valid = arr.filter((a): a is AuditAction => VALID_ACTIONS.has(a as AuditAction));
-  return valid.length ? valid : undefined;
+  if (!arr || arr.length === 0) return { ok: true, value: undefined };
+  const invalid = arr.find((a) => !VALID_ACTIONS.has(a as AuditAction));
+  if (invalid != null) {
+    return { ok: false, error: `Unknown action: ${invalid}` };
+  }
+  return { ok: true, value: arr as AuditAction[] };
 }
 
 function parseIsoDate(raw: unknown): { ok: true; value?: Date } | { ok: false; error: string } {
@@ -88,7 +94,7 @@ function parseLimit(
   const n = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10);
   if (!Number.isFinite(n)) return { ok: false, error: 'limit must be a number' };
   if (n < 1) return { ok: false, error: 'limit must be >= 1' };
-  if (n > 500) return { ok: false, error: 'limit must be <= 500' };
+  if (n > MAX_LIMIT) return { ok: false, error: `limit must be <= ${MAX_LIMIT}` };
   return { ok: true, value: Math.floor(n) };
 }
 
@@ -102,10 +108,15 @@ function parseOffset(
   return { ok: true, value: Math.floor(n) };
 }
 
-function parsePrincipalType(raw: unknown): PrincipalType | undefined {
-  if (typeof raw !== 'string' || !raw) return undefined;
-  if (!VALID_PRINCIPAL_TYPES.has(raw)) return undefined;
-  return raw as PrincipalType;
+function parsePrincipalType(
+  raw: unknown,
+): { ok: true; value: PrincipalType | undefined } | { ok: false; error: string } {
+  if (raw == null || raw === '') return { ok: true, value: undefined };
+  if (typeof raw !== 'string') return { ok: false, error: 'targetPrincipalType must be a string' };
+  if (!VALID_PRINCIPAL_TYPES.has(raw)) {
+    return { ok: false, error: `Unknown targetPrincipalType: ${raw}` };
+  }
+  return { ok: true, value: raw as PrincipalType };
 }
 
 function pickString(raw: unknown, maxLen = 256): string | undefined {
@@ -124,7 +135,7 @@ function escapeCsvCell(value: string): string {
   return guarded;
 }
 
-const CSV_COLUMNS: ReadonlyArray<{ key: keyof AdminAuditLogEntryWire; label: string }> = [
+const CSV_COLUMNS: ReadonlyArray<{ key: keyof AdminAuditLogEntry; label: string }> = [
   { key: 'timestamp', label: 'Timestamp' },
   { key: 'action', label: 'Action' },
   { key: 'actorName', label: 'Actor' },
@@ -139,7 +150,7 @@ function formatCsvHeader(): string {
   return CSV_COLUMNS.map((c) => escapeCsvCell(c.label)).join(',');
 }
 
-function formatCsvRow(entry: AdminAuditLogEntryWire): string {
+function formatCsvRow(entry: AdminAuditLogEntry): string {
   return CSV_COLUMNS.map((c) => escapeCsvCell(String(entry[c.key] ?? ''))).join(',');
 }
 
@@ -148,9 +159,9 @@ interface ParsedFilters {
   action?: AuditAction[];
   from?: Date;
   to?: Date;
-  actorId?: string;
+  actorQuery?: string;
   targetPrincipalType?: PrincipalType;
-  targetPrincipalId?: string;
+  targetQuery?: string;
   capability?: string;
 }
 
@@ -159,12 +170,48 @@ interface AuditLogQuery {
   action?: string | string[];
   from?: string;
   to?: string;
+  /** Substring match against the denormalized actor display name. */
+  actorQuery?: string;
+  /** @deprecated Use `actorQuery`. Still accepted as an alias. */
   actorId?: string;
   targetPrincipalType?: string;
+  /** Substring match against the denormalized target display name. */
+  targetQuery?: string;
+  /** @deprecated Use `targetQuery`. Still accepted as an alias. */
   targetPrincipalId?: string;
   capability?: string;
   limit?: string;
   offset?: string;
+}
+
+/**
+ * The HTTP filter keys `actorId`/`targetPrincipalId` were misnomers — they
+ * never matched ObjectIds, they did case-insensitive substring matches on
+ * the denormalized display names. The new keys `actorQuery`/`targetQuery`
+ * describe what actually happens. The legacy names are accepted for one
+ * release as deprecated aliases so the sibling admin-panel PR keeps working
+ * while it migrates; each use emits a deprecation log.
+ */
+function readActorQuery(query: AuditLogQuery): string | undefined {
+  if (query.actorQuery != null) return pickString(query.actorQuery, 128);
+  if (query.actorId != null) {
+    logger.warn(
+      '[adminAuditLog] deprecated filter param `actorId` — rename to `actorQuery` (substring match on actorName)',
+    );
+    return pickString(query.actorId, 128);
+  }
+  return undefined;
+}
+
+function readTargetQuery(query: AuditLogQuery): string | undefined {
+  if (query.targetQuery != null) return pickString(query.targetQuery, 128);
+  if (query.targetPrincipalId != null) {
+    logger.warn(
+      '[adminAuditLog] deprecated filter param `targetPrincipalId` — rename to `targetQuery` (substring match on targetName)',
+    );
+    return pickString(query.targetPrincipalId, 128);
+  }
+  return undefined;
 }
 
 function parseFilters(
@@ -174,16 +221,20 @@ function parseFilters(
   if (!from.ok) return { ok: false, error: `from: ${from.error}` };
   const to = parseIsoDate(query.to);
   if (!to.ok) return { ok: false, error: `to: ${to.error}` };
+  const action = parseActionFilter(query.action);
+  if (!action.ok) return { ok: false, error: action.error };
+  const targetPrincipalType = parsePrincipalType(query.targetPrincipalType);
+  if (!targetPrincipalType.ok) return { ok: false, error: targetPrincipalType.error };
   return {
     ok: true,
     value: {
       search: pickString(query.search, 200),
-      action: parseActionFilter(query.action),
+      action: action.value,
       from: from.value,
       to: to.value,
-      actorId: pickString(query.actorId, 128),
-      targetPrincipalType: parsePrincipalType(query.targetPrincipalType),
-      targetPrincipalId: pickString(query.targetPrincipalId, 128),
+      actorQuery: readActorQuery(query),
+      targetPrincipalType: targetPrincipalType.value,
+      targetQuery: readTargetQuery(query),
       capability: pickString(query.capability, 256),
     },
   };
@@ -251,32 +302,57 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps) {
       res.setHeader('Content-Disposition', `attachment; filename="audit-log-${filenameStamp}.csv"`);
       res.setHeader('Cache-Control', 'no-store');
 
-      // Stop pulling rows from Mongo as soon as the client disconnects so a
-      // cancelled download doesn't pin a cursor open or burn through memory.
+      /**
+       * The socket-`close` listener is the canonical signal — it fires on
+       * client TCP RST as well as on graceful end. `req.aborted` (deprecated)
+       * is kept as a belt-and-braces fallback for Node versions that emit it
+       * before the response sees `close`.
+       */
       let clientAborted = false;
       const markAborted = () => {
         clientAborted = true;
       };
       res.once('close', markAborted);
       req.once('aborted', markAborted);
+      const isCancelled = () => clientAborted;
 
-      // Wait for `drain` when the kernel/socket buffer is full so we never
-      // queue an unbounded amount of CSV in Node memory for slow consumers.
+      /**
+       * Wait for `drain` when the kernel/socket buffer is full so we never
+       * queue an unbounded amount of CSV in Node memory for slow consumers.
+       * Race against `close` so a destroyed socket can't strand the handler
+       * on a `drain` that will never fire.
+       */
       const writeChunk = (chunk: string): Promise<void> => {
         if (clientAborted) return Promise.resolve();
         if (res.write(chunk)) return Promise.resolve();
-        return new Promise<void>((resolve) => res.once('drain', () => resolve()));
+        return new Promise<void>((resolve) => {
+          const onDrain = () => {
+            res.removeListener('close', onClose);
+            resolve();
+          };
+          const onClose = () => {
+            res.removeListener('drain', onDrain);
+            resolve();
+          };
+          res.once('drain', onDrain);
+          res.once('close', onClose);
+        });
       };
 
       await writeChunk(CSV_BOM);
       await writeChunk(formatCsvHeader());
       await writeChunk('\r\n');
 
-      await streamAuditLogEntries(caller.tenantId, filters.value, async (entry) => {
-        if (clientAborted) return;
-        await writeChunk(formatCsvRow(entry));
-        await writeChunk('\r\n');
-      });
+      await streamAuditLogEntries(
+        caller.tenantId,
+        filters.value,
+        async (entry) => {
+          if (clientAborted) return;
+          await writeChunk(formatCsvRow(entry));
+          await writeChunk('\r\n');
+        },
+        { isCancelled },
+      );
 
       res.removeListener('close', markAborted);
       req.removeListener('aborted', markAborted);

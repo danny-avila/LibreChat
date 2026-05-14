@@ -1,56 +1,16 @@
-import { PrincipalType } from 'librechat-data-provider';
-import type { FilterQuery, Model, Types } from 'mongoose';
-import type { AuditAction, IAuditLog } from '~/types';
+import type { FilterQuery, Model } from 'mongoose';
+import type {
+  AdminAuditLogEntry,
+  AuditLogFilters,
+  AuditLogPage,
+  IAuditLog,
+  RecordAuditEntryInput,
+} from '~/types';
 import logger from '~/config/winston';
 
 const DEFAULT_LIMIT = 100;
-const MAX_LIMIT = 500;
+export const MAX_LIMIT = 500;
 const MAX_SEARCH_LENGTH = 200;
-
-export interface RecordAuditEntryInput {
-  action: AuditAction;
-  actorId: string | Types.ObjectId;
-  actorName: string;
-  targetPrincipalType: PrincipalType;
-  targetPrincipalId: string | Types.ObjectId;
-  targetName: string;
-  capability: string;
-  tenantId?: string;
-}
-
-export interface AuditLogFilters {
-  search?: string;
-  action?: AuditAction[];
-  from?: Date;
-  to?: Date;
-  actorId?: string;
-  targetPrincipalType?: PrincipalType;
-  targetPrincipalId?: string;
-  capability?: string;
-  offset?: number;
-  limit?: number;
-}
-
-export interface AuditLogPage {
-  entries: AdminAuditLogEntryWire[];
-  total: number;
-}
-
-/**
- * Wire shape returned to admin clients. `_id` is mapped to `id`, ObjectIds are
- * stringified, dates are ISO strings.
- */
-export interface AdminAuditLogEntryWire {
-  id: string;
-  action: AuditAction;
-  actorId: string;
-  actorName: string;
-  targetPrincipalType: PrincipalType;
-  targetPrincipalId: string;
-  targetName: string;
-  capability: string;
-  timestamp: string;
-}
 
 export interface AuditLogMethods {
   recordAuditEntry: (input: RecordAuditEntryInput) => Promise<IAuditLog | null>;
@@ -61,11 +21,12 @@ export interface AuditLogMethods {
   findAuditLogEntry: (
     tenantId: string | undefined,
     id: string,
-  ) => Promise<AdminAuditLogEntryWire | null>;
+  ) => Promise<AdminAuditLogEntry | null>;
   streamAuditLogEntries: (
     tenantId: string | undefined,
     filters: Omit<AuditLogFilters, 'offset' | 'limit'>,
-    onEntry: (entry: AdminAuditLogEntryWire) => void | Promise<void>,
+    onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
+    options?: { isCancelled?: () => boolean },
   ) => Promise<number>;
 }
 
@@ -73,7 +34,7 @@ function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function toWire(doc: IAuditLog): AdminAuditLogEntryWire {
+function toWire(doc: IAuditLog): AdminAuditLogEntry {
   return {
     id: doc._id.toString(),
     action: doc.action,
@@ -88,7 +49,9 @@ function toWire(doc: IAuditLog): AdminAuditLogEntryWire {
 }
 
 function tenantFilter(tenantId?: string): FilterQuery<IAuditLog> {
-  return tenantId != null ? { tenantId } : { tenantId: { $exists: false } };
+  return typeof tenantId === 'string' && tenantId.trim().length > 0
+    ? { tenantId }
+    : { tenantId: { $exists: false } };
 }
 
 function buildFilter(
@@ -100,25 +63,23 @@ function buildFilter(
   if (filters.action && filters.action.length > 0) {
     query.action = filters.action.length === 1 ? filters.action[0] : { $in: filters.action };
   }
-  // The `actorId` and `targetPrincipalId` filter params are matched against the
-  // denormalized `actorName` / `targetName` fields with case-insensitive partial
-  // regex — UI users want to filter by human name, not by Mongo ObjectId.
-  if (filters.actorId) {
-    query.actorName = { $regex: escapeRegex(filters.actorId), $options: 'i' };
+  if (filters.actorQuery) {
+    query.actorName = { $regex: escapeRegex(filters.actorQuery), $options: 'i' };
   }
   if (filters.targetPrincipalType) {
     query.targetPrincipalType = filters.targetPrincipalType;
   }
-  if (filters.targetPrincipalId) {
-    query.targetName = { $regex: escapeRegex(filters.targetPrincipalId), $options: 'i' };
+  if (filters.targetQuery) {
+    query.targetName = { $regex: escapeRegex(filters.targetQuery), $options: 'i' };
   }
   if (filters.capability) {
     query.capability = { $regex: escapeRegex(filters.capability), $options: 'i' };
   }
   if (filters.from || filters.to) {
-    query.createdAt = {};
-    if (filters.from) (query.createdAt as Record<string, Date>).$gte = filters.from;
-    if (filters.to) (query.createdAt as Record<string, Date>).$lte = filters.to;
+    const createdAt: { $gte?: Date; $lte?: Date } = {};
+    if (filters.from) createdAt.$gte = filters.from;
+    if (filters.to) createdAt.$lte = filters.to;
+    query.createdAt = createdAt;
   }
   if (filters.search && filters.search.length > 0) {
     const trimmed = filters.search.slice(0, MAX_SEARCH_LENGTH);
@@ -154,11 +115,25 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
       });
       return doc;
     } catch (err) {
-      logger.error(
-        '[auditLog] failed to record audit entry',
-        { action: input.action, capability: input.capability, tenantId: input.tenantId },
+      /**
+       * Audit emission must never block a privileged operation, so a failed
+       * write returns null instead of throwing. The structured payload below
+       * is the only forensic trail when downstream alerting flags the
+       * `failed to record audit entry` message.
+       */
+      logger.error('[auditLog] failed to record audit entry', {
+        action: input.action,
+        capability: input.capability,
+        tenantId: input.tenantId,
+        actorId:
+          typeof input.actorId === 'string' ? input.actorId : (input.actorId?.toString?.() ?? null),
+        targetPrincipalType: input.targetPrincipalType,
+        targetPrincipalId:
+          typeof input.targetPrincipalId === 'string'
+            ? input.targetPrincipalId
+            : (input.targetPrincipalId?.toString?.() ?? null),
         err,
-      );
+      });
       return null;
     }
   }
@@ -190,7 +165,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
   async function findAuditLogEntry(
     tenantId: string | undefined,
     id: string,
-  ): Promise<AdminAuditLogEntryWire | null> {
+  ): Promise<AdminAuditLogEntry | null> {
     if (!/^[a-fA-F0-9]{24}$/.test(id)) return null;
     const AuditLog = mongoose.models.AuditLog as Model<IAuditLog>;
     const query: FilterQuery<IAuditLog> = { _id: id, ...tenantFilter(tenantId) };
@@ -201,19 +176,29 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
   async function streamAuditLogEntries(
     tenantId: string | undefined,
     filters: Omit<AuditLogFilters, 'offset' | 'limit'>,
-    onEntry: (entry: AdminAuditLogEntryWire) => void | Promise<void>,
+    onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
+    options?: { isCancelled?: () => boolean },
   ): Promise<number> {
     const AuditLog = mongoose.models.AuditLog as Model<IAuditLog>;
     const query = buildFilter(tenantId, filters);
     const cursor = AuditLog.find(query)
       .sort({ createdAt: -1, _id: -1 })
-      .lean<IAuditLog>()
+      .lean<IAuditLog[]>()
       .cursor({ batchSize: 500 });
 
+    const isCancelled = options?.isCancelled;
     let count = 0;
-    for await (const doc of cursor) {
-      await onEntry(toWire(doc as IAuditLog));
-      count++;
+    try {
+      for await (const doc of cursor) {
+        if (isCancelled?.()) {
+          await cursor.close();
+          break;
+        }
+        await onEntry(toWire(doc));
+        count++;
+      }
+    } finally {
+      await cursor.close().catch(() => undefined);
     }
     return count;
   }

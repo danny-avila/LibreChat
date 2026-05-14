@@ -1,6 +1,6 @@
 import type { Document, Types } from 'mongoose';
 import type { PrincipalType } from 'librechat-data-provider';
-import type { AuditAction } from './admin';
+import type { AdminAuditLogEntry, AuditAction } from './admin';
 
 export type AuditLog = {
   action: AuditAction;
@@ -24,3 +24,34 @@ export type IAuditLog = AuditLog &
     createdAt: Date;
     updatedAt: Date;
   };
+
+export interface RecordAuditEntryInput {
+  action: AuditAction;
+  actorId: string | Types.ObjectId;
+  actorName: string;
+  targetPrincipalType: PrincipalType;
+  targetPrincipalId: string | Types.ObjectId;
+  targetName: string;
+  capability: string;
+  tenantId?: string;
+}
+
+export interface AuditLogFilters {
+  search?: string;
+  action?: AuditAction[];
+  from?: Date;
+  to?: Date;
+  /** Case-insensitive substring match against the denormalized `actorName`. */
+  actorQuery?: string;
+  targetPrincipalType?: PrincipalType;
+  /** Case-insensitive substring match against the denormalized `targetName`. */
+  targetQuery?: string;
+  capability?: string;
+  offset?: number;
+  limit?: number;
+}
+
+export interface AuditLogPage {
+  entries: AdminAuditLogEntry[];
+  total: number;
+}
