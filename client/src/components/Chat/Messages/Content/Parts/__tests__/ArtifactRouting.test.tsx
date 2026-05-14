@@ -754,7 +754,9 @@ describe('AttachmentGroup routing', () => {
       height: 16,
     } as Partial<TAttachment>);
 
-    const { container } = renderWith(<AttachmentGroup attachments={[first, second, json, image]} />);
+    const { container } = renderWith(
+      <AttachmentGroup attachments={[first, second, json, image]} />,
+    );
 
     const toggle = screen.getByRole('button', { name: 'com_ui_show_n_files' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');

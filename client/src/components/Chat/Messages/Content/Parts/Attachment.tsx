@@ -545,9 +545,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   const groupedFileAttachments = groupDownloadableFiles
     ? [...fileAttachments, ...downloadableTextAttachments].sort(bySalience)
     : fileAttachments;
-  const visibleTextAttachments = groupDownloadableFiles
-    ? textOnlyAttachments
-    : textAttachments;
+  const visibleTextAttachments = groupDownloadableFiles ? textOnlyAttachments : textAttachments;
 
   return (
     <>
