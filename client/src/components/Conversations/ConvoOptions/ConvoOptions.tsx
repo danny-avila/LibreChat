@@ -39,6 +39,7 @@ function ConvoOptions({
   isPopoverActive,
   setIsPopoverActive,
   isActiveConvo,
+  toggleNav,
 }: {
   conversationId: string | null;
   title: string | null;
@@ -49,6 +50,7 @@ function ConvoOptions({
   isPopoverActive: boolean;
   setIsPopoverActive: React.Dispatch<React.SetStateAction<boolean>>;
   isActiveConvo: boolean;
+  toggleNav?: () => void;
 }) {
   const localize = useLocalize();
   const { index } = useChatContext();
@@ -133,11 +135,18 @@ function ConvoOptions({
 
   const handleShareClick = useCallback(() => {
     setShowShareDialog(true);
-  }, []);
+    toggleNav?.();
+  }, [toggleNav]);
 
   const handleDeleteClick = useCallback(() => {
     setShowDeleteDialog(true);
-  }, []);
+    toggleNav?.();
+  }, [toggleNav]);
+
+  const handleNewBookmarkClick = useCallback(() => {
+    setShowBookmarkDialog(true);
+    toggleNav?.();
+  }, [toggleNav]);
 
   const handleArchiveClick = useCallback(async () => {
     const convoId = conversationId ?? '';
@@ -189,10 +198,9 @@ function ConvoOptions({
         id: '%___new___bookmark___%',
         label: localize('com_ui_bookmarks_new'),
         icon: <BookmarkPlusIcon className="icon-sm mr-2 text-text-primary" />,
-        hideOnClick: false,
         ref: newBookmarkRef,
         render: (props) => <button {...props} />,
-        onClick: () => setShowBookmarkDialog(true),
+        onClick: handleNewBookmarkClick,
       },
     ];
     (bookmarks ?? []).forEach((bookmark) => {
@@ -211,7 +219,14 @@ function ConvoOptions({
       });
     });
     return items;
-  }, [bookmarks, tags, localize, handleBookmarkToggle, tagMutation.isLoading]);
+  }, [
+    bookmarks,
+    tags,
+    localize,
+    handleBookmarkToggle,
+    handleNewBookmarkClick,
+    tagMutation.isLoading,
+  ]);
 
   const dropdownItems = useMemo(
     () => [
