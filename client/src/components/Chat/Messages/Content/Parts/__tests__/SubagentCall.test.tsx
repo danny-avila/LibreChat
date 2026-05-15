@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot, useRecoilCallback } from 'recoil';
-import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, act, fireEvent, waitFor, within } from '@testing-library/react';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import type {
   SubagentContentPart,
@@ -16,7 +16,7 @@ import {
   initSubagentTickerState,
 } from '~/utils/subagentContent';
 import { subagentProgressByToolCallId } from '~/store/subagents';
-import SubagentCall from '../SubagentCall';
+import SubagentCall, { SUBAGENT_TICKER_THROTTLE_MS } from '../SubagentCall';
 
 jest.mock('~/hooks', () => ({
   useLocalize:
@@ -83,18 +83,22 @@ jest.mock('../Attachment', () => ({
   ),
 }));
 
-jest.mock('@librechat/client', () => ({
-  OGDialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  OGDialogContent: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="dialog-content">{children}</div>
-  ),
-  OGDialogTitle: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="dialog-title">{children}</div>
-  ),
-  OGDialogDescription: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="dialog-description">{children}</div>
-  ),
-}));
+jest.mock(
+  '@librechat/client',
+  () => ({
+    OGDialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    OGDialogContent: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="dialog-content">{children}</div>
+    ),
+    OGDialogTitle: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="dialog-title">{children}</div>
+    ),
+    OGDialogDescription: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="dialog-description">{children}</div>
+    ),
+  }),
+  { virtual: true },
+);
 
 jest.mock('lucide-react', () => ({
   // eslint-disable-next-line i18next/no-literal-string
@@ -130,6 +134,10 @@ jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/toolLabels'),
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(' '),
 }));
+
+afterEach(() => {
+  jest.useRealTimers();
+});
 
 /** The dialog wraps single parts in `Container` and grouped tool_calls in
  *  `ToolCallGroup`. Stub both as transparent wrappers so the tests still
@@ -229,10 +237,13 @@ function renderWithState(args: {
       />
     </RecoilRoot>,
   );
-  act(() => {
-    setter.current?.(args.progress ?? null);
-  });
-  return rendered;
+  const setProgress = (next: SubagentProgress | null) => {
+    act(() => {
+      setter.current?.(next);
+    });
+  };
+  setProgress(args.progress ?? null);
+  return { ...rendered, setProgress };
 }
 
 describe('SubagentCall — status resolution', () => {
@@ -442,6 +453,52 @@ describe('SubagentCall — ticker', () => {
     );
     /** Only one "Writing:" label, not three — deltas collapse into one live line. */
     expect(screen.getAllByText('Writing:')).toHaveLength(1);
+  });
+
+  it('refreshes long live previews after the subagent ticker throttle window', () => {
+    jest.useFakeTimers();
+    const firstPreview = 'First live preview '.repeat(8).trim();
+    const secondPreview = 'Second live preview '.repeat(8).trim();
+    const eventForText = (text: string): SubagentUpdateEvent => ({
+      runId: 'p',
+      subagentRunId: 'run_a',
+      subagentType: 'self',
+      subagentAgentId: 'child',
+      phase: 'message_delta',
+      data: { delta: { content: [{ type: 'text', text }] } },
+      timestamp: '',
+    });
+    const progressForText = (text: string): SubagentProgress =>
+      progressFromEvents({
+        subagentRunId: 'run_a',
+        subagentType: 'self',
+        status: 'message_delta',
+        events: [eventForText(text)],
+      });
+
+    const { setProgress } = renderWithState({
+      toolCallId: 'call_throttled_writing',
+      initialProgress: 0.3,
+      isSubmitting: true,
+      progress: progressForText(firstPreview),
+    });
+    const ticker = within(screen.getByRole('button', { name: 'Running agent' }));
+
+    expect(ticker.getByText(firstPreview)).toBeInTheDocument();
+    setProgress(progressForText(secondPreview));
+    expect(ticker.getByText(firstPreview)).toBeInTheDocument();
+    expect(ticker.queryByText(secondPreview)).not.toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(SUBAGENT_TICKER_THROTTLE_MS - 1);
+    });
+    expect(ticker.getByText(firstPreview)).toBeInTheDocument();
+    expect(ticker.queryByText(secondPreview)).not.toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(ticker.getByText(secondPreview)).toBeInTheDocument();
   });
 });
 
