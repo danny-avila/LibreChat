@@ -35,10 +35,6 @@ interface RequestUrlParts {
   pathname?: string;
 }
 
-interface RequestDefaultPort {
-  defaultPort?: string | number;
-}
-
 interface AgentProtocol {
   protocol?: string;
 }
@@ -209,16 +205,10 @@ function getRequestAgentProtocol(request: RequestOptions): string | undefined {
   return getStringValue((agent as AgentProtocol).protocol);
 }
 
-function getRequestDefaultPort(request: RequestOptions): string | undefined {
-  return getStringValue((request as RequestOptions & RequestDefaultPort).defaultPort);
-}
-
 function getOutgoingHttpProtocol(request: RequestOptions): string {
   const protocol = getStringValue(request.protocol) ?? getRequestAgentProtocol(request);
   if (!protocol) {
-    const port = getStringValue(request.port);
-    const defaultPort = getRequestDefaultPort(request);
-    return port === '443' || defaultPort === '443' ? 'https:' : 'http:';
+    return 'http:';
   }
 
   return normalizeProtocol(protocol);

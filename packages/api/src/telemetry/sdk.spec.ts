@@ -1,5 +1,6 @@
 import { Socket } from 'node:net';
 import { IncomingMessage } from 'node:http';
+import { Agent as HttpsAgent } from 'node:https';
 import type { Span } from '@opentelemetry/api';
 import type { RequestOptions } from 'node:http';
 
@@ -312,7 +313,7 @@ describe('telemetry SDK lifecycle', () => {
     expect(JSON.stringify(attributes)).not.toContain('LC_ACTION_QUERY_SECRET_67890');
   });
 
-  it('uses HTTPS for outgoing URL attributes when HTTPS defaults imply it', () => {
+  it('uses the agent protocol for outgoing URL attributes when request protocol is absent', () => {
     initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
     const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
     const startOutgoingSpanHook = instrumentationOptions?.startOutgoingSpanHook;
@@ -322,15 +323,40 @@ describe('telemetry SDK lifecycle', () => {
     }
 
     const attributes = startOutgoingSpanHook({
-      defaultPort: 443,
+      agent: new HttpsAgent(),
       hostname: 'api.example.com',
       path: '/custom-action?api_key=LC_ACTION_QUERY_SECRET_67890',
-    } as RequestOptions & { defaultPort: number });
+    });
 
     expect(attributes).toEqual({
       'http.target': '/custom-action?api_key=[REDACTED]',
       'http.url': 'https://api.example.com/custom-action?api_key=[REDACTED]',
       'url.full': 'https://api.example.com/custom-action?api_key=[REDACTED]',
+      'url.path': '/custom-action',
+      'url.query': 'api_key=[REDACTED]',
+    });
+    expect(JSON.stringify(attributes)).not.toContain('LC_ACTION_QUERY_SECRET_67890');
+  });
+
+  it('does not infer HTTPS from port 443 without protocol context', () => {
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
+    const startOutgoingSpanHook = instrumentationOptions?.startOutgoingSpanHook;
+
+    if (!startOutgoingSpanHook) {
+      throw new Error('HTTP instrumentation startOutgoingSpanHook was not configured');
+    }
+
+    const attributes = startOutgoingSpanHook({
+      hostname: 'api.example.com',
+      port: 443,
+      path: '/custom-action?api_key=LC_ACTION_QUERY_SECRET_67890',
+    });
+
+    expect(attributes).toEqual({
+      'http.target': '/custom-action?api_key=[REDACTED]',
+      'http.url': 'http://api.example.com:443/custom-action?api_key=[REDACTED]',
+      'url.full': 'http://api.example.com:443/custom-action?api_key=[REDACTED]',
       'url.path': '/custom-action',
       'url.query': 'api_key=[REDACTED]',
     });
