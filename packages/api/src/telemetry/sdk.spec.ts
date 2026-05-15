@@ -312,6 +312,31 @@ describe('telemetry SDK lifecycle', () => {
     expect(JSON.stringify(attributes)).not.toContain('LC_ACTION_QUERY_SECRET_67890');
   });
 
+  it('uses HTTPS for outgoing URL attributes when HTTPS defaults imply it', () => {
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
+    const startOutgoingSpanHook = instrumentationOptions?.startOutgoingSpanHook;
+
+    if (!startOutgoingSpanHook) {
+      throw new Error('HTTP instrumentation startOutgoingSpanHook was not configured');
+    }
+
+    const attributes = startOutgoingSpanHook({
+      defaultPort: 443,
+      hostname: 'api.example.com',
+      path: '/custom-action?api_key=LC_ACTION_QUERY_SECRET_67890',
+    } as RequestOptions & { defaultPort: number });
+
+    expect(attributes).toEqual({
+      'http.target': '/custom-action?api_key=[REDACTED]',
+      'http.url': 'https://api.example.com/custom-action?api_key=[REDACTED]',
+      'url.full': 'https://api.example.com/custom-action?api_key=[REDACTED]',
+      'url.path': '/custom-action',
+      'url.query': 'api_key=[REDACTED]',
+    });
+    expect(JSON.stringify(attributes)).not.toContain('LC_ACTION_QUERY_SECRET_67890');
+  });
+
   it('redacts outgoing Undici URL query attributes before fetch spans are exported', () => {
     initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
     const instrumentationOptions = mockUndiciInstrumentation.mock.calls[0]?.[0];

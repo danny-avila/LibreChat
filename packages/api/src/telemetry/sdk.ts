@@ -35,6 +35,14 @@ interface RequestUrlParts {
   pathname?: string;
 }
 
+interface RequestDefaultPort {
+  defaultPort?: string | number;
+}
+
+interface AgentProtocol {
+  protocol?: string;
+}
+
 interface UndiciRequestInfo {
   path?: string;
   origin?: string;
@@ -188,13 +196,32 @@ function getSanitizedOutgoingUrlAttributes(rawUrl: string, origin?: string): Att
   }
 }
 
-function getOutgoingHttpProtocol(request: RequestOptions): string {
-  const protocol = getStringValue(request.protocol);
-  if (!protocol) {
-    return 'http:';
+function normalizeProtocol(protocol: string): string {
+  return protocol.endsWith(':') ? protocol : `${protocol}:`;
+}
+
+function getRequestAgentProtocol(request: RequestOptions): string | undefined {
+  const { agent } = request;
+  if (!agent || typeof agent === 'boolean') {
+    return undefined;
   }
 
-  return protocol.endsWith(':') ? protocol : `${protocol}:`;
+  return getStringValue((agent as AgentProtocol).protocol);
+}
+
+function getRequestDefaultPort(request: RequestOptions): string | undefined {
+  return getStringValue((request as RequestOptions & RequestDefaultPort).defaultPort);
+}
+
+function getOutgoingHttpProtocol(request: RequestOptions): string {
+  const protocol = getStringValue(request.protocol) ?? getRequestAgentProtocol(request);
+  if (!protocol) {
+    const port = getStringValue(request.port);
+    const defaultPort = getRequestDefaultPort(request);
+    return port === '443' || defaultPort === '443' ? 'https:' : 'http:';
+  }
+
+  return normalizeProtocol(protocol);
 }
 
 function getHostWithPort(host: string, port: string | undefined): string {
