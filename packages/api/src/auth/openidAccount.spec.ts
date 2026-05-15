@@ -1,0 +1,493 @@
+import { Types } from 'mongoose';
+import { SystemRoles } from 'librechat-data-provider';
+import type { IUser, AppConfig, UserMethods } from '@librechat/data-schemas';
+
+import {
+  normalizeOpenIdProfile,
+  resolveOpenIdAccount,
+  type OpenIdAccountInput,
+  type OpenIdAccountMethods,
+  type OpenIdAccountOptions,
+} from './openidAccount';
+
+const baseOptions: OpenIdAccountOptions = {
+  allowUserCreation: true,
+  syncProfileOnCreate: true,
+  syncProfileForExisting: false,
+};
+
+const appConfig = {
+  registration: {
+    allowedDomains: ['example.com'],
+  },
+} as AppConfig;
+
+function user(overrides: Partial<IUser> = {}): IUser {
+  const _id = overrides._id ?? new Types.ObjectId();
+  return {
+    _id,
+    id: _id.toString(),
+    email: 'user@example.com',
+    emailVerified: true,
+    provider: 'openid',
+    openidId: 'sub-123',
+    openidIssuer: 'https://issuer.example.com',
+    role: SystemRoles.USER,
+    ...overrides,
+  } as IUser;
+}
+
+function duplicateKeyError(): Error & { code: number } {
+  const error = new Error('duplicate key') as Error & { code: number };
+  error.code = 11000;
+  return error;
+}
+
+function methods(overrides: Partial<OpenIdAccountMethods> = {}): OpenIdAccountMethods {
+  return {
+    findUser: jest.fn(async () => null) as jest.MockedFunction<UserMethods['findUser']>,
+    createUser: jest.fn(async () => user()) as jest.MockedFunction<UserMethods['createUser']>,
+    updateUser: jest.fn(async (_userId, update) =>
+      user({ ...(update as Partial<IUser>) }),
+    ) as jest.MockedFunction<UserMethods['updateUser']>,
+    ...overrides,
+  };
+}
+
+function input(overrides: Partial<OpenIdAccountInput> = {}): OpenIdAccountInput {
+  return {
+    claims: {
+      sub: 'sub-123',
+      email: 'claims@example.com',
+      preferred_username: 'claims-user',
+      email_verified: false,
+    },
+    profile: {
+      email: 'user@example.com',
+      preferred_username: 'profile-user',
+      given_name: 'Profile',
+      family_name: 'User',
+      email_verified: true,
+      oid: 'oid-123',
+    },
+    issuer: 'https://issuer.example.com/',
+    appConfig,
+    options: baseOptions,
+    methods: methods(),
+    ...overrides,
+  };
+}
+
+describe('normalizeOpenIdProfile', () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('merges profile over claims and normalizes browser-compatible fields', () => {
+    const normalized = normalizeOpenIdProfile({
+      claims: {
+        sub: 'sub-123',
+        email: 'claims@example.com',
+        preferred_username: 'claims-user',
+        email_verified: false,
+      },
+      profile: {
+        email: 'USER@EXAMPLE.COM',
+        preferred_username: 'profile-user',
+        name: 'Profile User',
+        given_name: 'Profile',
+        family_name: 'User',
+        oid: 'oid-123',
+        email_verified: true,
+      },
+      issuer: 'https://issuer.example.com/.well-known/openid-configuration',
+    });
+
+    expect(normalized).toEqual({
+      subject: 'sub-123',
+      issuer: 'https://issuer.example.com',
+      idOnTheSource: 'oid-123',
+      email: 'user@example.com',
+      username: 'profile-user',
+      name: 'Profile User',
+      emailVerified: true,
+    });
+  });
+
+  it('honors browser OpenID username and name claim overrides', () => {
+    process.env.OPENID_USERNAME_CLAIM = 'custom_username';
+    process.env.OPENID_NAME_CLAIM = 'custom_name';
+
+    const normalized = normalizeOpenIdProfile({
+      claims: {
+        sub: 'sub-123',
+        email: 'user@example.com',
+        preferred_username: 'preferred-user',
+        name: 'Default Name',
+        custom_username: 'custom-user',
+        custom_name: 'Custom Name',
+      },
+    });
+
+    expect(normalized).toMatchObject({
+      username: 'custom-user',
+      name: 'Custom Name',
+    });
+  });
+
+  it('does not use the name claim unless OPENID_NAME_CLAIM selects it', () => {
+    delete process.env.OPENID_NAME_CLAIM;
+
+    const normalized = normalizeOpenIdProfile({
+      claims: {
+        sub: 'sub-123',
+        preferred_username: 'preferred-user',
+        name: 'Default Name',
+      },
+    });
+
+    expect(normalized.name).toBeUndefined();
+  });
+});
+
+describe('resolveOpenIdAccount', () => {
+  it('rejects missing subject before user lookup', async () => {
+    const deps = methods();
+    const result = await resolveOpenIdAccount(
+      input({ claims: { email: 'user@example.com' }, methods: deps }),
+    );
+
+    expect(result).toEqual({ status: 'unauthorized', reason: 'missing_sub' });
+    expect(deps.findUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing or invalid email before user lookup', async () => {
+    const deps = methods();
+    const result = await resolveOpenIdAccount(
+      input({
+        claims: { sub: 'sub-123', email: 'not-an-email' },
+        profile: undefined,
+        methods: deps,
+      }),
+    );
+
+    expect(result).toEqual({ status: 'unauthorized', reason: 'missing_email' });
+    expect(deps.findUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects disallowed email domains', async () => {
+    const deps = methods();
+    const result = await resolveOpenIdAccount(
+      input({
+        claims: { sub: 'sub-123', email: 'user@blocked.com' },
+        profile: undefined,
+        methods: deps,
+      }),
+    );
+
+    expect(result).toEqual({ status: 'unauthorized', reason: 'email_domain_not_allowed' });
+    expect(deps.findUser).not.toHaveBeenCalled();
+  });
+
+  it('creates a missing user with required identity fields and optional profile fields', async () => {
+    const created = user({
+      username: 'profile-user',
+      name: 'Profile User',
+      idOnTheSource: 'oid-123',
+    });
+    const deps = methods({
+      createUser: jest.fn(async () => created) as jest.MockedFunction<UserMethods['createUser']>,
+    });
+
+    const result = await resolveOpenIdAccount(input({ tenantId: 'tenant-a', methods: deps }));
+
+    expect(result).toMatchObject({ status: 'resolved', created: true, user: { id: created.id } });
+    expect(deps.createUser).toHaveBeenCalledWith(
+      {
+        provider: 'openid',
+        openidId: 'sub-123',
+        openidIssuer: 'https://issuer.example.com',
+        idOnTheSource: 'oid-123',
+        email: 'user@example.com',
+        role: SystemRoles.USER,
+        tenantId: 'tenant-a',
+        username: 'profile-user',
+        name: 'Profile User',
+        emailVerified: true,
+      },
+      expect.any(Object),
+      true,
+      true,
+    );
+  });
+
+  it('uses base-config provisioning without tenant context', async () => {
+    const deps = methods();
+
+    const result = await resolveOpenIdAccount(input({ methods: deps }));
+
+    expect(result).toMatchObject({ status: 'resolved', created: true });
+    expect(deps.createUser).toHaveBeenCalledWith(
+      expect.not.objectContaining({ tenantId: expect.any(String) }),
+      expect.any(Object),
+      true,
+      true,
+    );
+  });
+
+  it('does not write optional create profile fields when create profile sync is disabled', async () => {
+    const deps = methods();
+
+    await resolveOpenIdAccount(
+      input({
+        options: { ...baseOptions, syncProfileOnCreate: false },
+        methods: deps,
+      }),
+    );
+
+    expect(deps.createUser).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        username: expect.any(String),
+        name: expect.any(String),
+        emailVerified: expect.any(Boolean),
+      }),
+      expect.any(Object),
+      true,
+      true,
+    );
+  });
+
+  it('returns existing-users-only when creation is disabled for missing users', async () => {
+    const result = await resolveOpenIdAccount(
+      input({
+        options: { ...baseOptions, allowUserCreation: false },
+      }),
+    );
+
+    expect(result).toEqual({ status: 'unauthorized', reason: 'existing_users_only' });
+  });
+
+  it('persists security migrations for existing users even when profile sync is disabled', async () => {
+    const existing = user({
+      provider: '',
+      openidId: undefined,
+      openidIssuer: undefined,
+      role: undefined,
+      username: 'old-user',
+      name: 'Old User',
+    });
+    const updated = user({
+      ...existing,
+      provider: 'openid',
+      openidId: 'sub-123',
+      openidIssuer: 'https://issuer.example.com',
+      idOnTheSource: 'oid-123',
+      role: SystemRoles.USER,
+    });
+    const deps = methods({
+      findUser: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existing) as jest.MockedFunction<UserMethods['findUser']>,
+      updateUser: jest.fn(async () => updated) as jest.MockedFunction<UserMethods['updateUser']>,
+    });
+
+    const result = await resolveOpenIdAccount(input({ methods: deps }));
+
+    expect(result).toMatchObject({ status: 'resolved', created: false });
+    expect(deps.updateUser).toHaveBeenCalledWith(existing._id.toString(), {
+      provider: 'openid',
+      openidId: 'sub-123',
+      openidIssuer: 'https://issuer.example.com',
+      idOnTheSource: 'oid-123',
+      role: SystemRoles.USER,
+    });
+  });
+
+  it('syncs existing profile fields only when enabled', async () => {
+    const existing = user({ username: 'old-user', name: 'Old User' });
+    const deps = methods({
+      findUser: jest.fn(async () => existing) as jest.MockedFunction<UserMethods['findUser']>,
+      updateUser: jest.fn(async (_userId, update) =>
+        user({ ...existing, ...(update as Partial<IUser>) }),
+      ) as jest.MockedFunction<UserMethods['updateUser']>,
+    });
+
+    await resolveOpenIdAccount(
+      input({
+        options: { ...baseOptions, syncProfileForExisting: true },
+        methods: deps,
+      }),
+    );
+
+    expect(deps.updateUser).toHaveBeenCalledWith(
+      existing._id.toString(),
+      expect.objectContaining({
+        username: 'profile-user',
+        name: 'Profile User',
+        emailVerified: true,
+      }),
+    );
+  });
+
+  it('rejects existing tenant users from no-tenant provisioning mode before update', async () => {
+    const existing = user({ tenantId: 'tenant-a' });
+    const deps = methods({
+      findUser: jest.fn(async () => existing) as jest.MockedFunction<UserMethods['findUser']>,
+    });
+
+    const result = await resolveOpenIdAccount(input({ methods: deps }));
+
+    expect(result).toEqual({ status: 'unauthorized', reason: 'duplicate_conflict' });
+    expect(deps.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('resolves no-tenant existing-users-only tenant users without mutation', async () => {
+    const existing = user({ tenantId: 'tenant-a' });
+    const deps = methods({
+      findUser: jest.fn(async () => existing) as jest.MockedFunction<UserMethods['findUser']>,
+    });
+
+    const result = await resolveOpenIdAccount(
+      input({
+        options: {
+          ...baseOptions,
+          allowUserCreation: false,
+          syncProfileForExisting: true,
+        },
+        methods: deps,
+      }),
+    );
+
+    expect(result).toEqual({ status: 'resolved', user: existing, created: false });
+    expect(deps.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects users whose tenant does not match the request tenant before update', async () => {
+    const existing = user({ tenantId: 'tenant-b' });
+    const deps = methods({
+      findUser: jest.fn(async () => existing) as jest.MockedFunction<UserMethods['findUser']>,
+    });
+
+    const result = await resolveOpenIdAccount(input({ tenantId: 'tenant-a', methods: deps }));
+
+    expect(result).toEqual({ status: 'unauthorized', reason: 'duplicate_conflict' });
+    expect(deps.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('accepts a duplicate create race only when retry lookup resolves a safe same-scope user', async () => {
+    const existing = user();
+    const deps = methods({
+      findUser: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existing) as jest.MockedFunction<UserMethods['findUser']>,
+      createUser: jest.fn(async () => {
+        throw duplicateKeyError();
+      }) as jest.MockedFunction<UserMethods['createUser']>,
+      updateUser: jest.fn(async () => existing) as jest.MockedFunction<UserMethods['updateUser']>,
+    });
+
+    const result = await resolveOpenIdAccount(input({ methods: deps }));
+
+    expect(result).toMatchObject({ status: 'resolved', created: false });
+    expect(deps.updateUser).toHaveBeenCalled();
+  });
+
+  it('rejects duplicate retry lookup that resolves a tenant user from base context', async () => {
+    const deps = methods({
+      findUser: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(user({ tenantId: 'tenant-a' })) as jest.MockedFunction<
+        UserMethods['findUser']
+      >,
+      createUser: jest.fn(async () => {
+        throw duplicateKeyError();
+      }) as jest.MockedFunction<UserMethods['createUser']>,
+    });
+
+    const result = await resolveOpenIdAccount(input({ methods: deps }));
+
+    expect(result).toEqual({ status: 'unauthorized', reason: 'duplicate_conflict' });
+    expect(deps.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate retry lookup that resolves a different request tenant', async () => {
+    const deps = methods({
+      findUser: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(user({ tenantId: 'tenant-b' })) as jest.MockedFunction<
+        UserMethods['findUser']
+      >,
+      createUser: jest.fn(async () => {
+        throw duplicateKeyError();
+      }) as jest.MockedFunction<UserMethods['createUser']>,
+    });
+
+    const result = await resolveOpenIdAccount(input({ tenantId: 'tenant-a', methods: deps }));
+
+    expect(result).toEqual({ status: 'unauthorized', reason: 'duplicate_conflict' });
+    expect(deps.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('rereads created users under the explicit tenant scope when create returns a partial user', async () => {
+    const created = user({ tenantId: 'tenant-a' });
+    const deps = methods({
+      findUser: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(created) as jest.MockedFunction<UserMethods['findUser']>,
+      createUser: jest.fn(async () => ({ email: 'user@example.com' })) as jest.MockedFunction<
+        UserMethods['createUser']
+      >,
+    });
+
+    const result = await resolveOpenIdAccount(input({ tenantId: 'tenant-a', methods: deps }));
+
+    expect(result).toMatchObject({
+      status: 'resolved',
+      user: expect.objectContaining({ id: created.id, tenantId: 'tenant-a' }),
+      created: true,
+    });
+    expect(deps.findUser).toHaveBeenLastCalledWith({
+      openidId: 'sub-123',
+      openidIssuer: 'https://issuer.example.com',
+      tenantId: 'tenant-a',
+    });
+  });
+
+  it('rereads created users under the explicit base scope when no tenant is present', async () => {
+    const created = user();
+    const deps = methods({
+      findUser: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(created) as jest.MockedFunction<UserMethods['findUser']>,
+      createUser: jest.fn(async () => ({ email: 'user@example.com' })) as jest.MockedFunction<
+        UserMethods['createUser']
+      >,
+    });
+
+    const result = await resolveOpenIdAccount(input({ methods: deps }));
+
+    expect(result).toMatchObject({
+      status: 'resolved',
+      user: expect.objectContaining({ id: created.id }),
+      created: true,
+    });
+    expect(deps.findUser).toHaveBeenLastCalledWith({
+      openidId: 'sub-123',
+      openidIssuer: 'https://issuer.example.com',
+      tenantId: { $exists: false },
+    });
+  });
+});

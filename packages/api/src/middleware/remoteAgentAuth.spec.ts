@@ -1,4 +1,4 @@
-import type { AppConfig, IUser, UserMethods } from '@librechat/data-schemas';
+import type { AppConfig, IUser, UserGroupMethods, UserMethods } from '@librechat/data-schemas';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { Request, Response } from 'express';
@@ -44,12 +44,46 @@ jest.mock('../auth/openid', () => {
   return { ...actual, findOpenIDUser: jest.fn(actual.findOpenIDUser) };
 });
 
+jest.mock('../auth/entraGroupSync', () => {
+  const actual = jest.requireActual(
+    '../auth/entraGroupSync',
+  ) as typeof import('../auth/entraGroupSync');
+  return {
+    ...actual,
+    syncUserEntraGroupMemberships: jest.fn(async () => ({ attempted: false, synced: false })),
+  };
+});
+
+jest.mock('../auth/openidUserInfo', () => {
+  const actual = jest.requireActual(
+    '../auth/openidUserInfo',
+  ) as typeof import('../auth/openidUserInfo');
+  return {
+    ...actual,
+    enrichOpenIdProfile: jest.fn(async ({ claims }) => ({ status: 'skipped', profile: claims })),
+  };
+});
+
+jest.mock('../auth/federatedAuthCache', () => {
+  const actual = jest.requireActual(
+    '../auth/federatedAuthCache',
+  ) as typeof import('../auth/federatedAuthCache');
+  return {
+    ...actual,
+    readFederatedAuthCache: jest.fn(async () => null),
+    writeFederatedAuthCache: jest.fn(async () => undefined),
+  };
+});
+
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
-import { logger, tenantStorage } from '@librechat/data-schemas';
+import { getTenantId, logger, tenantStorage } from '@librechat/data-schemas';
 import { clearRemoteAgentAuthCache, createRemoteAgentAuth } from './remoteAgentAuth';
 import { findOpenIDUser, getOpenIdEmail } from '../auth/openid';
+import { syncUserEntraGroupMemberships } from '../auth/entraGroupSync';
+import { enrichOpenIdProfile } from '../auth/openidUserInfo';
+import { readFederatedAuthCache, writeFederatedAuthCache } from '../auth/federatedAuthCache';
 import { math } from '~/utils';
 
 const mockFetch = undiciFetch as jest.Mock;
@@ -58,19 +92,51 @@ const mockMath = math as jest.Mock;
 const realFindOpenIDUser =
   jest.requireActual<typeof import('../auth/openid')>('../auth/openid').findOpenIDUser;
 const mockFindOpenIDUser = findOpenIDUser as jest.MockedFunction<typeof findOpenIDUser>;
+const mockSyncUserEntraGroupMemberships = syncUserEntraGroupMemberships as jest.MockedFunction<
+  typeof syncUserEntraGroupMemberships
+>;
+const mockEnrichOpenIdProfile = enrichOpenIdProfile as jest.MockedFunction<
+  typeof enrichOpenIdProfile
+>;
+const mockReadFederatedAuthCache = readFederatedAuthCache as jest.MockedFunction<
+  typeof readFederatedAuthCache
+>;
+const mockWriteFederatedAuthCache = writeFederatedAuthCache as jest.MockedFunction<
+  typeof writeFederatedAuthCache
+>;
 const FAKE_TOKEN = 'header.payload.signature';
 const BASE_ISSUER = 'https://auth.example.com/realms/test';
 const BASE_JWKS_URI = `${BASE_ISSUER}/protocol/openid-connect/certs`;
+const FORBIDDEN_PERSISTED_TOKEN_KEYS = [
+  'federatedTokens',
+  'openidTokens',
+  'access_token',
+  'refresh_token',
+  'id_token',
+] as const;
 const ENV_KEYS = [
   'OPENID_EMAIL_CLAIM',
   'OPENID_JWKS_URL',
   'OPENID_JWKS_URL_CACHE_ENABLED',
   'OPENID_JWKS_URL_CACHE_TIME',
+  'OPENID_ISSUER',
+  'OPENID_CLIENT_ID',
+  'OPENID_CLIENT_SECRET',
   'PROXY',
+  'TENANT_ISOLATION_STRICT',
 ] as const;
 
 type AgentAuthConfig = NonNullable<NonNullable<TAgentsEndpoint['remoteApi']>['auth']>;
 type OidcConfig = NonNullable<AgentAuthConfig['oidc']>;
+type OidcConfigOverrides = Partial<
+  Omit<OidcConfig, 'provisioning' | 'userInfo' | 'profileSync' | 'groupSync' | 'federatedAuthCache'>
+> & {
+  provisioning?: Partial<NonNullable<OidcConfig['provisioning']>>;
+  userInfo?: Partial<NonNullable<OidcConfig['userInfo']>>;
+  profileSync?: Partial<NonNullable<OidcConfig['profileSync']>>;
+  groupSync?: Partial<NonNullable<OidcConfig['groupSync']>>;
+  federatedAuthCache?: Partial<NonNullable<OidcConfig['federatedAuthCache']>>;
+};
 type ApiKeyConfig = NonNullable<AgentAuthConfig['apiKey']>;
 type JwtVerifyCallback = (err: Error | null, payload?: JwtPayload) => void;
 type FindUserValue = IUser['_id'] | string | null | { $exists: boolean };
@@ -84,7 +150,26 @@ type FindUserCondition = {
 };
 type FindUserQuery = FindUserCondition & { $or?: FindUserCondition[] };
 
-const mockUser = { _id: 'uid123', id: 'uid123', email: 'agent@test.com' };
+const mockUser = { _id: 'uid123', id: 'uid123', email: 'agent@example.com' };
+const defaultProvisioning = {
+  enabled: false,
+};
+const defaultUserInfo = {
+  fetch: false,
+  require: false,
+};
+const defaultProfileSync = {
+  onCreate: true,
+  forExisting: false,
+};
+const defaultGroupSync = {
+  onCreate: false,
+  forExisting: false,
+};
+const defaultFederatedAuthCache = {
+  enabled: true,
+  ttlSeconds: 300,
+};
 const originalEnv = ENV_KEYS.reduce<Record<(typeof ENV_KEYS)[number], string | undefined>>(
   (env, key) => ({ ...env, [key]: process.env[key] }),
   {
@@ -92,7 +177,11 @@ const originalEnv = ENV_KEYS.reduce<Record<(typeof ENV_KEYS)[number], string | u
     OPENID_JWKS_URL: undefined,
     OPENID_JWKS_URL_CACHE_ENABLED: undefined,
     OPENID_JWKS_URL_CACHE_TIME: undefined,
+    OPENID_ISSUER: undefined,
+    OPENID_CLIENT_ID: undefined,
+    OPENID_CLIENT_SECRET: undefined,
     PROXY: undefined,
+    TENANT_ISOLATION_STRICT: undefined,
   },
 );
 
@@ -124,9 +213,17 @@ function makeReq(headers: Record<string, string> = {}): Partial<Request> {
 }
 
 function makeConfig(
-  oidcOverrides?: Partial<OidcConfig>,
+  oidcOverrides?: OidcConfigOverrides,
   apiKeyOverrides?: Partial<ApiKeyConfig>,
 ): AppConfig {
+  const {
+    provisioning,
+    userInfo,
+    profileSync,
+    groupSync,
+    federatedAuthCache,
+    ...baseOidcOverrides
+  } = oidcOverrides ?? {};
   return {
     endpoints: {
       agents: {
@@ -137,7 +234,15 @@ function makeConfig(
               issuer: BASE_ISSUER,
               audience: 'remote-agent-api',
               jwksUri: BASE_JWKS_URI,
-              ...oidcOverrides,
+              provisioning: {
+                ...defaultProvisioning,
+                ...provisioning,
+              },
+              userInfo: { ...defaultUserInfo, ...userInfo },
+              profileSync: { ...defaultProfileSync, ...profileSync },
+              groupSync: { ...defaultGroupSync, ...groupSync },
+              federatedAuthCache: { ...defaultFederatedAuthCache, ...federatedAuthCache },
+              ...baseOidcOverrides,
             },
             apiKey: { enabled: true, ...apiKeyOverrides },
           },
@@ -203,7 +308,17 @@ function makeFindUser(...users: IUser[]): jest.MockedFunction<UserMethods['findU
 function makeDeps(appConfig: AppConfig = makeConfig()) {
   return {
     findUser: makeFindUser(makeUser()),
-    updateUser: jest.fn(),
+    createUser: jest.fn(async () => makeUser()),
+    updateUser: jest.fn(async (_userId, update) => makeUser(update as Partial<IUser>)),
+    bulkUpdateGroups: jest.fn(async () => ({ modifiedCount: 0 })) as jest.MockedFunction<
+      UserGroupMethods['bulkUpdateGroups']
+    >,
+    findGroupsByExternalIds: jest.fn(async () => []) as jest.MockedFunction<
+      UserGroupMethods['findGroupsByExternalIds']
+    >,
+    upsertGroupByExternalId: jest.fn(async () => null) as jest.MockedFunction<
+      UserGroupMethods['upsertGroupByExternalId']
+    >,
     getAppConfig: jest.fn().mockResolvedValue(appConfig),
     apiKeyMiddleware: jest.fn((_req: unknown, _res: unknown, next: () => void) => next()),
   };
@@ -220,6 +335,12 @@ function setupOidcMocks(payload: JwtPayload, kid: string | null = 'test-kid') {
   );
 }
 
+function expectNoPersistedTokenFields(payload: Record<string, unknown>) {
+  FORBIDDEN_PERSISTED_TOKEN_KEYS.forEach((key) => {
+    expect(payload).not.toHaveProperty(key);
+  });
+}
+
 describe('createRemoteAgentAuth', () => {
   let mockNext: jest.Mock;
 
@@ -230,6 +351,14 @@ describe('createRemoteAgentAuth', () => {
     mockFetch.mockReset();
     mockMath.mockReturnValue(60000);
     mockFindOpenIDUser.mockImplementation(realFindOpenIDUser);
+    mockSyncUserEntraGroupMemberships.mockResolvedValue({ attempted: false, synced: false });
+    mockEnrichOpenIdProfile.mockImplementation(async ({ claims }) => ({
+      status: 'skipped',
+      profile: claims,
+      reason: 'disabled',
+    }));
+    mockReadFederatedAuthCache.mockResolvedValue(null);
+    mockWriteFederatedAuthCache.mockResolvedValue(undefined);
     mockNext = jest.fn();
   });
 
@@ -400,14 +529,14 @@ describe('createRemoteAgentAuth', () => {
 
   describe('when OIDC verification succeeds', () => {
     it('sets req.user and calls next()', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', exp: 9999999999 });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com', exp: 9999999999 });
       const deps = makeDeps();
       const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
       const { res } = makeRes();
 
       await createRemoteAgentAuth(deps)(req as Request, res, mockNext);
 
-      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@test.com' });
+      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@example.com' });
       expect((jwt.verify as jest.Mock).mock.calls[0][2]).toEqual(
         expect.objectContaining({ audience: 'remote-agent-api' }),
       );
@@ -416,7 +545,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('re-evaluates OIDC auth config after resolving the user tenant', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', scope: 'remote_agent' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com', scope: 'remote_agent' });
       const deps = makeDeps();
       deps.findUser = makeFindUser(makeUser({ tenantId: 'tenant-strict' }));
       deps.getAppConfig.mockImplementation(async (options) =>
@@ -439,9 +568,110 @@ describe('createRemoteAgentAuth', () => {
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
 
-    it('rejects OIDC auth when the resolved user tenant requires a missing scope', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', scope: 'openid profile' });
+    it('persists deferred OpenID migration after resolved tenant policy succeeds', async () => {
+      setupOidcMocks({ sub: 'sub-new', email: 'legacy@example.com', scope: 'remote_agent' });
+      const existing = makeUser({
+        email: 'legacy@example.com',
+        tenantId: 'tenant-strict',
+        provider: undefined,
+        openidId: undefined,
+        openidIssuer: undefined,
+      });
       const deps = makeDeps();
+      deps.findUser = makeFindUser(existing);
+      deps.getAppConfig.mockImplementation(async (options) =>
+        options?.tenantId === 'tenant-strict'
+          ? makeConfig({ audience: 'tenant-audience', scope: 'remote_agent' }, { enabled: false })
+          : makeConfig({ scope: undefined }, { enabled: true }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      deps.updateUser.mockImplementation(async (_userId, update) =>
+        makeUser({ ...existing, ...(update as Partial<IUser>) }),
+      );
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, { tenantId: 'tenant-strict' });
+      expect(deps.updateUser).toHaveBeenCalledWith(
+        existing._id.toString(),
+        expect.objectContaining({
+          provider: 'openid',
+          openidId: 'sub-new',
+          openidIssuer: BASE_ISSUER,
+        }),
+      );
+      expect(req.user).toMatchObject({
+        email: 'legacy@example.com',
+        tenantId: 'tenant-strict',
+        openidId: 'sub-new',
+      });
+      expect(mockNext).toHaveBeenCalledWith();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+    });
+
+    it('preserves enriched profile data during deferred tenant account reconciliation', async () => {
+      setupOidcMocks({ sub: 'sub-new', email: 'legacy@example.com', scope: 'remote_agent' });
+      mockEnrichOpenIdProfile.mockResolvedValueOnce({
+        status: 'fetched',
+        profile: {
+          sub: 'sub-new',
+          email: 'legacy@example.com',
+          given_name: 'Enriched',
+          family_name: 'Profile Name',
+          preferred_username: 'enriched-user',
+        },
+      });
+      const existing = makeUser({
+        email: 'legacy@example.com',
+        tenantId: 'tenant-strict',
+        provider: undefined,
+        openidId: undefined,
+        openidIssuer: undefined,
+      });
+      const deps = makeDeps();
+      deps.findUser = makeFindUser(existing);
+      deps.getAppConfig.mockImplementation(async (options) =>
+        options?.tenantId === 'tenant-strict'
+          ? makeConfig(
+              {
+                audience: 'tenant-audience',
+                scope: 'remote_agent',
+                profileSync: { forExisting: true },
+              },
+              { enabled: false },
+            )
+          : makeConfig(
+              {
+                scope: undefined,
+                userInfo: { fetch: true },
+              },
+              { enabled: true },
+            ),
+      );
+      deps.updateUser.mockImplementation(async (_userId, update) =>
+        makeUser({ ...existing, ...(update as Partial<IUser>) }),
+      );
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(deps.updateUser).toHaveBeenCalledWith(
+        existing._id.toString(),
+        expect.objectContaining({
+          name: 'Enriched Profile Name',
+          username: 'enriched-user',
+        }),
+      );
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('rejects OIDC auth when the resolved user tenant requires a missing scope', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com', scope: 'openid profile' });
+      const deps = makeDeps(makeConfig({ groupSync: { forExisting: true } }));
       deps.findUser = makeFindUser(
         makeUser({
           tenantId: 'tenant-strict',
@@ -466,13 +696,14 @@ describe('createRemoteAgentAuth', () => {
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
       expect(req.user).toBeUndefined();
+      expect(mockSyncUserEntraGroupMemberships).not.toHaveBeenCalled();
       expect(mockNext).not.toHaveBeenCalled();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
       expect(deps.updateUser).not.toHaveBeenCalled();
     });
 
     it('rejects OIDC auth when the resolved user tenant disables OIDC', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
       const deps = makeDeps();
       deps.findUser = makeFindUser(
         makeUser({
@@ -504,7 +735,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('allows exact and normalized configured issuers when verifying JWTs', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
       const issuer = `${BASE_ISSUER}/`;
       const deps = makeDeps(makeConfig({ issuer }));
 
@@ -521,7 +752,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('accepts case-insensitive Bearer auth scheme', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
       const deps = makeDeps();
       const req = makeReq({ authorization: `bearer ${FAKE_TOKEN}` });
 
@@ -533,12 +764,12 @@ describe('createRemoteAgentAuth', () => {
         expect.any(Object),
         expect.any(Function),
       );
-      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@test.com' });
+      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@example.com' });
       expect(mockNext).toHaveBeenCalledWith();
     });
 
     it('trims trailing whitespace from Bearer tokens', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
       const deps = makeDeps();
       const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}   ` });
 
@@ -550,12 +781,12 @@ describe('createRemoteAgentAuth', () => {
         expect.any(Object),
         expect.any(Function),
       );
-      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@test.com' });
+      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@example.com' });
       expect(mockNext).toHaveBeenCalledWith();
     });
 
     it('allows RSA, RSA-PSS, and ECDSA signing algorithms', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
       const deps = makeDeps();
 
       await createRemoteAgentAuth(deps)(
@@ -582,7 +813,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('does not allow HMAC signing algorithms', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
       const deps = makeDeps();
 
       await createRemoteAgentAuth(deps)(
@@ -599,7 +830,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('tries signing keys until a token without kid verifies', async () => {
-      const payload = { sub: 'sub123', email: 'agent@test.com' };
+      const payload = { sub: 'sub123', email: 'agent@example.com' };
       setupOidcMocks(payload, null);
       mockGetSigningKeys.mockResolvedValue([
         { kid: 'first-kid', getPublicKey: () => 'first-public-key' },
@@ -624,13 +855,13 @@ describe('createRemoteAgentAuth', () => {
       expect(jwt.verify).toHaveBeenCalledTimes(2);
       expect((jwt.verify as jest.Mock).mock.calls[0][1]).toBe('first-public-key');
       expect((jwt.verify as jest.Mock).mock.calls[1][1]).toBe('second-public-key');
-      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@test.com' });
+      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@example.com' });
       expect(mockNext).toHaveBeenCalledWith();
     });
 
     it('attaches federatedTokens with access_token and expires_at', async () => {
       const exp = 1234567890;
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', exp });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com', exp });
       const deps = makeDeps();
       const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
 
@@ -643,7 +874,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('omits federatedTokens expires_at when exp is absent', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
       const deps = makeDeps();
       const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
 
@@ -654,29 +885,303 @@ describe('createRemoteAgentAuth', () => {
       });
     });
 
-    it('falls back to apiKeyMiddleware when user is not found and apiKey is enabled', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+    it('hydrates a same-scope federated auth cache hit after token verification', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'cached@example.com', exp: 1234567890 });
+      mockReadFederatedAuthCache.mockResolvedValueOnce({
+        version: 1,
+        provider: 'openid',
+        userId: 'cached-user-id',
+        subject: 'sub123',
+        issuer: BASE_ISSUER,
+        email: 'cached@example.com',
+        username: 'cached-user',
+        name: 'Cached User',
+        role: 'user',
+        idOnTheSource: 'oid-cached',
+        accountSyncedAt: 1710000000000,
+      });
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
 
-      const deps = makeDeps(makeConfig({}, { enabled: true }));
-      deps.findUser.mockResolvedValue(null);
-      const { res } = makeRes();
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(mockReadFederatedAuthCache).toHaveBeenCalledWith(
+        {
+          provider: 'openid',
+          tenantId: undefined,
+          issuer: BASE_ISSUER,
+          subject: 'sub123',
+        },
+        { enabled: true, ttlMs: 300000 },
+      );
+      expect(deps.findUser).not.toHaveBeenCalled();
+      expect(deps.updateUser).not.toHaveBeenCalled();
+      expect(mockEnrichOpenIdProfile).not.toHaveBeenCalled();
+      expect(mockSyncUserEntraGroupMemberships).not.toHaveBeenCalled();
+      expect(req.user).toMatchObject({
+        id: 'cached-user-id',
+        email: 'cached@example.com',
+        provider: 'openid',
+        openidId: 'sub123',
+        openidIssuer: BASE_ISSUER,
+        idOnTheSource: 'oid-cached',
+        federatedTokens: { access_token: FAKE_TOKEN, expires_at: 1234567890 },
+      });
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('ignores a stale federated auth cache miss and reconciles the account', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+      mockReadFederatedAuthCache.mockResolvedValueOnce(null);
+      const deps = makeDeps();
 
       await createRemoteAgentAuth(deps)(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
-        res,
+        makeRes().res,
         mockNext,
       );
 
-      expect(deps.apiKeyMiddleware).toHaveBeenCalled();
+      expect(mockEnrichOpenIdProfile).toHaveBeenCalled();
+      expect(deps.findUser).toHaveBeenCalled();
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('treats federated auth cache read failures as misses', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+      mockReadFederatedAuthCache.mockRejectedValueOnce(new Error('redis unavailable'));
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.findUser).toHaveBeenCalled();
+      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@example.com' });
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('no matching LibreChat user'),
+        '[remoteAgentAuth] Federated auth cache read failed; treating as miss:',
+        expect.any(Error),
+      );
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('writes federated auth cache after same-scope account reconciliation', async () => {
+      setupOidcMocks({ sub: 'sub123', oid: 'oid123', email: 'agent@example.com' });
+      const deps = makeDeps(
+        makeConfig({
+          federatedAuthCache: { enabled: true, ttlSeconds: 120 },
+        }),
+      );
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockWriteFederatedAuthCache).toHaveBeenCalledWith(
+        {
+          provider: 'openid',
+          tenantId: undefined,
+          issuer: BASE_ISSUER,
+          subject: 'sub123',
+        },
+        expect.objectContaining({
+          version: 1,
+          provider: 'openid',
+          userId: 'uid123',
+          subject: 'sub123',
+          issuer: BASE_ISSUER,
+          email: 'agent@example.com',
+          idOnTheSource: 'oid123',
+          accountSyncedAt: expect.any(Number),
+        }),
+        { enabled: true, ttlMs: 120000 },
       );
     });
 
-    it('returns 401 when user is not found and apiKey is disabled', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+    it('continues authentication when federated auth cache write fails', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+      mockWriteFederatedAuthCache.mockRejectedValueOnce(new Error('redis unavailable'));
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
 
-      const deps = makeDeps(makeConfig({}, { enabled: false }));
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(mockWriteFederatedAuthCache).toHaveBeenCalled();
+      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@example.com' });
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[remoteAgentAuth] Federated auth cache write failed:',
+        expect.any(Error),
+      );
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('writes federated auth cache for request users that only have id', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+      const deps = makeDeps(
+        makeConfig({
+          provisioning: { enabled: true },
+        }),
+      );
+      deps.findUser.mockResolvedValue(null);
+      deps.createUser.mockResolvedValue(
+        makeUser({ _id: undefined as unknown as IUser['_id'], id: 'id-only-user' }),
+      );
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockWriteFederatedAuthCache).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ userId: 'id-only-user' }),
+        expect.any(Object),
+      );
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('does not write federated auth cache for no-tenant requests resolving tenant users', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com', scope: 'remote_agent' });
+      const deps = makeDeps();
+      deps.findUser = makeFindUser(makeUser({ tenantId: 'tenant-strict' }));
+      deps.getAppConfig.mockImplementation(async (options) =>
+        options?.tenantId === 'tenant-strict'
+          ? makeConfig({ audience: 'tenant-audience', scope: 'remote_agent' }, { enabled: false })
+          : makeConfig({ scope: undefined }, { enabled: true }),
+      );
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockNext).toHaveBeenCalledWith();
+      expect(mockWriteFederatedAuthCache).not.toHaveBeenCalled();
+    });
+
+    it('syncs remote Entra groups for an existing user when existing lifecycle sync is enabled', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+      const deps = makeDeps(
+        makeConfig({
+          provisioning: { enabled: false },
+          groupSync: { onCreate: false, forExisting: true },
+        }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(mockSyncUserEntraGroupMemberships).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lifecycle: 'existing',
+          accessToken: FAKE_TOKEN,
+          user: expect.objectContaining({ id: 'uid123', email: 'agent@example.com' }),
+          graphConfig: {
+            issuer: BASE_ISSUER,
+            clientId: undefined,
+            clientSecret: undefined,
+          },
+          options: expect.objectContaining({
+            syncGroupsOnCreate: false,
+            syncGroupsForExisting: true,
+          }),
+        }),
+      );
+      expect(req.user).toBeDefined();
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('continues authentication when remote Entra group sync reports failure', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+      mockSyncUserEntraGroupMemberships.mockResolvedValueOnce({
+        attempted: true,
+        synced: false,
+        reason: 'failed',
+      });
+      const deps = makeDeps(
+        makeConfig({
+          groupSync: { forExisting: true },
+        }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(mockSyncUserEntraGroupMemberships).toHaveBeenCalled();
+      expect(mockWriteFederatedAuthCache).not.toHaveBeenCalled();
+      expect(req.user).toMatchObject({ id: 'uid123' });
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('writes groupsSyncedAt when enabled group sync succeeds', async () => {
+      const syncedAt = 1710001234567;
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+      mockSyncUserEntraGroupMemberships.mockResolvedValueOnce({
+        attempted: true,
+        synced: true,
+        syncedAt,
+      });
+      const deps = makeDeps(
+        makeConfig({
+          groupSync: { forExisting: true },
+        }),
+      );
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockWriteFederatedAuthCache).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ groupsSyncedAt: syncedAt }),
+        expect.any(Object),
+      );
+    });
+
+    it('runs resolved tenant existing-user group sync inside the user tenant context', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com', scope: 'remote_agent' });
+      let groupSyncTenantId: string | undefined;
+      mockSyncUserEntraGroupMemberships.mockImplementationOnce(async () => {
+        groupSyncTenantId = getTenantId();
+        return { attempted: false, synced: false };
+      });
+
+      const deps = makeDeps();
+      deps.findUser = makeFindUser(makeUser({ tenantId: 'tenant-strict' }));
+      deps.getAppConfig.mockImplementation(async (options) =>
+        options?.tenantId === 'tenant-strict'
+          ? makeConfig(
+              {
+                audience: 'tenant-audience',
+                scope: 'remote_agent',
+                groupSync: { forExisting: true },
+              },
+              { enabled: false },
+            )
+          : makeConfig({ scope: undefined }, { enabled: true }),
+      );
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockSyncUserEntraGroupMemberships).toHaveBeenCalledWith(
+        expect.objectContaining({ lifecycle: 'existing' }),
+      );
+      expect(groupSyncTenantId).toBe('tenant-strict');
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('returns 401 when a verified token has no matching user and provisioning is disabled', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+
+      const deps = makeDeps(makeConfig({}, { enabled: true }));
       deps.findUser.mockResolvedValue(null);
       const { res, status, json } = makeRes();
 
@@ -688,7 +1193,360 @@ describe('createRemoteAgentAuth', () => {
 
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+      expect(deps.createUser).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('existing_users_only'));
+    });
+
+    it('creates a missing user when remote OIDC provisioning is enabled', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+
+      const created = makeUser({
+        _id: 'created-user-id',
+        id: 'created-user-id',
+        email: 'agent@example.com',
+        openidId: 'sub123',
+      });
+      const deps = makeDeps(
+        makeConfig(
+          { provisioning: { enabled: true }, profileSync: { onCreate: true } },
+          { enabled: true },
+        ),
+      );
+      deps.findUser.mockResolvedValue(null);
+      deps.createUser.mockResolvedValue(created);
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'openid',
+          openidId: 'sub123',
+          openidIssuer: BASE_ISSUER,
+          email: 'agent@example.com',
+        }),
+        expect.any(Object),
+        true,
+        true,
+      );
+      expect(req.user).toMatchObject({ id: 'created-user-id', openidId: 'sub123' });
+      expect((req.user as IUser).federatedTokens).toEqual({ access_token: FAKE_TOKEN });
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('uses required userinfo profile data and does not persist request tokens on create', async () => {
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'claims@example.com',
+        preferred_username: 'claims-user@example.com',
+      });
+      mockEnrichOpenIdProfile.mockResolvedValueOnce({
+        status: 'fetched',
+        profile: {
+          sub: 'sub123',
+          email: 'userinfo@example.com',
+          preferred_username: 'userinfo-user@example.com',
+          given_name: 'User',
+          family_name: 'Info Name',
+        },
+      });
+      const deps = makeDeps(
+        makeConfig({
+          provisioning: { enabled: true },
+          userInfo: { fetch: true, require: true },
+        }),
+      );
+      deps.findUser.mockResolvedValue(null);
+      deps.createUser.mockResolvedValue(
+        makeUser({ _id: 'created-user-id', id: 'created-user-id', email: 'userinfo@example.com' }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(mockEnrichOpenIdProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accessToken: FAKE_TOKEN,
+          subject: 'sub123',
+          fetchUserInfo: true,
+        }),
+      );
+      expect(deps.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'userinfo@example.com',
+          username: 'userinfo-user@example.com',
+          name: 'User Info Name',
+        }),
+        expect.any(Object),
+        true,
+        true,
+      );
+      const createPayload = deps.createUser.mock.calls[0]?.[0] as Record<string, unknown>;
+      expectNoPersistedTokenFields(createPayload);
+      expect(req.user).toMatchObject({
+        email: 'userinfo@example.com',
+        federatedTokens: { access_token: FAKE_TOKEN },
+      });
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('rejects required userinfo failures without API key fallback', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'claims@example.com' });
+      mockEnrichOpenIdProfile.mockResolvedValueOnce({
+        status: 'failed',
+        profile: { sub: 'sub123', email: 'claims@example.com' },
+        reason: 'service_error',
+      });
+      const deps = makeDeps(
+        makeConfig(
+          {
+            provisioning: { enabled: true },
+            userInfo: { fetch: true, require: true },
+          },
+          { enabled: true },
+        ),
+      );
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(deps.findUser).not.toHaveBeenCalled();
+      expect(deps.createUser).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
       expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('logs optional userinfo failures and continues with claims-only profile data', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'claims@example.com' });
+      mockEnrichOpenIdProfile.mockResolvedValueOnce({
+        status: 'failed',
+        profile: { sub: 'sub123', email: 'claims@example.com' },
+        reason: 'service_error',
+      });
+      const deps = makeDeps(
+        makeConfig({
+          provisioning: { enabled: true },
+          userInfo: { fetch: true, require: false },
+        }),
+      );
+      deps.findUser.mockResolvedValue(null);
+      deps.createUser.mockResolvedValue(
+        makeUser({ _id: 'created-user-id', id: 'created-user-id', email: 'claims@example.com' }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[remoteAgentAuth] OpenID userinfo failed: service_error',
+      );
+      expect(deps.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'claims@example.com' }),
+        expect.any(Object),
+        true,
+        true,
+      );
+      expect(req.user).toMatchObject({ email: 'claims@example.com' });
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('rejects disallowed domains during remote provisioning without API key fallback', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@blocked.com' });
+      const config = makeConfig({ provisioning: { enabled: true } }, { enabled: true });
+      config.registration = { allowedDomains: ['example.com'] } as AppConfig['registration'];
+      const deps = makeDeps(config);
+      deps.findUser.mockResolvedValue(null);
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(deps.createUser).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('rejects missing email during remote provisioning without API key fallback', async () => {
+      setupOidcMocks({ sub: 'sub123' });
+      const deps = makeDeps(makeConfig({ provisioning: { enabled: true } }, { enabled: true }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(deps.findUser).not.toHaveBeenCalled();
+      expect(deps.createUser).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+    });
+
+    it('applies email validation and allowed-domain checks to preferred_username fallback', async () => {
+      setupOidcMocks({ sub: 'sub123', preferred_username: 'not-an-email' });
+      const config = makeConfig({ provisioning: { enabled: true } }, { enabled: true });
+      config.registration = { allowedDomains: ['example.com'] } as AppConfig['registration'];
+      const deps = makeDeps(config);
+      const { res, status } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(deps.findUser).not.toHaveBeenCalled();
+      expect(deps.createUser).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+    });
+
+    it('applies allowed-domain checks to upn fallback email', async () => {
+      setupOidcMocks({ sub: 'sub123', upn: 'agent@blocked.com' });
+      const config = makeConfig({ provisioning: { enabled: true } }, { enabled: true });
+      config.registration = { allowedDomains: ['example.com'] } as AppConfig['registration'];
+      const deps = makeDeps(config);
+      deps.findUser.mockResolvedValue(null);
+      const { res, status } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(deps.createUser).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+    });
+
+    it('syncs remote Entra groups for a newly created user when create lifecycle sync is enabled', async () => {
+      process.env.OPENID_ISSUER = 'https://existing-openid.example.com';
+      process.env.OPENID_CLIENT_ID = 'existing-client-id';
+      process.env.OPENID_CLIENT_SECRET = 'existing-client-secret';
+      setupOidcMocks({ sub: 'sub123', oid: 'oid-created', email: 'agent@example.com' });
+
+      const created = makeUser({
+        _id: 'created-user-id',
+        id: 'created-user-id',
+        email: 'agent@example.com',
+        openidId: 'sub123',
+        idOnTheSource: 'oid-created',
+      });
+      const deps = makeDeps(
+        makeConfig({
+          provisioning: { enabled: true },
+          groupSync: { onCreate: true, forExisting: false },
+        }),
+      );
+      deps.findUser.mockResolvedValue(null);
+      deps.createUser.mockResolvedValue(created);
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(mockSyncUserEntraGroupMemberships).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lifecycle: 'created',
+          user: expect.objectContaining({ id: 'created-user-id', idOnTheSource: 'oid-created' }),
+          accessToken: FAKE_TOKEN,
+          graphConfig: {
+            issuer: 'https://existing-openid.example.com',
+            clientId: 'existing-client-id',
+            clientSecret: 'existing-client-secret',
+          },
+          options: expect.objectContaining({
+            syncGroupsOnCreate: true,
+            syncGroupsForExisting: false,
+          }),
+          methods: {
+            bulkUpdateGroups: deps.bulkUpdateGroups,
+            findGroupsByExternalIds: deps.findGroupsByExternalIds,
+            upsertGroupByExternalId: deps.upsertGroupByExternalId,
+          },
+        }),
+      );
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('does not sync groups for a newly created user when only existing lifecycle sync is enabled', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+
+      const deps = makeDeps(
+        makeConfig({
+          provisioning: { enabled: true },
+          groupSync: { onCreate: false, forExisting: true },
+        }),
+      );
+      deps.findUser.mockResolvedValue(null);
+      deps.createUser.mockResolvedValue(
+        makeUser({ _id: 'created-user-id', id: 'created-user-id', openidId: 'sub123' }),
+      );
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(mockSyncUserEntraGroupMemberships).not.toHaveBeenCalled();
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    it('returns 500 when enabled provisioning fails after token verification', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+
+      const deps = makeDeps(makeConfig({ provisioning: { enabled: true } }, { enabled: true }));
+      deps.findUser.mockResolvedValue(null);
+      deps.createUser.mockRejectedValue(new Error('DB write failed'));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Internal server error' });
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('returns 401 when strict tenant mode has no tenant context before account lookup', async () => {
+      process.env.TENANT_ISOLATION_STRICT = 'true';
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+
+      const deps = makeDeps(makeConfig({ provisioning: { enabled: true } }, { enabled: true }));
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        res,
+        mockNext,
+      );
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(deps.findUser).not.toHaveBeenCalled();
+      expect(deps.createUser).not.toHaveBeenCalled();
+      expect(deps.updateUser).not.toHaveBeenCalled();
+      expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
 
     it('does not resolve a colliding legacy openidId from a different issuer', async () => {
@@ -711,12 +1569,13 @@ describe('createRemoteAgentAuth', () => {
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
       expect(req.user).toBeUndefined();
+      expect(mockSyncUserEntraGroupMemberships).not.toHaveBeenCalled();
       expect(mockNext).not.toHaveBeenCalled();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
 
     it('returns 401 without user lookup when sub claim is missing', async () => {
-      setupOidcMocks({ email: 'agent@test.com' });
+      setupOidcMocks({ email: 'agent@example.com' });
 
       const deps = makeDeps(makeConfig({}, { enabled: true }));
       const { res, status, json } = makeRes();
@@ -729,13 +1588,15 @@ describe('createRemoteAgentAuth', () => {
 
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(mockReadFederatedAuthCache).not.toHaveBeenCalled();
+      expect(mockEnrichOpenIdProfile).not.toHaveBeenCalled();
       expect(findOpenIDUser).not.toHaveBeenCalled();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
       expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('returns 401 without API key fallback when OpenID user resolution is rejected', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
 
       const deps = makeDeps(makeConfig({}, { enabled: true }));
       deps.findUser
@@ -813,7 +1674,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('returns 401 when verifier rejects a HMAC-signed token', async () => {
-      const payload = { sub: 'sub123', email: 'agent@test.com' };
+      const payload = { sub: 'sub123', email: 'agent@example.com' };
       setupOidcMocks(payload);
       (jwt.decode as jest.Mock).mockReturnValue({
         header: { alg: 'HS256', kid: 'test-kid' },
@@ -864,7 +1725,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('returns 500 when findOpenIDUser throws', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
       mockFindOpenIDUser.mockRejectedValue(new Error('DB error'));
 
       const deps = makeDeps(makeConfig({}, { enabled: true }));
@@ -892,6 +1753,7 @@ describe('createRemoteAgentAuth', () => {
         makeConfig({
           jwksUri: 'https://explicit-1.example.com/jwks',
           issuer: 'https://issuer-explicit-1.example.com',
+          provisioning: { enabled: true },
         }),
       );
 
@@ -908,7 +1770,11 @@ describe('createRemoteAgentAuth', () => {
     it('uses OPENID_JWKS_URL env var and skips discovery', async () => {
       process.env.OPENID_JWKS_URL = 'https://env.example.com/jwks';
       const deps = makeDeps(
-        makeConfig({ jwksUri: undefined, issuer: 'https://issuer-env-1.example.com' }),
+        makeConfig({
+          jwksUri: undefined,
+          issuer: 'https://issuer-env-1.example.com',
+          provisioning: { enabled: true },
+        }),
       );
 
       await createRemoteAgentAuth(deps)(
@@ -968,7 +1834,11 @@ describe('createRemoteAgentAuth', () => {
     it('allows localhost HTTP OPENID_JWKS_URL values for development', async () => {
       process.env.OPENID_JWKS_URL = 'http://localhost:8080/jwks';
       const deps = makeDeps(
-        makeConfig({ jwksUri: undefined, issuer: 'http://localhost:8080/realms/test' }),
+        makeConfig({
+          jwksUri: undefined,
+          issuer: 'http://localhost:8080/realms/test',
+          provisioning: { enabled: true },
+        }),
       );
 
       await createRemoteAgentAuth(deps)(
@@ -992,7 +1862,9 @@ describe('createRemoteAgentAuth', () => {
         json: async () => ({ jwks_uri: `${issuer}/protocol/openid-connect/certs` }),
       });
 
-      const deps = makeDeps(makeConfig({ jwksUri: undefined, issuer }));
+      const deps = makeDeps(
+        makeConfig({ jwksUri: undefined, issuer, provisioning: { enabled: true } }),
+      );
 
       await createRemoteAgentAuth(deps)(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
@@ -1016,7 +1888,9 @@ describe('createRemoteAgentAuth', () => {
         json: async () => ({ jwks_uri: `${normalizedIssuer}/protocol/openid-connect/certs` }),
       });
 
-      const deps = makeDeps(makeConfig({ jwksUri: undefined, issuer }));
+      const deps = makeDeps(
+        makeConfig({ jwksUri: undefined, issuer, provisioning: { enabled: true } }),
+      );
 
       await createRemoteAgentAuth(deps)(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
@@ -1299,9 +2173,9 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('falls back to preferred_username when email is absent', async () => {
-      expect(await captureEmailArg({ sub: 's2', preferred_username: 'agent-user' })).toBe(
-        'agent-user',
-      );
+      expect(
+        await captureEmailArg({ sub: 's2', preferred_username: 'agent-user@example.com' }),
+      ).toBe('agent-user@example.com');
     });
 
     it('falls back to preferred_username when email is empty', async () => {
@@ -1309,9 +2183,9 @@ describe('createRemoteAgentAuth', () => {
         await captureEmailArg({
           sub: 's2-empty',
           email: '',
-          preferred_username: 'agent-user',
+          preferred_username: 'agent-user@example.com',
         }),
-      ).toBe('agent-user');
+      ).toBe('agent-user@example.com');
     });
 
     it('falls back to upn when email and preferred_username are absent', async () => {
@@ -1333,7 +2207,12 @@ describe('createRemoteAgentAuth', () => {
 
   describe('update user and migration scenarios', () => {
     it('persists openidId binding when migration is needed', async () => {
-      const mockUpdateUser = jest.fn().mockResolvedValue(undefined);
+      const updatedUser = makeUser({
+        email: 'existing@test.com',
+        openidId: 'sub-new',
+        openidIssuer: BASE_ISSUER,
+      });
+      const mockUpdateUser = jest.fn().mockResolvedValue(updatedUser);
       setupOidcMocks({ sub: 'sub-new', email: 'existing@test.com' });
 
       const deps = { ...makeDeps(), updateUser: mockUpdateUser };
@@ -1389,9 +2268,9 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('does not call updateUser when migration is false and role exists', async () => {
-      const mockUpdateUser = jest.fn();
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+    it('persists OpenID security fields for existing users', async () => {
+      const mockUpdateUser = jest.fn(async (_userId, update) => makeUser(update as Partial<IUser>));
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
 
       const deps = { ...makeDeps(), updateUser: mockUpdateUser };
       await createRemoteAgentAuth(deps)(
@@ -1400,13 +2279,22 @@ describe('createRemoteAgentAuth', () => {
         mockNext,
       );
 
-      expect(mockUpdateUser).not.toHaveBeenCalled();
+      expect(mockUpdateUser).toHaveBeenCalledWith(
+        mockUser.id,
+        expect.objectContaining({
+          provider: 'openid',
+          openidId: 'sub123',
+          openidIssuer: BASE_ISSUER,
+        }),
+      );
+      const updatePayload = mockUpdateUser.mock.calls[0]?.[1] as Record<string, unknown>;
+      expectNoPersistedTokenFields(updatePayload);
     });
   });
 
   describe('scope validation', () => {
     it('returns 401 when required scope is missing from token', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', scope: 'openid profile' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com', scope: 'openid profile' });
 
       const deps = makeDeps(makeConfig({ scope: 'remote_agent' }, { enabled: false }));
       const { res, status, json } = makeRes();
@@ -1422,7 +2310,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('does not fall back to apiKeyMiddleware when a verified token is missing scope', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', scope: 'openid profile' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com', scope: 'openid profile' });
 
       const deps = makeDeps(makeConfig({ scope: 'remote_agent' }, { enabled: true }));
       const { res, status, json } = makeRes();
@@ -1442,7 +2330,7 @@ describe('createRemoteAgentAuth', () => {
     it('passes when required scope is present in token', async () => {
       setupOidcMocks({
         sub: 'sub123',
-        email: 'agent@test.com',
+        email: 'agent@example.com',
         scope: 'openid profile remote_agent',
       });
 
@@ -1459,7 +2347,7 @@ describe('createRemoteAgentAuth', () => {
     it('passes when scp is an array containing the required scope', async () => {
       setupOidcMocks({
         sub: 'sub123',
-        email: 'agent@test.com',
+        email: 'agent@example.com',
         scp: ['openid', 'remote_agent'],
       });
 
@@ -1476,7 +2364,7 @@ describe('createRemoteAgentAuth', () => {
     it('passes when all configured scopes are present', async () => {
       setupOidcMocks({
         sub: 'sub123',
-        email: 'agent@test.com',
+        email: 'agent@example.com',
         scp: ['openid', 'remote_agent', 'admin'],
       });
 
@@ -1493,7 +2381,7 @@ describe('createRemoteAgentAuth', () => {
     it('returns 401 when any configured scope is missing', async () => {
       setupOidcMocks({
         sub: 'sub123',
-        email: 'agent@test.com',
+        email: 'agent@example.com',
         scp: ['openid', 'remote_agent'],
       });
 
@@ -1514,7 +2402,7 @@ describe('createRemoteAgentAuth', () => {
     it('treats comma-separated configured scopes as one invalid scope token', async () => {
       setupOidcMocks({
         sub: 'sub123',
-        email: 'agent@test.com',
+        email: 'agent@example.com',
         scope: 'remote_agent admin',
       });
 
@@ -1533,7 +2421,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('passes when scope is not configured (backward compat)', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
 
       const deps = makeDeps(makeConfig({ scope: undefined }));
       await createRemoteAgentAuth(deps)(
