@@ -170,6 +170,20 @@ actions:
 endpoints:
   
   custom:
+    - name: "LiteLLM"
+      apiKey: "sk-ajrasakha-master-key"
+      baseURL: "http://100.100.108.101:4999/v1"
+      models:
+        default: ['langgraph/ajrasakha_agent']
+        fetch: true
+      titleConvo: true
+      titleModel: "current_model"
+      titleMessageRole: "user"
+      summarize: false
+      summaryModel: "current_model"
+      forcePrompt: false
+      modelDisplayLabel: "AjraSakha LangGraph"  # optional display label in UI
+  
     - name: "vLLM-Qwen"
       apiKey: "not_required"
       baseURL: "http://100.100.108.100:8081/v1"
