@@ -118,6 +118,23 @@ describe('share routes retention', () => {
     expect(createSharedLink).not.toHaveBeenCalled();
   });
 
+  it('rejects new shares for expired conversations in all retention mode', async () => {
+    mongoose.models.Conversation.findOne.mockReturnValue(lean(expiredRetainedConvo));
+    createSharedLink.mockResolvedValue({ shareId: 'share-123' });
+
+    const response = await request(buildApp({ retentionMode: RetentionMode.ALL }))
+      .post('/api/share/convo-123')
+      .send({ targetMessageId: 'msg-123' });
+
+    expect(response.status).toBe(404);
+    expect(mongoose.models.Conversation.findOne).toHaveBeenCalledWith(
+      { conversationId: 'convo-123', user: 'user-123' },
+      'isTemporary expiredAt',
+    );
+    expect(createTempChatExpirationDate).not.toHaveBeenCalled();
+    expect(createSharedLink).not.toHaveBeenCalled();
+  });
+
   it('expires updated shares for retained non-temporary conversations', async () => {
     mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
     mongoose.models.Conversation.findOne.mockReturnValue(lean(retainedConvo));
@@ -150,6 +167,24 @@ describe('share routes retention', () => {
     const response = await request(buildApp()).patch('/api/share/share-123');
 
     expect(response.status).toBe(404);
+    expect(createTempChatExpirationDate).not.toHaveBeenCalled();
+    expect(updateSharedLink).not.toHaveBeenCalled();
+  });
+
+  it('rejects updated shares for expired conversations in all retention mode', async () => {
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mongoose.models.Conversation.findOne.mockReturnValue(lean(expiredRetainedConvo));
+    updateSharedLink.mockResolvedValue({ shareId: 'share-456' });
+
+    const response = await request(buildApp({ retentionMode: RetentionMode.ALL })).patch(
+      '/api/share/share-123',
+    );
+
+    expect(response.status).toBe(404);
+    expect(mongoose.models.SharedLink.findOne).toHaveBeenCalledWith(
+      { shareId: 'share-123', user: 'user-123' },
+      'conversationId',
+    );
     expect(createTempChatExpirationDate).not.toHaveBeenCalled();
     expect(updateSharedLink).not.toHaveBeenCalled();
   });

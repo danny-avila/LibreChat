@@ -21,29 +21,27 @@ const router = express.Router();
 async function getSharedLinkExpiration(req, conversationId) {
   const isRetentionAll = req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL;
 
-  if (!isRetentionAll) {
-    if (!conversationId) {
-      return;
-    }
+  if (!conversationId) {
+    return;
+  }
 
-    const Conversation = mongoose.models.Conversation;
-    const convo = await Conversation.findOne(
-      { conversationId, user: req.user.id },
-      'isTemporary expiredAt',
-    ).lean();
+  const Conversation = mongoose.models.Conversation;
+  const convo = await Conversation.findOne(
+    { conversationId, user: req.user.id },
+    'isTemporary expiredAt',
+  ).lean();
 
-    if (!convo) {
-      return;
-    }
+  if (!convo) {
+    return;
+  }
 
-    const conversationExpiredAt = getConversationExpirationDate(convo);
-    if (conversationExpiredAt == null) {
+  const conversationExpiredAt = getConversationExpirationDate(convo);
+  if (conversationExpiredAt == null) {
+    if (!isRetentionAll) {
       return null;
     }
-
-    if (!isActiveExpirationDate(conversationExpiredAt)) {
-      return conversationExpiredAt;
-    }
+  } else if (!isActiveExpirationDate(conversationExpiredAt)) {
+    return conversationExpiredAt;
   }
 
   try {
