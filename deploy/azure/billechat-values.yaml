@@ -41,7 +41,7 @@ librechat:
 
     # Branding
     APP_TITLE: "BilleChat"
-    OPENID_IMAGE_URL: "/assets/billennium-mark.png"
+    OPENID_IMAGE_URL: "/assets/favicon-32x32.png"
 
     # Azure AI Foundry — API key overridden via pipeline
     AZURE_AI_FOUNDRY_API_KEY: "override-via-pipeline"

@@ -60,10 +60,10 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-10 w-full bg-cover">
+        <div className="mt-6 h-20 w-full sm:h-24 md:h-28">
           <img
             src="assets/billennium-logo.png"
-            className="h-full w-full object-contain"
+            className="mx-auto h-full max-w-md px-4 object-contain"
             alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
           />
         </div>
