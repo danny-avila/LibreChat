@@ -89,7 +89,11 @@ function SocialLoginRender({
         oauthPath="openid"
         Icon={() =>
           startupConfig.openidImageUrl ? (
-            <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
+            <img
+              src={startupConfig.openidImageUrl}
+              alt={localize('com_ui_logo', { 0: startupConfig.openidLabel })}
+              className="h-5 w-5 object-contain"
+            />
           ) : (
             <OpenIDIcon />
           )

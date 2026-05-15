@@ -44,7 +44,7 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   }, [isAuthenticated, navigate, data]);
 
   useEffect(() => {
-    document.title = startupConfig?.appTitle || 'Billechat';
+    document.title = startupConfig?.appTitle || 'BilleChat';
   }, [startupConfig?.appTitle]);
 
   useEffect(() => {
