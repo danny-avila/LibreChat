@@ -26,6 +26,7 @@ describe('Share Methods', () => {
         user: { type: String, index: true },
         messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
         shareId: { type: String, index: true },
+        targetMessageId: { type: String, required: false, index: true },
         isPublic: { type: Boolean, default: true },
       },
       { timestamps: true },
@@ -712,6 +713,108 @@ describe('Share Methods', () => {
       expect((updatedShare?.messages?.[0] as unknown as t.IMessage | undefined)?.text).toBe(
         'User message',
       );
+    });
+
+    test('should update branch target to the latest refreshed message', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const rootMessageId = `msg_${nanoid()}`;
+      const oldAnswerId = `msg_${nanoid()}`;
+      const rerunPromptId = `msg_${nanoid()}`;
+      const rerunAnswerId = `msg_${nanoid()}`;
+
+      await Conversation.create({
+        conversationId,
+        title: 'Analysis Conversation',
+        user: userId,
+      });
+
+      const initialMessages = await Message.create([
+        {
+          messageId: rootMessageId,
+          conversationId,
+          user: userId,
+          text: 'Analyze February 2023 to October 2025',
+          isCreatedByUser: true,
+          parentMessageId: Constants.NO_PARENT,
+        },
+        {
+          messageId: oldAnswerId,
+          conversationId,
+          user: userId,
+          text: 'Old analysis result',
+          isCreatedByUser: false,
+          parentMessageId: rootMessageId,
+        },
+      ]);
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: initialMessages.map((message) => message._id),
+        targetMessageId: oldAnswerId,
+        isPublic: true,
+      });
+
+      await Message.create([
+        {
+          messageId: rerunPromptId,
+          conversationId,
+          user: userId,
+          text: 'Rerun for March 2023 to January 2026',
+          isCreatedByUser: true,
+          parentMessageId: oldAnswerId,
+        },
+        {
+          messageId: rerunAnswerId,
+          conversationId,
+          user: userId,
+          text: 'Updated analysis result',
+          isCreatedByUser: false,
+          parentMessageId: rerunPromptId,
+        },
+      ]);
+
+      const result = await shareMethods.updateSharedLink(userId, shareId, rerunAnswerId);
+      const updatedShare = await SharedLink.findOne({ shareId: result.shareId }).populate(
+        'messages',
+      );
+      const sharedMessages = await shareMethods.getSharedMessages(result.shareId);
+
+      expect(result.shareId).not.toBe(shareId);
+      expect(result.targetMessageId).toBe(rerunAnswerId);
+      expect(updatedShare?.targetMessageId).toBe(rerunAnswerId);
+      expect(updatedShare?.messages).toHaveLength(4);
+      expect(sharedMessages?.messages.map((message) => message.text)).toEqual([
+        'Analyze February 2023 to October 2025',
+        'Old analysis result',
+        'Rerun for March 2023 to January 2026',
+        'Updated analysis result',
+      ]);
+    });
+
+    test('should preserve existing branch target when refresh has no target override', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const targetMessageId = `msg_${nanoid()}`;
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [],
+        targetMessageId,
+        isPublic: true,
+      });
+
+      const result = await shareMethods.updateSharedLink(userId, shareId);
+      const updatedShare = await SharedLink.findOne({ shareId: result.shareId });
+
+      expect(result.targetMessageId).toBe(targetMessageId);
+      expect(updatedShare?.targetMessageId).toBe(targetMessageId);
     });
 
     test('should not allow user to update shared link they do not own', async () => {

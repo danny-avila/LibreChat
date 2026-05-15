@@ -648,11 +648,13 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     otherParams = {},
     limit = null,
     after = null,
+    includeSkillConfig = false,
   }: {
     accessibleIds?: Types.ObjectId[];
     otherParams?: Record<string, unknown>;
     limit?: number | null;
     after?: string | null;
+    includeSkillConfig?: boolean;
   }): Promise<{
     object: string;
     data: Array<Record<string, unknown>>;
@@ -700,7 +702,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
       }
     }
 
-    let query = Agent.find(baseQuery, {
+    const projection: Record<string, 1> = {
       id: 1,
       _id: 1,
       name: 1,
@@ -711,13 +713,14 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
       category: 1,
       support_contact: 1,
       is_promoted: 1,
-      /* Needed so the client can scope the `$` skill popover to each agent's
-         configured catalog without refetching the full agent document. The
-         master toggle is required alongside the allowlist so the popover can
-         distinguish "enabled with full catalog" from "disabled". */
-      skills: 1,
-      skills_enabled: 1,
-    }).sort({ updatedAt: -1, _id: 1 });
+    };
+
+    if (includeSkillConfig) {
+      projection.skills = 1;
+      projection.skills_enabled = 1;
+    }
+
+    let query = Agent.find(baseQuery, projection).sort({ updatedAt: -1, _id: 1 });
 
     if (isPaginated && normalizedLimit) {
       query = query.limit(normalizedLimit + 1);

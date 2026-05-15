@@ -3,6 +3,12 @@ const fs = require('fs');
 const winston = require('winston');
 require('winston-daily-rotate-file');
 const {
+  getTenantId,
+  getUserId,
+  getRequestId,
+  SYSTEM_TENANT_ID,
+} = require('@librechat/data-schemas');
+const {
   redactFormat,
   redactMessage,
   debugTraverse,
@@ -63,6 +69,44 @@ const levels = {
   silly: 7,
 };
 
+const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'];
+
+const getLogTenantId = () => {
+  const tenantId = getTenantId();
+  return tenantId === SYSTEM_TENANT_ID ? undefined : tenantId;
+};
+
+const requestContextFormat = winston.format((info) => {
+  if (info.tenantId === SYSTEM_TENANT_ID) {
+    delete info.tenantId;
+  }
+  const context = {
+    tenantId: getLogTenantId(),
+    userId: getUserId(),
+    requestId: getRequestId(),
+  };
+  LOG_CONTEXT_KEYS.forEach((key) => {
+    if (context[key] && info[key] == null) {
+      info[key] = context[key];
+    }
+  });
+  return info;
+});
+
+const formatRequestContext = (info) => {
+  const context = {};
+  LOG_CONTEXT_KEYS.forEach((key) => {
+    const value = info[key];
+    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
+      return;
+    }
+    if (typeof value === 'string' && value) {
+      context[key] = value;
+    }
+  });
+  return Object.keys(context).length > 0 ? JSON.stringify(context) : '';
+};
+
 winston.addColors({
   info: 'green', // fontStyle color
   warn: 'italic yellow',
@@ -81,6 +125,7 @@ const fileFormat = winston.format.combine(
   winston.format.timestamp({ format: () => new Date().toISOString() }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
+  requestContextFormat(),
   // redactErrors(),
 );
 
@@ -112,20 +157,16 @@ if (useDebugLogging) {
 
 const consoleFormat = winston.format.combine(
   redactFormat(),
+  requestContextFormat(),
   winston.format.colorize({ all: true }),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   // redactErrors(),
   winston.format.printf((info) => {
     const base = `${info.timestamp} ${info.level}: ${info.message}`;
     const isErrorOrWarn = info.level.includes('error') || info.level.includes('warn');
-
-    if (isErrorOrWarn) {
-      const metaTrailer = formatConsoleMeta(info);
-      const line = metaTrailer ? `${base} ${metaTrailer}` : base;
-      return redactMessage(line);
-    }
-
-    return base;
+    const metaTrailer = isErrorOrWarn ? formatConsoleMeta(info) : formatRequestContext(info);
+    const line = metaTrailer ? `${base} ${metaTrailer}` : base;
+    return isErrorOrWarn ? redactMessage(line) : line;
   }),
 );
 
