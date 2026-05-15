@@ -164,7 +164,10 @@ export class MCPServersRegistry {
 
   /**
    * Returns all server configs visible to the given user.
-   * Operator-managed servers (YAML + Config) override User DB servers on name collisions.
+   * Precedence (lowest to highest): YAML cache → Config-tier overrides → User DB.
+   * Config-tier entries supplied via `configServers` overlay YAML entries by name; user-DB
+   * entries (`source: 'user'`) are preserved against config-tier overlays so per-user servers
+   * are never replaced by admin-panel overrides.
    */
   public async getAllServerConfigs(
     userId?: string,
@@ -176,7 +179,13 @@ export class MCPServersRegistry {
     }
     const base = await this.getBaseServerConfigs(userId, role);
     this.warnOnOperatorManagedNameCollisions(configServers, base, 'Config');
-    return { ...base, ...configServers };
+    const result: Record<string, t.ParsedServerConfig> = { ...base };
+    for (const [name, override] of Object.entries(configServers)) {
+      if (result[name]?.source !== 'user') {
+        result[name] = override;
+      }
+    }
+    return result;
   }
 
   /**
@@ -393,19 +402,10 @@ export class MCPServersRegistry {
       return {};
     }
 
-    const yamlNames = await this.getYamlServerNames();
-    const configServerEntries = Object.entries(resolvedMcpConfig).filter(
-      ([name]) => !yamlNames.has(name),
-    );
-
-    if (configServerEntries.length === 0) {
-      return {};
-    }
-
     const result: Record<string, t.ParsedServerConfig> = {};
 
     const settled = await Promise.allSettled(
-      configServerEntries.map(async ([serverName, rawConfig]) => {
+      Object.entries(resolvedMcpConfig).map(async ([serverName, rawConfig]) => {
         const parsed = await this.ensureSingleConfigServer(serverName, rawConfig);
         if (parsed) {
           result[serverName] = parsed;
@@ -431,6 +431,14 @@ export class MCPServersRegistry {
     serverName: string,
     rawConfig: t.MCPOptions,
   ): Promise<t.ParsedServerConfig | undefined> {
+    const yamlNames = await this.getYamlServerNames();
+    if (yamlNames.has(serverName)) {
+      const yamlCached = await this.cacheConfigsRepo.get(serverName);
+      if (yamlCached && this.matchesYamlConfig(serverName, rawConfig, yamlCached)) {
+        return undefined;
+      }
+    }
+
     const cacheKey = this.configCacheKey(serverName, rawConfig);
 
     const cached = await this.configCacheRepo.get(cacheKey);
@@ -670,6 +678,35 @@ export class MCPServersRegistry {
         throw err;
       });
     return this.yamlServerNamesPromise;
+  }
+
+  /**
+   * Returns true when the merged `rawConfig` is content-equivalent to the cached YAML config,
+   * i.e., no admin-panel override changes a configurable field. Lets `ensureSingleConfigServer`
+   * skip lazy-init for YAML-defined servers without an effective override.
+   */
+  private matchesYamlConfig(
+    serverName: string,
+    rawConfig: t.MCPOptions,
+    yamlCached: t.ParsedServerConfig,
+  ): boolean {
+    const {
+      oauthMetadata: _oauthMetadata,
+      capabilities: _capabilities,
+      tools: _tools,
+      toolFunctions: _toolFunctions,
+      initDuration: _initDuration,
+      updatedAt: _updatedAt,
+      dbId: _dbId,
+      source: _source,
+      consumeOnly: _consumeOnly,
+      inspectionFailed: _inspectionFailed,
+      ...configurable
+    } = yamlCached;
+    return (
+      this.configCacheKey(serverName, rawConfig) ===
+      this.configCacheKey(serverName, configurable as t.MCPOptions)
+    );
   }
 
   /**

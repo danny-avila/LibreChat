@@ -402,4 +402,170 @@ describe('MCPServersRegistry', () => {
       });
     });
   });
+
+  describe('admin-panel overrides for YAML-defined servers', () => {
+    const yamlLangfuseConfig: t.ParsedServerConfig = {
+      type: 'streamable-http',
+      url: 'https://langfuse.com/api/public/mcp',
+      requiresOAuth: false,
+      source: 'yaml',
+      updatedAt: FIXED_TIME,
+    };
+
+    it('flows config-tier override on a YAML-defined server through to getAllServerConfigs', async () => {
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlLangfuseConfig);
+
+      const overrideRawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        iconPath: 'https://example.com/icon.svg',
+      } as unknown as t.MCPOptions;
+
+      const configServers = await registry.ensureConfigServers({
+        'langfuse-docs': overrideRawConfig,
+      });
+
+      expect(configServers['langfuse-docs']).toBeDefined();
+      expect(configServers['langfuse-docs'].iconPath).toBe('https://example.com/icon.svg');
+
+      const result = await registry.getAllServerConfigs('user-1', configServers);
+
+      expect(result['langfuse-docs']).toBeDefined();
+      expect(result['langfuse-docs'].iconPath).toBe('https://example.com/icon.svg');
+    });
+
+    it('does NOT trigger lazy-init when YAML-defined server has no effective override', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'yaml',
+        updatedAt: FIXED_TIME,
+      };
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+
+      const identicalRawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+      } as unknown as t.MCPOptions;
+
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      const result = await registry.ensureConfigServers({
+        'langfuse-docs': identicalRawConfig,
+      });
+
+      expect(inspectSpy).not.toHaveBeenCalled();
+      expect(result).toEqual({});
+    });
+
+    it('preserves user-DB tier (source: "user") over config-tier overrides', async () => {
+      const userDbEntry: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://user-defined.example.com/mcp',
+        requiresOAuth: false,
+        source: 'user',
+        dbId: 'user-db-id-123',
+        updatedAt: FIXED_TIME,
+      };
+
+      jest
+        .spyOn(registry['dbConfigsRepo'], 'getAll')
+        .mockResolvedValue({ 'shared-server': userDbEntry });
+
+      const configTierOverride: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://admin-override.example.com/mcp',
+        requiresOAuth: false,
+        source: 'config',
+        iconPath: 'https://example.com/admin-icon.svg',
+        updatedAt: FIXED_TIME,
+      };
+
+      const result = await registry.getAllServerConfigs('user-1', {
+        'shared-server': configTierOverride,
+      });
+
+      expect(result['shared-server']).toBeDefined();
+      expect(result['shared-server'].source).toBe('user');
+      expect(result['shared-server'].url).toBe('https://user-defined.example.com/mcp');
+      expect(result['shared-server'].dbId).toBe('user-db-id-123');
+    });
+
+    it('still runs lazy-init for pure config-tier servers not present in YAML', async () => {
+      const configOnlyRawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://config-only.example.com/mcp',
+        requiresOAuth: false,
+        iconPath: 'https://example.com/config-only-icon.svg',
+      } as unknown as t.MCPOptions;
+
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      const result = await registry.ensureConfigServers({
+        'config-only-server': configOnlyRawConfig,
+      });
+
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+      expect(inspectSpy).toHaveBeenCalledWith(
+        'config-only-server',
+        configOnlyRawConfig,
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(result['config-only-server']).toBeDefined();
+      expect(result['config-only-server'].iconPath).toBe(
+        'https://example.com/config-only-icon.svg',
+      );
+      expect(result['config-only-server'].source).toBe('config');
+    });
+
+    it('passes a fully merged config to lazy-init when override only adds new fields', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        headers: { Authorization: 'Bearer yaml-token' },
+        source: 'yaml',
+        updatedAt: FIXED_TIME,
+      } as unknown as t.ParsedServerConfig;
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+
+      const mergedRawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        headers: { Authorization: 'Bearer yaml-token' },
+        iconPath: 'https://example.com/icon.svg',
+      } as unknown as t.MCPOptions;
+
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      const result = await registry.ensureConfigServers({
+        'langfuse-docs': mergedRawConfig,
+      });
+
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+      const firstCallArgs = inspectSpy.mock.calls[0];
+      expect(firstCallArgs[0]).toBe('langfuse-docs');
+      const passedConfig = firstCallArgs[1] as t.StreamableHTTPOptions & {
+        iconPath?: string;
+        requiresOAuth?: boolean;
+      };
+      expect(passedConfig.type).toBe('streamable-http');
+      expect(passedConfig.url).toBe('https://langfuse.com/api/public/mcp');
+      expect(passedConfig.requiresOAuth).toBe(false);
+      expect(passedConfig.headers).toEqual({ Authorization: 'Bearer yaml-token' });
+      expect(passedConfig.iconPath).toBe('https://example.com/icon.svg');
+
+      expect(result['langfuse-docs']).toBeDefined();
+      expect(result['langfuse-docs'].iconPath).toBe('https://example.com/icon.svg');
+    });
+  });
 });
