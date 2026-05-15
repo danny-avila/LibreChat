@@ -188,4 +188,30 @@ describe('action OAuth token exchange validation', () => {
     expect(params.has('client_id')).toBe(false);
     expect(params.has('client_secret')).toBe(false);
   });
+
+  it('reuses the same HTTPS agent across token exchanges', async () => {
+    await getAccessToken(
+      {
+        ...baseFields,
+        code: 'authorization-code',
+        redirect_uri: 'https://chat.example.com/api/actions/action-1/oauth/callback',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+      },
+      createTokenMethods(),
+    );
+    await refreshAccessToken(
+      {
+        ...baseFields,
+        refresh_token: 'refresh-token',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+      },
+      createTokenMethods(),
+    );
+
+    const [accessConfig, refreshConfig] = mockedAxios.mock.calls.map(
+      ([config]) => config as AxiosRequestConfig,
+    );
+
+    expect(accessConfig.httpsAgent).toBe(refreshConfig.httpsAgent);
+  });
 });

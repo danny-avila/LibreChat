@@ -7,6 +7,8 @@ import { createSSRFSafeAgents } from '~/auth';
 import { logAxiosError } from '~/utils';
 import { validateActionOAuthEndpoint } from './validation';
 
+const actionOAuthAgents = createSSRFSafeAgents();
+
 export function createHandleOAuthToken({
   findToken,
   updateToken,
@@ -198,7 +200,7 @@ export async function refreshAccessToken(
       url: client_url,
       headers,
       maxRedirects: 0,
-      httpsAgent: createSSRFSafeAgents().httpsAgent,
+      httpsAgent: actionOAuthAgents.httpsAgent,
       data: params.toString(),
     });
     await processAccessTokens(
@@ -303,7 +305,7 @@ export async function getAccessToken(
       url: client_url,
       headers,
       maxRedirects: 0,
-      httpsAgent: createSSRFSafeAgents().httpsAgent,
+      httpsAgent: actionOAuthAgents.httpsAgent,
       data: params.toString(),
     });
 

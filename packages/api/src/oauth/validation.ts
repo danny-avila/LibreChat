@@ -1,6 +1,6 @@
 import { AuthTypeEnum } from 'librechat-data-provider';
 
-import { isSSRFTarget, resolveHostnameSSRF } from '~/auth';
+import { validateEndpointURL } from '~/auth';
 
 type ActionOAuthEndpointField = 'authorization_url' | 'client_url';
 
@@ -10,12 +10,25 @@ interface ActionOAuthAuthMetadata {
   client_url?: string | null;
 }
 
-function getHttpsPort(url: URL): string {
-  return url.port || '443';
-}
-
 function invalidActionOAuth(fieldName: ActionOAuthEndpointField, message: string): never {
   throw new Error(`Invalid action OAuth ${fieldName}: ${message}`);
+}
+
+function parseEndpointError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'endpoint URL is not permitted.';
+  }
+
+  try {
+    const parsed = JSON.parse(error.message) as { message?: unknown };
+    if (typeof parsed.message === 'string') {
+      return parsed.message;
+    }
+  } catch {
+    return error.message;
+  }
+
+  return error.message;
 }
 
 export async function validateActionOAuthEndpoint(
@@ -37,13 +50,10 @@ export async function validateActionOAuthEndpoint(
     invalidActionOAuth(fieldName, 'only HTTPS endpoint URLs are permitted.');
   }
 
-  const port = getHttpsPort(parsedUrl);
-  if (isSSRFTarget(parsedUrl.hostname, null, port)) {
-    invalidActionOAuth(fieldName, 'endpoint targets a restricted address.');
-  }
-
-  if (await resolveHostnameSSRF(parsedUrl.hostname, null, port)) {
-    invalidActionOAuth(fieldName, 'endpoint resolves to a restricted address.');
+  try {
+    await validateEndpointURL(url, `action OAuth ${fieldName}`);
+  } catch (error) {
+    invalidActionOAuth(fieldName, parseEndpointError(error));
   }
 }
 
