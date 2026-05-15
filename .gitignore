@@ -178,3 +178,12 @@ coordination/orchestration/*
 claude-flow
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
+
+
+# Data Provider
+packages/data-provider/dist/
+.superpowers
+.cursor
+docs/superpowers
+packages/sandbox/
+storage/
