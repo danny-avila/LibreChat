@@ -17,6 +17,7 @@ import {
 } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
+import { buildShareLink } from '~/utils/publicUrl';
 
 export default function SharedLinkButton({
   share,
@@ -74,9 +75,7 @@ export default function SharedLinkButton({
     },
   });
 
-  const generateShareLink = useCallback((shareId: string) => {
-    return `${window.location.protocol}//${window.location.host}/share/${shareId}`;
-  }, []);
+  const generateShareLink = useCallback((shareId: string) => buildShareLink(shareId), []);
 
   const updateSharedLink = async () => {
     if (!shareId) {
