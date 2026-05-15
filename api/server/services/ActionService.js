@@ -9,6 +9,7 @@ const {
   refreshAccessToken,
   GenerationJobManager,
   createSSRFSafeAgents,
+  validateActionOAuthMetadata,
 } = require('@librechat/api');
 const {
   Time,
@@ -203,6 +204,8 @@ async function createActionTool({
       if (metadata.auth && metadata.auth.type !== AuthTypeEnum.None) {
         try {
           if (metadata.auth.type === AuthTypeEnum.OAuth && metadata.auth.authorization_url) {
+            await validateActionOAuthMetadata(metadata.auth);
+
             const action_id = action.action_id;
             const identifier = `${userId}:${action.action_id}`;
             const requestLogin = async () => {

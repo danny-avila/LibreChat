@@ -3,7 +3,9 @@ import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { AxiosError } from 'axios';
+import { createSSRFSafeAgents } from '~/auth';
 import { logAxiosError } from '~/utils';
+import { validateActionOAuthEndpoint } from './validation';
 
 export function createHandleOAuthToken({
   findToken,
@@ -167,6 +169,8 @@ export async function refreshAccessToken(
   refresh_token?: string;
   refresh_token_expires_in?: number;
 }> {
+  await validateActionOAuthEndpoint(client_url, 'client_url');
+
   try {
     const oauth_client_id = await decryptV2(encrypted_oauth_client_id);
     const oauth_client_secret = await decryptV2(encrypted_oauth_client_secret);
@@ -193,6 +197,8 @@ export async function refreshAccessToken(
       method: 'POST',
       url: client_url,
       headers,
+      maxRedirects: 0,
+      httpsAgent: createSSRFSafeAgents().httpsAgent,
       data: params.toString(),
     });
     await processAccessTokens(
@@ -267,6 +273,8 @@ export async function getAccessToken(
   refresh_token?: string;
   refresh_token_expires_in?: number;
 }> {
+  await validateActionOAuthEndpoint(client_url, 'client_url');
+
   const oauth_client_id = await decryptV2(encrypted_oauth_client_id);
   const oauth_client_secret = await decryptV2(encrypted_oauth_client_secret);
 
@@ -294,6 +302,8 @@ export async function getAccessToken(
       method: 'POST',
       url: client_url,
       headers,
+      maxRedirects: 0,
+      httpsAgent: createSSRFSafeAgents().httpsAgent,
       data: params.toString(),
     });
 
