@@ -11,6 +11,7 @@ const mockSetFilesLoading = jest.fn();
 const mockMutate = jest.fn();
 
 let mockConversation: Record<string, string | null | undefined> = {};
+let mockIsTemporary = false;
 
 jest.mock('~/Providers/ChatContext', () => ({
   useChatContext: jest.fn(() => ({
@@ -30,7 +31,7 @@ jest.mock('@librechat/client', () => ({
 jest.mock('recoil', () => ({
   ...jest.requireActual('recoil'),
   useSetRecoilState: jest.fn(() => jest.fn()),
-  useRecoilValue: jest.fn(() => false),
+  useRecoilValue: jest.fn(() => mockIsTemporary),
 }));
 
 jest.mock('~/store', () => ({
@@ -102,6 +103,7 @@ describe('useFileHandling', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockConversation = {};
+    mockIsTemporary = false;
   });
 
   const loadHook = async () => (await import('../useFileHandling')).default;
@@ -289,6 +291,74 @@ describe('useFileHandling', () => {
       const formData: FormData = mockMutate.mock.calls[0][0];
       expect(formData.get('endpoint')).toBe('default');
       expect(formData.get('conversationId')).toBeNull();
+    });
+
+    it('sends temporary flag for temporary chat uploads', async () => {
+      mockIsTemporary = true;
+      mockConversation = {
+        conversationId: Constants.NEW_CONVO as string,
+        endpoint: 'openAI',
+        endpointType: 'custom',
+      };
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      const textFile = new File(['hello'], 'test.txt', { type: 'text/plain' });
+
+      await act(async () => {
+        await result.current.handleFiles([textFile]);
+      });
+
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('conversationId')).toBeNull();
+      expect(formData.get('isTemporary')).toBe('true');
+    });
+
+    it('does not send temporary flag for assistant builder uploads', async () => {
+      mockIsTemporary = true;
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() =>
+        useFileHandling({
+          additionalMetadata: { assistant_id: 'asst-123' },
+        }),
+      );
+
+      const textFile = new File(['hello'], 'test.txt', { type: 'text/plain' });
+
+      await act(async () => {
+        await result.current.handleFiles([textFile]);
+      });
+
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('assistant_id')).toBe('asst-123');
+      expect(formData.get('isTemporary')).toBeNull();
+    });
+
+    it('does not send temporary flag for agent builder uploads', async () => {
+      mockIsTemporary = true;
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() =>
+        useFileHandling({
+          endpointOverride: EModelEndpoint.agents,
+          additionalMetadata: { agent_id: 'agent-123' },
+        }),
+      );
+
+      const textFile = new File(['hello'], 'test.txt', { type: 'text/plain' });
+
+      await act(async () => {
+        await result.current.handleFiles([textFile]);
+      });
+
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('agent_id')).toBe('agent-123');
+      expect(formData.get('isTemporary')).toBeNull();
     });
   });
 });

@@ -66,6 +66,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
 
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
+  const isConversationUpload = !agent_id && !assistant_id;
   const endpointOverride = params?.endpointOverride;
   const endpointTypeOverride = params?.endpointTypeOverride;
   const endpointType = useMemo(
@@ -196,7 +197,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     if (conversation?.conversationId && conversation.conversationId !== Constants.NEW_CONVO) {
       formData.append('conversationId', conversation.conversationId);
     }
-    if (isTemporary) {
+    if (isTemporary && isConversationUpload) {
       formData.append('isTemporary', 'true');
     }
 
