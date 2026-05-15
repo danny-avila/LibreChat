@@ -214,23 +214,35 @@ function getOutgoingHttpProtocol(request: RequestOptions): string {
   return normalizeProtocol(protocol);
 }
 
+function getUrlAuthorityHost(host: string): string {
+  try {
+    const parsedHost = new URL(`http://${host}`);
+    return parsedHost.host;
+  } catch {
+    if (host.includes(':') && !host.startsWith('[')) {
+      return `[${host}]`;
+    }
+  }
+
+  return host;
+}
+
 function getHostWithPort(host: string, port: string | undefined): string {
+  const authorityHost = getUrlAuthorityHost(host);
   if (!port) {
-    return host;
+    return authorityHost;
   }
 
   try {
-    const parsedHost = new URL(`http://${host}`);
+    const parsedHost = new URL(`http://${authorityHost}`);
     if (parsedHost.port) {
-      return host;
+      return authorityHost;
     }
   } catch {
-    if (host.includes(':') && !host.startsWith('[')) {
-      return `[${host}]:${port}`;
-    }
+    return authorityHost;
   }
 
-  return `${host}:${port}`;
+  return `${authorityHost}:${port}`;
 }
 
 function getOutgoingHttpOrigin(request: RequestOptions): string | undefined {
@@ -243,7 +255,7 @@ function getOutgoingHttpOrigin(request: RequestOptions): string | undefined {
 
   const hostname = getStringValue(request.hostname);
   const resolvedHostname = hostname ?? 'localhost';
-  return `${protocol}//${port ? `${resolvedHostname}:${port}` : resolvedHostname}`;
+  return `${protocol}//${getHostWithPort(resolvedHostname, port)}`;
 }
 
 function getOutgoingHttpUrl(request: RequestOptions & RequestUrlParts): string {
