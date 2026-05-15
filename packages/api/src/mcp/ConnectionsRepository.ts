@@ -154,7 +154,10 @@ export class ConnectionsRepository {
     }
     if (
       this.ownerId === undefined &&
-      (config.startup === false || config.requiresOAuth || hasCustomUserVars(config))
+      (config.startup === false ||
+        config.requiresOAuth ||
+        config.consumeOnly ||
+        hasCustomUserVars(config))
     ) {
       return false;
     }

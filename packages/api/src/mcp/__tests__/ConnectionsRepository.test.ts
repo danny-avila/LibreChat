@@ -430,6 +430,16 @@ describe('ConnectionsRepository', () => {
         expect(await repository.has('customVarStartupServer')).toBe(false);
       });
 
+      it('should NOT allow connection to consumeOnly servers (agent-only access)', async () => {
+        mockServerConfigs.consumeOnlyServer = {
+          type: 'streamable-http',
+          url: 'http://example.com',
+          consumeOnly: true,
+        };
+
+        expect(await repository.has('consumeOnlyServer')).toBe(false);
+      });
+
       it('should disconnect existing connection when server becomes not allowed', async () => {
         // Initially setup as regular server
         mockServerConfigs.changingServer = {
@@ -521,6 +531,16 @@ describe('ConnectionsRepository', () => {
         };
 
         expect(await repository.has('customVarServer')).toBe(true);
+      });
+
+      it('should allow connection to consumeOnly servers', async () => {
+        mockServerConfigs.consumeOnlyServer = {
+          type: 'streamable-http',
+          url: 'http://example.com',
+          consumeOnly: true,
+        };
+
+        expect(await repository.has('consumeOnlyServer')).toBe(true);
       });
 
       it('should return null from get() when server config does not exist', async () => {
