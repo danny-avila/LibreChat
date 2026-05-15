@@ -174,7 +174,7 @@ endpoints:
       apiKey: "sk-ajrasakha-master-key"
       baseURL: "http://100.100.108.101:4999/v1"
       models:
-        default: ['langgraph/ajrasakha_agent']
+        default: ['ajrasakha_agent']
         fetch: true
       titleConvo: true
       titleModel: "current_model"
@@ -828,5 +828,5 @@ modelSpecs:
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
       preset:
         endpoint: "LiteLLM"
-        model: "langgraph/ajrasakha_agent"
+        model: "ajrasakha_agent"
         modelLabel: "AjraSakha LangGraph"
