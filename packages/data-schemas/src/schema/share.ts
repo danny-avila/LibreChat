@@ -10,6 +10,7 @@ export interface ISharedLink extends Document {
   isPublic: boolean;
   createdAt?: Date;
   updatedAt?: Date;
+  tenantId?: string;
 }
 
 const shareSchema: Schema<ISharedLink> = new Schema(
@@ -40,10 +41,14 @@ const shareSchema: Schema<ISharedLink> = new Schema(
       type: Boolean,
       default: true,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   { timestamps: true },
 );
 
-shareSchema.index({ conversationId: 1, user: 1, targetMessageId: 1 });
+shareSchema.index({ conversationId: 1, user: 1, targetMessageId: 1, tenantId: 1 });
 
 export default shareSchema;

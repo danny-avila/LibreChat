@@ -27,7 +27,7 @@ type TContentProps = {
   isLatestMessage: boolean;
 };
 
-const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
+const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TContentProps) {
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
 
@@ -106,5 +106,6 @@ const Markdown = memo(({ content = '', isLatestMessage }: TContentProps) => {
     </MarkdownErrorBoundary>
   );
 });
+Markdown.displayName = 'Markdown';
 
 export default Markdown;

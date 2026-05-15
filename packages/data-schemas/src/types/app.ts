@@ -1,14 +1,18 @@
 import type {
   TEndpoint,
-  FileSources,
+  FileStorage,
   TFileConfig,
   TAzureConfig,
   TCustomConfig,
   TMemoryConfig,
   EModelEndpoint,
+  TVertexAIConfig,
   TAgentsEndpoint,
+  CloudFrontConfig,
   TCustomEndpoints,
   TAssistantEndpoint,
+  TAnthropicEndpoint,
+  SummarizationConfig,
 } from 'librechat-data-provider';
 
 export type JsonSchemaType = {
@@ -54,12 +58,16 @@ export interface AppConfig {
   };
   /** Memory configuration */
   memory?: TMemoryConfig;
+  /** Summarization configuration */
+  summarization?: SummarizationConfig;
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
-  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
-  fileStrategy: FileSources.local | FileSources.s3 | FileSources.firebase | FileSources.azure_blob;
+  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob', 'cloudfront') */
+  fileStrategy: FileStorage;
   /** File strategies configuration */
   fileStrategies?: TCustomConfig['fileStrategies'];
+  /** CloudFront CDN configuration */
+  cloudfront?: CloudFrontConfig;
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
   /** Actions configurations */
@@ -82,6 +90,8 @@ export interface AppConfig {
   speech?: TCustomConfig['speech'];
   /** MCP server configuration */
   mcpConfig?: TCustomConfig['mcpServers'] | null;
+  /** MCP settings (domain allowlist, etc.) */
+  mcpSettings?: TCustomConfig['mcpSettings'] | null;
   /** File configuration */
   fileConfig?: TFileConfig;
   /** Secure image links configuration */
@@ -91,14 +101,19 @@ export interface AppConfig {
   /** Available tools */
   availableTools?: Record<string, FunctionTool>;
   endpoints?: {
+    /** Admin exemption list of host:port pairs that bypass the SSRF private-IP block */
+    allowedAddresses?: string[];
     /** OpenAI endpoint configuration */
     openAI?: Partial<TEndpoint>;
     /** Google endpoint configuration */
     google?: Partial<TEndpoint>;
     /** Bedrock endpoint configuration */
     bedrock?: Partial<TEndpoint>;
-    /** Anthropic endpoint configuration */
-    anthropic?: Partial<TEndpoint>;
+    /** Anthropic endpoint configuration with optional Vertex AI support */
+    anthropic?: Partial<TAnthropicEndpoint> & {
+      /** Validated Vertex AI configuration */
+      vertexConfig?: TVertexAIConfig;
+    };
     /** Azure OpenAI endpoint configuration */
     azureOpenAI?: TAzureConfig;
     /** Assistants endpoint configuration */

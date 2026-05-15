@@ -4,33 +4,33 @@ import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
 import { Link } from 'react-router-dom';
 import {
-  TrashIcon,
-  MessageSquare,
-  ArrowUpDown,
   ArrowUp,
+  TrashIcon,
   ArrowDown,
+  ArrowUpDown,
   ExternalLink,
+  MessageSquare,
 } from 'lucide-react';
-import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
-import type { TranslationKeys } from '~/hooks';
 import {
+  Label,
+  Button,
+  Spinner,
   OGDialog,
-  useToastContext,
-  OGDialogTemplate,
-  OGDialogTrigger,
-  OGDialogContent,
+  DataTable,
   useMediaQuery,
-  OGDialogHeader,
   OGDialogTitle,
   TooltipAnchor,
-  DataTable,
-  Spinner,
-  Button,
-  Label,
+  OGDialogHeader,
+  OGDialogTrigger,
+  OGDialogContent,
+  useToastContext,
+  OGDialogTemplate,
 } from '@librechat/client';
+import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks';
 import { useDeleteSharedLinkMutation, useSharedLinksQuery } from '~/data-provider';
-import { useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
+import { useLocalize } from '~/hooks';
 import { formatDate } from '~/utils';
 import store from '~/store';
 
@@ -47,12 +47,12 @@ const DEFAULT_PARAMS: SharedLinksListParams = {
 export default function SharedLinks() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const isSearchEnabled = useRecoilValue(store.search);
-  const [queryParams, setQueryParams] = useState<SharedLinksListParams>(DEFAULT_PARAMS);
-  const [deleteRow, setDeleteRow] = useState<SharedLinkItem | null>(null);
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const searchStore = useRecoilValue(store.search);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const [deleteRow, setDeleteRow] = useState<SharedLinkItem | null>(null);
+  const [queryParams, setQueryParams] = useState<SharedLinksListParams>(DEFAULT_PARAMS);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
     useSharedLinksQuery(queryParams, {
@@ -173,17 +173,23 @@ export default function SharedLinks() {
             ariaSort = 'ascending';
           }
           return (
-            <Button
-              variant="ghost"
-              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              aria-sort={ariaSort}
-              aria-label={localize('com_ui_name_sort')}
-              aria-current={sortState ? 'true' : 'false'}
-            >
-              {localize('com_ui_name')}
-              <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-            </Button>
+            <TooltipAnchor
+              description={localize('com_ui_name_sort')}
+              side="top"
+              render={
+                <Button
+                  variant="ghost"
+                  onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                  className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+                  aria-sort={ariaSort}
+                  aria-label={localize('com_ui_name_sort')}
+                  aria-current={sortState ? 'true' : 'false'}
+                >
+                  {localize('com_ui_name')}
+                  <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+                </Button>
+              }
+            />
           );
         },
         cell: ({ row }) => {
@@ -207,7 +213,7 @@ export default function SharedLinks() {
           );
         },
         meta: {
-          size: '35%',
+          size: '32%',
           mobileSize: '50%',
         },
       },
@@ -225,17 +231,23 @@ export default function SharedLinks() {
             ariaSort = 'ascending';
           }
           return (
-            <Button
-              variant="ghost"
-              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-              className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
-              aria-sort={ariaSort}
-              aria-label={localize('com_ui_creation_date_sort' as TranslationKeys)}
-              aria-current={sortState ? 'true' : 'false'}
-            >
-              {localize('com_ui_date')}
-              <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
-            </Button>
+            <TooltipAnchor
+              description={localize('com_ui_date_sort')}
+              side="top"
+              render={
+                <Button
+                  variant="ghost"
+                  onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                  className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm"
+                  aria-sort={ariaSort}
+                  aria-label={localize('com_ui_date_sort')}
+                  aria-current={sortState ? 'true' : 'false'}
+                >
+                  {localize('com_ui_date')}
+                  <SortIcon className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
+                </Button>
+              }
+            />
           );
         },
         cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
@@ -247,7 +259,7 @@ export default function SharedLinks() {
       {
         accessorKey: 'actions',
         header: () => (
-          <Label className="px-2 py-0 text-xs hover:bg-surface-hover sm:px-2 sm:py-2 sm:text-sm">
+          <Label className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm">
             {localize('com_assistants_actions')}
           </Label>
         ),
@@ -330,7 +342,7 @@ export default function SharedLinks() {
             onFilterChange={debouncedFilterChange}
             filterValue={queryParams.search}
             isLoading={isLoading}
-            enableSearch={isSearchEnabled}
+            enableSearch={searchStore.enabled === true}
           />
         </OGDialogContent>
       </OGDialog>

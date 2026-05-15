@@ -39,47 +39,40 @@ export default function MultiMessage({
     return null;
   }
 
-  const message = messagesTree[messagesTree.length - siblingIdx - 1] as TMessage | undefined;
+  const currentSiblingIdx = messagesTree.length - siblingIdx - 1;
+  const message = messagesTree[currentSiblingIdx] as TMessage | undefined;
 
   if (!message) {
     return null;
   }
 
+  /**
+   * No explicit key — React uses positional reconciliation since MultiMessage
+   * always renders exactly one child at this position.
+   *
+   * Both messageId and parentMessageId change during the SSE lifecycle
+   * (client UUID → createdHandler ID → server ID), so neither can serve as a
+   * stable key. Using either caused React to unmount/remount the entire subtree
+   * on each SSE event, destroying memoized state and causing visible flickering.
+   *
+   * Without a key, React reuses the component instance and updates props in place.
+   * The memo comparators on ContentRender/MessageRender handle field-level diffing,
+   * and sibling switches work correctly because the message prop changes entirely.
+   */
+  const sharedProps = {
+    message,
+    currentEditId,
+    setCurrentEditId,
+    siblingIdx: currentSiblingIdx,
+    siblingCount: messagesTree.length,
+    setSiblingIdx: setSiblingIdxRev,
+  };
+
   if (isAssistantsEndpoint(message.endpoint) && message.content) {
-    return (
-      <MessageParts
-        key={message.messageId}
-        message={message}
-        currentEditId={currentEditId}
-        setCurrentEditId={setCurrentEditId}
-        siblingIdx={messagesTree.length - siblingIdx - 1}
-        siblingCount={messagesTree.length}
-        setSiblingIdx={setSiblingIdxRev}
-      />
-    );
+    return <MessageParts {...sharedProps} />;
   } else if (message.content) {
-    return (
-      <MessageContent
-        key={message.messageId}
-        message={message}
-        currentEditId={currentEditId}
-        setCurrentEditId={setCurrentEditId}
-        siblingIdx={messagesTree.length - siblingIdx - 1}
-        siblingCount={messagesTree.length}
-        setSiblingIdx={setSiblingIdxRev}
-      />
-    );
+    return <MessageContent {...sharedProps} />;
   }
 
-  return (
-    <Message
-      key={message.messageId}
-      message={message}
-      currentEditId={currentEditId}
-      setCurrentEditId={setCurrentEditId}
-      siblingIdx={messagesTree.length - siblingIdx - 1}
-      siblingCount={messagesTree.length}
-      setSiblingIdx={setSiblingIdxRev}
-    />
-  );
+  return <Message {...sharedProps} />;
 }

@@ -1,11 +1,10 @@
 import type { TFile } from 'librechat-data-provider';
-import type { ExtendedFile } from '~/common';
 
 export default function FileIcon({
   file,
   fileType,
 }: {
-  file?: Partial<ExtendedFile | TFile>;
+  file?: Partial<TFile> & { progress?: number };
   fileType: {
     fill: string;
     paths: React.FC;

@@ -153,7 +153,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should not affect regular agents when ephemeralAgent is provided', () => {
-      const agentId = 'regular-agent';
+      const agentId = 'agent_regular';
       const mockAgent = {
         id: agentId,
         tools: [Tools.file_search],
@@ -179,7 +179,7 @@ describe('useAgentToolPermissions', () => {
 
   describe('Regular Agent with Tools', () => {
     it('should allow file_search when agent has the tool', () => {
-      const agentId = 'agent-123';
+      const agentId = 'agent_123';
       const mockAgent = {
         id: agentId,
         tools: [Tools.file_search, 'other_tool'],
@@ -198,7 +198,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should allow execute_code when agent has the tool', () => {
-      const agentId = 'agent-456';
+      const agentId = 'agent_456';
       const mockAgent = {
         id: agentId,
         tools: [Tools.execute_code, 'another_tool'],
@@ -217,7 +217,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should allow both tools when agent has both', () => {
-      const agentId = 'agent-789';
+      const agentId = 'agent_789';
       const mockAgent = {
         id: agentId,
         tools: [Tools.file_search, Tools.execute_code, 'custom_tool'],
@@ -236,7 +236,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should disallow both tools when agent has neither', () => {
-      const agentId = 'agent-no-tools';
+      const agentId = 'agent_no_tools';
       const mockAgent = {
         id: agentId,
         tools: ['custom_tool1', 'custom_tool2'],
@@ -255,7 +255,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should handle agent with empty tools array', () => {
-      const agentId = 'agent-empty-tools';
+      const agentId = 'agent_empty_tools';
       const mockAgent = {
         id: agentId,
         tools: [],
@@ -274,7 +274,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should handle agent with undefined tools', () => {
-      const agentId = 'agent-undefined-tools';
+      const agentId = 'agent_undefined_tools';
       const mockAgent = {
         id: agentId,
         tools: undefined,
@@ -295,7 +295,7 @@ describe('useAgentToolPermissions', () => {
 
   describe('Agent Data from Query', () => {
     it('should prioritize agentData tools over selectedAgent tools', () => {
-      const agentId = 'agent-with-query-data';
+      const agentId = 'agent_with_query_data';
       const mockAgent = {
         id: agentId,
         tools: ['old_tool'],
@@ -318,7 +318,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should fallback to selectedAgent tools when agentData has no tools', () => {
-      const agentId = 'agent-fallback';
+      const agentId = 'agent_fallback';
       const mockAgent = {
         id: agentId,
         tools: [Tools.file_search],
@@ -343,7 +343,7 @@ describe('useAgentToolPermissions', () => {
 
   describe('Agent Not Found Scenarios', () => {
     it('should disallow all tools when agent is not found in map', () => {
-      const agentId = 'non-existent-agent';
+      const agentId = 'agent_nonexistent';
 
       (useAgentsMapContext as jest.Mock).mockReturnValue({});
       (useGetAgentByIdQuery as jest.Mock).mockReturnValue({ data: undefined });
@@ -356,7 +356,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should disallow all tools when agentsMap is null', () => {
-      const agentId = 'agent-with-null-map';
+      const agentId = 'agent_with_null_map';
 
       (useAgentsMapContext as jest.Mock).mockReturnValue(null);
       (useGetAgentByIdQuery as jest.Mock).mockReturnValue({ data: undefined });
@@ -369,7 +369,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should disallow all tools when agentsMap is undefined', () => {
-      const agentId = 'agent-with-undefined-map';
+      const agentId = 'agent_with_undefined_map';
 
       (useAgentsMapContext as jest.Mock).mockReturnValue(undefined);
       (useGetAgentByIdQuery as jest.Mock).mockReturnValue({ data: undefined });
@@ -384,7 +384,7 @@ describe('useAgentToolPermissions', () => {
 
   describe('Memoization and Performance', () => {
     it('should memoize results when inputs do not change', () => {
-      const agentId = 'memoized-agent';
+      const agentId = 'agent_memoized';
       const mockAgent = {
         id: agentId,
         tools: [Tools.file_search],
@@ -417,8 +417,8 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should recompute when agentId changes', () => {
-      const agentId1 = 'agent-1';
-      const agentId2 = 'agent-2';
+      const agentId1 = 'agent_1';
+      const agentId2 = 'agent_2';
       const mockAgents = {
         [agentId1]: { id: agentId1, tools: [Tools.file_search] },
         [agentId2]: { id: agentId2, tools: [Tools.execute_code] },
@@ -442,7 +442,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should handle switching between ephemeral and regular agents', () => {
-      const regularAgentId = 'regular-agent';
+      const regularAgentId = 'agent_regular';
       const mockAgent = {
         id: regularAgentId,
         tools: [],
@@ -486,7 +486,7 @@ describe('useAgentToolPermissions', () => {
 
   describe('Edge Cases', () => {
     it('should handle agents with null tools gracefully', () => {
-      const agentId = 'agent-null-tools';
+      const agentId = 'agent_null_tools';
       const mockAgent = {
         id: agentId,
         tools: null as any,
@@ -520,7 +520,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should handle query loading state', () => {
-      const agentId = 'loading-agent';
+      const agentId = 'agent_loading';
 
       (useAgentsMapContext as jest.Mock).mockReturnValue({});
       (useGetAgentByIdQuery as jest.Mock).mockReturnValue({
@@ -538,7 +538,7 @@ describe('useAgentToolPermissions', () => {
     });
 
     it('should handle query error state', () => {
-      const agentId = 'error-agent';
+      const agentId = 'agent_error';
 
       (useAgentsMapContext as jest.Mock).mockReturnValue({});
       (useGetAgentByIdQuery as jest.Mock).mockReturnValue({

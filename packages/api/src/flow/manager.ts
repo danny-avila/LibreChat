@@ -3,6 +3,18 @@ import { logger } from '@librechat/data-schemas';
 import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 
+export const PENDING_STALE_MS = 2 * 60 * 1000;
+
+const SECONDS_THRESHOLD = 1e10;
+
+/**
+ * Normalizes an expiration timestamp to milliseconds.
+ * Timestamps below 10 billion are assumed to be in seconds (valid until ~2286).
+ */
+export function normalizeExpiresAt(timestamp: number): number {
+  return timestamp < SECONDS_THRESHOLD ? timestamp * 1000 : timestamp;
+}
+
 export class FlowStateManager<T = unknown> {
   private keyv: Keyv;
   private ttl: number;
@@ -41,36 +53,18 @@ export class FlowStateManager<T = unknown> {
     process.on('SIGHUP', cleanup);
   }
 
+  /**
+   * Flow keys are intentionally NOT tenant-scoped. OAuth callbacks arrive
+   * without tenant ALS context (the provider redirect doesn't carry
+   * X-Tenant-Id). Flow IDs are random UUIDs with no collision risk, and
+   * flow data is ephemeral (TTL-bounded, no sensitive user content).
+   */
   private getFlowKey(flowId: string, type: string): string {
     return `${type}:${flowId}`;
   }
 
-  /**
-   * Normalizes an expiration timestamp to milliseconds.
-   * Detects whether the input is in seconds or milliseconds based on magnitude.
-   * Timestamps below 10 billion are assumed to be in seconds (valid until ~2286).
-   * @param timestamp - The expiration timestamp (in seconds or milliseconds)
-   * @returns The timestamp normalized to milliseconds
-   */
-  private normalizeExpirationTimestamp(timestamp: number): number {
-    const SECONDS_THRESHOLD = 1e10;
-    if (timestamp < SECONDS_THRESHOLD) {
-      return timestamp * 1000;
-    }
-    return timestamp;
-  }
-
-  /**
-   * Checks if a flow's token has expired based on its expires_at field
-   * @param flowState - The flow state to check
-   * @returns true if the token has expired, false otherwise (including if no expires_at exists)
-   */
   private isTokenExpired(flowState: FlowState<T> | undefined): boolean {
-    if (!flowState?.result) {
-      return false;
-    }
-
-    if (typeof flowState.result !== 'object') {
+    if (!flowState?.result || typeof flowState.result !== 'object') {
       return false;
     }
 
@@ -79,13 +73,29 @@ export class FlowStateManager<T = unknown> {
     }
 
     const expiresAt = (flowState.result as { expires_at: unknown }).expires_at;
-
     if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
       return false;
     }
 
-    const normalizedExpiresAt = this.normalizeExpirationTimestamp(expiresAt);
-    return normalizedExpiresAt < Date.now();
+    return normalizeExpiresAt(expiresAt) < Date.now();
+  }
+
+  /**
+   * Stores initial PENDING flow state without starting the monitor loop.
+   * Use this when you need to guarantee the state is persisted before
+   * performing an action (e.g., an OAuth redirect), then call createFlow()
+   * separately to start monitoring for completion.
+   */
+  async initFlow(flowId: string, type: string, metadata: FlowMetadata = {}): Promise<void> {
+    const flowKey = this.getFlowKey(flowId, type);
+    const initialState: FlowState = {
+      type,
+      status: 'PENDING',
+      metadata,
+      createdAt: Date.now(),
+    };
+    logger.debug(`[${flowKey}] Storing initial flow state`);
+    await this.keyv.set(flowKey, initialState, this.ttl);
   }
 
   /**
@@ -129,22 +139,76 @@ export class FlowStateManager<T = unknown> {
     return new Promise<T>((resolve, reject) => {
       const checkInterval = 2000;
       let elapsedTime = 0;
+      let isCleanedUp = false;
+      let intervalId: NodeJS.Timeout | null = null;
+      let missingStateRetried = false;
+      let isRetrying = false;
 
-      const intervalId = setInterval(async () => {
+      // Cleanup function to avoid duplicate cleanup
+      const cleanup = () => {
+        if (isCleanedUp) return;
+        isCleanedUp = true;
+        if (intervalId) {
+          clearInterval(intervalId);
+          this.intervals.delete(intervalId);
+        }
+        if (signal && abortHandler) {
+          signal.removeEventListener('abort', abortHandler);
+        }
+      };
+
+      // Immediate abort handler - responds instantly to abort signal
+      const abortHandler = async () => {
+        cleanup();
+        logger.warn(`[${flowKey}] Flow aborted (immediate)`);
+        const message = `${type} flow aborted`;
         try {
-          const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+          await this.keyv.delete(flowKey);
+        } catch {
+          // Ignore delete errors during abort
+        }
+        reject(new Error(message));
+      };
+
+      // Register abort handler immediately if signal provided
+      if (signal) {
+        if (signal.aborted) {
+          // Already aborted, reject immediately
+          cleanup();
+          reject(new Error(`${type} flow aborted`));
+          return;
+        }
+        signal.addEventListener('abort', abortHandler, { once: true });
+      }
+
+      intervalId = setInterval(async () => {
+        if (isCleanedUp || isRetrying) return;
+
+        try {
+          let flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
           if (!flowState) {
-            clearInterval(intervalId);
-            this.intervals.delete(intervalId);
-            logger.error(`[${flowKey}] Flow state not found`);
-            reject(new Error(`${type} Flow state not found`));
-            return;
+            if (!missingStateRetried) {
+              missingStateRetried = true;
+              isRetrying = true;
+              logger.warn(
+                `[${flowKey}] Flow state not found, retrying once after 500ms (race recovery)`,
+              );
+              await new Promise((r) => setTimeout(r, 500));
+              flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+              isRetrying = false;
+            }
+
+            if (!flowState) {
+              cleanup();
+              logger.error(`[${flowKey}] Flow state not found after retry`);
+              reject(new Error(`${type} Flow state not found`));
+              return;
+            }
           }
 
           if (signal?.aborted) {
-            clearInterval(intervalId);
-            this.intervals.delete(intervalId);
+            cleanup();
             logger.warn(`[${flowKey}] Flow aborted`);
             const message = `${type} flow aborted`;
             await this.keyv.delete(flowKey);
@@ -153,8 +217,7 @@ export class FlowStateManager<T = unknown> {
           }
 
           if (flowState.status !== 'PENDING') {
-            clearInterval(intervalId);
-            this.intervals.delete(intervalId);
+            cleanup();
             logger.debug(`[${flowKey}] Flow completed`);
 
             if (flowState.status === 'COMPLETED' && flowState.result !== undefined) {
@@ -168,8 +231,7 @@ export class FlowStateManager<T = unknown> {
 
           elapsedTime += checkInterval;
           if (elapsedTime >= this.ttl) {
-            clearInterval(intervalId);
-            this.intervals.delete(intervalId);
+            cleanup();
             logger.error(
               `[${flowKey}] Flow timed out | Elapsed time: ${elapsedTime} | TTL: ${this.ttl}`,
             );
@@ -179,8 +241,7 @@ export class FlowStateManager<T = unknown> {
           logger.debug(`[${flowKey}] Flow state elapsed time: ${elapsedTime}, checking again...`);
         } catch (error) {
           logger.error(`[${flowKey}] Error checking flow state:`, error);
-          clearInterval(intervalId);
-          this.intervals.delete(intervalId);
+          cleanup();
           reject(error);
         }
       }, checkInterval);
@@ -197,10 +258,12 @@ export class FlowStateManager<T = unknown> {
     const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
 
     if (!flowState) {
-      logger.warn('[FlowStateManager] Cannot complete flow - flow state not found', {
-        flowId,
-        type,
-      });
+      logger.warn(
+        `[FlowStateManager] completeFlow: flow not found — key=${flowKey}. ` +
+          'Possible causes: flow TTL expired before callback arrived, flow was never created, or ' +
+          'the callback is routing to a different instance without shared Keyv storage.',
+        { flowId, type },
+      );
       return false;
     }
 
@@ -243,7 +306,7 @@ export class FlowStateManager<T = unknown> {
   async isFlowStale(
     flowId: string,
     type: string,
-    staleThresholdMs: number = 2 * 60 * 1000,
+    staleThresholdMs: number = PENDING_STALE_MS,
   ): Promise<{ isStale: boolean; age: number; status?: string }> {
     const flowKey = this.getFlowKey(flowId, type);
     const flowState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;

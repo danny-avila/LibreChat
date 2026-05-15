@@ -19,9 +19,7 @@ const allowSharedLinks =
   process.env.ALLOW_SHARED_LINKS === undefined || isEnabled(process.env.ALLOW_SHARED_LINKS);
 
 if (allowSharedLinks) {
-  const allowSharedLinksPublic =
-    process.env.ALLOW_SHARED_LINKS_PUBLIC === undefined ||
-    isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC);
+  const allowSharedLinksPublic = isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC);
   router.get(
     '/:shareId',
     allowSharedLinksPublic ? (req, res, next) => next() : requireJwtAuth,
@@ -89,6 +87,7 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
     return res.status(200).json({
       success: share.success,
       shareId: share.shareId,
+      targetMessageId: share.targetMessageId,
       conversationId: req.params.conversationId,
     });
   } catch (error) {
@@ -114,7 +113,12 @@ router.post('/:conversationId', requireJwtAuth, async (req, res) => {
 
 router.patch('/:shareId', requireJwtAuth, async (req, res) => {
   try {
-    const updatedShare = await updateSharedLink(req.user.id, req.params.shareId);
+    const { targetMessageId } = req.body ?? {};
+    if (targetMessageId !== undefined && typeof targetMessageId !== 'string') {
+      return res.status(400).json({ message: 'targetMessageId must be a string' });
+    }
+
+    const updatedShare = await updateSharedLink(req.user.id, req.params.shareId, targetMessageId);
     if (updatedShare) {
       res.status(200).json(updatedShare);
     } else {

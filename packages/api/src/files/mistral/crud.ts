@@ -168,9 +168,11 @@ export async function performOCR({
     config.httpsAgent = httpsAgent;
   }
 
+  const ocrURL = baseURL.endsWith('/ocr') ? baseURL : `${baseURL}/ocr`;
+
   return axios
     .post(
-      `${baseURL}/ocr`,
+      ocrURL,
       {
         model,
         image_limit: 0,

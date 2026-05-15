@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Trans } from 'react-i18next';
 import { QrCode, RotateCw, Trash2 } from 'lucide-react';
 import {
@@ -20,6 +20,7 @@ import {
   useDeleteSharedLinkMutation,
 } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
+import { buildShareLinkUrl } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 export default function SharedLinkButton({
@@ -85,15 +86,13 @@ export default function SharedLinkButton({
     },
   });
 
-  const generateShareLink = useCallback((shareId: string) => {
-    return `${window.location.protocol}//${window.location.host}/share/${shareId}`;
-  }, []);
+  const generateShareLink = (shareId: string) => buildShareLinkUrl(shareId);
 
   const updateSharedLink = async () => {
     if (!shareId) {
       return;
     }
-    const updateShare = await mutateAsync({ shareId });
+    const updateShare = await mutateAsync({ shareId, targetMessageId });
     const newLink = generateShareLink(updateShare.shareId);
     setSharedLink(newLink);
     setAnnouncement(localize('com_ui_link_refreshed'));

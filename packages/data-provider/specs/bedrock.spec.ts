@@ -1,5 +1,304 @@
-import { bedrockInputParser } from '../src/bedrock';
-import type { BedrockConverseInput } from '../src/bedrock';
+import { ThinkingDisplay } from '../src/schemas';
+import {
+  BEDROCK_OUTPUT_128K_BETA,
+  supportsAdaptiveThinking,
+  omitsThinkingByDefault,
+  resolveThinkingDisplay,
+  bedrockOutputParser,
+  bedrockInputParser,
+  bedrockInputSchema,
+  supportsContext1m,
+  BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA,
+} from '../src/bedrock';
+
+const BEDROCK_CLAUDE_4_BETAS = [BEDROCK_OUTPUT_128K_BETA, BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA];
+
+describe('supportsAdaptiveThinking', () => {
+  test('should return true for claude-opus-4-6', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4-6')).toBe(true);
+  });
+
+  test('should return true for claude-opus-4.6', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4.6')).toBe(true);
+  });
+
+  test('should return true for claude-opus-4-7 (future)', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4-7')).toBe(true);
+  });
+
+  test('should return true for claude-opus-5 (future)', () => {
+    expect(supportsAdaptiveThinking('claude-opus-5')).toBe(true);
+  });
+
+  test('should return true for claude-opus-9 (future)', () => {
+    expect(supportsAdaptiveThinking('claude-opus-9')).toBe(true);
+  });
+
+  test('should return true for claude-sonnet-5 (future)', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-5')).toBe(true);
+  });
+
+  test('should return true for claude-sonnet-6 (future)', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-6')).toBe(true);
+  });
+
+  test('should return false for claude-opus-4-5', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4-5')).toBe(false);
+  });
+
+  test('should return false for claude-opus-4', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4')).toBe(false);
+  });
+
+  test('should return false for claude-opus-4-0', () => {
+    expect(supportsAdaptiveThinking('claude-opus-4-0')).toBe(false);
+  });
+
+  test('should return true for claude-sonnet-4-6', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4-6')).toBe(true);
+  });
+
+  test('should return true for claude-sonnet-4.6', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4.6')).toBe(true);
+  });
+
+  test('should return true for claude-sonnet-4-7 (future)', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4-7')).toBe(true);
+  });
+
+  test('should return true for anthropic.claude-sonnet-4-6 (Bedrock)', () => {
+    expect(supportsAdaptiveThinking('anthropic.claude-sonnet-4-6')).toBe(true);
+  });
+
+  test('should return true for us.anthropic.claude-sonnet-4-6 (cross-region Bedrock)', () => {
+    expect(supportsAdaptiveThinking('us.anthropic.claude-sonnet-4-6')).toBe(true);
+  });
+
+  test('should return true for claude-4-6-sonnet (alternate naming)', () => {
+    expect(supportsAdaptiveThinking('claude-4-6-sonnet')).toBe(true);
+  });
+
+  test('should return false for claude-sonnet-4-5', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4-5')).toBe(false);
+  });
+
+  test('should return false for claude-sonnet-4', () => {
+    expect(supportsAdaptiveThinking('claude-sonnet-4')).toBe(false);
+  });
+
+  test('should return false for claude-3-7-sonnet', () => {
+    expect(supportsAdaptiveThinking('claude-3-7-sonnet')).toBe(false);
+  });
+
+  test('should return false for unrelated model', () => {
+    expect(supportsAdaptiveThinking('gpt-4o')).toBe(false);
+  });
+
+  test('should handle Bedrock model ID with prefix stripping', () => {
+    expect(supportsAdaptiveThinking('anthropic.claude-opus-4-6-v1:0')).toBe(true);
+  });
+
+  test('should handle cross-region Bedrock model ID', () => {
+    expect(supportsAdaptiveThinking('us.anthropic.claude-opus-4-6-v1')).toBe(true);
+  });
+
+  test('should return true for claude-4-6-opus (alternate naming)', () => {
+    expect(supportsAdaptiveThinking('claude-4-6-opus')).toBe(true);
+  });
+
+  test('should return true for anthropic.claude-4-6-opus (alternate naming)', () => {
+    expect(supportsAdaptiveThinking('anthropic.claude-4-6-opus')).toBe(true);
+  });
+
+  test('should return true for claude-5-sonnet (alternate naming)', () => {
+    expect(supportsAdaptiveThinking('claude-5-sonnet')).toBe(true);
+  });
+
+  test('should return true for anthropic.claude-5-sonnet (alternate naming)', () => {
+    expect(supportsAdaptiveThinking('anthropic.claude-5-sonnet')).toBe(true);
+  });
+
+  test('should return false for claude-4-5-opus (alternate naming, below threshold)', () => {
+    expect(supportsAdaptiveThinking('claude-4-5-opus')).toBe(false);
+  });
+
+  test('should return false for claude-4-sonnet (alternate naming, below threshold)', () => {
+    expect(supportsAdaptiveThinking('claude-4-sonnet')).toBe(false);
+  });
+});
+
+describe('supportsContext1m', () => {
+  test('should return false for claude-sonnet-4', () => {
+    expect(supportsContext1m('claude-sonnet-4')).toBe(false);
+  });
+
+  test('should return false for claude-sonnet-4-5', () => {
+    expect(supportsContext1m('claude-sonnet-4-5')).toBe(false);
+  });
+
+  test('should return true for claude-sonnet-4-6', () => {
+    expect(supportsContext1m('claude-sonnet-4-6')).toBe(true);
+  });
+
+  test('should return true for anthropic.claude-sonnet-4-6 (Bedrock)', () => {
+    expect(supportsContext1m('anthropic.claude-sonnet-4-6')).toBe(true);
+  });
+
+  test('should return true for claude-sonnet-5 (future)', () => {
+    expect(supportsContext1m('claude-sonnet-5')).toBe(true);
+  });
+
+  test('should return true for claude-opus-4-6', () => {
+    expect(supportsContext1m('claude-opus-4-6')).toBe(true);
+  });
+
+  test('should return true for claude-opus-4-7', () => {
+    expect(supportsContext1m('claude-opus-4-7')).toBe(true);
+  });
+
+  test('should return true for claude-opus-5 (future)', () => {
+    expect(supportsContext1m('claude-opus-5')).toBe(true);
+  });
+
+  test('should return false for claude-opus-4-5', () => {
+    expect(supportsContext1m('claude-opus-4-5')).toBe(false);
+  });
+
+  test('should return false for claude-opus-4', () => {
+    expect(supportsContext1m('claude-opus-4')).toBe(false);
+  });
+
+  test('should return false for claude-3-7-sonnet', () => {
+    expect(supportsContext1m('claude-3-7-sonnet')).toBe(false);
+  });
+
+  test('should return false for claude-sonnet-3', () => {
+    expect(supportsContext1m('claude-sonnet-3')).toBe(false);
+  });
+
+  test('should return false for unrelated model', () => {
+    expect(supportsContext1m('gpt-4o')).toBe(false);
+  });
+
+  test('should return false for claude-4-sonnet (alternate naming, below threshold)', () => {
+    expect(supportsContext1m('claude-4-sonnet')).toBe(false);
+  });
+
+  test('should return true for claude-5-sonnet (alternate naming)', () => {
+    expect(supportsContext1m('claude-5-sonnet')).toBe(true);
+  });
+
+  test('should return true for claude-4-6-sonnet (alternate naming)', () => {
+    expect(supportsContext1m('claude-4-6-sonnet')).toBe(true);
+  });
+
+  test('should return true for claude-4-6-opus (alternate naming)', () => {
+    expect(supportsContext1m('claude-4-6-opus')).toBe(true);
+  });
+
+  test('should return false for claude-3-sonnet (alternate naming, below threshold)', () => {
+    expect(supportsContext1m('claude-3-sonnet')).toBe(false);
+  });
+
+  test('should return false for claude-4-5-opus (alternate naming, below threshold)', () => {
+    expect(supportsContext1m('claude-4-5-opus')).toBe(false);
+  });
+});
+
+describe('omitsThinkingByDefault', () => {
+  test('returns true for claude-opus-4-7', () => {
+    expect(omitsThinkingByDefault('claude-opus-4-7')).toBe(true);
+  });
+
+  test('returns true for claude-opus-4.7', () => {
+    expect(omitsThinkingByDefault('claude-opus-4.7')).toBe(true);
+  });
+
+  test('returns true for anthropic.claude-opus-4-7 (Bedrock)', () => {
+    expect(omitsThinkingByDefault('anthropic.claude-opus-4-7')).toBe(true);
+  });
+
+  test('returns true for us.anthropic.claude-opus-4-7 (cross-region Bedrock)', () => {
+    expect(omitsThinkingByDefault('us.anthropic.claude-opus-4-7')).toBe(true);
+  });
+
+  test('returns true for claude-opus-4-8 (future Opus 4.x)', () => {
+    expect(omitsThinkingByDefault('claude-opus-4-8')).toBe(true);
+  });
+
+  test('returns true for claude-opus-5 (future major Opus)', () => {
+    expect(omitsThinkingByDefault('claude-opus-5')).toBe(true);
+  });
+
+  test('returns true for claude-opus-9 (far-future Opus)', () => {
+    expect(omitsThinkingByDefault('claude-opus-9')).toBe(true);
+  });
+
+  test('returns false for claude-opus-4-6 (adaptive but pre-4.7)', () => {
+    expect(omitsThinkingByDefault('claude-opus-4-6')).toBe(false);
+  });
+
+  test('returns false for claude-opus-4-5', () => {
+    expect(omitsThinkingByDefault('claude-opus-4-5')).toBe(false);
+  });
+
+  test('returns false for claude-sonnet-4-6', () => {
+    expect(omitsThinkingByDefault('claude-sonnet-4-6')).toBe(false);
+  });
+
+  test('returns false for claude-sonnet-4-7 (Sonnet is not affected by the Opus 4.7 default)', () => {
+    expect(omitsThinkingByDefault('claude-sonnet-4-7')).toBe(false);
+  });
+
+  test('returns false for claude-haiku-4-5', () => {
+    expect(omitsThinkingByDefault('claude-haiku-4-5')).toBe(false);
+  });
+
+  test('returns false for claude-3-7-sonnet', () => {
+    expect(omitsThinkingByDefault('claude-3-7-sonnet')).toBe(false);
+  });
+
+  test('returns false for unrelated models', () => {
+    expect(omitsThinkingByDefault('gpt-4o')).toBe(false);
+    expect(omitsThinkingByDefault('')).toBe(false);
+  });
+});
+
+describe('resolveThinkingDisplay', () => {
+  test('returns "summarized" for Opus 4.7 when explicit is auto/null/undefined', () => {
+    expect(resolveThinkingDisplay('claude-opus-4-7', ThinkingDisplay.auto)).toBe('summarized');
+    expect(resolveThinkingDisplay('claude-opus-4-7', null)).toBe('summarized');
+    expect(resolveThinkingDisplay('claude-opus-4-7', undefined)).toBe('summarized');
+  });
+
+  test('returns undefined for Opus 4.6 when explicit is auto/null/undefined', () => {
+    expect(resolveThinkingDisplay('claude-opus-4-6', ThinkingDisplay.auto)).toBeUndefined();
+    expect(resolveThinkingDisplay('claude-opus-4-6', null)).toBeUndefined();
+    expect(resolveThinkingDisplay('claude-opus-4-6', undefined)).toBeUndefined();
+  });
+
+  test('explicit summarized wins for any adaptive model', () => {
+    expect(resolveThinkingDisplay('claude-opus-4-6', ThinkingDisplay.summarized)).toBe(
+      'summarized',
+    );
+    expect(resolveThinkingDisplay('claude-sonnet-4-6', ThinkingDisplay.summarized)).toBe(
+      'summarized',
+    );
+    expect(resolveThinkingDisplay('claude-opus-4-7', ThinkingDisplay.summarized)).toBe(
+      'summarized',
+    );
+  });
+
+  test('explicit omitted wins even for Opus 4.7', () => {
+    expect(resolveThinkingDisplay('claude-opus-4-7', ThinkingDisplay.omitted)).toBe('omitted');
+    expect(resolveThinkingDisplay('claude-opus-4-6', ThinkingDisplay.omitted)).toBe('omitted');
+  });
+
+  test('unknown string values fall through to auto behavior', () => {
+    expect(resolveThinkingDisplay('claude-opus-4-7', 'bogus')).toBe('summarized');
+    expect(resolveThinkingDisplay('claude-opus-4-6', 'bogus')).toBeUndefined();
+  });
+});
 
 describe('bedrockInputParser', () => {
   describe('Model Matching for Reasoning Configuration', () => {
@@ -7,96 +306,152 @@ describe('bedrockInputParser', () => {
       const input = {
         model: 'anthropic.claude-3-7-sonnet',
       };
-      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
       expect(additionalFields.thinking).toBe(true);
       expect(additionalFields.thinkingBudget).toBe(2000);
-      expect(additionalFields.anthropic_beta).toEqual(['output-128k-2025-02-19']);
+      expect(additionalFields.anthropic_beta).toEqual([BEDROCK_OUTPUT_128K_BETA]);
     });
 
-    test('should match anthropic.claude-sonnet-4 model', () => {
+    test('should match anthropic.claude-sonnet-4 model without context beta header', () => {
       const input = {
         model: 'anthropic.claude-sonnet-4',
       };
-      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
       expect(additionalFields.thinking).toBe(true);
       expect(additionalFields.thinkingBudget).toBe(2000);
-      expect(additionalFields.anthropic_beta).toEqual(['output-128k-2025-02-19']);
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
     });
 
-    test('should match anthropic.claude-opus-5 model', () => {
+    test('should match anthropic.claude-opus-5 model with adaptive thinking', () => {
       const input = {
         model: 'anthropic.claude-opus-5',
       };
-      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
-      expect(additionalFields.thinking).toBe(true);
-      expect(additionalFields.thinkingBudget).toBe(2000);
-      expect(additionalFields.anthropic_beta).toEqual(['output-128k-2025-02-19']);
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
     });
 
-    test('should match anthropic.claude-haiku-6 model', () => {
+    test('should match anthropic.claude-haiku-6 model without context beta header', () => {
       const input = {
         model: 'anthropic.claude-haiku-6',
       };
-      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
       expect(additionalFields.thinking).toBe(true);
       expect(additionalFields.thinkingBudget).toBe(2000);
-      expect(additionalFields.anthropic_beta).toEqual(['output-128k-2025-02-19']);
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
     });
 
-    test('should match anthropic.claude-4-sonnet model', () => {
+    test('should match anthropic.claude-4-sonnet model without context beta header', () => {
       const input = {
         model: 'anthropic.claude-4-sonnet',
       };
-      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
       expect(additionalFields.thinking).toBe(true);
       expect(additionalFields.thinkingBudget).toBe(2000);
-      expect(additionalFields.anthropic_beta).toEqual(['output-128k-2025-02-19']);
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
     });
 
-    test('should match anthropic.claude-4.5-sonnet model', () => {
+    test('should match anthropic.claude-4.5-sonnet model without context beta header', () => {
       const input = {
         model: 'anthropic.claude-4.5-sonnet',
       };
-      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
       expect(additionalFields.thinking).toBe(true);
       expect(additionalFields.thinkingBudget).toBe(2000);
-      expect(additionalFields.anthropic_beta).toEqual(['output-128k-2025-02-19']);
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
     });
 
-    test('should match anthropic.claude-4-7-sonnet model', () => {
+    test('should match anthropic.claude-sonnet-4-6 with adaptive thinking', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-4-6',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('should match us.anthropic.claude-sonnet-4-6 with adaptive thinking', () => {
+      const input = {
+        model: 'us.anthropic.claude-sonnet-4-6',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('should match anthropic.claude-4-7-sonnet model with adaptive thinking', () => {
       const input = {
         model: 'anthropic.claude-4-7-sonnet',
       };
-      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('should match anthropic.claude-sonnet-4-20250514-v1:0 with full model ID', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-4-20250514-v1:0',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
       expect(additionalFields.thinking).toBe(true);
       expect(additionalFields.thinkingBudget).toBe(2000);
-      expect(additionalFields.anthropic_beta).toEqual(['output-128k-2025-02-19']);
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
     });
 
     test('should not match non-Claude models', () => {
       const input = {
         model: 'some-other-model',
       };
-      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       expect(result.additionalModelRequestFields).toBeUndefined();
     });
 
-    test('should respect explicit thinking configuration', () => {
+    test('should not add anthropic_beta to Moonshot Kimi K2 models', () => {
+      const input = {
+        model: 'moonshot.kimi-k2-0711-thinking',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as
+        | Record<string, unknown>
+        | undefined;
+      expect(additionalFields?.anthropic_beta).toBeUndefined();
+    });
+
+    test('should not add anthropic_beta to DeepSeek models', () => {
+      const input = {
+        model: 'deepseek.deepseek-r1',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as
+        | Record<string, unknown>
+        | undefined;
+      expect(additionalFields?.anthropic_beta).toBeUndefined();
+    });
+
+    test('should respect explicit thinking configuration but still add beta headers', () => {
       const input = {
         model: 'anthropic.claude-sonnet-4',
         thinking: false,
       };
-      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
       expect(additionalFields.thinking).toBeUndefined();
       expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
     });
 
     test('should respect custom thinking budget', () => {
@@ -105,10 +460,661 @@ describe('bedrockInputParser', () => {
         thinking: true,
         thinkingBudget: 3000,
       };
-      const result = bedrockInputParser.parse(input) as BedrockConverseInput;
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
       expect(additionalFields.thinking).toBe(true);
       expect(additionalFields.thinkingBudget).toBe(3000);
+    });
+
+    test('should preserve user-provided anthropic_beta values for Claude 4 models', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-4',
+        additionalModelRequestFields: {
+          anthropic_beta: ['context-1m-2025-08-07'],
+          custom_flag: true,
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.anthropic_beta).toEqual([
+        'context-1m-2025-08-07',
+        ...BEDROCK_CLAUDE_4_BETAS,
+      ]);
+      expect(additionalFields.custom_flag).toBe(true);
+    });
+  });
+
+  describe('Opus 4.6 Adaptive Thinking', () => {
+    test('should default to adaptive thinking for anthropic.claude-opus-4-6-v1', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('should handle cross-region model ID us.anthropic.claude-opus-4-6-v1', () => {
+      const input = {
+        model: 'us.anthropic.claude-opus-4-6-v1',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('should handle cross-region model ID global.anthropic.claude-opus-4-6-v1', () => {
+      const input = {
+        model: 'global.anthropic.claude-opus-4-6-v1',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('should pass effort parameter via output_config for adaptive models', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+        effort: 'medium',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.output_config).toEqual({ effort: 'medium' });
+      expect(additionalFields.effort).toBeUndefined();
+    });
+
+    test('should pass xhigh effort via output_config for adaptive models (Opus 4.7)', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-7',
+        effort: 'xhigh',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.output_config).toEqual({ effort: 'xhigh' });
+      expect(additionalFields.effort).toBeUndefined();
+    });
+
+    test('should set thinking.display to "summarized" so Opus 4.7 returns reasoning blocks', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-7',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+    });
+
+    test('should NOT set thinking.display for pre-Opus-4.7 adaptive models', () => {
+      const pre47Models = [
+        'anthropic.claude-opus-4-6-v1',
+        'anthropic.claude-sonnet-4-6',
+        'us.anthropic.claude-opus-4-6-v1',
+      ];
+
+      pre47Models.forEach((model) => {
+        const result = bedrockInputParser.parse({ model }) as Record<string, unknown>;
+        const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+        expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+        expect(additionalFields.thinking).not.toHaveProperty('display');
+      });
+    });
+
+    test('explicit thinkingDisplay="summarized" forces display even on Opus 4.6', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        thinkingDisplay: ThinkingDisplay.summarized,
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.thinkingDisplay).toBeUndefined();
+    });
+
+    test('explicit thinkingDisplay="omitted" wins even on Opus 4.7', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-7',
+        thinkingDisplay: ThinkingDisplay.omitted,
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'omitted' });
+      expect(additionalFields.thinkingDisplay).toBeUndefined();
+    });
+
+    test('thinkingDisplay="auto" defers to model default', () => {
+      const opus47 = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-7',
+        thinkingDisplay: ThinkingDisplay.auto,
+      }) as Record<string, unknown>;
+      expect((opus47.additionalModelRequestFields as Record<string, unknown>).thinking).toEqual({
+        type: 'adaptive',
+        display: 'summarized',
+      });
+
+      const opus46 = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        thinkingDisplay: ThinkingDisplay.auto,
+      }) as Record<string, unknown>;
+      expect((opus46.additionalModelRequestFields as Record<string, unknown>).thinking).toEqual({
+        type: 'adaptive',
+      });
+    });
+
+    test('thinkingDisplay is stripped when model does not support adaptive thinking', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+        thinkingDisplay: ThinkingDisplay.summarized,
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields?.thinkingDisplay).toBeUndefined();
+    });
+
+    test('thinkingDisplay is stripped when adaptive thinking is disabled', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-7',
+        thinking: false,
+        thinkingDisplay: ThinkingDisplay.summarized,
+      }) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toBeUndefined();
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.thinkingDisplay).toBeUndefined();
+    });
+
+    test('round-trips persisted display from AMRF.thinking.display (Opus 4.7 omitted)', () => {
+      /** Simulates a persisted conversation where the prior parse already set
+       * display on the nested AMRF.thinking object but did not persist the
+       * top-level thinkingDisplay field. The schema (bedrockInputSchema) should
+       * recover display → thinkingDisplay so the parser can honor the explicit
+       * choice on subsequent requests. */
+      const persisted = bedrockInputSchema.parse({
+        model: 'anthropic.claude-opus-4-7',
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'omitted' },
+        },
+      }) as Record<string, unknown>;
+      expect(persisted.thinkingDisplay).toBe('omitted');
+    });
+
+    test('round-trips persisted display from AMRF.thinking.display (summarized)', () => {
+      const persisted = bedrockInputSchema.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'summarized' },
+        },
+      }) as Record<string, unknown>;
+      expect(persisted.thinkingDisplay).toBe('summarized');
+    });
+
+    test('ignores unknown display values during round-trip extraction', () => {
+      const persisted = bedrockInputSchema.parse({
+        model: 'anthropic.claude-opus-4-7',
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'bogus' },
+        },
+      }) as Record<string, unknown>;
+      expect(persisted.thinkingDisplay).toBeUndefined();
+    });
+
+    test('top-level thinkingDisplay wins over persisted AMRF display', () => {
+      const persisted = bedrockInputSchema.parse({
+        model: 'anthropic.claude-opus-4-7',
+        thinkingDisplay: ThinkingDisplay.omitted,
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'summarized' },
+        },
+      }) as Record<string, unknown>;
+      expect(persisted.thinkingDisplay).toBe(ThinkingDisplay.omitted);
+    });
+
+    test('bedrockInputParser preserves persisted AMRF.thinking.display (Opus 4.7 omitted)', () => {
+      /** initializeBedrock calls bedrockInputParser directly on persisted
+       * model_parameters. Without the parser-side extraction, the 'omitted'
+       * user choice baked into AMRF would be silently reverted to
+       * 'summarized' by the Opus 4.7+ auto fallback. */
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-7',
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'omitted' },
+        },
+      }) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'omitted' });
+    });
+
+    test('bedrockInputParser: top-level thinkingDisplay wins over persisted AMRF display', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-7',
+        thinkingDisplay: ThinkingDisplay.summarized,
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive', display: 'omitted' },
+        },
+      }) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+    });
+
+    test('should not include output_config when effort is unset (empty string)', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+        effort: '',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.output_config).toBeUndefined();
+    });
+
+    test('should respect thinking=false for adaptive models', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+        thinking: false,
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toBeUndefined();
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('should preserve effort when thinking=false for adaptive models', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+        thinking: false,
+        effort: 'high',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toBeUndefined();
+      expect(additionalFields.thinkingBudget).toBeUndefined();
+      expect(additionalFields.output_config).toEqual({ effort: 'high' });
+      expect(additionalFields.effort).toBeUndefined();
+    });
+
+    test('should strip effort for non-adaptive thinking models', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+        effort: 'high',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toBe(true);
+      expect(additionalFields.thinkingBudget).toBe(2000);
+      expect(additionalFields.effort).toBeUndefined();
+      expect(additionalFields.output_config).toBeUndefined();
+    });
+
+    test('should not include effort for Opus 4.5 (non-adaptive)', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-5-v1:0',
+        effort: 'low',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toBe(true);
+      expect(additionalFields.effort).toBeUndefined();
+      expect(additionalFields.output_config).toBeUndefined();
+    });
+
+    test('should support max effort for Opus 4.6', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+        effort: 'max',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive' });
+      expect(additionalFields.output_config).toEqual({ effort: 'max' });
+    });
+  });
+
+  describe('bedrockOutputParser with configureThinking', () => {
+    test('should preserve adaptive thinking config without setting default maxTokens', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(output.maxTokens).toBeUndefined();
+      expect(output.maxOutputTokens).toBeUndefined();
+    });
+
+    test('should respect user-provided maxTokens for adaptive model', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        maxTokens: 32000,
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      expect(output.maxTokens).toBe(32000);
+    });
+
+    test('should use maxOutputTokens as maxTokens for adaptive model when maxTokens is not set', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        maxOutputTokens: 24000,
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      expect(output.maxTokens).toBe(24000);
+      expect(output.maxOutputTokens).toBeUndefined();
+    });
+
+    test('should convert thinking=true to enabled config for non-adaptive models', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'enabled', budget_tokens: 2000 });
+      expect(output.maxTokens).toBe(8192);
+    });
+
+    test('should pass output_config through for adaptive model with effort', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        effort: 'low',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toEqual({ type: 'adaptive' });
+      expect(amrf.output_config).toEqual({ effort: 'low' });
+    });
+
+    test('should not set maxTokens for adaptive models when neither maxTokens nor maxOutputTokens are provided', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+      }) as Record<string, unknown>;
+      parsed.maxOutputTokens = undefined;
+      (parsed as Record<string, unknown>).maxTokens = undefined;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      expect(output.maxTokens).toBeUndefined();
+    });
+
+    test('should use enabled default maxTokens (8192) for non-adaptive thinking models', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+      }) as Record<string, unknown>;
+      parsed.maxOutputTokens = undefined;
+      (parsed as Record<string, unknown>).maxTokens = undefined;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      expect(output.maxTokens).toBe(8192);
+    });
+
+    test('should use default thinking budget (2000) when no custom budget is set', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-3-7-sonnet',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      const thinking = amrf.thinking as { type: string; budget_tokens: number };
+      expect(thinking.budget_tokens).toBe(2000);
+    });
+
+    test('should override default thinking budget with custom value', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'anthropic.claude-3-7-sonnet',
+        thinkingBudget: 5000,
+        maxTokens: 8192,
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      const thinking = amrf.thinking as { type: string; budget_tokens: number };
+      expect(thinking.budget_tokens).toBe(5000);
+    });
+
+    test('should remove additionalModelRequestFields when thinking disabled and no other fields', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'some-other-model',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed as Record<string, unknown>);
+      expect(output.additionalModelRequestFields).toBeUndefined();
+    });
+  });
+
+  describe('Model switching cleanup', () => {
+    test('should strip anthropic_beta when switching from Anthropic to non-Anthropic model', () => {
+      const staleConversationData = {
+        model: 'openai.gpt-oss-120b-1:0',
+        promptCache: true,
+        additionalModelRequestFields: {
+          anthropic_beta: ['output-128k-2025-02-19'],
+          thinking: { type: 'adaptive' },
+          output_config: { effort: 'high' },
+        },
+      };
+      const result = bedrockInputParser.parse(staleConversationData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.anthropic_beta).toBeUndefined();
+      expect(amrf?.thinking).toBeUndefined();
+      expect(amrf?.output_config).toBeUndefined();
+      expect(result.promptCache).toBeUndefined();
+    });
+
+    test('should strip promptCache when switching from Claude to non-Claude/Nova model', () => {
+      const staleConversationData = {
+        model: 'deepseek.deepseek-r1',
+        promptCache: true,
+      };
+      const result = bedrockInputParser.parse(staleConversationData) as Record<string, unknown>;
+      expect(result.promptCache).toBeUndefined();
+    });
+
+    test('should preserve promptCache for Claude models', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-4-20250514-v1:0',
+        promptCache: true,
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      expect(result.promptCache).toBe(true);
+    });
+
+    test('should preserve promptCache for Nova models', () => {
+      const input = {
+        model: 'amazon.nova-pro-v1:0',
+        promptCache: true,
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      expect(result.promptCache).toBe(true);
+    });
+
+    test('should strip stale thinking config from additionalModelRequestFields for non-Anthropic models', () => {
+      const staleConversationData = {
+        model: 'moonshot.kimi-k2-0711-thinking',
+        additionalModelRequestFields: {
+          thinking: { type: 'enabled', budget_tokens: 2000 },
+          thinkingBudget: 2000,
+          anthropic_beta: ['output-128k-2025-02-19'],
+        },
+      };
+      const result = bedrockInputParser.parse(staleConversationData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.anthropic_beta).toBeUndefined();
+      expect(amrf?.thinking).toBeUndefined();
+      expect(amrf?.thinkingBudget).toBeUndefined();
+    });
+
+    test('should not strip anthropic_beta when staying on an Anthropic model', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.anthropic_beta).toBeDefined();
+      expect(Array.isArray(amrf.anthropic_beta)).toBe(true);
+    });
+
+    test('should strip stale reasoning_config when switching to Anthropic model', () => {
+      const staleConversationData = {
+        model: 'anthropic.claude-sonnet-4-6',
+        additionalModelRequestFields: {
+          reasoning_config: 'high',
+        },
+      };
+      const result = bedrockInputParser.parse(staleConversationData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBeUndefined();
+    });
+
+    test('should strip stale reasoning_config when switching from Moonshot to Meta model', () => {
+      const staleData = {
+        model: 'meta.llama-3-1-70b',
+        additionalModelRequestFields: {
+          reasoning_config: 'high',
+        },
+      };
+      const result = bedrockInputParser.parse(staleData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should strip stale reasoning_config when switching from ZAI to DeepSeek model', () => {
+      const staleData = {
+        model: 'deepseek.deepseek-r1',
+        additionalModelRequestFields: {
+          reasoning_config: 'medium',
+        },
+      };
+      const result = bedrockInputParser.parse(staleData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+  });
+
+  describe('Bedrock reasoning_effort → reasoning_config for Moonshot/ZAI models', () => {
+    test('should map reasoning_effort to reasoning_config for moonshotai.kimi-k2.5', () => {
+      const input = {
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'high',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBe('high');
+      expect(amrf.reasoning_effort).toBeUndefined();
+    });
+
+    test('should map reasoning_effort to reasoning_config for moonshot.kimi-k2.5', () => {
+      const input = {
+        model: 'moonshot.kimi-k2.5',
+        reasoning_effort: 'medium',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBe('medium');
+    });
+
+    test('should map reasoning_effort to reasoning_config for zai.glm-4.7', () => {
+      const input = {
+        model: 'zai.glm-4.7',
+        reasoning_effort: 'high',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBe('high');
+    });
+
+    test('should map reasoning_effort "low" to reasoning_config for Moonshot model', () => {
+      const input = {
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'low',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBe('low');
+    });
+
+    test('should not include reasoning_config when reasoning_effort is unset (empty string)', () => {
+      const input = {
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: '',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should not include reasoning_config when reasoning_effort is not provided', () => {
+      const input = {
+        model: 'moonshotai.kimi-k2.5',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should not forward reasoning_effort "none" to reasoning_config', () => {
+      const result = bedrockInputParser.parse({
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'none',
+      }) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should not forward reasoning_effort "minimal" to reasoning_config', () => {
+      const result = bedrockInputParser.parse({
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'minimal',
+      }) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should not forward reasoning_effort "xhigh" to reasoning_config', () => {
+      const result = bedrockInputParser.parse({
+        model: 'zai.glm-4.7',
+        reasoning_effort: 'xhigh',
+      }) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown> | undefined;
+      expect(amrf?.reasoning_config).toBeUndefined();
+    });
+
+    test('should not add reasoning_config to Anthropic models', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-4-6',
+        reasoning_effort: 'high',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBeUndefined();
+      expect(amrf.reasoning_effort).toBeUndefined();
+    });
+
+    test('should not add thinking or anthropic_beta to Moonshot models with reasoning_effort', () => {
+      const input = {
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'high',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.thinking).toBeUndefined();
+      expect(amrf.thinkingBudget).toBeUndefined();
+      expect(amrf.anthropic_beta).toBeUndefined();
+    });
+
+    test('should pass reasoning_config through bedrockOutputParser', () => {
+      const parsed = bedrockInputParser.parse({
+        model: 'moonshotai.kimi-k2.5',
+        reasoning_effort: 'high',
+      }) as Record<string, unknown>;
+      const output = bedrockOutputParser(parsed);
+      const amrf = output.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBe('high');
+    });
+
+    test('should strip stale reasoning_config from additionalModelRequestFields for Anthropic models', () => {
+      const staleData = {
+        model: 'anthropic.claude-opus-4-6-v1',
+        additionalModelRequestFields: {
+          reasoning_config: 'high',
+        },
+      };
+      const result = bedrockInputParser.parse(staleData) as Record<string, unknown>;
+      const amrf = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(amrf.reasoning_config).toBeUndefined();
     });
   });
 });

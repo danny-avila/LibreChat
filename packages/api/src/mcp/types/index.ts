@@ -17,7 +17,8 @@ import type {
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
-import type { TokenMethods, JsonSchemaType, IUser } from '@librechat/data-schemas';
+import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { LCTool } from '@librechat/agents';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
@@ -41,11 +42,6 @@ export interface MCPResource {
   name: string;
   description?: string;
   mimeType?: string;
-}
-export interface LCTool {
-  name: string;
-  description?: string;
-  parameters: JsonSchemaType;
 }
 
 export interface LCFunctionTool {
@@ -142,11 +138,19 @@ export type Artifacts =
     }
   | undefined;
 
-export type FormattedContentResult = [string | FormattedContent[], undefined | Artifacts];
+export type FormattedContentResult = [string, Artifacts | undefined];
 
 export type ImageFormatter = (item: ImageContent) => FormattedContent;
 
 export type FormattedToolResponse = FormattedContentResult;
+
+/**
+ * Origin of an MCP server definition.
+ * - `'yaml'`   — operator-defined in librechat.yaml, full trust, boot-time init
+ * - `'config'` — admin-defined via Config override, full trust, lazy init
+ * - `'user'`   — user-provided via UI, sandboxed (restricted placeholder resolution)
+ */
+export type MCPServerSource = 'yaml' | 'config' | 'user';
 
 export type ParsedServerConfig = MCPOptions & {
   url?: string;
@@ -158,8 +162,12 @@ export type ParsedServerConfig = MCPOptions & {
   initDuration?: number;
   updatedAt?: number;
   dbId?: string;
+  /** Origin of this server definition — determines trust level and placeholder resolution */
+  source?: MCPServerSource;
   /** True if access is only via agent (not directly shared with user) */
   consumeOnly?: boolean;
+  /** True when inspection failed at startup; the server is known but not fully initialized */
+  inspectionFailed?: boolean;
 };
 
 export type AddServerResult = {
@@ -170,18 +178,48 @@ export type AddServerResult = {
 export interface BasicConnectionOptions {
   serverName: string;
   serverConfig: MCPOptions;
+  useSSRFProtection?: boolean;
+  allowedDomains?: string[] | null;
+  /** Admin exemption list of host:port pairs that bypass the SSRF private-IP block */
+  allowedAddresses?: string[] | null;
+  /** When true, only resolve customUserVars in processMCPEnv (for DB-stored servers) */
+  dbSourced?: boolean;
 }
 
-export interface OAuthConnectionOptions {
-  user: IUser;
-  useOAuth: true;
-  requestBody?: RequestBody;
+/** User context for placeholder resolution in MCP connections (non-OAuth and OAuth alike) */
+export interface UserConnectionContext {
+  user?: IUser;
   customUserVars?: Record<string, string>;
+  requestBody?: RequestBody;
+  connectionTimeout?: number;
+}
+
+export interface OAuthConnectionOptions extends UserConnectionContext {
+  useOAuth: true;
   flowManager: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;
   oauthStart?: (authURL: string) => Promise<void>;
   oauthEnd?: () => Promise<void>;
   returnOnOAuth?: boolean;
+}
+
+export interface ToolDiscoveryOptions {
+  serverName: string;
+  user?: IUser;
+  flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
+  tokenMethods?: TokenMethods;
+  signal?: AbortSignal;
+  oauthStart?: (authURL: string) => Promise<void>;
+  customUserVars?: Record<string, string>;
+  requestBody?: RequestBody;
   connectionTimeout?: number;
+  /** Pre-resolved config-source servers for tenant-scoped lookup */
+  configServers?: Record<string, ParsedServerConfig>;
+}
+
+export interface ToolDiscoveryResult {
+  tools: Tool[] | null;
+  oauthRequired: boolean;
+  oauthUrl: string | null;
 }

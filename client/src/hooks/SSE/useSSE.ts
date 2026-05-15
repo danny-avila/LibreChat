@@ -2,31 +2,15 @@ import { useEffect, useState } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
-import {
-  request,
-  Constants,
-  /* @ts-ignore */
-  createPayload,
-  LocalStorageKeys,
-  removeNullishValues,
-} from 'librechat-data-provider';
+import { request, createPayload, removeNullishValues } from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
-import { useGenTitleMutation, useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
+import { clearAllDrafts } from '~/utils';
 import store from '~/store';
-
-const clearDraft = (conversationId?: string | null) => {
-  if (conversationId) {
-    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
-    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${conversationId}`);
-  } else {
-    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`);
-    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`);
-  }
-};
 
 type ChatHelpers = Pick<
   EventHandlerParams,
@@ -44,7 +28,6 @@ export default function useSSE(
   isAddedRequest = false,
   runIndex = 0,
 ) {
-  const genTitle = useGenTitleMutation();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
@@ -73,7 +56,6 @@ export default function useSSE(
     attachmentHandler,
     abortConversation,
   } = useEventHandlers({
-    genTitle,
     setMessages,
     getMessages,
     setCompleted,
@@ -122,7 +104,7 @@ export default function useSSE(
       const data = JSON.parse(e.data);
 
       if (data.final != null) {
-        clearDraft(submission.conversation?.conversationId);
+        clearAllDrafts(submission.conversation?.conversationId);
         try {
           finalHandler(data, submission as EventSubmission);
         } catch (error) {

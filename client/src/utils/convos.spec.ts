@@ -596,6 +596,77 @@ describe('Conversation Utilities', () => {
         expect(data!.pages[0].conversations[0].model).toBe('gpt-4');
       });
 
+      it('updateConvoInAllQueries with moveToTop moves convo to front and updates updatedAt', () => {
+        // Add more conversations so 'a' is not at position 0
+        const convoC = { conversationId: 'c', updatedAt: '2024-01-03T12:00:00Z' } as TConversation;
+        queryClient.setQueryData(['allConversations'], {
+          pages: [{ conversations: [convoC, convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        const before = new Date().toISOString();
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, model: 'gpt-4' }), true);
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+
+        // 'a' should now be at position 0
+        expect(data!.pages[0].conversations[0].conversationId).toBe('a');
+        expect(data!.pages[0].conversations[0].model).toBe('gpt-4');
+        // updatedAt should be updated
+        expect(
+          new Date(data!.pages[0].conversations[0].updatedAt).getTime(),
+        ).toBeGreaterThanOrEqual(new Date(before).getTime());
+        // 'c' should now be at position 1
+        expect(data!.pages[0].conversations[1].conversationId).toBe('c');
+      });
+
+      it('updateConvoInAllQueries with moveToTop from second page', () => {
+        const convoC = { conversationId: 'c', updatedAt: '2024-01-03T12:00:00Z' } as TConversation;
+        const convoD = { conversationId: 'd', updatedAt: '2024-01-04T12:00:00Z' } as TConversation;
+        queryClient.setQueryData(['allConversations'], {
+          pages: [
+            { conversations: [convoC, convoD], nextCursor: 'cursor1' },
+            { conversations: [convoA, convoB], nextCursor: null },
+          ],
+          pageParams: [],
+        });
+
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, title: 'Updated' }), true);
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+
+        // 'a' should now be at front of page 0
+        expect(data!.pages[0].conversations[0].conversationId).toBe('a');
+        expect(data!.pages[0].conversations[0].title).toBe('Updated');
+        // Page 0 should have 3 conversations now
+        expect(data!.pages[0].conversations.length).toBe(3);
+        // Page 1 should have 1 conversation (only 'b' remains)
+        expect(data!.pages[1].conversations.length).toBe(1);
+        expect(data!.pages[1].conversations[0].conversationId).toBe('b');
+      });
+
+      it('updateConvoInAllQueries with moveToTop when already at position 0 updates in place', () => {
+        const originalUpdatedAt = convoA.updatedAt;
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, model: 'gpt-4' }), true);
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+
+        expect(data!.pages[0].conversations[0].conversationId).toBe('a');
+        expect(data!.pages[0].conversations[0].model).toBe('gpt-4');
+        // updatedAt should still be updated even when already at top
+        expect(data!.pages[0].conversations[0].updatedAt).not.toBe(originalUpdatedAt);
+      });
+
+      it('updateConvoInAllQueries with moveToTop returns original data if convo not found', () => {
+        const dataBefore = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        updateConvoInAllQueries(
+          queryClient,
+          'nonexistent',
+          (c) => ({ ...c, model: 'gpt-4' }),
+          true,
+        );
+        const dataAfter = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+
+        expect(dataAfter).toEqual(dataBefore);
+      });
+
       it('removeConvoFromAllQueries deletes conversation', () => {
         removeConvoFromAllQueries(queryClient, 'a');
         const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);

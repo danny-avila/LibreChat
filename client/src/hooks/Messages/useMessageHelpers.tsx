@@ -1,10 +1,11 @@
-import throttle from 'lodash/throttle';
 import { useEffect, useRef, useCallback, useMemo } from 'react';
+import throttle from 'lodash/throttle';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useMessagesViewContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import { getTextKey, TEXT_KEY_DIVIDER, logger } from '~/utils';
 import useCopyToClipboard from './useCopyToClipboard';
+import { useGetAddedConvo } from '~/hooks/Chat';
 
 export default function useMessageHelpers(props: TMessageProps) {
   const latestText = useRef<string | number>('');
@@ -16,13 +17,15 @@ export default function useMessageHelpers(props: TMessageProps) {
     regenerate,
     isSubmitting,
     conversation,
-    latestMessage,
     setAbortScroll,
     handleContinue,
+    latestMessageId,
     setLatestMessage,
   } = useMessagesViewContext();
   const agentsMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();
+
+  const getAddedConvo = useGetAddedConvo();
 
   const { text, content, children, messageId = null, isCreatedByUser } = message ?? {};
   const edit = messageId === currentEditId;
@@ -122,7 +125,7 @@ export default function useMessageHelpers(props: TMessageProps) {
       return;
     }
 
-    regenerate(message);
+    regenerate(message, { addedConvo: getAddedConvo() });
   };
 
   const copyToClipboard = useCopyToClipboard({ text, content });
@@ -138,8 +141,8 @@ export default function useMessageHelpers(props: TMessageProps) {
     conversation,
     isSubmitting,
     handleScroll,
-    latestMessage,
     handleContinue,
+    latestMessageId,
     copyToClipboard,
     regenerateMessage,
   };

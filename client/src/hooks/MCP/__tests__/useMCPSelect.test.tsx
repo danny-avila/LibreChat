@@ -415,7 +415,7 @@ describe('useMCPSelect', () => {
       });
     });
 
-    it('should handle empty ephemeralAgent.mcp array correctly', async () => {
+    it('should clear mcpValues when ephemeralAgent.mcp is set to empty array', async () => {
       // Create a shared wrapper
       const { Wrapper, servers } = createWrapper(['initial-value']);
 
@@ -437,19 +437,21 @@ describe('useMCPSelect', () => {
         expect(result.current.mcpHook.mcpValues).toEqual(['initial-value']);
       });
 
-      // Try to set empty array externally
+      // Set empty array externally (e.g., spec with no MCP servers)
       act(() => {
         result.current.setEphemeralAgent({
           mcp: [],
         });
       });
 
-      // Values should remain unchanged since empty mcp array doesn't trigger update
-      // (due to the condition: ephemeralAgent?.mcp && ephemeralAgent.mcp.length > 0)
-      expect(result.current.mcpHook.mcpValues).toEqual(['initial-value']);
+      // Jotai atom should be cleared — an explicit empty mcp array means
+      // the spec (or reset) has no MCP servers, so the visual selection must clear
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual([]);
+      });
     });
 
-    it('should handle ephemeralAgent with clear mcp value', async () => {
+    it('should handle ephemeralAgent being reset to null', async () => {
       // Create a shared wrapper
       const { Wrapper, servers } = createWrapper(['server1', 'server2']);
 
@@ -471,16 +473,15 @@ describe('useMCPSelect', () => {
         expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
       });
 
-      // Set ephemeralAgent with clear value
+      // Reset ephemeralAgent to null (simulating non-spec reset)
       act(() => {
-        result.current.setEphemeralAgent({
-          mcp: [Constants.mcp_clear as string],
-        });
+        result.current.setEphemeralAgent(null);
       });
 
-      // mcpValues should be cleared
+      // mcpValues should remain unchanged since null ephemeral agent
+      // doesn't trigger the sync effect (mcps.length === 0)
       await waitFor(() => {
-        expect(result.current.mcpHook.mcpValues).toEqual([]);
+        expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
       });
     });
 
@@ -587,6 +588,233 @@ describe('useMCPSelect', () => {
 
       // Should unmount without errors
       expect(() => unmount()).not.toThrow();
+    });
+  });
+
+  describe('Environment-Keyed Storage (storageContextKey)', () => {
+    it('should use storageContextKey as atom key for new conversations', async () => {
+      const { Wrapper, servers } = createWrapper(['server1', 'server2']);
+      const storageContextKey = '__defaults__';
+
+      // Hook A: new conversation with storageContextKey
+      const { result: resultA } = renderHook(
+        () => useMCPSelect({ conversationId: null, storageContextKey, servers }),
+        { wrapper: Wrapper },
+      );
+
+      act(() => {
+        resultA.current.setMCPValues(['server1']);
+      });
+
+      await waitFor(() => {
+        expect(resultA.current.mcpValues).toEqual(['server1']);
+      });
+
+      // Hook B: new conversation WITHOUT storageContextKey (different environment)
+      const { result: resultB } = renderHook(
+        () => useMCPSelect({ conversationId: null, servers }),
+        { wrapper: Wrapper },
+      );
+
+      // Should NOT see server1 since it's a different atom (NEW_CONVO vs __defaults__)
+      expect(resultB.current.mcpValues).toEqual([]);
+    });
+
+    it('should use conversationId as atom key for existing conversations even with storageContextKey', async () => {
+      const conversationId = 'existing-convo-123';
+      const { Wrapper, servers } = createWrapper(['server1', 'server2']);
+      const storageContextKey = '__defaults__';
+
+      const { result } = renderHook(
+        () => useMCPSelect({ conversationId, storageContextKey, servers }),
+        { wrapper: Wrapper },
+      );
+
+      act(() => {
+        result.current.setMCPValues(['server1', 'server2']);
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual(['server1', 'server2']);
+      });
+
+      // Verify timestamp was written to the conversation key, not the environment key
+      const convoKey = `${LocalStorageKeys.LAST_MCP_}${conversationId}`;
+      expect(setTimestamp).toHaveBeenCalledWith(convoKey);
+    });
+
+    it('should dual-write to environment key when storageContextKey is provided', async () => {
+      const { Wrapper, servers } = createWrapper(['server1', 'server2']);
+      const storageContextKey = '__defaults__';
+
+      const { result } = renderHook(
+        () => useMCPSelect({ conversationId: null, storageContextKey, servers }),
+        { wrapper: Wrapper },
+      );
+
+      act(() => {
+        result.current.setMCPValues(['server1', 'server2']);
+      });
+
+      await waitFor(() => {
+        // Verify dual-write to environment key
+        const envKey = `${LocalStorageKeys.LAST_MCP_}${storageContextKey}`;
+        expect(localStorage.getItem(envKey)).toEqual(JSON.stringify(['server1', 'server2']));
+        expect(setTimestamp).toHaveBeenCalledWith(envKey);
+      });
+    });
+
+    it('should NOT dual-write when storageContextKey is undefined', async () => {
+      const conversationId = 'convo-no-specs';
+      const { Wrapper, servers } = createWrapper(['server1']);
+
+      const { result } = renderHook(() => useMCPSelect({ conversationId, servers }), {
+        wrapper: Wrapper,
+      });
+
+      act(() => {
+        result.current.setMCPValues(['server1']);
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpValues).toEqual(['server1']);
+      });
+
+      // Only the conversation-keyed timestamp should be set, no environment key
+      const envKey = `${LocalStorageKeys.LAST_MCP_}__defaults__`;
+      expect(localStorage.getItem(envKey)).toBeNull();
+    });
+
+    it('should isolate per-conversation state from environment defaults', async () => {
+      const { Wrapper, servers } = createWrapper(['server1', 'server2', 'server3']);
+      const storageContextKey = '__defaults__';
+
+      // Set environment defaults via new conversation
+      const { result: newConvoResult } = renderHook(
+        () => useMCPSelect({ conversationId: null, storageContextKey, servers }),
+        { wrapper: Wrapper },
+      );
+
+      act(() => {
+        newConvoResult.current.setMCPValues(['server1', 'server2']);
+      });
+
+      await waitFor(() => {
+        expect(newConvoResult.current.mcpValues).toEqual(['server1', 'server2']);
+      });
+
+      // Existing conversation should have its own isolated state
+      const { result: existingResult } = renderHook(
+        () => useMCPSelect({ conversationId: 'existing-convo', storageContextKey, servers }),
+        { wrapper: Wrapper },
+      );
+
+      // Should start empty (its own atom), not inherit from defaults
+      expect(existingResult.current.mcpValues).toEqual([]);
+
+      // Set different value for existing conversation
+      act(() => {
+        existingResult.current.setMCPValues(['server3']);
+      });
+
+      await waitFor(() => {
+        expect(existingResult.current.mcpValues).toEqual(['server3']);
+      });
+
+      // New conversation defaults should be unchanged
+      expect(newConvoResult.current.mcpValues).toEqual(['server1', 'server2']);
+    });
+  });
+
+  describe('Spec/Non-Spec Context Switching', () => {
+    it('should clear MCP when ephemeral agent switches to empty mcp (spec with no MCP)', async () => {
+      const { Wrapper, servers } = createWrapper(['server1', 'server2']);
+      const storageContextKey = '__defaults__';
+
+      const TestComponent = ({ ctxKey }: { ctxKey?: string }) => {
+        const mcpHook = useMCPSelect({ conversationId: null, storageContextKey: ctxKey, servers });
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, setEphemeralAgent };
+      };
+
+      // Start in non-spec context with some servers selected
+      const { result } = renderHook(() => TestComponent({ ctxKey: storageContextKey }), {
+        wrapper: Wrapper,
+      });
+
+      act(() => {
+        result.current.mcpHook.setMCPValues(['server1', 'server2']);
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
+      });
+
+      // Simulate switching to a spec with no MCP — ephemeral agent gets mcp: []
+      act(() => {
+        result.current.setEphemeralAgent({ mcp: [] });
+      });
+
+      // MCP values should clear since the spec explicitly has no MCP servers
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual([]);
+      });
+    });
+
+    it('should handle ephemeral agent with spec MCP servers syncing to Jotai atom', async () => {
+      const { Wrapper, servers } = createWrapper(['spec-server1', 'spec-server2']);
+
+      const TestComponent = () => {
+        const mcpHook = useMCPSelect({ conversationId: null, servers });
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper: Wrapper });
+
+      // Simulate spec application setting ephemeral agent MCP
+      act(() => {
+        result.current.setEphemeralAgent({
+          mcp: ['spec-server1', 'spec-server2'],
+          execute_code: true,
+        });
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual(['spec-server1', 'spec-server2']);
+      });
+    });
+
+    it('should handle null ephemeral agent reset (non-spec with specs configured)', async () => {
+      const { Wrapper, servers } = createWrapper(['server1', 'server2']);
+
+      const TestComponent = () => {
+        const mcpHook = useMCPSelect({ servers });
+        const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(Constants.NEW_CONVO));
+        return { mcpHook, setEphemeralAgent };
+      };
+
+      const { result } = renderHook(() => TestComponent(), { wrapper: Wrapper });
+
+      // Set values from a spec
+      act(() => {
+        result.current.setEphemeralAgent({ mcp: ['server1', 'server2'] });
+      });
+
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
+      });
+
+      // Reset ephemeral agent to null (switching to non-spec)
+      act(() => {
+        result.current.setEphemeralAgent(null);
+      });
+
+      // mcpValues should remain unchanged — null ephemeral agent doesn't trigger sync
+      // (BadgeRowContext will fill from localStorage defaults separately)
+      await waitFor(() => {
+        expect(result.current.mcpHook.mcpValues).toEqual(['server1', 'server2']);
+      });
     });
   });
 

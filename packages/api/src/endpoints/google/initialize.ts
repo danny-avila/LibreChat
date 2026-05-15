@@ -32,7 +32,7 @@ export async function initializeGoogle({
   let userKey = null;
   if (expiresAt && isUserProvided) {
     checkUserKeyExpiry(expiresAt, EModelEndpoint.google);
-    userKey = await db.getUserKey({ userId: req.user?.id, name: EModelEndpoint.google });
+    userKey = await db.getUserKey({ userId: req.user?.id ?? '', name: EModelEndpoint.google });
   }
 
   let serviceKey: Record<string, unknown> = {};
@@ -45,7 +45,7 @@ export async function initializeGoogle({
     /** Only attempt to load service key if GOOGLE_KEY is not provided */
     try {
       const serviceKeyPath =
-        process.env.GOOGLE_SERVICE_KEY_FILE || path.join(process.cwd(), 'data', 'auth.json');
+        process.env.GOOGLE_SERVICE_KEY_FILE || path.join(process.cwd(), 'api', 'data', 'auth.json');
       const loadedKey = await loadServiceKey(serviceKeyPath);
       if (loadedKey) {
         serviceKey = loadedKey;

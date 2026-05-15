@@ -30,6 +30,10 @@ const assistantSchema = new Schema<IAssistant>(
       type: Boolean,
       default: false,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,

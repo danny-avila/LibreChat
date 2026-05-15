@@ -18,6 +18,7 @@ const checkDomainAllowed = async (req, res, next) => {
     const email = req?.user?.email;
     const appConfig = await getAppConfig({
       role: req?.user?.role,
+      tenantId: req?.user?.tenantId,
     });
 
     if (email && !isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {

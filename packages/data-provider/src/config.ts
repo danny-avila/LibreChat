@@ -1,12 +1,14 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
-import { EModelEndpoint, eModelEndpointSchema } from './schemas';
+import { EModelEndpoint, eModelEndpointSchema, isAgentsEndpoint } from './schemas';
+import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
+import { REFILL_INTERVAL_UNITS } from './balance';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -61,16 +63,177 @@ export enum SettingsViews {
   advanced = 'advanced',
 }
 
+/** Validates any FileSources value — use for file metadata, DB records, and upload routing. */
 export const fileSourceSchema = z.nativeEnum(FileSources);
+
+/**
+ * `allowedAddresses` is an SSRF exemption list scoped to private IP space.
+ * Validate at config-load time:
+ *  - Reject URLs, paths, CIDR ranges, bare host/IP forms, and whitespace.
+ *  - Require `host:port` or `[ipv6]:port` entries so an exemption is scoped
+ *    to one service port instead of every port on a private host.
+ *  - Reject IPv4 literals that fall outside the private/loopback/link-local
+ *    ranges. Public IPs are never SSRF targets, so listing one has no
+ *    defensive purpose and must not silently grant trust.
+ *  - Hostnames pass through; their resolved IP is checked at runtime by
+ *    `resolveHostnameSSRF` and only a private resolved IP is meaningful.
+ *
+ * Mirrors a minimal subset of `isPrivateIP` from `@librechat/api` to avoid a
+ * circular package dependency. The runtime helper is the authoritative check;
+ * this refinement is a UX guardrail.
+ */
+function isPrivateIPv4Literal(value: string): boolean {
+  const match = value.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!match) {
+    return false;
+  }
+  const [a, b, c] = match.slice(1).map(Number) as [number, number, number, number];
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 0) return true; // RFC 5736 IETF protocol assignments
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a >= 224) return true; // multicast/reserved
+  return false;
+}
+
+function isPrivateIPv6Literal(value: string): boolean {
+  if (!value.includes(':')) return false;
+  if (value === '::1' || value === '::') return true;
+  if (value.startsWith('fc') || value.startsWith('fd')) return true; // fc00::/7
+  // fe80::/10 — first hextet 0xfe80–0xfebf
+  const firstHextet = value.split(':', 1)[0];
+  if (/^[0-9a-f]{1,4}$/.test(firstHextet ?? '')) {
+    const hextet = parseInt(firstHextet, 16);
+    if ((hextet & 0xffc0) === 0xfe80) return true;
+  }
+  // 4-in-6: ::ffff:A.B.C.D
+  const mappedMatch = value.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (mappedMatch) return isPrivateIPv4Literal(mappedMatch[1]);
+  return false;
+}
+
+/**
+ * Mirrors the allowedAddresses parser in `@librechat/api`'s auth helpers.
+ * Kept as a local copy because the data-provider package cannot import from
+ * `@librechat/api` without creating a circular dependency. Keep the two
+ * implementations in sync.
+ */
+function normalizePort(port: unknown): string {
+  if (typeof port !== 'string' && typeof port !== 'number') return '';
+  const portString = String(port).trim();
+  if (!/^\d+$/.test(portString)) return '';
+  const parsed = Number(portString);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) return '';
+  return String(parsed);
+}
+
+function parseAllowedAddressEntry(entry: string): { address: string; port: string } | null {
+  const trimmed = entry.toLowerCase().trim();
+  const bracketedIPv6 = trimmed.match(/^\[([^\]]+)\]:(\d+)$/);
+  const hostPort = bracketedIPv6 ? null : trimmed.match(/^([^:]+):(\d+)$/);
+  const address = (bracketedIPv6?.[1] ?? hostPort?.[1] ?? '').replace(/^\[|\]$/g, '');
+  const port = normalizePort(bracketedIPv6?.[2] ?? hostPort?.[2] ?? '');
+  if (!address || !port) return null;
+  return { address, port };
+}
+
+const allowedAddressEntrySchema = z
+  .string()
+  .refine((entry) => entry.length > 0 && entry.trim().length > 0, {
+    message: 'allowedAddresses entries must be non-empty',
+  })
+  .refine((entry) => !entry.includes('://') && !entry.includes('/') && !/\s/.test(entry), {
+    message:
+      'allowedAddresses entries must be host:port pairs — no URLs, paths, CIDR ranges, or whitespace',
+  })
+  .refine((entry) => parseAllowedAddressEntry(entry) != null, {
+    message:
+      'allowedAddresses entries must include a port, for example localhost:11434 or [::1]:11434',
+  })
+  .refine(
+    (entry) => {
+      const parsed = parseAllowedAddressEntry(entry);
+      if (!parsed) return false;
+      const stripped = parsed.address;
+      const isIPv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(stripped);
+      const isIPv6 = !isIPv4 && stripped.includes(':');
+      if (!isIPv4 && !isIPv6) {
+        return true; // hostname — checked at runtime via DNS
+      }
+      return isIPv4 ? isPrivateIPv4Literal(stripped) : isPrivateIPv6Literal(stripped);
+    },
+    {
+      message:
+        'allowedAddresses is scoped to private IP space — public IP literals are not permitted (use hostname:port if it resolves to a private IP)',
+    },
+  );
+
+export const allowedAddressesSchema = z.array(allowedAddressEntrySchema).optional();
+
+/** Storage backend strategies only — use for config fields that set where files are stored. */
+const FILE_STORAGE_BACKENDS = [
+  FileSources.local,
+  FileSources.firebase,
+  FileSources.s3,
+  FileSources.azure_blob,
+  FileSources.cloudfront,
+] as const satisfies ReadonlyArray<FileSources>;
+
+export const fileStorageSchema = z.enum(FILE_STORAGE_BACKENDS);
+
+export type FileStorage = z.infer<typeof fileStorageSchema>;
 
 export const fileStrategiesSchema = z
   .object({
-    default: fileSourceSchema.optional(),
-    avatar: fileSourceSchema.optional(),
-    image: fileSourceSchema.optional(),
-    document: fileSourceSchema.optional(),
+    default: fileStorageSchema.optional(),
+    avatar: fileStorageSchema.optional(),
+    image: fileStorageSchema.optional(),
+    document: fileStorageSchema.optional(),
+    skills: fileStorageSchema.optional(),
   })
   .optional();
+
+const cloudfrontSigningSchema = z.enum(['none', 'cookies', 'url']);
+
+export const cloudfrontConfigSchema = z
+  .object({
+    domain: z.string().url(),
+    distributionId: z.string().optional(),
+    invalidateOnDelete: z.boolean().default(false),
+    imageSigning: cloudfrontSigningSchema.default('none'),
+    urlExpiry: z.number().positive().default(3600),
+    cookieExpiry: z.number().positive().max(604800).default(1800),
+    cookieDomain: z
+      .string()
+      .min(1)
+      .refine((d) => d.startsWith('.'), {
+        message: 'cookieDomain must start with a dot (e.g., ".example.com") to apply to subdomains',
+      })
+      .optional(),
+    storageRegion: z.string().min(1).optional(),
+    includeRegionInPath: z.boolean().default(false),
+    requireSignedAccess: z.boolean().default(false),
+  })
+  .refine((data) => !data.invalidateOnDelete || !!data.distributionId, {
+    message: 'distributionId is required when invalidateOnDelete is true',
+    path: ['distributionId'],
+  })
+  .refine((data) => data.imageSigning !== 'cookies' || !!data.cookieDomain, {
+    message:
+      'cookieDomain is required when imageSigning is "cookies" (e.g., ".example.com" for API at api.example.com and CDN at cdn.example.com)',
+    path: ['cookieDomain'],
+  })
+  .refine((data) => !data.requireSignedAccess || data.imageSigning === 'cookies', {
+    message:
+      'cloudfront.requireSignedAccess=true requires cloudfront.imageSigning="cookies" (signed URL mode is not yet implemented)',
+    path: ['requireSignedAccess'],
+  })
+  .optional();
+
+export type CloudFrontConfig = z.infer<typeof cloudfrontConfigSchema>;
 
 // Helper type to extract the shape of the Zod object schema
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
@@ -114,18 +277,43 @@ export const modelConfigSchema = z
 
 export type TAzureModelConfig = z.infer<typeof modelConfigSchema>;
 
+const paramValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(paramValueSchema),
+    z.record(z.string(), paramValueSchema),
+  ]),
+);
+
+/** Validates addParams while keeping web_search aligned with current runtime boolean handling. */
+const addParamsSchema: z.ZodType<Record<string, unknown>> = z
+  .record(z.string(), paramValueSchema)
+  .superRefine((params, ctx) => {
+    if (params.web_search === undefined || typeof params.web_search === 'boolean') {
+      return;
+    }
+
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['web_search'],
+      message: '`web_search` must be a boolean in addParams',
+    });
+  });
+
 export const azureBaseSchema = z.object({
   apiKey: z.string(),
   serverless: z.boolean().optional(),
   instanceName: z.string().optional(),
   deploymentName: z.string().optional(),
   assistants: z.boolean().optional(),
-  addParams: z.record(z.any()).optional(),
+  addParams: addParamsSchema.optional(),
   dropParams: z.array(z.string()).optional(),
-  forcePrompt: z.boolean().optional(),
   version: z.string().optional(),
   baseURL: z.string().optional(),
-  additionalHeaders: z.record(z.any()).optional(),
+  additionalHeaders: z.record(z.string()).optional(),
 });
 
 export type TAzureBaseSchema = z.infer<typeof azureBaseSchema>;
@@ -176,13 +364,17 @@ export enum Capabilities {
 
 export enum AgentCapabilities {
   hide_sequential_outputs = 'hide_sequential_outputs',
+  programmatic_tools = 'programmatic_tools',
   end_after_tools = 'end_after_tools',
+  deferred_tools = 'deferred_tools',
   execute_code = 'execute_code',
   file_search = 'file_search',
   web_search = 'web_search',
   artifacts = 'artifacts',
+  subagents = 'subagents',
   actions = 'actions',
   context = 'context',
+  skills = 'skills',
   tools = 'tools',
   chain = 'chain',
   ocr = 'ocr',
@@ -204,6 +396,8 @@ export const baseEndpointSchema = z.object({
     .optional(),
   titleEndpoint: z.string().optional(),
   titlePromptTemplate: z.string().optional(),
+  /** Maximum characters allowed in a single tool result before truncation. */
+  maxToolResultChars: z.number().positive().optional(),
 });
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
@@ -211,6 +405,8 @@ export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
 export const bedrockEndpointSchema = baseEndpointSchema.merge(
   z.object({
     availableRegions: z.array(z.string()).optional(),
+    models: z.array(z.string()).optional(),
+    inferenceProfiles: z.record(z.string(), z.string()).optional(),
   }),
 );
 
@@ -252,25 +448,93 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
         userIdQuery: z.boolean().optional(),
       })
       .optional(),
-    headers: z.record(z.any()).optional(),
+    headers: z.record(z.string()).optional(),
   }),
 );
 
 export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const defaultAgentCapabilities = [
+  // Commented as requires latest Code Interpreter API
+  // AgentCapabilities.programmatic_tools,
+  AgentCapabilities.deferred_tools,
   AgentCapabilities.execute_code,
   AgentCapabilities.file_search,
   AgentCapabilities.web_search,
   AgentCapabilities.artifacts,
+  AgentCapabilities.subagents,
   AgentCapabilities.actions,
   AgentCapabilities.context,
+  AgentCapabilities.skills,
   AgentCapabilities.tools,
   AgentCapabilities.chain,
   AgentCapabilities.ocr,
 ];
 
+const LOCAL_REMOTE_OIDC_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+export function isRemoteOidcUrlAllowed(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:') return true;
+    if (url.protocol !== 'http:') return false;
+
+    const hostname = url.hostname.toLowerCase();
+    return LOCAL_REMOTE_OIDC_HOSTS.has(hostname) || hostname.endsWith('.localhost');
+  } catch {
+    return false;
+  }
+}
+
+const remoteApiOidcUrlSchema = z
+  .string()
+  .url()
+  .refine(isRemoteOidcUrlAllowed, { message: 'must use https:// unless targeting localhost' });
+
+const remoteApiOidcScopeSchema = z.string().refine((scope) => !scope.includes(','), {
+  message: 'scopes must be space-separated',
+});
+
+const remoteApiOidcSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    issuer: remoteApiOidcUrlSchema.optional(),
+    audience: z.string().min(1).optional(),
+    jwksUri: remoteApiOidcUrlSchema.optional(),
+    scope: remoteApiOidcScopeSchema.optional(),
+  })
+  .superRefine((oidc, ctx) => {
+    if (oidc.enabled === true && !oidc.issuer) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['issuer'],
+        message: 'issuer is required when OIDC auth is enabled',
+      });
+    }
+    if (oidc.enabled === true && !oidc.audience) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['audience'],
+        message: 'audience is required when OIDC auth is enabled',
+      });
+    }
+  });
+
+const remoteApiAuthSchema = z.object({
+  apiKey: z
+    .object({
+      enabled: z.boolean().default(true),
+    })
+    .optional(),
+  oidc: remoteApiOidcSchema.optional(),
+});
+
+const remoteApiSchema = z.object({
+  auth: remoteApiAuthSchema.optional(),
+});
+
 export const agentsEndpointSchema = baseEndpointSchema
+  .omit({ baseURL: true })
   .merge(
     z.object({
       /* agents specific */
@@ -285,6 +549,7 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      remoteApi: remoteApiSchema.optional(),
     }),
   )
   .default({
@@ -296,6 +561,43 @@ export const agentsEndpointSchema = baseEndpointSchema
   });
 
 export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
+
+export const paramDefinitionSchema = z.object({
+  key: z.string(),
+  description: z.string().optional(),
+  type: z.nativeEnum(SettingTypes).optional(),
+  default: z.union([z.number(), z.boolean(), z.string(), z.array(z.string())]).optional(),
+  showLabel: z.boolean().optional(),
+  showDefault: z.boolean().optional(),
+  options: z.array(z.string()).optional(),
+  range: z
+    .object({
+      min: z.number(),
+      max: z.number(),
+      step: z.number().optional(),
+    })
+    .optional(),
+  enumMappings: z.record(z.union([z.number(), z.boolean(), z.string()])).optional(),
+  component: z.nativeEnum(ComponentTypes).optional(),
+  optionType: z.nativeEnum(OptionTypes).optional(),
+  columnSpan: z.number().int().nonnegative().optional(),
+  columns: z.number().int().min(1).max(4).optional(),
+  label: z.string().optional(),
+  placeholder: z.string().optional(),
+  labelCode: z.boolean().optional(),
+  placeholderCode: z.boolean().optional(),
+  descriptionCode: z.boolean().optional(),
+  minText: z.number().optional(),
+  maxText: z.number().optional(),
+  minTags: z.number().min(0).optional(),
+  maxTags: z.number().min(0).optional(),
+  includeInput: z.boolean().optional(),
+  descriptionSide: z.enum(['top', 'right', 'bottom', 'left']).optional(),
+  searchPlaceholder: z.string().optional(),
+  selectPlaceholder: z.string().optional(),
+  searchPlaceholderCode: z.boolean().optional(),
+  selectPlaceholderCode: z.boolean().optional(),
+});
 
 export const endpointSchema = baseEndpointSchema.merge(
   z.object({
@@ -311,24 +613,20 @@ export const endpointSchema = baseEndpointSchema.merge(
       fetch: z.boolean().optional(),
       userIdQuery: z.boolean().optional(),
     }),
-    summarize: z.boolean().optional(),
-    summaryModel: z.string().optional(),
     iconURL: z.string().optional(),
-    forcePrompt: z.boolean().optional(),
     modelDisplayLabel: z.string().optional(),
-    headers: z.record(z.any()).optional(),
-    addParams: z.record(z.any()).optional(),
+    headers: z.record(z.string()).optional(),
+    addParams: addParamsSchema.optional(),
     dropParams: z.array(z.string()).optional(),
     customParams: z
       .object({
         defaultParamsEndpoint: z.string().default('custom'),
-        paramDefinitions: z.array(z.record(z.any())).optional(),
+        paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()
       .optional(),
-    customOrder: z.number().optional(),
     directEndpoint: z.boolean().optional(),
-    titleMessageRole: z.string().optional(),
+    titleMessageRole: z.enum(['system', 'user', 'assistant']).optional(),
   }),
 );
 
@@ -337,7 +635,6 @@ export type TEndpoint = z.infer<typeof endpointSchema>;
 export const azureEndpointSchema = z
   .object({
     groups: azureGroupConfigsSchema,
-    plugins: z.boolean().optional(),
     assistants: z.boolean().optional(),
   })
   .and(
@@ -349,15 +646,73 @@ export const azureEndpointSchema = z
         titleModel: true,
         titlePrompt: true,
         titlePromptTemplate: true,
-        summarize: true,
-        summaryModel: true,
-        customOrder: true,
       })
       .partial(),
   );
 
 export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
   TAzureConfigValidationResult;
+
+/**
+ * Vertex AI model configuration - similar to Azure model config
+ * Allows specifying deployment name for each model
+ */
+export const vertexModelConfigSchema = z
+  .object({
+    /** The actual model ID/deployment name used by Vertex AI API */
+    deploymentName: z.string().optional(),
+  })
+  .or(z.boolean());
+
+export type TVertexModelConfig = z.infer<typeof vertexModelConfigSchema>;
+
+/**
+ * Vertex AI configuration schema for Anthropic models served via Google Cloud Vertex AI.
+ * Similar to Azure configuration, this allows running Anthropic models through Google Cloud.
+ */
+export const vertexAISchema = z.object({
+  /** Enable Vertex AI mode for Anthropic (defaults to true when vertex config is present) */
+  enabled: z.boolean().optional(),
+  /** Google Cloud Project ID (optional - auto-detected from service key file if not provided) */
+  projectId: z.string().optional(),
+  /** Vertex AI region (e.g., 'us-east5', 'europe-west1') */
+  region: z.string().default('us-east5'),
+  /** Optional: Path to service account key file */
+  serviceKeyFile: z.string().optional(),
+  /** Optional: Default deployment name for all models (can be overridden per model) */
+  deploymentName: z.string().optional(),
+  /** Optional: Available models - can be string array or object with deploymentName mapping */
+  models: z.union([z.array(z.string()), z.record(z.string(), vertexModelConfigSchema)]).optional(),
+});
+
+export type TVertexAISchema = z.infer<typeof vertexAISchema>;
+
+export type TVertexModelMap = Record<string, string>;
+
+/**
+ * Validated Vertex AI configuration result
+ */
+export type TVertexAIConfig = TVertexAISchema & {
+  isValid: boolean;
+  errors: string[];
+  modelNames?: string[];
+  modelDeploymentMap?: TVertexModelMap;
+};
+
+/**
+ * Anthropic endpoint schema with optional Vertex AI configuration.
+ * Extends baseEndpointSchema with Vertex AI support.
+ */
+export const anthropicEndpointSchema = baseEndpointSchema.merge(
+  z.object({
+    /** Vertex AI configuration for running Anthropic models on Google Cloud */
+    vertex: vertexAISchema.optional(),
+    /** Optional: List of available models */
+    models: z.array(z.string()).optional(),
+  }),
+);
+
+export type TAnthropicEndpoint = z.infer<typeof anthropicEndpointSchema>;
 
 const ttsOpenaiSchema = z.object({
   url: z.string().optional(),
@@ -433,7 +788,8 @@ const speechTab = z
       .optional()
       .or(
         z.object({
-          engineSTT: z.string().optional(),
+          /** Keep in sync with STTProviders enum (defined below — cannot reference due to eval order) */
+          engineSTT: z.enum(['openai', 'azureOpenAI']).optional(),
           languageSTT: z.string().optional(),
           autoTranscribeAudio: z.boolean().optional(),
           decibelValue: z.number().optional(),
@@ -446,11 +802,12 @@ const speechTab = z
       .optional()
       .or(
         z.object({
-          engineTTS: z.string().optional(),
+          /** Keep in sync with TTSProviders enum (defined below — cannot reference due to eval order) */
+          engineTTS: z.enum(['openai', 'azureOpenAI', 'elevenlabs', 'localai']).optional(),
           voice: z.string().optional(),
           languageTTS: z.string().optional(),
           automaticPlayback: z.boolean().optional(),
-          playbackRate: z.number().optional(),
+          playbackRate: z.number().min(0.25).max(4).optional(),
           cacheTTS: z.boolean().optional(),
         }),
       )
@@ -526,6 +883,7 @@ const mcpServersSchema = z
     use: z.boolean().optional(),
     create: z.boolean().optional(),
     share: z.boolean().optional(),
+    public: z.boolean().optional(),
     trustCheckbox: z
       .object({
         label: localizedStringSchema.optional(),
@@ -548,18 +906,37 @@ export const interfaceSchema = z
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
-    endpointsMenu: z.boolean().optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
-    sidePanel: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
     memories: z.boolean().optional(),
     presets: z.boolean().optional(),
-    prompts: z.boolean().optional(),
-    agents: z.boolean().optional(),
+    prompts: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
+    agents: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
     temporaryChat: z.boolean().optional(),
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
+    autoSubmitFromUrl: z.boolean().optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     peoplePicker: z
@@ -576,19 +953,48 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    remoteAgents: z
+      .object({
+        use: z.boolean().optional(),
+        create: z.boolean().optional(),
+        share: z.boolean().optional(),
+        public: z.boolean().optional(),
+      })
+      .optional(),
+    skills: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+          defaultActiveOnShare: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
-    endpointsMenu: true,
     modelSelect: true,
     parameters: true,
-    sidePanel: true,
     presets: true,
     multiConvo: true,
     bookmarks: true,
     memories: true,
-    prompts: true,
-    agents: true,
+    prompts: {
+      use: true,
+      create: true,
+      share: false,
+      public: false,
+    },
+    agents: {
+      use: true,
+      create: true,
+      share: false,
+      public: false,
+    },
     temporaryChat: true,
+    autoSubmitFromUrl: true,
     runCode: true,
     webSearch: true,
     peoplePicker: {
@@ -603,9 +1009,23 @@ export const interfaceSchema = z
       use: true,
       create: true,
       share: false,
+      public: false,
     },
     fileSearch: true,
     fileCitations: true,
+    remoteAgents: {
+      use: false,
+      create: false,
+      share: false,
+      public: false,
+    },
+    skills: {
+      use: true,
+      create: true,
+      share: false,
+      public: false,
+      defaultActiveOnShare: false,
+    },
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
@@ -669,7 +1089,6 @@ export type TStartupConfig = {
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
-  instanceProjectId: string;
   bundlerURL?: string;
   staticBundlerURL?: string;
   sharePointFilePickerEnabled?: boolean;
@@ -677,11 +1096,18 @@ export type TStartupConfig = {
   sharePointPickerGraphScope?: string;
   sharePointPickerSharePointScope?: string;
   openidReuseTokens?: boolean;
+  allowAccountDeletion: boolean;
   minPasswordLength?: number;
   webSearch?: {
     searchProvider?: SearchProviders;
     scraperProvider?: ScraperProviders;
     rerankerType?: RerankerTypes;
+  };
+  cloudFront?: {
+    cookieRefresh?: {
+      endpoint: string;
+      domain: string;
+    };
   };
   mcpServers?: Record<
     string,
@@ -708,6 +1134,7 @@ export enum OCRStrategy {
   CUSTOM_OCR = 'custom_ocr',
   AZURE_MISTRAL_OCR = 'azure_mistral_ocr',
   VERTEXAI_MISTRAL_OCR = 'vertexai_mistral_ocr',
+  DOCUMENT_PARSER = 'document_parser',
 }
 
 export enum SearchCategories {
@@ -719,16 +1146,19 @@ export enum SearchCategories {
 export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
+  TAVILY = 'tavily',
 }
 
 export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
+  TAVILY = 'tavily',
 }
 
 export enum RerankerTypes {
   JINA = 'jina',
   COHERE = 'cohere',
+  NONE = 'none',
 }
 
 export enum SafeSearchTypes {
@@ -744,13 +1174,16 @@ export const webSearchSchema = z.object({
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
+  tavilyApiKey: z.string().optional().default('${TAVILY_API_KEY}'),
+  tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
+  tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
-  scraperTimeout: z.number().optional(),
+  scraperTimeout: z.number().int().nonnegative().optional(),
   safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
   firecrawlOptions: z
     .object({
@@ -759,7 +1192,7 @@ export const webSearchSchema = z.object({
       excludeTags: z.array(z.string()).optional(),
       headers: z.record(z.string()).optional(),
       waitFor: z.number().optional(),
-      timeout: z.number().optional(),
+      timeout: z.number().int().nonnegative().optional(),
       maxAge: z.number().optional(),
       mobile: z.boolean().optional(),
       skipTlsVerification: z.boolean().optional(),
@@ -785,6 +1218,33 @@ export const webSearchSchema = z.object({
         .optional(),
     })
     .optional(),
+  tavilySearchOptions: z
+    .object({
+      searchDepth: z.enum(['basic', 'advanced', 'fast', 'ultra-fast']).optional(),
+      maxResults: z.number().int().min(1).max(20).optional(),
+      includeImages: z.boolean().optional(),
+      includeAnswer: z.union([z.boolean(), z.enum(['basic', 'advanced'])]).optional(),
+      includeRawContent: z.union([z.boolean(), z.enum(['markdown', 'text'])]).optional(),
+      includeDomains: z.array(z.string()).optional(),
+      excludeDomains: z.array(z.string()).optional(),
+      topic: z.enum(['general', 'news', 'finance']).optional(),
+      timeRange: z.enum(['day', 'week', 'month', 'year', 'd', 'w', 'm', 'y']).optional(),
+      includeImageDescriptions: z.boolean().optional(),
+      includeFavicon: z.boolean().optional(),
+      chunksPerSource: z.number().int().min(1).max(3).optional(),
+      safeSearch: z.boolean().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
+  tavilyScraperOptions: z
+    .object({
+      extractDepth: z.enum(['basic', 'advanced']).optional(),
+      includeImages: z.boolean().optional(),
+      includeFavicon: z.boolean().optional(),
+      format: z.enum(['markdown', 'text']).optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
 });
 
 export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
@@ -801,10 +1261,7 @@ export const balanceSchema = z.object({
   startBalance: z.number().optional().default(20000),
   autoRefillEnabled: z.boolean().optional().default(false),
   refillIntervalValue: z.number().optional().default(30),
-  refillIntervalUnit: z
-    .enum(['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'])
-    .optional()
-    .default('days'),
+  refillIntervalUnit: z.enum(REFILL_INTERVAL_UNITS).optional().default('days'),
   refillAmount: z.number().optional().default(10000),
 });
 
@@ -822,19 +1279,59 @@ export const memorySchema = z.object({
   agent: z
     .union([
       z.object({
+        enabled: z.boolean().optional(),
         id: z.string(),
       }),
       z.object({
+        enabled: z.boolean().optional(),
         provider: z.string(),
         model: z.string(),
         instructions: z.string().optional(),
-        model_parameters: z.record(z.any()).optional(),
+        model_parameters: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
       }),
     ])
     .optional(),
 });
 
 export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;
+
+export const summarizationTriggerSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('token_ratio'),
+    value: z.number().finite().min(0).max(1),
+  }),
+  z.object({
+    type: z.literal('remaining_tokens'),
+    value: z.number().finite().int().positive(),
+  }),
+  z.object({
+    type: z.literal('messages_to_refine'),
+    value: z.number().finite().int().positive(),
+  }),
+]);
+
+export const contextPruningSchema = z.object({
+  enabled: z.boolean().optional(),
+  keepLastAssistants: z.number().min(0).max(10).optional(),
+  softTrimRatio: z.number().min(0).max(1).optional(),
+  hardClearRatio: z.number().min(0).max(1).optional(),
+  minPrunableToolChars: z.number().min(0).optional(),
+});
+
+export const summarizationConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  parameters: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  trigger: summarizationTriggerSchema.optional(),
+  prompt: z.string().optional(),
+  updatePrompt: z.string().optional(),
+  reserveRatio: z.number().min(0).max(1).optional(),
+  maxSummaryTokens: z.number().positive().optional(),
+  contextPruning: contextPruningSchema.optional(),
+});
+
+export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
@@ -844,18 +1341,27 @@ export const configSchema = z.object({
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   memory: memorySchema.optional(),
+  summarization: summarizationConfigSchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
   mcpServers: MCPServersSchema.optional(),
+  mcpSettings: z
+    .object({
+      allowedDomains: z.array(z.string()).optional(),
+      allowedAddresses: allowedAddressesSchema,
+    })
+    .optional(),
   interface: interfaceSchema,
   turnstile: turnstileSchema.optional(),
-  fileStrategy: fileSourceSchema.default(FileSources.local),
+  fileStrategy: fileStorageSchema.default(FileSources.local),
   fileStrategies: fileStrategiesSchema,
+  cloudfront: cloudfrontConfigSchema,
   actions: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
+      allowedAddresses: allowedAddressesSchema,
     })
     .optional(),
   registration: z
@@ -878,16 +1384,17 @@ export const configSchema = z.object({
   modelSpecs: specsConfigSchema.optional(),
   endpoints: z
     .object({
-      all: baseEndpointSchema.optional(),
+      allowedAddresses: allowedAddressesSchema,
+      all: baseEndpointSchema.omit({ baseURL: true }).optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),
-      [EModelEndpoint.anthropic]: baseEndpointSchema.optional(),
+      [EModelEndpoint.anthropic]: anthropicEndpointSchema.optional(),
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       [EModelEndpoint.agents]: agentsEndpointSchema.optional(),
       [EModelEndpoint.custom]: customEndpointsSchema.optional(),
-      [EModelEndpoint.bedrock]: baseEndpointSchema.optional(),
+      [EModelEndpoint.bedrock]: bedrockEndpointSchema.optional(),
     })
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
@@ -931,6 +1438,7 @@ export enum KnownEndpoints {
   cohere = 'cohere',
   fireworks = 'fireworks',
   deepseek = 'deepseek',
+  moonshot = 'moonshot',
   groq = 'groq',
   helicone = 'helicone',
   huggingface = 'huggingface',
@@ -975,12 +1483,17 @@ export const alternateName = {
   [EModelEndpoint.bedrock]: 'AWS Bedrock',
   [KnownEndpoints.ollama]: 'Ollama',
   [KnownEndpoints.deepseek]: 'DeepSeek',
+  [KnownEndpoints.moonshot]: 'Moonshot',
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
   [KnownEndpoints.helicone]: 'Helicone',
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.4',
+  // TODO: gpt-5.4-thinking may have separate reasoning token pricing — verify before release
+  'gpt-5.4-thinking',
+  'gpt-5.4-pro',
   'gpt-5.1',
   'gpt-5.1-chat-latest',
   'gpt-5.1-codex',
@@ -1014,6 +1527,9 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-opus-4-7',
+  'claude-sonnet-4-6',
+  'claude-opus-4-6',
   'claude-sonnet-4-5',
   'claude-sonnet-4-5-20250929',
   'claude-haiku-4-5',
@@ -1031,31 +1547,18 @@ const sharedAnthropicModels = [
   'claude-3-5-sonnet-20241022',
   'claude-3-5-sonnet-20240620',
   'claude-3-5-sonnet-latest',
-  'claude-3-opus-20240229',
-  'claude-3-sonnet-20240229',
-  'claude-3-haiku-20240307',
-  'claude-2.1',
-  'claude-2',
-  'claude-1.2',
-  'claude-1',
-  'claude-1-100k',
-  'claude-instant-1',
-  'claude-instant-1-100k',
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-opus-4-7',
+  'anthropic.claude-sonnet-4-6',
+  'anthropic.claude-opus-4-6-v1',
   'anthropic.claude-sonnet-4-5-20250929-v1:0',
   'anthropic.claude-haiku-4-5-20251001-v1:0',
   'anthropic.claude-opus-4-1-20250805-v1:0',
   'anthropic.claude-3-5-sonnet-20241022-v2:0',
   'anthropic.claude-3-5-sonnet-20240620-v1:0',
   'anthropic.claude-3-5-haiku-20241022-v1:0',
-  'anthropic.claude-3-haiku-20240307-v1:0',
-  'anthropic.claude-3-opus-20240229-v1:0',
-  'anthropic.claude-3-sonnet-20240229-v1:0',
-  'anthropic.claude-v2',
-  'anthropic.claude-v2:1',
-  'anthropic.claude-instant-v1',
   // 'cohere.command-text-v14', // no conversation history
   // 'cohere.command-light-text-v14', // no conversation history
   'cohere.command-r-v1:0',
@@ -1085,13 +1588,17 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 3.1 Models
+    'gemini-3.1-pro-preview',
+    'gemini-3.1-pro-preview-customtools',
+    'gemini-3.1-flash-lite-preview',
+    // Gemini 3 Models
+    'gemini-3-pro-preview',
+    'gemini-3-flash-preview',
     // Gemini 2.5 Models
     'gemini-2.5-pro',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
-    // Gemini 2.0 Models
-    'gemini-2.0-flash-001',
-    'gemini-2.0-flash-lite',
   ],
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
@@ -1161,6 +1668,7 @@ export const visionModels = [
   'o4-mini',
   'o3',
   'o1',
+  'gpt-5',
   'gpt-4.1',
   'gpt-4.5',
   'llava',
@@ -1213,7 +1721,13 @@ export function validateVisionModel({
   return visionModels.concat(additionalModels).some((visionModel) => model.includes(visionModel));
 }
 
-export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion', 'flux']);
+export const imageGenTools = new Set([
+  'dalle',
+  'dall-e',
+  'stable-diffusion',
+  'flux',
+  'gemini_image_gen',
+]);
 
 /**
  * Enum for collections using infinite queries
@@ -1234,6 +1748,7 @@ export enum InfiniteCollections {
  */
 export enum Time {
   ONE_DAY = 86400000,
+  TWELVE_HOURS = 43200000,
   ONE_HOUR = 3600000,
   THIRTY_MINUTES = 1800000,
   TEN_MINUTES = 600000,
@@ -1252,6 +1767,10 @@ export enum CacheKeys {
    * Key for the config store namespace.
    */
   CONFIG_STORE = 'CONFIG_STORE',
+  /**
+   * Key for the tool cache namespace (plugins, MCP tools, tool definitions).
+   */
+  TOOL_CACHE = 'TOOL_CACHE',
   /**
    * Key for the roles cache.
    */
@@ -1333,6 +1852,10 @@ export enum CacheKeys {
    * Key for SAML session.
    */
   SAML_SESSION = 'SAML_SESSION',
+  /**
+   * Key for admin panel OAuth exchange codes (one-time-use, short TTL).
+   */
+  ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
 }
 
 /**
@@ -1426,6 +1949,10 @@ export enum ErrorTypes {
    */
   NO_BASE_URL = 'no_base_url',
   /**
+   * Base URL targets a restricted or invalid address (SSRF protection).
+   */
+  INVALID_BASE_URL = 'invalid_base_url',
+  /**
    * Moderation error
    */
   MODERATION = 'moderation',
@@ -1477,6 +2004,10 @@ export enum ErrorTypes {
    * Model refused to respond (content policy violation)
    */
   REFUSAL = 'refusal',
+  /**
+   * SSE stream 404 — job completed, expired, or was deleted before the subscriber connected
+   */
+  STREAM_EXPIRED = 'stream_expired',
 }
 
 /**
@@ -1493,6 +2024,12 @@ export enum AuthKeys {
    * Note: this is not for Environment Variables, but to access encrypted object values.
    */
   GOOGLE_API_KEY = 'GOOGLE_API_KEY',
+  /**
+   * API key to use Anthropic.
+   *
+   * Note: this is not for Environment Variables, but to access encrypted object values.
+   */
+  ANTHROPIC_API_KEY = 'ANTHROPIC_API_KEY',
 }
 
 /**
@@ -1595,9 +2132,9 @@ export enum TTSProviders {
 /** Enum for app-wide constants */
 export enum Constants {
   /** Key for the app's version. */
-  VERSION = 'v0.8.2-rc1',
+  VERSION = 'v0.8.6-rc1',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.1',
+  CONFIG_VERSION = '1.3.11',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
@@ -1622,8 +2159,6 @@ export enum Constants {
   SAVED_TAG = 'Saved',
   /** Max number of Conversation starters for Agents/Assistants */
   MAX_CONVO_STARTERS = 4,
-  /** Global/instance Project Name */
-  GLOBAL_PROJECT_NAME = 'instance',
   /** Delimiter for MCP tools */
   mcp_delimiter = '_mcp_',
   /** Prefix for MCP plugins */
@@ -1632,6 +2167,8 @@ export enum Constants {
   mcp_all = 'sys__all__sys',
   /** Unique value to indicate clearing MCP servers from UI state. For frontend use only. */
   mcp_clear = 'sys__clear__sys',
+  /** Key suffix for non-spec user default tool storage */
+  spec_defaults_key = '__defaults__',
   /**
    * Unique value to indicate the MCP tool was added to an agent.
    * This helps inform the UI if the mcp server was previously added.
@@ -1643,7 +2180,25 @@ export enum Constants {
   LC_TRANSFER_TO_ = 'lc_transfer_to_',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
+  /** Programmatic Tool Calling tool name */
+  PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_code',
+  /** Bash Programmatic Tool Calling tool name */
+  BASH_PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_bash',
+  /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
+  SUBAGENT = 'subagent',
 }
+
+/** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
+export const MAX_SUBAGENTS = 10;
+
+/** Maximum explicit subagent hops allowed from any root agent at runtime. */
+export const MAX_SUBAGENT_DEPTH = 5;
+
+/** Maximum unique explicit subagent targets that may be loaded at runtime. */
+export const MAX_SUBAGENT_GRAPH_NODES = 50;
+
+/** Maximum expanded SubagentConfig entries embedded into one run request. */
+export const MAX_SUBAGENT_RUN_CONFIGS = 100;
 
 export enum LocalStorageKeys {
   /** Key for the admin defined App Title */
@@ -1676,8 +2231,8 @@ export enum LocalStorageKeys {
   LAST_PROMPT_CATEGORY = 'lastPromptCategory',
   /** Key for rendering User Messages as Markdown */
   ENABLE_USER_MSG_MARKDOWN = 'enableUserMsgMarkdown',
-  /** Key for displaying analysis tool code input */
-  SHOW_ANALYSIS_CODE = 'showAnalysisCode',
+  /** Key for auto-expanding tool call details */
+  AUTO_EXPAND_TOOLS = 'autoExpandTools',
   /** Last selected MCP values per conversation ID */
   LAST_MCP_ = 'LAST_MCP_',
   /** Last checked toggle for Code Interpreter API per conversation ID */
@@ -1688,6 +2243,8 @@ export enum LocalStorageKeys {
   LAST_FILE_SEARCH_TOGGLE_ = 'LAST_FILE_SEARCH_TOGGLE_',
   /** Last checked toggle for Artifacts per conversation ID */
   LAST_ARTIFACTS_TOGGLE_ = 'LAST_ARTIFACTS_TOGGLE_',
+  /** Last checked toggle for Skills per conversation ID */
+  LAST_SKILLS_TOGGLE_ = 'LAST_SKILLS_TOGGLE_',
   /** Key for the last selected agent provider */
   LAST_AGENT_PROVIDER = 'lastAgentProvider',
   /** Key for the last selected agent model */
@@ -1779,4 +2336,47 @@ export function getEndpointField<
     return undefined;
   }
   return config[property];
+}
+
+/**
+ * Resolves the effective endpoint type:
+ * - Non-agents endpoint: config.type || endpoint
+ * - Agents + provider: config[provider].type || provider
+ * - Agents, no provider: EModelEndpoint.agents
+ *
+ * Returns `undefined` when endpoint is null/undefined.
+ */
+export function resolveEndpointType(
+  endpointsConfig: TEndpointsConfig | undefined | null,
+  endpoint: string | null | undefined,
+  agentProvider?: string | null,
+): EModelEndpoint | string | undefined {
+  if (!endpoint) {
+    return undefined;
+  }
+
+  if (!isAgentsEndpoint(endpoint)) {
+    return getEndpointField(endpointsConfig, endpoint, 'type') || endpoint;
+  }
+
+  if (agentProvider) {
+    const providerType = getEndpointField(endpointsConfig, agentProvider, 'type');
+    if (providerType) {
+      return providerType;
+    }
+    return agentProvider;
+  }
+
+  return EModelEndpoint.agents;
+}
+
+/** Resolves the `defaultParamsEndpoint` for a given endpoint from its custom params config */
+export function getDefaultParamsEndpoint(
+  endpointsConfig: TEndpointsConfig | undefined | null,
+  endpoint: string | null | undefined,
+): string | undefined {
+  if (!endpointsConfig || !endpoint) {
+    return undefined;
+  }
+  return endpointsConfig[endpoint]?.customParams?.defaultParamsEndpoint;
 }

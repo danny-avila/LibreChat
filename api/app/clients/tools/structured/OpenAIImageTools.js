@@ -3,8 +3,8 @@ const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const FormData = require('form-data');
 const { EnvHttpProxyAgent } = require('undici');
-const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
+const { tool } = require('@librechat/agents/langchain/tools');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const { logAxiosError, oaiToolkit, extractBaseURL, getProxyAgent } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -76,6 +76,8 @@ function createOpenAIImageTools(fields = {}) {
 
   let apiKey = fields.IMAGE_GEN_OAI_API_KEY ?? getApiKey();
   const closureConfig = { apiKey };
+
+  const imageModel = process.env.IMAGE_GEN_OAI_MODEL || 'gpt-image-1';
 
   let baseURL = 'https://api.openai.com/v1/';
   if (!override && process.env.IMAGE_GEN_OAI_BASEURL) {
@@ -160,7 +162,7 @@ function createOpenAIImageTools(fields = {}) {
 
         resp = await openai.images.generate(
           {
-            model: 'gpt-image-1',
+            model: imageModel,
             prompt: replaceUnwantedChars(prompt),
             n: Math.min(Math.max(1, n), 10),
             background,
@@ -246,7 +248,7 @@ Error Message: ${error.message}`);
       }
 
       const formData = new FormData();
-      formData.append('model', 'gpt-image-1');
+      formData.append('model', imageModel);
       formData.append('prompt', replaceUnwantedChars(prompt));
       // TODO: `mask` support
       // TODO: more than 1 image support

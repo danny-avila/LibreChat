@@ -80,6 +80,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           streaming: true,
           model: 'qwen/qwen3-max',
           include_reasoning: true,
+          promptCache: true,
           apiKey: 'sk-xxxx',
         },
         configOptions: {
@@ -87,6 +88,8 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           defaultHeaders: {
             'HTTP-Referer': 'https://librechat.ai',
             'X-Title': 'LibreChat',
+            'X-OpenRouter-Title': 'LibreChat',
+            'X-OpenRouter-Categories': 'general-chat,personal-agent',
             'x-librechat-thread-id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
             'x-test-key': '{{TESTING_USER_VAR}}',
           },

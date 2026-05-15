@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { memo, useCallback, useRef } from 'react';
 import { MicOff } from 'lucide-react';
 import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
 import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
@@ -7,7 +7,7 @@ import { globalAudioId } from '~/common';
 import { cn } from '~/utils';
 
 const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
-export default function AudioRecorder({
+export default memo(function AudioRecorder({
   disabled,
   ask,
   methods,
@@ -26,10 +26,12 @@ export default function AudioRecorder({
   const { speechToTextEndpoint } = useGetAudioSettings();
 
   const existingTextRef = useRef<string>('');
+  const isSubmittingRef = useRef(isSubmitting);
+  isSubmittingRef.current = isSubmitting;
 
   const onTranscriptionComplete = useCallback(
     (text: string) => {
-      if (isSubmitting) {
+      if (isSubmittingRef.current) {
         showToast({
           message: localize('com_ui_speech_while_submitting'),
           status: 'error',
@@ -52,7 +54,7 @@ export default function AudioRecorder({
         existingTextRef.current = '';
       }
     },
-    [ask, reset, showToast, localize, isSubmitting, speechToTextEndpoint],
+    [ask, reset, showToast, localize, speechToTextEndpoint],
   );
 
   const setText = useCallback(
@@ -125,4 +127,4 @@ export default function AudioRecorder({
       }
     />
   );
-}
+});

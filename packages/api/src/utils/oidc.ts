@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import type { IUser } from '@librechat/data-schemas';
+import type { IUser, OIDCTokens } from '@librechat/data-schemas';
 
 export interface OpenIDTokenInfo {
   accessToken?: string;
@@ -11,14 +11,7 @@ export interface OpenIDTokenInfo {
   claims?: Record<string, unknown>;
 }
 
-interface FederatedTokens {
-  access_token?: string;
-  id_token?: string;
-  refresh_token?: string;
-  expires_at?: number;
-}
-
-function isFederatedTokens(obj: unknown): obj is FederatedTokens {
+function isFederatedTokens(obj: unknown): obj is OIDCTokens {
   if (!obj || typeof obj !== 'object') {
     return false;
   }
@@ -34,7 +27,22 @@ const OPENID_TOKEN_FIELDS = [
   'EXPIRES_AT',
 ] as const;
 
-export function extractOpenIDTokenInfo(user: IUser | null | undefined): OpenIDTokenInfo | null {
+/**
+ * Placeholder for Microsoft Graph API access token.
+ * This placeholder is resolved asynchronously via OBO (On-Behalf-Of) flow
+ * and requires special handling outside the synchronous processMCPEnv pipeline.
+ */
+export const GRAPH_TOKEN_PLACEHOLDER = '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
+
+/**
+ * Default Microsoft Graph API scopes for OBO token exchange.
+ * Can be overridden via GRAPH_API_SCOPES environment variable.
+ */
+export const DEFAULT_GRAPH_SCOPES = 'https://graph.microsoft.com/.default';
+
+export function extractOpenIDTokenInfo(
+  user: Partial<IUser> | null | undefined,
+): OpenIDTokenInfo | null {
   if (!user) {
     return null;
   }
@@ -46,23 +54,24 @@ export function extractOpenIDTokenInfo(user: IUser | null | undefined): OpenIDTo
 
     const tokenInfo: OpenIDTokenInfo = {};
 
-    if ('federatedTokens' in user && isFederatedTokens(user.federatedTokens)) {
-      const tokens = user.federatedTokens;
+    const federated = user.federatedTokens;
+    const openid = user.openidTokens;
+
+    if (federated && isFederatedTokens(federated)) {
       logger.debug('[extractOpenIDTokenInfo] Found federatedTokens:', {
-        has_access_token: !!tokens.access_token,
-        has_id_token: !!tokens.id_token,
-        has_refresh_token: !!tokens.refresh_token,
-        expires_at: tokens.expires_at,
+        has_access_token: !!federated.access_token,
+        has_id_token: !!federated.id_token,
+        has_refresh_token: !!federated.refresh_token,
+        expires_at: federated.expires_at,
       });
-      tokenInfo.accessToken = tokens.access_token;
-      tokenInfo.idToken = tokens.id_token;
-      tokenInfo.expiresAt = tokens.expires_at;
-    } else if ('openidTokens' in user && isFederatedTokens(user.openidTokens)) {
-      const tokens = user.openidTokens;
+      tokenInfo.accessToken = federated.access_token;
+      tokenInfo.idToken = federated.id_token;
+      tokenInfo.expiresAt = federated.expires_at;
+    } else if (openid && isFederatedTokens(openid)) {
       logger.debug('[extractOpenIDTokenInfo] Found openidTokens');
-      tokenInfo.accessToken = tokens.access_token;
-      tokenInfo.idToken = tokens.id_token;
-      tokenInfo.expiresAt = tokens.expires_at;
+      tokenInfo.accessToken = openid.access_token;
+      tokenInfo.idToken = openid.id_token;
+      tokenInfo.expiresAt = openid.expires_at;
     }
 
     tokenInfo.userId = user.openidId || user.id;

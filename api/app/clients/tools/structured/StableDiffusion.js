@@ -1,15 +1,31 @@
 // Generates image using stable diffusion webui's api (automatic1111)
 const fs = require('fs');
-const { z } = require('zod');
 const path = require('path');
 const axios = require('axios');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
-const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
+const { Tool } = require('@librechat/agents/langchain/tools');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 const { getBasePath } = require('@librechat/api');
 const paths = require('~/config/paths');
+
+const stableDiffusionJsonSchema = {
+  type: 'object',
+  properties: {
+    prompt: {
+      type: 'string',
+      description:
+        'Detailed keywords to describe the subject, using at least 7 keywords to accurately describe the image, separated by comma',
+    },
+    negative_prompt: {
+      type: 'string',
+      description:
+        'Keywords we want to exclude from the final image, using at least 7 keywords to accurately describe the image, separated by comma',
+    },
+  },
+  required: ['prompt', 'negative_prompt'],
+};
 
 const displayMessage =
   "Stable Diffusion displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
@@ -27,6 +43,10 @@ class StableDiffusionAPI extends Tool {
     this.returnMetadata = fields.returnMetadata ?? false;
     /** @type {boolean} */
     this.isAgent = fields.isAgent;
+    if (this.isAgent) {
+      /** Ensures LangChain maps [content, artifact] tuple to ToolMessage fields instead of serializing it into content. */
+      this.responseFormat = 'content_and_artifact';
+    }
     if (fields.uploadImageBuffer) {
       /** @type {uploadImageBuffer} Necessary for output to contain all image metadata. */
       this.uploadImageBuffer = fields.uploadImageBuffer.bind(this);
@@ -46,18 +66,11 @@ class StableDiffusionAPI extends Tool {
 // - Generate images only once per human query unless explicitly requested by the user`;
     this.description =
       "You can generate images using text with 'stable-diffusion'. This tool is exclusively for visual content.";
-    this.schema = z.object({
-      prompt: z
-        .string()
-        .describe(
-          'Detailed keywords to describe the subject, using at least 7 keywords to accurately describe the image, separated by comma',
-        ),
-      negative_prompt: z
-        .string()
-        .describe(
-          'Keywords we want to exclude from the final image, using at least 7 keywords to accurately describe the image, separated by comma',
-        ),
-    });
+    this.schema = stableDiffusionJsonSchema;
+  }
+
+  static get jsonSchema() {
+    return stableDiffusionJsonSchema;
   }
 
   replaceNewLinesWithSpaces(inputString) {
@@ -106,7 +119,7 @@ class StableDiffusionAPI extends Tool {
       generationResponse = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
     } catch (error) {
       logger.error('[StableDiffusion] Error while generating image:', error);
-      return 'Error making API request.';
+      return this.returnValue('Error making API request.');
     }
     const image = generationResponse.data.images[0];
 

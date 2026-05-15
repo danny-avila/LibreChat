@@ -1,15 +1,29 @@
 import { useEffect } from 'react';
-import { Spinner } from '@librechat/client';
-import { useParams } from 'react-router-dom';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
+import { Spinner, useToastContext } from '@librechat/client';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset } from 'librechat-data-provider';
+import {
+  mergeQuerySettingsWithSpec,
+  processValidSettings,
+  getDefaultModelSpec,
+  getModelSpecPreset,
+  isNotFoundError,
+  logger,
+} from '~/utils';
+import {
+  useAssistantListMap,
+  useIdChangeEffect,
+  useAppStartup,
+  useNewConvo,
+  useLocalize,
+} from '~/hooks';
 import { useGetConvoIdQuery, useGetStartupConfig, useGetEndpointsQuery } from '~/data-provider';
-import { useNewConvo, useAppStartup, useAssistantListMap, useIdChangeEffect } from '~/hooks';
-import { getDefaultModelSpec, getModelSpecPreset, logger } from '~/utils';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
+import { NotificationSeverity } from '~/common';
 import useAuthRedirect from './useAuthRedirect';
 import temporaryStore from '~/store/temporary';
 import store from '~/store';
@@ -29,10 +43,13 @@ export default function ChatRoute() {
   useAppStartup({ startupConfig, user });
 
   const index = 0;
+  const [searchParams] = useSearchParams();
   const { conversationId = '' } = useParams();
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
   const { newConversation } = useNewConvo();
+  const { showToast } = useToastContext();
+  const localize = useLocalize();
 
   const modelsQuery = useGetModelsQuery({
     enabled: isAuthenticated,
@@ -71,14 +88,35 @@ export default function ChatRoute() {
       return;
     }
 
-    if (conversationId === Constants.NEW_CONVO && endpointsQuery.data && modelsQuery.data) {
+    const isNewConvo = conversationId === Constants.NEW_CONVO;
+
+    const getNewConvoPreset = () => {
       const result = getDefaultModelSpec(startupConfig);
       const spec = result?.default ?? result?.last;
+      const specPreset = spec ? getModelSpecPreset(spec) : undefined;
+
+      const queryParams: Record<string, string> = {};
+      searchParams.forEach((value, key) => {
+        if (key !== 'prompt' && key !== 'q' && key !== 'submit') {
+          queryParams[key] = value;
+        }
+      });
+      const querySettings = processValidSettings(queryParams);
+
+      if (Object.keys(querySettings).length > 0) {
+        return mergeQuerySettingsWithSpec(specPreset, querySettings);
+      }
+      return specPreset;
+    };
+
+    if (isNewConvo && endpointsQuery.data && modelsQuery.data) {
+      const preset = getNewConvoPreset();
+
       logger.log('conversation', 'ChatRoute, new convo effect', conversation);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
+        ...(preset ? { preset } : {}),
       });
 
       hasSetConversation.current = true;
@@ -93,17 +131,40 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     } else if (
-      conversationId === Constants.NEW_CONVO &&
-      assistantListMap[EModelEndpoint.assistants] &&
-      assistantListMap[EModelEndpoint.azureAssistants]
+      conversationId &&
+      endpointsQuery.data &&
+      modelsQuery.data &&
+      initialConvoQuery.isError &&
+      isNotFoundError(initialConvoQuery.error)
     ) {
       const result = getDefaultModelSpec(startupConfig);
       const spec = result?.default ?? result?.last;
+      showToast({
+        message: localize('com_ui_conversation_not_found'),
+        severity: NotificationSeverity.WARNING,
+      });
+      logger.log(
+        'conversation',
+        'ChatRoute initialConvoQuery isNotFoundError',
+        initialConvoQuery.error,
+      );
+      newConversation({
+        modelsData: modelsQuery.data,
+        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
+      });
+      hasSetConversation.current = true;
+    } else if (
+      isNewConvo &&
+      assistantListMap[EModelEndpoint.assistants] &&
+      assistantListMap[EModelEndpoint.azureAssistants]
+    ) {
+      const preset = getNewConvoPreset();
+
       logger.log('conversation', 'ChatRoute new convo, assistants effect', conversation);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        ...(spec ? { preset: getModelSpecPreset(spec) } : {}),
+        ...(preset ? { preset } : {}),
       });
       hasSetConversation.current = true;
     } else if (
@@ -125,6 +186,7 @@ export default function ChatRoute() {
     roles,
     startupConfig,
     initialConvoQuery.data,
+    initialConvoQuery.isError,
     endpointsQuery.data,
     modelsQuery.data,
     assistantListMap,

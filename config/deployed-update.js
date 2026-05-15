@@ -29,7 +29,7 @@ const shouldRebase = process.argv.includes('--rebase');
     execSync('git checkout main', { stdio: 'inherit' });
     console.purple('Pulling the latest code from main...');
     execSync('git pull origin main', { stdio: 'inherit' });
-  } else if (shouldRebase) {
+  } else {
     const currentBranch = getCurrentBranch();
     console.purple(`Rebasing ${currentBranch} onto main...`);
     execSync('git rebase origin/main', { stdio: 'inherit' });
@@ -41,13 +41,16 @@ const shouldRebase = process.argv.includes('--rebase');
   execSync(downCommand, { stdio: 'inherit' });
 
   console.purple('Removing all tags for LibreChat `deployed` images...');
-  const repositories = ['ghcr.io/danny-avila/librechat-dev-api', 'librechat-client'];
+  const repositories = ['registry.librechat.ai/danny-avila/librechat-dev-api', 'librechat-client'];
   repositories.forEach((repo) => {
-    const tags = execSync(`sudo docker images ${repo} -q`, { encoding: 'utf8' })
+    const imageRefs = execSync(`sudo docker images ${repo} --format "{{.Repository}}:{{.Tag}}"`, {
+      encoding: 'utf8',
+    })
       .split('\n')
-      .filter(Boolean);
-    tags.forEach((tag) => {
-      const removeImageCommand = `sudo docker rmi ${tag}`;
+      .filter(Boolean)
+      .filter((ref) => !ref.includes('<none>'));
+    imageRefs.forEach((imageRef) => {
+      const removeImageCommand = `sudo docker rmi ${imageRef}`;
       console.orange(removeImageCommand);
       execSync(removeImageCommand, { stdio: 'inherit' });
     });
@@ -58,11 +61,14 @@ const shouldRebase = process.argv.includes('--rebase');
   console.orange(pullCommand);
   execSync(pullCommand, { stdio: 'inherit' });
 
-  let startCommand = 'sudo docker compose -f ./deploy-compose.yml up -d';
+  const startCommand = 'sudo docker compose -f ./deploy-compose.yml up -d';
   console.green('Your LibreChat app is now up to date! Start the app with the following command:');
   console.purple(startCommand);
   console.orange(
     "Note: it's also recommended to clear your browser cookies and localStorage for LibreChat to assure a fully clean installation.",
   );
   console.orange("Also: Don't worry, your data is safe :)");
-})();
+})().catch((err) => {
+  console.error('Update script failed:', err.message);
+  process.exit(1);
+});

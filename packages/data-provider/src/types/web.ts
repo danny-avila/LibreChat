@@ -1,5 +1,6 @@
 import type { Logger as WinstonLogger } from 'winston';
-import type { RunnableConfig } from '@langchain/core/runnables';
+import type { z } from 'zod';
+import type { webSearchSchema } from '../config';
 
 export type SearchRefType = 'search' | 'image' | 'news' | 'video' | 'ref';
 
@@ -11,7 +12,8 @@ export enum DATE_RANGE {
   PAST_YEAR = 'y',
 }
 
-export type SearchProvider = 'serper' | 'searxng';
+export type SearchProvider = 'serper' | 'searxng' | 'tavily';
+export type ScraperProvider = 'firecrawl' | 'serper' | 'tavily';
 export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none';
 
 export interface Highlight {
@@ -74,6 +76,9 @@ export interface SearchConfig {
   serperApiKey?: string;
   searxngInstanceUrl?: string;
   searxngApiKey?: string;
+  tavilyApiKey?: string;
+  tavilySearchUrl?: string;
+  tavilySearchOptions?: TavilyConfig['tavilySearchOptions'];
 }
 
 export type References = {
@@ -130,6 +135,14 @@ export interface FirecrawlConfig {
   };
 }
 
+export interface TavilyConfig {
+  tavilyApiKey?: string;
+  tavilySearchUrl?: string;
+  tavilyExtractUrl?: string;
+  tavilySearchOptions?: z.infer<typeof webSearchSchema>['tavilySearchOptions'];
+  tavilyScraperOptions?: z.infer<typeof webSearchSchema>['tavilyScraperOptions'];
+}
+
 export interface ScraperContentResult {
   content: string;
 }
@@ -174,16 +187,6 @@ export interface CohereRerankerResponse {
 export type SafeSearchLevel = 0 | 1 | 2;
 
 export type Logger = WinstonLogger;
-export interface SearchToolConfig extends SearchConfig, ProcessSourcesConfig, FirecrawlConfig {
-  logger?: Logger;
-  safeSearch?: SafeSearchLevel;
-  jinaApiKey?: string;
-  jinaApiUrl?: string;
-  cohereApiKey?: string;
-  rerankerType?: RerankerType;
-  onSearchResults?: (results: SearchResult, runnableConfig?: RunnableConfig) => void;
-  onGetHighlights?: (link: string) => void;
-}
 export interface MediaReference {
   originalUrl: string;
   title?: string;
@@ -289,18 +292,6 @@ export interface FirecrawlScraperConfig {
   timeout?: number;
   logger?: Logger;
 }
-
-export type GetSourcesParams = {
-  query: string;
-  date?: DATE_RANGE;
-  country?: string;
-  numResults?: number;
-  safeSearch?: SearchToolConfig['safeSearch'];
-  images?: boolean;
-  videos?: boolean;
-  news?: boolean;
-  type?: 'search' | 'images' | 'videos' | 'news';
-};
 
 /** Serper API */
 export interface VideoResult {
@@ -609,12 +600,3 @@ export interface SearXNGResult {
   publishedDate?: string;
   img_src?: string;
 }
-
-export type ProcessSourcesFields = {
-  result: SearchResult;
-  numElements: number;
-  query: string;
-  news: boolean;
-  proMode: boolean;
-  onGetHighlights: SearchToolConfig['onGetHighlights'];
-};

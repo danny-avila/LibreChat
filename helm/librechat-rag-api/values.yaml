@@ -9,7 +9,7 @@ rag:
 
 image:
   repository: danny-avila/librechat-rag-api-dev-lite # there is rag-api-dev and rag-api-dev-lite. currently only lite is docuimented
-  registry: ghcr.io
+  registry: registry.librechat.ai
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: latest
@@ -39,6 +39,11 @@ fullnameOverride: ''
 
 podAnnotations: {}
 podLabels: {}
+
+# Enable or disable injection of service environment variables into pods.
+# When running in namespaces with many services, the injected variables can cause
+# "argument list too long" errors. Set to false to disable.
+enableServiceLinks: true
 
 podSecurityContext: {} # fsGroup: 2000
 

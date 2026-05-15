@@ -8,6 +8,11 @@
 </p>
 
 <p align="center">
+  <strong>English</strong> ·
+  <a href="README.zh.md">中文</a>
+</p>
+
+<p align="center">
   <a href="https://discord.librechat.ai"> 
     <img
       src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&logoColor=white&labelColor=000000&color=blueviolet">
@@ -27,8 +32,8 @@
 </p>
 
 <p align="center">
-<a href="https://railway.app/template/b5k2mn?referralCode=HI9hWz">
-  <img src="https://railway.app/button.svg" alt="Deploy on Railway" height="30">
+<a href="https://railway.com/deploy/librechat-official?referralCode=HI9hWz&utm_medium=integration&utm_source=readme&utm_campaign=librechat">
+  <img src="https://railway.com/button.svg" alt="Deploy on Railway" height="30">
 </a>
 <a href="https://zeabur.com/templates/0X2ZY8">
   <img src="https://zeabur.com/button.svg" alt="Deploy on Zeabur" height="30"/>
@@ -69,6 +74,8 @@
     - Agent Marketplace: Discover and deploy community-built agents
     - Collaborative Sharing: Share agents with specific users and groups
     - Flexible & Extensible: Use MCP Servers, tools, file search, code execution, and more
+    - [Skills](https://www.librechat.ai/docs/features/skills): Create reusable `SKILL.md` instruction bundles for manual, automatic, or always-on agent workflows
+    - [Subagents](https://www.librechat.ai/docs/features/subagents): Delegate focused work to isolated child agent runs with their own context windows
     - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, Google, Vertex AI, Responses API, and more
     - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
 
@@ -109,6 +116,11 @@
 - 🎨 **Customizable Interface**:  
   - Customizable Dropdown & Interface that adapts to both power users and newcomers
 
+- 🌊 **[Resumable Streams](https://www.librechat.ai/docs/features/resumable_streams)**:  
+  - Never lose a response: AI responses automatically reconnect and resume if your connection drops
+  - Multi-Tab & Multi-Device Sync: Open the same chat in multiple tabs or pick up on another device
+  - Production-Ready: Works from single-server setups to horizontally scaled deployments with Redis
+
 - 🗣️ **Speech & Audio**:  
   - Chat hands-free with Speech-to-Text and Text-to-Speech  
   - Automatically send and play Audio  
@@ -127,6 +139,7 @@
 
 - ⚙️ **Configuration & Deployment**:  
   - Configure Proxy, Reverse Proxy, Docker, & many Deployment options  
+  - Use [S3 with CloudFront](https://www.librechat.ai/docs/configuration/cdn/cloudfront) for stable media links, edge delivery, signed cookies, and secured downloads
   - Use completely local or deploy on the cloud
 
 - 📖 **Open-Source & Community**:  
@@ -137,13 +150,11 @@
 
 ## 🪶 All-In-One AI Conversations with LibreChat
 
-LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
+LibreChat is a self-hosted AI chat platform that unifies all major AI providers in a single, privacy-focused interface.
 
-With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
+Beyond chat, LibreChat provides AI Agents, Model Context Protocol (MCP) support, Artifacts, Code Interpreter, custom actions, conversation search, and enterprise-ready multi-user authentication.
 
-[![Watch the video](https://raw.githubusercontent.com/LibreChat-AI/librechat.ai/main/public/images/changelog/v0.7.6.gif)](https://www.youtube.com/watch?v=ilfwGQtJNlI)
-
-Click on the thumbnail to open the video☝️
+Open source, actively developed, and built for anyone who values control over their AI infrastructure.
 
 ---
 

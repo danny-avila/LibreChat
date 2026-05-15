@@ -11,6 +11,7 @@ on:
       - 'packages/api/src/cache/**'
       - 'packages/api/src/cluster/**'
       - 'packages/api/src/mcp/**'
+      - 'packages/api/src/stream/**'
       - 'redis-config/**'
       - '.github/workflows/cache-integration-tests.yml'
 

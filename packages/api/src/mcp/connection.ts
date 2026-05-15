@@ -11,42 +11,50 @@ import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/webso
 import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type {
   RequestInit as UndiciRequestInit,
   RequestInfo as UndiciRequestInfo,
   Response as UndiciResponse,
 } from 'undici';
 import type { MCPOAuthTokens } from './oauth/types';
-import { withTimeout } from '~/utils/promise';
 import type * as t from './types';
+import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
+import { runOutsideTracing } from '~/utils/tracing';
 import { sanitizeUrlForLogging } from './utils';
+import { withTimeout } from '~/utils/promise';
 import { mcpConfig } from './mcpConfig';
 
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
 
 /**
- * Creates a dispatcher that respects PROXY and NO_PROXY environment variables.
- * Uses undici's EnvHttpProxyAgent which natively handles NO_PROXY patterns.
+ * Creates an undici Agent that respects PROXY/NO_PROXY env vars.
+ *
+ * When PROXY is unset, returns a stock Agent (optionally with the caller-
+ * supplied connect hook for SSRF protection). When PROXY is set, returns an
+ * EnvHttpProxyAgent — the connect hook is intentionally dropped because the
+ * socket connects to the proxy host, not the target host, so a target-IP
+ * SSRF check at connect time is not meaningful. The corporate proxy itself
+ * is the trust boundary for proxied requests.
+ *
+ * NO_PROXY is read from the environment by EnvHttpProxyAgent natively.
  */
-function createProxyDispatcher(timeout?: number) {
+function createMcpAgent(opts: {
+  bodyTimeout: number;
+  headersTimeout: number;
+  keepAliveTimeout?: number;
+  keepAliveMaxTimeout?: number;
+  connect?: Agent.Options['connect'];
+}): Agent {
   const PROXY = process.env.PROXY;
-  const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
-
   if (!PROXY) {
-    return new Agent({
-      bodyTimeout: effectiveTimeout,
-      headersTimeout: effectiveTimeout,
-    });
+    return new Agent(opts as Agent.Options);
   }
-
   return new EnvHttpProxyAgent({
     httpProxy: PROXY,
     httpsProxy: PROXY,
-    bodyTimeout: effectiveTimeout,
-    headersTimeout: effectiveTimeout,
-    // NO_PROXY/no_proxy is automatically read from environment by EnvHttpProxyAgent
-  });
+    bodyTimeout: opts.bodyTimeout,
+    headersTimeout: opts.headersTimeout,
+  }) as unknown as Agent;
 }
 
 function isStdioOptions(options: t.MCPOptions): options is t.StdioOptions {
@@ -92,12 +100,336 @@ function isStreamableHTTPOptions(options: t.MCPOptions): options is t.Streamable
 
 const FIVE_MINUTES = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT = 60000;
+/** SSE connections through proxies may need longer initial handshake time */
+const SSE_CONNECT_TIMEOUT = 120000;
+const DEFAULT_INIT_TIMEOUT = 30000;
+/** Max 307/308 redirects to follow per request (prevents redirect loops) */
+const MAX_REDIRECTS = 5;
+
+/**
+ * Headers stripped before forwarding a request across an origin boundary on
+ * 307/308 redirects, mirroring browser/Fetch-spec behavior. These headers can
+ * carry credentials (OAuth bearer, MCP session, cookies) that an attacker
+ * controlling a redirecting MCP endpoint could otherwise exfiltrate by sending
+ * a `Location` to a host they own.
+ */
+const CROSS_ORIGIN_FORBIDDEN_HEADERS = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'mcp-session-id',
+]);
+
+/**
+ * Normalizes a fetch input + init pair so the redirect loop only ever has
+ * to deal with `(string, init)`. When `input` is a `Request`, its method,
+ * headers, and body are baked into the returned init — explicit init values
+ * win (matching Fetch-spec semantics) and the body is buffered with
+ * `arrayBuffer()` so 307/308 retries can replay it on the new URL. Without
+ * this, switching `url` to a `Location` string on redirect would silently
+ * drop the original POST method and request payload.
+ */
+async function resolveFetchInput(
+  input: UndiciRequestInfo,
+  init: UndiciRequestInit | undefined,
+): Promise<{ urlString: string; resolvedInit: UndiciRequestInit | undefined }> {
+  if (typeof input === 'string') {
+    return { urlString: input, resolvedInit: init };
+  }
+  if (input instanceof URL) {
+    return { urlString: input.href, resolvedInit: init };
+  }
+  /**
+   * Treat anything else as a `Request`. Duck-typed instead of
+   * `instanceof undici.Request` because requests handed to a generic fetch
+   * wrapper can come from a different undici realm and fail the prototype
+   * check while still implementing the same shape. The `as unknown as` cast
+   * is needed because undici's `Headers` and DOM's `Headers` have
+   * incompatible declared shapes even though they are interchangeable at
+   * runtime for the methods we use.
+   */
+  const req = input as unknown as {
+    url: string;
+    method: string;
+    headers: { entries: () => Iterable<[string, string]> };
+    body: unknown;
+    signal: AbortSignal | null;
+    arrayBuffer: () => Promise<ArrayBuffer>;
+  };
+  const reqHeaders = Object.fromEntries(req.headers.entries());
+  const initHeaders = normalizeInitHeaders(init);
+  const mergedHeaders = { ...reqHeaders, ...initHeaders };
+  /** Body must be buffered before we hand it off — the original stream is
+   * single-shot, so a redirect retry with the same stream would crash with
+   * `body has been read`. Empty/no-body Requests skip the read entirely. */
+  const reqBody = req.body ? await req.arrayBuffer() : undefined;
+  /** Forward the `Request`'s abort signal so callers that wired up an
+   * `AbortController` (for timeout / user-cancellation) keep working after
+   * we re-shape the input into `(string, init)`. Explicit `init.signal`
+   * still wins per Fetch-spec semantics. */
+  const signal = init?.signal ?? req.signal ?? undefined;
+  return {
+    urlString: req.url,
+    resolvedInit: {
+      ...init,
+      method: init?.method ?? req.method,
+      body: init?.body ?? (reqBody as unknown as UndiciRequestInit['body']),
+      headers: mergedHeaders,
+      signal,
+    },
+  };
+}
+
+function normalizeInitHeaders(init: UndiciRequestInit | undefined): Record<string, string> {
+  if (!init?.headers) {
+    return {};
+  }
+  if (init.headers instanceof Headers) {
+    return Object.fromEntries(init.headers.entries());
+  }
+  if (Array.isArray(init.headers)) {
+    return Object.fromEntries(init.headers);
+  }
+  return init.headers as Record<string, string>;
+}
+
+function buildFetchInit(
+  init: UndiciRequestInit | undefined,
+  dispatcher: Agent,
+  requestHeaders: Record<string, string> | null | undefined,
+): UndiciRequestInit {
+  const hasInitHeaders = init?.headers != null;
+  const hasRuntimeHeaders = requestHeaders != null && Object.keys(requestHeaders).length > 0;
+  /**
+   * If neither `init.headers` nor runtime headers contribute anything, leave
+   * `headers` off the returned init entirely. Setting `headers: {}` would
+   * blow away the headers carried on a `Request` input — auth/session tokens
+   * and protocol negotiation headers — even when no redirect is involved.
+   */
+  if (!hasInitHeaders && !hasRuntimeHeaders) {
+    return { ...init, redirect: 'manual', dispatcher };
+  }
+  const initHeaders = normalizeInitHeaders(init);
+  const headers = hasRuntimeHeaders ? { ...initHeaders, ...requestHeaders } : initHeaders;
+  return {
+    ...init,
+    redirect: 'manual',
+    headers,
+    dispatcher,
+  };
+}
+
+function getUrlPort(url: URL | string): string {
+  const parsed = typeof url === 'string' ? new URL(url) : url;
+  if (parsed.port) return parsed.port;
+  if (parsed.protocol === 'http:' || parsed.protocol === 'ws:') return '80';
+  if (parsed.protocol === 'https:' || parsed.protocol === 'wss:') return '443';
+  return '';
+}
+
+/**
+ * Drops credential-bearing headers when a 307/308 redirect crosses an origin
+ * boundary. Removes the always-forbidden set plus any caller-supplied secret
+ * headers (runtime `setRequestHeaders` values and config-level API keys).
+ */
+function stripCrossOriginHeaders(
+  headers: Record<string, string>,
+  secretHeaderKeys: ReadonlySet<string>,
+): Record<string, string> {
+  const stripped: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const lowered = key.toLowerCase();
+    if (CROSS_ORIGIN_FORBIDDEN_HEADERS.has(lowered)) {
+      continue;
+    }
+    if (secretHeaderKeys.has(lowered)) {
+      continue;
+    }
+    stripped[key] = value;
+  }
+  return stripped;
+}
+
+interface CircuitBreakerState {
+  cycleCount: number;
+  cycleWindowStart: number;
+  cooldownUntil: number;
+  failedRounds: number;
+  failedWindowStart: number;
+  failedBackoffUntil: number;
+}
+
+/** Default body timeout for Streamable HTTP GET SSE streams that idle between server pushes */
+const DEFAULT_SSE_READ_TIMEOUT = FIVE_MINUTES;
+
+/**
+ * Error message prefixes emitted by the MCP SDK's StreamableHTTPClientTransport
+ * (client/streamableHttp.ts → _handleSseStream / _scheduleReconnection).
+ * These are SDK-internal strings, not part of a public API. If the SDK changes
+ * them, suppression in setupTransportErrorHandlers will silently stop working.
+ */
+const SDK_SSE_STREAM_DISCONNECTED = 'SSE stream disconnected';
+const SDK_SSE_RECONNECT_FAILED = 'Failed to reconnect SSE stream';
+
+/**
+ * Headers for SSE connections.
+ *
+ * Headers we intentionally DO NOT include:
+ * - Accept: text/event-stream - Already set by eventsource library AND MCP SDK
+ * - X-Accel-Buffering: This is a RESPONSE header for Nginx, not a request header.
+ *   The upstream MCP server must send this header for Nginx to respect it.
+ * - Connection: keep-alive: Forbidden in HTTP/2 (RFC 7540 §8.1.2.2).
+ *   HTTP/2 manages connection persistence differently.
+ */
+const SSE_REQUEST_HEADERS = {
+  'Cache-Control': 'no-cache',
+};
+
+/**
+ * Extracts a meaningful error message from SSE transport errors.
+ * The MCP SDK's SSEClientTransport can produce "SSE error: undefined" when the
+ * underlying eventsource library encounters connection issues without a specific message.
+ *
+ * @returns Object containing:
+ *   - message: Human-readable error description
+ *   - code: HTTP status code if available
+ *   - isProxyHint: Whether this error suggests proxy misconfiguration
+ *   - isTransient: Whether this is likely a transient error that will auto-reconnect
+ */
+function extractSSEErrorMessage(error: unknown): {
+  message: string;
+  code?: number;
+  isProxyHint: boolean;
+  isTransient: boolean;
+} {
+  if (!error || typeof error !== 'object') {
+    return {
+      message: 'Unknown SSE transport error',
+      isProxyHint: true,
+      isTransient: true,
+    };
+  }
+
+  const errorObj = error as { message?: string; code?: number; event?: unknown };
+  const rawMessage = errorObj.message ?? '';
+  const code = errorObj.code;
+
+  /**
+   * Handle the common "SSE error: undefined" case.
+   * This typically occurs when:
+   * 1. A reverse proxy buffers the SSE stream (proxy issue)
+   * 2. The server closes an idle connection (normal SSE behavior)
+   * 3. Network interruption without specific error details
+   *
+   * In all cases, the eventsource library will attempt to reconnect automatically.
+   */
+  if (rawMessage === 'SSE error: undefined' || rawMessage === 'undefined' || !rawMessage) {
+    return {
+      message:
+        'SSE connection closed. This can occur due to: (1) idle connection timeout (normal), ' +
+        '(2) reverse proxy buffering (check proxy_buffering config), or (3) network interruption.',
+      code,
+      isProxyHint: true,
+      isTransient: true,
+    };
+  }
+
+  /**
+   * Check for timeout patterns. Use case-insensitive matching for common timeout error codes:
+   * - ETIMEDOUT: TCP connection timeout
+   * - ESOCKETTIMEDOUT: Socket timeout
+   * - "timed out" / "timeout": Generic timeout messages
+   */
+  const lowerMessage = rawMessage.toLowerCase();
+  if (
+    rawMessage.includes('ETIMEDOUT') ||
+    rawMessage.includes('ESOCKETTIMEDOUT') ||
+    lowerMessage.includes('timed out') ||
+    lowerMessage.includes('timeout after') ||
+    lowerMessage.includes('request timeout')
+  ) {
+    return {
+      message: `SSE connection timed out: ${rawMessage}. If behind a reverse proxy, increase proxy_read_timeout.`,
+      code,
+      isProxyHint: true,
+      isTransient: true,
+    };
+  }
+
+  // Connection reset is often transient (server restart, proxy reload)
+  if (rawMessage.includes('ECONNRESET')) {
+    return {
+      message: `SSE connection reset: ${rawMessage}. The server or proxy may have restarted.`,
+      code,
+      isProxyHint: false,
+      isTransient: true,
+    };
+  }
+
+  // Connection refused is more serious - server may be down
+  if (rawMessage.includes('ECONNREFUSED')) {
+    return {
+      message: `SSE connection refused: ${rawMessage}. Verify the MCP server is running and accessible.`,
+      code,
+      isProxyHint: false,
+      isTransient: false,
+    };
+  }
+
+  // DNS failure is usually a configuration issue, not transient
+  if (rawMessage.includes('ENOTFOUND') || rawMessage.includes('getaddrinfo')) {
+    return {
+      message: `SSE DNS resolution failed: ${rawMessage}. Check the server URL is correct.`,
+      code,
+      isProxyHint: false,
+      isTransient: false,
+    };
+  }
+
+  // Check for HTTP status codes in the message
+  const statusMatch = rawMessage.match(/\b(4\d{2}|5\d{2})\b/);
+  if (statusMatch) {
+    const statusCode = parseInt(statusMatch[1], 10);
+    // 5xx errors are often transient, 4xx are usually not
+    const isServerError = statusCode >= 500 && statusCode < 600;
+    return {
+      message: rawMessage,
+      code: statusCode,
+      isProxyHint: statusCode === 502 || statusCode === 503 || statusCode === 504,
+      isTransient: isServerError,
+    };
+  }
+
+  /**
+   * "fetch failed" is a generic undici TypeError that occurs when an in-flight HTTP request
+   * is aborted (e.g. after an MCP protocol-level timeout fires). The transport itself is still
+   * functional — only the individual request was lost — so treat this as transient.
+   */
+  if (rawMessage === 'fetch failed') {
+    return {
+      message:
+        'fetch failed (request aborted, likely after a timeout — connection may still be usable)',
+      code,
+      isProxyHint: false,
+      isTransient: true,
+    };
+  }
+
+  return {
+    message: rawMessage,
+    code,
+    isProxyHint: false,
+    isTransient: false,
+  };
+}
 
 interface MCPConnectionParams {
   serverName: string;
   serverConfig: t.MCPOptions;
   userId?: string;
   oauthTokens?: MCPOAuthTokens | null;
+  useSSRFProtection?: boolean;
+  allowedAddresses?: string[] | null;
 }
 
 export class MCPConnection extends EventEmitter {
@@ -112,14 +444,19 @@ export class MCPConnection extends EventEmitter {
   private isReconnecting = false;
   private isInitializing = false;
   private reconnectAttempts = 0;
+  private agents: Agent[] = [];
   private readonly userId?: string;
   private lastPingTime: number;
   private lastConnectionCheckAt: number = 0;
   private oauthTokens?: MCPOAuthTokens | null;
   private requestHeaders?: Record<string, string> | null;
   private oauthRequired = false;
+  private oauthRecovery = false;
+  private readonly useSSRFProtection: boolean;
+  private readonly allowedAddresses?: string[] | null;
   iconPath?: string;
   timeout?: number;
+  sseReadTimeout?: number;
   url?: string;
 
   /**
@@ -127,6 +464,88 @@ export class MCPConnection extends EventEmitter {
    * Used to detect if connection is stale compared to updated config.
    */
   public readonly createdAt: number;
+
+  private static circuitBreakers: Map<string, CircuitBreakerState> = new Map();
+
+  public static clearCooldown(serverName: string): void {
+    MCPConnection.circuitBreakers.delete(serverName);
+    logger.debug(`[MCP][${serverName}] Circuit breaker state cleared`);
+  }
+
+  private getCircuitBreaker(): CircuitBreakerState {
+    let cb = MCPConnection.circuitBreakers.get(this.serverName);
+    if (!cb) {
+      cb = {
+        cycleCount: 0,
+        cycleWindowStart: Date.now(),
+        cooldownUntil: 0,
+        failedRounds: 0,
+        failedWindowStart: Date.now(),
+        failedBackoffUntil: 0,
+      };
+      MCPConnection.circuitBreakers.set(this.serverName, cb);
+    }
+    return cb;
+  }
+
+  private isCircuitOpen(): boolean {
+    const cb = this.getCircuitBreaker();
+    const now = Date.now();
+    return now < cb.cooldownUntil || now < cb.failedBackoffUntil;
+  }
+
+  private recordCycle(): void {
+    const cb = this.getCircuitBreaker();
+    const now = Date.now();
+    if (now - cb.cycleWindowStart > mcpConfig.CB_CYCLE_WINDOW_MS) {
+      cb.cycleCount = 0;
+      cb.cycleWindowStart = now;
+    }
+    cb.cycleCount++;
+    if (cb.cycleCount >= mcpConfig.CB_MAX_CYCLES) {
+      cb.cooldownUntil = now + mcpConfig.CB_CYCLE_COOLDOWN_MS;
+      cb.cycleCount = 0;
+      cb.cycleWindowStart = now;
+      logger.warn(
+        `${this.getLogPrefix()} Circuit breaker: too many cycles, cooling down for ${mcpConfig.CB_CYCLE_COOLDOWN_MS}ms`,
+      );
+    }
+  }
+
+  private recordFailedRound(): void {
+    const cb = this.getCircuitBreaker();
+    const now = Date.now();
+    if (now - cb.failedWindowStart > mcpConfig.CB_FAILED_WINDOW_MS) {
+      cb.failedRounds = 0;
+      cb.failedWindowStart = now;
+    }
+    cb.failedRounds++;
+    if (cb.failedRounds >= mcpConfig.CB_MAX_FAILED_ROUNDS) {
+      const backoff = Math.min(
+        mcpConfig.CB_BASE_BACKOFF_MS *
+          Math.pow(2, cb.failedRounds - mcpConfig.CB_MAX_FAILED_ROUNDS),
+        mcpConfig.CB_MAX_BACKOFF_MS,
+      );
+      cb.failedBackoffUntil = now + backoff;
+      logger.warn(
+        `${this.getLogPrefix()} Circuit breaker: too many failures, backing off for ${backoff}ms`,
+      );
+    }
+  }
+
+  private resetFailedRounds(): void {
+    const cb = this.getCircuitBreaker();
+    cb.failedRounds = 0;
+    cb.failedWindowStart = Date.now();
+    cb.failedBackoffUntil = 0;
+  }
+
+  public static decrementCycleCount(serverName: string): void {
+    const cb = MCPConnection.circuitBreakers.get(serverName);
+    if (cb && cb.cycleCount > 0) {
+      cb.cycleCount--;
+    }
+  }
 
   setRequestHeaders(headers: Record<string, string> | null): void {
     if (!headers) {
@@ -148,8 +567,11 @@ export class MCPConnection extends EventEmitter {
     this.options = params.serverConfig;
     this.serverName = params.serverName;
     this.userId = params.userId;
+    this.useSSRFProtection = params.useSSRFProtection === true;
+    this.allowedAddresses = params.allowedAddresses ?? null;
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
+    this.sseReadTimeout = params.serverConfig.sseReadTimeout;
     this.lastPingTime = Date.now();
     this.createdAt = Date.now(); // Record creation timestamp for staleness detection
     if (params.oauthTokens) {
@@ -178,43 +600,168 @@ export class MCPConnection extends EventEmitter {
    * Factory function to create fetch functions without capturing the entire `this` context.
    * This helps prevent memory leaks by only passing necessary dependencies.
    *
-   * @param getHeaders Function to retrieve request headers
-   * @param timeout Timeout value for the agent (in milliseconds)
-   * @returns A fetch function that merges headers appropriately
+   * When `sseBodyTimeout` is provided, a second Agent is created with a much longer
+   * body timeout for GET requests (the Streamable HTTP SSE stream). POST requests
+   * continue using the normal timeout so they fail fast on real errors.
    */
   private createFetchFunction(
     getHeaders: () => Record<string, string> | null | undefined,
     timeout?: number,
+    sseBodyTimeout?: number,
+    configuredSecretHeaderKeys?: ReadonlySet<string>,
+    baseUrl?: string,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
-    const dispatcher = createProxyDispatcher(timeout);
-    return function customFetch(
+    const basePort = baseUrl ? getUrlPort(baseUrl) : '';
+    const ssrfConnect = this.useSSRFProtection
+      ? createSSRFSafeUndiciConnect(this.allowedAddresses, basePort)
+      : undefined;
+    const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
+    /** Capture only the fields needed by the fetch closure; see factory note above. */
+    const agents = this.agents;
+    const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
+    const postAgent = createMcpAgent({
+      bodyTimeout: effectiveTimeout,
+      headersTimeout: effectiveTimeout,
+      ...connectOpts,
+    });
+    this.agents.push(postAgent);
+
+    let getAgent: Agent | undefined;
+    if (sseBodyTimeout != null) {
+      getAgent = createMcpAgent({
+        bodyTimeout: sseBodyTimeout,
+        headersTimeout: effectiveTimeout,
+        ...connectOpts,
+      });
+      this.agents.push(getAgent);
+    }
+
+    let safeRedirectPostAgent: Agent | undefined;
+    let safeRedirectGetAgent: Agent | undefined;
+    /**
+     * Allowlist mode keeps the original MCP URL admin-approved, but redirect
+     * targets are server-controlled. These agents add connect-time DNS checks
+     * for those cross-origin hops so DNS rebinding cannot beat the standalone
+     * resolveHostnameSSRF pre-check.
+     */
+    const createSafeRedirectAgent = (bodyTimeout: number): Agent => {
+      const redirectSSRFConnect = createSSRFSafeUndiciConnect();
+      const agent = createMcpAgent({
+        bodyTimeout,
+        headersTimeout: effectiveTimeout,
+        connect: redirectSSRFConnect,
+      });
+      agents.push(agent);
+      return agent;
+    };
+    const getSafeRedirectDispatcher = (isGetRequest: boolean): Agent => {
+      if (!isGetRequest || sseBodyTimeout == null) {
+        safeRedirectPostAgent ??= createSafeRedirectAgent(effectiveTimeout);
+        return safeRedirectPostAgent;
+      }
+      safeRedirectGetAgent ??= createSafeRedirectAgent(sseBodyTimeout);
+      return safeRedirectGetAgent;
+    };
+
+    return async function customFetch(
       input: UndiciRequestInfo,
       init?: UndiciRequestInit,
     ): Promise<UndiciResponse> {
+      /**
+       * Resolve the input shape upfront so the redirect loop can work with a
+       * (string url, init) pair uniformly. When `input` is a `Request`, we
+       * pull its method, headers, and body into the init — the body is
+       * buffered because `Request.body` is a one-shot stream that can't be
+       * replayed across redirect hops, and switching `url` to the new
+       * `Location` would otherwise drop the original method/body and turn a
+       * redirected POST into a GET with no payload.
+       */
+      const { urlString, resolvedInit } = await resolveFetchInput(input, init);
+
+      const isGet = (resolvedInit?.method ?? 'GET').toUpperCase() === 'GET';
+      const dispatcher = isGet && getAgent ? getAgent : postAgent;
       const requestHeaders = getHeaders();
-      if (!requestHeaders) {
-        return undiciFetch(input, { ...init, dispatcher });
-      }
+      /**
+       * Headers that originated from user/server configuration — runtime
+       * `setRequestHeaders` plus any keys baked into the transport at
+       * construction time (e.g. `serverConfig.headers` API keys). All are
+       * treated as credentials and stripped on cross-origin redirect.
+       */
+      const secretHeaderKeys: ReadonlySet<string> = new Set([
+        ...Object.keys(requestHeaders ?? {}).map((key) => key.toLowerCase()),
+        ...(configuredSecretHeaderKeys ?? []),
+      ]);
 
-      let initHeaders: Record<string, string> = {};
-      if (init?.headers) {
-        if (init.headers instanceof Headers) {
-          initHeaders = Object.fromEntries(init.headers.entries());
-        } else if (Array.isArray(init.headers)) {
-          initHeaders = Object.fromEntries(init.headers);
-        } else {
-          initHeaders = init.headers as Record<string, string>;
+      let currentInit = buildFetchInit(resolvedInit, dispatcher, requestHeaders);
+      let currentUrlString = urlString;
+      const originalOrigin = new URL(currentUrlString).origin;
+
+      for (let redirects = 0; ; redirects++) {
+        const response = await undiciFetch(currentUrlString, currentInit);
+        const isMethodPreservingRedirect = response.status === 307 || response.status === 308;
+
+        if (!isMethodPreservingRedirect || redirects >= MAX_REDIRECTS) {
+          return response;
         }
-      }
 
-      return undiciFetch(input, {
-        ...init,
-        headers: {
-          ...initHeaders,
-          ...requestHeaders,
-        },
-        dispatcher,
-      });
+        const location = response.headers.get('location');
+        if (!location) {
+          return response;
+        }
+
+        const targetUrl = new URL(location, currentUrlString);
+        const isCrossOriginRedirect = targetUrl.origin !== originalOrigin;
+
+        /**
+         * Keep the standalone check for immediate literal/current-DNS blocks.
+         * Cross-origin allowlist redirects also switch to a connect-time
+         * SSRF-safe dispatcher below so DNS rebinding cannot change the
+         * address between this check and the socket connection.
+         *
+         * `allowedAddresses` is intentionally NOT consulted on either layer:
+         * redirect targets are server-controlled (the MCP server's response
+         * chooses where to send us), so they must not inherit the admin's
+         * exemption for the originally-configured URL. A legitimate self-
+         * redirect from a permitted private host is still blocked here, by
+         * design — letting redirect targets inherit the exemption would open
+         * an SSRF amplification primitive.
+         */
+        if (await resolveHostnameSSRF(targetUrl.hostname)) {
+          logger.warn(
+            `[MCP] Blocked redirect to private/reserved address: ${sanitizeUrlForLogging(targetUrl)}`,
+          );
+          return response;
+        }
+
+        await response.body?.cancel().catch(() => undefined);
+
+        if (isCrossOriginRedirect && currentInit.headers != null) {
+          currentInit = {
+            ...currentInit,
+            headers: stripCrossOriginHeaders(
+              currentInit.headers as Record<string, string>,
+              secretHeaderKeys,
+            ),
+          };
+        }
+
+        if (isCrossOriginRedirect) {
+          /**
+           * Once a server-controlled cross-origin hop is seen, keep the safe
+           * dispatcher for the rest of this redirect chain. Restoring the
+           * original dispatcher on a later hop back to the original origin
+           * would re-open the allowlist-mode rebinding gap. When the original
+           * dispatcher carries `allowedAddresses`, this also prevents a
+           * redirect from inheriting that port-scoped exemption.
+           */
+          currentInit = {
+            ...currentInit,
+            dispatcher: getSafeRedirectDispatcher(isGet),
+          };
+        }
+
+        currentUrlString = targetUrl.href;
+      }
     };
   }
 
@@ -223,7 +770,7 @@ export class MCPConnection extends EventEmitter {
     logger.error(`${this.getLogPrefix()} ${errorContext}: ${errorMessage}`);
   }
 
-  private constructTransport(options: t.MCPOptions): Transport {
+  private async constructTransport(options: t.MCPOptions): Promise<Transport> {
     try {
       let type: t.MCPOptions['type'];
       if (isStdioOptions(options)) {
@@ -254,12 +801,34 @@ export class MCPConnection extends EventEmitter {
             env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },
           });
 
-        case 'websocket':
+        case 'websocket': {
           if (!isWebSocketOptions(options)) {
             throw new Error('Invalid options for websocket transport.');
           }
           this.url = options.url;
+          /**
+           * SSRF pre-check: always validate resolved IPs for WebSocket, regardless
+           * of allowlist configuration. Allowlisting a domain grants trust to that
+           * name, not to whatever IP it resolves to at runtime (DNS rebinding).
+           *
+           * Note: WebSocketClientTransport does its own DNS resolution, creating a
+           * small TOCTOU window. This is an SDK limitation — the transport accepts
+           * only a URL with no custom DNS lookup hook.
+           */
+          const wsUrl = new URL(options.url);
+          const wsHostname = wsUrl.hostname;
+          const isSSRF = await resolveHostnameSSRF(
+            wsHostname,
+            this.allowedAddresses,
+            getUrlPort(wsUrl),
+          );
+          if (isSSRF) {
+            throw new Error(
+              `SSRF protection: WebSocket host "${wsHostname}" resolved to a private/reserved IP address`,
+            );
+          }
           return new WebSocketClientTransport(new URL(options.url));
+        }
 
         case 'sse': {
           if (!isSSEOptions(options)) {
@@ -278,36 +847,57 @@ export class MCPConnection extends EventEmitter {
             headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
           }
 
-          const timeoutValue = this.timeout || DEFAULT_TIMEOUT;
-          const dispatcher = createProxyDispatcher(timeoutValue);
+          /**
+           * SSE connections need longer timeouts for reliability.
+           * The connect timeout is extended because proxies may delay initial response.
+           */
+          const sseTimeout = this.timeout || SSE_CONNECT_TIMEOUT;
+          const ssrfConnect = this.useSSRFProtection
+            ? createSSRFSafeUndiciConnect(this.allowedAddresses, getUrlPort(url))
+            : undefined;
+          const sseAgent = createMcpAgent({
+            bodyTimeout: sseTimeout,
+            headersTimeout: sseTimeout,
+            keepAliveTimeout: sseTimeout,
+            keepAliveMaxTimeout: sseTimeout * 2,
+            ...(ssrfConnect != null ? { connect: ssrfConnect } : {}),
+          });
+          this.agents.push(sseAgent);
+          const sseConfiguredSecretHeaderKeys: ReadonlySet<string> = new Set(
+            Object.keys(headers).map((key) => key.toLowerCase()),
+          );
           const transport = new SSEClientTransport(url, {
             requestInit: {
-              headers,
+              /** User/OAuth headers override SSE defaults */
+              headers: { ...SSE_REQUEST_HEADERS, ...headers },
               signal: abortController.signal,
             },
             eventSourceInit: {
               fetch: (url, init) => {
-                const fetchHeaders = new Headers(Object.assign({}, init?.headers, headers));
+                /** Merge headers: SSE defaults < init headers < user headers (user wins) */
+                const fetchHeaders = new Headers(
+                  Object.assign({}, SSE_REQUEST_HEADERS, init?.headers, headers),
+                );
                 return undiciFetch(url, {
                   ...init,
-                  dispatcher,
+                  redirect: 'manual',
+                  dispatcher: sseAgent,
                   headers: fetchHeaders,
                 });
               },
             },
             fetch: this.createFetchFunction(
               this.getRequestHeaders.bind(this),
-              this.timeout,
+              sseTimeout,
+              undefined,
+              sseConfiguredSecretHeaderKeys,
+              options.url,
             ) as unknown as FetchLike,
           });
 
           transport.onclose = () => {
             logger.info(`${this.getLogPrefix()} SSE transport closed`);
             this.emit('connectionChange', 'disconnected');
-          };
-
-          transport.onmessage = (message) => {
-            logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
           };
 
           this.setupTransportErrorHandlers(transport);
@@ -331,6 +921,9 @@ export class MCPConnection extends EventEmitter {
             headers['Authorization'] = `Bearer ${this.oauthTokens.access_token}`;
           }
 
+          const httpConfiguredSecretHeaderKeys: ReadonlySet<string> = new Set(
+            Object.keys(headers).map((key) => key.toLowerCase()),
+          );
           const transport = new StreamableHTTPClientTransport(url, {
             requestInit: {
               headers,
@@ -339,16 +932,15 @@ export class MCPConnection extends EventEmitter {
             fetch: this.createFetchFunction(
               this.getRequestHeaders.bind(this),
               this.timeout,
+              this.sseReadTimeout || DEFAULT_SSE_READ_TIMEOUT,
+              httpConfiguredSecretHeaderKeys,
+              options.url,
             ) as unknown as FetchLike,
           });
 
           transport.onclose = () => {
             logger.info(`${this.getLogPrefix()} Streamable-http transport closed`);
             this.emit('connectionChange', 'disconnected');
-          };
-
-          transport.onmessage = (message: JSONRPCMessage) => {
-            logger.info(`${this.getLogPrefix()} Message received: ${JSON.stringify(message)}`);
           };
 
           this.setupTransportErrorHandlers(transport);
@@ -409,7 +1001,11 @@ export class MCPConnection extends EventEmitter {
     }
 
     this.isReconnecting = true;
-    const backoffDelay = (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 30000);
+    const backoffDelay = (attempt: number) => {
+      const base = Math.min(1000 * Math.pow(2, attempt), 30000);
+      const jitter = Math.floor(Math.random() * 1000); // up to 1s of random jitter
+      return base + jitter;
+    };
 
     try {
       while (
@@ -483,6 +1079,12 @@ export class MCPConnection extends EventEmitter {
       return;
     }
 
+    if (this.isCircuitOpen()) {
+      this.connectionState = 'error';
+      this.emit('connectionChange', 'error');
+      throw new Error(`${this.getLogPrefix()} Circuit breaker is open, connection attempt blocked`);
+    }
+
     this.emit('connectionChange', 'connecting');
 
     this.connectPromise = (async () => {
@@ -490,25 +1092,37 @@ export class MCPConnection extends EventEmitter {
         if (this.transport) {
           try {
             await this.client.close();
-            this.transport = null;
           } catch (error) {
             logger.warn(`${this.getLogPrefix()} Error closing connection:`, error);
           }
+          this.transport = null;
+          await this.closeAgents();
         }
 
-        this.transport = this.constructTransport(this.options);
-        this.setupTransportDebugHandlers();
+        this.transport = await runOutsideTracing(() => this.constructTransport(this.options));
+        this.patchTransportSend();
 
-        const connectTimeout = this.options.initTimeout ?? 120000;
-        await withTimeout(
-          this.client.connect(this.transport),
-          connectTimeout,
-          `Connection timeout after ${connectTimeout}ms`,
+        const connectTimeout = this.options.initTimeout ?? DEFAULT_INIT_TIMEOUT;
+        await runOutsideTracing(() =>
+          withTimeout(
+            this.client.connect(this.transport!),
+            connectTimeout,
+            `Connection timeout after ${connectTimeout}ms`,
+          ),
         );
 
+        this.setupTransportOnMessageHandler();
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
         this.reconnectAttempts = 0;
+        this.resetFailedRounds();
+        if (this.oauthRecovery) {
+          MCPConnection.decrementCycleCount(this.serverName);
+          this.oauthRecovery = false;
+          logger.debug(
+            `${this.getLogPrefix()} OAuth recovery: decremented cycle count after successful reconnect`,
+          );
+        }
       } catch (error) {
         // Check if it's a rate limit error - stop immediately to avoid making it worse
         if (this.isRateLimitError(error)) {
@@ -592,9 +1206,8 @@ export class MCPConnection extends EventEmitter {
           try {
             // Wait for OAuth to be handled
             await oauthHandledPromise;
-            // Reset the oauthRequired flag
             this.oauthRequired = false;
-            // Don't throw the error - just return so connection can be retried
+            this.oauthRecovery = true;
             logger.info(
               `${this.getLogPrefix()} OAuth handled successfully, connection will be retried`,
             );
@@ -610,6 +1223,7 @@ export class MCPConnection extends EventEmitter {
 
         this.connectionState = 'error';
         this.emit('connectionChange', 'error');
+        this.recordFailedRound();
         throw error;
       } finally {
         this.connectPromise = null;
@@ -619,14 +1233,10 @@ export class MCPConnection extends EventEmitter {
     return this.connectPromise;
   }
 
-  private setupTransportDebugHandlers(): void {
+  private patchTransportSend(): void {
     if (!this.transport) {
       return;
     }
-
-    this.transport.onmessage = (msg) => {
-      logger.debug(`${this.getLogPrefix()} Transport received: ${JSON.stringify(msg)}`);
-    };
 
     const originalSend = this.transport.send.bind(this.transport);
     this.transport.send = async (msg) => {
@@ -636,14 +1246,35 @@ export class MCPConnection extends EventEmitter {
         }
         this.lastPingTime = Date.now();
       }
-      logger.debug(`${this.getLogPrefix()} Transport sending: ${JSON.stringify(msg)}`);
+      const method = 'method' in msg ? msg.method : undefined;
+      const id = 'id' in msg ? (msg as { id: string | number | null }).id : undefined;
+      logger.debug(
+        `${this.getLogPrefix()} Transport sending: method=${method ?? 'response'} id=${id ?? 'none'}`,
+      );
       return originalSend(msg);
+    };
+  }
+
+  private setupTransportOnMessageHandler(): void {
+    if (!this.transport?.onmessage) {
+      return;
+    }
+
+    const sdkHandler = this.transport.onmessage;
+    this.transport.onmessage = (msg) => {
+      const method = 'method' in msg ? msg.method : undefined;
+      const id = 'id' in msg ? (msg as { id: string | number | null }).id : undefined;
+      logger.debug(
+        `${this.getLogPrefix()} Transport received: method=${method ?? 'response'} id=${id ?? 'none'}`,
+      );
+      sdkHandler(msg);
     };
   }
 
   async connect(): Promise<void> {
     try {
-      await this.disconnect();
+      // preserve cycle tracking across reconnects so the circuit breaker can detect rapid cycling
+      await this.disconnect(false);
       await this.connectClient();
       if (!(await this.isConnected())) {
         throw new Error('Connection not established');
@@ -656,37 +1287,126 @@ export class MCPConnection extends EventEmitter {
 
   private setupTransportErrorHandlers(transport: Transport): void {
     transport.onerror = (error) => {
-      if (error && typeof error === 'object' && 'code' in error) {
-        const errorCode = (error as unknown as { code?: number }).code;
+      const rawMessage =
+        error && typeof error === 'object' ? ((error as { message?: string }).message ?? '') : '';
 
-        // Ignore SSE 404 errors for servers that don't support SSE
-        if (
-          errorCode === 404 &&
-          String(error?.message).toLowerCase().includes('failed to open sse stream')
-        ) {
-          logger.warn(`${this.getLogPrefix()} SSE stream not available (404). Ignoring.`);
+      /**
+       * The MCP SDK's StreamableHTTPClientTransport fires onerror for SSE GET stream
+       * disconnects but also handles reconnection internally via _scheduleReconnection.
+       * Escalating these to a full transport rebuild creates a redundant reconnection
+       * loop. Log at debug level and let the SDK recover the GET stream on its own.
+       *
+       * "Maximum reconnection attempts … exceeded" means the SDK gave up — that one
+       * must fall through so our higher-level reconnection takes over.
+       */
+      if (
+        rawMessage.startsWith(SDK_SSE_STREAM_DISCONNECTED) ||
+        rawMessage.startsWith(SDK_SSE_RECONNECT_FAILED)
+      ) {
+        logger.debug(`${this.getLogPrefix()} SDK SSE stream recovery in progress: ${rawMessage}`);
+        return;
+      }
+
+      const {
+        message: errorMessage,
+        code: errorCode,
+        isProxyHint,
+        isTransient,
+      } = extractSSEErrorMessage(error);
+
+      if (errorCode === 400 || errorCode === 404 || errorCode === 405) {
+        const hasSession =
+          'sessionId' in transport &&
+          (transport as { sessionId?: string }).sessionId != null &&
+          (transport as { sessionId?: string }).sessionId !== '';
+
+        if (!hasSession && errorMessage.toLowerCase().includes('failed to open sse stream')) {
+          logger.warn(
+            `${this.getLogPrefix()} SSE stream not available (${errorCode}), no session. Ignoring.`,
+          );
           return;
         }
 
-        // Check if it's an OAuth authentication error
-        if (this.isOAuthError(error)) {
-          logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
-          this.emit('oauthError', error);
+        if (hasSession) {
+          logger.warn(
+            `${this.getLogPrefix()} ${errorCode} with active session — session lost, triggering reconnection.`,
+          );
         }
       }
 
-      logger.error(`${this.getLogPrefix()} Transport error:`, error);
+      // Check if it's an OAuth authentication error
+      if (this.isOAuthError(error)) {
+        logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
+        this.emit('oauthError', error);
+      }
+
+      /**
+       * Log with enhanced context for debugging.
+       * All transport.onerror events are logged as errors to preserve stack traces.
+       * isTransient indicates whether auto-reconnection is expected to succeed.
+       *
+       * The MCP SDK's SseError extends Error and includes:
+       * - code: HTTP status code or eventsource error code
+       * - event: The original eventsource ErrorEvent
+       * - stack: Full stack trace
+       */
+      const errorContext: Record<string, unknown> = {
+        code: errorCode,
+        isTransient,
+      };
+
+      if (isProxyHint) {
+        errorContext.hint = 'Check Nginx/proxy configuration for SSE endpoints';
+      }
+
+      // Extract additional debug info from SseError if available
+      if (error && typeof error === 'object') {
+        const sseError = error as { event?: unknown; stack?: string };
+
+        // Include the original eventsource event for debugging
+        if (sseError.event && typeof sseError.event === 'object') {
+          const event = sseError.event as { code?: number; message?: string; type?: string };
+          errorContext.eventDetails = {
+            type: event.type,
+            code: event.code,
+            message: event.message,
+          };
+        }
+
+        // Include stack trace if available
+        if (sseError.stack) {
+          errorContext.stack = sseError.stack;
+        }
+      }
+
+      const errorLabel = isTransient
+        ? 'Transport error (transient, will reconnect)'
+        : 'Transport error (may require manual intervention)';
+
+      logger.error(`${this.getLogPrefix()} ${errorLabel}: ${errorMessage}`, errorContext);
 
       this.emit('connectionChange', 'error');
     };
   }
 
-  public async disconnect(): Promise<void> {
+  private async closeAgents(): Promise<void> {
+    const logPrefix = this.getLogPrefix();
+    const closing = this.agents.map((agent) =>
+      agent.close().catch((err: unknown) => {
+        logger.debug(`${logPrefix} Agent close error (non-fatal):`, err);
+      }),
+    );
+    this.agents = [];
+    await Promise.all(closing);
+  }
+
+  public async disconnect(resetCycleTracking = true): Promise<void> {
     try {
       if (this.transport) {
         await this.client.close();
         this.transport = null;
       }
+      await this.closeAgents();
       if (this.connectionState === 'disconnected') {
         return;
       }
@@ -694,6 +1414,9 @@ export class MCPConnection extends EventEmitter {
       this.emit('connectionChange', 'disconnected');
     } finally {
       this.connectPromise = null;
+      if (!resetCycleTracking) {
+        this.recordCycle();
+      }
     }
   }
 

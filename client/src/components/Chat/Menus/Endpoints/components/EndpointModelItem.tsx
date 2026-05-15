@@ -1,42 +1,32 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { EarthIcon, Pin, PinOff } from 'lucide-react';
+import React from 'react';
+import { VisuallyHidden } from '@ariakit/react';
+import { CheckCircle2, EarthIcon, Pin, PinOff } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import type { Endpoint } from '~/common';
+import { useFavorites, useLocalize, useIsActiveItem } from '~/hooks';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
-import { useFavorites, useLocalize } from '~/hooks';
-import type { Endpoint } from '~/common';
 import { cn } from '~/utils';
 
 interface EndpointModelItemProps {
   modelId: string | null;
   endpoint: Endpoint;
-  isSelected: boolean;
 }
 
-export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointModelItemProps) {
+export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps) {
   const localize = useLocalize();
-  const { handleSelectModel } = useModelSelectorContext();
+  const { handleSelectModel, selectedValues } = useModelSelectorContext();
+  const {
+    endpoint: selectedEndpoint,
+    model: selectedModel,
+    modelSpec: selectedSpec,
+  } = selectedValues;
+  const isSelected =
+    !selectedSpec && selectedEndpoint === endpoint.value && selectedModel === modelId;
   const { isFavoriteModel, toggleFavoriteModel, isFavoriteAgent, toggleFavoriteAgent } =
     useFavorites();
 
-  const itemRef = useRef<HTMLDivElement>(null);
-  const [isActive, setIsActive] = useState(false);
-
-  useEffect(() => {
-    const element = itemRef.current;
-    if (!element) {
-      return;
-    }
-
-    const observer = new MutationObserver(() => {
-      setIsActive(element.hasAttribute('data-active-item'));
-    });
-
-    observer.observe(element, { attributes: true, attributeFilter: ['data-active-item'] });
-    setIsActive(element.hasAttribute('data-active-item'));
-
-    return () => observer.disconnect();
-  }, []);
+  const { ref: itemRef, isActive } = useIsActiveItem<HTMLDivElement>();
 
   let isGlobal = false;
   let modelName = modelId;
@@ -110,6 +100,7 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
     <MenuItem
       ref={itemRef}
       onClick={() => handleSelectModel(endpoint, modelId ?? '')}
+      aria-selected={isSelected || undefined}
       className="group flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
     >
       <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
@@ -118,38 +109,28 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
         {isGlobal && <EarthIcon className="ml-1 size-4 text-surface-submit" />}
       </div>
       <button
+        type="button"
         tabIndex={isActive ? 0 : -1}
         onClick={handleFavoriteClick}
         aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
         className={cn(
-          'rounded-md p-1 hover:bg-surface-hover',
-          isFavorite ? 'visible' : 'invisible group-hover:visible group-data-[active-item]:visible',
+          'rounded-md p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary',
+          isFavorite
+            ? 'visible'
+            : 'invisible group-focus-within:visible group-hover:visible group-data-[active-item]:visible',
         )}
       >
         {isFavorite ? (
-          <PinOff className="h-4 w-4 text-text-secondary" />
+          <PinOff className="h-4 w-4 text-text-secondary" aria-hidden="true" />
         ) : (
           <Pin className="h-4 w-4 text-text-secondary" aria-hidden="true" />
         )}
       </button>
       {isSelected && (
-        <div className="flex-shrink-0 self-center">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="block"
-          >
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12ZM16.0755 7.93219C16.5272 8.25003 16.6356 8.87383 16.3178 9.32549L11.5678 16.0755C11.3931 16.3237 11.1152 16.4792 10.8123 16.4981C10.5093 16.517 10.2142 16.3973 10.0101 16.1727L7.51006 13.4227C7.13855 13.014 7.16867 12.3816 7.57733 12.0101C7.98598 11.6386 8.61843 11.6687 8.98994 12.0773L10.6504 13.9039L14.6822 8.17451C15 7.72284 15.6238 7.61436 16.0755 7.93219Z"
-              fill="currentColor"
-            />
-          </svg>
-        </div>
+        <>
+          <CheckCircle2 className="size-4 shrink-0 text-text-primary" aria-hidden="true" />
+          <VisuallyHidden>{localize('com_a11y_selected')}</VisuallyHidden>
+        </>
       )}
     </MenuItem>
   );
@@ -158,7 +139,6 @@ export function EndpointModelItem({ modelId, endpoint, isSelected }: EndpointMod
 export function renderEndpointModels(
   endpoint: Endpoint | null,
   models: Array<{ name: string; isGlobal?: boolean }>,
-  selectedModel: string | null,
   filteredModels?: string[],
   endpointIndex?: number,
 ) {
@@ -172,7 +152,6 @@ export function renderEndpointModels(
           key={`${endpoint.value}${indexSuffix}-${modelId}-${modelIndex}`}
           modelId={modelId}
           endpoint={endpoint}
-          isSelected={selectedModel === modelId}
         />
       ),
   );

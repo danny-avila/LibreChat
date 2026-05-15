@@ -7,6 +7,7 @@ import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtuali
 import type { TConversation } from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
+import { useActiveJobs } from '~/data-provider';
 import { groupConversationsByDate, cn } from '~/utils';
 import Convo from './Convo';
 import store from '~/store';
@@ -47,7 +48,7 @@ const MeasuredRow: FC<MeasuredRowProps> = memo(
   ({ cache, rowKey, parent, index, style, children }) => (
     <CellMeasurer cache={cache} columnIndex={0} key={rowKey} parent={parent} rowIndex={index}>
       {({ registerChild }) => (
-        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style}>
+        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style} className="px-3">
           {children}
         </div>
       )}
@@ -81,7 +82,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
   return (
     <button
       onClick={onToggle}
-      className="group flex w-full items-center justify-between px-1 py-2 text-xs font-bold text-text-secondary"
+      className="group flex w-full items-center justify-between rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
       type="button"
     >
       <span className="select-none">{localize('com_ui_chats')}</span>
@@ -98,6 +99,9 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
   const localize = useLocalize();
   return (
     <h2
+      aria-label={localize('com_a11y_chats_date_section', {
+        date: localize(groupName as TranslationKeys) || groupName,
+      })}
       className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
       style={{ fontSize: '0.7rem' }}
     >
@@ -120,18 +124,28 @@ const MemoizedConvo = memo(
     conversation,
     retainView,
     toggleNav,
+    isGenerating,
   }: {
     conversation: TConversation;
     retainView: () => void;
     toggleNav: () => void;
+    isGenerating: boolean;
   }) => {
-    return <Convo conversation={conversation} retainView={retainView} toggleNav={toggleNav} />;
+    return (
+      <Convo
+        conversation={conversation}
+        retainView={retainView}
+        toggleNav={toggleNav}
+        isGenerating={isGenerating}
+      />
+    );
   },
   (prevProps, nextProps) => {
     return (
       prevProps.conversation.conversationId === nextProps.conversation.conversationId &&
       prevProps.conversation.title === nextProps.conversation.title &&
-      prevProps.conversation.endpoint === nextProps.conversation.endpoint
+      prevProps.conversation.endpoint === nextProps.conversation.endpoint &&
+      prevProps.isGenerating === nextProps.isGenerating
     );
   },
 );
@@ -154,9 +168,20 @@ const Conversations: FC<ConversationsProps> = ({
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
 
+  const favoritesContentKeyRef = useRef('');
+
+  // Fetch active job IDs for showing generation indicators
+  const { data: activeJobsData } = useActiveJobs();
+  const activeJobIds = useMemo(
+    () => new Set(activeJobsData?.activeJobIds ?? []),
+    [activeJobsData?.activeJobIds],
+  );
+
   // Determine if FavoritesList will render content
   const shouldShowFavorites =
     !search.query && (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
+
+  favoritesContentKeyRef.current = `${favorites.length}-${showAgentMarketplace ? 1 : 0}-${isFavoritesLoading ? 1 : 0}`;
 
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],
@@ -205,7 +230,7 @@ const Conversations: FC<ConversationsProps> = ({
             return `unknown-${index}`;
           }
           if (item.type === 'favorites') {
-            return 'favorites';
+            return `favorites-${favoritesContentKeyRef.current}`;
           }
           if (item.type === 'chats-header') {
             return 'chats-header';
@@ -225,7 +250,6 @@ const Conversations: FC<ConversationsProps> = ({
     [convoHeight],
   );
 
-  // Debounced function to clear cache and recompute heights
   const clearFavoritesCache = useCallback(() => {
     if (cache) {
       cache.clear(0, 0);
@@ -235,13 +259,22 @@ const Conversations: FC<ConversationsProps> = ({
     }
   }, [cache, containerRef]);
 
-  // Clear cache when favorites change
   useEffect(() => {
     const frameId = requestAnimationFrame(() => {
       clearFavoritesCache();
     });
     return () => cancelAnimationFrame(frameId);
-  }, [favorites.length, isFavoritesLoading, clearFavoritesCache]);
+  }, [favorites.length, isFavoritesLoading, showAgentMarketplace, clearFavoritesCache]);
+
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      cache.clearAll();
+      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+        containerRef.current.recomputeRowHeights(0);
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [search.query, cache, containerRef]);
 
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
@@ -259,11 +292,7 @@ const Conversations: FC<ConversationsProps> = ({
       if (item.type === 'favorites') {
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <FavoritesList
-              isSmallScreen={isSmallScreen}
-              toggleNav={toggleNav}
-              onHeightChange={clearFavoritesCache}
-            />
+            <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
           </MeasuredRow>
         );
       }
@@ -292,9 +321,15 @@ const Conversations: FC<ConversationsProps> = ({
       }
 
       if (item.type === 'convo') {
+        const isGenerating = activeJobIds.has(item.convo.conversationId ?? '');
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <MemoizedConvo conversation={item.convo} retainView={moveToTop} toggleNav={toggleNav} />
+            <MemoizedConvo
+              conversation={item.convo}
+              retainView={moveToTop}
+              toggleNav={toggleNav}
+              isGenerating={isGenerating}
+            />
           </MeasuredRow>
         );
       }
@@ -306,11 +341,11 @@ const Conversations: FC<ConversationsProps> = ({
       flattenedItems,
       moveToTop,
       toggleNav,
-      clearFavoritesCache,
       isSmallScreen,
       isChatsExpanded,
       setIsChatsExpanded,
       shouldShowFavorites,
+      activeJobIds,
     ],
   );
 
@@ -358,7 +393,8 @@ const Conversations: FC<ConversationsProps> = ({
                 aria-label="Conversations"
                 onRowsRendered={handleRowsRendered}
                 tabIndex={-1}
-                style={{ outline: 'none', scrollbarGutter: 'stable' }}
+                style={{ outline: 'none' }}
+                containerRole="rowgroup"
               />
             )}
           </AutoSizer>
@@ -368,4 +404,5 @@ const Conversations: FC<ConversationsProps> = ({
   );
 };
 
+export { DateLabel };
 export default memo(Conversations);

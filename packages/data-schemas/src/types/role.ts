@@ -5,14 +5,16 @@ import { CursorPaginationParams } from '~/common';
 
 export interface IRole extends Document {
   name: string;
+  description?: string;
   permissions: {
     [PermissionTypes.BOOKMARKS]?: {
       [Permissions.USE]?: boolean;
     };
     [PermissionTypes.PROMPTS]?: {
-      [Permissions.SHARED_GLOBAL]?: boolean;
       [Permissions.USE]?: boolean;
       [Permissions.CREATE]?: boolean;
+      [Permissions.SHARE]?: boolean;
+      [Permissions.SHARE_PUBLIC]?: boolean;
     };
     [PermissionTypes.MEMORIES]?: {
       [Permissions.USE]?: boolean;
@@ -21,9 +23,10 @@ export interface IRole extends Document {
       [Permissions.READ]?: boolean;
     };
     [PermissionTypes.AGENTS]?: {
-      [Permissions.SHARED_GLOBAL]?: boolean;
       [Permissions.USE]?: boolean;
       [Permissions.CREATE]?: boolean;
+      [Permissions.SHARE]?: boolean;
+      [Permissions.SHARE_PUBLIC]?: boolean;
     };
     [PermissionTypes.MULTI_CONVO]?: {
       [Permissions.USE]?: boolean;
@@ -55,8 +58,22 @@ export interface IRole extends Document {
       [Permissions.USE]?: boolean;
       [Permissions.CREATE]?: boolean;
       [Permissions.SHARE]?: boolean;
+      [Permissions.SHARE_PUBLIC]?: boolean;
+    };
+    [PermissionTypes.REMOTE_AGENTS]?: {
+      [Permissions.USE]?: boolean;
+      [Permissions.CREATE]?: boolean;
+      [Permissions.SHARE]?: boolean;
+      [Permissions.SHARE_PUBLIC]?: boolean;
+    };
+    [PermissionTypes.SKILLS]?: {
+      [Permissions.USE]?: boolean;
+      [Permissions.CREATE]?: boolean;
+      [Permissions.SHARE]?: boolean;
+      [Permissions.SHARE_PUBLIC]?: boolean;
     };
   };
+  tenantId?: string;
 }
 
 export type RolePermissions = IRole['permissions'];
@@ -64,11 +81,13 @@ export type RolePermissionsInput = DeepPartial<RolePermissions>;
 
 export interface CreateRoleRequest {
   name: string;
+  description?: string;
   permissions: RolePermissionsInput;
 }
 
 export interface UpdateRoleRequest {
   name?: string;
+  description?: string;
   permissions?: RolePermissionsInput;
 }
 

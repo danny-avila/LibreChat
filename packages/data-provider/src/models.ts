@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import type { TPreset } from './schemas';
+import type { TModelSpecPreset } from './schemas';
 import {
   EModelEndpoint,
-  tPresetSchema,
+  tModelSpecPresetSchema,
   eModelEndpointSchema,
   AuthType,
   authTypeSchema,
@@ -11,7 +11,7 @@ import {
 export type TModelSpec = {
   name: string;
   label: string;
-  preset: TPreset;
+  preset: TModelSpecPreset;
   order?: number;
   default?: boolean;
   description?: string;
@@ -22,38 +22,50 @@ export type TModelSpec = {
    * - If omitted, the spec appears as a standalone item at the top level
    */
   group?: string;
+  /**
+   * Optional icon URL for the group this spec belongs to.
+   * Only needs to be set on one spec per group - the first one found with a groupIcon will be used.
+   * Can be a URL or an endpoint name to use its icon.
+   */
+  groupIcon?: string | EModelEndpoint;
   showIconInMenu?: boolean;
   showIconInHeader?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType?: AuthType;
+  /** Hide the chat input tool badge row while this model spec is active. */
+  hideBadgeRow?: boolean;
   webSearch?: boolean;
   fileSearch?: boolean;
   executeCode?: boolean;
+  artifacts?: string | boolean;
   mcpServers?: string[];
 };
 
 export const tModelSpecSchema = z.object({
   name: z.string(),
   label: z.string(),
-  preset: tPresetSchema,
+  preset: tModelSpecPresetSchema,
   order: z.number().optional(),
   default: z.boolean().optional(),
   description: z.string().optional(),
   group: z.string().optional(),
+  groupIcon: z.union([z.string(), eModelEndpointSchema]).optional(),
   showIconInMenu: z.boolean().optional(),
   showIconInHeader: z.boolean().optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
+  hideBadgeRow: z.boolean().optional(),
   webSearch: z.boolean().optional(),
   fileSearch: z.boolean().optional(),
   executeCode: z.boolean().optional(),
+  artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
 });
 
 export const specsConfigSchema = z.object({
   enforce: z.boolean().default(false),
   prioritize: z.boolean().default(true),
-  list: z.array(tModelSpecSchema).min(1),
+  list: z.array(tModelSpecSchema).default([]),
   addedEndpoints: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
 });
 

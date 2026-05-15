@@ -5,7 +5,11 @@ const { requireJwtAuth } = require('~/server/middleware');
 const router = express.Router();
 
 router.put('/', requireJwtAuth, async (req, res) => {
-  await updateUserKey({ userId: req.user.id, ...req.body });
+  if (req.body == null || typeof req.body !== 'object') {
+    return res.status(400).send({ error: 'Invalid request body.' });
+  }
+  const { name, value, expiresAt } = req.body;
+  await updateUserKey({ userId: req.user.id, name, value, expiresAt });
   res.status(201).send();
 });
 

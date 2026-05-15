@@ -38,8 +38,7 @@ function MCPToolItem({
       return {
         text: localize('com_nav_tool_remove'),
         icon: <XCircle className="flex h-4 w-4 items-center stroke-2" aria-hidden="true" />,
-        className:
-          'btn relative bg-gray-300 hover:bg-gray-400 dark:bg-gray-50 dark:hover:bg-gray-200',
+        className: 'btn btn-neutral border-token-border-light relative',
         disabled: false,
       };
     }

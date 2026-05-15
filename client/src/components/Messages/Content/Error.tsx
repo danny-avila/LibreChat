@@ -41,6 +41,7 @@ const errorMessages = {
   [ErrorTypes.NO_USER_KEY]: 'com_error_no_user_key',
   [ErrorTypes.INVALID_USER_KEY]: 'com_error_invalid_user_key',
   [ErrorTypes.NO_BASE_URL]: 'com_error_no_base_url',
+  [ErrorTypes.INVALID_BASE_URL]: 'com_error_invalid_base_url',
   [ErrorTypes.INVALID_ACTION]: `com_error_${ErrorTypes.INVALID_ACTION}`,
   [ErrorTypes.INVALID_REQUEST]: `com_error_${ErrorTypes.INVALID_REQUEST}`,
   [ErrorTypes.REFUSAL]: 'com_error_refusal',
@@ -74,6 +75,7 @@ const errorMessages = {
     return info;
   },
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
+  [ErrorTypes.STREAM_EXPIRED]: 'com_error_stream_expired',
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: (json: TGenericError, localize: LocalizeFunction) => {

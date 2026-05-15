@@ -1,27 +1,21 @@
+import { startTransition } from 'react';
+import { useSetRecoilState } from 'recoil';
 import { TooltipAnchor, Button, Sidebar } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
 
-/** Element ID for the close sidebar button - used for focus management */
 export const CLOSE_SIDEBAR_ID = 'close-sidebar-button';
-/** Element ID for the open sidebar button - used for focus management */
 export const OPEN_SIDEBAR_ID = 'open-sidebar-button';
 
-export default function OpenSidebar({
-  setNavVisible,
-  className,
-}: {
-  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
-  className?: string;
-}) {
+export default function OpenSidebar({ className }: { className?: string }) {
   const localize = useLocalize();
+  const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
 
   const handleClick = () => {
-    setNavVisible((prev) => {
-      localStorage.setItem('navVisible', JSON.stringify(!prev));
-      return !prev;
+    startTransition(() => {
+      setSidebarExpanded(true);
     });
-    // Delay focus until after the sidebar animation completes (200ms)
     setTimeout(() => {
       document.getElementById(CLOSE_SIDEBAR_ID)?.focus();
     }, 250);
@@ -40,12 +34,12 @@ export default function OpenSidebar({
           aria-expanded={false}
           aria-controls="chat-history-nav"
           className={cn(
-            'rounded-xl border border-border-light bg-surface-secondary p-2 hover:bg-surface-hover',
+            'rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt',
             className,
           )}
           onClick={handleClick}
         >
-          <Sidebar aria-hidden="true" />
+          <Sidebar className="icon-md" aria-hidden="true" />
         </Button>
       }
     />

@@ -12,6 +12,7 @@ describe('ServerConfigsCacheInMemory Integration Tests', () => {
 
   // Test data
   const mockConfig1: ParsedServerConfig = {
+    type: 'stdio',
     command: 'node',
     args: ['server1.js'],
     env: { TEST: 'value1' },
@@ -19,6 +20,7 @@ describe('ServerConfigsCacheInMemory Integration Tests', () => {
   };
 
   const mockConfig2: ParsedServerConfig = {
+    type: 'stdio',
     command: 'python',
     args: ['server2.py'],
     env: { TEST: 'value2' },
@@ -26,6 +28,7 @@ describe('ServerConfigsCacheInMemory Integration Tests', () => {
   };
 
   const mockConfig3: ParsedServerConfig = {
+    type: 'stdio',
     command: 'node',
     args: ['server3.js'],
     url: 'http://localhost:3000',
@@ -178,6 +181,56 @@ describe('ServerConfigsCacheInMemory Integration Tests', () => {
 
       const result = await cache.get('server1');
       expect(result).toEqual(mockConfig3);
+    });
+  });
+
+  describe('credential placeholders in YAML configs', () => {
+    it('should preserve LIBRECHAT_OPENID placeholders (admin configs are trusted)', async () => {
+      const adminConfig: ParsedServerConfig & { headers?: Record<string, string> } = {
+        type: 'sse',
+        url: 'https://internal-service.example.com/mcp',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+          'X-User-Id': '{{LIBRECHAT_OPENID_USER_ID}}',
+        },
+        updatedAt: FIXED_TIME,
+      };
+
+      await cache.add('internal-service', adminConfig as ParsedServerConfig);
+      const retrieved = await cache.get('internal-service');
+
+      const retrievedWithHeaders = retrieved as ParsedServerConfig & {
+        headers?: Record<string, string>;
+      };
+
+      expect(retrievedWithHeaders?.headers?.Authorization).toBe(
+        'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+      );
+      expect(retrievedWithHeaders?.headers?.['X-User-Id']).toBe('{{LIBRECHAT_OPENID_USER_ID}}');
+    });
+
+    it('should preserve LIBRECHAT_USER placeholders (admin configs are trusted)', async () => {
+      const adminConfig: ParsedServerConfig & { headers?: Record<string, string> } = {
+        type: 'sse',
+        url: 'https://internal-api.example.com/mcp',
+        headers: {
+          'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+          'X-User-Name': '{{LIBRECHAT_USER_NAME}}',
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+        },
+        updatedAt: FIXED_TIME,
+      };
+
+      await cache.add('internal-api', adminConfig as ParsedServerConfig);
+      const retrieved = await cache.get('internal-api');
+
+      const retrievedWithHeaders = retrieved as ParsedServerConfig & {
+        headers?: Record<string, string>;
+      };
+
+      expect(retrievedWithHeaders?.headers?.['X-User-Email']).toBe('{{LIBRECHAT_USER_EMAIL}}');
+      expect(retrievedWithHeaders?.headers?.['X-User-Name']).toBe('{{LIBRECHAT_USER_NAME}}');
+      expect(retrievedWithHeaders?.headers?.['X-User-Id']).toBe('{{LIBRECHAT_USER_ID}}');
     });
   });
 });

@@ -5,16 +5,18 @@ import {
   permissionsSchema,
   agentPermissionsSchema,
   promptPermissionsSchema,
+  skillPermissionsSchema,
   memoryPermissionsSchema,
   runCodePermissionsSchema,
   bookmarkPermissionsSchema,
   webSearchPermissionsSchema,
   fileSearchPermissionsSchema,
   multiConvoPermissionsSchema,
-  temporaryChatPermissionsSchema,
-  peoplePickerPermissionsSchema,
-  fileCitationsPermissionsSchema,
   mcpServersPermissionsSchema,
+  peoplePickerPermissionsSchema,
+  remoteAgentsPermissionsSchema,
+  temporaryChatPermissionsSchema,
+  fileCitationsPermissionsSchema,
 } from './permissions';
 
 /**
@@ -43,10 +45,10 @@ const defaultRolesSchema = z.object({
     name: z.literal(SystemRoles.ADMIN),
     permissions: permissionsSchema.extend({
       [PermissionTypes.PROMPTS]: promptPermissionsSchema.extend({
-        [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
         [Permissions.USE]: z.boolean().default(true),
         [Permissions.CREATE]: z.boolean().default(true),
-        // [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
       [PermissionTypes.BOOKMARKS]: bookmarkPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
@@ -59,10 +61,10 @@ const defaultRolesSchema = z.object({
         [Permissions.OPT_OUT]: z.boolean().default(true),
       }),
       [PermissionTypes.AGENTS]: agentPermissionsSchema.extend({
-        [Permissions.SHARED_GLOBAL]: z.boolean().default(true),
         [Permissions.USE]: z.boolean().default(true),
         [Permissions.CREATE]: z.boolean().default(true),
-        // [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
       [PermissionTypes.MULTI_CONVO]: multiConvoPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
@@ -94,6 +96,19 @@ const defaultRolesSchema = z.object({
         [Permissions.USE]: z.boolean().default(true),
         [Permissions.CREATE]: z.boolean().default(true),
         [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
+      }),
+      [PermissionTypes.REMOTE_AGENTS]: remoteAgentsPermissionsSchema.extend({
+        [Permissions.USE]: z.boolean().default(true),
+        [Permissions.CREATE]: z.boolean().default(true),
+        [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
+      }),
+      [PermissionTypes.SKILLS]: skillPermissionsSchema.extend({
+        [Permissions.USE]: z.boolean().default(true),
+        [Permissions.CREATE]: z.boolean().default(true),
+        [Permissions.SHARE]: z.boolean().default(true),
+        [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
       }),
     }),
   }),
@@ -103,14 +118,25 @@ const defaultRolesSchema = z.object({
   }),
 });
 
+const systemRoleSet = new Set(Object.values(SystemRoles).map((r) => r.toUpperCase()));
+
+/** Case-insensitive check for reserved system role names. */
+export function isSystemRoleName(name: string | undefined | null): boolean {
+  if (!name) {
+    return false;
+  }
+  return systemRoleSet.has(name.toUpperCase());
+}
+
 export const roleDefaults = defaultRolesSchema.parse({
   [SystemRoles.ADMIN]: {
     name: SystemRoles.ADMIN,
     permissions: {
       [PermissionTypes.PROMPTS]: {
-        [Permissions.SHARED_GLOBAL]: true,
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.BOOKMARKS]: {
         [Permissions.USE]: true,
@@ -123,9 +149,10 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.OPT_OUT]: true,
       },
       [PermissionTypes.AGENTS]: {
-        [Permissions.SHARED_GLOBAL]: true,
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.MULTI_CONVO]: {
         [Permissions.USE]: true,
@@ -157,16 +184,39 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
       },
     },
   },
   [SystemRoles.USER]: {
     name: SystemRoles.USER,
     permissions: {
-      [PermissionTypes.PROMPTS]: {},
+      [PermissionTypes.PROMPTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
       [PermissionTypes.BOOKMARKS]: {},
       [PermissionTypes.MEMORIES]: {},
-      [PermissionTypes.AGENTS]: {},
+      [PermissionTypes.AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
       [PermissionTypes.MULTI_CONVO]: {},
       [PermissionTypes.TEMPORARY_CHAT]: {},
       [PermissionTypes.RUN_CODE]: {},
@@ -181,7 +231,24 @@ export const roleDefaults = defaultRolesSchema.parse({
       },
       [PermissionTypes.FILE_SEARCH]: {},
       [PermissionTypes.FILE_CITATIONS]: {},
-      [PermissionTypes.MCP_SERVERS]: {},
+      [PermissionTypes.MCP_SERVERS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
+      [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: false,
+        [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     },
   },
 });

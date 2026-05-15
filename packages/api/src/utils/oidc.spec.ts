@@ -1,10 +1,10 @@
 import { extractOpenIDTokenInfo, isOpenIDTokenValid, processOpenIDPlaceholders } from './oidc';
-import type { TUser } from 'librechat-data-provider';
+import type { IUser } from '@librechat/data-schemas';
 
 describe('OpenID Token Utilities', () => {
   describe('extractOpenIDTokenInfo', () => {
     it('should extract token info from user with federatedTokens', () => {
-      const user: Partial<TUser> = {
+      const user: Partial<IUser> = {
         id: 'user-123',
         provider: 'openid',
         openidId: 'oidc-sub-456',
@@ -36,7 +36,7 @@ describe('OpenID Token Utilities', () => {
     });
 
     it('should return null when user is not OpenID provider', () => {
-      const user: Partial<TUser> = {
+      const user: Partial<IUser> = {
         id: 'user-123',
         provider: 'email',
       };
@@ -46,7 +46,7 @@ describe('OpenID Token Utilities', () => {
     });
 
     it('should return token info when user has no federatedTokens but is OpenID provider', () => {
-      const user: Partial<TUser> = {
+      const user: Partial<IUser> = {
         id: 'user-123',
         provider: 'openid',
         openidId: 'oidc-sub-456',
@@ -66,7 +66,7 @@ describe('OpenID Token Utilities', () => {
     });
 
     it('should extract partial token info when some tokens are missing', () => {
-      const user: Partial<TUser> = {
+      const user: Partial<IUser> = {
         id: 'user-123',
         provider: 'openid',
         openidId: 'oidc-sub-456',
@@ -89,7 +89,7 @@ describe('OpenID Token Utilities', () => {
     });
 
     it('should prioritize openidId over regular id', () => {
-      const user: Partial<TUser> = {
+      const user: Partial<IUser> = {
         id: 'user-123',
         provider: 'openid',
         openidId: 'oidc-sub-456',
@@ -104,7 +104,7 @@ describe('OpenID Token Utilities', () => {
     });
 
     it('should fall back to regular id when openidId is not available', () => {
-      const user: Partial<TUser> = {
+      const user: Partial<IUser> = {
         id: 'user-123',
         provider: 'openid',
         federatedTokens: {
@@ -397,7 +397,7 @@ describe('OpenID Token Utilities', () => {
 
   describe('Integration: Full OpenID Token Flow', () => {
     it('should extract, validate, and process tokens correctly', () => {
-      const user: Partial<TUser> = {
+      const user: Partial<IUser> = {
         id: 'user-123',
         provider: 'openid',
         openidId: 'oidc-sub-456',
@@ -427,8 +427,37 @@ describe('OpenID Token Utilities', () => {
       expect(result).toContain('User:');
     });
 
+    it('should resolve LIBRECHAT_OPENID_ID_TOKEN and LIBRECHAT_OPENID_ACCESS_TOKEN to different values', () => {
+      const user: Partial<IUser> = {
+        id: 'user-123',
+        provider: 'openid',
+        openidId: 'oidc-sub-456',
+        email: 'test@example.com',
+        name: 'Test User',
+        federatedTokens: {
+          access_token: 'my-access-token',
+          id_token: 'my-id-token',
+          refresh_token: 'my-refresh-token',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        },
+      };
+
+      const tokenInfo = extractOpenIDTokenInfo(user);
+      expect(tokenInfo).not.toBeNull();
+      expect(tokenInfo!.accessToken).toBe('my-access-token');
+      expect(tokenInfo!.idToken).toBe('my-id-token');
+      expect(tokenInfo!.accessToken).not.toBe(tokenInfo!.idToken);
+
+      const input = 'ACCESS={{LIBRECHAT_OPENID_ACCESS_TOKEN}}, ID={{LIBRECHAT_OPENID_ID_TOKEN}}';
+      const result = processOpenIDPlaceholders(input, tokenInfo!);
+
+      expect(result).toBe('ACCESS=my-access-token, ID=my-id-token');
+      // Verify they are not the same value (the reported bug)
+      expect(result).not.toBe('ACCESS=my-access-token, ID=my-access-token');
+    });
+
     it('should handle expired tokens correctly', () => {
-      const user: Partial<TUser> = {
+      const user: Partial<IUser> = {
         id: 'user-123',
         provider: 'openid',
         openidId: 'oidc-sub-456',
@@ -452,7 +481,7 @@ describe('OpenID Token Utilities', () => {
     });
 
     it('should handle user with no federatedTokens but still has OpenID provider', () => {
-      const user: Partial<TUser> = {
+      const user: Partial<IUser> = {
         id: 'user-123',
         provider: 'openid',
         openidId: 'oidc-sub-456',
@@ -470,7 +499,7 @@ describe('OpenID Token Utilities', () => {
     });
 
     it('should handle non-OpenID users', () => {
-      const user: Partial<TUser> = {
+      const user: Partial<IUser> = {
         id: 'user-123',
         provider: 'email',
       };

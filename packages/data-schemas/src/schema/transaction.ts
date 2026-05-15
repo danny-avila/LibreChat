@@ -14,8 +14,10 @@ export interface ITransaction extends Document {
   inputTokens?: number;
   writeTokens?: number;
   readTokens?: number;
+  messageId?: string;
   createdAt?: Date;
   updatedAt?: Date;
+  tenantId?: string;
 }
 
 const transactionSchema: Schema<ITransaction> = new Schema(
@@ -52,6 +54,11 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     inputTokens: { type: Number },
     writeTokens: { type: Number },
     readTokens: { type: Number },
+    messageId: { type: String },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,

@@ -25,4 +25,5 @@ export interface IAction extends Document {
     oauth_client_id?: string;
     oauth_client_secret?: string;
   };
+  tenantId?: string;
 }

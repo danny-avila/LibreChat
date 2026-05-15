@@ -18,31 +18,6 @@ import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
 import { useConversationTagsQuery } from './queries';
 
-export type TGenTitleMutation = UseMutationResult<
-  t.TGenTitleResponse,
-  unknown,
-  t.TGenTitleRequest,
-  unknown
->;
-
-export const useGenTitleMutation = (): TGenTitleMutation => {
-  const queryClient = useQueryClient();
-  return useMutation((payload: t.TGenTitleRequest) => dataService.genTitle(payload), {
-    onSuccess: (response, vars) => {
-      queryClient.setQueryData(
-        [QueryKeys.conversation, vars.conversationId],
-        (convo: t.TConversation | undefined) =>
-          convo ? { ...convo, title: response.title } : convo,
-      );
-      updateConvoInAllQueries(queryClient, vars.conversationId, (c) => ({
-        ...c,
-        title: response.title,
-      }));
-      document.title = response.title;
-    },
-  });
-};
-
 export const useUpdateConversationMutation = (
   id: string,
 ): UseMutationResult<
@@ -201,17 +176,17 @@ export const useCreateSharedLinkMutation = (
 };
 
 export const useUpdateSharedLinkMutation = (
-  options?: t.MutationOptions<t.TUpdateShareLinkRequest, { shareId: string }>,
-): UseMutationResult<t.TSharedLinkResponse, unknown, { shareId: string }, unknown> => {
+  options?: t.MutationOptions<t.TUpdateShareLinkRequest, t.TUpdateShareLinkRequest>,
+): UseMutationResult<t.TSharedLinkResponse, unknown, t.TUpdateShareLinkRequest, unknown> => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ shareId }) => {
+    ({ shareId, targetMessageId }) => {
       if (!shareId) {
         throw new Error('Share ID is required');
       }
-      return dataService.updateSharedLink(shareId);
+      return dataService.updateSharedLink(shareId, targetMessageId);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {

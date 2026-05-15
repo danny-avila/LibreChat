@@ -1,6 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
+const { loadAgent: loadAgentFn } = require('@librechat/api');
 const { isAgentsEndpoint, removeNullishValues, Constants } = require('librechat-data-provider');
-const { loadAgent } = require('~/models/Agent');
+const { getMCPServerTools } = require('~/server/services/Config');
+const db = require('~/models');
+
+const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 const buildOptions = (req, endpoint, parsedBody, endpointType) => {
   const { spec, iconURL, agent_id, ...model_parameters } = parsedBody;
@@ -15,6 +19,9 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
     return undefined;
   });
 
+  /** @type {import('librechat-data-provider').TConversation | undefined} */
+  const addedConvo = req.body?.addedConvo;
+
   return removeNullishValues({
     spec,
     iconURL,
@@ -23,6 +30,7 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
     endpointType,
     model_parameters,
     agent: agentPromise,
+    addedConvo,
   });
 };
 

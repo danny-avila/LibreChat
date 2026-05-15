@@ -4,13 +4,16 @@ const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const { isEnabled, FlowStateManager } = require('@librechat/api');
 const { getLogStores } = require('~/cache');
-
-const Conversation = mongoose.models.Conversation;
-const Message = mongoose.models.Message;
+const { batchResetMeiliFlags } = require('./utils');
 
 const searchEnabled = isEnabled(process.env.SEARCH);
 const indexingDisabled = isEnabled(process.env.MEILI_NO_SYNC);
 let currentTimeout = null;
+
+const defaultSyncThreshold = 1000;
+const syncThreshold = process.env.MEILI_SYNC_THRESHOLD
+  ? parseInt(process.env.MEILI_SYNC_THRESHOLD, 10)
+  : defaultSyncThreshold;
 
 class MeiliSearchClient {
   static instance = null;
@@ -189,16 +192,24 @@ async function ensureFilterableAttributes(client) {
  */
 async function performSync(flowManager, flowId, flowType) {
   try {
+    if (indexingDisabled === true) {
+      logger.info('[indexSync] Indexing is disabled, skipping...');
+      return { messagesSync: false, convosSync: false };
+    }
+
+    const Message = mongoose.models.Message;
+    const Conversation = mongoose.models.Conversation;
+    if (!Message || !Conversation) {
+      throw new Error(
+        '[indexSync] Models not registered. Ensure createModels() has been called before indexSync.',
+      );
+    }
+
     const client = MeiliSearchClient.getInstance();
 
     const { status } = await client.health();
     if (status !== 'available') {
       throw new Error('Meilisearch not available');
-    }
-
-    if (indexingDisabled === true) {
-      logger.info('[indexSync] Indexing is disabled, skipping...');
-      return { messagesSync: false, convosSync: false };
     }
 
     /** Ensures indexes have proper filterable attributes configured */
@@ -215,33 +226,34 @@ async function performSync(flowManager, flowId, flowType) {
       );
 
       // Reset sync flags to force full re-sync
-      await Message.collection.updateMany({ _meiliIndex: true }, { $set: { _meiliIndex: false } });
-      await Conversation.collection.updateMany(
-        { _meiliIndex: true },
-        { $set: { _meiliIndex: false } },
-      );
+      await batchResetMeiliFlags(Message.collection);
+      await batchResetMeiliFlags(Conversation.collection);
     }
 
     // Check if we need to sync messages
+    logger.info('[indexSync] Requesting message sync progress...');
     const messageProgress = await Message.getSyncProgress();
     if (!messageProgress.isComplete || settingsUpdated) {
       logger.info(
         `[indexSync] Messages need syncing: ${messageProgress.totalProcessed}/${messageProgress.totalDocuments} indexed`,
       );
 
-      // Check if we should do a full sync or incremental
-      const messageCount = await Message.countDocuments();
+      const messageCount = messageProgress.totalDocuments;
       const messagesIndexed = messageProgress.totalProcessed;
-      const syncThreshold = parseInt(process.env.MEILI_SYNC_THRESHOLD || '1000', 10);
+      const unindexedMessages = messageCount - messagesIndexed;
+      const noneIndexed = messagesIndexed === 0 && unindexedMessages > 0;
 
-      if (messageCount - messagesIndexed > syncThreshold) {
-        logger.info('[indexSync] Starting full message sync due to large difference');
+      if (settingsUpdated || noneIndexed || unindexedMessages > syncThreshold) {
+        if (noneIndexed && !settingsUpdated) {
+          logger.info('[indexSync] No messages marked as indexed, forcing full sync');
+        }
+        logger.info(`[indexSync] Starting message sync (${unindexedMessages} unindexed)`);
         await Message.syncWithMeili();
         messagesSync = true;
-      } else if (messageCount !== messagesIndexed) {
-        logger.warn('[indexSync] Messages out of sync, performing incremental sync');
-        await Message.syncWithMeili();
-        messagesSync = true;
+      } else if (unindexedMessages > 0) {
+        logger.info(
+          `[indexSync] ${unindexedMessages} messages unindexed (below threshold: ${syncThreshold}, skipping)`,
+        );
       }
     } else {
       logger.info(
@@ -256,18 +268,22 @@ async function performSync(flowManager, flowId, flowType) {
         `[indexSync] Conversations need syncing: ${convoProgress.totalProcessed}/${convoProgress.totalDocuments} indexed`,
       );
 
-      const convoCount = await Conversation.countDocuments();
+      const convoCount = convoProgress.totalDocuments;
       const convosIndexed = convoProgress.totalProcessed;
-      const syncThreshold = parseInt(process.env.MEILI_SYNC_THRESHOLD || '1000', 10);
+      const unindexedConvos = convoCount - convosIndexed;
+      const noneConvosIndexed = convosIndexed === 0 && unindexedConvos > 0;
 
-      if (convoCount - convosIndexed > syncThreshold) {
-        logger.info('[indexSync] Starting full conversation sync due to large difference');
+      if (settingsUpdated || noneConvosIndexed || unindexedConvos > syncThreshold) {
+        if (noneConvosIndexed && !settingsUpdated) {
+          logger.info('[indexSync] No conversations marked as indexed, forcing full sync');
+        }
+        logger.info(`[indexSync] Starting convos sync (${unindexedConvos} unindexed)`);
         await Conversation.syncWithMeili();
         convosSync = true;
-      } else if (convoCount !== convosIndexed) {
-        logger.warn('[indexSync] Convos out of sync, performing incremental sync');
-        await Conversation.syncWithMeili();
-        convosSync = true;
+      } else if (unindexedConvos > 0) {
+        logger.info(
+          `[indexSync] ${unindexedConvos} convos unindexed (below threshold: ${syncThreshold}, skipping)`,
+        );
       }
     } else {
       logger.info(
@@ -338,6 +354,13 @@ async function indexSync() {
       logger.debug('[indexSync] Creating indices...');
       currentTimeout = setTimeout(async () => {
         try {
+          const Message = mongoose.models.Message;
+          const Conversation = mongoose.models.Conversation;
+          if (!Message || !Conversation) {
+            throw new Error(
+              '[indexSync] Models not registered. Ensure createModels() has been called before indexSync.',
+            );
+          }
           await Message.syncWithMeili();
           await Conversation.syncWithMeili();
         } catch (err) {
