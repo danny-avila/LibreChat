@@ -225,11 +225,8 @@ function getOutgoingHttpOrigin(request: RequestOptions): string | undefined {
   }
 
   const hostname = getStringValue(request.hostname);
-  if (!hostname) {
-    return undefined;
-  }
-
-  return `${protocol}//${port ? `${hostname}:${port}` : hostname}`;
+  const resolvedHostname = hostname ?? 'localhost';
+  return `${protocol}//${port ? `${resolvedHostname}:${port}` : resolvedHostname}`;
 }
 
 function getOutgoingHttpUrl(request: RequestOptions & RequestUrlParts): string {
