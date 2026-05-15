@@ -3,11 +3,7 @@ import type { Keyv } from 'keyv';
 import { standardCache } from '~/cache';
 import { normalizeOpenIdIssuer } from './openid';
 
-export type FederatedAuthProvider = 'openid';
-
 export type FederatedAuthCacheEntry = {
-  version: 1;
-  provider: FederatedAuthProvider;
   userId: string;
   tenantId?: string;
   subject: string;
@@ -19,7 +15,6 @@ export type FederatedAuthCacheEntry = {
   idOnTheSource?: string;
   accountSyncedAt: number;
   profileSyncedAt?: number;
-  rolesSyncedAt?: number;
   groupsSyncedAt?: number;
 };
 
@@ -29,7 +24,6 @@ export type FederatedAuthCacheOptions = {
 };
 
 export type FederatedAuthCacheKeyInput = {
-  provider: FederatedAuthProvider;
   tenantId?: string;
   issuer?: string;
   subject: string;
@@ -73,8 +67,6 @@ function isValidEntry(value: unknown): value is FederatedAuthCacheEntry {
   }
 
   if (
-    value.version !== 1 ||
-    value.provider !== 'openid' ||
     typeof value.userId !== 'string' ||
     !value.userId ||
     typeof value.subject !== 'string' ||
@@ -93,14 +85,12 @@ function isValidEntry(value: unknown): value is FederatedAuthCacheEntry {
     isOptionalString(value.role) &&
     isOptionalString(value.idOnTheSource) &&
     (value.profileSyncedAt === undefined || isValidNumber(value.profileSyncedAt)) &&
-    (value.rolesSyncedAt === undefined || isValidNumber(value.rolesSyncedAt)) &&
     (value.groupsSyncedAt === undefined || isValidNumber(value.groupsSyncedAt))
   );
 }
 
 function matchesInput(entry: FederatedAuthCacheEntry, input: FederatedAuthCacheKeyInput): boolean {
   return (
-    entry.provider === input.provider &&
     entry.subject === input.subject &&
     getTenantSegment(entry.tenantId) === getTenantSegment(input.tenantId) &&
     normalizeIssuerSegment(entry.issuer) === normalizeIssuerSegment(input.issuer)

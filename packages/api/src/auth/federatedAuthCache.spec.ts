@@ -32,7 +32,6 @@ function makeInput(
   overrides: Partial<FederatedAuthCacheKeyInput> = {},
 ): FederatedAuthCacheKeyInput {
   return {
-    provider: 'openid',
     tenantId: 'tenant-a',
     issuer: 'https://issuer.example.com/',
     subject: 'subject-123',
@@ -42,8 +41,6 @@ function makeInput(
 
 function makeEntry(overrides: Partial<FederatedAuthCacheEntry> = {}): FederatedAuthCacheEntry {
   return {
-    version: 1,
-    provider: 'openid',
     userId: 'user-123',
     tenantId: 'tenant-a',
     subject: 'subject-123',
@@ -87,8 +84,6 @@ describe('federatedAuthCache', () => {
   });
 
   it.each([
-    ['unsupported version', { version: 2 }],
-    ['mismatched provider', { provider: 'github' }],
     ['mismatched issuer', { issuer: 'https://other.example.com' }],
     ['mismatched subject', { subject: 'other-subject' }],
     ['mismatched tenant', { tenantId: 'tenant-b' }],

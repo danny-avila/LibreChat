@@ -484,7 +484,6 @@ function getCacheInput(
   }
 
   return {
-    provider: 'openid',
     tenantId,
     issuer,
     subject,
@@ -547,8 +546,6 @@ function buildFederatedCacheEntry({
     lifecycle === 'created' ? options.syncProfileOnCreate : options.syncProfileForExisting;
 
   return {
-    version: 1,
-    provider: 'openid',
     userId,
     ...(user.tenantId ? { tenantId: user.tenantId } : {}),
     subject: input.subject,

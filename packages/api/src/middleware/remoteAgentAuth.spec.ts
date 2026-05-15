@@ -888,8 +888,6 @@ describe('createRemoteAgentAuth', () => {
     it('hydrates a same-scope federated auth cache hit after token verification', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'cached@example.com', exp: 1234567890 });
       mockReadFederatedAuthCache.mockResolvedValueOnce({
-        version: 1,
-        provider: 'openid',
         userId: 'cached-user-id',
         subject: 'sub123',
         issuer: BASE_ISSUER,
@@ -907,7 +905,6 @@ describe('createRemoteAgentAuth', () => {
 
       expect(mockReadFederatedAuthCache).toHaveBeenCalledWith(
         {
-          provider: 'openid',
           tenantId: undefined,
           issuer: BASE_ISSUER,
           subject: 'sub123',
@@ -979,14 +976,11 @@ describe('createRemoteAgentAuth', () => {
 
       expect(mockWriteFederatedAuthCache).toHaveBeenCalledWith(
         {
-          provider: 'openid',
           tenantId: undefined,
           issuer: BASE_ISSUER,
           subject: 'sub123',
         },
         expect.objectContaining({
-          version: 1,
-          provider: 'openid',
           userId: 'uid123',
           subject: 'sub123',
           issuer: BASE_ISSUER,
