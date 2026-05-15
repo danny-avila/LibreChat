@@ -111,11 +111,11 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
 router.post('/:conversationId', requireJwtAuth, checkSharedLinksAccess, async (req, res) => {
   try {
     const { targetMessageId } = req.body;
+    const role = await getRoleByName(req.user.role);
+    const sharedLinksPerms = role?.permissions?.[PermissionTypes.SHARED_LINKS] || {};
+    const grantPublic = sharedLinksPerms[Permissions.SHARE_PUBLIC] === true;
     const created = await createSharedLink(req.user.id, req.params.conversationId, targetMessageId);
     if (created) {
-      const role = await getRoleByName(req.user.role);
-      const sharedLinksPerms = role?.permissions?.[PermissionTypes.SHARED_LINKS] || {};
-      const grantPublic = sharedLinksPerms[Permissions.SHARE_PUBLIC] === true;
       await grantCreationPermissions(created._id, req.user.id, grantPublic);
       res.status(200).json(created);
     } else {
