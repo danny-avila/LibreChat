@@ -17,6 +17,10 @@ const mockBuildOptions = jest.fn((_endpoint, parsedBody) => ({
   ...parsedBody,
   endpoint: _endpoint,
 }));
+const mockAgentBuildOptions = jest.fn((_req, endpoint, parsedBody) => ({
+  ...parsedBody,
+  endpoint,
+}));
 
 jest.mock('~/server/services/Endpoints/azureAssistants', () => ({
   buildOptions: mockBuildOptions,
@@ -25,7 +29,7 @@ jest.mock('~/server/services/Endpoints/assistants', () => ({
   buildOptions: mockBuildOptions,
 }));
 jest.mock('~/server/services/Endpoints/agents', () => ({
-  buildOptions: mockBuildOptions,
+  buildOptions: mockAgentBuildOptions,
 }));
 
 jest.mock('~/models', () => ({
@@ -38,6 +42,7 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   handleError: jest.fn(),
 }));
 
@@ -205,6 +210,183 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(enforcedResult.maxOutputTokens).toBe(8192);
     expect(enforcedResult.temperature).toBe(0.7);
     expect(enforcedResult.maxContextTokens).toBe(50000);
+  });
+
+  it('should restore private model spec preset fields in non-enforced mode', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const modelSpec = {
+      name: 'guarded-openai',
+      iconURL: 'openAI',
+      preset: {
+        endpoint: EModelEndpoint.openAI,
+        model: 'gpt-4o',
+        promptPrefix: 'private prompt prefix',
+        instructions: 'private instructions',
+        additional_instructions: 'private additional instructions',
+        temperature: 0.2,
+        maxContextTokens: 10000,
+      },
+    };
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.openAI,
+        spec: 'guarded-openai',
+        model: 'gpt-4o',
+        temperature: 0.8,
+      },
+      {
+        modelSpecs: {
+          enforce: false,
+          list: [modelSpec],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(req.body.endpointOption.promptPrefix).toBe('private prompt prefix');
+    expect(req.body.endpointOption.instructions).toBeUndefined();
+    expect(req.body.endpointOption.additional_instructions).toBeUndefined();
+    expect(req.body.endpointOption.temperature).toBe(0.8);
+    expect(req.body.endpointOption.maxContextTokens).toBeUndefined();
+    expect(req.body.endpointOption.iconURL).toBe('openAI');
+  });
+
+  it('should reject non-enforced model specs for a different endpoint', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.openAI,
+        spec: 'guarded-google',
+        model: 'gpt-4o',
+      },
+      {
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'guarded-google',
+              preset: {
+                endpoint: EModelEndpoint.google,
+                model: 'gemini-pro',
+                promptPrefix: 'private google prompt',
+              },
+            },
+          ],
+        },
+      },
+    );
+    const res = createRes();
+    const next = jest.fn();
+    const { handleError } = require('@librechat/api');
+
+    await buildEndpointOption(req, res, next);
+
+    expect(handleError).toHaveBeenCalledWith(res, { text: 'Model spec mismatch' });
+    expect(mockAgentBuildOptions).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('should restore private model spec examples when the parser supplies an empty default', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const examples = [{ input: { content: 'hello' }, output: { content: 'world' } }];
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.google,
+        spec: 'guarded-google',
+        model: 'gemini-pro',
+      },
+      {
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'guarded-google',
+              preset: {
+                endpoint: EModelEndpoint.google,
+                model: 'gemini-pro',
+                examples,
+              },
+            },
+          ],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(req.body.endpointOption.examples).toEqual(examples);
+  });
+
+  it('should resolve special variables for restored non-agent promptPrefix', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.assistants,
+        spec: 'guarded-assistant',
+        assistant_id: 'asst_123',
+      },
+      {
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'guarded-assistant',
+              preset: {
+                endpoint: EModelEndpoint.assistants,
+                assistant_id: 'asst_123',
+                promptPrefix: 'Help {{current_user}}.',
+              },
+            },
+          ],
+        },
+      },
+    );
+    req.user = { name: 'Ada' };
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(req.body.endpointOption.promptPrefix).toBe('Help Ada.');
+  });
+
+  it('should leave restored agent promptPrefix variables for agent initialization', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.openAI,
+        spec: 'guarded-openai',
+        model: 'gpt-4o',
+      },
+      {
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'guarded-openai',
+              preset: {
+                endpoint: EModelEndpoint.openAI,
+                model: 'gpt-4o',
+                promptPrefix: 'Help {{current_user}}.',
+              },
+            },
+          ],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+    req.user = { name: 'Ada' };
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(req.body.endpointOption.promptPrefix).toBe('Help {{current_user}}.');
   });
 
   it('should fall back to OpenAI schema when getEndpointsConfig fails', async () => {

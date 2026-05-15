@@ -37,8 +37,15 @@ jobs:
 
       - name: Get Chart Version
         id: chart-version
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          CHART_VERSION=$(echo "${{ github.ref_name }}" | cut -d'-' -f2)
+          CHART_VERSION="${REF_NAME#chart-}"
+          SEMVER_REGEX='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if [[ ! "$CHART_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "Invalid chart version: $CHART_VERSION" >&2
+            exit 1
+          fi
           echo "CHART_VERSION=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
 
       # Log in to GitHub Container Registry
