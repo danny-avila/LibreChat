@@ -147,8 +147,8 @@ const FarmerProfileModal = ({
       : [otherOption];
 
   const villageOptions =
-    selectedBlock && selectedBlock !== otherOption
-      ? [...(VILLAGES[selectedBlock] ?? []), otherOption]
+    selectedDistrict && selectedDistrict !== otherOption
+      ? [...(VILLAGES[selectedDistrict] ?? []), otherOption]
       : [otherOption];
 
   const kvkOptions =
@@ -524,11 +524,11 @@ const FarmerProfileModal = ({
                       value={field.value ?? ''}
                       onChange={field.onChange}
                       placeholder={
-                        selectedBlock
+                        selectedDistrict
                           ? localize('com_farmer_placeholder_select_village')
-                          : localize('com_farmer_placeholder_select_block_first')
+                          : localize('com_farmer_placeholder_select_district_first')
                       }
-                      disabled={!selectedBlock}
+                      disabled={!selectedDistrict}
                     />
                   )}
                 />
