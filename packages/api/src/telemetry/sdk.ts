@@ -10,6 +10,7 @@ import { MongooseInstrumentation } from '@opentelemetry/instrumentation-mongoose
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import type { NodeSDKConfiguration } from '@opentelemetry/sdk-node';
 import type { Span, Attributes } from '@opentelemetry/api';
+import type { RequestOptions } from 'node:http';
 import type { TelemetryConfig, TelemetryStatus } from './config';
 import { getTelemetryConfig } from './config';
 
@@ -26,6 +27,17 @@ const SIGNAL_SHUTDOWN_TIMEOUT_MS = 5_000;
 interface RegisteredSignal {
   signal: NodeJS.Signals;
   listener: NodeJS.SignalsListener;
+}
+
+interface RequestUrlParts {
+  href?: string;
+  search?: string;
+  pathname?: string;
+}
+
+interface UndiciRequestInfo {
+  path?: string;
+  origin?: string;
 }
 
 let activeSdk: NodeSDK | undefined;
@@ -95,6 +107,134 @@ function getSanitizedIncomingUrlAttributes(
   return attributes;
 }
 
+function getStringValue(value: string | number | null | undefined): string | undefined {
+  if (value == null) {
+    return undefined;
+  }
+
+  const stringValue = String(value).trim();
+  return stringValue || undefined;
+}
+
+function getRedactedQuery(search: string): string | undefined {
+  const query = search.startsWith('?') ? search.slice(1) : search;
+  if (!query) {
+    return undefined;
+  }
+
+  return query
+    .split('&')
+    .map((part) => {
+      const separatorIndex = part.indexOf('=');
+      const key = separatorIndex >= 0 ? part.slice(0, separatorIndex) : part;
+      return `${key}=${REDACTED_QUERY_VALUE}`;
+    })
+    .join('&');
+}
+
+function getSanitizedUrlAttributesFromParts(
+  origin: string | undefined,
+  pathname: string,
+  search: string,
+): Attributes {
+  const path = pathname || '/';
+  const redactedQuery = getRedactedQuery(search);
+  const target = redactedQuery ? `${path}?${redactedQuery}` : path;
+  const fullUrl = origin ? `${origin}${target}` : target;
+  const attributes: Attributes = {
+    'http.target': target,
+    'http.url': fullUrl,
+    'url.full': fullUrl,
+    'url.path': path,
+  };
+
+  if (redactedQuery) {
+    attributes['url.query'] = redactedQuery;
+  }
+
+  return attributes;
+}
+
+function getFallbackUrlParts(rawUrl: string): { pathname: string; search: string } {
+  const queryIndex = rawUrl.indexOf('?');
+  if (queryIndex < 0) {
+    return { pathname: rawUrl || '/', search: '' };
+  }
+
+  return {
+    pathname: rawUrl.slice(0, queryIndex) || '/',
+    search: rawUrl.slice(queryIndex),
+  };
+}
+
+function getSanitizedOutgoingUrlAttributes(rawUrl: string, origin?: string): Attributes {
+  const hasOrigin = /^[a-z][a-z\d+\-.]*:\/\//i.test(rawUrl);
+
+  try {
+    const parsedUrl = new URL(rawUrl, origin ?? 'http://localhost');
+    const safeOrigin = hasOrigin || origin ? parsedUrl.origin : undefined;
+    return getSanitizedUrlAttributesFromParts(safeOrigin, parsedUrl.pathname, parsedUrl.search);
+  } catch {
+    const { pathname, search } = getFallbackUrlParts(rawUrl);
+    return getSanitizedUrlAttributesFromParts(origin, pathname, search);
+  }
+}
+
+function getOutgoingHttpProtocol(request: RequestOptions): string {
+  const protocol = getStringValue(request.protocol);
+  if (!protocol) {
+    return 'http:';
+  }
+
+  return protocol.endsWith(':') ? protocol : `${protocol}:`;
+}
+
+function getOutgoingHttpOrigin(request: RequestOptions): string | undefined {
+  const protocol = getOutgoingHttpProtocol(request);
+  const host = getStringValue(request.host);
+  if (host) {
+    return `${protocol}//${host}`;
+  }
+
+  const hostname = getStringValue(request.hostname);
+  if (!hostname) {
+    return undefined;
+  }
+
+  const port = getStringValue(request.port);
+  return `${protocol}//${port ? `${hostname}:${port}` : hostname}`;
+}
+
+function getOutgoingHttpUrl(request: RequestOptions & RequestUrlParts): string {
+  if (request.path) {
+    return request.path;
+  }
+
+  if (request.href) {
+    return request.href;
+  }
+
+  const pathname = request.pathname || '/';
+  if (!request.search) {
+    return pathname;
+  }
+
+  const search = request.search.startsWith('?') ? request.search : `?${request.search}`;
+  return `${pathname}${search}`;
+}
+
+function getSanitizedOutgoingHttpUrlAttributes(request: RequestOptions): Attributes {
+  const requestWithUrlParts = request as RequestOptions & RequestUrlParts;
+  return getSanitizedOutgoingUrlAttributes(
+    getOutgoingHttpUrl(requestWithUrlParts),
+    getOutgoingHttpOrigin(request),
+  );
+}
+
+function getSanitizedUndiciUrlAttributes(request: UndiciRequestInfo): Attributes {
+  return getSanitizedOutgoingUrlAttributes(request.path ?? '/', request.origin);
+}
+
 function getResourceAttributes(config: TelemetryConfig): Attributes {
   const attributes: Attributes = {
     [ATTR_SERVICE_NAME]: config.serviceName,
@@ -123,6 +263,8 @@ function createSdk(config: TelemetryConfig): NodeSDK {
         },
         startIncomingSpanHook: (request: IncomingMessage) =>
           getSanitizedIncomingUrlAttributes(request, config.healthPath),
+        startOutgoingSpanHook: (request: RequestOptions) =>
+          getSanitizedOutgoingHttpUrlAttributes(request),
         ignoreIncomingRequestHook: (request: IncomingMessage) =>
           shouldIgnoreIncomingRequest(request, config.healthPath),
       }),
@@ -130,7 +272,9 @@ function createSdk(config: TelemetryConfig): NodeSDK {
       new MongoDBInstrumentation(),
       new MongooseInstrumentation(),
       new IORedisInstrumentation(),
-      new UndiciInstrumentation(),
+      new UndiciInstrumentation({
+        startSpanHook: (request: UndiciRequestInfo) => getSanitizedUndiciUrlAttributes(request),
+      }),
     ],
   };
 
