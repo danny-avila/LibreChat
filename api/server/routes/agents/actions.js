@@ -160,7 +160,7 @@ router.post(
       }
 
       try {
-        await validateActionOAuthMetadata(metadata.auth);
+        await validateActionOAuthMetadata(metadata.auth, appConfig?.actions?.allowedAddresses);
       } catch (error) {
         return res.status(400).json({ message: error.message });
       }

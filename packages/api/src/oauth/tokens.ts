@@ -8,6 +8,23 @@ import { logAxiosError } from '~/utils';
 import { validateActionOAuthEndpoint } from './validation';
 
 const actionOAuthAgents = createSSRFSafeAgents();
+const actionOAuthAgentsByAddress = new Map<string, ReturnType<typeof createSSRFSafeAgents>>();
+
+function getActionOAuthAgents(allowedAddresses?: string[] | null) {
+  if (!Array.isArray(allowedAddresses) || allowedAddresses.length === 0) {
+    return actionOAuthAgents;
+  }
+
+  const cacheKey = allowedAddresses.join('\n');
+  const cachedAgents = actionOAuthAgentsByAddress.get(cacheKey);
+  if (cachedAgents) {
+    return cachedAgents;
+  }
+
+  const agents = createSSRFSafeAgents(allowedAddresses);
+  actionOAuthAgentsByAddress.set(cacheKey, agents);
+  return agents;
+}
 
 export function createHandleOAuthToken({
   findToken,
@@ -147,6 +164,7 @@ export async function refreshAccessToken(
     token_exchange_method,
     encrypted_oauth_client_id,
     encrypted_oauth_client_secret,
+    allowedAddresses,
   }: {
     userId: string;
     client_url: string;
@@ -155,6 +173,7 @@ export async function refreshAccessToken(
     token_exchange_method: TokenExchangeMethodEnum;
     encrypted_oauth_client_id: string;
     encrypted_oauth_client_secret: string;
+    allowedAddresses?: string[] | null;
   },
   {
     findToken,
@@ -171,7 +190,7 @@ export async function refreshAccessToken(
   refresh_token?: string;
   refresh_token_expires_in?: number;
 }> {
-  await validateActionOAuthEndpoint(client_url, 'client_url');
+  await validateActionOAuthEndpoint(client_url, 'client_url', allowedAddresses);
 
   try {
     const oauth_client_id = await decryptV2(encrypted_oauth_client_id);
@@ -200,7 +219,7 @@ export async function refreshAccessToken(
       url: client_url,
       headers,
       maxRedirects: 0,
-      httpsAgent: actionOAuthAgents.httpsAgent,
+      httpsAgent: getActionOAuthAgents(allowedAddresses).httpsAgent,
       data: params.toString(),
     });
     await processAccessTokens(
@@ -250,6 +269,7 @@ export async function getAccessToken(
     token_exchange_method,
     encrypted_oauth_client_id,
     encrypted_oauth_client_secret,
+    allowedAddresses,
   }: {
     code: string;
     userId: string;
@@ -259,6 +279,7 @@ export async function getAccessToken(
     token_exchange_method: TokenExchangeMethodEnum;
     encrypted_oauth_client_id: string;
     encrypted_oauth_client_secret: string;
+    allowedAddresses?: string[] | null;
   },
   {
     findToken,
@@ -275,7 +296,7 @@ export async function getAccessToken(
   refresh_token?: string;
   refresh_token_expires_in?: number;
 }> {
-  await validateActionOAuthEndpoint(client_url, 'client_url');
+  await validateActionOAuthEndpoint(client_url, 'client_url', allowedAddresses);
 
   const oauth_client_id = await decryptV2(encrypted_oauth_client_id);
   const oauth_client_secret = await decryptV2(encrypted_oauth_client_secret);
@@ -305,7 +326,7 @@ export async function getAccessToken(
       url: client_url,
       headers,
       maxRedirects: 0,
-      httpsAgent: actionOAuthAgents.httpsAgent,
+      httpsAgent: getActionOAuthAgents(allowedAddresses).httpsAgent,
       data: params.toString(),
     });
 

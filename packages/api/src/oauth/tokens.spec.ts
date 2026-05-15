@@ -214,4 +214,20 @@ describe('action OAuth token exchange validation', () => {
 
     expect(accessConfig.httpsAgent).toBe(refreshConfig.httpsAgent);
   });
+
+  it('allows explicitly exempted private token endpoints', async () => {
+    await getAccessToken(
+      {
+        ...baseFields,
+        client_url: 'https://10.0.0.1/oauth/token',
+        code: 'authorization-code',
+        redirect_uri: 'https://chat.example.com/api/actions/action-1/oauth/callback',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        allowedAddresses: ['10.0.0.1:443'],
+      },
+      createTokenMethods(),
+    );
+
+    expect(getAxiosConfig().url).toBe('https://10.0.0.1/oauth/token');
+  });
 });

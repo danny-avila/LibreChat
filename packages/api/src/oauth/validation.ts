@@ -34,6 +34,7 @@ function parseEndpointError(error: unknown): string {
 export async function validateActionOAuthEndpoint(
   url: string | null | undefined,
   fieldName: ActionOAuthEndpointField,
+  allowedAddresses?: string[] | null,
 ): Promise<void> {
   if (!url || typeof url !== 'string') {
     invalidActionOAuth(fieldName, 'endpoint URL is required.');
@@ -51,7 +52,7 @@ export async function validateActionOAuthEndpoint(
   }
 
   try {
-    await validateEndpointURL(url, `action OAuth ${fieldName}`);
+    await validateEndpointURL(url, `action OAuth ${fieldName}`, allowedAddresses);
   } catch (error) {
     invalidActionOAuth(fieldName, parseEndpointError(error));
   }
@@ -59,11 +60,12 @@ export async function validateActionOAuthEndpoint(
 
 export async function validateActionOAuthMetadata(
   auth?: ActionOAuthAuthMetadata | null,
+  allowedAddresses?: string[] | null,
 ): Promise<void> {
   if (!auth || auth.type !== AuthTypeEnum.OAuth) {
     return;
   }
 
-  await validateActionOAuthEndpoint(auth.authorization_url, 'authorization_url');
-  await validateActionOAuthEndpoint(auth.client_url, 'client_url');
+  await validateActionOAuthEndpoint(auth.authorization_url, 'authorization_url', allowedAddresses);
+  await validateActionOAuthEndpoint(auth.client_url, 'client_url', allowedAddresses);
 }
