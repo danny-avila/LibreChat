@@ -126,7 +126,15 @@ function getRedactedQuery(search: string): string | undefined {
     .split('&')
     .map((part) => {
       const separatorIndex = part.indexOf('=');
-      const key = separatorIndex >= 0 ? part.slice(0, separatorIndex) : part;
+      if (separatorIndex < 0) {
+        return REDACTED_QUERY_VALUE;
+      }
+
+      const key = part.slice(0, separatorIndex);
+      if (!key) {
+        return REDACTED_QUERY_VALUE;
+      }
+
       return `${key}=${REDACTED_QUERY_VALUE}`;
     })
     .join('&');
@@ -189,11 +197,31 @@ function getOutgoingHttpProtocol(request: RequestOptions): string {
   return protocol.endsWith(':') ? protocol : `${protocol}:`;
 }
 
+function getHostWithPort(host: string, port: string | undefined): string {
+  if (!port) {
+    return host;
+  }
+
+  try {
+    const parsedHost = new URL(`http://${host}`);
+    if (parsedHost.port) {
+      return host;
+    }
+  } catch {
+    if (host.includes(':') && !host.startsWith('[')) {
+      return `[${host}]:${port}`;
+    }
+  }
+
+  return `${host}:${port}`;
+}
+
 function getOutgoingHttpOrigin(request: RequestOptions): string | undefined {
   const protocol = getOutgoingHttpProtocol(request);
   const host = getStringValue(request.host);
+  const port = getStringValue(request.port);
   if (host) {
-    return `${protocol}//${host}`;
+    return `${protocol}//${getHostWithPort(host, port)}`;
   }
 
   const hostname = getStringValue(request.hostname);
@@ -201,7 +229,6 @@ function getOutgoingHttpOrigin(request: RequestOptions): string | undefined {
     return undefined;
   }
 
-  const port = getStringValue(request.port);
   return `${protocol}//${port ? `${hostname}:${port}` : hostname}`;
 }
 

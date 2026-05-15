@@ -261,6 +261,33 @@ describe('telemetry SDK lifecycle', () => {
     expect(JSON.stringify(attributes)).not.toContain('sensitive+prompt+words');
   });
 
+  it('redacts delimiter-less outgoing query segments and preserves separate HTTP ports', () => {
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
+    const startOutgoingSpanHook = instrumentationOptions?.startOutgoingSpanHook;
+
+    if (!startOutgoingSpanHook) {
+      throw new Error('HTTP instrumentation startOutgoingSpanHook was not configured');
+    }
+
+    const attributes = startOutgoingSpanHook({
+      protocol: 'https:',
+      host: 'api.example.com',
+      port: 8443,
+      path: '/custom-action?LC_ACTION_QUERY_SECRET_67890&user_text=sensitive+prompt+words',
+    });
+
+    expect(attributes).toEqual({
+      'http.target': '/custom-action?[REDACTED]&user_text=[REDACTED]',
+      'http.url': 'https://api.example.com:8443/custom-action?[REDACTED]&user_text=[REDACTED]',
+      'url.full': 'https://api.example.com:8443/custom-action?[REDACTED]&user_text=[REDACTED]',
+      'url.path': '/custom-action',
+      'url.query': '[REDACTED]&user_text=[REDACTED]',
+    });
+    expect(JSON.stringify(attributes)).not.toContain('LC_ACTION_QUERY_SECRET_67890');
+    expect(JSON.stringify(attributes)).not.toContain('sensitive+prompt+words');
+  });
+
   it('redacts outgoing Undici URL query attributes before fetch spans are exported', () => {
     initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
     const instrumentationOptions = mockUndiciInstrumentation.mock.calls[0]?.[0];
