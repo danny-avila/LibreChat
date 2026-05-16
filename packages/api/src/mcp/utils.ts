@@ -10,8 +10,9 @@ export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVa
 
 /**
  * Returns the names of `customUserVars` declared on the server config for which
- * the user has not supplied a non-empty value. An empty array means every
- * declared variable is satisfied (or the server declares none).
+ * the user has not supplied a non-blank value (unset, empty, or whitespace-only
+ * values count as missing, since they still fail auth). An empty array means
+ * every declared variable is satisfied (or the server declares none).
  *
  * Used to gate tool exposure: a server that requires user-provided credentials
  * should not surface its tools to the model until those values are set,

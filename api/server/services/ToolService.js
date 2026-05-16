@@ -639,20 +639,41 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   };
 
   const getOrFetchMCPServerTools = async (userId, serverName) => {
-    const serverConfig = await getMCPServersRegistry().getServerConfig(
-      serverName,
-      userId,
-      configServers,
-    );
-    const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
-    const missingUserVars = getMissingCustomUserVars(serverConfig ?? {}, customUserVars);
-    if (missingUserVars.length > 0) {
-      logger.warn(
-        `[Tool Definitions] Skipping MCP server '${serverName}': required user-provided variable(s) not set: ${missingUserVars.join(
-          ', ',
-        )}. Tools will not be exposed until the user configures them.`,
+    let serverConfig;
+    let registryAvailable = true;
+    try {
+      serverConfig = await getMCPServersRegistry().getServerConfig(
+        serverName,
+        userId,
+        configServers,
       );
-      return null;
+    } catch (err) {
+      registryAvailable = false;
+      logger.debug(
+        `[Tool Definitions] MCP registry unavailable while resolving '${serverName}': ${
+          err?.message ?? err
+        }. Skipping customUserVars gate for this lookup.`,
+      );
+    }
+
+    if (registryAvailable) {
+      if (!serverConfig) {
+        logger.warn(
+          `[Tool Definitions] Skipping MCP server '${serverName}': no server config found (server may have been removed).`,
+        );
+        return null;
+      }
+
+      const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+      const missingUserVars = getMissingCustomUserVars(serverConfig, customUserVars);
+      if (missingUserVars.length > 0) {
+        logger.warn(
+          `[Tool Definitions] Skipping MCP server '${serverName}': required user-provided variable(s) not set: ${missingUserVars.join(
+            ', ',
+          )}. Tools will not be exposed until the user configures them.`,
+        );
+        return null;
+      }
     }
 
     const cached = await getMCPServerTools(userId, serverName);

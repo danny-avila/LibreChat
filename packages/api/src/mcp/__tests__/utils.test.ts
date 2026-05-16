@@ -373,9 +373,11 @@ describe('getMissingCustomUserVars', () => {
     expect(getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123' })).toEqual(['THINGY_REGION']);
   });
 
-  it('treats empty-string values as missing', () => {
+  it('treats empty-string and whitespace-only values as missing', () => {
     const config = configWithVars(['THINGY_TOKEN']);
     expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '' })).toEqual(['THINGY_TOKEN']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '   ' })).toEqual(['THINGY_TOKEN']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '\t\n ' })).toEqual(['THINGY_TOKEN']);
   });
 
   it('returns an empty array when every declared variable has a value', () => {
