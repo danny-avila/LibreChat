@@ -180,7 +180,11 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
       {/* Content — fills remaining space, no card wrapper */}
       <div className="min-h-0 flex-1 overflow-auto">
         {viewMode === 'rendered' ? (
-          <SkillMarkdownRenderer content={cleanBody} />
+          <SkillMarkdownRenderer
+            content={cleanBody}
+            skillId={skill._id}
+            currentFilePath="SKILL.md"
+          />
         ) : (
           <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-text-primary">
             {skill.body ?? ''}
