@@ -624,6 +624,7 @@ endpoints:
 #       label: "General Assistant"
 #       description: "General purpose assistant"
 #       # No 'group' field - appears as standalone item at top level (not nested)
+#       # hideBadgeRow: true  # Optional: hides the tool badge row for this spec
 #       preset:
 #         endpoint: "openAI"
 #         model: "gpt-4o-mini"

@@ -1,8 +1,25 @@
 import { unlink } from 'fs/promises';
 import { isMainThread } from 'worker_threads';
-import { getTenantId, tenantStorage, logger, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import { tenantStorage, logger, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import type { TenantContext } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
 import type { ServerRequest } from '~/types/http';
+
+type ContextUser = {
+  tenantId?: string;
+  id?: string;
+  _id?: { toString: () => string };
+} | null;
+
+type ContextRequest = {
+  headers: ServerRequest['headers'];
+  tenantId?: string;
+  user?: ContextUser;
+  id?: string;
+  requestId?: string;
+};
+
+const REQUEST_ID_HEADERS = ['x-request-id', 'x-correlation-id'] as const;
 
 let _checkedThread = false;
 
@@ -17,20 +34,73 @@ export function _resetTenantMiddlewareStrictCache(): void {
   _strictMode = undefined;
 }
 
+function normalizeContextValue(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+function getHeaderValue(value: string | string[] | undefined): string | undefined {
+  return normalizeContextValue(Array.isArray(value) ? value[0] : value);
+}
+
+function getRequestId(req: ContextRequest): string | undefined {
+  const requestId = normalizeContextValue(req.requestId) ?? normalizeContextValue(req.id);
+  if (requestId) {
+    return requestId;
+  }
+  for (const header of REQUEST_ID_HEADERS) {
+    const value = getHeaderValue(req.headers[header]);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function getUserId(user: ContextUser): string | undefined {
+  return normalizeContextValue(user?.id) ?? normalizeContextValue(user?._id?.toString());
+}
+
+function hasTenantContext(context: TenantContext): boolean {
+  return Boolean(context.tenantId || context.userId || context.requestId);
+}
+
+export function buildTenantContext(
+  req: ContextRequest,
+  tenantId = req.tenantId ?? req.user?.tenantId,
+): TenantContext {
+  return {
+    tenantId: normalizeContextValue(tenantId),
+    userId: getUserId(req.user ?? null),
+    requestId: getRequestId(req),
+  };
+}
+
+export function runWithTenantContext(context: TenantContext, next: NextFunction): void {
+  if (!hasTenantContext(context)) {
+    next();
+    return;
+  }
+  return void tenantStorage.run(context, async () => {
+    next();
+  });
+}
+
 /**
  * Express middleware that propagates the authenticated user's `tenantId` into
- * the AsyncLocalStorage context used by the Mongoose tenant-isolation plugin.
+ * the AsyncLocalStorage context used by the Mongoose tenant-isolation plugin
+ * and request-scoped logging.
  *
  * **Placement**: Chained automatically by `requireJwtAuth` after successful
  * passport authentication (req.user is populated). Must NOT be registered at
  * global `app.use()` scope — `req.user` is undefined at that stage.
  *
  * Behaviour:
- * - Authenticated request with `tenantId` → wraps downstream in `tenantStorage.run({ tenantId })`
+ * - Authenticated request with context → wraps downstream in `tenantStorage.run(context)`
  * - Authenticated request **without** `tenantId`:
  *   - Strict mode (`TENANT_ISOLATION_STRICT=true`) → responds 403
- *   - Non-strict (default) → passes through without ALS context (backward compat)
- * - Unauthenticated request → no-op (calls `next()` directly)
+ *   - Non-strict (default) → passes through with user/request context only
+ * - Unauthenticated request → propagates request context when available
  */
 export function tenantContextMiddleware(
   req: ServerRequest,
@@ -47,27 +117,26 @@ export function tenantContextMiddleware(
     }
   }
 
-  const user = req.user as { tenantId?: string } | undefined;
+  const user = req.user;
+  const context = buildTenantContext(req);
 
   if (!user) {
-    next();
+    runWithTenantContext(context, next);
     return;
   }
 
-  const tenantId = user.tenantId;
+  const { tenantId } = context;
 
   if (!tenantId) {
     if (isStrict()) {
       res.status(403).json({ error: 'Tenant context required in strict isolation mode' });
       return;
     }
-    next();
+    runWithTenantContext(context, next);
     return;
   }
 
-  return void tenantStorage.run({ tenantId }, async () => {
-    next();
-  });
+  runWithTenantContext(context, next);
 }
 
 export type RequestTenantSource = {
@@ -137,6 +206,19 @@ async function rejectRequestWithUploadCleanup(
   res.status(403).json({ error: message });
 }
 
+function rejectRequestWithUploadCleanupInContext(
+  context: TenantContext,
+  req: ServerRequest,
+  res: Response,
+  message: string,
+): Promise<void> {
+  const rejectRequest = () => rejectRequestWithUploadCleanup(req, res, message);
+  if (!hasTenantContext(context)) {
+    return rejectRequest();
+  }
+  return tenantStorage.run(context, rejectRequest);
+}
+
 /**
  * Re-enters tenant ALS from the server-resolved request tenant.
  *
@@ -150,20 +232,23 @@ export function restoreTenantContextFromReq(
   next: NextFunction,
 ): void | Promise<void> {
   const tenantId = resolveRequestTenantId(req as RequestTenantSource);
+  const context = buildTenantContext(req, tenantId);
+  const resolvedTenantId = context.tenantId;
 
-  if (!tenantId) {
+  if (!resolvedTenantId) {
     if (isStrict()) {
-      return rejectRequestWithUploadCleanup(
+      return rejectRequestWithUploadCleanupInContext(
+        context,
         req,
         res,
         'Tenant context required in strict isolation mode',
       );
     }
-    next();
+    runWithTenantContext(context, next);
     return;
   }
 
-  if (tenantId === SYSTEM_TENANT_ID) {
+  if (resolvedTenantId === SYSTEM_TENANT_ID) {
     logger.warn('[restoreTenantContextFromReq] Rejected system tenant for request route', {
       path: req.path,
     });
@@ -174,12 +259,15 @@ export function restoreTenantContextFromReq(
     );
   }
 
-  if (getTenantId() === tenantId) {
+  const currentContext = tenantStorage.getStore();
+  if (
+    currentContext?.tenantId === context.tenantId &&
+    currentContext?.userId === context.userId &&
+    currentContext?.requestId === context.requestId
+  ) {
     next();
     return;
   }
 
-  return void tenantStorage.run({ tenantId }, async () => {
-    next();
-  });
+  return runWithTenantContext(context, next);
 }
