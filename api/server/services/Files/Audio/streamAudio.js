@@ -90,15 +90,13 @@ function createChunkProcessor(user, messageId) {
       notFoundCount++;
       return [];
     } else {
-      const text = message.content?.length > 0 ? parseTextParts(message.content) : message.text;
-      messageCache.set(
-        messageId,
-        {
-          text,
-          complete: true,
-        },
-        Time.FIVE_MINUTES,
-      );
+      const resolvedText =
+        message.content?.length > 0 ? parseTextParts(message.content, true) : message.text;
+      message = {
+        text: resolvedText,
+        complete: message.complete ?? true,
+      };
+      messageCache.set(messageId, message, Time.FIVE_MINUTES);
     }
 
     const text = typeof message === 'string' ? message : message.text;

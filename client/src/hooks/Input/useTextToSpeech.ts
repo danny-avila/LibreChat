@@ -9,6 +9,7 @@ import useGetAudioSettings from '~/hooks/Input/useGetAudioSettings';
 import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { usePauseGlobalAudio } from '../Audio';
 import { logger } from '~/utils';
+import { logTtsSpeak } from '~/utils/ttsDebug';
 import store from '~/store';
 
 type TUseTextToSpeech = {
@@ -120,7 +121,10 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
       if (isMouseDownRef.current) {
         const messageContent = content ?? '';
         const parsedMessage =
-          typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
+          typeof messageContent === 'string'
+            ? messageContent
+            : parseTextParts(messageContent, true);
+        logTtsSpeak(messageId, messageContent, parsedMessage);
         generateSpeech(parsedMessage, false);
       }
     }, 1000);
@@ -140,7 +144,10 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
     } else {
       const messageContent = content ?? '';
       const parsedMessage =
-        typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
+        typeof messageContent === 'string'
+          ? messageContent
+          : parseTextParts(messageContent, true);
+      logTtsSpeak(messageId, messageContent, parsedMessage);
       generateSpeech(parsedMessage, false);
     }
   };

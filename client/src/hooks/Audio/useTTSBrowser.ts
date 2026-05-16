@@ -7,6 +7,7 @@ import useTextToSpeechBrowser from '~/hooks/Input/useTextToSpeechBrowser';
 import usePauseGlobalAudio from '~/hooks/Audio/usePauseGlobalAudio';
 import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { logger } from '~/utils';
+import { logTtsSpeak } from '~/utils/ttsDebug';
 import store from '~/store';
 
 type TUseTextToSpeech = {
@@ -17,7 +18,7 @@ type TUseTextToSpeech = {
 };
 
 const useTTSBrowser = (props?: TUseTextToSpeech) => {
-  const { content, isLast = false, index = 0 } = props ?? {};
+  const { messageId, content, isLast = false, index = 0 } = props ?? {};
 
   const isMouseDownRef = useRef(false);
   const timerRef = useRef<number | undefined>(undefined);
@@ -61,7 +62,10 @@ const useTTSBrowser = (props?: TUseTextToSpeech) => {
       if (isMouseDownRef.current) {
         const messageContent = content ?? '';
         const parsedMessage =
-          typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
+          typeof messageContent === 'string'
+            ? messageContent
+            : parseTextParts(messageContent, true);
+        logTtsSpeak(messageId, messageContent, parsedMessage);
         generateSpeech(parsedMessage);
       }
     }, 1000);
@@ -81,7 +85,10 @@ const useTTSBrowser = (props?: TUseTextToSpeech) => {
     } else {
       const messageContent = content ?? '';
       const parsedMessage =
-        typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
+        typeof messageContent === 'string'
+          ? messageContent
+          : parseTextParts(messageContent, true);
+      logTtsSpeak(messageId, messageContent, parsedMessage);
       generateSpeech(parsedMessage);
     }
   };

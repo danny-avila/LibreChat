@@ -350,6 +350,13 @@ export function parseTextParts(
     if (!part.type) {
       continue;
     }
+    const partType = part.type as string;
+    if (
+      skipReasoning &&
+      (partType === ContentTypes.THINK || partType === 'thinking' || partType === 'reasoning')
+    ) {
+      continue;
+    }
     if (part.type === ContentTypes.TEXT) {
       const textValue = (typeof part.text === 'string' ? part.text : part.text?.value) || '';
 
@@ -363,7 +370,10 @@ export function parseTextParts(
       }
       result += textValue;
     } else if (part.type === ContentTypes.THINK && !skipReasoning) {
-      const textValue = typeof part.think === 'string' ? part.think : '';
+      const textValue =
+        typeof part.think === 'string'
+          ? part.think
+          : (part.think as { value?: string } | undefined)?.value || '';
       if (
         result.length > 0 &&
         textValue.length > 0 &&
