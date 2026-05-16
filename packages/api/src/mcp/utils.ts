@@ -26,7 +26,7 @@ export function getMissingCustomUserVars(
   }
   return Object.keys(config.customUserVars ?? {}).filter((key) => {
     const value = providedVars?.[key];
-    return value == null || value === '';
+    return value == null || (typeof value === 'string' && value.trim() === '');
   });
 }
 
