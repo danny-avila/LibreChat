@@ -13,7 +13,51 @@ import type { LCAvailableTools, LCFunctionTool } from './types';
  * Refs: https://platform.openai.com/docs/api-reference/chat/create
  *       https://github.com/danny-avila/LibreChat/issues/7435
  */
-const MAX_OPENAI_TOOL_NAME_LENGTH = 64;
+export const MAX_OPENAI_TOOL_NAME_LENGTH = 64;
+
+/**
+ * Minimal logger surface used by {@link composeMCPToolName}. Allows callers to
+ * inject the shared `logger` from `@librechat/data-schemas` or any compatible
+ * stub (e.g. in tests) without coupling this helper to a specific instance.
+ */
+export interface MCPToolNameLogger {
+  warn: (message: string) => void;
+}
+
+/**
+ * Composes an MCP tool function name (`${toolName}${mcp_delimiter}${serverName}`)
+ * and emits an actionable warning when the result exceeds the OpenAI-compatible
+ * 64-character limit. The composed name is returned in all cases — the warning
+ * is diagnostic only and does not alter behavior — so existing call sites can
+ * adopt the helper without changing their downstream logic.
+ *
+ * @param toolName - Raw MCP tool name as reported by the server.
+ * @param serverName - LibreChat-side name configured for the MCP server.
+ * @param options.logger - Optional logger; falls back to the shared logger.
+ * @param options.context - Short tag prefixed onto the warning (e.g. "MCP Cache",
+ *   "MCP Inspector") so operators can trace which path materialized the name.
+ */
+export function composeMCPToolName(
+  toolName: string,
+  serverName: string,
+  options: { logger?: MCPToolNameLogger; context?: string } = {},
+): string {
+  const delimiter = Constants.mcp_delimiter;
+  const name = `${toolName}${delimiter}${serverName}`;
+  if (name.length > MAX_OPENAI_TOOL_NAME_LENGTH) {
+    const log = options.logger ?? logger;
+    const tag = options.context ?? 'MCP';
+    log.warn(
+      `[${tag}] Tool name "${name}" (${name.length} chars) exceeds the ` +
+        `${MAX_OPENAI_TOOL_NAME_LENGTH}-char limit enforced by OpenAI-compatible APIs ` +
+        `(server: "${serverName}", tool: "${toolName}", delimiter: "${delimiter}"). ` +
+        `Calls including this tool will be rejected with HTTP 400. ` +
+        `Shorten the MCP server name or the tool name to fit within ` +
+        `${MAX_OPENAI_TOOL_NAME_LENGTH - delimiter.length} characters combined.`,
+    );
+  }
+  return name;
+}
 
 export interface MCPToolInput {
   name: string;
@@ -43,7 +87,6 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps) {
     const { userId, serverName, tools } = params;
     try {
       const serverTools: LCAvailableTools = {};
-      const mcpDelimiter = Constants.mcp_delimiter;
 
       if (tools == null || tools.length === 0) {
         logger.debug(`[MCP Cache] No tools to update for server ${serverName} (user: ${userId})`);
@@ -51,17 +94,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps) {
       }
 
       for (const tool of tools) {
-        const name = `${tool.name}${mcpDelimiter}${serverName}`;
-        if (name.length > MAX_OPENAI_TOOL_NAME_LENGTH) {
-          logger.warn(
-            `[MCP Cache] Tool name "${name}" (${name.length} chars) exceeds the ` +
-              `${MAX_OPENAI_TOOL_NAME_LENGTH}-char limit enforced by OpenAI-compatible APIs ` +
-              `(server: "${serverName}", tool: "${tool.name}", delimiter: "${mcpDelimiter}"). ` +
-              `Calls including this tool will be rejected with HTTP 400. ` +
-              `Shorten the MCP server name or the tool name to fit within ` +
-              `${MAX_OPENAI_TOOL_NAME_LENGTH - mcpDelimiter.length} characters combined.`,
-          );
-        }
+        const name = composeMCPToolName(tool.name, serverName, { context: 'MCP Cache' });
         const entry: LCFunctionTool = {
           type: 'function',
           ['function']: {
