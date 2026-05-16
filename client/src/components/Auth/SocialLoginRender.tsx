@@ -92,7 +92,7 @@ function SocialLoginRender({
             <img
               src={startupConfig.openidImageUrl}
               alt={localize('com_ui_logo', { 0: startupConfig.openidLabel })}
-              className="h-5 w-5 object-contain"
+              className="h-6 w-6 shrink-0 object-contain"
             />
           ) : (
             <OpenIDIcon />

@@ -60,11 +60,18 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-20 w-full sm:h-24 md:h-28">
+        <div className="mt-6 flex w-full flex-col items-center gap-4 px-4">
+          <div className="h-20 w-full sm:h-24 md:h-28">
+            <img
+              src="assets/billennium-logo.png"
+              className="mx-auto h-full max-w-md object-contain"
+              alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
+            />
+          </div>
           <img
-            src="assets/billennium-logo.png"
-            className="mx-auto h-full max-w-md px-4 object-contain"
-            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
+            src="assets/billiegenie.png"
+            className="mx-auto w-full max-w-sm object-contain sm:max-w-md md:max-w-lg lg:max-w-xl"
+            alt="BillieGenie"
           />
         </div>
       </BlinkAnimation>
