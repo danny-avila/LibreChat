@@ -146,7 +146,9 @@
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/core": "^2.7.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.218.0",
     "@opentelemetry/resources": "^2.7.1",
+    "@opentelemetry/sdk-node": "^0.218.0",
     "@opentelemetry/sdk-trace-node": "^2.7.1",
     "@opentelemetry/semantic-conventions": "^1.41.1",
     "axios": "^1.13.5"
