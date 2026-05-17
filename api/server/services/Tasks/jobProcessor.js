@@ -1,6 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
 const { Constants, parseCompactConvo } = require('librechat-data-provider');
-const { getTaskQueueService } = require('@librechat/api');
 const { getScheduledTask, updateScheduledTask, getUserById } = require('~/models');
 const AgentController = require('~/server/controllers/agents/request');
 const { initializeClient, buildOptions } = require('~/server/services/Endpoints/agents');
@@ -135,14 +134,7 @@ const processJob = async (job) => {
   }
 
   if (!task) {
-    logger.warn(
-      `[JobProcessor] Scheduled task ${taskId} no longer exists; removing orphaned BullMQ schedule.`,
-    );
-    try {
-      await getTaskQueueService().removeTask(taskId);
-    } catch (cleanupErr) {
-      logger.error(`[JobProcessor] Failed to remove orphaned schedule ${taskId}:`, cleanupErr);
-    }
+    logger.error(`[JobProcessor] Scheduled task ${taskId} not found; skipping job.`);
     return;
   }
   if (task.status !== 'active') {

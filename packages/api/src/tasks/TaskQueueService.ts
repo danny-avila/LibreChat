@@ -3,7 +3,7 @@ import { Queue, Worker } from 'bullmq';
 import { logger } from '@librechat/data-schemas';
 import { cacheConfig } from '../cache/cacheConfig';
 import { isValidTimezone, resolveDateTriggerMillis } from './timezone';
-import type { Job, RepeatableJob, RepeatOptions } from 'bullmq';
+import type { Job, RepeatOptions } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Types } from 'mongoose';
 
@@ -102,6 +102,17 @@ export class TaskQueueService {
     logger.warn('No job processor configured for scheduled tasks');
   }
 
+  /**
+   * Create or replace the schedule for a task.
+   *
+   * Recurring triggers (`cron`, `interval`) use BullMQ's JobScheduler API —
+   * the schedulerId equals the task's Mongo `_id`, so upserts replace any
+   * prior schedule for that task atomically and removals are a single
+   * `removeJobScheduler(taskId)` call with no fuzzy key matching.
+   *
+   * `date` triggers are one-off and get enqueued as a delayed job keyed by
+   * the same id so `removeTask` can clean them up uniformly.
+   */
   public async addOrUpdateTask(task: ScheduledTaskJobInput): Promise<void> {
     this.ensureInitialized();
     if (!this.queue) {
@@ -116,9 +127,7 @@ export class TaskQueueService {
     }
 
     if (task.timezone && !isValidTimezone(task.timezone)) {
-      throw new Error(
-        `Invalid IANA timezone for task ${jobId}: ${task.timezone}`,
-      );
+      throw new Error(`Invalid IANA timezone for task ${jobId}: ${task.timezone}`);
     }
 
     if (task.triggerType === 'date') {
@@ -130,7 +139,7 @@ export class TaskQueueService {
       return;
     }
 
-    let repeatOptions: RepeatOptions;
+    let repeatOptions: Omit<RepeatOptions, 'key'>;
     if (task.triggerType === 'cron') {
       repeatOptions = { pattern: task.expression };
       if (task.timezone) {
@@ -144,22 +153,17 @@ export class TaskQueueService {
       repeatOptions = { every };
     }
 
-    await this.queue.add(
-      QUEUE_NAME,
-      { taskId: jobId },
-      { jobId, repeat: repeatOptions },
-    );
+    await this.queue.upsertJobScheduler(jobId, repeatOptions, {
+      name: QUEUE_NAME,
+      data: { taskId: jobId },
+    });
   }
 
   /**
-   * Remove every repeatable schedule (and pending delayed job) tied to a task.
-   *
-   * BullMQ stores repeatables keyed by a hash of the repeat options; the
-   * user-supplied `jobId` is exposed as `.id` on repeatable records, but some
-   * versions emit `null` there or migrate the record to the newer job
-   * scheduler API. To stay resilient we sweep by all three angles: matching
-   * `.id`, matching keys that embed the taskId, and the new scheduler API
-   * (best-effort, ignored on older BullMQ builds).
+   * Cancel every BullMQ artefact tied to a task. Idempotent — safe to call
+   * for unknown ids. JobScheduler removal handles recurring (cron/interval)
+   * schedules; `queue.getJob(taskId)` covers any one-off delayed jobs that
+   * were enqueued for a `date` trigger.
    */
   public async removeTask(taskId: string): Promise<void> {
     this.ensureInitialized();
@@ -168,26 +172,9 @@ export class TaskQueueService {
     }
 
     try {
-      const repeatableJobs = await this.queue.getRepeatableJobs();
-      const matches = repeatableJobs.filter(
-        (job: RepeatableJob) => job.id === taskId || job.key?.includes(taskId),
-      );
-      for (const match of matches) {
-        await this.queue.removeRepeatableByKey(match.key);
-      }
+      await this.queue.removeJobScheduler(taskId);
     } catch (err) {
-      logger.warn(`[TaskQueueService] Failed to sweep repeatable jobs for ${taskId}:`, err);
-    }
-
-    const queueWithScheduler = this.queue as Queue & {
-      removeJobScheduler?: (id: string) => Promise<boolean>;
-    };
-    if (typeof queueWithScheduler.removeJobScheduler === 'function') {
-      try {
-        await queueWithScheduler.removeJobScheduler(taskId);
-      } catch (err) {
-        logger.debug(`[TaskQueueService] removeJobScheduler skipped for ${taskId}:`, err);
-      }
+      logger.error(`[TaskQueueService] removeJobScheduler failed for ${taskId}:`, err);
     }
 
     try {
@@ -196,7 +183,7 @@ export class TaskQueueService {
         await job.remove();
       }
     } catch (err) {
-      logger.warn(`[TaskQueueService] Failed to remove pending job ${taskId}:`, err);
+      logger.error(`[TaskQueueService] Failed to remove pending job ${taskId}:`, err);
     }
   }
 }

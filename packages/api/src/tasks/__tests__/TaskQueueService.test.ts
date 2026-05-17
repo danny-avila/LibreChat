@@ -2,30 +2,36 @@ type AnyFn = (...args: unknown[]) => unknown;
 
 interface BullMqMocks {
   mockAdd: jest.Mock<Promise<void>, [string, unknown, unknown]>;
-  mockGetRepeatableJobs: jest.Mock<Promise<Array<{ id: string; key: string }>>, []>;
-  mockRemoveRepeatableByKey: jest.Mock<Promise<void>, [string]>;
+  mockUpsertJobScheduler: jest.Mock<Promise<void>, [string, unknown, unknown]>;
+  mockRemoveJobScheduler: jest.Mock<Promise<boolean>, [string]>;
   mockGetJob: jest.Mock<Promise<{ remove: AnyFn } | null>, [string]>;
   mockJobRemove: jest.Mock<Promise<void>, []>;
 }
 
 jest.mock('bullmq', () => {
   const mockAdd = jest.fn();
-  const mockGetRepeatableJobs = jest.fn().mockResolvedValue([]);
-  const mockRemoveRepeatableByKey = jest.fn();
+  const mockUpsertJobScheduler = jest.fn();
+  const mockRemoveJobScheduler = jest.fn().mockResolvedValue(true);
   const mockJobRemove = jest.fn();
-  const mockGetJob = jest.fn().mockResolvedValue({ remove: mockJobRemove });
+  const mockGetJob = jest.fn().mockResolvedValue(null);
 
   return {
     Queue: jest.fn().mockImplementation(() => ({
       add: mockAdd,
-      getRepeatableJobs: mockGetRepeatableJobs,
-      removeRepeatableByKey: mockRemoveRepeatableByKey,
+      upsertJobScheduler: mockUpsertJobScheduler,
+      removeJobScheduler: mockRemoveJobScheduler,
       getJob: mockGetJob,
     })),
     Worker: jest.fn().mockImplementation(() => ({
       on: jest.fn(),
     })),
-    __mocks: { mockAdd, mockGetRepeatableJobs, mockRemoveRepeatableByKey, mockGetJob, mockJobRemove },
+    __mocks: {
+      mockAdd,
+      mockUpsertJobScheduler,
+      mockRemoveJobScheduler,
+      mockGetJob,
+      mockJobRemove,
+    },
   };
 });
 
@@ -52,23 +58,27 @@ jest.mock('../../cache/cacheConfig', () => ({
 import { TaskQueueService } from '../TaskQueueService';
 import bullmq from 'bullmq';
 
-const { mockAdd, mockGetRepeatableJobs, mockRemoveRepeatableByKey, mockGetJob, mockJobRemove } = (
-  bullmq as unknown as { __mocks: BullMqMocks }
-).__mocks;
+const {
+  mockAdd,
+  mockUpsertJobScheduler,
+  mockRemoveJobScheduler,
+  mockGetJob,
+  mockJobRemove,
+} = (bullmq as unknown as { __mocks: BullMqMocks }).__mocks;
 
 describe('TaskQueueService', () => {
   let service: TaskQueueService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRemoveJobScheduler.mockResolvedValue(true);
+    mockGetJob.mockResolvedValue(null);
     service = new TaskQueueService();
     service.setJobProcessor(async () => {});
   });
 
   describe('addOrUpdateTask', () => {
-    it('adds a cron task as a repeatable BullMQ job', async () => {
-      mockGetRepeatableJobs.mockResolvedValue([]);
-
+    it('upserts a cron scheduler keyed by the task id', async () => {
       await service.addOrUpdateTask({
         _id: '123',
         status: 'active',
@@ -76,20 +86,15 @@ describe('TaskQueueService', () => {
         expression: '0 * * * *',
       });
 
-      expect(mockAdd).toHaveBeenCalledWith(
-        'scheduled-tasks',
-        { taskId: '123' },
-        { jobId: '123', repeat: { pattern: '0 * * * *' } },
+      expect(mockRemoveJobScheduler).toHaveBeenCalledWith('123');
+      expect(mockUpsertJobScheduler).toHaveBeenCalledWith(
+        '123',
+        { pattern: '0 * * * *' },
+        { name: 'scheduled-tasks', data: { taskId: '123' } },
       );
     });
 
-    it('removes the existing repeatable job before adding an interval task', async () => {
-      mockGetRepeatableJobs.mockResolvedValue([
-        { id: '123', key: 'repeat:123' },
-        { id: '456', key: 'repeat:456' },
-      ]);
-      mockGetJob.mockResolvedValue(null);
-
+    it('upserts an interval scheduler with the parsed every value', async () => {
       await service.addOrUpdateTask({
         _id: '123',
         status: 'active',
@@ -97,17 +102,14 @@ describe('TaskQueueService', () => {
         expression: '60000',
       });
 
-      expect(mockRemoveRepeatableByKey).toHaveBeenCalledWith('repeat:123');
-      expect(mockAdd).toHaveBeenCalledWith(
-        'scheduled-tasks',
-        { taskId: '123' },
-        { jobId: '123', repeat: { every: 60000 } },
+      expect(mockUpsertJobScheduler).toHaveBeenCalledWith(
+        '123',
+        { every: 60000 },
+        { name: 'scheduled-tasks', data: { taskId: '123' } },
       );
     });
 
-    it('skips queuing for paused tasks', async () => {
-      mockGetRepeatableJobs.mockResolvedValue([]);
-
+    it('skips queuing for paused tasks but still clears any prior schedule', async () => {
       await service.addOrUpdateTask({
         _id: '123',
         status: 'paused',
@@ -115,12 +117,11 @@ describe('TaskQueueService', () => {
         expression: '0 * * * *',
       });
 
-      expect(mockAdd).not.toHaveBeenCalled();
+      expect(mockRemoveJobScheduler).toHaveBeenCalledWith('123');
+      expect(mockUpsertJobScheduler).not.toHaveBeenCalled();
     });
 
     it('throws on an invalid interval expression', async () => {
-      mockGetRepeatableJobs.mockResolvedValue([]);
-
       await expect(
         service.addOrUpdateTask({
           _id: '123',
@@ -131,9 +132,7 @@ describe('TaskQueueService', () => {
       ).rejects.toThrow(/Invalid interval expression/);
     });
 
-    it('passes timezone through to BullMQ for cron triggers', async () => {
-      mockGetRepeatableJobs.mockResolvedValue([]);
-
+    it('passes timezone through for cron triggers', async () => {
       await service.addOrUpdateTask({
         _id: '123',
         status: 'active',
@@ -142,16 +141,14 @@ describe('TaskQueueService', () => {
         timezone: 'America/New_York',
       });
 
-      expect(mockAdd).toHaveBeenCalledWith(
-        'scheduled-tasks',
-        { taskId: '123' },
-        { jobId: '123', repeat: { pattern: '0 9 * * *', tz: 'America/New_York' } },
+      expect(mockUpsertJobScheduler).toHaveBeenCalledWith(
+        '123',
+        { pattern: '0 9 * * *', tz: 'America/New_York' },
+        { name: 'scheduled-tasks', data: { taskId: '123' } },
       );
     });
 
     it('rejects an invalid IANA timezone', async () => {
-      mockGetRepeatableJobs.mockResolvedValue([]);
-
       await expect(
         service.addOrUpdateTask({
           _id: '123',
@@ -163,9 +160,8 @@ describe('TaskQueueService', () => {
       ).rejects.toThrow(/Invalid IANA timezone/);
     });
 
-    it('interprets a naive date expression in the task timezone', async () => {
+    it('enqueues a one-off delayed job for date triggers and interprets the expression in the task timezone', async () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-06-30T12:00:00Z'));
-      mockGetRepeatableJobs.mockResolvedValue([]);
 
       await service.addOrUpdateTask({
         _id: '123',
@@ -175,7 +171,6 @@ describe('TaskQueueService', () => {
         timezone: 'America/New_York',
       });
 
-      // 2026-07-15 09:00 NY (EDT, UTC-4) = 2026-07-15 13:00 UTC.
       const expectedTargetMs = Date.UTC(2026, 6, 15, 13, 0, 0);
       const expectedDelay = expectedTargetMs - new Date('2026-06-30T12:00:00Z').getTime();
       expect(mockAdd).toHaveBeenCalledWith(
@@ -183,20 +178,28 @@ describe('TaskQueueService', () => {
         { taskId: '123' },
         { jobId: '123', delay: expectedDelay },
       );
+      expect(mockUpsertJobScheduler).not.toHaveBeenCalled();
 
       jest.useRealTimers();
     });
   });
 
   describe('removeTask', () => {
-    it('removes both repeatable and direct jobs for the given id', async () => {
-      mockGetRepeatableJobs.mockResolvedValue([{ id: '123', key: 'repeat:123' }]);
+    it('removes the scheduler and any pending one-off job for the given id', async () => {
       mockGetJob.mockResolvedValue({ remove: mockJobRemove });
 
       await service.removeTask('123');
 
-      expect(mockRemoveRepeatableByKey).toHaveBeenCalledWith('repeat:123');
+      expect(mockRemoveJobScheduler).toHaveBeenCalledWith('123');
+      expect(mockGetJob).toHaveBeenCalledWith('123');
       expect(mockJobRemove).toHaveBeenCalled();
+    });
+
+    it('is idempotent when nothing matches the id', async () => {
+      mockGetJob.mockResolvedValue(null);
+
+      await expect(service.removeTask('does-not-exist')).resolves.toBeUndefined();
+      expect(mockRemoveJobScheduler).toHaveBeenCalledWith('does-not-exist');
     });
   });
 });

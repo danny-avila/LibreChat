@@ -3,8 +3,6 @@ const { getScheduledTask, updateScheduledTask, getUserById } = require('~/models
 const AgentController = require('~/server/controllers/agents/request');
 const { buildOptions } = require('~/server/services/Endpoints/agents');
 const { getAppConfig } = require('~/server/services/Config');
-const { getTaskQueueService } = require('@librechat/api');
-
 jest.mock('~/models', () => ({
   getScheduledTask: jest.fn(),
   updateScheduledTask: jest.fn(),
@@ -19,9 +17,6 @@ jest.mock('~/server/services/Endpoints/agents', () => ({
 jest.mock('~/server/services/Endpoints/agents/title', () => jest.fn());
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
-}));
-jest.mock('@librechat/api', () => ({
-  getTaskQueueService: jest.fn(() => ({ removeTask: jest.fn().mockResolvedValue(undefined) })),
 }));
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -39,16 +34,13 @@ describe('jobProcessor', () => {
     getAppConfig.mockResolvedValue({ interfaceConfig: {} });
   });
 
-  it('should not process if task is not found and reaps the orphan schedule', async () => {
+  it('should not process if task is not found', async () => {
     getScheduledTask.mockResolvedValue(null);
-    const removeTask = jest.fn().mockResolvedValue(undefined);
-    getTaskQueueService.mockReturnValue({ removeTask });
 
     await processJob({ data: { taskId: '123' } });
 
     expect(getScheduledTask).toHaveBeenCalledWith('123');
     expect(AgentController).not.toHaveBeenCalled();
-    expect(removeTask).toHaveBeenCalledWith('123');
   });
 
   it('should not process if task is not active', async () => {
