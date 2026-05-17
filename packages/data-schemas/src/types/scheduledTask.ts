@@ -2,7 +2,7 @@ import type { Document } from 'mongoose';
 
 export interface IScheduledTask extends Document {
   userId: string;
-  targetType: 'agent' | 'assistant';
+  targetType: 'agent' | 'assistant' | 'model';
   targetId: string;
   triggerType: 'cron' | 'interval' | 'date';
   expression: string;

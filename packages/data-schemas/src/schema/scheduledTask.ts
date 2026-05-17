@@ -10,7 +10,7 @@ const scheduledTaskSchema = new Schema<IScheduledTask>(
     },
     targetType: {
       type: String,
-      enum: ['agent', 'assistant'],
+      enum: ['agent', 'assistant', 'model'],
       required: true,
     },
     targetId: {

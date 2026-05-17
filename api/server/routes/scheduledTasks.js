@@ -1,6 +1,10 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { getTaskQueueService, isValidTimezone } = require('@librechat/api');
+const {
+  getTaskQueueService,
+  isValidTimezone,
+  isValidCronExpression,
+} = require('@librechat/api');
 const {
   getScheduledTasksByUser,
   getScheduledTask,
@@ -34,8 +38,8 @@ function sanitizeTaskInput(data) {
 }
 
 function validateTaskInput(data) {
-  if (!data.targetType || !['agent', 'assistant'].includes(data.targetType)) {
-    return 'targetType must be "agent" or "assistant"';
+  if (!data.targetType || !['agent', 'assistant', 'model'].includes(data.targetType)) {
+    return 'targetType must be "agent", "assistant" or "model"';
   }
   if (!data.targetId || typeof data.targetId !== 'string') {
     return 'targetId is required';
@@ -46,8 +50,21 @@ function validateTaskInput(data) {
   if (!data.expression || typeof data.expression !== 'string') {
     return 'expression is required';
   }
+  if (data.triggerType === 'cron' && !isValidCronExpression(data.expression)) {
+    return `cron expression must have 5 fields (got "${data.expression}"). See https://crontab.guru/`;
+  }
   if (!data.payload || typeof data.payload !== 'object') {
     return 'payload is required';
+  }
+  if (data.targetType === 'model') {
+    const endpoint = typeof data.payload.endpoint === 'string' ? data.payload.endpoint : null;
+    const model = typeof data.payload.model === 'string' ? data.payload.model : null;
+    if (!endpoint) {
+      return 'payload.endpoint is required for model tasks';
+    }
+    if (!model) {
+      return 'payload.model is required for model tasks';
+    }
   }
   if (data.timezone != null && data.timezone !== '' && !isValidTimezone(data.timezone)) {
     return `timezone must be a valid IANA identifier (got "${data.timezone}")`;
@@ -92,6 +109,13 @@ router.put('/:id', async (req, res) => {
     return res
       .status(400)
       .json({ error: `timezone must be a valid IANA identifier (got "${data.timezone}")` });
+  }
+  if (data.triggerType === 'cron' && typeof data.expression === 'string') {
+    if (!isValidCronExpression(data.expression)) {
+      return res.status(400).json({
+        error: `cron expression must have 5 fields (got "${data.expression}"). See https://crontab.guru/`,
+      });
+    }
   }
 
   try {

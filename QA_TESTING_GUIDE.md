@@ -45,18 +45,18 @@ This guide walks through end-to-end manual QA of the Scheduled Tasks feature. It
 - Clicking it should open an empty panel with a **+** button at the top right.
 
 ### 2. Create a basic recurring task (UI)
-- Click **+** to open the form.
+- Click **+** — the chat area is replaced by the full-page Scheduled Tasks builder at `/scheduled-tasks/new` (similar to the Prompt builder).
 - Fill in:
-  - **Target Type**: `Agent`
-  - **Target ID**: a real agent ID from your workspace
-  - **Cron Expression**: `* * * * *` (every minute)
+  - **Provider**: e.g. `OpenAI`
+  - **Model**: pick any model the provider exposes
+  - **Cron Expression**: `* * * * *` (every minute) — confirm the inline helper reads "Every minute"
   - **Prompt**: `Write one fun fact about octopuses.`
 - Leave the capability switches off.
 - Click **Save**.
 
 Expected:
-- Task card appears with `active` badge.
-- Within ~60s, backend logs show `Executing scheduled task ...` then `Successfully executed scheduled task ...`.
+- The URL changes to `/scheduled-tasks/<id>` and the side panel lists the new task with an `active` badge.
+- Within ~60 s, backend logs show `Executing scheduled task ...` then `Successfully executed scheduled task ...`.
 - **The main chat history sidebar should NOT show this new run as a conversation.**
 
 ### 3. View task runs (new UI)
@@ -78,35 +78,38 @@ Expected: the conversation shows tool calls for the web-search tool and a summar
 - Configure an MCP server (e.g., a weather tool) in your account.
 - Create a task with:
   - Prompt: `What's the weather in Tokyo right now?`
-  - Check the relevant MCP server in the form.
+  - In the **MCP Servers** section of the builder, tick the relevant server. Each row should show its friendly title, description, and a connection status dot — mirroring the in-chat MCP picker.
 - After the next run, open the run from the History modal.
 
 Expected: the conversation invokes the selected MCP server tool.
 
 ### 5b. Timezone-aware scheduling
 - Create a cron task with:
-  - **Trigger Type**: Cron
   - **Cron Expression**: `0 9 * * *` (9 AM)
   - **Timezone**: pick a zone that's currently *not* your local zone (e.g. `Asia/Kolkata` if you're in the US).
 - Backend should accept and persist the task.
 - In your DB (or `GET /api/scheduled-tasks`), confirm the `timezone` field is stored.
 - Tail the backend logs around the next 9 AM in the selected zone — the run should fire then, not at your local 9 AM.
 
-Also create a one-shot date task:
-  - **Trigger Type**: One-shot date
-  - **Run At**: pick a datetime ~2 minutes in the future
-  - **Timezone**: leave as your local zone
-
-Expected: the run fires at the wall-clock time you entered, regardless of server timezone.
-
 Invalid-timezone smoke test:
 ```bash
 curl -s -X POST http://localhost:3080/api/scheduled-tasks \
   -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
-  -d '{"targetType":"agent","targetId":"<id>","triggerType":"cron",
-       "expression":"0 9 * * *","timezone":"Bogus/Zone","payload":{"text":"hi"}}'
+  -d '{"targetType":"model","targetId":"gpt-4o","triggerType":"cron",
+       "expression":"0 9 * * *","timezone":"Bogus/Zone",
+       "payload":{"text":"hi","endpoint":"openAI","model":"gpt-4o"}}'
 ```
 Expected: `400` with an error message about IANA identifier.
+
+Invalid-cron smoke test:
+```bash
+curl -s -X POST http://localhost:3080/api/scheduled-tasks \
+  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
+  -d '{"targetType":"model","targetId":"gpt-4o","triggerType":"cron",
+       "expression":"not-a-cron",
+       "payload":{"text":"hi","endpoint":"openAI","model":"gpt-4o"}}'
+```
+Expected: `400` referencing crontab.guru.
 
 ### 6. Temporary chat mode (no persistence)
 - Create a task with **Run as Temporary Chat** enabled.
@@ -141,16 +144,16 @@ Expected: no further `Executing scheduled task ...` log lines for that task ID �
 - Click **Play** (resume). Status flips back to `active` (green) and within ~60 s a new run shows up.
 
 ### 8b. Edit a task in place (UI)
-- On any existing task, click the **Pencil** icon.
-- The form opens prepopulated with the task's values and the heading reads **Edit Task**.
-- Change the prompt and switch the trigger from `Cron` to `Interval` (e.g. `120000` ms). Save.
-- The task card updates immediately. New runs use the new prompt and interval.
+- On any existing task, click the **Pencil** icon — you should land on `/scheduled-tasks/<id>` with the form pre-populated and the heading reading **Edit Task**.
+- Change the prompt, swap the model, and tweak the cron expression to `*/15 * * * *`. Save.
+- The task card updates immediately. New runs use the new prompt, model, and schedule.
 
-### 8c. Cron preset picker (UI)
-- Open the create form, leave **Trigger Type** as **Cron**.
+### 8c. Cron preset picker + inline validation (UI)
+- Open the create form.
 - Use the **Quick presets…** dropdown beneath the cron input — selecting "Every 5 minutes" should fill the input with `*/5 * * * *`.
 - Modify the field to `*/30 * * * *`. The helper line below should read "Every 30 minutes".
-- For an expression we can't describe (e.g. `0 9 * * 1-3`) the helper line should disappear — power users can still save it. Submit and confirm the task is created.
+- Type a garbage expression like `not-a-cron`. The helper text should turn red ("Cron expression must have 5 space-separated fields…") and the **Save** button should disable until the expression is valid again.
+- For an expression we can't describe (e.g. `0 9 * * 1-3`) the human-readable line should disappear — power users can still save it. The crontab.guru link in the form should open the external builder in a new tab.
 
 ### 9. API smoke test (cURL)
 Replace `<TOKEN>` with the JWT from your browser's network tab.
@@ -159,15 +162,20 @@ Replace `<TOKEN>` with the JWT from your browser's network tab.
 # List
 curl -s http://localhost:3080/api/scheduled-tasks -H "Authorization: Bearer <TOKEN>"
 
-# Create
+# Create (model-target — matches the new builder)
 curl -s -X POST http://localhost:3080/api/scheduled-tasks \
   -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
   -d '{
-    "targetType":"agent",
-    "targetId":"<AGENT_ID>",
-    "triggerType":"interval",
-    "expression":"60000",
-    "payload":{"text":"hello","ephemeralAgent":{"web_search":true}}
+    "targetType":"model",
+    "targetId":"gpt-4o",
+    "triggerType":"cron",
+    "expression":"* * * * *",
+    "payload":{
+      "text":"hello",
+      "endpoint":"openAI",
+      "model":"gpt-4o",
+      "ephemeralAgent":{"web_search":true}
+    }
   }'
 
 # Update (pause)

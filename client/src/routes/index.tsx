@@ -38,6 +38,11 @@ const loadSkillsView = () =>
     Component: m.default,
   }));
 
+const loadInlineScheduledTasksView = () =>
+  import('~/components/SidePanel/ScheduledTasks/layouts/InlineScheduledTasksView').then((m) => ({
+    Component: m.default,
+  }));
+
 const baseEl = document.querySelector('base');
 const baseHref = baseEl?.getAttribute('href') || '/';
 
@@ -144,6 +149,18 @@ export const router = createBrowserRouter(
             {
               path: 'skills/:skillId/edit',
               lazy: loadSkillsView,
+            },
+            {
+              path: 'scheduled-tasks',
+              element: <Navigate to="/scheduled-tasks/new" replace={true} />,
+            },
+            {
+              path: 'scheduled-tasks/new',
+              lazy: loadInlineScheduledTasksView,
+            },
+            {
+              path: 'scheduled-tasks/:taskId',
+              lazy: loadInlineScheduledTasksView,
             },
             {
               path: 'agents',

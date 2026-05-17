@@ -58,6 +58,7 @@ export * from './stream';
 /* Tasks */
 export * from './tasks/TaskQueueService';
 export * from './tasks/timezone';
+export * from './tasks/cron';
 /* Diagnostics */
 export { memoryDiagnostics } from './utils/memory';
 /* types */

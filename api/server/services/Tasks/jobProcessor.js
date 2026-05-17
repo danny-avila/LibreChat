@@ -1,29 +1,61 @@
 const { logger } = require('@librechat/data-schemas');
-const { getScheduledTask, updateScheduledTask, saveConvo } = require('~/models');
+const { Constants } = require('librechat-data-provider');
+const { getScheduledTask, updateScheduledTask, saveConvo, getUserById } = require('~/models');
 const AgentController = require('~/server/controllers/agents/request');
-const { initializeClient } = require('~/server/services/Endpoints/agents');
+const { initializeClient, buildOptions } = require('~/server/services/Endpoints/agents');
 const addTitle = require('~/server/services/Endpoints/agents/title');
+const { getAppConfig } = require('~/server/services/Config');
 
 /**
  * Builds a request-like object that AgentController can consume from a
  * scheduled-task definition. Each run starts a fresh conversation so background
  * runs never mutate the user's interactive chats.
+ *
+ * For `targetType: 'model'` tasks we mirror the chat ephemeral-agent flow:
+ * `endpoint` + `model` from the task payload populate `req.body`, and
+ * `buildOptions` synthesizes the same `endpointOption` shape that
+ * `buildEndpointOption` middleware would produce for an interactive run.
  */
-function buildRequestFromTask(task, taskId) {
+async function buildRequestFromTask(task, taskId) {
   const payload = task.payload && typeof task.payload === 'object' ? task.payload : {};
   const {
     text,
     isTemporary,
+    endpoint: payloadEndpoint,
+    model: payloadModel,
     endpointOption: payloadEndpointOption,
     ephemeralAgent,
     agent_id: payloadAgentId,
     ...restPayload
   } = payload;
 
-  const agentId = task.targetType === 'agent' ? task.targetId : payloadAgentId;
+  const isModelTarget = task.targetType === 'model';
+  const endpoint = isModelTarget ? payloadEndpoint : restPayload.endpoint;
+  const model = isModelTarget ? payloadModel : restPayload.model;
+  const agentId = isModelTarget
+    ? Constants.EPHEMERAL_AGENT_ID
+    : task.targetType === 'agent'
+      ? task.targetId
+      : payloadAgentId;
 
-  return {
-    user: { id: task.userId },
+  let userRecord = null;
+  try {
+    userRecord = await getUserById(task.userId, '-password');
+  } catch (err) {
+    logger.warn(`[JobProcessor] Failed to fetch user ${task.userId}:`, err);
+  }
+
+  const appConfig = await getAppConfig({
+    role: userRecord?.role,
+    tenantId: userRecord?.tenantId,
+  }).catch((err) => {
+    logger.warn('[JobProcessor] Failed to resolve appConfig, continuing with empty config', err);
+    return null;
+  });
+
+  const req = {
+    user: userRecord ? { ...userRecord, id: task.userId } : { id: task.userId },
+    config: appConfig || { interfaceConfig: {} },
     body: {
       ...restPayload,
       text: text || 'Scheduled Task Execution',
@@ -32,10 +64,26 @@ function buildRequestFromTask(task, taskId) {
       ephemeralAgent,
       endpointOption: payloadEndpointOption || {},
       agent_id: agentId,
+      endpoint,
+      model,
     },
     scheduledTaskMeta: { taskId, isScheduled: true },
-    config: { interfaceConfig: {} },
   };
+
+  if (isModelTarget && endpoint) {
+    try {
+      const builtOption = await buildOptions(req, endpoint, { ...req.body, agent_id: agentId });
+      req.body.endpointOption = builtOption;
+    } catch (err) {
+      logger.error(
+        `[JobProcessor] Failed to build endpoint option for task ${taskId} (endpoint=${endpoint}):`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  return req;
 }
 
 function buildResponseMock() {
@@ -77,7 +125,7 @@ const processJob = async (job) => {
 
   logger.info(`Executing scheduled task ${taskId} for user ${task.userId}`);
 
-  const req = buildRequestFromTask(task, taskId);
+  const req = await buildRequestFromTask(task, taskId);
   const res = buildResponseMock();
   const next = (err) => {
     if (err) {

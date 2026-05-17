@@ -1,369 +1,121 @@
-import React, { useMemo, useState } from 'react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CalendarClock, Plus, Trash2, History, Pause, Play, Pencil } from 'lucide-react';
-import { Button, Input, SelectDropDown, TextareaAutosize, Checkbox, Switch } from '@librechat/client';
+import { Button } from '@librechat/client';
 import type { TScheduledTask } from 'librechat-data-provider';
-import { useLocalize, useMCPServerManager } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import {
   useGetScheduledTasks,
-  useCreateScheduledTask,
   useDeleteScheduledTask,
   useUpdateScheduledTask,
 } from '~/data-provider';
-import { CRON_PRESETS, describeCronExpression } from './cronPresets';
-import { getSupportedTimezones } from './timezones';
-import { buildInitialTask, nextPauseStatus, taskToFormState } from './helpers';
-import type { ScheduledTaskFormState } from './helpers';
+import { describeCronExpression } from './cronPresets';
+import { nextPauseStatus } from './helpers';
 import TaskRunsModal from './TaskRunsModal';
 
+/**
+ * Side-panel entry for Scheduled Tasks. Acts as a thin list view: clicking a
+ * task or the `+` button routes the user to the full-page builder at
+ * `/scheduled-tasks/...`, leaving pause/resume/delete/history quick actions
+ * here for one-tap management.
+ */
 export default function ScheduledTasksPanel() {
   const localize = useLocalize();
+  const navigate = useNavigate();
   const { data: tasks, isLoading } = useGetScheduledTasks();
-  const createMutation = useCreateScheduledTask();
   const updateMutation = useUpdateScheduledTask();
   const deleteMutation = useDeleteScheduledTask();
-  const { availableMCPServers } = useMCPServerManager();
 
-  const [isCreating, setIsCreating] = useState(false);
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [viewingTaskId, setViewingTaskId] = useState<string | null>(null);
-  const [newTask, setNewTask] = useState<ScheduledTaskFormState>(buildInitialTask);
 
-  const timezoneOptions = useMemo(
-    () => getSupportedTimezones().map((tz) => ({ label: tz, value: tz })),
-    [],
-  );
-  const showTimezone = newTask.triggerType !== 'interval';
-  const isFormOpen = isCreating || editingTaskId != null;
-  const cronDescription = useMemo(
-    () => (newTask.triggerType === 'cron' ? describeCronExpression(newTask.expression) : null),
-    [newTask.triggerType, newTask.expression],
-  );
-
-  const closeForm = () => {
-    setIsCreating(false);
-    setEditingTaskId(null);
-    setNewTask(buildInitialTask());
-  };
-
-  const openCreate = () => {
-    setEditingTaskId(null);
-    setNewTask(buildInitialTask());
-    setIsCreating(true);
-  };
-
-  const openEdit = (task: TScheduledTask) => {
-    setIsCreating(false);
-    setEditingTaskId(task._id);
-    setNewTask(taskToFormState(task));
-  };
-
-  const buildSubmitPayload = () => {
-    const { timezone, ...rest } = newTask;
-    return showTimezone && timezone ? { ...rest, timezone } : rest;
-  };
-
-  const handleSubmit = () => {
-    if (!newTask.targetId || !newTask.payload.text) {
-      return;
-    }
-    const payload = buildSubmitPayload();
-    if (editingTaskId) {
-      updateMutation.mutate(
-        { id: editingTaskId, payload },
-        {
-          onSuccess: closeForm,
-        },
-      );
-      return;
-    }
-    createMutation.mutate(payload, { onSuccess: closeForm });
-  };
-
-  const togglePause = (task: TScheduledTask) => {
+  const openCreate = () => navigate('/scheduled-tasks/new');
+  const openEdit = (task: TScheduledTask) => navigate(`/scheduled-tasks/${task._id}`);
+  const togglePause = (task: TScheduledTask) =>
     updateMutation.mutate({ id: task._id, payload: { status: nextPauseStatus(task.status) } });
-  };
-
-  const isSubmitting = createMutation.isLoading || updateMutation.isLoading;
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 text-text-primary">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
+        <h2 className="flex items-center gap-2 text-lg font-semibold">
           <CalendarClock className="h-5 w-5" />
           {localize('com_sidepanel_scheduled_tasks')}
         </h2>
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => (isFormOpen ? closeForm() : openCreate())}
+          onClick={openCreate}
           className="rounded-md p-1 hover:bg-surface-hover"
+          aria-label={localize('com_sidepanel_new_task')}
         >
           <Plus className="h-5 w-5" />
         </Button>
       </div>
 
-      {isFormOpen && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border-light p-3">
-          <h3 className="font-medium">
-            {editingTaskId
-              ? localize('com_sidepanel_edit_task')
-              : localize('com_sidepanel_new_task')}
-          </h3>
-          
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">{localize('com_sidepanel_target_type')}</label>
-            <SelectDropDown
-              value={newTask.targetType}
-              setValue={(val) => setNewTask({ ...newTask, targetType: val as 'agent' | 'assistant' })}
-              availableValues={[
-                { label: 'Agent', value: 'agent' },
-                { label: 'Assistant', value: 'assistant' }
-              ]}
-              showAbove={false}
-              showLabel={false}
-              className="w-full"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">{localize('com_sidepanel_target_id')}</label>
-            <Input
-              type="text"
-              value={newTask.targetId}
-              onChange={(e) => setNewTask({ ...newTask, targetId: e.target.value })}
-              placeholder="e.g. agent-123"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">{localize('com_sidepanel_trigger_type')}</label>
-            <SelectDropDown
-              value={newTask.triggerType}
-              setValue={(val) => {
-                const triggerType = val as 'cron' | 'interval' | 'date';
-                let expression = newTask.expression;
-                if (triggerType === 'cron') {
-                  expression = '0 * * * *';
-                } else if (triggerType === 'interval') {
-                  expression = '3600000';
-                } else if (triggerType === 'date') {
-                  const inOneHour = new Date(Date.now() + 60 * 60 * 1000);
-                  expression = inOneHour.toISOString().slice(0, 16);
-                }
-                setNewTask({ ...newTask, triggerType, expression });
-              }}
-              availableValues={[
-                { label: localize('com_sidepanel_trigger_cron'), value: 'cron' },
-                { label: localize('com_sidepanel_trigger_interval'), value: 'interval' },
-                { label: localize('com_sidepanel_trigger_date'), value: 'date' },
-              ]}
-              showAbove={false}
-              showLabel={false}
-              className="w-full"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">
-              {newTask.triggerType === 'cron'
-                ? localize('com_sidepanel_cron_expression')
-                : newTask.triggerType === 'interval'
-                  ? localize('com_sidepanel_interval_ms')
-                  : localize('com_sidepanel_run_at')}
-            </label>
-            <Input
-              type={newTask.triggerType === 'date' ? 'datetime-local' : 'text'}
-              value={newTask.expression}
-              onChange={(e) => setNewTask({ ...newTask, expression: e.target.value })}
-              placeholder={
-                newTask.triggerType === 'cron'
-                  ? '0 * * * *'
-                  : newTask.triggerType === 'interval'
-                    ? '3600000'
-                    : ''
-              }
-            />
-            {newTask.triggerType === 'cron' && (
-              <>
-                <SelectDropDown
-                  value=""
-                  setValue={(val) => {
-                    if (typeof val === 'string' && val) {
-                      setNewTask({ ...newTask, expression: val });
-                    }
-                  }}
-                  availableValues={[
-                    { label: localize('com_sidepanel_cron_preset_placeholder'), value: '' },
-                    ...CRON_PRESETS.map((p) => ({
-                      label: localize(p.labelKey) || p.label,
-                      value: p.value,
-                    })),
-                  ]}
-                  showAbove={false}
-                  showLabel={false}
-                  className="w-full mt-1"
-                />
-                {cronDescription && (
-                  <span className="text-xs text-text-secondary mt-1">{cronDescription}</span>
-                )}
-              </>
-            )}
-          </div>
-
-          {showTimezone && (
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium">{localize('com_sidepanel_timezone')}</label>
-              <SelectDropDown
-                value={newTask.timezone}
-                setValue={(val) => setNewTask({ ...newTask, timezone: val as string })}
-                availableValues={timezoneOptions}
-                showAbove={false}
-                showLabel={false}
-                className="w-full"
-              />
-              <span className="text-xs text-text-secondary">
-                {localize('com_sidepanel_timezone_hint')}
-              </span>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">{localize('com_sidepanel_prompt')}</label>
-            <TextareaAutosize
-              value={newTask.payload.text ?? ''}
-              onChange={(e) =>
-                setNewTask({
-                  ...newTask,
-                  payload: { ...newTask.payload, text: e.target.value },
-                })
-              }
-              className="w-full rounded-md border border-border-light bg-surface-primary p-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring-primary"
-              minRows={3}
-              placeholder="What should the agent do?"
-            />
-          </div>
-
-          <div className="flex flex-col gap-3 mt-2 rounded-md border border-border-light p-3 bg-surface-secondary">
-            <label className="text-sm font-medium">{localize('com_assistants_capabilities')}</label>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <label htmlFor="web_search" className="text-sm cursor-pointer">{localize('com_ui_tool_name_web_search') || 'Web Search'}</label>
-                <Switch
-                  id="web_search"
-                  checked={newTask.payload.ephemeralAgent?.web_search}
-                  onCheckedChange={(checked) => setNewTask({ ...newTask, payload: { ...newTask.payload, ephemeralAgent: { ...newTask.payload.ephemeralAgent, web_search: !!checked } } })}
-                  aria-label="Toggle Web Search"
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <label htmlFor="file_search" className="text-sm cursor-pointer">{localize('com_ui_tool_name_file_search') || 'File Search'}</label>
-                <Switch
-                  id="file_search"
-                  checked={newTask.payload.ephemeralAgent?.file_search}
-                  onCheckedChange={(checked) => setNewTask({ ...newTask, payload: { ...newTask.payload, ephemeralAgent: { ...newTask.payload.ephemeralAgent, file_search: !!checked } } })}
-                  aria-label="Toggle File Search"
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <label htmlFor="execute_code" className="text-sm cursor-pointer">{localize('com_ui_tool_name_code') || 'Code Execution'}</label>
-                <Switch
-                  id="execute_code"
-                  checked={newTask.payload.ephemeralAgent?.execute_code}
-                  onCheckedChange={(checked) => setNewTask({ ...newTask, payload: { ...newTask.payload, ephemeralAgent: { ...newTask.payload.ephemeralAgent, execute_code: !!checked } } })}
-                  aria-label="Toggle Code Execution"
-                />
-              </div>
-            </div>
-
-            {availableMCPServers.length > 0 && (
-              <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-border-light">
-                <label className="text-sm font-medium">{localize('com_ui_mcp_servers') || 'MCP Servers'}</label>
-                <div className="flex flex-col gap-2 max-h-32 overflow-y-auto">
-                  {availableMCPServers.map(server => (
-                    <div key={server.serverName} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`mcp_${server.serverName}`}
-                        checked={newTask.payload.ephemeralAgent?.mcp?.includes(server.serverName)}
-                        onCheckedChange={(checked) => {
-                          const mcp = newTask.payload.ephemeralAgent?.mcp || [];
-                          const newMcp = checked 
-                            ? [...mcp, server.serverName]
-                            : mcp.filter(name => name !== server.serverName);
-                          setNewTask({ ...newTask, payload: { ...newTask.payload, ephemeralAgent: { ...newTask.payload.ephemeralAgent, mcp: newMcp } } });
-                        }}
-                      />
-                      <label htmlFor={`mcp_${server.serverName}`} className="text-sm cursor-pointer truncate">
-                        {server.serverName}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 mt-1">
-            <Checkbox
-              id="isTemporary"
-              checked={newTask.payload.isTemporary === true}
-              onCheckedChange={(checked) =>
-                setNewTask({
-                  ...newTask,
-                  payload: { ...newTask.payload, isTemporary: checked === true },
-                })
-              }
-              aria-label="Run as temporary chat"
-            />
-            <label htmlFor="isTemporary" className="text-sm cursor-pointer">
-              {localize('com_sidepanel_temporary_chat')}
-            </label>
-          </div>
-
-          <div className="flex justify-end gap-2 mt-2">
-            <Button variant="outline" onClick={closeForm}>
-              {localize('com_ui_cancel')}
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={isSubmitting || !newTask.targetId || !newTask.payload.text}
-            >
-              {isSubmitting ? localize('com_ui_saving') : localize('com_ui_save')}
-            </Button>
-          </div>
-        </div>
-      )}
-
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="text-sm text-text-secondary">{localize('com_ui_loading')}</div>
         ) : tasks?.length === 0 ? (
-          <div className="text-sm text-text-secondary">{localize('com_sidepanel_no_tasks')}</div>
+          <div className="text-sm text-text-secondary">
+            {localize('com_sidepanel_no_tasks')}
+          </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {tasks?.map((task) => (
-              <div key={task._id} className="flex flex-col gap-2 rounded-lg border border-border-light p-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="font-medium text-sm">
-                      {task.targetType === 'agent' ? 'Agent' : 'Assistant'} Task
-                    </span>
-                    <div className="text-xs text-text-secondary font-mono mt-1">
-                      {task.expression}
-                      {task.timezone ? ` · ${task.timezone}` : ''}
+            {tasks?.map((task) => {
+              const description = describeCronExpression(task.expression);
+              const modelLabel =
+                task.targetType === 'model'
+                  ? task.payload?.model ?? task.targetId
+                  : task.targetId;
+              return (
+                <div
+                  key={task._id}
+                  className="flex flex-col gap-2 rounded-lg border border-border-light p-3"
+                >
+                  <div className="flex items-start justify-between">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(task)}
+                      className="flex-1 text-left"
+                    >
+                      <span className="block text-sm font-medium text-text-primary">
+                        {modelLabel}
+                      </span>
+                      <span className="mt-1 block font-mono text-xs text-text-secondary">
+                        {task.expression}
+                        {task.timezone ? ` · ${task.timezone}` : ''}
+                      </span>
+                      {description && (
+                        <span className="mt-1 block text-xs text-text-secondary">
+                          {description}
+                        </span>
+                      )}
+                    </button>
+                    <div className="flex flex-shrink-0 items-center gap-1">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${
+                          task.status === 'active'
+                            ? 'bg-green-100 text-green-800'
+                            : task.status === 'paused'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        {task.status}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full ${
-                        task.status === 'active'
-                          ? 'bg-green-100 text-green-800'
-                          : task.status === 'paused'
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      {task.status}
-                    </span>
+                  {task.payload?.text && (
+                    <div className="line-clamp-2 text-sm text-text-secondary">
+                      {task.payload.text}
+                    </div>
+                  )}
+                  {task.lastRunAt && (
+                    <div className="text-xs text-text-secondary">
+                      {localize('com_sidepanel_last_run')}:{' '}
+                      {new Date(task.lastRunAt).toLocaleString()}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-end gap-1">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -414,22 +166,16 @@ export default function ScheduledTasksPanel() {
                     </Button>
                   </div>
                 </div>
-                <div className="text-sm line-clamp-2 mt-1">{task.payload.text ?? ''}</div>
-                {task.lastRunAt && (
-                  <div className="text-xs text-text-secondary mt-1">
-                    {localize('com_sidepanel_last_run')}: {new Date(task.lastRunAt).toLocaleString()}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
-      <TaskRunsModal 
-        taskId={viewingTaskId || ''} 
-        isOpen={!!viewingTaskId} 
-        onClose={() => setViewingTaskId(null)} 
+      <TaskRunsModal
+        taskId={viewingTaskId || ''}
+        isOpen={!!viewingTaskId}
+        onClose={() => setViewingTaskId(null)}
       />
     </div>
   );
