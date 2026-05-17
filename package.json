@@ -147,8 +147,6 @@
     "axios": "^1.13.5"
   },
   "overrides": {
-    "axios": "latest",
     "expr-eval": "2.0.3"
   }
 }
-
