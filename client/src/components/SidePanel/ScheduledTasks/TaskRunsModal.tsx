@@ -77,15 +77,27 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
    * Radix Dialog treats any pointer event outside `DialogContent` as a request
    * to close. The `Convo` row's three-dot menu (Ariakit popover) renders in a
    * separate portal, so clicking a menu item would otherwise dismiss the modal
-   * before the item's own `onClick` runs. Veto the dismiss when the event
-   * originates inside any menu/popover element.
+   * before the item's own `onClick` runs.
+   *
+   * `event.target` on these custom events is the dismissable layer itself;
+   * the actual clicked DOM node lives at `event.detail.originalEvent.target`.
+   * Veto the dismiss when that real target sits inside any menu/popover.
    */
-  const handleInteractOutside = useCallback((event: Event) => {
-    const target = event.target as HTMLElement | null;
-    if (target?.closest('[role="menu"], [data-radix-popper-content-wrapper]')) {
-      event.preventDefault();
-    }
-  }, []);
+  const handleInteractOutside = useCallback(
+    (event: CustomEvent<{ originalEvent: Event }>) => {
+      const original = event.detail?.originalEvent;
+      const target = (original?.target ?? null) as HTMLElement | null;
+      if (!target) return;
+      if (
+        target.closest(
+          '[role="menu"], [role="menuitem"], .popover-ui, [data-radix-popper-content-wrapper]',
+        )
+      ) {
+        event.preventDefault();
+      }
+    },
+    [],
+  );
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
