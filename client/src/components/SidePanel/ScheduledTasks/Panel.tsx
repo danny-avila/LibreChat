@@ -2,8 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarClock, Plus, Trash2, History, Pause, Play, Pencil } from 'lucide-react';
 import { Button } from '@librechat/client';
+import {
+  Permissions,
+  SystemRoles,
+  PermissionTypes,
+} from 'librechat-data-provider';
 import type { TScheduledTask } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
+import { useAuthContext, useHasAccess, useLocalize } from '~/hooks';
 import {
   useGetScheduledTasks,
   useDeleteScheduledTask,
@@ -11,6 +16,7 @@ import {
 } from '~/data-provider';
 import { describeCronExpression } from './cronPresets';
 import { nextPauseStatus } from './helpers';
+import AdminSettings from './AdminSettings';
 import TaskRunsModal from './TaskRunsModal';
 
 /**
@@ -22,6 +28,11 @@ import TaskRunsModal from './TaskRunsModal';
 export default function ScheduledTasksPanel() {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const { user } = useAuthContext();
+  const canCreate = useHasAccess({
+    permissionType: PermissionTypes.SCHEDULED_TASKS,
+    permission: Permissions.CREATE,
+  });
   const { data: tasks, isLoading } = useGetScheduledTasks();
   const updateMutation = useUpdateScheduledTask();
   const deleteMutation = useDeleteScheduledTask();
@@ -40,16 +51,20 @@ export default function ScheduledTasksPanel() {
           <CalendarClock className="h-5 w-5" />
           {localize('com_sidepanel_scheduled_tasks')}
         </h2>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={openCreate}
-          className="rounded-md p-1 hover:bg-surface-hover"
-          aria-label={localize('com_sidepanel_new_task')}
-        >
-          <Plus className="h-5 w-5" />
-        </Button>
+        {canCreate && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={openCreate}
+            className="rounded-md p-1 hover:bg-surface-hover"
+            aria-label={localize('com_sidepanel_new_task')}
+          >
+            <Plus className="h-5 w-5" />
+          </Button>
+        )}
       </div>
+
+      {user?.role === SystemRoles.ADMIN && <AdminSettings />}
 
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (

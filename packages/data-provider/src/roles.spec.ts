@@ -10,7 +10,8 @@ const RESOURCE_MANAGEMENT_FIELDS: Permissions[] = [
 /**
  * Permission types where CREATE/SHARE/SHARE_PUBLIC must default to false for USER.
  * MEMORIES is excluded: its CREATE/READ/UPDATE apply to the user's own private data.
- * AGENTS/PROMPTS are excluded: CREATE=true is intentional (users own their agents/prompts).
+ * AGENTS/PROMPTS/SCHEDULED_TASKS are excluded: CREATE=true is intentional (users
+ * own their agents/prompts/scheduled tasks).
  * Add new types here if they gate shared/multi-user resources.
  */
 const RESOURCE_PERMISSION_TYPES: PermissionTypes[] = [
@@ -89,7 +90,8 @@ describe('roleDefaults', () => {
           permType === PermissionTypes.MEMORIES ||
           permType === PermissionTypes.PROMPTS ||
           permType === PermissionTypes.AGENTS ||
-          permType === PermissionTypes.SKILLS;
+          permType === PermissionTypes.SKILLS ||
+          permType === PermissionTypes.SCHEDULED_TASKS;
 
         expect({
           permType,

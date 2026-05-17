@@ -64,6 +64,10 @@ export enum PermissionTypes {
    * Type for Skill Permissions
    */
   SKILLS = 'SKILLS',
+  /**
+   * Type for Scheduled Tasks Permissions
+   */
+  SCHEDULED_TASKS = 'SCHEDULED_TASKS',
 }
 
 /**
@@ -87,6 +91,7 @@ export const PERMISSION_TYPE_INTERFACE_FIELDS: Record<PermissionTypes, string> =
   [PermissionTypes.MCP_SERVERS]: 'mcpServers',
   [PermissionTypes.REMOTE_AGENTS]: 'remoteAgents',
   [PermissionTypes.SKILLS]: 'skills',
+  [PermissionTypes.SCHEDULED_TASKS]: 'scheduledTasks',
 };
 
 /** Set of interface config field names that correspond to role permissions. */
@@ -231,6 +236,18 @@ export const skillPermissionsSchema = z.object({
 });
 export type TSkillPermissions = z.infer<typeof skillPermissionsSchema>;
 
+/**
+ * Minimal admin gate for Scheduled Tasks: `USE` controls visibility of the
+ * side-panel entry + the `/scheduled-tasks/*` routes; `CREATE` controls
+ * whether the builder accepts new tasks. Tasks are always per-user, so no
+ * `SHARE` semantics are exposed yet.
+ */
+export const scheduledTasksPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+  [Permissions.CREATE]: z.boolean().default(true),
+});
+export type TScheduledTasksPermissions = z.infer<typeof scheduledTasksPermissionsSchema>;
+
 // Define a single permissions schema that holds all permission types.
 export const permissionsSchema = z.object({
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
@@ -248,4 +265,5 @@ export const permissionsSchema = z.object({
   [PermissionTypes.MCP_SERVERS]: mcpServersPermissionsSchema,
   [PermissionTypes.REMOTE_AGENTS]: remoteAgentsPermissionsSchema,
   [PermissionTypes.SKILLS]: skillPermissionsSchema,
+  [PermissionTypes.SCHEDULED_TASKS]: scheduledTasksPermissionsSchema,
 });

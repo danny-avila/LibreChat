@@ -1075,6 +1075,15 @@ export function updateMemoryPermissions(
   return request.put(endpoints.updateMemoryPermissions(variables.roleName), variables.updates);
 }
 
+export function updateScheduledTasksPermissions(
+  variables: m.UpdateScheduledTasksPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(
+    endpoints.updateScheduledTasksPermissions(variables.roleName),
+    variables.updates,
+  );
+}
+
 export function updatePeoplePickerPermissions(
   variables: m.UpdatePeoplePickerPermVars,
 ): Promise<m.UpdatePermResponse> {

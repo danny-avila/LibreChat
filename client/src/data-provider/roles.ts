@@ -9,6 +9,7 @@ import {
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
   remoteAgentsPermissionsSchema,
+  scheduledTasksPermissionsSchema,
 } from 'librechat-data-provider';
 import type {
   QueryObserverResult,
@@ -320,6 +321,42 @@ export const useUpdateRemoteAgentsPermissionsMutation = (
         const error = args[0];
         if (error != null) {
           console.error('Failed to update remote agents permissions:', error);
+        }
+        if (onError) {
+          onError(...args);
+        }
+      },
+      onMutate,
+    },
+  );
+};
+
+export const useUpdateScheduledTasksPermissionsMutation = (
+  options?: t.UpdateScheduledTasksPermOptions,
+): UseMutationResult<
+  t.UpdatePermResponse,
+  t.TError | undefined,
+  t.UpdateScheduledTasksPermVars,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  const { onMutate, onSuccess, onError } = options ?? {};
+  return useMutation(
+    (variables) => {
+      scheduledTasksPermissionsSchema.partial().parse(variables.updates);
+      return dataService.updateScheduledTasksPermissions(variables);
+    },
+    {
+      onSuccess: (data, variables, context) => {
+        queryClient.invalidateQueries([QueryKeys.roles, variables.roleName]);
+        if (onSuccess) {
+          onSuccess(data, variables, context);
+        }
+      },
+      onError: (...args) => {
+        const error = args[0];
+        if (error != null) {
+          console.error('Failed to update scheduled-task permissions:', error);
         }
         if (onError) {
           onError(...args);

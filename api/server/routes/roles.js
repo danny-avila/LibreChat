@@ -12,6 +12,7 @@ const {
   peoplePickerPermissionsSchema,
   remoteAgentsPermissionsSchema,
   skillPermissionsSchema,
+  scheduledTasksPermissionsSchema,
 } = require('librechat-data-provider');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
 const { updateRoleByName, getRoleByName } = require('~/models');
@@ -65,6 +66,11 @@ const permissionConfigs = {
     schema: skillPermissionsSchema,
     permissionType: PermissionTypes.SKILLS,
     errorMessage: 'Invalid skill permissions.',
+  },
+  'scheduled-tasks': {
+    schema: scheduledTasksPermissionsSchema,
+    permissionType: PermissionTypes.SCHEDULED_TASKS,
+    errorMessage: 'Invalid scheduled-task permissions.',
   },
 };
 
@@ -188,5 +194,15 @@ router.put('/:roleName/remote-agents', manageRoles, createPermissionUpdateHandle
  * Update skill permissions for a specific role
  */
 router.put('/:roleName/skills', manageRoles, createPermissionUpdateHandler('skills'));
+
+/**
+ * PUT /api/roles/:roleName/scheduled-tasks
+ * Update scheduled-task permissions for a specific role
+ */
+router.put(
+  '/:roleName/scheduled-tasks',
+  manageRoles,
+  createPermissionUpdateHandler('scheduled-tasks'),
+);
 
 module.exports = router;

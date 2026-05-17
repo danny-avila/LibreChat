@@ -95,6 +95,11 @@ export default function useSideNavLinks({
   const { agentsConfig } = useGetAgentsConfig({ endpointsConfig });
   const { skillsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
 
+  const hasAccessToScheduledTasks = useHasAccess({
+    permissionType: PermissionTypes.SCHEDULED_TASKS,
+    permission: Permissions.USE,
+  });
+
   const Links = useMemo(() => {
     const links: NavLink[] = [];
 
@@ -208,14 +213,15 @@ export default function useSideNavLinks({
       });
     }
 
-    // Scheduled Tasks Link
-    links.push({
-      title: 'com_sidepanel_scheduled_tasks',
-      label: '',
-      icon: CalendarClock,
-      id: 'scheduled-tasks',
-      Component: ScheduledTasksPanel,
-    });
+    if (hasAccessToScheduledTasks) {
+      links.push({
+        title: 'com_sidepanel_scheduled_tasks',
+        label: '',
+        icon: CalendarClock,
+        id: 'scheduled-tasks',
+        Component: ScheduledTasksPanel,
+      });
+    }
 
     if (includeHidePanel && hidePanel) {
       links.push({
@@ -245,6 +251,7 @@ export default function useSideNavLinks({
     availableMCPServers,
     hasAccessToUseMCPSettings,
     hasAccessToCreateMCP,
+    hasAccessToScheduledTasks,
     includeHidePanel,
     hidePanel,
   ]);

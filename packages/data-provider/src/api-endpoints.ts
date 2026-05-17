@@ -414,6 +414,8 @@ export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
 export const getRole = (roleName: string) => `${roles()}/${encodeURIComponent(roleName)}`;
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;
+export const updateScheduledTasksPermissions = (roleName: string) =>
+  `${getRole(roleName)}/scheduled-tasks`;
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
 export const updatePeoplePickerPermissions = (roleName: string) =>
   `${getRole(roleName)}/people-picker`;

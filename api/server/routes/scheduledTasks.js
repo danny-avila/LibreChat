@@ -1,21 +1,35 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const {
+  generateCheckAccess,
   getTaskQueueService,
   isValidTimezone,
   isValidCronExpression,
 } = require('@librechat/api');
+const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getScheduledTasksByUser,
   getScheduledTask,
   createScheduledTask,
   updateScheduledTask,
   deleteScheduledTask,
+  getRoleByName,
 } = require('~/models');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+
+const checkScheduledTaskUse = generateCheckAccess({
+  permissionType: PermissionTypes.SCHEDULED_TASKS,
+  permissions: [Permissions.USE],
+  getRoleByName,
+});
+const checkScheduledTaskCreate = generateCheckAccess({
+  permissionType: PermissionTypes.SCHEDULED_TASKS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
 
 /**
  * Strip fields the client is not allowed to set directly.
@@ -72,7 +86,7 @@ function validateTaskInput(data) {
   return null;
 }
 
-router.get('/', async (req, res) => {
+router.get('/', checkScheduledTaskUse, async (req, res) => {
   try {
     const tasks = await getScheduledTasksByUser(req.user.id);
     res.status(200).json(tasks);
@@ -82,7 +96,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', checkScheduledTaskCreate, async (req, res) => {
   const data = sanitizeTaskInput(req.body);
   const validationError = validateTaskInput(data);
   if (validationError) {
@@ -101,7 +115,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', checkScheduledTaskUse, async (req, res) => {
   const { id } = req.params;
   const data = sanitizeTaskInput(req.body);
 
@@ -131,7 +145,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', checkScheduledTaskUse, async (req, res) => {
   const { id } = req.params;
 
   try {

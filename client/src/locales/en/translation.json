@@ -1564,6 +1564,8 @@
   "com_ui_skill_version": "v{{0}}",
   "com_ui_skill_view_rendered": "View rendered",
   "com_ui_skill_view_source": "View source",
+  "com_ui_scheduled_tasks_allow_create": "Allow creating Scheduled Tasks",
+  "com_ui_scheduled_tasks_allow_use": "Allow using Scheduled Tasks",
   "com_ui_skill_warnings": "Heads up",
   "com_ui_skill_write_instructions": "Write skill instructions",
   "com_ui_skills": "Skills",

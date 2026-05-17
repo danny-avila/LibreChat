@@ -198,6 +198,10 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
       },
+      [PermissionTypes.SCHEDULED_TASKS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+      },
     },
   },
   [SystemRoles.USER]: {
@@ -248,6 +252,10 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
+      },
+      [PermissionTypes.SCHEDULED_TASKS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
       },
     },
   },
