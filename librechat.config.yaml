@@ -95,15 +95,15 @@ mcpServers:
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
    #  chatMenu: false
 
-  golden:
-    type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.44:9005/mcp
-    timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
-    initTimeout: 120000
-   #  chatMenu: false
+  # golden:
+  #   type: streamable-http # type can optionally be omitted
+  #   url: http://100.100.108.44:9005/mcp
+  #   timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+  #   initTimeout: 120000
+  #  #  chatMenu: false
   pop:
     type: streamable-http # type can optionally be omitted
-    url: http://100.100.108.44:9013/mcp
+    url: http://100.100.108.44:9018/mcp
     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
     initTimeout: 120000
    #  chatMenu: false
@@ -343,27 +343,18 @@ modelSpecs:
           * Else if response is relevant and sufficient:
             * Generate answer using relevant `answer_text` from MCP data.
             * Stop.
-          4.2 **Golden Dataset (Fallback 1)**
-          * If Reviewer response is not available / irrelevant / insufficient, call: `golden_retriever_tool`
-          * Wait for full response.
-          * If query matches any `question_text`:
-            * Generate answer using **all information from the corresponding `answer_text`**.
-            * Stop.
-          * Else if relevant and sufficient:
-            * Generate answer using relevant `answer_text` from MCP data.
-            * Stop.
-          4.3 **Package of Practices (POP) (Fallback 2)**
-          * If Golden response is not available / irrelevant / insufficient, call: `get_context_from_package_of_practices`
+          4.2 **Package of Practices (POP) (Fallback 2)**
+          * If Reviewer response is not available / irrelevant / insufficient, call: `get_context_from_package_of_practices`
           * Wait for full response.
           * If response is relevant and sufficient:
             * Generate answer using available data.
             * Append:
               "# Your query has also been shared with an expert for review. It will be processed within 2 hours. Please ask the same query after 2 hours."
             * Stop.
-          4.4 **Final Fallback**
+          4.3 **Final Fallback**
           * If all sources are insufficient, respond:
             "# We do not have sufficient information to answer your query at the moment. Your query has been transferred to an expert and will be processed within 2 hours. Please ask the same query after 2 hours."
-          4.5. Fetch market-related data using MCP tools with strict priority order.
+          4.4. Fetch market-related data using MCP tools with strict priority order.
               First query Ajrasakha-Agmarknet and return data if available.
               If no data is found, then query Ajrasakha-eNAM and return results if available.
               Always return data from the highest-priority source where results are found, without querying lower-priority sources unnecessarily.
@@ -400,10 +391,10 @@ modelSpecs:
              - Show it only if the content is clearly relevant; otherwise, do not display or ask about it.
 
           
-          6. You must generate answers strictly and exclusively from the relevant content available in the Golden Dataset MCP or  package of  practice mcp. Do not use external knowledge, assumptions, or general information beyond these approved sources.
+          6. You must generate answers strictly and exclusively from the relevant content available in the Reviewer Dataset MCP or  package of  practice mcp. Do not use external knowledge, assumptions, or general information beyond these approved sources.
                Crucially, if the MCP content is in a different language than [USER_LANGUAGE], you MUST translate the facts into [USER_LANGUAGE]. The requirement to use "strictly approved sources" applies to the FACTS, not the language.
 
-               If the required information is not found in the Golden Dataset MCP, package of practice mcp, clearly state that the information is not available in the approved sources.
+               If the required information is not found in the Reviewer Dataset MCP, package of practice mcp, clearly state that the information is not available in the approved sources.
 
                Do not provide any other source  from mcp tool which you have not used for answering the question.
                After providing the answer, you must explicitly state:
@@ -411,7 +402,7 @@ modelSpecs:
                “The answer I provided is sourced only from the following approved materials.”
 
                Then, present the references in a structured table with the following columns:
-               For Reviewer and Golden Dataset MCP Tool use the following columns:
+               For Reviewer Dataset MCP Tool use the following columns:
 
                | Agri Specialist Name | Source Link |
                If multiple sources belong to the same Agri Specialist, list all corresponding source links inside the same cell as href links semicolon-separated..
@@ -606,27 +597,18 @@ modelSpecs:
           * Else if response is relevant and sufficient:
             * Generate answer using relevant `answer_text` from MCP data.
             * Stop.
-          4.2 **Golden Dataset (Fallback 1)**
-          * If Reviewer response is not available / irrelevant / insufficient, call: `golden_retriever_tool`
-          * Wait for full response.
-          * If query matches any `question_text`:
-            * Generate answer using **all information from the corresponding `answer_text`**.
-            * Stop.
-          * Else if relevant and sufficient:
-            * Generate answer using relevant `answer_text` from MCP data.
-            * Stop.
-          4.3 **Package of Practices (POP) (Fallback 2)**
-          * If Golden response is not available / irrelevant / insufficient, call: `get_context_from_package_of_practices`
+          4.2 **Package of Practices (POP) (Fallback 2)**
+          * If Reviewer response is not available / irrelevant / insufficient, call: `get_context_from_package_of_practices`
           * Wait for full response.
           * If response is relevant and sufficient:
             * Generate answer using available data.
             * Append:
-              "Your query has also been shared with an expert for review. It will be processed within 2 hours. Please ask the same query after 2 hours."
+              "# Your query has also been shared with an expert for review. It will be processed within 2 hours. Please ask the same query after 2 hours."
             * Stop.
-          4.4 **Final Fallback**
+          4.3 **Final Fallback**
           * If all sources are insufficient, respond:
-            "We do not have sufficient information to answer your query at the moment. Your query has been transferred to an expert and will be processed within 2 hours. Please ask the same query after 2 hours."
-          4.5. **Fetch market-related data using MCP tools with strict priority order.**
+            "# We do not have sufficient information to answer your query at the moment. Your query has been transferred to an expert and will be processed within 2 hours. Please ask the same query after 2 hours."
+          4.4. Fetch market-related data using MCP tools with strict priority order.
               First query Ajrasakha-Agmarknet and return data if available.
               If no data is found, then query Ajrasakha-eNAM and return results if available.
               Always return data from the highest-priority source where results are found, without querying lower-priority sources unnecessarily.
@@ -635,10 +617,10 @@ modelSpecs:
              - Search the **FAQ-Video MCP server** for a relevant YouTube video or summary.  
              - Show it only if the content is clearly relevant; otherwise, do not display or ask about it.
 
-          6. You must generate answers strictly and exclusively from the relevant content available in the Golden Dataset MCP or  package of  practice mcp. Do not use external knowledge, assumptions, or general information beyond these approved sources.
+          6. You must generate answers strictly and exclusively from the relevant content available in the Reviewer Dataset MCP or  package of  practice mcp. Do not use external knowledge, assumptions, or general information beyond these approved sources.
                Crucially, if the MCP content is in a different language than [USER_LANGUAGE], you MUST translate the facts into [USER_LANGUAGE]. The requirement to use "strictly approved sources" applies to the FACTS, not the language.
 
-               If the required information is not found in the Golden Dataset MCP, package of practice mcp, clearly state that the information is not available in the approved sources.
+               If the required information is not found in the Reviewer Dataset MCP, package of practice mcp, clearly state that the information is not available in the approved sources.
 
                Do not provide any other source  from mcp tool which you have not used for answering the question.
                After providing the answer, you must explicitly state:
@@ -646,7 +628,7 @@ modelSpecs:
                “The answer I provided is sourced only from the following approved materials.”
 
                Then, present the references in a structured table with the following columns:
-               For Reviewer and Golden Dataset MCP Tool use the following columns:
+               For Reviewer Dataset MCP Tool use the following columns:
 
                | Agri Specialist Name | Source Link |
                If multiple sources belong to the same Agri Specialist, list all corresponding source links inside the same cell as href links semicolon-separated.
@@ -747,7 +729,6 @@ modelSpecs:
       label: "AjraSakha-Claude-FFV"
       mcpServers:
          - reviewer
-         - golden
          - pop
          - ajrasakha-agmarknet
          - ajrasakha-enam
@@ -770,7 +751,6 @@ modelSpecs:
       label: "AjraSakha-Gemma-FFV"
       mcpServers:
          - reviewer
-         - golden
          - pop
          - ajrasakha-agmarknet
          - ajrasakha-enam
@@ -793,7 +773,6 @@ modelSpecs:
       label: "AjraSakha-Sarvam-FFV"
       mcpServers:
          - reviewer
-         - golden
          - pop
          - ajrasakha-agmarknet
          - ajrasakha-enam
@@ -818,7 +797,6 @@ modelSpecs:
 
       mcpServers:
          - reviewer
-         - golden
          - pop
          - ajrasakha-agmarknet
          - ajrasakha-enam
