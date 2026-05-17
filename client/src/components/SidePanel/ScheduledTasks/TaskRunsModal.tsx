@@ -1,9 +1,9 @@
-import React from 'react';
 import { CalendarClock } from 'lucide-react';
-import { useLocalize } from '~/hooks';
-import { useConversationsInfiniteQuery } from '~/data-provider';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, Button } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@librechat/client';
+import { useLocalize } from '~/hooks';
+import { useConversationsInfiniteQuery, useGetEndpointsQuery } from '~/data-provider';
+import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 
 interface TaskRunsModalProps {
   taskId: string;
@@ -13,30 +13,43 @@ interface TaskRunsModalProps {
   onClose: () => void;
 }
 
+function formatRunTimestamp(value?: string | Date) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
 export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: TaskRunsModalProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const { data: endpointsConfig } = useGetEndpointsQuery();
 
-  const { data, isLoading } = useConversationsInfiniteQuery({
-    taskId,
-    includeScheduled: true,
-  }, {
-    enabled: isOpen && !!taskId,
-  });
+  const { data, isLoading } = useConversationsInfiniteQuery(
+    { taskId, includeScheduled: true },
+    { enabled: isOpen && !!taskId },
+  );
 
   const conversations = data?.pages.flatMap((page) => page.conversations) || [];
 
+  const openConvo = (conversationId?: string | null) => {
+    if (!conversationId) return;
+    navigate(`/c/${conversationId}`);
+    onClose();
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col">
         <DialogHeader>
           <DialogTitle>{localize('com_sidepanel_task_runs')}</DialogTitle>
-          {taskName && (
-            <span className="text-sm text-text-secondary">{taskName}</span>
-          )}
+          {taskName && <span className="text-sm text-text-secondary">{taskName}</span>}
         </DialogHeader>
-        
-        <div className="flex-1 overflow-y-auto mt-4">
+
+        <div className="mt-4 flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-12 text-sm text-text-secondary">
               {localize('com_ui_loading')}
@@ -54,27 +67,40 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              {conversations.map((convo) => (
-                <div 
-                  key={convo.conversationId} 
-                  className="flex items-center justify-between p-3 border border-border-light rounded-lg hover:bg-surface-hover cursor-pointer"
-                  onClick={() => {
-                    navigate(`/c/${convo.conversationId}`);
-                    onClose();
-                  }}
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium text-sm">{convo.title || localize('com_ui_new_chat')}</span>
-                    <span className="text-xs text-text-secondary">
-                      {new Date(convo.updatedAt).toLocaleString()}
-                    </span>
+            <div className="flex flex-col gap-0.5">
+              {conversations.map((convo) => {
+                const timestamp = formatRunTimestamp(convo.updatedAt ?? convo.createdAt);
+                const title = convo.title || localize('com_ui_new_chat');
+                return (
+                  <div
+                    key={convo.conversationId}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openConvo(convo.conversationId)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openConvo(convo.conversationId);
+                      }
+                    }}
+                    className="group flex h-12 w-full cursor-pointer items-center gap-2 rounded-lg px-2 outline-none hover:bg-surface-active-alt focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white md:h-10"
+                    aria-label={title}
+                  >
+                    <EndpointIcon
+                      conversation={convo}
+                      endpointsConfig={endpointsConfig}
+                      size={20}
+                      context="menu-item"
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm text-text-primary">{title}</span>
+                      {timestamp && (
+                        <span className="truncate text-xs text-text-secondary">{timestamp}</span>
+                      )}
+                    </div>
                   </div>
-                  <Button variant="ghost" size="sm">
-                    {localize('com_sidepanel_view_run')}
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
