@@ -1,4 +1,4 @@
-const manifest = require('./manifest');
+const manifest = require('./toolsManifest');
 
 // Structured Tools
 const DALLE3 = require('./structured/DALLE3');

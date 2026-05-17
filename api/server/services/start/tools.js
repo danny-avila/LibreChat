@@ -6,7 +6,7 @@ const { zodToJsonSchema } = require('zod-to-json-schema');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { Tools, ImageVisionTool } = require('librechat-data-provider');
 const { getToolkitKey, oaiToolkit, geminiToolkit } = require('@librechat/api');
-const { toolkits } = require('~/app/clients/tools/manifest');
+const { toolkits } = require('~/app/clients/tools/toolsManifest');
 
 /**
  * Loads and formats tools from the specified tool directory.

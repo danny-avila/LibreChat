@@ -59,7 +59,7 @@ const {
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
-const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
+const { manifestToolMap, toolkits } = require('~/app/clients/tools/toolsManifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { resolveConfigServers } = require('~/server/services/MCP');
