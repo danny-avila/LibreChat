@@ -1,6 +1,8 @@
+import { useCallback, useMemo } from 'react';
+import throttle from 'lodash/throttle';
 import { CalendarClock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@librechat/client';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, Spinner } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { useConversationsInfiniteQuery, useGetEndpointsQuery } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
@@ -12,6 +14,9 @@ interface TaskRunsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+/** Distance from the bottom (px) at which we trigger the next-page fetch. */
+const LOAD_MORE_THRESHOLD_PX = 64;
 
 function formatRunTimestamp(value?: string | Date) {
   if (!value) return '';
@@ -28,7 +33,13 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
   const navigate = useNavigate();
   const { data: endpointsConfig } = useGetEndpointsQuery();
 
-  const { data, isLoading } = useConversationsInfiniteQuery(
+  const {
+    data,
+    isLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useConversationsInfiniteQuery(
     { taskId, includeScheduled: true },
     { enabled: isOpen && !!taskId },
   );
@@ -41,6 +52,23 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
     onClose();
   };
 
+  const throttledFetchNextPage = useMemo(
+    () => throttle(() => fetchNextPage(), 300, { trailing: false }),
+    [fetchNextPage],
+  );
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      if (!hasNextPage || isFetchingNextPage) return;
+      const el = e.currentTarget;
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distanceFromBottom <= LOAD_MORE_THRESHOLD_PX) {
+        throttledFetchNextPage();
+      }
+    },
+    [hasNextPage, isFetchingNextPage, throttledFetchNextPage],
+  );
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col">
@@ -49,7 +77,7 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
           {taskName && <span className="text-sm text-text-secondary">{taskName}</span>}
         </DialogHeader>
 
-        <div className="mt-4 flex-1 overflow-y-auto">
+        <div className="mt-4 flex-1 overflow-y-auto" onScroll={handleScroll}>
           {isLoading ? (
             <div className="flex items-center justify-center py-12 text-sm text-text-secondary">
               {localize('com_ui_loading')}
@@ -101,6 +129,12 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
                   </div>
                 );
               })}
+              {isFetchingNextPage && (
+                <div className="flex items-center justify-center gap-2 py-3 text-xs text-text-secondary">
+                  <Spinner className="h-3.5 w-3.5 text-text-primary" />
+                  <span className="animate-pulse">{localize('com_ui_loading')}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
