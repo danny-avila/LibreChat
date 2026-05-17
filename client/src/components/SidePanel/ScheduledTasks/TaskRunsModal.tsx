@@ -14,12 +14,25 @@ interface TaskRunsModalProps {
   taskName?: string;
   isOpen: boolean;
   onClose: () => void;
+  /**
+   * Invoked when a row's "Share" action is picked. The modal cannot host the
+   * share dialog itself because OGDialog's depth-based z-index sits below
+   * this dialog's z-[999]; the parent closes us first and mounts its own
+   * ShareButton at the document root.
+   */
+  onRequestShare: (conversationId: string, title: string) => void;
 }
 
 /** Distance from the bottom (px) at which we trigger the next-page fetch. */
 const LOAD_MORE_THRESHOLD_PX = 64;
 
-export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: TaskRunsModalProps) {
+export default function TaskRunsModal({
+  taskId,
+  taskName,
+  isOpen,
+  onClose,
+  onRequestShare,
+}: TaskRunsModalProps) {
   const localize = useLocalize();
 
   const {
@@ -97,6 +110,7 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
                       key={convo.conversationId}
                       conversation={convo}
                       onOpen={onClose}
+                      onRequestShare={onRequestShare}
                     />
                   ))}
                 </div>

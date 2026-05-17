@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarClock, Plus, Trash2, History, Pause, Play, Pencil } from 'lucide-react';
 import { Button } from '@librechat/client';
@@ -14,6 +14,7 @@ import {
   useDeleteScheduledTask,
   useUpdateScheduledTask,
 } from '~/data-provider';
+import ShareButton from '~/components/Conversations/ConvoOptions/ShareButton';
 import { nextPauseStatus } from './helpers';
 import AdminSettings from './AdminSettings';
 import TaskRunsModal from './TaskRunsModal';
@@ -39,6 +40,29 @@ export default function ScheduledTasksPanel() {
   const [viewingTaskId, setViewingTaskId] = useState<string | null>(null);
   const viewingTask = tasks?.find((t) => t._id === viewingTaskId) ?? null;
   const viewingTaskName = viewingTask?.name?.trim() || viewingTask?.payload?.model || viewingTask?.targetId;
+
+  /**
+   * Shared link dialog state. Hosted at the panel level rather than the runs
+   * modal because OGDialog computes its z-index from a nested-depth context
+   * (≤200) — well below the runs modal at z-[999]. We close the runs modal
+   * first, then mount the share dialog freestanding above everything.
+   */
+  const [sharingConvo, setSharingConvo] = useState<{ id: string; title: string } | null>(null);
+  const handleRequestShare = useCallback(
+    (conversationId: string, title: string) => {
+      setViewingTaskId(null);
+      setSharingConvo({ id: conversationId, title });
+    },
+    [],
+  );
+  const shareDialogOpen = sharingConvo !== null;
+  const handleShareOpenChange = useCallback<React.Dispatch<React.SetStateAction<boolean>>>(
+    (value) => {
+      const next = typeof value === 'function' ? value(shareDialogOpen) : value;
+      if (!next) setSharingConvo(null);
+    },
+    [shareDialogOpen],
+  );
 
   const openCreate = () => navigate('/scheduled-tasks/new');
   const openEdit = (task: TScheduledTask) => navigate(`/scheduled-tasks/${task._id}`);
@@ -164,7 +188,16 @@ export default function ScheduledTasksPanel() {
         taskName={viewingTaskName}
         isOpen={!!viewingTaskId}
         onClose={() => setViewingTaskId(null)}
+        onRequestShare={handleRequestShare}
       />
+
+      {sharingConvo && (
+        <ShareButton
+          conversationId={sharingConvo.id}
+          open={shareDialogOpen}
+          onOpenChange={handleShareOpenChange}
+        />
+      )}
     </div>
   );
 }

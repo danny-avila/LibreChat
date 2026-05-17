@@ -3,25 +3,27 @@ import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
 import { useToastContext } from '@librechat/client';
-import { Ellipsis, ExternalLink, Pen, Trash } from 'lucide-react';
+import { Archive, CopyPlus, Ellipsis, ExternalLink, Share2, Trash } from 'lucide-react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import {
-  useGetEndpointsQuery,
-  useUpdateConversationMutation,
+  useArchiveConvoMutation,
   useDeleteConversationMutation,
+  useDuplicateConversationMutation,
+  useGetEndpointsQuery,
+  useGetStartupConfig,
 } from '~/data-provider';
 import EndpointIcon from '~/components/Endpoints/EndpointIcon';
-import { useNavigateToConvo, useLocalize } from '~/hooks';
+import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
-import { cn, logger } from '~/utils';
+import { cn } from '~/utils';
 
 interface TaskRunRowProps {
   conversation: TConversation;
-  /**
-   * Called once the run has been "opened" — the parent should close the
-   * modal so the user lands on the run's chat view.
-   */
+  /** Called when the user opens this run; parent should dismiss the modal. */
   onOpen: () => void;
+  /** Called when the user picks "Share"; parent should close the modal and
+   *  mount its own ShareButton with this conversation id. */
+  onRequestShare: (conversationId: string, title: string) => void;
 }
 
 /** Reset window for the inline two-click delete confirmation. */
@@ -35,14 +37,17 @@ const DELETE_CONFIRM_RESET_MS = 2500;
  * popover that fights the parent Radix Dialog's outside-click logic.
  *
  * The menu uses `portal={false}` so its DOM lives inside the dialog tree —
- * Radix simply never sees a click on a menu item as "outside".
+ * Radix simply never sees a click on a menu item as "outside". Share opens
+ * an OGDialog whose depth-based z-index sits below the modal, so it's
+ * delegated up to the parent which closes the modal first.
  */
-export default function TaskRunRow({ conversation, onOpen }: TaskRunRowProps) {
+export default function TaskRunRow({ conversation, onOpen, onRequestShare }: TaskRunRowProps) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo();
   const { data: endpointsConfig } = useGetEndpointsQuery();
+  const { data: startupConfig } = useGetStartupConfig();
 
   const conversationId = conversation.conversationId ?? '';
   const title = (conversation.title ?? '').trim();
@@ -51,14 +56,8 @@ export default function TaskRunRow({ conversation, onOpen }: TaskRunRowProps) {
   const menuStore = Ariakit.useMenuStore({ focusLoop: true });
   const isMenuOpen = menuStore.useState('open');
 
-  const [renaming, setRenaming] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(displayTitle);
   const [pendingDelete, setPendingDelete] = useState(false);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    setTitleDraft(displayTitle);
-  }, [displayTitle]);
 
   useEffect(() => {
     if (!isMenuOpen) {
@@ -79,7 +78,25 @@ export default function TaskRunRow({ conversation, onOpen }: TaskRunRowProps) {
     [],
   );
 
-  const updateMutation = useUpdateConversationMutation(conversationId);
+  const archiveMutation = useArchiveConvoMutation();
+  const duplicateMutation = useDuplicateConversationMutation({
+    onSuccess: (data) => {
+      onOpen();
+      navigateToConvo(data.conversation);
+      showToast({
+        message: localize('com_ui_duplication_success'),
+        severity: NotificationSeverity.SUCCESS,
+        showIcon: true,
+      });
+    },
+    onError: () => {
+      showToast({
+        message: localize('com_ui_duplication_error'),
+        severity: NotificationSeverity.ERROR,
+        showIcon: true,
+      });
+    },
+  });
   const deleteMutation = useDeleteConversationMutation({
     onSuccess: () => {
       showToast({
@@ -97,9 +114,14 @@ export default function TaskRunRow({ conversation, onOpen }: TaskRunRowProps) {
     },
   });
 
+  const sharedLinksEnabled = startupConfig?.sharedLinksEnabled === true;
+  const isDuplicateLoading = duplicateMutation.isLoading;
+  const isArchiveLoading = archiveMutation.isLoading;
+  const isDeleteLoading = deleteMutation.isLoading;
+
   const handleOpen = useCallback(() => {
     if (!conversationId) return;
-    if (typeof title === 'string' && title.length > 0) {
+    if (title.length > 0) {
       document.title = title;
     }
     onOpen();
@@ -112,41 +134,44 @@ export default function TaskRunRow({ conversation, onOpen }: TaskRunRowProps) {
     menuStore.hide();
   }, [conversationId, menuStore]);
 
-  const handleStartRename = useCallback(() => {
-    setTitleDraft(displayTitle);
-    setRenaming(true);
+  const handleShareClick = useCallback(() => {
+    if (!conversationId) return;
     menuStore.hide();
-  }, [displayTitle, menuStore]);
+    onRequestShare(conversationId, displayTitle);
+  }, [conversationId, displayTitle, menuStore, onRequestShare]);
 
-  const submitRename = useCallback(async () => {
-    const next = titleDraft.trim();
-    if (!conversationId || next === '' || next === displayTitle) {
-      setRenaming(false);
-      setTitleDraft(displayTitle);
-      return;
-    }
-    try {
-      await updateMutation.mutateAsync({ conversationId, title: next });
-      setRenaming(false);
-    } catch (err) {
-      logger.error('Failed to rename task run', err);
-      setTitleDraft(displayTitle);
-      setRenaming(false);
-      showToast({
-        message: localize('com_ui_rename_failed'),
-        severity: NotificationSeverity.ERROR,
-        showIcon: true,
-      });
-    }
-  }, [conversationId, displayTitle, localize, showToast, titleDraft, updateMutation]);
+  const handleDuplicateClick = useCallback(() => {
+    if (!conversationId || isDuplicateLoading) return;
+    duplicateMutation.mutate({ conversationId });
+    menuStore.hide();
+  }, [conversationId, duplicateMutation, isDuplicateLoading, menuStore]);
 
-  const cancelRename = useCallback(() => {
-    setTitleDraft(displayTitle);
-    setRenaming(false);
-  }, [displayTitle]);
+  const handleArchiveClick = useCallback(() => {
+    if (!conversationId || isArchiveLoading) return;
+    archiveMutation.mutate(
+      { conversationId, isArchived: true },
+      {
+        onSuccess: () => {
+          showToast({
+            message: localize('com_ui_convo_archived'),
+            severity: NotificationSeverity.SUCCESS,
+            showIcon: true,
+          });
+        },
+        onError: () => {
+          showToast({
+            message: localize('com_ui_archive_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
+    menuStore.hide();
+  }, [archiveMutation, conversationId, isArchiveLoading, localize, menuStore, showToast]);
 
   const handleDeleteClick = useCallback(() => {
-    if (!conversationId) return;
+    if (!conversationId || isDeleteLoading) return;
 
     if (!pendingDelete) {
       setPendingDelete(true);
@@ -170,15 +195,15 @@ export default function TaskRunRow({ conversation, onOpen }: TaskRunRowProps) {
       endpoint: lastMessage?.endpoint,
       source: 'button',
     });
-  }, [conversationId, deleteMutation, menuStore, pendingDelete, queryClient]);
+  }, [conversationId, deleteMutation, isDeleteLoading, menuStore, pendingDelete, queryClient]);
 
-  const isDeleteDisabled = deleteMutation.isLoading;
+  const itemClass =
+    'flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-hover focus:bg-surface-hover data-[disabled]:cursor-not-allowed data-[disabled]:opacity-60';
 
   return (
     <div
       className={cn(
-        'group relative flex h-12 w-full items-center rounded-lg outline-none transition-colors',
-        'focus-within:bg-surface-active-alt md:h-9',
+        'group relative flex h-12 w-full items-center rounded-lg outline-none transition-colors md:h-9',
         isMenuOpen ? 'bg-surface-active-alt' : 'hover:bg-surface-active-alt',
       )}
     >
@@ -186,14 +211,12 @@ export default function TaskRunRow({ conversation, onOpen }: TaskRunRowProps) {
         type="button"
         className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
         onClick={(event) => {
-          if (renaming) return;
           if (event.metaKey || event.ctrlKey) {
             handleOpenInNewTab();
             return;
           }
           handleOpen();
         }}
-        disabled={renaming}
         aria-label={localize('com_ui_conversation_label', { title: displayTitle })}
       >
         <EndpointIcon
@@ -202,28 +225,7 @@ export default function TaskRunRow({ conversation, onOpen }: TaskRunRowProps) {
           size={20}
           context="menu-item"
         />
-        {renaming ? (
-          <input
-            autoFocus
-            value={titleDraft}
-            onChange={(event) => setTitleDraft(event.target.value)}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                void submitRename();
-              } else if (event.key === 'Escape') {
-                event.preventDefault();
-                cancelRename();
-              }
-            }}
-            onBlur={() => void submitRename()}
-            className="min-w-0 flex-1 truncate rounded-md border border-border-medium bg-surface-primary px-1.5 py-0.5 text-sm text-text-primary outline-none focus:border-text-primary"
-            aria-label={localize('com_ui_rename_conversation')}
-          />
-        ) : (
-          <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{displayTitle}</span>
-        )}
+        <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{displayTitle}</span>
       </button>
 
       <Ariakit.MenuProvider store={menuStore}>
@@ -245,29 +247,46 @@ export default function TaskRunRow({ conversation, onOpen }: TaskRunRowProps) {
           gutter={4}
           className="popover-ui z-[1100] min-w-[180px] py-1"
         >
-          <Ariakit.MenuItem
-            className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-hover focus:bg-surface-hover"
-            onClick={handleOpenInNewTab}
-          >
+          <Ariakit.MenuItem className={itemClass} onClick={handleOpenInNewTab}>
             <ExternalLink className="h-4 w-4 text-text-secondary" aria-hidden="true" />
             {localize('com_ui_open_in_new_tab')}
           </Ariakit.MenuItem>
+
+          {sharedLinksEnabled && (
+            <Ariakit.MenuItem className={itemClass} onClick={handleShareClick}>
+              <Share2 className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+              {localize('com_ui_share')}
+            </Ariakit.MenuItem>
+          )}
+
           <Ariakit.MenuItem
-            className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-hover focus:bg-surface-hover"
-            onClick={handleStartRename}
+            className={itemClass}
+            disabled={isDuplicateLoading}
+            hideOnClick={false}
+            onClick={handleDuplicateClick}
           >
-            <Pen className="h-4 w-4 text-text-secondary" aria-hidden="true" />
-            {localize('com_ui_rename')}
+            <CopyPlus className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+            {localize('com_ui_duplicate')}
           </Ariakit.MenuItem>
+
           <Ariakit.MenuItem
-            disabled={isDeleteDisabled}
+            className={itemClass}
+            disabled={isArchiveLoading}
+            hideOnClick={false}
+            onClick={handleArchiveClick}
+          >
+            <Archive className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+            {localize('com_ui_archive')}
+          </Ariakit.MenuItem>
+
+          <Ariakit.MenuItem
+            disabled={isDeleteLoading}
             hideOnClick={false}
             className={cn(
-              'flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm outline-none',
+              'flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-60',
               pendingDelete
                 ? 'bg-red-500/10 text-red-600 hover:bg-red-500/15 focus:bg-red-500/15 dark:text-red-400'
                 : 'text-text-primary hover:bg-surface-hover focus:bg-surface-hover',
-              isDeleteDisabled && 'cursor-not-allowed opacity-60',
             )}
             onClick={handleDeleteClick}
           >
@@ -278,9 +297,7 @@ export default function TaskRunRow({ conversation, onOpen }: TaskRunRowProps) {
               )}
               aria-hidden="true"
             />
-            {pendingDelete
-              ? localize('com_ui_confirm_delete')
-              : localize('com_ui_delete')}
+            {pendingDelete ? localize('com_ui_confirm_delete') : localize('com_ui_delete')}
           </Ariakit.MenuItem>
         </Ariakit.Menu>
       </Ariakit.MenuProvider>
