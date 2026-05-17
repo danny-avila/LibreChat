@@ -26,9 +26,9 @@ This guide walks through end-to-end manual QA of the Scheduled Tasks feature. It
    ```
 6. **Run unit tests** (from the project root, matches `.github/CONTRIBUTING.md`):
    ```bash
-   npm run test:api          # backend (legacy /api)
-   npm run test:packages:api # new /packages/api (incl. timezone helpers, queue service)
-   npm run test:client       # frontend
+   npm run test:api          # backend (legacy /api): job processor
+   npm run test:packages:api # new /packages/api: timezone helpers + queue service
+   npm run test:client       # frontend: cron presets, timezones, form-state helpers
    ```
 7. **Start the app** in two terminals:
    - Terminal 1: `npm run backend:dev`

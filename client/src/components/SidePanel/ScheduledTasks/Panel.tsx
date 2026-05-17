@@ -10,67 +10,10 @@ import {
   useUpdateScheduledTask,
 } from '~/data-provider';
 import { CRON_PRESETS, describeCronExpression } from './cronPresets';
-import { getBrowserTimezone, getSupportedTimezones } from './timezones';
+import { getSupportedTimezones } from './timezones';
+import { buildInitialTask, nextPauseStatus, taskToFormState } from './helpers';
+import type { ScheduledTaskFormState } from './helpers';
 import TaskRunsModal from './TaskRunsModal';
-
-type NewTaskState = {
-  targetType: 'agent' | 'assistant';
-  targetId: string;
-  triggerType: 'cron' | 'interval' | 'date';
-  expression: string;
-  timezone: string;
-  payload: {
-    text?: string;
-    isTemporary?: boolean;
-    ephemeralAgent?: {
-      web_search?: boolean;
-      file_search?: boolean;
-      execute_code?: boolean;
-      mcp?: string[];
-    };
-  };
-  status: 'active' | 'paused' | 'completed' | 'failed';
-};
-
-const buildInitialTask = (): NewTaskState => ({
-  targetType: 'agent',
-  targetId: '',
-  triggerType: 'cron',
-  expression: '0 * * * *',
-  timezone: getBrowserTimezone(),
-  payload: {
-    text: '',
-    isTemporary: false,
-    ephemeralAgent: {
-      web_search: false,
-      file_search: false,
-      execute_code: false,
-      mcp: [],
-    },
-  },
-  status: 'active',
-});
-
-function taskToFormState(task: TScheduledTask): NewTaskState {
-  return {
-    targetType: task.targetType,
-    targetId: task.targetId,
-    triggerType: task.triggerType,
-    expression: task.expression,
-    timezone: task.timezone || getBrowserTimezone(),
-    payload: {
-      text: task.payload?.text ?? '',
-      isTemporary: task.payload?.isTemporary ?? false,
-      ephemeralAgent: {
-        web_search: task.payload?.ephemeralAgent?.web_search ?? false,
-        file_search: task.payload?.ephemeralAgent?.file_search ?? false,
-        execute_code: task.payload?.ephemeralAgent?.execute_code ?? false,
-        mcp: task.payload?.ephemeralAgent?.mcp ?? [],
-      },
-    },
-    status: task.status,
-  };
-}
 
 export default function ScheduledTasksPanel() {
   const localize = useLocalize();
@@ -83,7 +26,7 @@ export default function ScheduledTasksPanel() {
   const [isCreating, setIsCreating] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [viewingTaskId, setViewingTaskId] = useState<string | null>(null);
-  const [newTask, setNewTask] = useState<NewTaskState>(buildInitialTask);
+  const [newTask, setNewTask] = useState<ScheduledTaskFormState>(buildInitialTask);
 
   const timezoneOptions = useMemo(
     () => getSupportedTimezones().map((tz) => ({ label: tz, value: tz })),
@@ -137,8 +80,7 @@ export default function ScheduledTasksPanel() {
   };
 
   const togglePause = (task: TScheduledTask) => {
-    const nextStatus: TScheduledTask['status'] = task.status === 'paused' ? 'active' : 'paused';
-    updateMutation.mutate({ id: task._id, payload: { status: nextStatus } });
+    updateMutation.mutate({ id: task._id, payload: { status: nextPauseStatus(task.status) } });
   };
 
   const isSubmitting = createMutation.isLoading || updateMutation.isLoading;
