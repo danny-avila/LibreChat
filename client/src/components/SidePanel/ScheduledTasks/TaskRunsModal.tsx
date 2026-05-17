@@ -53,7 +53,7 @@ export default function TaskRunsModal({ taskId, isOpen, onClose }: TaskRunsModal
                     </span>
                   </div>
                   <Button variant="ghost" size="sm">
-                    {localize('com_ui_view')}
+                    View
                   </Button>
                 </div>
               ))}

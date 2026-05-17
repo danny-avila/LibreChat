@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useMCPServerManager } from '~/hooks';
 import { useGetScheduledTasks, useCreateScheduledTask, useDeleteScheduledTask } from '~/data-provider';
 import { CalendarClock, Plus, Trash2, History } from 'lucide-react';
-import { Button, Input, SelectDropDown, TextareaAutosize, Checkbox } from '@librechat/client';
+import { Button, Input, SelectDropDown, TextareaAutosize, Checkbox, Switch } from '@librechat/client';
 import TaskRunsModal from './TaskRunsModal';
 
 export default function ScheduledTasksPanel() {
@@ -10,16 +10,43 @@ export default function ScheduledTasksPanel() {
   const { data: tasks, isLoading } = useGetScheduledTasks();
   const createMutation = useCreateScheduledTask();
   const deleteMutation = useDeleteScheduledTask();
+  const { availableMCPServers } = useMCPServerManager();
 
   const [isCreating, setIsCreating] = useState(false);
   const [viewingTaskId, setViewingTaskId] = useState<string | null>(null);
-  const [newTask, setNewTask] = useState({
-    targetType: 'agent' as const,
+  const [newTask, setNewTask] = useState<{
+    targetType: 'agent' | 'assistant';
+    targetId: string;
+    triggerType: 'cron' | 'interval' | 'date';
+    expression: string;
+    payload: {
+      text?: string;
+      isTemporary?: boolean;
+      ephemeralAgent?: {
+        web_search?: boolean;
+        file_search?: boolean;
+        execute_code?: boolean;
+        mcp?: string[];
+      };
+    };
+    status: 'active' | 'paused' | 'completed' | 'failed';
+    outputConversationId: string;
+  }>({
+    targetType: 'agent',
     targetId: '',
-    triggerType: 'cron' as const,
+    triggerType: 'cron',
     expression: '0 * * * *',
-    payload: { text: '', isTemporary: false },
-    status: 'active' as const,
+    payload: { 
+      text: '', 
+      isTemporary: false,
+      ephemeralAgent: {
+        web_search: false,
+        file_search: false,
+        execute_code: false,
+        mcp: []
+      }
+    },
+    status: 'active',
     outputConversationId: '',
   });
 
@@ -27,10 +54,8 @@ export default function ScheduledTasksPanel() {
     if (!newTask.targetId || !newTask.payload.text) return;
     
     // Create a copy and remove empty optional fields
-    const payloadToSubmit = { ...newTask };
-    if (!payloadToSubmit.outputConversationId) {
-      delete payloadToSubmit.outputConversationId;
-    }
+    const { outputConversationId, ...rest } = newTask;
+    const payloadToSubmit: any = outputConversationId ? { ...rest, outputConversationId } : rest;
 
     createMutation.mutate(payloadToSubmit, {
       onSuccess: () => {
@@ -40,7 +65,16 @@ export default function ScheduledTasksPanel() {
           targetId: '',
           triggerType: 'cron',
           expression: '0 * * * *',
-          payload: { text: '', isTemporary: false },
+          payload: { 
+            text: '', 
+            isTemporary: false,
+            ephemeralAgent: {
+              web_search: false,
+              file_search: false,
+              execute_code: false,
+              mcp: [] as string[]
+            }
+          },
           status: 'active',
           outputConversationId: '',
         });
@@ -125,6 +159,65 @@ export default function ScheduledTasksPanel() {
             />
           </div>
 
+          <div className="flex flex-col gap-3 mt-2 rounded-md border border-border-light p-3 bg-surface-secondary">
+            <label className="text-sm font-medium">{localize('com_assistants_capabilities')}</label>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <label htmlFor="web_search" className="text-sm cursor-pointer">{localize('com_ui_tool_name_web_search') || 'Web Search'}</label>
+                <Switch
+                  id="web_search"
+                  checked={newTask.payload.ephemeralAgent?.web_search}
+                  onCheckedChange={(checked) => setNewTask({ ...newTask, payload: { ...newTask.payload, ephemeralAgent: { ...newTask.payload.ephemeralAgent, web_search: !!checked } } })}
+                  aria-label="Toggle Web Search"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <label htmlFor="file_search" className="text-sm cursor-pointer">{localize('com_ui_tool_name_file_search') || 'File Search'}</label>
+                <Switch
+                  id="file_search"
+                  checked={newTask.payload.ephemeralAgent?.file_search}
+                  onCheckedChange={(checked) => setNewTask({ ...newTask, payload: { ...newTask.payload, ephemeralAgent: { ...newTask.payload.ephemeralAgent, file_search: !!checked } } })}
+                  aria-label="Toggle File Search"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <label htmlFor="execute_code" className="text-sm cursor-pointer">{localize('com_ui_tool_name_code') || 'Code Execution'}</label>
+                <Switch
+                  id="execute_code"
+                  checked={newTask.payload.ephemeralAgent?.execute_code}
+                  onCheckedChange={(checked) => setNewTask({ ...newTask, payload: { ...newTask.payload, ephemeralAgent: { ...newTask.payload.ephemeralAgent, execute_code: !!checked } } })}
+                  aria-label="Toggle Code Execution"
+                />
+              </div>
+            </div>
+
+            {availableMCPServers.length > 0 && (
+              <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-border-light">
+                <label className="text-sm font-medium">{localize('com_ui_mcp_servers') || 'MCP Servers'}</label>
+                <div className="flex flex-col gap-2 max-h-32 overflow-y-auto">
+                  {availableMCPServers.map(server => (
+                    <div key={server.serverName} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`mcp_${server.serverName}`}
+                        checked={newTask.payload.ephemeralAgent?.mcp?.includes(server.serverName)}
+                        onCheckedChange={(checked) => {
+                          const mcp = newTask.payload.ephemeralAgent?.mcp || [];
+                          const newMcp = checked 
+                            ? [...mcp, server.serverName]
+                            : mcp.filter(name => name !== server.serverName);
+                          setNewTask({ ...newTask, payload: { ...newTask.payload, ephemeralAgent: { ...newTask.payload.ephemeralAgent, mcp: newMcp } } });
+                        }}
+                      />
+                      <label htmlFor={`mcp_${server.serverName}`} className="text-sm cursor-pointer truncate">
+                        {server.serverName}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-2 mt-1">
             <Checkbox
               id="isTemporary"
@@ -146,9 +239,9 @@ export default function ScheduledTasksPanel() {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={createMutation.isPending || !newTask.targetId || !newTask.payload.text}
+              disabled={createMutation.isLoading || !newTask.targetId || !newTask.payload.text}
             >
-              {createMutation.isPending ? localize('com_ui_saving') : localize('com_ui_save')}
+              {createMutation.isLoading ? localize('com_ui_saving') : localize('com_ui_save')}
             </Button>
           </div>
         </div>
