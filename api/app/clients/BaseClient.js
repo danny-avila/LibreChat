@@ -807,11 +807,15 @@ class BaseClient {
       return { message: savedMessage };
     }
 
+    const scheduledTaskMeta = options?.req?.scheduledTaskMeta;
     const fieldsToKeep = {
       conversationId: message.conversationId,
       endpoint: options.endpoint,
       endpointType: options.endpointType,
       ...endpointOptions,
+      ...(scheduledTaskMeta?.isScheduled === true
+        ? { isScheduled: true, taskId: scheduledTaskMeta.taskId }
+        : {}),
     };
     const conversationCreatedAt = options?.req?.conversationCreatedAt;
     const createdAtOnInsert =

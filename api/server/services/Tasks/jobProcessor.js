@@ -1,7 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { Constants, parseCompactConvo } = require('librechat-data-provider');
 const { getTaskQueueService } = require('@librechat/api');
-const { getScheduledTask, updateScheduledTask, saveConvo, getUserById } = require('~/models');
+const { getScheduledTask, updateScheduledTask, getUserById } = require('~/models');
 const AgentController = require('~/server/controllers/agents/request');
 const { initializeClient, buildOptions } = require('~/server/services/Endpoints/agents');
 const addTitle = require('~/server/services/Endpoints/agents/title');
@@ -161,27 +161,14 @@ const processJob = async (job) => {
   };
 
   try {
+    /**
+     * The agent flow tags the conversation via `req.scheduledTaskMeta` →
+     * `BaseClient.saveMessageToDatabase` (sets `isScheduled` + `taskId` on the
+     * first save). ResumableAgentController returns immediately, so we can't
+     * tag the doc here — it would race the agent's own first save and either
+     * no-op (with `noUpsert`) or fight the agent's writes.
+     */
     await AgentController(req, res, next, initializeClient, addTitle);
-
-    const conversationId = req.body.conversationId;
-    if (conversationId && conversationId !== 'new' && req.body.isTemporary !== true) {
-      try {
-        await saveConvo(
-          { userId: task.userId },
-          { conversationId, isScheduled: true, taskId },
-          {
-            context: 'jobProcessor - mark scheduled run',
-            noUpsert: true,
-          },
-        );
-      } catch (err) {
-        logger.error(
-          `[JobProcessor] Failed to tag conversation ${conversationId} for task ${taskId}:`,
-          err,
-        );
-      }
-    }
-
     await updateScheduledTask(taskId, { lastRunAt: new Date() }, task.userId);
     logger.info(`Successfully executed scheduled task ${taskId}`);
   } catch (error) {

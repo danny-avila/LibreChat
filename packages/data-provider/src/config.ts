@@ -56,6 +56,8 @@ export const excludedKeys = new Set([
   'files',
   'spec',
   'disableParams',
+  'isScheduled',
+  'taskId',
 ]);
 
 export enum SettingsViews {
