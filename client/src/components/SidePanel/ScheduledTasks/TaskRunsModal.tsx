@@ -73,9 +73,27 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
 
   const isEmpty = !isLoading && conversations.length === 0;
 
+  /**
+   * Radix Dialog treats any pointer event outside `DialogContent` as a request
+   * to close. The `Convo` row's three-dot menu (Ariakit popover) renders in a
+   * separate portal, so clicking a menu item would otherwise dismiss the modal
+   * before the item's own `onClick` runs. Veto the dismiss when the event
+   * originates inside any menu/popover element.
+   */
+  const handleInteractOutside = useCallback((event: Event) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('[role="menu"], [data-radix-popper-content-wrapper]')) {
+      event.preventDefault();
+    }
+  }, []);
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col">
+      <DialogContent
+        className="flex max-h-[80vh] max-w-2xl flex-col"
+        onPointerDownOutside={handleInteractOutside}
+        onInteractOutside={handleInteractOutside}
+      >
         <DialogHeader>
           <DialogTitle>{localize('com_sidepanel_task_runs')}</DialogTitle>
           {taskName && <span className="text-sm text-text-secondary">{taskName}</span>}
