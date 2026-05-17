@@ -4,20 +4,36 @@ This guide walks through end-to-end manual QA of the Scheduled Tasks feature. It
 
 ## Prerequisites
 
-1. **Redis** is required for BullMQ. Spin up a local instance:
+1. **Node.js & MongoDB.** Use Node v20.19.0+ / ^22.12.0 / ≥23, and a reachable MongoDB instance (Community Server, Atlas, or `mongodb-memory-server`). Update `MONGO_URI` in `.env` accordingly.
+2. **Install dependencies and build all compiled code** (Turborepo). From the project root:
+   ```bash
+   npm run smart-reinstall   # installs deps + builds workspaces
+   # or, after subsequent pulls:
+   npm run build
+   ```
+3. **Lint check before testing** (the project ships husky pre-commit hooks; run manually to catch issues early):
+   ```bash
+   npm run lint
+   ```
+4. **Redis** is required for BullMQ. Spin up a local instance:
    ```bash
    docker run -d -p 6379:6379 --name librechat-redis redis
    ```
-2. **Environment variables** in `.env`:
+5. **Environment variables** in `.env`:
    ```env
    USE_REDIS=true
    REDIS_URI=redis://localhost:6379
    ```
-3. **Build and start** in two terminals:
-   - `npm run build` (one time, after pulling)
+6. **Run unit tests** (from the project root, matches `.github/CONTRIBUTING.md`):
+   ```bash
+   npm run test:api          # backend (legacy /api)
+   npm run test:packages:api # new /packages/api (incl. timezone helpers, queue service)
+   npm run test:client       # frontend
+   ```
+7. **Start the app** in two terminals:
    - Terminal 1: `npm run backend:dev`
    - Terminal 2: `npm run frontend:dev`
-4. Log in to `http://localhost:3090`.
+8. Log in to `http://localhost:3090`.
 
 ---
 
@@ -118,6 +134,24 @@ Expected: both return `404 Task not found`. User A's task remains unaffected.
 
 Expected: no further `Executing scheduled task ...` log lines for that task ID — BullMQ repeatable job has been removed.
 
+### 8a. Pause and resume a task (UI)
+- Create a new every-minute cron task and wait until you've seen at least one successful run in the Task Runs modal.
+- On the task card, click the **Pause** icon. The status badge should flip to `paused` (yellow) and the icon should become **Play**.
+- Wait at least 2 minutes — no new run entries should appear in the Task Runs modal and backend logs should be quiet for this task.
+- Click **Play** (resume). Status flips back to `active` (green) and within ~60 s a new run shows up.
+
+### 8b. Edit a task in place (UI)
+- On any existing task, click the **Pencil** icon.
+- The form opens prepopulated with the task's values and the heading reads **Edit Task**.
+- Change the prompt and switch the trigger from `Cron` to `Interval` (e.g. `120000` ms). Save.
+- The task card updates immediately. New runs use the new prompt and interval.
+
+### 8c. Cron preset picker (UI)
+- Open the create form, leave **Trigger Type** as **Cron**.
+- Use the **Quick presets…** dropdown beneath the cron input — selecting "Every 5 minutes" should fill the input with `*/5 * * * *`.
+- Modify the field to `*/30 * * * *`. The helper line below should read "Every 30 minutes".
+- For an expression we can't describe (e.g. `0 9 * * 1-3`) the helper line should disappear — power users can still save it. Submit and confirm the task is created.
+
 ### 9. API smoke test (cURL)
 Replace `<TOKEN>` with the JWT from your browser's network tab.
 
@@ -157,8 +191,13 @@ Expected: after restart, BullMQ should resume firing the existing repeatable job
 ## What to capture for the PR
 
 - A short screen recording (or annotated screenshots) covering:
-  - Creating a task with Web Search + MCP enabled
+  - Creating a task with Web Search + MCP enabled, using the **Cron preset picker**
+  - Pausing → resuming → editing a task
   - Opening the **Task Runs** modal and navigating into a run
   - The chat history sidebar staying clean (no scheduled runs)
 - Logs snippet showing one successful background execution.
-- Confirmation that all 10 test cases above pass.
+- Confirmation that all test cases above pass.
+
+## Companion docs PR
+
+User-facing documentation lives in the [`LibreChat-AI/librechat.ai`](https://github.com/LibreChat-AI/librechat.ai) repo. This PR is paired with `content/docs/features/scheduled_tasks.mdx` (registered in `content/docs/features/meta.json`). Link the docs PR in this PR's description before requesting review.
