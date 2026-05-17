@@ -22,6 +22,7 @@ export type ScheduledTaskFormState = {
       web_search?: boolean;
       file_search?: boolean;
       execute_code?: boolean;
+      skills?: boolean;
       mcp?: string[];
     };
   };
@@ -45,6 +46,7 @@ export function buildInitialTask(): ScheduledTaskFormState {
         web_search: false,
         file_search: false,
         execute_code: false,
+        skills: false,
         mcp: [],
       },
     },
@@ -73,6 +75,7 @@ export function taskToFormState(task: TScheduledTask): ScheduledTaskFormState {
         web_search: task.payload?.ephemeralAgent?.web_search ?? false,
         file_search: task.payload?.ephemeralAgent?.file_search ?? false,
         execute_code: task.payload?.ephemeralAgent?.execute_code ?? false,
+        skills: task.payload?.ephemeralAgent?.skills ?? false,
         mcp: task.payload?.ephemeralAgent?.mcp ?? [],
       },
     },

@@ -11,7 +11,9 @@ import {
 } from '@librechat/client';
 import {
   alternateName,
+  Permissions,
   EModelEndpoint,
+  PermissionTypes,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -21,7 +23,12 @@ import {
   useCreateScheduledTask,
   useUpdateScheduledTask,
 } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import {
+  useLocalize,
+  useHasAccess,
+  useGetAgentsConfig,
+  useAgentCapabilities,
+} from '~/hooks';
 import {
   buildInitialTask,
   formStateToCreatePayload,
@@ -50,6 +57,13 @@ export default function TaskForm({ task, onSubmitted }: TaskFormProps) {
   const updateMutation = useUpdateScheduledTask();
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
   const { data: modelsData = {} } = useGetModelsQuery();
+  const { agentsConfig } = useGetAgentsConfig({ endpointsConfig });
+  const { skillsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
+  const canUseSkills = useHasAccess({
+    permissionType: PermissionTypes.SKILLS,
+    permission: Permissions.USE,
+  });
+  const showSkillsToggle = canUseSkills && skillsEnabled;
 
   const [state, setState] = useState<ScheduledTaskFormState>(() =>
     task ? taskToFormState(task) : buildInitialTask(),
@@ -331,6 +345,19 @@ export default function TaskForm({ task, onSubmitted }: TaskFormProps) {
             aria-label={localize('com_ui_tool_name_code')}
           />
         </div>
+        {showSkillsToggle && (
+          <div className="flex items-center justify-between">
+            <label htmlFor="skills" className="text-sm text-text-primary">
+              {localize('com_ui_skills')}
+            </label>
+            <Switch
+              id="skills"
+              checked={state.payload.ephemeralAgent?.skills === true}
+              onCheckedChange={(checked) => updateEphemeralAgent({ skills: !!checked })}
+              aria-label={localize('com_ui_skills')}
+            />
+          </div>
+        )}
         <div className="mt-2 border-t border-border-light pt-3">
           <MCPServerPicker
             value={state.payload.ephemeralAgent?.mcp ?? []}

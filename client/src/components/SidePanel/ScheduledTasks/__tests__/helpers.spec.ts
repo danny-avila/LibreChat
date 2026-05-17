@@ -38,6 +38,7 @@ describe('buildInitialTask', () => {
       web_search: false,
       file_search: false,
       execute_code: false,
+      skills: false,
       mcp: [],
     });
   });
@@ -88,6 +89,7 @@ describe('taskToFormState', () => {
           web_search: true,
           file_search: false,
           execute_code: true,
+          skills: false,
           mcp: ['github', 'jira'],
         },
       },
@@ -110,6 +112,7 @@ describe('taskToFormState', () => {
       web_search: false,
       file_search: false,
       execute_code: false,
+      skills: false,
       mcp: [],
     });
   });
@@ -121,6 +124,17 @@ describe('taskToFormState', () => {
   it('falls back to legacy targetId for model name when payload.model is missing', () => {
     const legacy = taskToFormState({ ...baseTask, payload: { endpoint: 'bedrock' } });
     expect(legacy.model).toBe('claude-3-5-sonnet');
+  });
+
+  it('round-trips the ephemeral skills toggle', () => {
+    const state = taskToFormState({
+      ...baseTask,
+      payload: {
+        ...baseTask.payload,
+        ephemeralAgent: { ...baseTask.payload.ephemeralAgent, skills: true },
+      },
+    });
+    expect(state.payload.ephemeralAgent?.skills).toBe(true);
   });
 });
 
