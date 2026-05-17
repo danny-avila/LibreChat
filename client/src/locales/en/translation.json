@@ -620,6 +620,7 @@
   "com_sidepanel_new_task": "New Task",
   "com_sidepanel_target_type": "Target Type",
   "com_sidepanel_target_id": "Target ID (Agent/Assistant ID)",
+  "com_sidepanel_output_conversation_id": "Output Conversation ID (Optional)",
   "com_sidepanel_cron_expression": "Cron Expression",
   "com_sidepanel_prompt": "Prompt",
   "com_sidepanel_no_tasks": "No scheduled tasks found.",

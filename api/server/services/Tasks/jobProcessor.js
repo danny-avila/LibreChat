@@ -26,7 +26,7 @@ const processJob = async (job) => {
       user: { id: task.userId },
       body: {
         text: task.payload.text || 'Scheduled Task Execution',
-        conversationId: 'new', // Or a specific conversation if we want to thread them
+        conversationId: task.outputConversationId || 'new',
         endpointOption: task.payload.endpointOption || {},
         agent_id: task.targetType === 'agent' ? task.targetId : undefined,
         // Add other necessary payload fields
@@ -61,8 +61,12 @@ const processJob = async (job) => {
     // Execute the agent controller
     await AgentController(req, res, next, initializeClient, addTitle);
 
-    // Update lastRunAt
-    await updateScheduledTask(taskId, { lastRunAt: new Date() });
+    // Update lastRunAt and potentially outputConversationId if it was new
+    const updateData = { lastRunAt: new Date() };
+    if (!task.outputConversationId && req.body.conversationId !== 'new') {
+      updateData.outputConversationId = req.body.conversationId;
+    }
+    await updateScheduledTask(taskId, updateData);
 
     logger.info(`Successfully executed scheduled task ${taskId}`);
   } catch (error) {

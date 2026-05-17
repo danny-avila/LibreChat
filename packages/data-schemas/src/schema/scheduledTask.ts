@@ -39,6 +39,9 @@ const scheduledTaskSchema = new Schema<IScheduledTask>(
     lastRunAt: {
       type: Date,
     },
+    outputConversationId: {
+      type: String,
+    },
     tenantId: {
       type: String,
       index: true,

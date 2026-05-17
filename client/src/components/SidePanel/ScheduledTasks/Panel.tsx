@@ -18,11 +18,19 @@ export default function ScheduledTasksPanel() {
     expression: '0 * * * *',
     payload: { text: '' },
     status: 'active' as const,
+    outputConversationId: '',
   });
 
   const handleCreate = () => {
     if (!newTask.targetId || !newTask.payload.text) return;
-    createMutation.mutate(newTask, {
+    
+    // Create a copy and remove empty optional fields
+    const payloadToSubmit = { ...newTask };
+    if (!payloadToSubmit.outputConversationId) {
+      delete payloadToSubmit.outputConversationId;
+    }
+
+    createMutation.mutate(payloadToSubmit, {
       onSuccess: () => {
         setIsCreating(false);
         setNewTask({
@@ -32,6 +40,7 @@ export default function ScheduledTasksPanel() {
           expression: '0 * * * *',
           payload: { text: '' },
           status: 'active',
+          outputConversationId: '',
         });
       },
     });
@@ -80,6 +89,16 @@ export default function ScheduledTasksPanel() {
               value={newTask.targetId}
               onChange={(e) => setNewTask({ ...newTask, targetId: e.target.value })}
               placeholder="e.g. agent-123"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium">{localize('com_sidepanel_output_conversation_id')}</label>
+            <Input
+              type="text"
+              value={newTask.outputConversationId}
+              onChange={(e) => setNewTask({ ...newTask, outputConversationId: e.target.value })}
+              placeholder="Leave blank to create a new thread"
             />
           </div>
 

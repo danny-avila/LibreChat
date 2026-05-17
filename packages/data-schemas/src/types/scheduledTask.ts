@@ -9,6 +9,7 @@ export interface IScheduledTask extends Document {
   payload: Record<string, unknown>;
   status: 'active' | 'paused' | 'completed' | 'failed';
   lastRunAt?: Date;
+  outputConversationId?: string;
   tenantId?: string;
   createdAt: Date;
   updatedAt: Date;

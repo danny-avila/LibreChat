@@ -8,6 +8,7 @@ export type TScheduledTask = {
   payload: Record<string, unknown>;
   status: 'active' | 'paused' | 'completed' | 'failed';
   lastRunAt?: string;
+  outputConversationId?: string;
   createdAt: string;
   updatedAt: string;
 };
