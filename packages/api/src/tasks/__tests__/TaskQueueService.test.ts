@@ -33,8 +33,20 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
 }));
 
-jest.mock('../../cache/redisClients', () => ({
-  ioredisClient: {},
+jest.mock('ioredis', () => {
+  const Mock = jest.fn().mockImplementation(() => ({
+    on: jest.fn(),
+    quit: jest.fn().mockResolvedValue(undefined),
+  }));
+  return { __esModule: true, default: Mock };
+});
+
+jest.mock('../../cache/cacheConfig', () => ({
+  cacheConfig: {
+    USE_REDIS: true,
+    REDIS_URI: 'redis://127.0.0.1:6379',
+    REDIS_KEY_PREFIX: '',
+  },
 }));
 
 import { TaskQueueService } from '../TaskQueueService';

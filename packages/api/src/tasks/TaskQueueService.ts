@@ -1,12 +1,14 @@
+import IoRedis from 'ioredis';
 import { Queue, Worker } from 'bullmq';
 import { logger } from '@librechat/data-schemas';
-import { ioredisClient } from '../cache/redisClients';
+import { cacheConfig } from '../cache/cacheConfig';
 import { isValidTimezone, resolveDateTriggerMillis } from './timezone';
 import type { Job, RepeatOptions } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Types } from 'mongoose';
 
 const QUEUE_NAME = 'scheduled-tasks';
+const QUEUE_PREFIX = `${cacheConfig.REDIS_KEY_PREFIX || 'librechat'}:bull`;
 
 export type JobProcessor = (job: Job) => Promise<void>;
 
@@ -21,8 +23,26 @@ interface ScheduledTaskJobInput {
 export class TaskQueueService {
   private queue: Queue | null = null;
   private worker: Worker | null = null;
+  private queueConnection: Redis | null = null;
+  private workerConnection: Redis | null = null;
   private jobProcessor: JobProcessor | null = null;
   private initialized = false;
+
+  /**
+   * BullMQ refuses any ioredis client that has `keyPrefix` set (it uses raw
+   * Lua scripts that don't honor client-side prefixing), and a Worker's
+   * blocking connection must have `maxRetriesPerRequest: null`. The shared
+   * `ioredisClient` violates both, so we create dedicated connections here
+   * and namespace queue keys via BullMQ's own `prefix` option.
+   */
+  private buildConnection(forWorker: boolean): Redis | null {
+    if (!cacheConfig.USE_REDIS || !cacheConfig.REDIS_URI) {
+      return null;
+    }
+    return new IoRedis(cacheConfig.REDIS_URI, {
+      maxRetriesPerRequest: forWorker ? null : 3,
+    });
+  }
 
   /**
    * Lazy-initialize the Queue/Worker so simply importing this module does not
@@ -34,13 +54,16 @@ export class TaskQueueService {
     }
     this.initialized = true;
 
-    if (!ioredisClient) {
+    this.queueConnection = this.buildConnection(false);
+    this.workerConnection = this.buildConnection(true);
+    if (!this.queueConnection || !this.workerConnection) {
       logger.warn('Redis is not configured. Scheduled tasks will not be processed.');
       return;
     }
 
     this.queue = new Queue(QUEUE_NAME, {
-      connection: ioredisClient as Redis,
+      connection: this.queueConnection,
+      prefix: QUEUE_PREFIX,
     });
 
     this.worker = new Worker(
@@ -49,7 +72,8 @@ export class TaskQueueService {
         await this.processJob(job);
       },
       {
-        connection: ioredisClient as Redis,
+        connection: this.workerConnection,
+        prefix: QUEUE_PREFIX,
       },
     );
 
