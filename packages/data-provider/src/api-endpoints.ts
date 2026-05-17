@@ -491,3 +491,6 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+export const scheduledTasks = () => `${BASE_URL}/api/scheduled-tasks`;
+export const scheduledTask = (id: string) => `${scheduledTasks()}/${id}`;

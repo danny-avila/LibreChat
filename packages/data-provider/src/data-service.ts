@@ -982,8 +982,9 @@ export const createSkillNode = (
   skillId: string,
   data: FormData | t.TCreateSkillNodeRequest,
 ): Promise<t.TSkillNode> => {
-  const name = data instanceof FormData ? (data.get('name') as string) || 'untitled' : data.name;
-  const type = data instanceof FormData ? 'file' : data.type;
+  const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
+  const name = isFormData ? ((data as FormData).get('name') as string) || 'untitled' : (data as t.TCreateSkillNodeRequest).name;
+  const type = isFormData ? 'file' : (data as t.TCreateSkillNodeRequest).type;
   const now = new Date().toISOString();
   return Promise.resolve({
     _id: `pending-${now}`,
@@ -1281,3 +1282,12 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+// Scheduled Tasks
+export const getScheduledTasks = () => request.get<t.TScheduledTask[]>(endpoints.scheduledTasks());
+export const createScheduledTask = (payload: t.TCreateScheduledTask) =>
+  request.post(endpoints.scheduledTasks(), payload) as Promise<t.TScheduledTask>;
+export const updateScheduledTask = (id: string, payload: t.TUpdateScheduledTask) =>
+  request.put(endpoints.scheduledTask(id), payload) as Promise<t.TScheduledTask>;
+export const deleteScheduledTask = (id: string) =>
+  request.delete(endpoints.scheduledTask(id)) as Promise<{ success: boolean }>;

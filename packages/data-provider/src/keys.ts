@@ -64,6 +64,7 @@ export enum QueryKeys {
   mcpServer = 'mcpServer',
   /* Active Jobs */
   activeJobs = 'activeJobs',
+  scheduledTasks = 'scheduledTasks',
   /* Agent API Keys */
   agentApiKeys = 'agentApiKeys',
   /* Skills */
@@ -108,6 +109,9 @@ export enum MutationKeys {
   deleteAgentAction = 'deleteAgentAction',
   revertAgentVersion = 'revertAgentVersion',
   deleteUser = 'deleteUser',
+  createScheduledTask = 'createScheduledTask',
+  updateScheduledTask = 'updateScheduledTask',
+  deleteScheduledTask = 'deleteScheduledTask',
   updateRole = 'updateRole',
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',

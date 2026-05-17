@@ -211,6 +211,7 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+  app.use('/api/scheduled-tasks', routes.scheduledTasks);
 
   app.use('/metrics', metricsRouter);
 
