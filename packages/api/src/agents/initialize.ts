@@ -70,7 +70,12 @@ function appendAdditionalInstructions(agent: Agent, text?: string | null): void 
  */
 export type InitializedAgent = Agent & {
   tools: GenericTool[];
+  /** @deprecated use requestAttachments or agentContextAttachments based on sharing semantics. */
   attachments: IMongoFile[];
+  /** Files attached to the current user message/run and safe to share across run agents. */
+  requestAttachments: IMongoFile[];
+  /** Files attached to this agent's permanent context via tool_resources. */
+  agentContextAttachments: IMongoFile[];
   toolContextMap: Record<string, unknown>;
   dynamicToolContextMap?: Record<string, unknown>;
   maxContextTokens: number;
@@ -488,7 +493,12 @@ export async function initializeAgent(
     });
   }
 
-  const { attachments: primedAttachments, tool_resources } = await primeResources({
+  const {
+    attachments: primedAttachments,
+    requestAttachments: primedRequestAttachments,
+    agentContextAttachments: primedAgentContextAttachments,
+    tool_resources,
+  } = await primeResources({
     req: req as never,
     getFiles: db.getFiles as never,
     filterFiles: db.filterFilesByAgentAccess,
@@ -906,9 +916,17 @@ export async function initializeAgent(
   const maxOutputTokensNum = Number(maxOutputTokens) || 0;
   const baseContextTokens = Math.max(0, agentMaxContextNum - maxOutputTokensNum);
 
-  const finalAttachments: IMongoFile[] = (primedAttachments ?? [])
-    .filter((a): a is TFile => a != null)
-    .map((a) => a as unknown as IMongoFile);
+  const toMongoFiles = (files: Array<TFile | undefined> | undefined): IMongoFile[] =>
+    (files ?? []).filter((a): a is TFile => a != null).map((a) => a as unknown as IMongoFile);
+
+  const finalAttachments: IMongoFile[] = toMongoFiles(primedAttachments);
+  const requestAttachments: IMongoFile[] = toMongoFiles(primedRequestAttachments);
+  const agentContextAttachments: IMongoFile[] = toMongoFiles(primedAgentContextAttachments);
+
+  const compatibilityAttachments =
+    finalAttachments.length > 0
+      ? finalAttachments
+      : requestAttachments.concat(agentContextAttachments);
 
   const endpointConfigs = req.config?.endpoints;
   const providerConfig =
@@ -939,7 +957,9 @@ export async function initializeAgent(
     activeSkillNames,
     manualSkillPrimes,
     alwaysApplySkillPrimes,
-    attachments: finalAttachments,
+    attachments: compatibilityAttachments,
+    requestAttachments,
+    agentContextAttachments,
     toolContextMap: toolContextMap ?? {},
     dynamicToolContextMap: dynamicToolContextMap ?? {},
     useLegacyContent: !!options.useLegacyContent,

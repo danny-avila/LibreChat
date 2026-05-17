@@ -12,11 +12,13 @@ const {
   resolveHeaders,
   createSafeUser,
   initializeAgent,
+  countTokens,
   getBalanceConfig,
   omitTitleOptions,
   getProviderConfig,
   memoryInstructions,
   createTokenCounter,
+  extractFileContext,
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
@@ -402,6 +404,36 @@ class AgentClient extends BaseClient {
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
+    const getAgentContextAttachments = (agentId) => {
+      const attachmentsByAgentId = this.options.agentContextAttachmentsByAgentId;
+      if (!attachmentsByAgentId) {
+        return [];
+      }
+      if (typeof attachmentsByAgentId.get === 'function') {
+        return attachmentsByAgentId.get(agentId) ?? [];
+      }
+      return attachmentsByAgentId[agentId] ?? [];
+    };
+
+    const agentScopedContextEntries = await Promise.all(
+      allAgents.map(async ({ agentId }) => {
+        const attachments = getAgentContextAttachments(agentId);
+        if (!attachments || attachments.length === 0) {
+          return [agentId, ''];
+        }
+        const context = await extractFileContext({
+          attachments,
+          req: this.options.req,
+          tokenCountFn: (text) => countTokens(text),
+        });
+        return [agentId, context ?? ''];
+      }),
+    );
+
+    const agentScopedContext = new Map(
+      agentScopedContextEntries.filter(([, context]) => Boolean(context)),
+    );
+
     /** Preserve canonical pre-format token counts for all history entering graph formatting */
     this.indexTokenCountMap = canonicalTokenCountMap;
 
@@ -439,10 +471,14 @@ class AgentClient extends BaseClient {
 
     await Promise.all(
       allAgents.map(({ agent, agentId }) => {
-        const agentRunContext =
-          memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)
-            ? [sharedRunContext, memoryContext].filter(Boolean).join('\n\n')
-            : sharedRunContext;
+        const agentRunContextParts = [sharedRunContext];
+        if (memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)) {
+          agentRunContextParts.push(memoryContext);
+        }
+        const scopedContext = agentScopedContext.get(agentId);
+        if (scopedContext) {
+          agentRunContextParts.push(scopedContext);
+        }
 
         return applyContextToAgent({
           agent,
@@ -450,7 +486,7 @@ class AgentClient extends BaseClient {
           logger,
           mcpManager,
           configServers,
-          sharedRunContext: agentRunContext,
+          sharedRunContext: agentRunContextParts.filter(Boolean).join('\n\n'),
           ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
         });
       }),

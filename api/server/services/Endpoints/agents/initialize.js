@@ -796,6 +796,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     }
   }
 
+  const agentContextAttachmentsByAgentId = new Map();
+  const addAgentContextAttachments = (config) => {
+    if (!config?.id || !Array.isArray(config.agentContextAttachments)) {
+      return;
+    }
+    if (config.agentContextAttachments.length === 0) {
+      return;
+    }
+    agentContextAttachmentsByAgentId.set(config.id, config.agentContextAttachments);
+  };
+  addAgentContextAttachments(primaryConfig);
+  for (const config of agentConfigs.values()) {
+    addAgentContextAttachments(config);
+  }
+
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
   if (!isAgentsEndpoint(primaryConfig.endpoint) && !endpointConfig) {
     try {
@@ -851,7 +866,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     agent: primaryConfig,
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,
-    attachments: primaryConfig.attachments,
+    attachments: primaryConfig.requestAttachments ?? primaryConfig.attachments,
+    agentContextAttachmentsByAgentId,
     endpointType: endpointOption.endpointType,
     resendFiles: primaryConfig.resendFiles ?? true,
     maxContextTokens: primaryConfig.maxContextTokens,
