@@ -11,9 +11,10 @@ const permissions: PermissionConfig[] = [
 ];
 
 /**
- * Minimal admin gate for Scheduled Tasks. Mirrors the Memories wrapper:
- * `USE` controls visibility of the side-panel entry + builder routes,
- * `CREATE` controls whether the form accepts new tasks. The shared
+ * Minimal admin gate for Scheduled Tasks:
+ *  - `USE` controls visibility of the side-panel entry + builder routes.
+ *  - `CREATE` controls whether the form accepts new tasks.
+ *
  * `AdminSettingsDialog` handles role selection, mutation wiring, and the
  * trigger button rendering.
  */

@@ -1,10 +1,9 @@
 import type { TEphemeralAgent, TEndpointOption } from '../types';
 
 /**
- * Payload stored alongside a scheduled task. For `targetType: 'model'` runs we
- * persist the provider key (`endpoint`) and model identifier (`model`) here so
- * the job processor can construct an ephemeral agent run without needing a
- * separate target collection.
+ * Payload stored alongside a scheduled task. The provider key (`endpoint`)
+ * and model identifier (`model`) live here so the job processor can construct
+ * an ephemeral-agent run without a separate target collection.
  */
 export type TScheduledTaskPayload = {
   text?: string;
@@ -18,9 +17,11 @@ export type TScheduledTaskPayload = {
 export type TScheduledTask = {
   _id: string;
   userId: string;
-  targetType: 'agent' | 'assistant' | 'model';
+  /** User-supplied display name (1-120 chars). */
+  name: string;
+  targetType: 'model';
   targetId: string;
-  triggerType: 'cron' | 'interval' | 'date';
+  triggerType: 'cron';
   expression: string;
   /** IANA timezone identifier (e.g. "America/New_York"). Defaults to UTC server-side. */
   timezone?: string;

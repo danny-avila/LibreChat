@@ -11,32 +11,22 @@ const { getAppConfig } = require('~/server/services/Config');
  * scheduled-task definition. Each run starts a fresh conversation so background
  * runs never mutate the user's interactive chats.
  *
- * For `targetType: 'model'` tasks we mirror the chat ephemeral-agent flow:
- * `endpoint` + `model` from the task payload populate `req.body`, and
- * `buildOptions` synthesizes the same `endpointOption` shape that
- * `buildEndpointOption` middleware would produce for an interactive run.
+ * Scheduled tasks always run as ephemeral-agent model invocations: `endpoint`
+ * and `model` come from `task.payload`, and `buildOptions` synthesizes the
+ * same `endpointOption` shape that `buildEndpointOption` middleware would
+ * produce for an interactive chat turn.
  */
 async function buildRequestFromTask(task, taskId) {
   const payload = task.payload && typeof task.payload === 'object' ? task.payload : {};
   const {
     text,
     isTemporary,
-    endpoint: payloadEndpoint,
-    model: payloadModel,
+    endpoint,
+    model,
     endpointOption: payloadEndpointOption,
     ephemeralAgent,
-    agent_id: payloadAgentId,
     ...restPayload
   } = payload;
-
-  const isModelTarget = task.targetType === 'model';
-  const endpoint = isModelTarget ? payloadEndpoint : restPayload.endpoint;
-  const model = isModelTarget ? payloadModel : restPayload.model;
-  const agentId = isModelTarget
-    ? Constants.EPHEMERAL_AGENT_ID
-    : task.targetType === 'agent'
-      ? task.targetId
-      : payloadAgentId;
 
   let userRecord = null;
   try {
@@ -63,24 +53,31 @@ async function buildRequestFromTask(task, taskId) {
       isTemporary: isTemporary === true,
       ephemeralAgent,
       endpointOption: payloadEndpointOption || {},
-      agent_id: agentId,
+      agent_id: Constants.EPHEMERAL_AGENT_ID,
       endpoint,
       model,
     },
     scheduledTaskMeta: { taskId, isScheduled: true },
   };
 
-  if (isModelTarget && endpoint) {
-    try {
-      const builtOption = await buildOptions(req, endpoint, { ...req.body, agent_id: agentId });
-      req.body.endpointOption = builtOption;
-    } catch (err) {
-      logger.error(
-        `[JobProcessor] Failed to build endpoint option for task ${taskId} (endpoint=${endpoint}):`,
-        err,
-      );
-      throw err;
-    }
+  if (!endpoint) {
+    const err = new Error(`Scheduled task ${taskId} is missing payload.endpoint`);
+    logger.error(`[JobProcessor] ${err.message}`);
+    throw err;
+  }
+
+  try {
+    const builtOption = await buildOptions(req, endpoint, {
+      ...req.body,
+      agent_id: Constants.EPHEMERAL_AGENT_ID,
+    });
+    req.body.endpointOption = builtOption;
+  } catch (err) {
+    logger.error(
+      `[JobProcessor] Failed to build endpoint option for task ${taskId} (endpoint=${endpoint}):`,
+      err,
+    );
+    throw err;
   }
 
   return req;

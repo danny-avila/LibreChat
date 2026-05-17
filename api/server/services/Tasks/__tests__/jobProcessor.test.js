@@ -54,10 +54,11 @@ describe('jobProcessor', () => {
     expect(AgentController).not.toHaveBeenCalled();
   });
 
-  it('executes a model-target task by building an ephemeral endpointOption from payload.endpoint/model', async () => {
+  it('executes a model task by building an ephemeral endpointOption from payload.endpoint/model', async () => {
     const mockTask = {
       _id: 'task_model',
       userId: 'user1',
+      name: 'Morning digest',
       targetType: 'model',
       targetId: 'gpt-4o',
       status: 'active',
@@ -109,51 +110,23 @@ describe('jobProcessor', () => {
     );
   });
 
-  it('keeps the legacy agent-target path working', async () => {
-    const mockTask = {
-      _id: '123',
-      userId: 'user1',
-      targetType: 'agent',
-      targetId: 'agent1',
-      status: 'active',
-      payload: {
-        text: 'hello world',
-        ephemeralAgent: { web_search: true, mcp: ['server1'] },
-      },
-    };
-
-    getScheduledTask.mockResolvedValue(mockTask);
-    updateScheduledTask.mockResolvedValue(true);
-    saveConvo.mockResolvedValue(true);
-
-    let capturedReq;
-    AgentController.mockImplementation(async (req) => {
-      capturedReq = {
-        agent_id: req.body.agent_id,
-        text: req.body.text,
-        conversationId: req.body.conversationId,
-      };
-      req.body.conversationId = 'convo-new-id';
-    });
-
-    await processJob({ data: { taskId: '123' } });
-
-    expect(buildOptions).not.toHaveBeenCalled();
-    expect(capturedReq.agent_id).toBe('agent1');
-    expect(capturedReq.text).toBe('hello world');
-    expect(capturedReq.conversationId).toBe('new');
-  });
-
   it('does not tag conversation when run is temporary', async () => {
     getScheduledTask.mockResolvedValue({
       _id: '123',
       userId: 'user1',
-      targetType: 'agent',
-      targetId: 'agent1',
+      name: 'Temp task',
+      targetType: 'model',
+      targetId: 'gpt-4o',
       status: 'active',
-      payload: { text: 'hello', isTemporary: true },
+      payload: {
+        text: 'hello',
+        endpoint: 'openAI',
+        model: 'gpt-4o',
+        isTemporary: true,
+      },
     });
     updateScheduledTask.mockResolvedValue(true);
+    buildOptions.mockResolvedValue({ endpoint: 'openAI', model_parameters: { model: 'gpt-4o' } });
 
     AgentController.mockImplementation(async (req) => {
       req.body.conversationId = 'convo-temp';
@@ -164,17 +137,35 @@ describe('jobProcessor', () => {
     expect(saveConvo).not.toHaveBeenCalled();
   });
 
-  it('should throw error if AgentController fails', async () => {
-    const mockTask = {
+  it('rejects a task that is missing payload.endpoint', async () => {
+    getScheduledTask.mockResolvedValue({
       _id: '123',
       userId: 'user1',
-      targetType: 'agent',
+      name: 'Missing endpoint',
+      targetType: 'model',
+      targetId: 'gpt-4o',
       status: 'active',
-      payload: {},
-    };
+      payload: { text: 'hello', model: 'gpt-4o' },
+    });
 
-    getScheduledTask.mockResolvedValue(mockTask);
+    await expect(processJob({ data: { taskId: '123' } })).rejects.toThrow(
+      /missing payload.endpoint/,
+    );
+    expect(AgentController).not.toHaveBeenCalled();
+    expect(updateScheduledTask).not.toHaveBeenCalled();
+  });
 
+  it('should throw error if AgentController fails', async () => {
+    getScheduledTask.mockResolvedValue({
+      _id: '123',
+      userId: 'user1',
+      name: 'Failing task',
+      targetType: 'model',
+      targetId: 'gpt-4o',
+      status: 'active',
+      payload: { text: 'hello', endpoint: 'openAI', model: 'gpt-4o' },
+    });
+    buildOptions.mockResolvedValue({ endpoint: 'openAI', model_parameters: { model: 'gpt-4o' } });
     AgentController.mockRejectedValue(new Error('Agent error'));
 
     await expect(processJob({ data: { taskId: '123' } })).rejects.toThrow('Agent error');

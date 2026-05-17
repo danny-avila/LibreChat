@@ -8,8 +8,8 @@ export interface CronPreset {
 }
 
 /**
- * Common cron presets surfaced in the task builder. Power users can still
- * type any 5-field cron expression directly; this list is just a quick start.
+ * Canonical labels for well-known cron expressions. `describeCronExpression`
+ * matches against these to render a friendly description below the input.
  */
 export const CRON_PRESETS: CronPreset[] = [
   { labelKey: 'com_sidepanel_cron_every_minute', label: 'Every minute', value: '* * * * *' },

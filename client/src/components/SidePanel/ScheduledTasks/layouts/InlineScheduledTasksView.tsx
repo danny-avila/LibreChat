@@ -6,16 +6,15 @@ import { useHasAccess, useLocalize } from '~/hooks';
 import TaskForm from '../TaskForm';
 
 /**
- * Full-page Scheduled Tasks builder route. Mirrors `InlinePromptsView`: the
- * route lazy-loads this component which then renders the create or edit form
- * inside the same scroll container that the chat normally occupies.
+ * Full-page Scheduled Tasks builder route. The route lazy-loads this
+ * component which renders the create or edit form inside the same scroll
+ * container that the chat normally occupies.
  *
  * Permission gates:
  *  - `SCHEDULED_TASKS / USE` is required to render any builder view; a denied
- *    user is redirected to `/c/new` (same fallback the side-panel uses when
- *    the entry is hidden).
+ *    user is redirected to `/c/new`.
  *  - `SCHEDULED_TASKS / CREATE` is required for the `/new` route; without it,
- *    we redirect to the list so existing tasks can still be inspected.
+ *    the user is redirected to `/c/new`.
  */
 export default function InlineScheduledTasksView() {
   const localize = useLocalize();

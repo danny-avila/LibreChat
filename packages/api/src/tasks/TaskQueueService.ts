@@ -178,10 +178,3 @@ export function getTaskQueueService(): TaskQueueService {
   }
   return _instance;
 }
-
-/** @deprecated use getTaskQueueService() instead. Kept for backwards compatibility. */
-export const taskQueueService = new Proxy({} as TaskQueueService, {
-  get(_target, prop, receiver) {
-    return Reflect.get(getTaskQueueService(), prop, receiver);
-  },
-});

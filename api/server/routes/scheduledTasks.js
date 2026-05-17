@@ -52,33 +52,39 @@ function sanitizeTaskInput(data) {
 }
 
 function validateTaskInput(data) {
-  if (!data.targetType || !['agent', 'assistant', 'model'].includes(data.targetType)) {
-    return 'targetType must be "agent", "assistant" or "model"';
+  const trimmedName = typeof data.name === 'string' ? data.name.trim() : '';
+  if (!trimmedName) {
+    return 'name is required';
+  }
+  if (trimmedName.length > 120) {
+    return 'name must be at most 120 characters';
+  }
+  data.name = trimmedName;
+  if (data.targetType != null && data.targetType !== 'model') {
+    return 'targetType must be "model"';
   }
   if (!data.targetId || typeof data.targetId !== 'string') {
     return 'targetId is required';
   }
-  if (!data.triggerType || !['cron', 'interval', 'date'].includes(data.triggerType)) {
-    return 'triggerType must be "cron", "interval" or "date"';
+  if (data.triggerType != null && data.triggerType !== 'cron') {
+    return 'triggerType must be "cron"';
   }
   if (!data.expression || typeof data.expression !== 'string') {
     return 'expression is required';
   }
-  if (data.triggerType === 'cron' && !isValidCronExpression(data.expression)) {
+  if (!isValidCronExpression(data.expression)) {
     return `cron expression must have 5 fields (got "${data.expression}"). See https://crontab.guru/`;
   }
   if (!data.payload || typeof data.payload !== 'object') {
     return 'payload is required';
   }
-  if (data.targetType === 'model') {
-    const endpoint = typeof data.payload.endpoint === 'string' ? data.payload.endpoint : null;
-    const model = typeof data.payload.model === 'string' ? data.payload.model : null;
-    if (!endpoint) {
-      return 'payload.endpoint is required for model tasks';
-    }
-    if (!model) {
-      return 'payload.model is required for model tasks';
-    }
+  const endpoint = typeof data.payload.endpoint === 'string' ? data.payload.endpoint : null;
+  const model = typeof data.payload.model === 'string' ? data.payload.model : null;
+  if (!endpoint) {
+    return 'payload.endpoint is required';
+  }
+  if (!model) {
+    return 'payload.model is required';
   }
   if (data.timezone != null && data.timezone !== '' && !isValidTimezone(data.timezone)) {
     return `timezone must be a valid IANA identifier (got "${data.timezone}")`;
@@ -119,17 +125,25 @@ router.put('/:id', checkScheduledTaskUse, async (req, res) => {
   const { id } = req.params;
   const data = sanitizeTaskInput(req.body);
 
+  if (data.name != null) {
+    const trimmedName = typeof data.name === 'string' ? data.name.trim() : '';
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    if (trimmedName.length > 120) {
+      return res.status(400).json({ error: 'name must be at most 120 characters' });
+    }
+    data.name = trimmedName;
+  }
   if (data.timezone != null && data.timezone !== '' && !isValidTimezone(data.timezone)) {
     return res
       .status(400)
       .json({ error: `timezone must be a valid IANA identifier (got "${data.timezone}")` });
   }
-  if (data.triggerType === 'cron' && typeof data.expression === 'string') {
-    if (!isValidCronExpression(data.expression)) {
-      return res.status(400).json({
-        error: `cron expression must have 5 fields (got "${data.expression}"). See https://crontab.guru/`,
-      });
-    }
+  if (typeof data.expression === 'string' && !isValidCronExpression(data.expression)) {
+    return res.status(400).json({
+      error: `cron expression must have 5 fields (got "${data.expression}"). See https://crontab.guru/`,
+    });
   }
 
   try {

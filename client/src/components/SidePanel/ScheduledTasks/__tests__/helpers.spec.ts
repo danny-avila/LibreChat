@@ -28,6 +28,7 @@ afterEach(() => {
 describe('buildInitialTask', () => {
   it('returns sensible defaults for a brand-new task', () => {
     const state = buildInitialTask();
+    expect(state.name).toBe('');
     expect(state.endpoint).toBe('');
     expect(state.model).toBe('');
     expect(state.expression).toBe('0 * * * *');
@@ -52,6 +53,7 @@ describe('taskToFormState', () => {
   const baseTask: TScheduledTask = {
     _id: 'task_1',
     userId: 'user_1',
+    name: 'Weekday digest',
     targetType: 'model',
     targetId: 'claude-3-5-sonnet',
     triggerType: 'cron',
@@ -77,6 +79,7 @@ describe('taskToFormState', () => {
   it('maps every editable field from a persisted task', () => {
     const state = taskToFormState(baseTask);
     expect(state).toEqual({
+      name: 'Weekday digest',
       endpoint: 'bedrock',
       model: 'claude-3-5-sonnet',
       expression: '0 9 * * 1-5',
@@ -121,9 +124,9 @@ describe('taskToFormState', () => {
     expect(taskToFormState({ ...baseTask, status: 'paused' }).status).toBe('paused');
   });
 
-  it('falls back to legacy targetId for model name when payload.model is missing', () => {
-    const legacy = taskToFormState({ ...baseTask, payload: { endpoint: 'bedrock' } });
-    expect(legacy.model).toBe('claude-3-5-sonnet');
+  it('falls back to targetId for model name when payload.model is missing', () => {
+    const fallback = taskToFormState({ ...baseTask, payload: { endpoint: 'bedrock' } });
+    expect(fallback.model).toBe('claude-3-5-sonnet');
   });
 
   it('round-trips the ephemeral skills toggle', () => {
@@ -156,6 +159,7 @@ describe('nextPauseStatus', () => {
 describe('formStateToCreatePayload', () => {
   it('emits a model-target payload with endpoint and model stored under payload', () => {
     const state = buildInitialTask();
+    state.name = 'Daily Digest';
     state.endpoint = 'openAI';
     state.model = 'gpt-4o';
     state.payload.text = 'daily digest';
@@ -167,12 +171,21 @@ describe('formStateToCreatePayload', () => {
     };
 
     const payload = formStateToCreatePayload(state);
+    expect(payload.name).toBe('Daily Digest');
     expect(payload.targetType).toBe('model');
     expect(payload.targetId).toBe('gpt-4o');
     expect(payload.triggerType).toBe('cron');
     expect(payload.payload.endpoint).toBe('openAI');
     expect(payload.payload.model).toBe('gpt-4o');
     expect(payload.payload.ephemeralAgent?.mcp).toEqual(['memory']);
+  });
+
+  it('trims surrounding whitespace from the name before sending', () => {
+    const state = buildInitialTask();
+    state.name = '   Spaced Name   ';
+    state.endpoint = 'openAI';
+    state.model = 'gpt-4o';
+    expect(formStateToCreatePayload(state).name).toBe('Spaced Name');
   });
 
   it('drops the timezone field when empty so the server applies its default', () => {

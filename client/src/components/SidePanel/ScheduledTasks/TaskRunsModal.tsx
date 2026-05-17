@@ -6,11 +6,13 @@ import { useNavigate } from 'react-router-dom';
 
 interface TaskRunsModalProps {
   taskId: string;
+  /** Optional human label (task name / model) shown as a subtitle. */
+  taskName?: string;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export default function TaskRunsModal({ taskId, isOpen, onClose }: TaskRunsModalProps) {
+export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: TaskRunsModalProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
 
@@ -28,6 +30,9 @@ export default function TaskRunsModal({ taskId, isOpen, onClose }: TaskRunsModal
       <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{localize('com_sidepanel_task_runs')}</DialogTitle>
+          {taskName && (
+            <span className="text-sm text-text-secondary">{taskName}</span>
+          )}
         </DialogHeader>
         
         <div className="flex-1 overflow-y-auto mt-4">

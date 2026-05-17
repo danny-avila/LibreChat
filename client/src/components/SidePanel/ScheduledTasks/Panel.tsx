@@ -38,6 +38,8 @@ export default function ScheduledTasksPanel() {
   const deleteMutation = useDeleteScheduledTask();
 
   const [viewingTaskId, setViewingTaskId] = useState<string | null>(null);
+  const viewingTask = tasks?.find((t) => t._id === viewingTaskId) ?? null;
+  const viewingTaskName = viewingTask?.name?.trim() || viewingTask?.payload?.model || viewingTask?.targetId;
 
   const openCreate = () => navigate('/scheduled-tasks/new');
   const openEdit = (task: TScheduledTask) => navigate(`/scheduled-tasks/${task._id}`);
@@ -77,10 +79,8 @@ export default function ScheduledTasksPanel() {
           <div className="flex flex-col gap-3">
             {tasks?.map((task) => {
               const description = describeCronExpression(task.expression);
-              const modelLabel =
-                task.targetType === 'model'
-                  ? task.payload?.model ?? task.targetId
-                  : task.targetId;
+              const modelLabel = task.payload?.model ?? task.targetId;
+              const displayName = task.name?.trim() || modelLabel;
               return (
                 <div
                   key={task._id}
@@ -93,8 +93,9 @@ export default function ScheduledTasksPanel() {
                       className="flex-1 text-left"
                     >
                       <span className="block text-sm font-medium text-text-primary">
-                        {modelLabel}
+                        {displayName}
                       </span>
+                      <span className="mt-1 block text-xs text-text-secondary">{modelLabel}</span>
                       <span className="mt-1 block font-mono text-xs text-text-secondary">
                         {task.expression}
                         {task.timezone ? ` · ${task.timezone}` : ''}
@@ -189,6 +190,7 @@ export default function ScheduledTasksPanel() {
 
       <TaskRunsModal
         taskId={viewingTaskId || ''}
+        taskName={viewingTaskName}
         isOpen={!!viewingTaskId}
         onClose={() => setViewingTaskId(null)}
       />

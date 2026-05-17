@@ -8,10 +8,17 @@ const scheduledTaskSchema = new Schema<IScheduledTask>(
       required: true,
       index: true,
     },
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 120,
+    },
     targetType: {
       type: String,
-      enum: ['agent', 'assistant', 'model'],
+      enum: ['model'],
       required: true,
+      default: 'model',
     },
     targetId: {
       type: String,
@@ -19,8 +26,9 @@ const scheduledTaskSchema = new Schema<IScheduledTask>(
     },
     triggerType: {
       type: String,
-      enum: ['cron', 'interval', 'date'],
+      enum: ['cron'],
       required: true,
+      default: 'cron',
     },
     expression: {
       type: String,

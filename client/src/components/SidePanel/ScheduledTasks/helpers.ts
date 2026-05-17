@@ -4,13 +4,14 @@ import type { TScheduledTask } from 'librechat-data-provider';
 /**
  * Form state for the Scheduled Tasks builder.
  *
- * The new builder always emits `targetType: 'model'` tasks: the user picks a
- * provider (`endpoint`) and model, optionally toggles capabilities/MCP, and
- * the job processor runs an ephemeral agent on their behalf. The form keeps a
+ * The builder emits `targetType: 'model'` tasks: the user picks a provider
+ * (`endpoint`) and model, optionally toggles capabilities/MCP, and the job
+ * processor runs an ephemeral agent on their behalf. The form keeps a
  * dedicated `endpoint`/`model` pair instead of overloading `targetId` so the
  * UI is straightforward to bind.
  */
 export type ScheduledTaskFormState = {
+  name: string;
   endpoint: string;
   model: string;
   expression: string;
@@ -35,6 +36,7 @@ export type ScheduledTaskFormState = {
  */
 export function buildInitialTask(): ScheduledTaskFormState {
   return {
+    name: '',
     endpoint: '',
     model: '',
     expression: '0 * * * *',
@@ -58,14 +60,12 @@ export function buildInitialTask(): ScheduledTaskFormState {
  * Maps a persisted scheduled task into the editor's form state. Optional
  * payload fields are filled with sensible defaults so the form never receives
  * `undefined` values for controlled inputs.
- *
- * Legacy `agent` / `assistant` tasks land in the editor with empty model
- * fields; the user must pick a model to convert them to the new flow.
  */
 export function taskToFormState(task: TScheduledTask): ScheduledTaskFormState {
   return {
+    name: task.name ?? '',
     endpoint: task.payload?.endpoint ?? '',
-    model: task.payload?.model ?? (task.targetType === 'model' ? task.targetId : ''),
+    model: task.payload?.model ?? task.targetId,
     expression: task.expression,
     timezone: task.timezone || getBrowserTimezone(),
     payload: {
@@ -99,6 +99,7 @@ export function nextPauseStatus(
  */
 export function formStateToCreatePayload(state: ScheduledTaskFormState) {
   return {
+    name: state.name.trim(),
     targetType: 'model' as const,
     targetId: state.model,
     triggerType: 'cron' as const,
