@@ -158,6 +158,30 @@ Open source, actively developed, and built for anyone who values control over th
 
 ---
 
+## 🚀 Quick Start with Ollama (Free Local AI)
+
+Run LibreChat with **completely free, local AI** using Ollama:
+
+```bash
+# Start LibreChat with Ollama
+docker compose up -d
+
+# Setup recommended models (first time only)
+./scripts/setup-ollama.sh
+```
+
+Access LibreChat at **http://localhost:3080** and select **Ollama** from the model dropdown.
+
+**Benefits:**
+- Zero API costs - unlimited free AI usage
+- Privacy-focused - data never leaves your machine
+- Works offline - no internet required
+- GPU acceleration supported
+
+See [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md) for detailed setup instructions.
+
+---
+
 ## 🌐 Resources
 
 **GitHub Repo:**
