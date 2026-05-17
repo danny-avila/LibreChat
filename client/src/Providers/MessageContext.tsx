@@ -10,6 +10,8 @@ type MessageContext = {
   isSubmitting?: boolean;
   /** Whether this is the latest message in the conversation */
   isLatestMessage?: boolean;
+  /** Length of `message.content` parts array — bumps when tools/text are appended so PoP UI can refresh. */
+  contentPartCount?: number;
 };
 
 export const MessageContext = createContext<MessageContext>({} as MessageContext);

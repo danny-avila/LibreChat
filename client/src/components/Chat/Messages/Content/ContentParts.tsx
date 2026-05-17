@@ -77,6 +77,7 @@ const ContentParts = memo(function ContentParts({
             nextType: content?.[idx + 1]?.type,
             isSubmitting: effectiveIsSubmitting,
             isLatestMessage,
+            contentPartCount: content?.length ?? 0,
           }}
         >
           <Part
@@ -91,16 +92,7 @@ const ContentParts = memo(function ContentParts({
         </MessageContext.Provider>
       );
     },
-    [
-      attachmentMap,
-      content,
-      conversationId,
-      effectiveIsSubmitting,
-      isCreatedByUser,
-      isLast,
-      isLatestMessage,
-      messageId,
-    ],
+    [attachmentMap, content, conversationId, effectiveIsSubmitting, isLast, isLatestMessage, messageId],
   );
 
   // Early return: no content
