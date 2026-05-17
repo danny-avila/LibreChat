@@ -1,5 +1,12 @@
 import type { TEphemeralAgent, TEndpointOption } from '../types';
 
+export type TScheduledTaskPayload = {
+  text?: string;
+  isTemporary?: boolean;
+  endpointOption?: TEndpointOption;
+  ephemeralAgent?: TEphemeralAgent;
+};
+
 export type TScheduledTask = {
   _id: string;
   userId: string;
@@ -7,11 +14,7 @@ export type TScheduledTask = {
   targetId: string;
   triggerType: 'cron' | 'interval' | 'date';
   expression: string;
-  payload: Record<string, unknown> & {
-    text?: string;
-    endpointOption?: TEndpointOption;
-    ephemeralAgent?: TEphemeralAgent;
-  };
+  payload: TScheduledTaskPayload;
   status: 'active' | 'paused' | 'completed' | 'failed';
   lastRunAt?: string;
   createdAt: string;

@@ -1,4 +1,12 @@
-import { TaskQueueService } from '../TaskQueueService';
+type AnyFn = (...args: unknown[]) => unknown;
+
+interface BullMqMocks {
+  mockAdd: jest.Mock<Promise<void>, [string, unknown, unknown]>;
+  mockGetRepeatableJobs: jest.Mock<Promise<Array<{ id: string; key: string }>>, []>;
+  mockRemoveRepeatableByKey: jest.Mock<Promise<void>, [string]>;
+  mockGetJob: jest.Mock<Promise<{ remove: AnyFn } | null>, [string]>;
+  mockJobRemove: jest.Mock<Promise<void>, []>;
+}
 
 jest.mock('bullmq', () => {
   const mockAdd = jest.fn();
@@ -17,85 +25,107 @@ jest.mock('bullmq', () => {
     Worker: jest.fn().mockImplementation(() => ({
       on: jest.fn(),
     })),
-    __mocks: { mockAdd, mockGetRepeatableJobs, mockRemoveRepeatableByKey, mockGetJob, mockJobRemove }
+    __mocks: { mockAdd, mockGetRepeatableJobs, mockRemoveRepeatableByKey, mockGetJob, mockJobRemove },
   };
 });
 
 jest.mock('@librechat/data-schemas', () => ({
-  logger: {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-  },
+  logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
 }));
 
 jest.mock('../../cache/redisClients', () => ({
-  ioredisClient: {}, // Mock redis client
+  ioredisClient: {},
 }));
 
+import { TaskQueueService } from '../TaskQueueService';
 import bullmq from 'bullmq';
-const { mockAdd, mockGetRepeatableJobs, mockRemoveRepeatableByKey, mockGetJob, mockJobRemove } = (bullmq as any).__mocks;
 
+const { mockAdd, mockGetRepeatableJobs, mockRemoveRepeatableByKey, mockGetJob, mockJobRemove } = (
+  bullmq as unknown as { __mocks: BullMqMocks }
+).__mocks;
 
 describe('TaskQueueService', () => {
-  let taskQueueService: TaskQueueService;
-  
+  let service: TaskQueueService;
+
   beforeEach(() => {
     jest.clearAllMocks();
-    taskQueueService = new TaskQueueService();
+    service = new TaskQueueService();
+    service.setJobProcessor(async () => {});
   });
 
   describe('addOrUpdateTask', () => {
-    it('should add a cron task', async () => {
-      const mockTask = {
-        _id: { toString: () => '123' },
+    it('adds a cron task as a repeatable BullMQ job', async () => {
+      mockGetRepeatableJobs.mockResolvedValue([]);
+
+      await service.addOrUpdateTask({
+        _id: '123',
         status: 'active',
         triggerType: 'cron',
         expression: '0 * * * *',
-      } as any;
-
-      mockGetRepeatableJobs.mockResolvedValue([]);
-
-      await taskQueueService.addOrUpdateTask(mockTask);
+      });
 
       expect(mockAdd).toHaveBeenCalledWith(
         'scheduled-tasks',
         { taskId: '123' },
-        { jobId: '123', repeat: { pattern: '0 * * * *' } }
+        { jobId: '123', repeat: { pattern: '0 * * * *' } },
       );
     });
 
-    it('should remove existing repeatable job before adding', async () => {
-      const mockTask = {
-        _id: { toString: () => '123' },
-        status: 'active',
-        triggerType: 'interval',
-        expression: '60000',
-      } as any;
-
+    it('removes the existing repeatable job before adding an interval task', async () => {
       mockGetRepeatableJobs.mockResolvedValue([
         { id: '123', key: 'repeat:123' },
-        { id: '456', key: 'repeat:456' }
+        { id: '456', key: 'repeat:456' },
       ]);
       mockGetJob.mockResolvedValue(null);
 
-      await taskQueueService.addOrUpdateTask(mockTask);
+      await service.addOrUpdateTask({
+        _id: '123',
+        status: 'active',
+        triggerType: 'interval',
+        expression: '60000',
+      });
 
       expect(mockRemoveRepeatableByKey).toHaveBeenCalledWith('repeat:123');
       expect(mockAdd).toHaveBeenCalledWith(
         'scheduled-tasks',
         { taskId: '123' },
-        { jobId: '123', repeat: { every: 60000 } }
+        { jobId: '123', repeat: { every: 60000 } },
       );
+    });
+
+    it('skips queuing for paused tasks', async () => {
+      mockGetRepeatableJobs.mockResolvedValue([]);
+
+      await service.addOrUpdateTask({
+        _id: '123',
+        status: 'paused',
+        triggerType: 'cron',
+        expression: '0 * * * *',
+      });
+
+      expect(mockAdd).not.toHaveBeenCalled();
+    });
+
+    it('throws on an invalid interval expression', async () => {
+      mockGetRepeatableJobs.mockResolvedValue([]);
+
+      await expect(
+        service.addOrUpdateTask({
+          _id: '123',
+          status: 'active',
+          triggerType: 'interval',
+          expression: 'not-a-number',
+        }),
+      ).rejects.toThrow(/Invalid interval expression/);
     });
   });
 
   describe('removeTask', () => {
-    it('should remove task by ID', async () => {
+    it('removes both repeatable and direct jobs for the given id', async () => {
       mockGetRepeatableJobs.mockResolvedValue([{ id: '123', key: 'repeat:123' }]);
       mockGetJob.mockResolvedValue({ remove: mockJobRemove });
 
-      await taskQueueService.removeTask('123');
+      await service.removeTask('123');
 
       expect(mockRemoveRepeatableByKey).toHaveBeenCalledWith('repeat:123');
       expect(mockJobRemove).toHaveBeenCalled();

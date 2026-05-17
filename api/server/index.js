@@ -43,7 +43,7 @@ const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
-const { taskQueueService } = require('@librechat/api');
+const { getTaskQueueService } = require('@librechat/api');
 const { processJob } = require('./services/Tasks/jobProcessor');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -276,7 +276,7 @@ const startServer = async () => {
       GenerationJobManager.initialize();
 
       // Initialize Task Queue Service
-      taskQueueService.setJobProcessor(processJob);
+      getTaskQueueService().setJobProcessor(processJob);
 
       const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
       if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {

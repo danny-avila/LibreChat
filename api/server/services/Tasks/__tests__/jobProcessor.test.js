@@ -1,10 +1,11 @@
 const { processJob } = require('../jobProcessor');
-const { getScheduledTask, updateScheduledTask } = require('~/models');
+const { getScheduledTask, updateScheduledTask, saveConvo } = require('~/models');
 const AgentController = require('~/server/controllers/agents/request');
 
 jest.mock('~/models', () => ({
   getScheduledTask: jest.fn(),
   updateScheduledTask: jest.fn(),
+  saveConvo: jest.fn(),
 }));
 
 jest.mock('~/server/controllers/agents/request', () => jest.fn());
@@ -44,7 +45,7 @@ describe('jobProcessor', () => {
     expect(AgentController).not.toHaveBeenCalled();
   });
 
-  it('should execute the AgentController and update the task on success', async () => {
+  it('executes AgentController, tags the conversation, and updates lastRunAt', async () => {
     const mockTask = {
       _id: '123',
       userId: 'user1',
@@ -58,37 +59,70 @@ describe('jobProcessor', () => {
           mcp: ['server1'],
         },
       },
-      save: jest.fn().mockResolvedValue(true),
     };
 
     getScheduledTask.mockResolvedValue(mockTask);
     updateScheduledTask.mockResolvedValue(true);
+    saveConvo.mockResolvedValue(true);
 
-    AgentController.mockImplementation(async (req, res, next) => {
-      // Simulate successful run
-      res.json({ status: 'success' });
-      res.end();
+    let capturedReq;
+    AgentController.mockImplementation(async (req) => {
+      capturedReq = {
+        userId: req.user.id,
+        text: req.body.text,
+        conversationId: req.body.conversationId,
+        agent_id: req.body.agent_id,
+        ephemeralAgent: req.body.ephemeralAgent,
+        scheduledTaskMeta: req.scheduledTaskMeta,
+      };
+      req.body.conversationId = 'convo-new-id';
     });
 
     await processJob({ data: { taskId: '123' } });
 
     expect(getScheduledTask).toHaveBeenCalledWith('123');
-    
     expect(AgentController).toHaveBeenCalled();
-    const reqArg = AgentController.mock.calls[0][0];
-    
-    expect(reqArg.user.id).toBe('user1');
-    expect(reqArg.body.text).toBe('hello world');
-    expect(reqArg.body.conversationId).toBe('new');
-    expect(reqArg.body.agent_id).toBe('agent1');
-    expect(reqArg.body.ephemeralAgent).toEqual({
+
+    expect(capturedReq.userId).toBe('user1');
+    expect(capturedReq.text).toBe('hello world');
+    expect(capturedReq.conversationId).toBe('new');
+    expect(capturedReq.agent_id).toBe('agent1');
+    expect(capturedReq.ephemeralAgent).toEqual({
       web_search: true,
       mcp: ['server1'],
     });
+    expect(capturedReq.scheduledTaskMeta).toEqual({ taskId: '123', isScheduled: true });
 
-    expect(updateScheduledTask).toHaveBeenCalledWith('123', expect.objectContaining({
-      lastRunAt: expect.any(Date),
-    }));
+    expect(saveConvo).toHaveBeenCalledWith(
+      { userId: 'user1' },
+      { conversationId: 'convo-new-id', isScheduled: true, taskId: '123' },
+      expect.objectContaining({ noUpsert: true }),
+    );
+    expect(updateScheduledTask).toHaveBeenCalledWith(
+      '123',
+      expect.objectContaining({ lastRunAt: expect.any(Date) }),
+      'user1',
+    );
+  });
+
+  it('does not tag conversation when run is temporary', async () => {
+    getScheduledTask.mockResolvedValue({
+      _id: '123',
+      userId: 'user1',
+      targetType: 'agent',
+      targetId: 'agent1',
+      status: 'active',
+      payload: { text: 'hello', isTemporary: true },
+    });
+    updateScheduledTask.mockResolvedValue(true);
+
+    AgentController.mockImplementation(async (req) => {
+      req.body.conversationId = 'convo-temp';
+    });
+
+    await processJob({ data: { taskId: '123' } });
+
+    expect(saveConvo).not.toHaveBeenCalled();
   });
 
   it('should throw error if AgentController fails', async () => {

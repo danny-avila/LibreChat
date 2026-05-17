@@ -30,54 +30,52 @@ export default function ScheduledTasksPanel() {
       };
     };
     status: 'active' | 'paused' | 'completed' | 'failed';
-    outputConversationId: string;
   }>({
     targetType: 'agent',
     targetId: '',
     triggerType: 'cron',
     expression: '0 * * * *',
-    payload: { 
-      text: '', 
+    payload: {
+      text: '',
       isTemporary: false,
       ephemeralAgent: {
         web_search: false,
         file_search: false,
         execute_code: false,
-        mcp: []
-      }
+        mcp: [],
+      },
     },
     status: 'active',
-    outputConversationId: '',
   });
 
-  const handleCreate = () => {
-    if (!newTask.targetId || !newTask.payload.text) return;
-    
-    // Create a copy and remove empty optional fields
-    const { outputConversationId, ...rest } = newTask;
-    const payloadToSubmit: any = outputConversationId ? { ...rest, outputConversationId } : rest;
+  const resetForm = () =>
+    setNewTask({
+      targetType: 'agent',
+      targetId: '',
+      triggerType: 'cron',
+      expression: '0 * * * *',
+      payload: {
+        text: '',
+        isTemporary: false,
+        ephemeralAgent: {
+          web_search: false,
+          file_search: false,
+          execute_code: false,
+          mcp: [],
+        },
+      },
+      status: 'active',
+    });
 
-    createMutation.mutate(payloadToSubmit, {
+  const handleCreate = () => {
+    if (!newTask.targetId || !newTask.payload.text) {
+      return;
+    }
+
+    createMutation.mutate(newTask, {
       onSuccess: () => {
         setIsCreating(false);
-        setNewTask({
-          targetType: 'agent',
-          targetId: '',
-          triggerType: 'cron',
-          expression: '0 * * * *',
-          payload: { 
-            text: '', 
-            isTemporary: false,
-            ephemeralAgent: {
-              web_search: false,
-              file_search: false,
-              execute_code: false,
-              mcp: [] as string[]
-            }
-          },
-          status: 'active',
-          outputConversationId: '',
-        });
+        resetForm();
       },
     });
   };
@@ -129,16 +127,6 @@ export default function ScheduledTasksPanel() {
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">{localize('com_sidepanel_output_conversation_id')}</label>
-            <Input
-              type="text"
-              value={newTask.outputConversationId}
-              onChange={(e) => setNewTask({ ...newTask, outputConversationId: e.target.value })}
-              placeholder="Leave blank to create a new thread"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
             <label className="text-sm font-medium">{localize('com_sidepanel_cron_expression')}</label>
             <Input
               type="text"
@@ -151,8 +139,13 @@ export default function ScheduledTasksPanel() {
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium">{localize('com_sidepanel_prompt')}</label>
             <TextareaAutosize
-              value={newTask.payload.text as string}
-              onChange={(e) => setNewTask({ ...newTask, payload: { ...newTask.payload, text: e.target.value } })}
+              value={newTask.payload.text ?? ''}
+              onChange={(e) =>
+                setNewTask({
+                  ...newTask,
+                  payload: { ...newTask.payload, text: e.target.value },
+                })
+              }
               className="w-full rounded-md border border-border-light bg-surface-primary p-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring-primary"
               minRows={3}
               placeholder="What should the agent do?"
@@ -221,8 +214,13 @@ export default function ScheduledTasksPanel() {
           <div className="flex items-center gap-2 mt-1">
             <Checkbox
               id="isTemporary"
-              checked={newTask.payload.isTemporary as boolean}
-              onCheckedChange={(checked) => setNewTask({ ...newTask, payload: { ...newTask.payload, isTemporary: !!checked } })}
+              checked={newTask.payload.isTemporary === true}
+              onCheckedChange={(checked) =>
+                setNewTask({
+                  ...newTask,
+                  payload: { ...newTask.payload, isTemporary: checked === true },
+                })
+              }
               aria-label="Run as temporary chat"
             />
             <label htmlFor="isTemporary" className="text-sm cursor-pointer">
@@ -288,9 +286,7 @@ export default function ScheduledTasksPanel() {
                     </Button>
                   </div>
                 </div>
-                <div className="text-sm line-clamp-2 mt-1">
-                  {task.payload.text as string}
-                </div>
+                <div className="text-sm line-clamp-2 mt-1">{task.payload.text ?? ''}</div>
                 {task.lastRunAt && (
                   <div className="text-xs text-text-secondary mt-1">
                     {localize('com_sidepanel_last_run')}: {new Date(task.lastRunAt).toLocaleString()}

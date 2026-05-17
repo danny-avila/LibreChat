@@ -1,99 +1,139 @@
 # Local QA Testing Guide: Scheduled Tasks
 
-This guide provides step-by-step instructions to locally test the newly implemented **Scheduled Tasks** feature in LibreChat. It covers the end-to-end data flow, API interactions (with dummy content), and edge cases such as enabling MCP and Web Search on a per-task basis.
+This guide walks through end-to-end manual QA of the Scheduled Tasks feature. It assumes a clean local checkout of this branch.
 
 ## Prerequisites
 
-1. **Redis**: Ensure you have a local Redis instance running (BullMQ requires Redis).
+1. **Redis** is required for BullMQ. Spin up a local instance:
    ```bash
-   # Example using Docker
-   docker run -d -p 6379:6379 redis
+   docker run -d -p 6379:6379 --name librechat-redis redis
    ```
-2. **Environment Variables**: Verify that your `.env` file has Redis enabled:
+2. **Environment variables** in `.env`:
    ```env
    USE_REDIS=true
    REDIS_URI=redis://localhost:6379
    ```
-3. **Start the Application**:
-   Open two terminals and run:
+3. **Build and start** in two terminals:
+   - `npm run build` (one time, after pulling)
    - Terminal 1: `npm run backend:dev`
    - Terminal 2: `npm run frontend:dev`
+4. Log in to `http://localhost:3090`.
 
 ---
 
 ## Test Cases
 
-### 1. Basic Task Creation (UI Validation)
-**Goal:** Verify the new "Scheduled Tasks" side panel renders correctly and allows basic task creation.
+### 1. Sidebar entry renders
+- Open the unified left sidebar.
+- The **Scheduled Tasks** tab should appear with a clock-calendar icon.
+- Clicking it should open an empty panel with a **+** button at the top right.
 
-- **Step 1:** Log in to your local LibreChat instance.
-- **Step 2:** Open the left-hand Unified Sidebar and click on the **Scheduled Tasks** tab.
-- **Step 3:** Click the **+** (Plus) button to open the "New Task" form.
-- **Step 4:** Fill out the form with dummy data:
-  - **Target Type:** `Agent`
-  - **Target ID:** `<your-agent-id>` *(Create a dummy agent first, and copy its ID)*
-  - **Cron Expression:** `* * * * *` *(Runs every minute)*
-  - **Prompt:** `Write a one-sentence summary of the weather.`
-- **Step 5:** Click **Save**.
-- **Expected Result:** The task should appear in the list with an `active` status. Wait 1 minute, and check your backend terminal for `[INFO] Successfully executed scheduled task...`.
+### 2. Create a basic recurring task (UI)
+- Click **+** to open the form.
+- Fill in:
+  - **Target Type**: `Agent`
+  - **Target ID**: a real agent ID from your workspace
+  - **Cron Expression**: `* * * * *` (every minute)
+  - **Prompt**: `Write one fun fact about octopuses.`
+- Leave the capability switches off.
+- Click **Save**.
 
-### 2. Edge Case: MCP Integration (Per-Task Basis via API)
-**Goal:** Ensure that when a scheduled task runs, it correctly utilizes the specific MCP servers configured for that exact task (overriding or supplementing the Agent's default configuration).
+Expected:
+- Task card appears with `active` badge.
+- Within ~60s, backend logs show `Executing scheduled task ...` then `Successfully executed scheduled task ...`.
+- **The main chat history sidebar should NOT show this new run as a conversation.**
 
-*Note: Since the UI for advanced `ephemeralAgent` settings isn't fully built out yet, we will test this via the API.*
+### 3. View task runs (new UI)
+- On the task card, click the **History** (clock) icon.
+- A modal titled "Task Runs" opens.
+- After a minute or two there should be one or more entries with timestamps.
+- Click any entry → you should navigate to `/c/<conversationId>` and see the agent's response in the normal chat view.
+- Verify that the resulting conversation is **not** present in the main chat history list.
 
-- **Step 1:** Configure a dummy MCP server (e.g., `weather-mcp`) in the MCP Builder.
-- **Step 2:** Obtain your Bearer Token from the browser's Network tab or local storage.
-- **Step 3:** Create a task using cURL, passing the `ephemeralAgent` configuration to enable the specific MCP server:
+### 4. Per-task capabilities: Web Search
+- Create another task with:
+  - Prompt: `Search the web for today's top headline and summarize it.`
+  - Toggle **Web Search** ON.
+- After the next minute, open the task's runs and click into the latest one.
+
+Expected: the conversation shows tool calls for the web-search tool and a summarized answer.
+
+### 5. Per-task capabilities: MCP server
+- Configure an MCP server (e.g., a weather tool) in your account.
+- Create a task with:
+  - Prompt: `What's the weather in Tokyo right now?`
+  - Check the relevant MCP server in the form.
+- After the next run, open the run from the History modal.
+
+Expected: the conversation invokes the selected MCP server tool.
+
+### 6. Temporary chat mode (no persistence)
+- Create a task with **Run as Temporary Chat** enabled.
+- After the next run, open the History modal for this task.
+
+Expected: the modal shows no entries — the run executed but was not persisted. Backend logs still show success.
+
+### 7. User isolation
+- Log in as user A, create a task, capture its `_id` (from network tab `GET /api/scheduled-tasks`).
+- Log in as user B in a different browser.
+- From user B's session, try:
+  ```bash
+  curl -X PUT http://localhost:3080/api/scheduled-tasks/<USER_A_TASK_ID> \
+    -H "Authorization: Bearer <USER_B_TOKEN>" \
+    -H "Content-Type: application/json" \
+    -d '{"status":"paused"}'
+  curl -X DELETE http://localhost:3080/api/scheduled-tasks/<USER_A_TASK_ID> \
+    -H "Authorization: Bearer <USER_B_TOKEN>"
+  ```
+Expected: both return `404 Task not found`. User A's task remains unaffected.
+
+### 8. Task deletion cleans up the queue
+- Delete the task created in step 2 by clicking the trash icon.
+- Wait two minutes.
+
+Expected: no further `Executing scheduled task ...` log lines for that task ID — BullMQ repeatable job has been removed.
+
+### 9. API smoke test (cURL)
+Replace `<TOKEN>` with the JWT from your browser's network tab.
 
 ```bash
-curl -X POST http://localhost:3080/api/scheduled-tasks \
-  -H "Authorization: Bearer <YOUR_TOKEN>" \
-  -H "Content-Type: application/json" \
+# List
+curl -s http://localhost:3080/api/scheduled-tasks -H "Authorization: Bearer <TOKEN>"
+
+# Create
+curl -s -X POST http://localhost:3080/api/scheduled-tasks \
+  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
   -d '{
-    "targetType": "agent",
-    "targetId": "<your-agent-id>",
-    "triggerType": "cron",
-    "expression": "* * * * *",
-    "payload": {
-      "text": "What is the weather in London right now?",
-      "ephemeralAgent": {
-        "mcp": ["weather-mcp"]
-      }
-    }
+    "targetType":"agent",
+    "targetId":"<AGENT_ID>",
+    "triggerType":"interval",
+    "expression":"60000",
+    "payload":{"text":"hello","ephemeralAgent":{"web_search":true}}
   }'
+
+# Update (pause)
+curl -s -X PUT http://localhost:3080/api/scheduled-tasks/<TASK_ID> \
+  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
+  -d '{"status":"paused"}'
+
+# Delete
+curl -s -X DELETE http://localhost:3080/api/scheduled-tasks/<TASK_ID> \
+  -H "Authorization: Bearer <TOKEN>"
 ```
-- **Expected Result:** The backend logs should show the background job executing, and the Agent should successfully call the `weather-mcp` tool during execution.
 
-### 3. Edge Case: Web Search & File Search (Per-Task Basis)
-**Goal:** Verify that standard tools (like web search) function correctly in a background context when explicitly enabled for the task.
+### 10. Backend restart resilience
+- Create an active recurring task.
+- Stop and restart `npm run backend:dev`.
 
-- **Step 1:** Use cURL to create a task with Web Search and File Search explicitly enabled:
+Expected: after restart, BullMQ should resume firing the existing repeatable jobs (they're persisted in Redis). Verify with backend logs.
 
-```bash
-curl -X POST http://localhost:3080/api/scheduled-tasks \
-  -H "Authorization: Bearer <YOUR_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "targetType": "agent",
-    "targetId": "<your-agent-id>",
-    "triggerType": "cron",
-    "expression": "* * * * *",
-    "payload": {
-      "text": "Search the web for today s top news headline and summarize it.",
-      "ephemeralAgent": {
-        "web_search": true,
-        "file_search": false
-      }
-    }
-  }'
-```
-- **Expected Result:** The backend job completes without errors, and the agent successfully performs the web search. You can verify this by checking the resulting conversation thread in your LibreChat UI.
+---
 
-### 4. Task Deletion & Queue Cleanup
-**Goal:** Verify that deleting a task removes it from the database and stops the BullMQ queue from firing it.
+## What to capture for the PR
 
-- **Step 1:** In the Scheduled Tasks UI, click the **Trash** icon next to the active task.
-- **Step 2:** Verify it disappears from the UI.
-- **Step 3:** Wait for the next cron interval (e.g., 2 minutes).
-- **Expected Result:** The task should *not* execute in the backend logs, confirming the BullMQ repeatable job was successfully destroyed.
+- A short screen recording (or annotated screenshots) covering:
+  - Creating a task with Web Search + MCP enabled
+  - Opening the **Task Runs** modal and navigating into a run
+  - The chat history sidebar staying clean (no scheduled runs)
+- Logs snippet showing one successful background execution.
+- Confirmation that all 10 test cases above pass.

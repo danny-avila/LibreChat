@@ -30,6 +30,8 @@ export interface ConversationMethods {
       cursor?: string | null;
       limit?: number;
       isArchived?: boolean;
+      includeScheduled?: boolean;
+      taskId?: string;
       tags?: string[];
       search?: string;
       sortBy?: string;
