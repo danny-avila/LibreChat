@@ -26,6 +26,9 @@ const scheduledTaskSchema = new Schema<IScheduledTask>(
       type: String,
       required: true,
     },
+    timezone: {
+      type: String,
+    },
     payload: {
       type: Schema.Types.Mixed,
       required: true,

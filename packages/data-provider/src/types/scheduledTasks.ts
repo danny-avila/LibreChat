@@ -14,6 +14,8 @@ export type TScheduledTask = {
   targetId: string;
   triggerType: 'cron' | 'interval' | 'date';
   expression: string;
+  /** IANA timezone identifier (e.g. "America/New_York"). Defaults to UTC server-side. */
+  timezone?: string;
   payload: TScheduledTaskPayload;
   status: 'active' | 'paused' | 'completed' | 'failed';
   lastRunAt?: string;

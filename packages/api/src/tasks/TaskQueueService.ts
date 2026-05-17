@@ -1,6 +1,7 @@
 import { Queue, Worker } from 'bullmq';
 import { logger } from '@librechat/data-schemas';
 import { ioredisClient } from '../cache/redisClients';
+import { isValidTimezone, resolveDateTriggerMillis } from './timezone';
 import type { Job, RepeatOptions } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Types } from 'mongoose';
@@ -14,6 +15,7 @@ interface ScheduledTaskJobInput {
   status: 'active' | 'paused' | 'completed' | 'failed';
   triggerType: 'cron' | 'interval' | 'date';
   expression: string;
+  timezone?: string;
 }
 
 export class TaskQueueService {
@@ -89,8 +91,15 @@ export class TaskQueueService {
       return;
     }
 
+    if (task.timezone && !isValidTimezone(task.timezone)) {
+      throw new Error(
+        `Invalid IANA timezone for task ${jobId}: ${task.timezone}`,
+      );
+    }
+
     if (task.triggerType === 'date') {
-      const delay = new Date(task.expression).getTime() - Date.now();
+      const targetMs = resolveDateTriggerMillis(task.expression, task.timezone);
+      const delay = targetMs - Date.now();
       if (delay > 0) {
         await this.queue.add(QUEUE_NAME, { taskId: jobId }, { jobId, delay });
       }
@@ -100,6 +109,9 @@ export class TaskQueueService {
     let repeatOptions: RepeatOptions;
     if (task.triggerType === 'cron') {
       repeatOptions = { pattern: task.expression };
+      if (task.timezone) {
+        repeatOptions.tz = task.timezone;
+      }
     } else {
       const every = parseInt(task.expression, 10);
       if (Number.isNaN(every) || every <= 0) {

@@ -57,6 +57,7 @@ export * from './cache';
 export * from './stream';
 /* Tasks */
 export * from './tasks/TaskQueueService';
+export * from './tasks/timezone';
 /* Diagnostics */
 export { memoryDiagnostics } from './utils/memory';
 /* types */

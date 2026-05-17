@@ -1,9 +1,48 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useLocalize, useMCPServerManager } from '~/hooks';
 import { useGetScheduledTasks, useCreateScheduledTask, useDeleteScheduledTask } from '~/data-provider';
 import { CalendarClock, Plus, Trash2, History } from 'lucide-react';
 import { Button, Input, SelectDropDown, TextareaAutosize, Checkbox, Switch } from '@librechat/client';
 import TaskRunsModal from './TaskRunsModal';
+import { getBrowserTimezone, getSupportedTimezones } from './timezones';
+
+type NewTaskState = {
+  targetType: 'agent' | 'assistant';
+  targetId: string;
+  triggerType: 'cron' | 'interval' | 'date';
+  expression: string;
+  timezone: string;
+  payload: {
+    text?: string;
+    isTemporary?: boolean;
+    ephemeralAgent?: {
+      web_search?: boolean;
+      file_search?: boolean;
+      execute_code?: boolean;
+      mcp?: string[];
+    };
+  };
+  status: 'active' | 'paused' | 'completed' | 'failed';
+};
+
+const buildInitialTask = (): NewTaskState => ({
+  targetType: 'agent',
+  targetId: '',
+  triggerType: 'cron',
+  expression: '0 * * * *',
+  timezone: getBrowserTimezone(),
+  payload: {
+    text: '',
+    isTemporary: false,
+    ephemeralAgent: {
+      web_search: false,
+      file_search: false,
+      execute_code: false,
+      mcp: [],
+    },
+  },
+  status: 'active',
+});
 
 export default function ScheduledTasksPanel() {
   const localize = useLocalize();
@@ -14,65 +53,28 @@ export default function ScheduledTasksPanel() {
 
   const [isCreating, setIsCreating] = useState(false);
   const [viewingTaskId, setViewingTaskId] = useState<string | null>(null);
-  const [newTask, setNewTask] = useState<{
-    targetType: 'agent' | 'assistant';
-    targetId: string;
-    triggerType: 'cron' | 'interval' | 'date';
-    expression: string;
-    payload: {
-      text?: string;
-      isTemporary?: boolean;
-      ephemeralAgent?: {
-        web_search?: boolean;
-        file_search?: boolean;
-        execute_code?: boolean;
-        mcp?: string[];
-      };
-    };
-    status: 'active' | 'paused' | 'completed' | 'failed';
-  }>({
-    targetType: 'agent',
-    targetId: '',
-    triggerType: 'cron',
-    expression: '0 * * * *',
-    payload: {
-      text: '',
-      isTemporary: false,
-      ephemeralAgent: {
-        web_search: false,
-        file_search: false,
-        execute_code: false,
-        mcp: [],
-      },
-    },
-    status: 'active',
-  });
+  const [newTask, setNewTask] = useState<NewTaskState>(buildInitialTask);
 
-  const resetForm = () =>
-    setNewTask({
-      targetType: 'agent',
-      targetId: '',
-      triggerType: 'cron',
-      expression: '0 * * * *',
-      payload: {
-        text: '',
-        isTemporary: false,
-        ephemeralAgent: {
-          web_search: false,
-          file_search: false,
-          execute_code: false,
-          mcp: [],
-        },
-      },
-      status: 'active',
-    });
+  const timezoneOptions = useMemo(
+    () => getSupportedTimezones().map((tz) => ({ label: tz, value: tz })),
+    [],
+  );
+  const showTimezone = newTask.triggerType !== 'interval';
+
+  const resetForm = () => setNewTask(buildInitialTask());
 
   const handleCreate = () => {
     if (!newTask.targetId || !newTask.payload.text) {
       return;
     }
 
-    createMutation.mutate(newTask, {
+    const { timezone, ...rest } = newTask;
+    const payload =
+      showTimezone && timezone
+        ? { ...rest, timezone }
+        : rest;
+
+    createMutation.mutate(payload, {
       onSuccess: () => {
         setIsCreating(false);
         resetForm();
@@ -127,14 +129,71 @@ export default function ScheduledTasksPanel() {
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">{localize('com_sidepanel_cron_expression')}</label>
-            <Input
-              type="text"
-              value={newTask.expression}
-              onChange={(e) => setNewTask({ ...newTask, expression: e.target.value })}
-              placeholder="0 * * * *"
+            <label className="text-sm font-medium">{localize('com_sidepanel_trigger_type')}</label>
+            <SelectDropDown
+              value={newTask.triggerType}
+              setValue={(val) => {
+                const triggerType = val as 'cron' | 'interval' | 'date';
+                let expression = newTask.expression;
+                if (triggerType === 'cron') {
+                  expression = '0 * * * *';
+                } else if (triggerType === 'interval') {
+                  expression = '3600000';
+                } else if (triggerType === 'date') {
+                  const inOneHour = new Date(Date.now() + 60 * 60 * 1000);
+                  expression = inOneHour.toISOString().slice(0, 16);
+                }
+                setNewTask({ ...newTask, triggerType, expression });
+              }}
+              availableValues={[
+                { label: localize('com_sidepanel_trigger_cron'), value: 'cron' },
+                { label: localize('com_sidepanel_trigger_interval'), value: 'interval' },
+                { label: localize('com_sidepanel_trigger_date'), value: 'date' },
+              ]}
+              showAbove={false}
+              showLabel={false}
+              className="w-full"
             />
           </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium">
+              {newTask.triggerType === 'cron'
+                ? localize('com_sidepanel_cron_expression')
+                : newTask.triggerType === 'interval'
+                  ? localize('com_sidepanel_interval_ms')
+                  : localize('com_sidepanel_run_at')}
+            </label>
+            <Input
+              type={newTask.triggerType === 'date' ? 'datetime-local' : 'text'}
+              value={newTask.expression}
+              onChange={(e) => setNewTask({ ...newTask, expression: e.target.value })}
+              placeholder={
+                newTask.triggerType === 'cron'
+                  ? '0 * * * *'
+                  : newTask.triggerType === 'interval'
+                    ? '3600000'
+                    : ''
+              }
+            />
+          </div>
+
+          {showTimezone && (
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium">{localize('com_sidepanel_timezone')}</label>
+              <SelectDropDown
+                value={newTask.timezone}
+                setValue={(val) => setNewTask({ ...newTask, timezone: val as string })}
+                availableValues={timezoneOptions}
+                showAbove={false}
+                showLabel={false}
+                className="w-full"
+              />
+              <span className="text-xs text-text-secondary">
+                {localize('com_sidepanel_timezone_hint')}
+              </span>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium">{localize('com_sidepanel_prompt')}</label>
@@ -261,6 +320,7 @@ export default function ScheduledTasksPanel() {
                     </span>
                     <div className="text-xs text-text-secondary font-mono mt-1">
                       {task.expression}
+                      {task.timezone ? ` · ${task.timezone}` : ''}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

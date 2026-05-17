@@ -1,6 +1,6 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { getTaskQueueService } = require('@librechat/api');
+const { getTaskQueueService, isValidTimezone } = require('@librechat/api');
 const {
   getScheduledTasksByUser,
   getScheduledTask,
@@ -49,6 +49,9 @@ function validateTaskInput(data) {
   if (!data.payload || typeof data.payload !== 'object') {
     return 'payload is required';
   }
+  if (data.timezone != null && data.timezone !== '' && !isValidTimezone(data.timezone)) {
+    return `timezone must be a valid IANA identifier (got "${data.timezone}")`;
+  }
   return null;
 }
 
@@ -84,6 +87,12 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const data = sanitizeTaskInput(req.body);
+
+  if (data.timezone != null && data.timezone !== '' && !isValidTimezone(data.timezone)) {
+    return res
+      .status(400)
+      .json({ error: `timezone must be a valid IANA identifier (got "${data.timezone}")` });
+  }
 
   try {
     const updatedTask = await updateScheduledTask(id, data, req.user.id);

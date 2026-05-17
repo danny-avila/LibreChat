@@ -67,6 +67,31 @@ Expected: the conversation shows tool calls for the web-search tool and a summar
 
 Expected: the conversation invokes the selected MCP server tool.
 
+### 5b. Timezone-aware scheduling
+- Create a cron task with:
+  - **Trigger Type**: Cron
+  - **Cron Expression**: `0 9 * * *` (9 AM)
+  - **Timezone**: pick a zone that's currently *not* your local zone (e.g. `Asia/Kolkata` if you're in the US).
+- Backend should accept and persist the task.
+- In your DB (or `GET /api/scheduled-tasks`), confirm the `timezone` field is stored.
+- Tail the backend logs around the next 9 AM in the selected zone — the run should fire then, not at your local 9 AM.
+
+Also create a one-shot date task:
+  - **Trigger Type**: One-shot date
+  - **Run At**: pick a datetime ~2 minutes in the future
+  - **Timezone**: leave as your local zone
+
+Expected: the run fires at the wall-clock time you entered, regardless of server timezone.
+
+Invalid-timezone smoke test:
+```bash
+curl -s -X POST http://localhost:3080/api/scheduled-tasks \
+  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
+  -d '{"targetType":"agent","targetId":"<id>","triggerType":"cron",
+       "expression":"0 9 * * *","timezone":"Bogus/Zone","payload":{"text":"hi"}}'
+```
+Expected: `400` with an error message about IANA identifier.
+
 ### 6. Temporary chat mode (no persistence)
 - Create a task with **Run as Temporary Chat** enabled.
 - After the next run, open the History modal for this task.

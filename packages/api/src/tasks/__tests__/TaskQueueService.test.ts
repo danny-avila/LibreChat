@@ -118,6 +118,62 @@ describe('TaskQueueService', () => {
         }),
       ).rejects.toThrow(/Invalid interval expression/);
     });
+
+    it('passes timezone through to BullMQ for cron triggers', async () => {
+      mockGetRepeatableJobs.mockResolvedValue([]);
+
+      await service.addOrUpdateTask({
+        _id: '123',
+        status: 'active',
+        triggerType: 'cron',
+        expression: '0 9 * * *',
+        timezone: 'America/New_York',
+      });
+
+      expect(mockAdd).toHaveBeenCalledWith(
+        'scheduled-tasks',
+        { taskId: '123' },
+        { jobId: '123', repeat: { pattern: '0 9 * * *', tz: 'America/New_York' } },
+      );
+    });
+
+    it('rejects an invalid IANA timezone', async () => {
+      mockGetRepeatableJobs.mockResolvedValue([]);
+
+      await expect(
+        service.addOrUpdateTask({
+          _id: '123',
+          status: 'active',
+          triggerType: 'cron',
+          expression: '0 9 * * *',
+          timezone: 'Not/A_Zone',
+        }),
+      ).rejects.toThrow(/Invalid IANA timezone/);
+    });
+
+    it('interprets a naive date expression in the task timezone', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-06-30T12:00:00Z'));
+      mockGetRepeatableJobs.mockResolvedValue([]);
+
+      await service.addOrUpdateTask({
+        _id: '123',
+        status: 'active',
+        triggerType: 'date',
+        expression: '2026-07-15T09:00:00',
+        timezone: 'America/New_York',
+      });
+
+      // 2026-07-15 09:00 NY (EDT, UTC-4) = 2026-07-15 13:00 UTC.
+      const expectedTargetMs = Date.UTC(2026, 6, 15, 13, 0, 0);
+      const expectedDelay = expectedTargetMs - new Date('2026-06-30T12:00:00Z').getTime();
+      expect(mockAdd).toHaveBeenCalledWith(
+        'scheduled-tasks',
+        { taskId: '123' },
+        { jobId: '123', delay: expectedDelay },
+      );
+
+      jest.useRealTimers();
+    });
   });
 
   describe('removeTask', () => {
