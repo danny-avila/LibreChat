@@ -33,14 +33,15 @@ interface:
 registration:
   socialLogins: []
 
-# Endpoint SSRF allowlist for Ollama
-endpoints:
-  allowedAddresses:
+# Action/domain allowlist for Ollama-related outbound access
+actions:
+  allowedDomains:
     - 'localhost:11434'
     - '127.0.0.1:11434'
     - 'ollama:11434'
     - 'host.docker.internal:11434'
-  
+
+endpoints:
   # Agent configuration for Ollama models
   agents:
     recursionLimit: 50
