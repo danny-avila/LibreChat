@@ -17,6 +17,7 @@ import { useDeleteAgentMutation } from '~/data-provider';
 import { isEphemeralAgent } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+import { clearAgentDraft } from './drafts';
 
 function DeleteButton({
   agent_id,
@@ -44,6 +45,7 @@ function DeleteButton({
         message: localize('com_ui_agent_deleted'),
         status: 'success',
       });
+      clearAgentDraft(vars.agent_id);
 
       if (createMutation.data?.id ?? '') {
         logger.log('agents', 'resetting createMutation');

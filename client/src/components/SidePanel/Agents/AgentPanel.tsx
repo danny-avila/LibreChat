@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useRef, useState } from 'react';
+import React, { useMemo, useEffect, useCallback, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
@@ -33,6 +33,7 @@ import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
 import ModelPanel from './ModelPanel';
+import { clearAgentDrafts, getAgentDraft, saveAgentDraft } from './drafts';
 
 /* Helpers */
 function getUpdateToastMessage(
@@ -212,6 +213,22 @@ export const isAvatarUploadOnlyDirty = (
   return result.sawDirty && result.onlyAvatarDirty;
 };
 
+const hasPersistableDirtyFields = (dirtyFields?: FieldNamesMarkedBoolean<AgentForm>): boolean => {
+  if (!dirtyFields) {
+    return false;
+  }
+
+  const result = evaluateDirtyFields(dirtyFields);
+  return result.sawDirty && !result.onlyAvatarDirty;
+};
+
+const isPersistableDraftField = (name?: string): boolean => {
+  const [fieldName] = name?.split('.') ?? [];
+  return Boolean(
+    fieldName && !AVATAR_ONLY_DIRTY_FIELDS.has(fieldName) && !IGNORED_DIRTY_FIELDS.has(fieldName),
+  );
+};
+
 export default function AgentPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -244,8 +261,17 @@ export default function AgentPanel() {
   const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
+  const draftValues = useMemo(() => getAgentDraft(current_agent_id), [current_agent_id]);
+  const hasDraft = draftValues != null;
+  const defaultValues = useMemo(
+    () => ({
+      ...getDefaultAgentFormValues(),
+      ...draftValues,
+    }),
+    [draftValues],
+  );
   const methods = useForm<AgentForm>({
-    defaultValues: getDefaultAgentFormValues(),
+    defaultValues,
     mode: 'onChange',
   });
 
@@ -253,11 +279,80 @@ export default function AgentPanel() {
     control,
     handleSubmit,
     reset,
+    watch,
     getValues,
     setValue,
     formState: { dirtyFields },
   } = methods;
+  const currentAgentIdRef = useRef<string | undefined>(current_agent_id);
+  const shouldPersistDraftRef = useRef(hasDraft);
   const [isAvatarUploadInFlight, setIsAvatarUploadInFlight] = useState(false);
+
+  const clearDraftsForAgentIds = useCallback((agentIds: Array<string | null | undefined>) => {
+    shouldPersistDraftRef.current = false;
+    clearAgentDrafts(agentIds);
+  }, []);
+
+  const handleAgentChange = useCallback(
+    (selectedAgentId?: string | null) => {
+      clearDraftsForAgentIds([currentAgentIdRef.current, selectedAgentId]);
+    },
+    [clearDraftsForAgentIds],
+  );
+
+  const handleCreateNewAgent = useCallback(() => {
+    clearDraftsForAgentIds([currentAgentIdRef.current, undefined]);
+    reset(getDefaultAgentFormValues());
+    setCurrentAgentId(undefined);
+  }, [clearDraftsForAgentIds, reset, setCurrentAgentId]);
+
+  const shouldPersistDraft = hasPersistableDirtyFields(dirtyFields);
+
+  useEffect(() => {
+    if (currentAgentIdRef.current === current_agent_id) {
+      return;
+    }
+
+    if (shouldPersistDraftRef.current) {
+      saveAgentDraft(currentAgentIdRef.current, getValues());
+    }
+
+    currentAgentIdRef.current = current_agent_id;
+  }, [current_agent_id, getValues]);
+
+  useEffect(() => {
+    if (hasDraft) {
+      shouldPersistDraftRef.current = true;
+    }
+  }, [hasDraft]);
+
+  useEffect(() => {
+    if (!shouldPersistDraft) {
+      return;
+    }
+
+    shouldPersistDraftRef.current = true;
+    saveAgentDraft(currentAgentIdRef.current, getValues());
+  }, [getValues, shouldPersistDraft]);
+
+  useEffect(() => {
+    const subscription = watch((_, { name }) => {
+      if (!shouldPersistDraftRef.current && !isPersistableDraftField(name)) {
+        return;
+      }
+
+      shouldPersistDraftRef.current = true;
+      saveAgentDraft(currentAgentIdRef.current, getValues());
+    });
+
+    return () => {
+      if (shouldPersistDraftRef.current) {
+        saveAgentDraft(currentAgentIdRef.current, getValues());
+      }
+      subscription.unsubscribe();
+    };
+  }, [getValues, watch]);
+
   const uploadAvatarMutation = useUploadAgentAvatarMutation({
     onSuccess: (updatedAgent) => {
       showToast({ message: localize('com_ui_upload_agent_avatar') });
@@ -363,6 +458,9 @@ export default function AgentPanel() {
         setValue('avatar_preview', '', { shouldDirty: false });
       }
 
+      clearDraftsForAgentIds([current_agent_id, data.id ?? agent_id]);
+      reset(getValues());
+
       // Clear the ref after use
       previousVersionRef.current = undefined;
     },
@@ -395,6 +493,12 @@ export default function AgentPanel() {
           status: 'error',
         });
       }
+
+      clearDraftsForAgentIds([undefined, current_agent_id, data.id]);
+      reset({
+        ...getValues(),
+        id: data.id ?? getValues('id'),
+      });
     },
     onError: (err) => {
       const error = err as Error;
@@ -432,6 +536,7 @@ export default function AgentPanel() {
                 message: localize('com_agents_avatar_upload_error'),
                 status: 'error',
               });
+              return;
             }
           } catch (error) {
             console.error('[AgentPanel] Avatar upload failed for avatar-only submission', error);
@@ -439,7 +544,10 @@ export default function AgentPanel() {
               message: localize('com_agents_avatar_upload_error'),
               status: 'error',
             });
+            return;
           }
+          clearDraftsForAgentIds([current_agent_id, agent_id]);
+          reset(getValues());
           return;
         }
         update.mutate({ agent_id, data: { ...basePayload, tools } });
@@ -461,7 +569,19 @@ export default function AgentPanel() {
 
       create.mutate({ ...basePayload, model, tools, provider });
     },
-    [agent_id, create, dirtyFields, handleAvatarUpload, update, showToast, localize],
+    [
+      agent_id,
+      create,
+      dirtyFields,
+      reset,
+      getValues,
+      current_agent_id,
+      handleAvatarUpload,
+      update,
+      showToast,
+      localize,
+      clearDraftsForAgentIds,
+    ],
   );
 
   const handleSelectAgent = useCallback(() => {
@@ -495,6 +615,8 @@ export default function AgentPanel() {
               <AgentSelect
                 createMutation={create}
                 agentQuery={agentQuery}
+                hasDraft={hasDraft}
+                onAgentChange={handleAgentChange}
                 setCurrentAgentId={setCurrentAgentId}
                 selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
               />
@@ -505,10 +627,7 @@ export default function AgentPanel() {
                   type="button"
                   variant="outline"
                   className="w-full justify-center"
-                  onClick={() => {
-                    reset(getDefaultAgentFormValues());
-                    setCurrentAgentId(undefined);
-                  }}
+                  onClick={handleCreateNewAgent}
                   disabled={agentQuery.isInitialLoading}
                   aria-label={localize('com_ui_create_new_agent')}
                 >

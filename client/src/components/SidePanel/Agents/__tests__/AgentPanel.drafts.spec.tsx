@@ -1,0 +1,266 @@
+/**
+ * @jest-environment jsdom
+ */
+import * as React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import type { AgentForm, NavLink } from '~/common';
+import { ActivePanelProvider, useActivePanel } from '~/Providers/ActivePanelContext';
+import Nav from '~/components/SidePanel/Nav';
+import AgentPanel from '../AgentPanel';
+import { getAgentDraft, saveAgentDraft, clearAllAgentDrafts } from '../drafts';
+
+let mockCurrentAgentId: string | undefined;
+
+type MockButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  size?: string;
+  variant?: string;
+};
+
+jest.mock('@librechat/client', () => ({
+  Button: ({ children, onClick, size: _size, variant: _variant, ...props }: MockButtonProps) => (
+    <button onClick={onClick} {...props}>
+      {children}
+    </button>
+  ),
+  useToastContext: () => ({
+    showToast: jest.fn(),
+  }),
+}));
+
+jest.mock('librechat-data-provider/react-query', () => ({
+  useGetModelsQuery: () => ({ data: {} }),
+}));
+
+jest.mock('~/Providers', () => jest.requireActual('~/Providers/ActivePanelContext'));
+
+jest.mock('~/data-provider', () => ({
+  useGetAgentByIdQuery: () => ({
+    data: null,
+    isInitialLoading: false,
+    isSuccess: false,
+  }),
+  useGetExpandedAgentByIdQuery: () => ({
+    data: null,
+    isInitialLoading: false,
+    isSuccess: false,
+  }),
+  useCreateAgentMutation: () => ({
+    mutate: jest.fn(),
+    reset: jest.fn(),
+    isLoading: false,
+  }),
+  useUpdateAgentMutation: () => ({
+    mutate: jest.fn(),
+    isLoading: false,
+  }),
+  useUploadAgentAvatarMutation: () => ({
+    mutateAsync: jest.fn(),
+    isLoading: false,
+  }),
+}));
+
+jest.mock('~/hooks', () => ({
+  useSelectAgent: () => ({ onSelect: jest.fn() }),
+  useLocalize: () => (key: string) => key,
+  useAuthContext: () => ({ user: { id: 'user-123', role: 'USER' } }),
+}));
+
+jest.mock('~/hooks/useResourcePermissions', () => ({
+  useResourcePermissions: () => ({
+    hasPermission: jest.fn(() => true),
+    isLoading: false,
+  }),
+}));
+
+jest.mock('~/Providers/AgentPanelContext', () => ({
+  useAgentPanelContext: () => ({
+    activePanel: 'builder',
+    agentsConfig: { allowedProviders: [] },
+    setActivePanel: jest.fn(),
+    endpointsConfig: {},
+    setCurrentAgentId: jest.fn(),
+    agent_id: mockCurrentAgentId,
+  }),
+}));
+
+jest.mock('~/utils', () => ({
+  createProviderOption: jest.fn((provider: string) => ({ value: provider, label: provider })),
+  getDefaultAgentFormValues: jest.fn(() => ({
+    id: '',
+    name: '',
+    description: '',
+    instructions: '',
+    model: '',
+    model_parameters: {},
+    provider: { value: '', label: '' },
+    tools: [],
+    tool_options: {},
+    category: 'general',
+    execute_code: false,
+    file_search: false,
+    web_search: false,
+    avatar_file: null,
+    avatar_preview: '',
+    avatar_action: null,
+  })),
+}));
+
+jest.mock('~/common', () => {
+  const actual = jest.requireActual('~/common') as typeof import('~/common');
+
+  return {
+    ...actual,
+    Panel: {
+      model: 'model',
+      builder: 'builder',
+      advanced: 'advanced',
+    },
+    isEphemeralAgent: (agentId: string | null | undefined): boolean => !agentId,
+  };
+});
+
+jest.mock('../AgentSelect', () => ({
+  __esModule: true,
+  default: () => <div>Agent Select</div>,
+}));
+
+jest.mock('../AgentConfig', () => ({
+  __esModule: true,
+  default: () => {
+    const { useFormContext } = jest.requireActual(
+      'react-hook-form',
+    ) as typeof import('react-hook-form');
+    const { register } = useFormContext();
+
+    return (
+      <div>
+        <input aria-label="Draft name" {...register('name')} />
+        <textarea aria-label="Draft instructions" {...register('instructions')} />
+        <input aria-label="Draft model" {...register('model')} />
+      </div>
+    );
+  },
+}));
+
+jest.mock('../AgentFooter', () => ({
+  __esModule: true,
+  default: () => <button type="submit">Save Agent</button>,
+}));
+
+jest.mock('../Advanced/AdvancedPanel', () => ({
+  __esModule: true,
+  default: () => <div>Advanced Panel</div>,
+}));
+
+jest.mock('../AgentPanelSkeleton', () => ({
+  __esModule: true,
+  default: () => <div>Loading</div>,
+}));
+
+jest.mock('../ModelPanel', () => ({
+  __esModule: true,
+  default: () => <div>Model Panel</div>,
+}));
+
+function PanelControls() {
+  const { setActive } = useActivePanel();
+
+  return (
+    <>
+      <button type="button" onClick={() => setActive('agents')}>
+        Agents
+      </button>
+      <button type="button" onClick={() => setActive('files')}>
+        Files
+      </button>
+    </>
+  );
+}
+
+function Harness() {
+  const Icon = () => null;
+  const links = [
+    {
+      title: 'com_sidepanel_agent_builder',
+      icon: Icon,
+      id: 'agents',
+      Component: AgentPanel,
+    },
+    {
+      title: 'com_sidepanel_attach_files',
+      icon: Icon,
+      id: 'files',
+      Component: () => <div>Files panel</div>,
+    },
+  ] as NavLink[];
+
+  return (
+    <ActivePanelProvider>
+      <PanelControls />
+      <Nav links={links} />
+    </ActivePanelProvider>
+  );
+}
+
+describe('AgentPanel draft preservation', () => {
+  beforeEach(() => {
+    localStorage.setItem('side:active-panel', 'agents');
+    mockCurrentAgentId = undefined;
+    clearAllAgentDrafts();
+  });
+
+  it('restores unsaved new-agent values after switching to Files and back', () => {
+    render(<Harness />);
+
+    fireEvent.change(screen.getByLabelText('Draft name'), {
+      target: { value: 'Navigation survivor' },
+    });
+    fireEvent.change(screen.getByLabelText('Draft instructions'), {
+      target: { value: 'Keep these instructions.' },
+    });
+    fireEvent.change(screen.getByLabelText('Draft model'), {
+      target: { value: 'gpt-4o-mini' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Files' }));
+    expect(screen.getByText('Files panel')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Agents' }));
+
+    expect(screen.getByLabelText('Draft name')).toHaveValue('Navigation survivor');
+    expect(screen.getByLabelText('Draft instructions')).toHaveValue('Keep these instructions.');
+    expect(screen.getByLabelText('Draft model')).toHaveValue('gpt-4o-mini');
+  });
+
+  it('clears an existing draft when Create new agent is clicked', () => {
+    mockCurrentAgentId = 'agent-123';
+    saveAgentDraft('agent-123', {
+      id: 'agent-123',
+      name: 'Unsaved saved-agent name',
+      description: '',
+      instructions: 'Unsaved saved-agent instructions',
+      model: 'gpt-4o',
+      model_parameters: {},
+      provider: { label: 'OpenAI', value: 'openAI' },
+      tools: [],
+      tool_options: {},
+      category: 'general',
+      execute_code: false,
+      file_search: false,
+      web_search: false,
+    } as AgentForm);
+
+    render(<Harness />);
+
+    expect(screen.getByLabelText('Draft name')).toHaveValue('Unsaved saved-agent name');
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_create_new_agent' }));
+
+    expect(screen.getByLabelText('Draft name')).toHaveValue('');
+    expect(screen.getByLabelText('Draft instructions')).toHaveValue('');
+    expect(screen.getByLabelText('Draft model')).toHaveValue('');
+    expect(getAgentDraft('agent-123')).toBeUndefined();
+    expect(getAgentDraft(undefined)).toBeUndefined();
+  });
+});
