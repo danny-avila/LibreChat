@@ -34,6 +34,8 @@ import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
+import ScheduledTasksPanel from '~/components/SidePanel/ScheduledTasks/Panel';
+import { CalendarClock } from 'lucide-react';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -205,6 +207,15 @@ export default function useSideNavLinks({
         Component: MCPBuilderPanel,
       });
     }
+
+    // Scheduled Tasks Link
+    links.push({
+      title: 'com_sidepanel_scheduled_tasks',
+      label: '',
+      icon: CalendarClock,
+      id: 'scheduled-tasks',
+      Component: ScheduledTasksPanel,
+    });
 
     if (includeHidePanel && hidePanel) {
       links.push({

@@ -616,6 +616,7 @@
   "com_sidepanel_hide_panel": "Hide Panel",
   "com_sidepanel_manage_files": "Manage Files",
   "com_sidepanel_parameters": "Parameters",
+  "com_sidepanel_scheduled_tasks": "Scheduled Tasks",
   "com_sources_agent_file": "Source Document",
   "com_sources_agent_files": "Agent Files",
   "com_sources_download_aria_label": "Download {{filename}}{{status}}",
