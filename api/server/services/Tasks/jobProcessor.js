@@ -67,8 +67,17 @@ async function buildRequestFromTask(task, taskId) {
   }
 
   try {
+    /**
+     * `buildOptions` destructures `{ spec, iconURL, agent_id, ...model_parameters }`
+     * from `parsedBody`, so every other key it sees ends up in `model_parameters`
+     * and reaches the LLM provider as a model parameter. Pass only the
+     * model-relevant shape — request-scope fields like `conversationId`, `text`,
+     * and `ephemeralAgent` belong on `req.body` for AgentController to consume,
+     * not on the LLM invocation.
+     */
     const builtOption = await buildOptions(req, endpoint, {
-      ...req.body,
+      endpoint,
+      model,
       agent_id: Constants.EPHEMERAL_AGENT_ID,
     });
     req.body.endpointOption = builtOption;

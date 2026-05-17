@@ -1,4 +1,5 @@
 import React from 'react';
+import { CalendarClock } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, Button } from '@librechat/client';
@@ -37,9 +38,21 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
         
         <div className="flex-1 overflow-y-auto mt-4">
           {isLoading ? (
-            <div className="text-sm text-text-secondary">{localize('com_ui_loading')}</div>
+            <div className="flex items-center justify-center py-12 text-sm text-text-secondary">
+              {localize('com_ui_loading')}
+            </div>
           ) : conversations.length === 0 ? (
-            <div className="text-sm text-text-secondary">{localize('com_sidepanel_no_runs')}</div>
+            <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+              <div className="rounded-full bg-surface-secondary p-3 text-text-secondary">
+                <CalendarClock className="h-6 w-6" aria-hidden="true" />
+              </div>
+              <div className="text-sm font-medium text-text-primary">
+                {localize('com_sidepanel_no_runs')}
+              </div>
+              <p className="max-w-xs text-xs text-text-secondary">
+                {localize('com_sidepanel_no_runs_description')}
+              </p>
+            </div>
           ) : (
             <div className="flex flex-col gap-2">
               {conversations.map((convo) => (

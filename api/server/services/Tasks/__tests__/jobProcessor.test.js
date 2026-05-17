@@ -92,7 +92,7 @@ describe('jobProcessor', () => {
     expect(buildOptions).toHaveBeenCalledWith(
       expect.objectContaining({ user: expect.objectContaining({ id: 'user1' }) }),
       'openAI',
-      expect.objectContaining({ endpoint: 'openAI', model: 'gpt-4o', agent_id: 'ephemeral' }),
+      { endpoint: 'openAI', model: 'gpt-4o', agent_id: 'ephemeral' },
     );
     expect(capturedReq.agent_id).toBe('ephemeral');
     expect(capturedReq.endpoint).toBe('openAI');

@@ -14,7 +14,6 @@ import {
   useDeleteScheduledTask,
   useUpdateScheduledTask,
 } from '~/data-provider';
-import { describeCronExpression } from './cronPresets';
 import { nextPauseStatus } from './helpers';
 import AdminSettings from './AdminSettings';
 import TaskRunsModal from './TaskRunsModal';
@@ -76,109 +75,81 @@ export default function ScheduledTasksPanel() {
             {localize('com_sidepanel_no_tasks')}
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
             {tasks?.map((task) => {
-              const description = describeCronExpression(task.expression);
               const modelLabel = task.payload?.model ?? task.targetId;
               const displayName = task.name?.trim() || modelLabel;
+              const statusDot =
+                task.status === 'active'
+                  ? 'bg-green-500'
+                  : task.status === 'paused'
+                    ? 'bg-yellow-500'
+                    : 'bg-gray-400';
+              const statusLabel =
+                task.status === 'paused'
+                  ? localize('com_sidepanel_resume_task')
+                  : localize('com_sidepanel_pause_task');
               return (
                 <div
                   key={task._id}
-                  className="flex flex-col gap-2 rounded-lg border border-border-light p-3"
+                  className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-hover"
                 >
-                  <div className="flex items-start justify-between">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(task)}
-                      className="flex-1 text-left"
-                    >
-                      <span className="block text-sm font-medium text-text-primary">
-                        {displayName}
-                      </span>
-                      <span className="mt-1 block text-xs text-text-secondary">{modelLabel}</span>
-                      <span className="mt-1 block font-mono text-xs text-text-secondary">
-                        {task.expression}
-                        {task.timezone ? ` · ${task.timezone}` : ''}
-                      </span>
-                      {description && (
-                        <span className="mt-1 block text-xs text-text-secondary">
-                          {description}
-                        </span>
-                      )}
-                    </button>
-                    <div className="flex flex-shrink-0 items-center gap-1">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs ${
-                          task.status === 'active'
-                            ? 'bg-green-100 text-green-800'
-                            : task.status === 'paused'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-gray-100 text-gray-800'
-                        }`}
-                      >
-                        {task.status}
-                      </span>
-                    </div>
-                  </div>
-                  {task.payload?.text && (
-                    <div className="line-clamp-2 text-sm text-text-secondary">
-                      {task.payload.text}
-                    </div>
-                  )}
-                  {task.lastRunAt && (
-                    <div className="text-xs text-text-secondary">
-                      {localize('com_sidepanel_last_run')}:{' '}
-                      {new Date(task.lastRunAt).toLocaleString()}
-                    </div>
-                  )}
-                  <div className="flex items-center justify-end gap-1">
+                  <span
+                    aria-label={task.status}
+                    className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${statusDot}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => openEdit(task)}
+                    className="min-w-0 flex-1 truncate text-left text-sm text-text-primary"
+                    title={displayName}
+                  >
+                    {displayName}
+                  </button>
+                  <div className="flex flex-shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => togglePause(task)}
-                      className="text-text-secondary hover:text-text-primary"
-                      title={
-                        task.status === 'paused'
-                          ? localize('com_sidepanel_resume_task')
-                          : localize('com_sidepanel_pause_task')
-                      }
+                      className="h-6 w-6 text-text-secondary hover:text-text-primary"
+                      title={statusLabel}
                       disabled={
                         updateMutation.isLoading ||
                         (task.status !== 'active' && task.status !== 'paused')
                       }
                     >
                       {task.status === 'paused' ? (
-                        <Play className="h-4 w-4" />
+                        <Play className="h-3.5 w-3.5" />
                       ) : (
-                        <Pause className="h-4 w-4" />
+                        <Pause className="h-3.5 w-3.5" />
                       )}
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => openEdit(task)}
-                      className="text-text-secondary hover:text-text-primary"
+                      className="h-6 w-6 text-text-secondary hover:text-text-primary"
                       title={localize('com_sidepanel_edit_task')}
                     >
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => setViewingTaskId(task._id)}
-                      className="text-text-secondary hover:text-text-primary"
+                      className="h-6 w-6 text-text-secondary hover:text-text-primary"
                       title={localize('com_sidepanel_task_runs')}
                     >
-                      <History className="h-4 w-4" />
+                      <History className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => deleteMutation.mutate(task._id)}
-                      className="text-text-secondary hover:text-red-500"
+                      className="h-6 w-6 text-text-secondary hover:text-red-500"
                       title={localize('com_ui_delete')}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
