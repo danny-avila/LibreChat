@@ -1,0 +1,158 @@
+# LibreChat Configuration - Ollama Integration for Free Local AI Agent
+# https://www.librechat.ai/docs/configuration/librechat_yaml
+
+version: 1.3.11
+
+# Enable caching for better performance
+cache: true
+
+# Custom interface configuration
+interface:
+  customWelcome: 'Welcome to LibreChat with Ollama! Free local AI agent ready.'
+  fileSearch: true
+  modelSelect: true
+  parameters: true
+  presets: true
+  prompts:
+    use: true
+    create: true
+    share: false
+    public: false
+  bookmarks: true
+  multiConvo: true
+  agents:
+    use: true
+    create: true
+    share: false
+    public: false
+  marketplace:
+    use: false
+  fileCitations: true
+
+# Registration settings
+registration:
+  socialLogins: []
+
+# Endpoint SSRF allowlist for Ollama
+endpoints:
+  allowedAddresses:
+    - 'localhost:11434'
+    - '127.0.0.1:11434'
+    - 'ollama:11434'
+    - 'host.docker.internal:11434'
+  
+  # Agent configuration for Ollama models
+  agents:
+    recursionLimit: 50
+    maxRecursionLimit: 100
+    disableBuilder: false
+    capabilities: ["execute_code", "file_search", "actions", "tools"]
+
+  # Custom endpoints - Ollama as primary free AI endpoint
+  custom:
+    # Ollama - Primary Free Local AI
+    - name: 'Ollama'
+      apiKey: 'ollama'
+      baseURL: 'http://ollama:11434/v1'
+      models:
+        default:
+          - 'llama3.2:latest'
+          - 'llama3.1:latest'
+          - 'llama3:latest'
+          - 'mistral:latest'
+          - 'mixtral:latest'
+          - 'codellama:latest'
+          - 'deepseek-coder:latest'
+          - 'phi3:latest'
+          - 'gemma2:latest'
+          - 'qwen2:latest'
+        fetch: true
+      titleConvo: true
+      titleModel: 'llama3.2:latest'
+      summarize: true
+      summaryModel: 'llama3.2:latest'
+      modelDisplayLabel: 'Ollama'
+      # Drop unsupported parameters for Ollama
+      dropParams: ['user', 'frequency_penalty', 'presence_penalty', 'logit_bias']
+      # Custom parameters for Ollama
+      addParams:
+        stream: true
+
+    # Ollama Agent - Specialized for Agent Tasks
+    - name: 'OllamaAgent'
+      apiKey: 'ollama'
+      baseURL: 'http://ollama:11434/v1'
+      models:
+        default:
+          - 'llama3.2:latest'
+          - 'llama3.1:latest'
+          - 'qwen2:latest'
+          - 'mistral:latest'
+        fetch: true
+      titleConvo: true
+      titleModel: 'llama3.2:latest'
+      modelDisplayLabel: 'Ollama Agent'
+      dropParams: ['user', 'frequency_penalty', 'presence_penalty', 'logit_bias']
+      addParams:
+        stream: true
+
+# Model specifications for easy selection
+modelSpecs:
+  list:
+    # Fast Response Model
+    - name: "llama3.2-fast"
+      label: "Llama 3.2 (Fast)"
+      description: "Fast local inference with Llama 3.2 - great for quick responses"
+      group: "Ollama"
+      preset:
+        endpoint: "Ollama"
+        model: "llama3.2:latest"
+        temperature: 0.7
+
+    # Coding Assistant
+    - name: "codellama-coder"
+      label: "CodeLlama Coder"
+      description: "Specialized for coding tasks and code generation"
+      group: "Ollama"
+      preset:
+        endpoint: "Ollama"
+        model: "codellama:latest"
+        temperature: 0.3
+
+    # Deep Reasoning
+    - name: "llama3.1-reasoning"
+      label: "Llama 3.1 (Reasoning)"
+      description: "Best for complex reasoning and analysis tasks"
+      group: "Ollama"
+      preset:
+        endpoint: "Ollama"
+        model: "llama3.1:latest"
+        temperature: 0.5
+
+    # Agent Mode
+    - name: "agent-mode"
+      label: "Agent Mode (Qwen2)"
+      description: "Optimized for agent tasks with tool usage"
+      group: "OllamaAgent"
+      preset:
+        endpoint: "OllamaAgent"
+        model: "qwen2:latest"
+        temperature: 0.7
+
+# File configuration
+fileConfig:
+  endpoints:
+    Ollama:
+      fileLimit: 5
+      fileSizeLimit: 10
+      totalSizeLimit: 50
+      supportedMimeTypes:
+        - "image/.*"
+        - "application/pdf"
+        - "text/.*"
+    OllamaAgent:
+      fileLimit: 10
+      fileSizeLimit: 20
+      totalSizeLimit: 100
+  serverFileSizeLimit: 100
+  avatarSizeLimit: 2
