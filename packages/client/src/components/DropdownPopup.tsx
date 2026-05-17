@@ -86,16 +86,6 @@ const Menu: React.FC<MenuProps> = ({
       unmountOnHide={unmountOnHide}
       preserveTabOrder={preserveTabOrder}
       className={cn('popover-ui z-40', className)}
-      /**
-       * The menu portals out of any parent (e.g. a Radix Dialog). Without
-       * isolating pointer events here, the parent's outside-click listener
-       * fires for every click on a menu item and dismisses the dialog before
-       * the item's own onClick can run. Containing pointerdown / mousedown /
-       * touchstart inside the popover keeps each menu fully interactive.
-       */
-      onPointerDown={(event) => event.stopPropagation()}
-      onMouseDown={(event) => event.stopPropagation()}
-      onTouchStart={(event) => event.stopPropagation()}
       {...props}
     >
       {items

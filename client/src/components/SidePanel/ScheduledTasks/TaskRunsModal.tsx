@@ -4,9 +4,9 @@ import { CalendarClock } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, Spinner } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { useConversationsInfiniteQuery } from '~/data-provider';
-import Convo from '~/components/Conversations/Convo';
 import { DateLabel } from '~/components/Conversations/Conversations';
 import { groupConversationsByDate } from '~/utils';
+import TaskRunRow from './TaskRunRow';
 
 interface TaskRunsModalProps {
   taskId: string;
@@ -60,52 +60,11 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
     [hasNextPage, isFetchingNextPage, throttledFetchNextPage],
   );
 
-  /**
-   * `Convo` calls `toggleNav()` before navigating; we hijack that callback to
-   * close the modal so opening a run feels like opening a chat from the
-   * sidebar. `retainView` is the sidebar's "move-to-top" callback, irrelevant
-   * here — query refetch handles ordering on next open.
-   */
-  const handleConvoToggle = useCallback(() => {
-    onClose();
-  }, [onClose]);
-  const handleRetainView = useCallback(() => {}, []);
-
   const isEmpty = !isLoading && conversations.length === 0;
-
-  /**
-   * Radix Dialog treats any pointer event outside `DialogContent` as a request
-   * to close. The `Convo` row's three-dot menu (Ariakit popover) renders in a
-   * separate portal, so clicking a menu item would otherwise dismiss the modal
-   * before the item's own `onClick` runs.
-   *
-   * `event.target` on these custom events is the dismissable layer itself;
-   * the actual clicked DOM node lives at `event.detail.originalEvent.target`.
-   * Veto the dismiss when that real target sits inside any menu/popover.
-   */
-  const handleInteractOutside = useCallback(
-    (event: CustomEvent<{ originalEvent: Event }>) => {
-      const original = event.detail?.originalEvent;
-      const target = (original?.target ?? null) as HTMLElement | null;
-      if (!target) return;
-      if (
-        target.closest(
-          '[role="menu"], [role="menuitem"], .popover-ui, [data-radix-popper-content-wrapper]',
-        )
-      ) {
-        event.preventDefault();
-      }
-    },
-    [],
-  );
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent
-        className="flex max-h-[80vh] max-w-2xl flex-col"
-        onPointerDownOutside={handleInteractOutside}
-        onInteractOutside={handleInteractOutside}
-      >
+      <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col">
         <DialogHeader>
           <DialogTitle>{localize('com_sidepanel_task_runs')}</DialogTitle>
           {taskName && <span className="text-sm text-text-secondary">{taskName}</span>}
@@ -134,12 +93,10 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
                 <div key={groupName} className="flex flex-col">
                   <DateLabel groupName={groupName} isFirst={groupIndex === 0} />
                   {convos.map((convo) => (
-                    <Convo
+                    <TaskRunRow
                       key={convo.conversationId}
                       conversation={convo}
-                      retainView={handleRetainView}
-                      toggleNav={handleConvoToggle}
-                      menuClassName="z-[1100]"
+                      onOpen={onClose}
                     />
                   ))}
                 </div>
