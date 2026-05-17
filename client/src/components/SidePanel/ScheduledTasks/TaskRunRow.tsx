@@ -30,6 +30,30 @@ interface TaskRunRowProps {
 const DELETE_CONFIRM_RESET_MS = 2500;
 
 /**
+ * Compact run timestamp. Same-day → "9:32 PM", same-year → "Apr 15",
+ * older → "Apr 15, 2024". The parent DateLabel already disambiguates the
+ * group (Today / Yesterday / ...), so the shorter form is enough inline;
+ * the full ISO datetime lives in the row's `title` attribute for tooltips.
+ */
+function formatRunTime(value: string | Date | undefined): { short: string; full: string } {
+  if (!value) return { short: '', full: '' };
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return { short: '', full: '' };
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  const sameYear = date.getFullYear() === now.getFullYear();
+  const short = sameDay
+    ? date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    : date.toLocaleDateString(
+        undefined,
+        sameYear
+          ? { month: 'short', day: 'numeric' }
+          : { month: 'short', day: 'numeric', year: 'numeric' },
+      );
+  return { short, full: date.toLocaleString() };
+}
+
+/**
  * Self-contained row used inside the Task Runs modal. Visually mirrors the
  * chat sidebar entry (endpoint icon, single-line title, hover affordances)
  * but ships its own menu so that nothing inside the row depends on the
@@ -52,6 +76,7 @@ export default function TaskRunRow({ conversation, onOpen, onRequestShare }: Tas
   const conversationId = conversation.conversationId ?? '';
   const title = (conversation.title ?? '').trim();
   const displayTitle = title.length > 0 ? title : localize('com_ui_untitled');
+  const runTime = formatRunTime(conversation.createdAt ?? conversation.updatedAt);
 
   const menuStore = Ariakit.useMenuStore({ focusLoop: true });
   const isMenuOpen = menuStore.useState('open');
@@ -226,6 +251,14 @@ export default function TaskRunRow({ conversation, onOpen, onRequestShare }: Tas
           context="menu-item"
         />
         <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{displayTitle}</span>
+        {runTime.short && (
+          <span
+            className="ml-2 hidden shrink-0 whitespace-nowrap text-xs text-text-tertiary sm:inline"
+            title={runTime.full}
+          >
+            {runTime.short}
+          </span>
+        )}
       </button>
 
       <Ariakit.MenuProvider store={menuStore}>
