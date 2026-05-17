@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useLocalize } from '~/hooks';
 import { useGetScheduledTasks, useCreateScheduledTask, useDeleteScheduledTask } from '~/data-provider';
 import { CalendarClock, Plus, Trash2 } from 'lucide-react';
+import { Button, Input, SelectDropDown, TextareaAutosize } from '@librechat/client';
 
 export default function ScheduledTasksPanel() {
   const localize = useLocalize();
@@ -43,86 +44,88 @@ export default function ScheduledTasksPanel() {
           <CalendarClock className="h-5 w-5" />
           {localize('com_sidepanel_scheduled_tasks')}
         </h2>
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => setIsCreating(!isCreating)}
           className="rounded-md p-1 hover:bg-surface-hover"
         >
           <Plus className="h-5 w-5" />
-        </button>
+        </Button>
       </div>
 
       {isCreating && (
         <div className="flex flex-col gap-3 rounded-lg border border-border-light p-3">
-          <h3 className="font-medium">New Task</h3>
+          <h3 className="font-medium">{localize('com_sidepanel_new_task')}</h3>
           
           <div className="flex flex-col gap-1">
-            <label className="text-sm">Target Type</label>
-            <select
+            <label className="text-sm font-medium">{localize('com_sidepanel_target_type')}</label>
+            <SelectDropDown
               value={newTask.targetType}
-              onChange={(e) => setNewTask({ ...newTask, targetType: e.target.value as 'agent' | 'assistant' })}
-              className="rounded-md border border-border-light bg-surface-primary p-2 text-sm"
-            >
-              <option value="agent">Agent</option>
-              <option value="assistant">Assistant</option>
-            </select>
+              setValue={(val) => setNewTask({ ...newTask, targetType: val as 'agent' | 'assistant' })}
+              availableValues={[
+                { label: 'Agent', value: 'agent' },
+                { label: 'Assistant', value: 'assistant' }
+              ]}
+              showAbove={false}
+              showLabel={false}
+              className="w-full"
+            />
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-sm">Target ID (Agent/Assistant ID)</label>
-            <input
+            <label className="text-sm font-medium">{localize('com_sidepanel_target_id')}</label>
+            <Input
               type="text"
               value={newTask.targetId}
               onChange={(e) => setNewTask({ ...newTask, targetId: e.target.value })}
-              className="rounded-md border border-border-light bg-surface-primary p-2 text-sm"
               placeholder="e.g. agent-123"
             />
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-sm">Cron Expression</label>
-            <input
+            <label className="text-sm font-medium">{localize('com_sidepanel_cron_expression')}</label>
+            <Input
               type="text"
               value={newTask.expression}
               onChange={(e) => setNewTask({ ...newTask, expression: e.target.value })}
-              className="rounded-md border border-border-light bg-surface-primary p-2 text-sm"
               placeholder="0 * * * *"
             />
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-sm">Prompt</label>
-            <textarea
-              value={newTask.payload.text}
+            <label className="text-sm font-medium">{localize('com_sidepanel_prompt')}</label>
+            <TextareaAutosize
+              value={newTask.payload.text as string}
               onChange={(e) => setNewTask({ ...newTask, payload: { ...newTask.payload, text: e.target.value } })}
-              className="rounded-md border border-border-light bg-surface-primary p-2 text-sm"
-              rows={3}
+              className="w-full rounded-md border border-border-light bg-surface-primary p-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring-primary"
+              minRows={3}
               placeholder="What should the agent do?"
             />
           </div>
 
           <div className="flex justify-end gap-2 mt-2">
-            <button
+            <Button
+              variant="outline"
               onClick={() => setIsCreating(false)}
-              className="rounded-md px-3 py-1.5 text-sm hover:bg-surface-hover"
             >
-              Cancel
-            </button>
-            <button
+              {localize('com_ui_cancel')}
+            </Button>
+            <Button
               onClick={handleCreate}
               disabled={createMutation.isPending || !newTask.targetId || !newTask.payload.text}
-              className="rounded-md bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50"
             >
-              {createMutation.isPending ? 'Saving...' : 'Save'}
-            </button>
+              {createMutation.isPending ? localize('com_ui_saving') : localize('com_ui_save')}
+            </Button>
           </div>
         </div>
       )}
 
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
-          <div className="text-sm text-text-secondary">Loading...</div>
+          <div className="text-sm text-text-secondary">{localize('com_ui_loading')}</div>
         ) : tasks?.length === 0 ? (
-          <div className="text-sm text-text-secondary">No scheduled tasks found.</div>
+          <div className="text-sm text-text-secondary">{localize('com_sidepanel_no_tasks')}</div>
         ) : (
           <div className="flex flex-col gap-3">
             {tasks?.map((task) => (
@@ -140,12 +143,14 @@ export default function ScheduledTasksPanel() {
                     <span className={`text-xs px-2 py-0.5 rounded-full ${task.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
                       {task.status}
                     </span>
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => deleteMutation.mutate(task._id)}
                       className="text-text-secondary hover:text-red-500"
                     >
                       <Trash2 className="h-4 w-4" />
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 <div className="text-sm line-clamp-2 mt-1">
@@ -153,7 +158,7 @@ export default function ScheduledTasksPanel() {
                 </div>
                 {task.lastRunAt && (
                   <div className="text-xs text-text-secondary mt-1">
-                    Last run: {new Date(task.lastRunAt).toLocaleString()}
+                    {localize('com_sidepanel_last_run')}: {new Date(task.lastRunAt).toLocaleString()}
                   </div>
                 )}
               </div>
