@@ -92,8 +92,13 @@ describe('jobProcessor', () => {
     expect(buildOptions).toHaveBeenCalledWith(
       expect.objectContaining({ user: expect.objectContaining({ id: 'user1' }) }),
       'openAI',
-      { endpoint: 'openAI', model: 'gpt-4o', agent_id: 'ephemeral' },
+      expect.objectContaining({ model: 'gpt-4o', agent_id: 'ephemeral' }),
     );
+    const [, , parsedBodyArg] = buildOptions.mock.calls[0];
+    expect(parsedBodyArg).not.toHaveProperty('endpoint');
+    expect(parsedBodyArg).not.toHaveProperty('conversationId');
+    expect(parsedBodyArg).not.toHaveProperty('text');
+    expect(parsedBodyArg).not.toHaveProperty('ephemeralAgent');
     expect(capturedReq.agent_id).toBe('ephemeral');
     expect(capturedReq.endpoint).toBe('openAI');
     expect(capturedReq.model).toBe('gpt-4o');

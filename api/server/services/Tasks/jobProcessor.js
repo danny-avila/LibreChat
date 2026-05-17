@@ -1,5 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
-const { Constants } = require('librechat-data-provider');
+const { Constants, parseCompactConvo } = require('librechat-data-provider');
+const { getTaskQueueService } = require('@librechat/api');
 const { getScheduledTask, updateScheduledTask, saveConvo, getUserById } = require('~/models');
 const AgentController = require('~/server/controllers/agents/request');
 const { initializeClient, buildOptions } = require('~/server/services/Endpoints/agents');
@@ -69,15 +70,28 @@ async function buildRequestFromTask(task, taskId) {
   try {
     /**
      * `buildOptions` destructures `{ spec, iconURL, agent_id, ...model_parameters }`
-     * from `parsedBody`, so every other key it sees ends up in `model_parameters`
-     * and reaches the LLM provider as a model parameter. Pass only the
-     * model-relevant shape — request-scope fields like `conversationId`, `text`,
-     * and `ephemeralAgent` belong on `req.body` for AgentController to consume,
-     * not on the LLM invocation.
+     * from `parsedBody`, so any other key ends up in `model_parameters` and
+     * reaches the LLM provider. Interactive chats route through
+     * `parseCompactConvo` which Zod-picks only schema fields (model,
+     * temperature, etc.); we do the same here so `endpoint`, `conversationId`,
+     * `text`, and similar request-scope fields cannot leak into the model call.
      */
+    let parsedBody = {};
+    try {
+      parsedBody = parseCompactConvo({
+        endpoint,
+        conversation: { ...payload, endpoint, model },
+      }) || {};
+    } catch (parseErr) {
+      logger.warn(
+        `[JobProcessor] parseCompactConvo failed for task ${taskId}, falling back to {model}:`,
+        parseErr,
+      );
+      parsedBody = { model };
+    }
+
     const builtOption = await buildOptions(req, endpoint, {
-      endpoint,
-      model,
+      ...parsedBody,
       agent_id: Constants.EPHEMERAL_AGENT_ID,
     });
     req.body.endpointOption = builtOption;
@@ -121,7 +135,14 @@ const processJob = async (job) => {
   }
 
   if (!task) {
-    logger.error(`Scheduled task not found: ${taskId}`);
+    logger.warn(
+      `[JobProcessor] Scheduled task ${taskId} no longer exists; removing orphaned BullMQ schedule.`,
+    );
+    try {
+      await getTaskQueueService().removeTask(taskId);
+    } catch (cleanupErr) {
+      logger.error(`[JobProcessor] Failed to remove orphaned schedule ${taskId}:`, cleanupErr);
+    }
     return;
   }
   if (task.status !== 'active') {

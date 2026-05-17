@@ -3,7 +3,7 @@ import { Queue, Worker } from 'bullmq';
 import { logger } from '@librechat/data-schemas';
 import { cacheConfig } from '../cache/cacheConfig';
 import { isValidTimezone, resolveDateTriggerMillis } from './timezone';
-import type { Job, RepeatOptions } from 'bullmq';
+import type { Job, RepeatableJob, RepeatOptions } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Types } from 'mongoose';
 
@@ -151,21 +151,52 @@ export class TaskQueueService {
     );
   }
 
+  /**
+   * Remove every repeatable schedule (and pending delayed job) tied to a task.
+   *
+   * BullMQ stores repeatables keyed by a hash of the repeat options; the
+   * user-supplied `jobId` is exposed as `.id` on repeatable records, but some
+   * versions emit `null` there or migrate the record to the newer job
+   * scheduler API. To stay resilient we sweep by all three angles: matching
+   * `.id`, matching keys that embed the taskId, and the new scheduler API
+   * (best-effort, ignored on older BullMQ builds).
+   */
   public async removeTask(taskId: string): Promise<void> {
     this.ensureInitialized();
     if (!this.queue) {
       return;
     }
 
-    const repeatableJobs = await this.queue.getRepeatableJobs();
-    const jobToRemove = repeatableJobs.find((job) => job.id === taskId);
-    if (jobToRemove) {
-      await this.queue.removeRepeatableByKey(jobToRemove.key);
+    try {
+      const repeatableJobs = await this.queue.getRepeatableJobs();
+      const matches = repeatableJobs.filter(
+        (job: RepeatableJob) => job.id === taskId || job.key?.includes(taskId),
+      );
+      for (const match of matches) {
+        await this.queue.removeRepeatableByKey(match.key);
+      }
+    } catch (err) {
+      logger.warn(`[TaskQueueService] Failed to sweep repeatable jobs for ${taskId}:`, err);
     }
 
-    const job = await this.queue.getJob(taskId);
-    if (job) {
-      await job.remove();
+    const queueWithScheduler = this.queue as Queue & {
+      removeJobScheduler?: (id: string) => Promise<boolean>;
+    };
+    if (typeof queueWithScheduler.removeJobScheduler === 'function') {
+      try {
+        await queueWithScheduler.removeJobScheduler(taskId);
+      } catch (err) {
+        logger.debug(`[TaskQueueService] removeJobScheduler skipped for ${taskId}:`, err);
+      }
+    }
+
+    try {
+      const job = await this.queue.getJob(taskId);
+      if (job) {
+        await job.remove();
+      }
+    } catch (err) {
+      logger.warn(`[TaskQueueService] Failed to remove pending job ${taskId}:`, err);
     }
   }
 }
