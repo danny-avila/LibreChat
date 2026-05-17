@@ -20,6 +20,8 @@ interface ConversationProps {
   retainView: () => void;
   toggleNav: () => void;
   isGenerating?: boolean;
+  /** Forwarded to `ConvoOptions` — override the popover z-index inside dialogs. */
+  menuClassName?: string;
 }
 
 export default function Conversation({
@@ -27,6 +29,7 @@ export default function Conversation({
   retainView,
   toggleNav,
   isGenerating = false,
+  menuClassName,
 }: ConversationProps) {
   const params = useParams();
   const localize = useLocalize();
@@ -175,6 +178,7 @@ export default function Conversation({
     isPopoverActive,
     setIsPopoverActive: handlePopoverOpenChange,
     isShiftHeld: isActiveConvo ? isShiftHeld : false,
+    menuClassName,
   };
 
   return (

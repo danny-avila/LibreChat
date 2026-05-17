@@ -29,6 +29,7 @@ function ConvoOptions({
   setIsPopoverActive,
   isActiveConvo,
   isShiftHeld = false,
+  menuClassName,
 }: {
   conversationId: string | null;
   title: string | null;
@@ -38,6 +39,12 @@ function ConvoOptions({
   setIsPopoverActive: (open: boolean) => void;
   isActiveConvo: boolean;
   isShiftHeld?: boolean;
+  /**
+   * Extra classes appended to the dropdown surface — used to override the
+   * default `z-[125]` layering when this menu is rendered inside a Dialog
+   * (which sits at `z-[999]`). Last class wins through tailwind-merge.
+   */
+  menuClassName?: string;
 }) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
@@ -294,7 +301,7 @@ function ConvoOptions({
         portal={true}
         menuId={menuId}
         focusLoop={true}
-        className="z-[125]"
+        className={cn('z-[125]', menuClassName)}
         unmountOnHide={true}
         isOpen={isPopoverActive}
         setIsOpen={setIsPopoverActive}

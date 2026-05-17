@@ -81,7 +81,7 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
           {taskName && <span className="text-sm text-text-secondary">{taskName}</span>}
         </DialogHeader>
 
-        <div className="mt-4 flex-1 overflow-y-auto px-1" onScroll={handleScroll}>
+        <div className="mt-4 flex-1 overflow-y-auto px-3 pb-3" onScroll={handleScroll}>
           {isLoading ? (
             <div className="flex items-center justify-center py-12 text-sm text-text-secondary">
               {localize('com_ui_loading')}
@@ -109,6 +109,7 @@ export default function TaskRunsModal({ taskId, taskName, isOpen, onClose }: Tas
                       conversation={convo}
                       retainView={handleRetainView}
                       toggleNav={handleConvoToggle}
+                      menuClassName="z-[1100]"
                     />
                   ))}
                 </div>
