@@ -1,3 +1,5 @@
+import type { TEphemeralAgent, TEndpointOption } from '../types';
+
 export type TScheduledTask = {
   _id: string;
   userId: string;
@@ -5,10 +7,13 @@ export type TScheduledTask = {
   targetId: string;
   triggerType: 'cron' | 'interval' | 'date';
   expression: string;
-  payload: Record<string, unknown>;
+  payload: Record<string, unknown> & {
+    text?: string;
+    endpointOption?: TEndpointOption;
+    ephemeralAgent?: TEphemeralAgent;
+  };
   status: 'active' | 'paused' | 'completed' | 'failed';
   lastRunAt?: string;
-  outputConversationId?: string;
   createdAt: string;
   updatedAt: string;
 };

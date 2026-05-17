@@ -86,16 +86,18 @@ export const useConversationsInfiniteQuery = (
   params: ConversationListParams,
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
-  const { isArchived, sortBy, sortDirection, tags, search } = params;
+  const { isArchived, sortBy, sortDirection, tags, search, includeScheduled, taskId } = params;
 
   return useInfiniteQuery<ConversationListResponse>({
     queryKey: [
       isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
-      { isArchived, sortBy, sortDirection, tags, search },
+      { isArchived, sortBy, sortDirection, tags, search, includeScheduled, taskId },
     ],
     queryFn: ({ pageParam }) =>
       dataService.listConversations({
         isArchived,
+        includeScheduled,
+        taskId,
         sortBy,
         sortDirection,
         tags,

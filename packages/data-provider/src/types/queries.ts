@@ -15,6 +15,8 @@ export type Conversation = {
 export type ConversationListParams = {
   cursor?: string;
   isArchived?: boolean;
+  includeScheduled?: boolean;
+  taskId?: string;
   sortBy?: 'title' | 'createdAt' | 'updatedAt';
   sortDirection?: 'asc' | 'desc';
   tags?: string[];

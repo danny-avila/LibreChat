@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useLocalize } from '~/hooks';
 import { useGetScheduledTasks, useCreateScheduledTask, useDeleteScheduledTask } from '~/data-provider';
-import { CalendarClock, Plus, Trash2 } from 'lucide-react';
-import { Button, Input, SelectDropDown, TextareaAutosize } from '@librechat/client';
+import { CalendarClock, Plus, Trash2, History } from 'lucide-react';
+import { Button, Input, SelectDropDown, TextareaAutosize, Checkbox } from '@librechat/client';
+import TaskRunsModal from './TaskRunsModal';
 
 export default function ScheduledTasksPanel() {
   const localize = useLocalize();
@@ -11,12 +12,13 @@ export default function ScheduledTasksPanel() {
   const deleteMutation = useDeleteScheduledTask();
 
   const [isCreating, setIsCreating] = useState(false);
+  const [viewingTaskId, setViewingTaskId] = useState<string | null>(null);
   const [newTask, setNewTask] = useState({
     targetType: 'agent' as const,
     targetId: '',
     triggerType: 'cron' as const,
     expression: '0 * * * *',
-    payload: { text: '' },
+    payload: { text: '', isTemporary: false },
     status: 'active' as const,
     outputConversationId: '',
   });
@@ -38,7 +40,7 @@ export default function ScheduledTasksPanel() {
           targetId: '',
           triggerType: 'cron',
           expression: '0 * * * *',
-          payload: { text: '' },
+          payload: { text: '', isTemporary: false },
           status: 'active',
           outputConversationId: '',
         });
@@ -123,6 +125,18 @@ export default function ScheduledTasksPanel() {
             />
           </div>
 
+          <div className="flex items-center gap-2 mt-1">
+            <Checkbox
+              id="isTemporary"
+              checked={newTask.payload.isTemporary as boolean}
+              onCheckedChange={(checked) => setNewTask({ ...newTask, payload: { ...newTask.payload, isTemporary: !!checked } })}
+              aria-label="Run as temporary chat"
+            />
+            <label htmlFor="isTemporary" className="text-sm cursor-pointer">
+              {localize('com_sidepanel_temporary_chat')}
+            </label>
+          </div>
+
           <div className="flex justify-end gap-2 mt-2">
             <Button
               variant="outline"
@@ -165,6 +179,15 @@ export default function ScheduledTasksPanel() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      onClick={() => setViewingTaskId(task._id)}
+                      className="text-text-secondary hover:text-text-primary"
+                      title={localize('com_sidepanel_task_runs')}
+                    >
+                      <History className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => deleteMutation.mutate(task._id)}
                       className="text-text-secondary hover:text-red-500"
                     >
@@ -185,6 +208,12 @@ export default function ScheduledTasksPanel() {
           </div>
         )}
       </div>
+
+      <TaskRunsModal 
+        taskId={viewingTaskId || ''} 
+        isOpen={!!viewingTaskId} 
+        onClose={() => setViewingTaskId(null)} 
+      />
     </div>
   );
 }

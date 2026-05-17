@@ -274,6 +274,8 @@ export function createConversationMethods(
       cursor,
       limit = 25,
       isArchived = false,
+      includeScheduled = false,
+      taskId,
       tags,
       search,
       sortBy = 'updatedAt',
@@ -282,6 +284,8 @@ export function createConversationMethods(
       cursor?: string | null;
       limit?: number;
       isArchived?: boolean;
+      includeScheduled?: boolean;
+      taskId?: string;
       tags?: string[];
       search?: string;
       sortBy?: string;
@@ -295,6 +299,14 @@ export function createConversationMethods(
     } else {
       filters.push({
         $or: [{ isArchived: false }, { isArchived: { $exists: false } }],
+      } as FilterQuery<IConversation>);
+    }
+
+    if (taskId) {
+      filters.push({ taskId } as FilterQuery<IConversation>);
+    } else if (!includeScheduled) {
+      filters.push({
+        $or: [{ isScheduled: false }, { isScheduled: { $exists: false } }],
       } as FilterQuery<IConversation>);
     }
 

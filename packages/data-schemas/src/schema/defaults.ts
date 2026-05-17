@@ -115,6 +115,13 @@ export const conversationPreset = {
     type: Boolean,
     default: false,
   },
+  isScheduled: {
+    type: Boolean,
+    default: false,
+  },
+  taskId: {
+    type: String,
+  },
   /* UI Components */
   iconURL: {
     type: String,

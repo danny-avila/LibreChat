@@ -27,11 +27,19 @@ const processJob = async (job) => {
       body: {
         text: task.payload.text || 'Scheduled Task Execution',
         conversationId: task.outputConversationId || 'new',
-        endpointOption: task.payload.endpointOption || {},
+        endpointOption: {
+          ...(task.payload.endpointOption || {}),
+          isScheduled: true,
+          taskId: taskId,
+        },
         agent_id: task.targetType === 'agent' ? task.targetId : undefined,
+        isTemporary: task.payload.isTemporary || false,
         // Add other necessary payload fields
         ...task.payload,
       },
+      // Pass these custom fields so the agent controller saves them with the conversation
+      isScheduled: true,
+      taskId: taskId,
       config: {
         interfaceConfig: {}, // Mock config if needed
       },
