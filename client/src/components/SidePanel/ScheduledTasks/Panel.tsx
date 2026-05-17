@@ -1,10 +1,17 @@
 import React, { useMemo, useState } from 'react';
-import { useLocalize, useMCPServerManager } from '~/hooks';
-import { useGetScheduledTasks, useCreateScheduledTask, useDeleteScheduledTask } from '~/data-provider';
-import { CalendarClock, Plus, Trash2, History } from 'lucide-react';
+import { CalendarClock, Plus, Trash2, History, Pause, Play, Pencil } from 'lucide-react';
 import { Button, Input, SelectDropDown, TextareaAutosize, Checkbox, Switch } from '@librechat/client';
-import TaskRunsModal from './TaskRunsModal';
+import type { TScheduledTask } from 'librechat-data-provider';
+import { useLocalize, useMCPServerManager } from '~/hooks';
+import {
+  useGetScheduledTasks,
+  useCreateScheduledTask,
+  useDeleteScheduledTask,
+  useUpdateScheduledTask,
+} from '~/data-provider';
+import { CRON_PRESETS, describeCronExpression } from './cronPresets';
 import { getBrowserTimezone, getSupportedTimezones } from './timezones';
+import TaskRunsModal from './TaskRunsModal';
 
 type NewTaskState = {
   targetType: 'agent' | 'assistant';
@@ -44,14 +51,37 @@ const buildInitialTask = (): NewTaskState => ({
   status: 'active',
 });
 
+function taskToFormState(task: TScheduledTask): NewTaskState {
+  return {
+    targetType: task.targetType,
+    targetId: task.targetId,
+    triggerType: task.triggerType,
+    expression: task.expression,
+    timezone: task.timezone || getBrowserTimezone(),
+    payload: {
+      text: task.payload?.text ?? '',
+      isTemporary: task.payload?.isTemporary ?? false,
+      ephemeralAgent: {
+        web_search: task.payload?.ephemeralAgent?.web_search ?? false,
+        file_search: task.payload?.ephemeralAgent?.file_search ?? false,
+        execute_code: task.payload?.ephemeralAgent?.execute_code ?? false,
+        mcp: task.payload?.ephemeralAgent?.mcp ?? [],
+      },
+    },
+    status: task.status,
+  };
+}
+
 export default function ScheduledTasksPanel() {
   const localize = useLocalize();
   const { data: tasks, isLoading } = useGetScheduledTasks();
   const createMutation = useCreateScheduledTask();
+  const updateMutation = useUpdateScheduledTask();
   const deleteMutation = useDeleteScheduledTask();
   const { availableMCPServers } = useMCPServerManager();
 
   const [isCreating, setIsCreating] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [viewingTaskId, setViewingTaskId] = useState<string | null>(null);
   const [newTask, setNewTask] = useState<NewTaskState>(buildInitialTask);
 
@@ -60,27 +90,58 @@ export default function ScheduledTasksPanel() {
     [],
   );
   const showTimezone = newTask.triggerType !== 'interval';
+  const isFormOpen = isCreating || editingTaskId != null;
+  const cronDescription = useMemo(
+    () => (newTask.triggerType === 'cron' ? describeCronExpression(newTask.expression) : null),
+    [newTask.triggerType, newTask.expression],
+  );
 
-  const resetForm = () => setNewTask(buildInitialTask());
+  const closeForm = () => {
+    setIsCreating(false);
+    setEditingTaskId(null);
+    setNewTask(buildInitialTask());
+  };
 
-  const handleCreate = () => {
+  const openCreate = () => {
+    setEditingTaskId(null);
+    setNewTask(buildInitialTask());
+    setIsCreating(true);
+  };
+
+  const openEdit = (task: TScheduledTask) => {
+    setIsCreating(false);
+    setEditingTaskId(task._id);
+    setNewTask(taskToFormState(task));
+  };
+
+  const buildSubmitPayload = () => {
+    const { timezone, ...rest } = newTask;
+    return showTimezone && timezone ? { ...rest, timezone } : rest;
+  };
+
+  const handleSubmit = () => {
     if (!newTask.targetId || !newTask.payload.text) {
       return;
     }
-
-    const { timezone, ...rest } = newTask;
-    const payload =
-      showTimezone && timezone
-        ? { ...rest, timezone }
-        : rest;
-
-    createMutation.mutate(payload, {
-      onSuccess: () => {
-        setIsCreating(false);
-        resetForm();
-      },
-    });
+    const payload = buildSubmitPayload();
+    if (editingTaskId) {
+      updateMutation.mutate(
+        { id: editingTaskId, payload },
+        {
+          onSuccess: closeForm,
+        },
+      );
+      return;
+    }
+    createMutation.mutate(payload, { onSuccess: closeForm });
   };
+
+  const togglePause = (task: TScheduledTask) => {
+    const nextStatus: TScheduledTask['status'] = task.status === 'paused' ? 'active' : 'paused';
+    updateMutation.mutate({ id: task._id, payload: { status: nextStatus } });
+  };
+
+  const isSubmitting = createMutation.isLoading || updateMutation.isLoading;
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 text-text-primary">
@@ -92,16 +153,20 @@ export default function ScheduledTasksPanel() {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => setIsCreating(!isCreating)}
+          onClick={() => (isFormOpen ? closeForm() : openCreate())}
           className="rounded-md p-1 hover:bg-surface-hover"
         >
           <Plus className="h-5 w-5" />
         </Button>
       </div>
 
-      {isCreating && (
+      {isFormOpen && (
         <div className="flex flex-col gap-3 rounded-lg border border-border-light p-3">
-          <h3 className="font-medium">{localize('com_sidepanel_new_task')}</h3>
+          <h3 className="font-medium">
+            {editingTaskId
+              ? localize('com_sidepanel_edit_task')
+              : localize('com_sidepanel_new_task')}
+          </h3>
           
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium">{localize('com_sidepanel_target_type')}</label>
@@ -176,6 +241,31 @@ export default function ScheduledTasksPanel() {
                     : ''
               }
             />
+            {newTask.triggerType === 'cron' && (
+              <>
+                <SelectDropDown
+                  value=""
+                  setValue={(val) => {
+                    if (typeof val === 'string' && val) {
+                      setNewTask({ ...newTask, expression: val });
+                    }
+                  }}
+                  availableValues={[
+                    { label: localize('com_sidepanel_cron_preset_placeholder'), value: '' },
+                    ...CRON_PRESETS.map((p) => ({
+                      label: localize(p.labelKey) || p.label,
+                      value: p.value,
+                    })),
+                  ]}
+                  showAbove={false}
+                  showLabel={false}
+                  className="w-full mt-1"
+                />
+                {cronDescription && (
+                  <span className="text-xs text-text-secondary mt-1">{cronDescription}</span>
+                )}
+              </>
+            )}
           </div>
 
           {showTimezone && (
@@ -288,17 +378,14 @@ export default function ScheduledTasksPanel() {
           </div>
 
           <div className="flex justify-end gap-2 mt-2">
-            <Button
-              variant="outline"
-              onClick={() => setIsCreating(false)}
-            >
+            <Button variant="outline" onClick={closeForm}>
               {localize('com_ui_cancel')}
             </Button>
             <Button
-              onClick={handleCreate}
-              disabled={createMutation.isLoading || !newTask.targetId || !newTask.payload.text}
+              onClick={handleSubmit}
+              disabled={isSubmitting || !newTask.targetId || !newTask.payload.text}
             >
-              {createMutation.isLoading ? localize('com_ui_saving') : localize('com_ui_save')}
+              {isSubmitting ? localize('com_ui_saving') : localize('com_ui_save')}
             </Button>
           </div>
         </div>
@@ -324,9 +411,47 @@ export default function ScheduledTasksPanel() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${task.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full ${
+                        task.status === 'active'
+                          ? 'bg-green-100 text-green-800'
+                          : task.status === 'paused'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
                       {task.status}
                     </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => togglePause(task)}
+                      className="text-text-secondary hover:text-text-primary"
+                      title={
+                        task.status === 'paused'
+                          ? localize('com_sidepanel_resume_task')
+                          : localize('com_sidepanel_pause_task')
+                      }
+                      disabled={
+                        updateMutation.isLoading ||
+                        (task.status !== 'active' && task.status !== 'paused')
+                      }
+                    >
+                      {task.status === 'paused' ? (
+                        <Play className="h-4 w-4" />
+                      ) : (
+                        <Pause className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openEdit(task)}
+                      className="text-text-secondary hover:text-text-primary"
+                      title={localize('com_sidepanel_edit_task')}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -341,6 +466,7 @@ export default function ScheduledTasksPanel() {
                       size="icon"
                       onClick={() => deleteMutation.mutate(task._id)}
                       className="text-text-secondary hover:text-red-500"
+                      title={localize('com_ui_delete')}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
