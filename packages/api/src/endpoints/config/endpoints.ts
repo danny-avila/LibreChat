@@ -14,7 +14,11 @@ type DefaultEndpointsResult = Record<string, PartialEndpointEntry | false | null
 type MutableEndpointsConfig = Record<string, PartialEndpointEntry | false | null | undefined>;
 
 export interface EndpointsConfigDeps {
-  getAppConfig: (params: { role?: string | null; tenantId?: string }) => Promise<AppConfig>;
+  getAppConfig: (params: {
+    role?: string;
+    userId?: string;
+    tenantId?: string;
+  }) => Promise<AppConfig>;
   loadDefaultEndpointsConfig: (appConfig: AppConfig) => Promise<DefaultEndpointsResult>;
   loadCustomEndpointsConfig?: (custom: unknown) => TCustomEndpointsConfig | undefined;
 }
@@ -28,7 +32,12 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
 
   async function getEndpointsConfig(req: ServerRequest): Promise<TEndpointsConfig> {
     const appConfig =
-      req.config ?? (await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId }));
+      req.config ??
+      (await getAppConfig({
+        role: req.user?.role,
+        userId: req.user?.id,
+        tenantId: req.user?.tenantId,
+      }));
     const defaultEndpointsConfig = await loadDefaultEndpointsConfig(appConfig);
     const customEndpointsConfig = loadCustomEndpointsConfig(appConfig?.endpoints?.custom);
 
