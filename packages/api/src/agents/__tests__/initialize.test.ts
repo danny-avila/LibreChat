@@ -502,6 +502,45 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
   });
 });
 
+describe('initializeAgent — attachment scoping', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('keeps request attachments separate from agent context attachments', async () => {
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const requestFile = { file_id: 'request-file', filename: 'request.txt' };
+    const agentContextFile = { file_id: 'agent-context-file', filename: 'agent-context.txt' };
+    primeResources.mockResolvedValueOnce({
+      attachments: [agentContextFile, requestFile],
+      requestAttachments: [requestFile],
+      agentContextAttachments: [agentContextFile],
+      tool_resources: undefined,
+    });
+
+    const { agent, req, res, loadTools, db } = createMocks();
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.attachments).toEqual([agentContextFile, requestFile]);
+    expect(result.requestAttachments).toEqual([requestFile]);
+    expect(result.agentContextAttachments).toEqual([agentContextFile]);
+  });
+});
+
 describe('initializeAgent — maxContextTokens', () => {
   beforeEach(() => {
     jest.clearAllMocks();
