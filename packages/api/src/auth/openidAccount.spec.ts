@@ -184,7 +184,7 @@ describe('resolveOpenIdAccount', () => {
     expect(deps.findUser).not.toHaveBeenCalled();
   });
 
-  it('rejects missing or invalid email before user lookup', async () => {
+  it('rejects missing or invalid email when no existing OpenID user matches', async () => {
     const deps = methods();
     const result = await resolveOpenIdAccount(
       input({
@@ -195,10 +195,19 @@ describe('resolveOpenIdAccount', () => {
     );
 
     expect(result).toEqual({ status: 'unauthorized', reason: 'missing_email' });
-    expect(deps.findUser).not.toHaveBeenCalled();
+    expect(deps.findUser).toHaveBeenCalledWith({
+      $or: [
+        { openidId: 'sub-123', openidIssuer: 'https://issuer.example.com' },
+        {
+          openidId: 'sub-123',
+          $or: [{ openidIssuer: { $exists: false } }, { openidIssuer: null }, { openidIssuer: '' }],
+        },
+      ],
+    });
+    expect(deps.createUser).not.toHaveBeenCalled();
   });
 
-  it('rejects disallowed email domains', async () => {
+  it('rejects disallowed email domains before email fallback or provisioning', async () => {
     const deps = methods();
     const result = await resolveOpenIdAccount(
       input({
@@ -209,7 +218,62 @@ describe('resolveOpenIdAccount', () => {
     );
 
     expect(result).toEqual({ status: 'unauthorized', reason: 'email_domain_not_allowed' });
-    expect(deps.findUser).not.toHaveBeenCalled();
+    expect(deps.findUser).toHaveBeenCalledTimes(1);
+    expect(deps.createUser).not.toHaveBeenCalled();
+  });
+
+  it('resolves an existing OpenID user without an email claim', async () => {
+    const existing = user();
+    const deps = methods({
+      findUser: mockFindUser(async () => existing),
+      updateUser: mockUpdateUser(async (_userId, update) =>
+        user({ ...existing, ...(update as Partial<IUser>) }),
+      ),
+    });
+
+    const result = await resolveOpenIdAccount(
+      input({
+        claims: { sub: 'sub-123' },
+        profile: undefined,
+        options: { ...baseOptions, syncProfileForExisting: true },
+        methods: deps,
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'resolved', created: false });
+    expect(deps.updateUser).toHaveBeenCalledWith(
+      existing._id.toString(),
+      expect.not.objectContaining({
+        email: expect.any(String),
+        emailVerified: expect.any(Boolean),
+      }),
+    );
+    expect(deps.createUser).not.toHaveBeenCalled();
+  });
+
+  it('does not write a disallowed email claim for an existing OpenID user', async () => {
+    const existing = user();
+    const deps = methods({
+      findUser: mockFindUser(async () => existing),
+      updateUser: mockUpdateUser(async (_userId, update) =>
+        user({ ...existing, ...(update as Partial<IUser>) }),
+      ),
+    });
+
+    const result = await resolveOpenIdAccount(
+      input({
+        claims: { sub: 'sub-123', email: 'user@blocked.com' },
+        profile: undefined,
+        options: { ...baseOptions, syncProfileForExisting: true },
+        methods: deps,
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'resolved', created: false });
+    expect(deps.updateUser).toHaveBeenCalledWith(
+      existing._id.toString(),
+      expect.not.objectContaining({ email: 'user@blocked.com' }),
+    );
   });
 
   it('creates a missing user with required identity fields and optional profile fields', async () => {

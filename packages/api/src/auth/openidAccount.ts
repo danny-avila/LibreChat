@@ -169,11 +169,24 @@ function buildUpdateData(
 
   return {
     ...securityUpdate,
-    ...(profile.email ? { email: profile.email } : {}),
+    ...(profile.email ? { email: profile.email, emailVerified: profile.emailVerified } : {}),
     ...(profile.username ? { username: profile.username } : {}),
     ...(profile.name ? { name: profile.name } : {}),
-    emailVerified: profile.emailVerified,
   };
+}
+
+function canUseProfileEmail(input: OpenIdAccountInput, profile: NormalizedOpenIdProfile): boolean {
+  return Boolean(
+    profile.email &&
+      isEmailDomainAllowed(profile.email, input.appConfig.registration?.allowedDomains),
+  );
+}
+
+function getEmailSafeProfile(
+  input: OpenIdAccountInput,
+  profile: NormalizedOpenIdProfile,
+): NormalizedOpenIdProfile {
+  return canUseProfileEmail(input, profile) ? profile : { ...profile, email: undefined };
 }
 
 function isDuplicateKeyError(error: unknown): boolean {
@@ -264,11 +277,17 @@ async function provisionOpenIdUser(
   if (!input.options.allowUserCreation) {
     return { status: 'unauthorized', reason: 'existing_users_only' };
   }
+  if (!profile.email) {
+    return { status: 'unauthorized', reason: 'missing_email' };
+  }
+  if (!canUseProfileEmail(input, profile)) {
+    return { status: 'unauthorized', reason: 'email_domain_not_allowed' };
+  }
 
   const createData = {
     provider: 'openid',
     openidId: profile.subject,
-    email: profile.email ?? '',
+    email: profile.email,
     role: SystemRoles.USER,
     ...(profile.issuer ? { openidIssuer: profile.issuer } : {}),
     ...(profile.idOnTheSource ? { idOnTheSource: profile.idOnTheSource } : {}),
@@ -320,14 +339,10 @@ export async function resolveOpenIdAccount(
   try {
     const profile = normalizeOpenIdProfile(input);
     if (!profile.subject) return { status: 'unauthorized', reason: 'missing_sub' };
-    if (!profile.email) return { status: 'unauthorized', reason: 'missing_email' };
-    if (!isEmailDomainAllowed(profile.email, input.appConfig.registration?.allowedDomains)) {
-      return { status: 'unauthorized', reason: 'email_domain_not_allowed' };
-    }
 
     const result = await findOpenIDUser({
       findUser: input.methods.findUser,
-      email: profile.email,
+      email: undefined,
       openidId: profile.subject,
       openidIssuer: profile.issuer,
       idOnTheSource: profile.idOnTheSource,
@@ -343,21 +358,50 @@ export async function resolveOpenIdAccount(
       return { status: 'unauthorized', reason, message: result.error };
     }
 
-    if (!result.user) {
-      return await provisionOpenIdUser(input, profile);
+    let resolvedUser = result.user;
+    if (!resolvedUser) {
+      if (!profile.email) return { status: 'unauthorized', reason: 'missing_email' };
+      if (!canUseProfileEmail(input, profile)) {
+        return { status: 'unauthorized', reason: 'email_domain_not_allowed' };
+      }
+
+      const emailResult = await findOpenIDUser({
+        findUser: input.methods.findUser,
+        email: profile.email,
+        openidId: profile.subject,
+        openidIssuer: profile.issuer,
+        idOnTheSource: undefined,
+        strategyName: 'openidAccount',
+      });
+
+      if (emailResult.error) {
+        let reason: OpenIdRejectReason = 'openid_issuer_mismatch';
+        if (!emailResult.user) reason = 'provider_collision';
+        if (emailResult.user?.openidId && emailResult.user.openidId !== profile.subject) {
+          reason = 'openid_subject_mismatch';
+        }
+        return { status: 'unauthorized', reason, message: emailResult.error };
+      }
+
+      if (!emailResult.user) {
+        return await provisionOpenIdUser(input, profile);
+      }
+
+      resolvedUser = emailResult.user;
     }
 
-    if (violatesProvisioningTenantScope(input, result.user)) {
+    if (violatesProvisioningTenantScope(input, resolvedUser)) {
       return { status: 'unauthorized', reason: 'duplicate_conflict' };
     }
 
-    if (shouldDeferExistingTenantUserMutation(input, result.user)) {
-      return { status: 'resolved', user: result.user, created: false };
+    if (shouldDeferExistingTenantUserMutation(input, resolvedUser)) {
+      return { status: 'resolved', user: resolvedUser, created: false };
     }
 
+    const updateProfile = getEmailSafeProfile(input, profile);
     return await persistExistingUser(
-      result.user,
-      profile,
+      resolvedUser,
+      updateProfile,
       input.methods,
       input.options.syncProfileForExisting,
     );

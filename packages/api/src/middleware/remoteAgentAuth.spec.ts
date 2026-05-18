@@ -1333,7 +1333,7 @@ describe('createRemoteAgentAuth', () => {
 
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
-      expect(deps.findUser).not.toHaveBeenCalled();
+      expect(deps.findUser).toHaveBeenCalled();
       expect(deps.createUser).not.toHaveBeenCalled();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
       expect(mockNext).not.toHaveBeenCalled();
@@ -1397,6 +1397,7 @@ describe('createRemoteAgentAuth', () => {
     it('rejects missing email during remote provisioning without API key fallback', async () => {
       setupOidcMocks({ sub: 'sub123' });
       const deps = makeDeps(makeConfig({ provisioning: { enabled: true } }, { enabled: true }));
+      deps.findUser.mockResolvedValue(null);
       const { res, status, json } = makeRes();
 
       await createRemoteAgentAuth(deps)(
@@ -1417,6 +1418,7 @@ describe('createRemoteAgentAuth', () => {
       const config = makeConfig({ provisioning: { enabled: true } }, { enabled: true });
       config.registration = { allowedDomains: ['example.com'] } as AppConfig['registration'];
       const deps = makeDeps(config);
+      deps.findUser.mockResolvedValue(null);
       const { res, status } = makeRes();
 
       await createRemoteAgentAuth(deps)(
@@ -1426,7 +1428,7 @@ describe('createRemoteAgentAuth', () => {
       );
 
       expect(status).toHaveBeenCalledWith(401);
-      expect(deps.findUser).not.toHaveBeenCalled();
+      expect(deps.findUser).toHaveBeenCalled();
       expect(deps.createUser).not.toHaveBeenCalled();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
