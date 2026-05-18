@@ -62,25 +62,14 @@ jobs:
           project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
           path: "client/src/locales"
 
-      # 3. Create a short-lived GitHub App token so this workflow does not
-      # depend on allowing GITHUB_TOKEN to create pull requests globally.
-      - name: Create pull request token
-        id: pr-token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.LOCIZE_PR_APP_ID }}
-          private-key: ${{ secrets.LOCIZE_PR_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-
-      # 4. Create a Pull Request using built-in functionality.
+      # 3. Create a Pull Request using a dedicated fine-grained PAT so this
+      # workflow does not depend on the global GITHUB_TOKEN PR-creation setting.
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
-          token: ${{ steps.pr-token.outputs.token }}
+          token: ${{ secrets.LOCIZE_PR_TOKEN }}
           add-paths: |
             client/src/locales/**
-          sign-commits: true
           commit-message: "🌍 i18n: Update translation.json with latest translations"
           base: main
           branch: i18n/locize-translation-update
