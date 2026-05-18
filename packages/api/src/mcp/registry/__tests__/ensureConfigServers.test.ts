@@ -37,13 +37,10 @@ const yamlConfig: t.MCPOptions = {
 
 function makeParsedConfig(overrides: Partial<t.ParsedServerConfig> = {}): t.ParsedServerConfig {
   return {
-    type: 'sse',
-    url: 'https://mcp.example.com/sse',
-    requiresOAuth: false,
+    ...overrides,
     tools: 'tool_a, tool_b',
     capabilities: '{}',
     initDuration: 42,
-    ...overrides,
   } as unknown as t.ParsedServerConfig;
 }
 
@@ -91,8 +88,9 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     ).toEqual({});
   });
 
-  it('should exclude YAML servers from config-source detection', async () => {
+  it('should process YAML-named servers alongside config-only servers', async () => {
     await registry.addServer('yaml_server', yamlConfig, 'CACHE');
+    inspectSpy.mockClear();
 
     const result = await registry.ensureConfigServers({
       yaml_server: yamlConfig,
@@ -100,10 +98,10 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     });
 
     expect(result).toHaveProperty('config_server');
-    expect(result).not.toHaveProperty('yaml_server');
+    expect(result).toHaveProperty('yaml_server');
   });
 
-  it('should return empty when all servers are YAML', async () => {
+  it('should lazy-init YAML-named servers that appear in the merged config', async () => {
     await registry.addServer('yaml_a', yamlConfig, 'CACHE');
     await registry.addServer('yaml_b', yamlConfig, 'CACHE');
     inspectSpy.mockClear();
@@ -113,8 +111,9 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       yaml_b: yamlConfig,
     });
 
-    expect(result).toEqual({});
-    expect(inspectSpy).not.toHaveBeenCalled();
+    expect(result).toHaveProperty('yaml_a');
+    expect(result).toHaveProperty('yaml_b');
+    expect(inspectSpy).toHaveBeenCalledTimes(2);
   });
 
   it('should lazy-initialize a config-source server and tag source as config', async () => {

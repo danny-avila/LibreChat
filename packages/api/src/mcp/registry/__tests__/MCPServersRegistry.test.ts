@@ -435,33 +435,6 @@ describe('MCPServersRegistry', () => {
       expect(result['langfuse-docs'].iconPath).toBe('https://example.com/icon.svg');
     });
 
-    it('does NOT trigger lazy-init when YAML-defined server has no effective override', async () => {
-      const yamlSeed: t.ParsedServerConfig = {
-        type: 'streamable-http',
-        url: 'https://langfuse.com/api/public/mcp',
-        requiresOAuth: false,
-        source: 'yaml',
-        updatedAt: FIXED_TIME,
-      };
-      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
-
-      const identicalRawConfig: t.MCPOptions = {
-        type: 'streamable-http',
-        url: 'https://langfuse.com/api/public/mcp',
-        requiresOAuth: false,
-      } as unknown as t.MCPOptions;
-
-      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
-      inspectSpy.mockClear();
-
-      const result = await registry.ensureConfigServers({
-        'langfuse-docs': identicalRawConfig,
-      });
-
-      expect(inspectSpy).not.toHaveBeenCalled();
-      expect(result).toEqual({});
-    });
-
     it('preserves user-DB tier (source: "user") over config-tier overrides', async () => {
       const userDbEntry: t.ParsedServerConfig = {
         type: 'streamable-http',

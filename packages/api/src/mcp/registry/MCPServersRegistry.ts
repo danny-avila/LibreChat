@@ -135,12 +135,21 @@ export class MCPServersRegistry {
   /**
    * Returns the config for a single server. When `configServers` is provided, config-source
    * servers are resolved from it directly (no global state, no cross-tenant race).
+   * Precedence matches `getAllServerConfigs`: User DB beats Config-tier beats YAML, so a
+   * per-user server (`source: 'user'`) is never shadowed by an admin-panel override of the
+   * same name.
    */
   public async getServerConfig(
     serverName: string,
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<t.ParsedServerConfig | undefined> {
+    if (configServers?.[serverName] && userId) {
+      const userDbConfig = await this.dbConfigsRepo.get(serverName, userId);
+      if (userDbConfig?.source === 'user') {
+        return userDbConfig;
+      }
+    }
     if (configServers?.[serverName]) {
       return configServers[serverName];
     }
@@ -431,14 +440,6 @@ export class MCPServersRegistry {
     serverName: string,
     rawConfig: t.MCPOptions,
   ): Promise<t.ParsedServerConfig | undefined> {
-    const yamlNames = await this.getYamlServerNames();
-    if (yamlNames.has(serverName)) {
-      const yamlCached = await this.cacheConfigsRepo.get(serverName);
-      if (yamlCached && this.matchesYamlConfig(serverName, rawConfig, yamlCached)) {
-        return undefined;
-      }
-    }
-
     const cacheKey = this.configCacheKey(serverName, rawConfig);
 
     const cached = await this.configCacheRepo.get(cacheKey);
@@ -678,35 +679,6 @@ export class MCPServersRegistry {
         throw err;
       });
     return this.yamlServerNamesPromise;
-  }
-
-  /**
-   * Returns true when the merged `rawConfig` is content-equivalent to the cached YAML config,
-   * i.e., no admin-panel override changes a configurable field. Lets `ensureSingleConfigServer`
-   * skip lazy-init for YAML-defined servers without an effective override.
-   */
-  private matchesYamlConfig(
-    serverName: string,
-    rawConfig: t.MCPOptions,
-    yamlCached: t.ParsedServerConfig,
-  ): boolean {
-    const {
-      oauthMetadata: _oauthMetadata,
-      capabilities: _capabilities,
-      tools: _tools,
-      toolFunctions: _toolFunctions,
-      initDuration: _initDuration,
-      updatedAt: _updatedAt,
-      dbId: _dbId,
-      source: _source,
-      consumeOnly: _consumeOnly,
-      inspectionFailed: _inspectionFailed,
-      ...configurable
-    } = yamlCached;
-    return (
-      this.configCacheKey(serverName, rawConfig) ===
-      this.configCacheKey(serverName, configurable as t.MCPOptions)
-    );
   }
 
   /**
