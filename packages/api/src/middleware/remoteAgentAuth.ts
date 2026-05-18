@@ -2,14 +2,12 @@ import jwt from 'jsonwebtoken';
 import { createHash } from 'crypto';
 import jwksRsa from 'jwks-rsa';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { getTenantId, logger, tenantStorage } from '@librechat/data-schemas';
 import { isRemoteOidcUrlAllowed } from 'librechat-data-provider';
 import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { AppConfig, IUser, UserGroupMethods, UserMethods } from '@librechat/data-schemas';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
-import type { RequestInit } from 'undici';
 import type { GetAppConfigOptions } from '../app/service';
 import { normalizeOpenIdIssuer } from '../auth/openid';
 import {
@@ -32,6 +30,7 @@ import {
   type FederatedAuthCacheKeyInput,
   type FederatedAuthCacheOptions,
 } from '../auth/federatedAuthCache';
+import { fetchRemoteAuth } from '../auth/fetch';
 import { isEnabled, math } from '~/utils';
 
 export interface RemoteAgentAuthDeps {
@@ -121,7 +120,6 @@ const DEFAULT_FEDERATED_AUTH_CACHE_CONFIG: FederatedAuthCacheConfig = {
   ttlSeconds: 300,
 };
 
-const OIDC_DISCOVERY_TIMEOUT_MS = 10000;
 const MAX_JWKS_CACHE_ENTRIES = 100;
 const JWT_ALGORITHMS: Algorithm[] = [
   'RS256',
@@ -199,16 +197,6 @@ function getJwksCacheOptions(): JwksCacheOptions {
   };
 }
 
-function buildDiscoveryOptions(controller: AbortController): RequestInit {
-  const options: RequestInit = { signal: controller.signal };
-
-  if (process.env.PROXY) {
-    options.dispatcher = new ProxyAgent(process.env.PROXY);
-  }
-
-  return options;
-}
-
 function ensureRemoteOidcUrlAllowed(value: string, label: string): string {
   if (isRemoteOidcUrlAllowed(value)) return value;
   throw new Error(`${label} must use https:// unless targeting localhost`);
@@ -219,19 +207,17 @@ async function discoverJwksUri(issuer: string): Promise<string> {
   if (!normalizedIssuer) throw new Error('OIDC issuer is required');
 
   const discoveryUrl = `${normalizedIssuer}/.well-known/openid-configuration`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), OIDC_DISCOVERY_TIMEOUT_MS);
+  const res = await fetchRemoteAuth(discoveryUrl);
 
   try {
-    const res = await undiciFetch(discoveryUrl, buildDiscoveryOptions(controller));
     if (!res.ok) throw new Error(`OIDC discovery failed: ${res.status} ${res.statusText}`);
 
-    const meta = (await res.json()) as { jwks_uri?: string };
+    const meta = await res.json<{ jwks_uri?: string }>();
     if (!meta.jwks_uri) throw new Error('OIDC discovery response missing jwks_uri');
 
     return ensureRemoteOidcUrlAllowed(meta.jwks_uri, 'OIDC JWKS URI');
   } finally {
-    clearTimeout(timeout);
+    res.release?.();
   }
 }
 
