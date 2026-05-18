@@ -11,7 +11,7 @@ import {
   PermissionBits,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { FieldNamesMarkedBoolean } from 'react-hook-form';
+import type { FieldNamesMarkedBoolean, FieldPath } from 'react-hook-form';
 import type { Agent } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm, StringOption } from '~/common';
@@ -280,6 +280,7 @@ export default function AgentPanel() {
     reset,
     watch,
     getValues,
+    getFieldState,
     setValue,
     formState: { dirtyFields },
   } = methods;
@@ -316,6 +317,17 @@ export default function AgentPanel() {
 
   const shouldPersistDraft = hasPersistableDirtyFields(dirtyFields);
 
+  const isDirtyPersistableDraftField = useCallback(
+    (name?: string): boolean => {
+      if (!isPersistableDraftField(name)) {
+        return false;
+      }
+
+      return getFieldState(name as FieldPath<AgentForm>).isDirty;
+    },
+    [getFieldState],
+  );
+
   useEffect(() => {
     if (currentAgentIdRef.current === current_agent_id) {
       return;
@@ -348,7 +360,7 @@ export default function AgentPanel() {
 
   useEffect(() => {
     const subscription = watch((_, { name }) => {
-      if (!shouldPersistDraftRef.current && !isPersistableDraftField(name)) {
+      if (!shouldPersistDraftRef.current && !isDirtyPersistableDraftField(name)) {
         return;
       }
 
@@ -362,7 +374,7 @@ export default function AgentPanel() {
       }
       subscription.unsubscribe();
     };
-  }, [getValues, persistAgentDraft, watch]);
+  }, [getValues, isDirtyPersistableDraftField, persistAgentDraft, watch]);
 
   const uploadAvatarMutation = useUploadAgentAvatarMutation({
     onSuccess: (updatedAgent) => {

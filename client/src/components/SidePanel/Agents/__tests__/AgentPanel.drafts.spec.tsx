@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 import * as React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import type { AgentForm, NavLink } from '~/common';
 import { ActivePanelProvider, useActivePanel } from '~/Providers/ActivePanelContext';
@@ -21,6 +21,7 @@ const SAVE_AGENT_LABEL = 'Save Agent';
 const AGENTS_BUTTON_LABEL = 'Agents';
 const FILES_BUTTON_LABEL = 'Files';
 const FILES_PANEL_LABEL = 'Files panel';
+const PROGRAMMATIC_UPDATE_LABEL = 'Programmatic agent update';
 
 type MockButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: string;
@@ -136,9 +137,24 @@ jest.mock('~/common', () => {
 
 jest.mock('../AgentSelect', () => ({
   __esModule: true,
-  default: ({ hasDraft }: MockAgentSelectProps) => {
+  default: function MockAgentSelect({ hasDraft }: MockAgentSelectProps) {
+    const { useFormContext } = jest.requireActual(
+      'react-hook-form',
+    ) as typeof import('react-hook-form');
+    const { setValue } = useFormContext<AgentForm>();
+
     mockLastAgentSelectHasDraft = hasDraft;
-    return <div>{AGENT_SELECT_LABEL}</div>;
+    return (
+      <>
+        <div>{AGENT_SELECT_LABEL}</div>
+        <button
+          type="button"
+          onClick={() => setValue('name', 'Saved from API', { shouldDirty: false })}
+        >
+          {PROGRAMMATIC_UPDATE_LABEL}
+        </button>
+      </>
+    );
   },
 }));
 
@@ -281,6 +297,20 @@ describe('AgentPanel draft preservation', () => {
     expect(screen.getByLabelText('Draft model')).toHaveValue('');
     expect(getAgentDraft('agent-123')).toBeUndefined();
     expect(getAgentDraft(undefined)).toBeUndefined();
+    expect(mockLastAgentSelectHasDraft).toBe(false);
+  });
+
+  it('does not save a draft for programmatic form updates', async () => {
+    mockCurrentAgentId = 'agent-123';
+
+    render(<Harness />);
+
+    fireEvent.click(screen.getByRole('button', { name: PROGRAMMATIC_UPDATE_LABEL }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Draft name')).toHaveValue('Saved from API');
+    });
+    expect(getAgentDraft('agent-123')).toBeUndefined();
     expect(mockLastAgentSelectHasDraft).toBe(false);
   });
 });
