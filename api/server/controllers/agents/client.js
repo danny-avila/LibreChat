@@ -18,7 +18,6 @@ const {
   getProviderConfig,
   memoryInstructions,
   createTokenCounter,
-  extractFileContext,
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
@@ -33,6 +32,8 @@ const {
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   isSkillPrimeMessage,
+  collectFileIds,
+  buildAgentScopedContext,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
 } = require('@librechat/api');
@@ -277,10 +278,8 @@ class AgentClient extends BaseClient {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
 
-      for (const file of attachments) {
-        if (file?.file_id) {
-          sharedRunAttachmentIds.add(file.file_id);
-        }
+      for (const fileId of collectFileIds(attachments)) {
+        sharedRunAttachmentIds.add(fileId);
       }
 
       if (this.message_file_map) {
@@ -411,37 +410,13 @@ class AgentClient extends BaseClient {
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
-    const getAgentContextAttachments = (agentId) => {
-      const attachmentsByAgentId = this.options.agentContextAttachmentsByAgentId;
-      if (!attachmentsByAgentId) {
-        return [];
-      }
-      if (typeof attachmentsByAgentId.get === 'function') {
-        return attachmentsByAgentId.get(agentId) ?? [];
-      }
-      return attachmentsByAgentId[agentId] ?? [];
-    };
-
-    const agentScopedContextEntries = await Promise.all(
-      allAgents.map(async ({ agentId }) => {
-        const attachments = getAgentContextAttachments(agentId).filter(
-          (file) => !file?.file_id || !sharedRunAttachmentIds.has(file.file_id),
-        );
-        if (!attachments || attachments.length === 0) {
-          return [agentId, ''];
-        }
-        const context = await extractFileContext({
-          attachments,
-          req: this.options.req,
-          tokenCountFn: (text) => countTokens(text),
-        });
-        return [agentId, context ?? ''];
-      }),
-    );
-
-    const agentScopedContext = new Map(
-      agentScopedContextEntries.filter(([, context]) => Boolean(context)),
-    );
+    const agentScopedContext = await buildAgentScopedContext({
+      agentIds: allAgents.map(({ agentId }) => agentId),
+      attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+      sharedRunAttachmentIds,
+      req: this.options.req,
+      tokenCountFn: (text) => countTokens(text),
+    });
 
     /** Preserve canonical pre-format token counts for all history entering graph formatting */
     this.indexTokenCountMap = canonicalTokenCountMap;

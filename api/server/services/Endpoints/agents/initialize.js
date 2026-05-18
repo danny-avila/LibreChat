@@ -10,6 +10,7 @@ const {
   getCustomEndpointConfig,
   discoverConnectedAgents,
   resolveAgentScopedSkillIds,
+  buildAgentContextAttachmentsByAgentId,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -796,20 +797,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     }
   }
 
-  const agentContextAttachmentsByAgentId = new Map();
-  const addAgentContextAttachments = (config) => {
-    if (!config?.id || !Array.isArray(config.agentContextAttachments)) {
-      return;
-    }
-    if (config.agentContextAttachments.length === 0) {
-      return;
-    }
-    agentContextAttachmentsByAgentId.set(config.id, config.agentContextAttachments);
-  };
-  addAgentContextAttachments(primaryConfig);
-  for (const config of agentConfigs.values()) {
-    addAgentContextAttachments(config);
-  }
+  const agentContextAttachmentsByAgentId = buildAgentContextAttachmentsByAgentId([
+    primaryConfig,
+    ...agentConfigs.values(),
+  ]);
 
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
   if (!isAgentsEndpoint(primaryConfig.endpoint) && !endpointConfig) {
