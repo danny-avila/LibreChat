@@ -286,11 +286,7 @@ describe('createRemoteAgentAuth', () => {
       await createRemoteAgentAuth(deps)(makeReq() as Request, res, mockNext);
 
       expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
-      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, {
-        role: 'user',
-        userId: 'uid123',
-        tenantId: 'tenant-oidc-only',
-      });
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, { tenantId: 'tenant-oidc-only' });
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
       expect(mockNext).not.toHaveBeenCalled();
@@ -332,11 +328,7 @@ describe('createRemoteAgentAuth', () => {
 
       await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
 
-      expect(deps.getAppConfig).toHaveBeenCalledWith({
-        role: 'user',
-        userId: 'uid123',
-        tenantId: 'tenant-a',
-      });
+      expect(deps.getAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-a' });
       expect(deps.apiKeyMiddleware).toHaveBeenCalled();
     });
 

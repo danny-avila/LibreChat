@@ -239,15 +239,10 @@ function getVerifyOptions(oidcConfig: EnabledOidcConfig): VerifyOptions {
 }
 
 function getConfigOptions(req: Request): GetAppConfigOptions {
-  const user = req.user as { id?: string; role?: string; tenantId?: string } | undefined;
+  const user = req.user as { tenantId?: string } | undefined;
   const tenantId = user?.tenantId ?? getTenantId();
 
-  if (tenantId) {
-    const options: GetAppConfigOptions = { tenantId };
-    if (user?.role) options.role = user.role;
-    if (user?.id) options.userId = user.id;
-    return options;
-  }
+  if (tenantId) return { tenantId };
   return { baseOnly: true };
 }
 
