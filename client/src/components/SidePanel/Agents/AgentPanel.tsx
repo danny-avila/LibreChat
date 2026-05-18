@@ -266,7 +266,11 @@ export default function AgentPanel() {
   const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
-  const draftValues = useMemo(() => getAgentDraft(current_agent_id), [current_agent_id]);
+  const draftUserId = user?.id;
+  const draftValues = useMemo(
+    () => getAgentDraft(current_agent_id, draftUserId),
+    [current_agent_id, draftUserId],
+  );
   const defaultValues = useMemo(() => getDraftFormValues(draftValues), [draftValues]);
   const methods = useForm<AgentForm>({
     defaultValues,
@@ -284,12 +288,13 @@ export default function AgentPanel() {
     formState: { dirtyFields },
   } = methods;
   const currentAgentIdRef = useRef<string | undefined>(current_agent_id);
+  const draftUserIdRef = useRef<string | undefined>(draftUserId);
   const [hasDraft, setHasDraft] = useState(draftValues != null);
   const shouldPersistDraftRef = useRef(hasDraft);
   const [isAvatarUploadInFlight, setIsAvatarUploadInFlight] = useState(false);
 
   const persistAgentDraft = useCallback((agentId: string | undefined, values: AgentForm) => {
-    saveAgentDraft(agentId, values);
+    saveAgentDraft(agentId, values, draftUserIdRef.current);
     if (agentId === currentAgentIdRef.current) {
       setHasDraft(true);
     }
@@ -297,8 +302,8 @@ export default function AgentPanel() {
 
   const clearDraftsForAgentIds = useCallback((agentIds: Array<string | null | undefined>) => {
     shouldPersistDraftRef.current = false;
-    clearAgentDrafts(agentIds);
-    setHasDraft(getAgentDraft(currentAgentIdRef.current) != null);
+    clearAgentDrafts(agentIds, draftUserIdRef.current);
+    setHasDraft(getAgentDraft(currentAgentIdRef.current, draftUserIdRef.current) != null);
   }, []);
 
   const handleAgentChange = useCallback(
@@ -328,23 +333,32 @@ export default function AgentPanel() {
   );
 
   useEffect(() => {
-    if (currentAgentIdRef.current === current_agent_id) {
+    const agentChanged = currentAgentIdRef.current !== current_agent_id;
+    const userChanged = draftUserIdRef.current !== draftUserId;
+
+    if (!agentChanged && !userChanged) {
       return;
     }
 
-    if (shouldPersistDraftRef.current) {
-      saveAgentDraft(currentAgentIdRef.current, getValues());
+    if (agentChanged && shouldPersistDraftRef.current) {
+      saveAgentDraft(currentAgentIdRef.current, getValues(), draftUserIdRef.current);
     }
 
     currentAgentIdRef.current = current_agent_id;
-    const nextDraft = getAgentDraft(current_agent_id);
+    draftUserIdRef.current = draftUserId;
+    const nextDraft = getAgentDraft(current_agent_id, draftUserId);
     const nextHasDraft = nextDraft != null;
     shouldPersistDraftRef.current = nextHasDraft;
     setHasDraft(nextHasDraft);
     if (nextDraft) {
       reset(getDraftFormValues(nextDraft));
+      return;
     }
-  }, [current_agent_id, getValues, reset]);
+
+    if (userChanged) {
+      reset(getDefaultAgentFormValues());
+    }
+  }, [current_agent_id, draftUserId, getValues, reset]);
 
   useEffect(() => {
     if (hasDraft) {
@@ -373,7 +387,7 @@ export default function AgentPanel() {
 
     return () => {
       if (shouldPersistDraftRef.current) {
-        saveAgentDraft(currentAgentIdRef.current, getValues());
+        saveAgentDraft(currentAgentIdRef.current, getValues(), draftUserIdRef.current);
       }
       subscription.unsubscribe();
     };

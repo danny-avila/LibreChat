@@ -10,6 +10,7 @@ import type { AgentForm } from '~/common';
 
 // Mock toast context - define this after all mocks
 let mockShowToast: jest.Mock;
+const MOCK_USER_ID = 'user-123';
 
 // Mock notification severity enum before other imports
 jest.mock('~/common/types', () => ({
@@ -99,7 +100,7 @@ jest.mock('~/utils', () => ({
 jest.mock('~/hooks', () => ({
   useSelectAgent: () => ({ onSelect: jest.fn() }),
   useLocalize: () => (key: string) => key,
-  useAuthContext: () => ({ user: { id: 'user-123', role: 'USER' } }),
+  useAuthContext: () => ({ user: { id: MOCK_USER_ID, role: 'USER' } }),
 }));
 
 jest.mock('~/hooks/useResourcePermissions', () => ({
@@ -414,26 +415,30 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
       });
       mockUpdateAgent.mockResolvedValue(createMockAgent({ name: 'Test Agent', version: 2 }));
 
-      saveAgentDraft('agent-123', {
-        id: 'agent-123',
-        name: 'Unsaved Agent',
-        description: '',
-        instructions: 'Unsaved instructions',
-        model: 'gpt-4',
-        model_parameters: {},
-        provider: 'openai',
-        category: 'general',
-        execute_code: false,
-        file_search: false,
-        web_search: false,
-      } as AgentForm);
+      saveAgentDraft(
+        'agent-123',
+        {
+          id: 'agent-123',
+          name: 'Unsaved Agent',
+          description: '',
+          instructions: 'Unsaved instructions',
+          model: 'gpt-4',
+          model_parameters: {},
+          provider: 'openai',
+          category: 'general',
+          execute_code: false,
+          file_search: false,
+          web_search: false,
+        } as AgentForm,
+        MOCK_USER_ID,
+      );
 
-      expect(getAgentDraft('agent-123')).toBeDefined();
+      expect(getAgentDraft('agent-123', MOCK_USER_ID)).toBeDefined();
 
       await renderAndSubmitForm();
 
       await waitFor(() => {
-        expect(getAgentDraft('agent-123')).toBeUndefined();
+        expect(getAgentDraft('agent-123', MOCK_USER_ID)).toBeUndefined();
       });
     });
   });

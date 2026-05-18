@@ -80,4 +80,17 @@ describe('agent drafts', () => {
     expect(getAgentDraft('agent-a')).toBeUndefined();
     expect(getAgentDraft('agent-b')?.name).toBe('Agent B');
   });
+
+  it('keeps drafts isolated by user id', () => {
+    saveAgentDraft(undefined, createForm({ name: 'User A new draft' }), 'user-a');
+    saveAgentDraft(undefined, createForm({ name: 'User B new draft' }), 'user-b');
+    saveAgentDraft('agent-1', createForm({ name: 'User A saved-agent draft' }), 'user-a');
+
+    clearAgentDraft(undefined, 'user-a');
+
+    expect(getAgentDraft(undefined, 'user-a')).toBeUndefined();
+    expect(getAgentDraft(undefined, 'user-b')?.name).toBe('User B new draft');
+    expect(getAgentDraft('agent-1', 'user-a')?.name).toBe('User A saved-agent draft');
+    expect(getAgentDraft('agent-1', 'user-b')).toBeUndefined();
+  });
 });

@@ -15,7 +15,7 @@ import type { UseMutationResult } from '@tanstack/react-query';
 import { logger, getDefaultAgentFormValues } from '~/utils';
 import { useDeleteAgentMutation } from '~/data-provider';
 import { isEphemeralAgent } from '~/common';
-import { useLocalize } from '~/hooks';
+import { useAuthContext, useLocalize } from '~/hooks';
 import store from '~/store';
 import { clearAgentDraft } from './drafts';
 
@@ -29,6 +29,7 @@ function DeleteButton({
   createMutation: UseMutationResult<Agent, Error, AgentCreateParams>;
 }) {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const { reset } = useFormContext();
   const { showToast } = useToastContext();
   const setConversation = useSetRecoilState(store.conversationByIndex(0));
@@ -45,7 +46,7 @@ function DeleteButton({
         message: localize('com_ui_agent_deleted'),
         status: 'success',
       });
-      clearAgentDraft(vars.agent_id);
+      clearAgentDraft(vars.agent_id, user?.id);
 
       if (createMutation.data?.id ?? '') {
         logger.log('agents', 'resetting createMutation');

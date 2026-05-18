@@ -12,6 +12,7 @@ import { getAgentDraft, saveAgentDraft, clearAllAgentDrafts } from '../drafts';
 
 let mockCurrentAgentId: string | undefined;
 let mockLastAgentSelectHasDraft: boolean | undefined;
+let mockUserId: string | undefined;
 
 const AGENT_SELECT_LABEL = 'Agent Select';
 const ADVANCED_PANEL_LABEL = 'Advanced Panel';
@@ -22,6 +23,7 @@ const AGENTS_BUTTON_LABEL = 'Agents';
 const FILES_BUTTON_LABEL = 'Files';
 const FILES_PANEL_LABEL = 'Files panel';
 const PROGRAMMATIC_UPDATE_LABEL = 'Programmatic agent update';
+const MOCK_USER_ID = 'user-123';
 
 type MockButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: string;
@@ -78,7 +80,7 @@ jest.mock('~/data-provider', () => ({
 jest.mock('~/hooks', () => ({
   useSelectAgent: () => ({ onSelect: jest.fn() }),
   useLocalize: () => (key: string) => key,
-  useAuthContext: () => ({ user: { id: 'user-123', role: 'USER' } }),
+  useAuthContext: () => ({ user: { id: mockUserId, role: 'USER' } }),
 }));
 
 jest.mock('~/hooks/useResourcePermissions', () => ({
@@ -241,6 +243,7 @@ describe('AgentPanel draft preservation', () => {
     localStorage.setItem('side:active-panel', 'agents');
     mockCurrentAgentId = undefined;
     mockLastAgentSelectHasDraft = undefined;
+    mockUserId = MOCK_USER_ID;
     clearAllAgentDrafts();
   });
 
@@ -269,21 +272,25 @@ describe('AgentPanel draft preservation', () => {
 
   it('clears an existing draft when Create new agent is clicked', () => {
     mockCurrentAgentId = 'agent-123';
-    saveAgentDraft('agent-123', {
-      id: 'agent-123',
-      name: 'Unsaved saved-agent name',
-      description: '',
-      instructions: 'Unsaved saved-agent instructions',
-      model: 'gpt-4o',
-      model_parameters: {},
-      provider: { label: 'OpenAI', value: 'openAI' },
-      tools: [],
-      tool_options: {},
-      category: 'general',
-      execute_code: false,
-      file_search: false,
-      web_search: false,
-    } as AgentForm);
+    saveAgentDraft(
+      'agent-123',
+      {
+        id: 'agent-123',
+        name: 'Unsaved saved-agent name',
+        description: '',
+        instructions: 'Unsaved saved-agent instructions',
+        model: 'gpt-4o',
+        model_parameters: {},
+        provider: { label: 'OpenAI', value: 'openAI' },
+        tools: [],
+        tool_options: {},
+        category: 'general',
+        execute_code: false,
+        file_search: false,
+        web_search: false,
+      } as AgentForm,
+      MOCK_USER_ID,
+    );
 
     render(<Harness />);
 
@@ -295,8 +302,8 @@ describe('AgentPanel draft preservation', () => {
     expect(screen.getByLabelText('Draft name')).toHaveValue('');
     expect(screen.getByLabelText('Draft instructions')).toHaveValue('');
     expect(screen.getByLabelText('Draft model')).toHaveValue('');
-    expect(getAgentDraft('agent-123')).toBeUndefined();
-    expect(getAgentDraft(undefined)).toBeUndefined();
+    expect(getAgentDraft('agent-123', MOCK_USER_ID)).toBeUndefined();
+    expect(getAgentDraft(undefined, MOCK_USER_ID)).toBeUndefined();
     expect(mockLastAgentSelectHasDraft).toBe(false);
   });
 
@@ -310,7 +317,7 @@ describe('AgentPanel draft preservation', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Draft name')).toHaveValue('Saved from API');
     });
-    expect(getAgentDraft('agent-123')).toBeUndefined();
+    expect(getAgentDraft('agent-123', MOCK_USER_ID)).toBeUndefined();
     expect(mockLastAgentSelectHasDraft).toBe(false);
   });
 
@@ -321,21 +328,25 @@ describe('AgentPanel draft preservation', () => {
     fireEvent.change(screen.getByLabelText('Draft name'), {
       target: { value: 'Previous agent draft' },
     });
-    saveAgentDraft('agent-456', {
-      id: 'agent-456',
-      name: 'Mounted switch draft',
-      description: '',
-      instructions: 'Draft for the switched agent',
-      model: 'gpt-4o',
-      model_parameters: {},
-      provider: { label: 'OpenAI', value: 'openAI' },
-      tools: [],
-      tool_options: {},
-      category: 'general',
-      execute_code: false,
-      file_search: false,
-      web_search: false,
-    } as AgentForm);
+    saveAgentDraft(
+      'agent-456',
+      {
+        id: 'agent-456',
+        name: 'Mounted switch draft',
+        description: '',
+        instructions: 'Draft for the switched agent',
+        model: 'gpt-4o',
+        model_parameters: {},
+        provider: { label: 'OpenAI', value: 'openAI' },
+        tools: [],
+        tool_options: {},
+        category: 'general',
+        execute_code: false,
+        file_search: false,
+        web_search: false,
+      } as AgentForm,
+      MOCK_USER_ID,
+    );
 
     mockCurrentAgentId = 'agent-456';
     rerender(<Harness />);
@@ -344,7 +355,25 @@ describe('AgentPanel draft preservation', () => {
       expect(screen.getByLabelText('Draft name')).toHaveValue('Mounted switch draft');
     });
     expect(screen.getByLabelText('Draft instructions')).toHaveValue('Draft for the switched agent');
-    expect(getAgentDraft('agent-123')?.name).toBe('Previous agent draft');
+    expect(getAgentDraft('agent-123', MOCK_USER_ID)?.name).toBe('Previous agent draft');
     expect(mockLastAgentSelectHasDraft).toBe(true);
+  });
+
+  it('does not carry drafts across user changes while mounted', async () => {
+    const { rerender } = render(<Harness />);
+
+    fireEvent.change(screen.getByLabelText('Draft name'), {
+      target: { value: 'First user draft' },
+    });
+    expect(getAgentDraft(undefined, MOCK_USER_ID)?.name).toBe('First user draft');
+
+    mockUserId = 'user-456';
+    rerender(<Harness />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Draft name')).toHaveValue('');
+    });
+    expect(getAgentDraft(undefined, 'user-456')).toBeUndefined();
+    expect(getAgentDraft(undefined, MOCK_USER_ID)?.name).toBe('First user draft');
   });
 });

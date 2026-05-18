@@ -6,8 +6,8 @@ export type AgentDraftValues = Partial<AgentForm>;
 
 const drafts = new Map<string, AgentDraftValues>();
 
-export function getAgentDraftKey(agentId?: string | null): string {
-  return agentId || NEW_AGENT_DRAFT_KEY;
+export function getAgentDraftKey(agentId?: string | null, userId?: string | null): string {
+  return `${userId || 'anonymous'}:${agentId || NEW_AGENT_DRAFT_KEY}`;
 }
 
 const sanitizeFile = ({ file: _file, ...value }: ExtendedFile): ExtendedFile => value;
@@ -37,20 +37,30 @@ export function sanitizeAgentDraft(values: AgentForm): AgentDraftValues {
   return draft;
 }
 
-export function getAgentDraft(agentId?: string | null): AgentDraftValues | undefined {
-  return drafts.get(getAgentDraftKey(agentId));
+export function getAgentDraft(
+  agentId?: string | null,
+  userId?: string | null,
+): AgentDraftValues | undefined {
+  return drafts.get(getAgentDraftKey(agentId, userId));
 }
 
-export function saveAgentDraft(agentId: string | null | undefined, values: AgentForm): void {
-  drafts.set(getAgentDraftKey(agentId), sanitizeAgentDraft(values));
+export function saveAgentDraft(
+  agentId: string | null | undefined,
+  values: AgentForm,
+  userId?: string | null,
+): void {
+  drafts.set(getAgentDraftKey(agentId, userId), sanitizeAgentDraft(values));
 }
 
-export function clearAgentDraft(agentId?: string | null): void {
-  drafts.delete(getAgentDraftKey(agentId));
+export function clearAgentDraft(agentId?: string | null, userId?: string | null): void {
+  drafts.delete(getAgentDraftKey(agentId, userId));
 }
 
-export function clearAgentDrafts(agentIds: Array<string | null | undefined>): void {
-  agentIds.forEach(clearAgentDraft);
+export function clearAgentDrafts(
+  agentIds: Array<string | null | undefined>,
+  userId?: string | null,
+): void {
+  agentIds.forEach((agentId) => clearAgentDraft(agentId, userId));
 }
 
 export function clearAllAgentDrafts(): void {
