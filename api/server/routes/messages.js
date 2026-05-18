@@ -269,10 +269,7 @@ router.post('/artifact/:messageId', async (req, res) => {
 router.get('/:conversationId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const messages = await db.getMessages(
-      { conversationId, user: req.user.id },
-      '-_id -__v -user',
-    );
+    const messages = await db.getMessages({ conversationId, user: req.user.id }, '-_id -__v -user');
     res.status(200).json(messages);
   } catch (error) {
     logger.error('Error fetching messages:', error);
