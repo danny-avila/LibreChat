@@ -36,6 +36,7 @@ import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
+import FilesPanel from '~/nj/components/SidePanel/Files/FilesPanel';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -203,6 +204,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
   );
 
   const filenameFilter = table.getColumn('filename')?.getFilterValue() as string;
+
+  // NJ: We're inserting our own version of the panel here, but using PanelTable to get
+  // all the file handling logic that only exists here
+  return <FilesPanel files={data as TFile[]} handleFileClick={handleFileClick} />;
 
   return (
     <div role="region" aria-label={localize('com_files_table')} className="space-y-2">

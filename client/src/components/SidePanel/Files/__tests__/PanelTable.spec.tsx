@@ -110,9 +110,12 @@ function renderTable(data: TFile[]) {
 
 function clickFilenameCell() {
   const cells = screen.getAllByRole('button');
+  const filenameCell = cells[0];
+  /* NJ: Our filename cells are different, so find it a different way
   const filenameCell = cells.find(
     (cell) => cell.tagName === 'TD' && cell.textContent && !cell.textContent.includes('com_ui_'),
   );
+  */
   if (!filenameCell) {
     throw new Error('Could not find filename cell with role="button" — check mock setup');
   }
