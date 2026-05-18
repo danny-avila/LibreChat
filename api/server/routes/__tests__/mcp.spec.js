@@ -25,6 +25,7 @@ const mockRegistryInstance = {
   getAllowedDomains: jest.fn().mockReturnValue(null),
   getAllowedAddresses: jest.fn().mockReturnValue(null),
 };
+let mockMCPUseAllowed = true;
 
 jest.mock('@librechat/api', () => {
   const actual = jest.requireActual('@librechat/api');
@@ -46,7 +47,15 @@ jest.mock('@librechat/api', () => {
       deleteUserTokens: jest.fn(),
     },
     getUserMCPAuthMap: jest.fn(),
-    generateCheckAccess: jest.fn(() => (req, res, next) => next()),
+    generateCheckAccess: jest.fn(({ permissionType, permissions }) => (req, res, next) => {
+      const { PermissionTypes, Permissions } = require('librechat-data-provider');
+      const isMCPUseCheck =
+        permissionType === PermissionTypes.MCP_SERVERS && permissions.includes(Permissions.USE);
+      if (isMCPUseCheck && !mockMCPUseAllowed) {
+        return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+      }
+      return next();
+    }),
     MCPServersRegistry: {
       getInstance: () => mockRegistryInstance,
     },
@@ -175,6 +184,7 @@ describe('MCP Routes', () => {
     jest.clearAllMocks();
     mockResolveAllMcpConfigs.mockResolvedValue({});
     mockResolveMcpConfigNames.mockResolvedValue([]);
+    mockMCPUseAllowed = true;
   });
 
   describe('GET /:serverName/oauth/initiate', () => {
@@ -1957,6 +1967,16 @@ describe('MCP Routes', () => {
   });
 
   describe('GET /tools', () => {
+    it('should deny MCP tools when user lacks MCP server use permission', async () => {
+      mockMCPUseAllowed = false;
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ message: 'Forbidden: Insufficient permissions' });
+      expect(mockResolveAllMcpConfigs).not.toHaveBeenCalled();
+    });
+
     it('should continue returning MCP tools when one server cache lookup fails', async () => {
       const { Constants } = require('librechat-data-provider');
       const { logger } = require('@librechat/data-schemas');

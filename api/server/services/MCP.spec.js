@@ -38,7 +38,7 @@ jest.mock('@librechat/api', () => {
 
 const { logger } = require('@librechat/data-schemas');
 const { MCPOAuthHandler } = require('@librechat/api');
-const { CacheKeys, Constants } = require('librechat-data-provider');
+const { CacheKeys, Constants, Permissions, PermissionTypes } = require('librechat-data-provider');
 const D = Constants.mcp_delimiter;
 const {
   createMCPTool,
@@ -71,6 +71,8 @@ jest.mock('~/models', () => ({
   findToken: jest.fn(),
   createToken: jest.fn(),
   updateToken: jest.fn(),
+  deleteTokens: jest.fn(),
+  getRoleByName: jest.fn(),
 }));
 
 jest.mock('./Tools/mcp', () => ({
@@ -660,12 +662,14 @@ describe('tests for the new helper functions used by the MCP connection status e
 
 describe('User parameter passing tests', () => {
   let mockReinitMCPServer;
+  let mockGetMCPManager;
   let mockGetFlowStateManager;
   let mockGetLogStores;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockReinitMCPServer = require('./Tools/mcp').reinitMCPServer;
+    mockGetMCPManager = require('~/config').getMCPManager;
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
     mockGetLogStores = require('~/cache').getLogStores;
 
@@ -812,6 +816,53 @@ describe('User parameter passing tests', () => {
 
       // Verify reinitMCPServer was NOT called since tool was in cache
       expect(mockReinitMCPServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject tool execution when user lacks MCP server use permission', async () => {
+      const mockUser = { id: 'mcp-denied-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: false,
+          },
+        },
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: {
+              user: mockUser,
+            },
+            metadata: {
+              provider: 'openai',
+            },
+            toolCall: {},
+          },
+        ),
+      ).rejects.toThrow(
+        '[MCP][test-server][test-tool] tool call failed: Forbidden: Insufficient MCP server permissions',
+      );
+      expect(mockGetMCPManager).not.toHaveBeenCalled();
     });
   });
 

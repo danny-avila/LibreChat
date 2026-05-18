@@ -3,8 +3,38 @@ import { Tools } from 'librechat-data-provider';
 import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
 
+export const DEFAULT_MCP_IMAGE_DATA_MAX_BYTES = 10 * 1024 * 1024;
+
 function generateResourceId(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').substring(0, 10);
+}
+
+function getMCPImageDataMaxBytes(): number {
+  const raw = process.env.MCP_IMAGE_DATA_MAX_BYTES;
+  if (!raw) {
+    return DEFAULT_MCP_IMAGE_DATA_MAX_BYTES;
+  }
+
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MCP_IMAGE_DATA_MAX_BYTES;
+}
+
+function getImageDataBytes(data: string): number {
+  return Buffer.byteLength(data, 'utf8');
+}
+
+function assertImageDataWithinLimit(item: t.ImageContent): void {
+  if (item.data.startsWith('http')) {
+    return;
+  }
+
+  const maxBytes = getMCPImageDataMaxBytes();
+  const dataBytes = getImageDataBytes(item.data);
+  if (dataBytes <= maxBytes) {
+    return;
+  }
+
+  throw new Error(`MCP image result exceeds maximum size of ${maxBytes} bytes: ${dataBytes} bytes`);
 }
 
 const RECOGNIZED_PROVIDERS = new Set([
@@ -71,6 +101,10 @@ function parseAsString(result: t.MCPToolCallResponse): string {
         }
         return resourceText.join('\n');
       }
+      if (isImageContent(item)) {
+        assertImageDataWithinLimit(item);
+        return `Image result: ${item.mimeType}`;
+      }
       return JSON.stringify(item, null, 2);
     })
     .filter(Boolean)
@@ -120,6 +154,7 @@ export function formatToolContent(
       if (!isImageContent(item)) {
         return;
       }
+      assertImageDataWithinLimit(item);
       const formatter = imageFormatters.default as t.ImageFormatter;
       const formattedImage = formatter(item);
 

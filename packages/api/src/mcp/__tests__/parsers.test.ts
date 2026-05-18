@@ -91,6 +91,16 @@ describe('formatToolContent', () => {
   });
 
   describe('image handling', () => {
+    const originalMaxImageBytes = process.env.MCP_IMAGE_DATA_MAX_BYTES;
+
+    afterEach(() => {
+      if (originalMaxImageBytes === undefined) {
+        delete process.env.MCP_IMAGE_DATA_MAX_BYTES;
+        return;
+      }
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = originalMaxImageBytes;
+    });
+
     it('should handle images with http URLs', () => {
       const result: t.MCPToolCallResponse = {
         content: [{ type: 'image', data: 'https://example.com/image.png', mimeType: 'image/png' }],
@@ -146,6 +156,43 @@ describe('formatToolContent', () => {
       expect(content).toBe('');
       expect(artifacts).toBeDefined();
       expect(artifacts?.content).toHaveLength(2);
+    });
+
+    it('should reject oversized base64 image data before creating artifacts', () => {
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = '3';
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'QUJDRA==', mimeType: 'image/png' }],
+      };
+
+      expect(() => formatToolContent(result, 'openai')).toThrow(
+        'MCP image result exceeds maximum size of 3 bytes',
+      );
+    });
+
+    it('should reject oversized image data for unrecognized providers before stringifying', () => {
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = '3';
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'QUJDRA==', mimeType: 'image/png' }],
+      };
+
+      expect(() => formatToolContent(result, 'unknown' as t.Provider)).toThrow(
+        'MCP image result exceeds maximum size of 3 bytes',
+      );
+    });
+
+    it('should not apply the image data cap to remote image URLs', () => {
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = '3';
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'https://example.com/large.png', mimeType: 'image/png' }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toBe('');
+      expect(artifacts?.content?.[0]).toEqual({
+        type: 'image_url',
+        image_url: { url: 'https://example.com/large.png' },
+      });
     });
   });
 

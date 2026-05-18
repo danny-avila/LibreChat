@@ -7,6 +7,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const d = Constants.mcp_delimiter;
 
 const mockGetAllServerConfigs = jest.fn();
+const mockUserCanUseMCPServers = jest.fn();
 
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({
@@ -24,6 +25,7 @@ jest.mock('~/config', () => ({
 
 jest.mock('~/server/services/MCP', () => ({
   resolveConfigServers: jest.fn().mockResolvedValue({}),
+  userCanUseMCPServers: (...args) => mockUserCanUseMCPServers(...args),
 }));
 
 jest.mock('~/server/services/Files/strategies', () => ({
@@ -106,6 +108,7 @@ describe('MCP Tool Authorization', () => {
       authorizedServer: { type: 'sse', url: 'https://authorized.example.com' },
       anotherServer: { type: 'sse', url: 'https://another.example.com' },
     });
+    mockUserCanUseMCPServers.mockResolvedValue(true);
 
     mockReq = {
       user: {
@@ -127,17 +130,52 @@ describe('MCP Tool Authorization', () => {
   describe('filterAuthorizedTools', () => {
     const availableTools = { web_search: true, custom_tool: true };
     const userId = 'test-user-123';
+    const testUser = { id: userId, role: 'USER' };
 
     test('should keep authorized MCP tools and strip unauthorized ones', async () => {
       const result = await filterAuthorizedTools({
         tools: [`toolA${d}authorizedServer`, `toolB${d}forbiddenServer`, 'web_search'],
         userId,
+        user: testUser,
         availableTools,
       });
 
       expect(result).toContain(`toolA${d}authorizedServer`);
       expect(result).toContain('web_search');
       expect(result).not.toContain(`toolB${d}forbiddenServer`);
+    });
+
+    test('should strip MCP tools when user lacks MCP server use permission', async () => {
+      mockUserCanUseMCPServers.mockResolvedValue(false);
+
+      const result = await filterAuthorizedTools({
+        tools: [
+          `toolA${d}authorizedServer`,
+          `${Constants.mcp_all}${d}authorizedServer`,
+          'web_search',
+        ],
+        userId,
+        user: testUser,
+        availableTools,
+      });
+
+      expect(result).toEqual(['web_search']);
+      expect(mockUserCanUseMCPServers).toHaveBeenCalledWith({ id: userId, role: 'USER' });
+      expect(mockGetAllServerConfigs).not.toHaveBeenCalled();
+    });
+
+    test('should strip MCP tools when user context is missing', async () => {
+      mockUserCanUseMCPServers.mockResolvedValueOnce(false);
+
+      const result = await filterAuthorizedTools({
+        tools: [`toolA${d}authorizedServer`, 'web_search'],
+        userId,
+        availableTools,
+      });
+
+      expect(result).toEqual(['web_search']);
+      expect(mockUserCanUseMCPServers).toHaveBeenCalledWith(undefined);
+      expect(mockGetAllServerConfigs).not.toHaveBeenCalled();
     });
 
     test('should keep system tools without querying MCP registry', async () => {
@@ -170,6 +208,7 @@ describe('MCP Tool Authorization', () => {
       const result = await filterAuthorizedTools({
         tools: [`toolA${d}someServer`, 'web_search'],
         userId,
+        user: testUser,
         availableTools,
       });
 
@@ -188,6 +227,7 @@ describe('MCP Tool Authorization', () => {
           `steal${d}nonexistent`,
         ],
         userId,
+        user: testUser,
         availableTools,
       });
 
@@ -224,6 +264,7 @@ describe('MCP Tool Authorization', () => {
       await filterAuthorizedTools({
         tools: [`tool${d}authorizedServer`],
         userId: 'specific-user-id',
+        user: { id: 'specific-user-id', role: 'USER' },
         availableTools,
       });
 
@@ -241,6 +282,7 @@ describe('MCP Tool Authorization', () => {
       const result = await filterAuthorizedTools({
         tools: [`tool${d}config-override-server`, `tool${d}unauthorizedServer`],
         userId,
+        user: testUser,
         availableTools,
         configServers,
       });
@@ -254,6 +296,7 @@ describe('MCP Tool Authorization', () => {
       await filterAuthorizedTools({
         tools: [`tool1${d}authorizedServer`, `tool2${d}anotherServer`, `tool3${d}unknownServer`],
         userId,
+        user: testUser,
         availableTools,
       });
 
@@ -270,6 +313,7 @@ describe('MCP Tool Authorization', () => {
       const result = await filterAuthorizedTools({
         tools: [...existingTools, `newTool${d}unknownServer`, 'web_search'],
         userId,
+        user: testUser,
         availableTools,
         existingTools,
       });
@@ -288,6 +332,7 @@ describe('MCP Tool Authorization', () => {
       const result = await filterAuthorizedTools({
         tools: [`toolA${d}serverA`, 'web_search'],
         userId,
+        user: testUser,
         availableTools,
       });
 
@@ -303,6 +348,7 @@ describe('MCP Tool Authorization', () => {
       const result = await filterAuthorizedTools({
         tools: [malformedTool, `legit${d}serverA`, 'web_search'],
         userId,
+        user: testUser,
         availableTools,
         existingTools: [malformedTool, `legit${d}serverA`],
       });
@@ -321,6 +367,7 @@ describe('MCP Tool Authorization', () => {
           'web_search',
         ],
         userId,
+        user: testUser,
         availableTools,
       });
 
@@ -346,6 +393,27 @@ describe('MCP Tool Authorization', () => {
       expect(agent.tools).toContain('web_search');
       expect(agent.tools).toContain(`validTool${d}authorizedServer`);
       expect(agent.tools).not.toContain(`attack${d}forbiddenServer`);
+    });
+
+    test('should strip all MCP tools on create when user lacks MCP server use permission', async () => {
+      mockUserCanUseMCPServers.mockResolvedValue(false);
+      mockReq.body = {
+        provider: 'openai',
+        model: 'gpt-4',
+        name: 'MCP Denied Test Agent',
+        tools: [
+          'web_search',
+          `validTool${d}authorizedServer`,
+          `${Constants.mcp_all}${d}authorizedServer`,
+        ],
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const agent = mockRes.json.mock.calls[0][0];
+      expect(agent.tools).toEqual(['web_search']);
+      expect(agent.mcpServerNames).toEqual([]);
     });
 
     test('should not 500 when MCP registry is uninitialized', async () => {
@@ -444,6 +512,23 @@ describe('MCP Tool Authorization', () => {
       expect(updatedAgent.tools).toContain('web_search');
       expect(updatedAgent.tools).toContain(`existingTool${d}authorizedServer`);
       expect(updatedAgent.tools).not.toContain(`attack${d}forbiddenServer`);
+    });
+
+    test('should reject newly added MCP tools when user lacks MCP server use permission', async () => {
+      mockUserCanUseMCPServers.mockResolvedValue(false);
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        tools: ['web_search', `existingTool${d}authorizedServer`, `newTool${d}anotherServer`],
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.tools).toContain('web_search');
+      expect(updatedAgent.tools).toContain(`existingTool${d}authorizedServer`);
+      expect(updatedAgent.tools).not.toContain(`newTool${d}anotherServer`);
     });
 
     test('should allow adding authorized MCP tools', async () => {

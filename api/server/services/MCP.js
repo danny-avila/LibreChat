@@ -7,6 +7,7 @@ const {
   Constants: AgentConstants,
 } = require('@librechat/agents');
 const {
+  checkAccess,
   sendEvent,
   MCPOAuthHandler,
   isMCPDomainAllowed,
@@ -16,14 +17,22 @@ const {
   resolveJsonSchemaRefs,
   buildOAuthToolCallName,
 } = require('@librechat/api');
-const { Time, CacheKeys, Constants, isAssistantsEndpoint } = require('librechat-data-provider');
+const {
+  Time,
+  CacheKeys,
+  Constants,
+  Permissions,
+  PermissionTypes,
+  isAssistantsEndpoint,
+} = require('librechat-data-provider');
 const {
   getOAuthReconnectionManager,
   getMCPServersRegistry,
   getFlowStateManager,
   getMCPManager,
 } = require('~/config');
-const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
+const db = require('~/models');
+const { findToken, createToken, updateToken, deleteTokens } = db;
 const { getGraphApiToken } = require('./GraphTokenService');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
@@ -35,6 +44,24 @@ const RECONNECT_THROTTLE_MS = 10_000;
 
 const missingToolCache = new Map();
 const MISSING_TOOL_TTL_MS = 10_000;
+
+async function userCanUseMCPServers(user) {
+  if (!user?.id || !user?.role) {
+    return false;
+  }
+
+  try {
+    return await checkAccess({
+      user,
+      permissionType: PermissionTypes.MCP_SERVERS,
+      permissions: [Permissions.USE],
+      getRoleByName: db.getRoleByName,
+    });
+  } catch (error) {
+    logger.error(`[MCP][User: ${user.id}] Failed MCP permission check`, error);
+    return false;
+  }
+}
 
 function evictStale(map, ttl) {
   if (map.size <= MAX_CACHE_SIZE) {
@@ -631,11 +658,15 @@ function createToolInstance({
     let derivedSignal = null;
 
     try {
+      const provider = (config?.metadata?.provider || capturedProvider)?.toLowerCase();
+      const canUseMCP = await userCanUseMCPServers(config?.configurable?.user);
+      if (!canUseMCP) {
+        throw new Error('Forbidden: Insufficient MCP server permissions');
+      }
       const flowsCache = getLogStores(CacheKeys.FLOWS);
       const flowManager = getFlowStateManager(flowsCache);
       derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
-      const provider = (config?.metadata?.provider || capturedProvider)?.toLowerCase();
 
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
       const flowId = `${serverName}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`;
@@ -888,6 +919,7 @@ async function getServerConnectionStatus(
 module.exports = {
   createMCPTool,
   createMCPTools,
+  userCanUseMCPServers,
   getMCPSetupData,
   resolveConfigServers,
   resolveMcpConfigNames,
