@@ -11,6 +11,7 @@ import AgentPanel from '../AgentPanel';
 import { getAgentDraft, saveAgentDraft, clearAllAgentDrafts } from '../drafts';
 
 let mockCurrentAgentId: string | undefined;
+let mockLastAgentSelectHasDraft: boolean | undefined;
 
 const AGENT_SELECT_LABEL = 'Agent Select';
 const ADVANCED_PANEL_LABEL = 'Advanced Panel';
@@ -24,6 +25,10 @@ const FILES_PANEL_LABEL = 'Files panel';
 type MockButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: string;
   variant?: string;
+};
+
+type MockAgentSelectProps = {
+  hasDraft?: boolean;
 };
 
 jest.mock('@librechat/client', () => ({
@@ -131,7 +136,10 @@ jest.mock('~/common', () => {
 
 jest.mock('../AgentSelect', () => ({
   __esModule: true,
-  default: () => <div>{AGENT_SELECT_LABEL}</div>,
+  default: ({ hasDraft }: MockAgentSelectProps) => {
+    mockLastAgentSelectHasDraft = hasDraft;
+    return <div>{AGENT_SELECT_LABEL}</div>;
+  },
 }));
 
 jest.mock('../AgentConfig', () => ({
@@ -216,6 +224,7 @@ describe('AgentPanel draft preservation', () => {
   beforeEach(() => {
     localStorage.setItem('side:active-panel', 'agents');
     mockCurrentAgentId = undefined;
+    mockLastAgentSelectHasDraft = undefined;
     clearAllAgentDrafts();
   });
 
@@ -263,6 +272,7 @@ describe('AgentPanel draft preservation', () => {
     render(<Harness />);
 
     expect(screen.getByLabelText('Draft name')).toHaveValue('Unsaved saved-agent name');
+    expect(mockLastAgentSelectHasDraft).toBe(true);
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_create_new_agent' }));
 
@@ -271,5 +281,6 @@ describe('AgentPanel draft preservation', () => {
     expect(screen.getByLabelText('Draft model')).toHaveValue('');
     expect(getAgentDraft('agent-123')).toBeUndefined();
     expect(getAgentDraft(undefined)).toBeUndefined();
+    expect(mockLastAgentSelectHasDraft).toBe(false);
   });
 });

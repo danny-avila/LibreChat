@@ -262,7 +262,6 @@ export default function AgentPanel() {
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const draftValues = useMemo(() => getAgentDraft(current_agent_id), [current_agent_id]);
-  const hasDraft = draftValues != null;
   const defaultValues = useMemo(
     () => ({
       ...getDefaultAgentFormValues(),
@@ -285,12 +284,21 @@ export default function AgentPanel() {
     formState: { dirtyFields },
   } = methods;
   const currentAgentIdRef = useRef<string | undefined>(current_agent_id);
+  const [hasDraft, setHasDraft] = useState(draftValues != null);
   const shouldPersistDraftRef = useRef(hasDraft);
   const [isAvatarUploadInFlight, setIsAvatarUploadInFlight] = useState(false);
+
+  const persistAgentDraft = useCallback((agentId: string | undefined, values: AgentForm) => {
+    saveAgentDraft(agentId, values);
+    if (agentId === currentAgentIdRef.current) {
+      setHasDraft(true);
+    }
+  }, []);
 
   const clearDraftsForAgentIds = useCallback((agentIds: Array<string | null | undefined>) => {
     shouldPersistDraftRef.current = false;
     clearAgentDrafts(agentIds);
+    setHasDraft(getAgentDraft(currentAgentIdRef.current) != null);
   }, []);
 
   const handleAgentChange = useCallback(
@@ -318,6 +326,9 @@ export default function AgentPanel() {
     }
 
     currentAgentIdRef.current = current_agent_id;
+    const nextHasDraft = getAgentDraft(current_agent_id) != null;
+    shouldPersistDraftRef.current = nextHasDraft;
+    setHasDraft(nextHasDraft);
   }, [current_agent_id, getValues]);
 
   useEffect(() => {
@@ -332,8 +343,8 @@ export default function AgentPanel() {
     }
 
     shouldPersistDraftRef.current = true;
-    saveAgentDraft(currentAgentIdRef.current, getValues());
-  }, [getValues, shouldPersistDraft]);
+    persistAgentDraft(currentAgentIdRef.current, getValues());
+  }, [getValues, persistAgentDraft, shouldPersistDraft]);
 
   useEffect(() => {
     const subscription = watch((_, { name }) => {
@@ -342,7 +353,7 @@ export default function AgentPanel() {
       }
 
       shouldPersistDraftRef.current = true;
-      saveAgentDraft(currentAgentIdRef.current, getValues());
+      persistAgentDraft(currentAgentIdRef.current, getValues());
     });
 
     return () => {
@@ -351,7 +362,7 @@ export default function AgentPanel() {
       }
       subscription.unsubscribe();
     };
-  }, [getValues, watch]);
+  }, [getValues, persistAgentDraft, watch]);
 
   const uploadAvatarMutation = useUploadAgentAvatarMutation({
     onSuccess: (updatedAgent) => {
