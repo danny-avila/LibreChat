@@ -196,13 +196,7 @@ describe('resolveOpenIdAccount', () => {
 
     expect(result).toEqual({ status: 'unauthorized', reason: 'missing_email' });
     expect(deps.findUser).toHaveBeenCalledWith({
-      $or: [
-        { openidId: 'sub-123', openidIssuer: 'https://issuer.example.com' },
-        {
-          openidId: 'sub-123',
-          $or: [{ openidIssuer: { $exists: false } }, { openidIssuer: null }, { openidIssuer: '' }],
-        },
-      ],
+      $or: [{ openidId: 'sub-123', openidIssuer: 'https://issuer.example.com' }],
     });
     expect(deps.createUser).not.toHaveBeenCalled();
   });
@@ -520,6 +514,7 @@ describe('resolveOpenIdAccount', () => {
       findUser: mockFindUser()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(created),
       createUser: mockCreateUser(async () => ({ email: 'user@example.com' })),
     });
@@ -542,6 +537,7 @@ describe('resolveOpenIdAccount', () => {
     const created = user();
     const deps = methods({
       findUser: mockFindUser()
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(created),

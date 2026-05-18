@@ -1333,7 +1333,7 @@ describe('createRemoteAgentAuth', () => {
 
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
-      expect(deps.findUser).toHaveBeenCalled();
+      expect(deps.findUser).not.toHaveBeenCalled();
       expect(deps.createUser).not.toHaveBeenCalled();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
       expect(mockNext).not.toHaveBeenCalled();
@@ -1408,7 +1408,7 @@ describe('createRemoteAgentAuth', () => {
 
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
-      expect(deps.findUser).not.toHaveBeenCalled();
+      expect(deps.findUser).toHaveBeenCalled();
       expect(deps.createUser).not.toHaveBeenCalled();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
@@ -1617,6 +1617,7 @@ describe('createRemoteAgentAuth', () => {
 
       const deps = makeDeps(makeConfig({}, { enabled: true }));
       deps.findUser
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(makeUser({ provider: 'google', openidId: undefined }));
       const { res, status, json } = makeRes();
@@ -2173,6 +2174,7 @@ describe('createRemoteAgentAuth', () => {
       const deps = makeDeps();
       deps.findUser
         .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(makeUser({ email: getOpenIdEmail(claims), openidId: claims.sub }));
       await createRemoteAgentAuth(deps)(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
@@ -2180,7 +2182,9 @@ describe('createRemoteAgentAuth', () => {
         mockNext,
       );
 
-      return (deps.findUser.mock.calls[1]?.[0] as { email?: string } | undefined)?.email;
+      return deps.findUser.mock.calls
+        .map(([query]) => query as { email?: string })
+        .find((query) => query.email)?.email;
     }
 
     it('uses email claim', async () => {
