@@ -1092,6 +1092,7 @@ describe('createRemoteAgentAuth', () => {
             issuer: BASE_ISSUER,
             clientId: undefined,
             clientSecret: undefined,
+            enabled: true,
           },
           options: expect.objectContaining({
             syncGroupsOnCreate: false,
@@ -1482,6 +1483,7 @@ describe('createRemoteAgentAuth', () => {
             issuer: BASE_ISSUER,
             clientId: 'existing-client-id',
             clientSecret: 'existing-client-secret',
+            enabled: true,
           },
           options: expect.objectContaining({
             syncGroupsOnCreate: true,

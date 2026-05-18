@@ -394,6 +394,7 @@ function getEntraGraphConfig(oidcConfig: EnabledOidcConfig): EntraGraphConfig {
     issuer: oidcConfig.issuer,
     clientId: process.env.OPENID_CLIENT_ID,
     clientSecret: process.env.OPENID_CLIENT_SECRET,
+    enabled: true,
   };
 }
 

@@ -16,6 +16,7 @@ export type EntraGraphConfig = {
   issuer: string;
   clientId?: string;
   clientSecret?: string;
+  enabled?: boolean;
   includeOwnersAsMembers?: boolean;
   useEntraIdForPeopleSearch?: boolean;
 };
@@ -119,7 +120,11 @@ function shouldSyncLifecycle(
 }
 
 function isGraphEnabled(config: EntraGraphConfig): boolean {
-  return config.useEntraIdForPeopleSearch ?? isEnabled(process.env.USE_ENTRA_ID_FOR_PEOPLE_SEARCH);
+  return (
+    config.enabled ??
+    config.useEntraIdForPeopleSearch ??
+    isEnabled(process.env.USE_ENTRA_ID_FOR_PEOPLE_SEARCH)
+  );
 }
 
 function shouldIncludeOwners(config: EntraGraphConfig): boolean {
