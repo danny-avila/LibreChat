@@ -239,15 +239,20 @@ function getVerifyOptions(oidcConfig: EnabledOidcConfig): VerifyOptions {
 }
 
 function getConfigOptions(req: Request): GetAppConfigOptions {
-  const user = req.user as { tenantId?: string } | undefined;
+  const user = req.user as { id?: string; role?: string; tenantId?: string } | undefined;
   const tenantId = user?.tenantId ?? getTenantId();
 
-  if (tenantId) return { tenantId };
+  if (tenantId) {
+    const options: GetAppConfigOptions = { tenantId };
+    if (user?.role) options.role = user.role;
+    if (user?.id) options.userId = user.id;
+    return options;
+  }
   return { baseOnly: true };
 }
 
 function getUserConfigOptions(user: IUser): GetAppConfigOptions {
-  if (user.tenantId) return { tenantId: user.tenantId };
+  if (user.tenantId) return { role: user.role, userId: user.id, tenantId: user.tenantId };
   return { baseOnly: true };
 }
 
@@ -255,6 +260,8 @@ function isResolvedUserConfigScope(initialOptions: GetAppConfigOptions, user: IU
   const userOptions = getUserConfigOptions(user);
   return (
     initialOptions.tenantId === userOptions.tenantId &&
+    initialOptions.userId === userOptions.userId &&
+    initialOptions.role === userOptions.role &&
     initialOptions.baseOnly === userOptions.baseOnly
   );
 }

@@ -172,6 +172,22 @@ describe('createEndpointsConfigService', () => {
 
       expect(mockGetAppConfig).not.toHaveBeenCalled();
     });
+
+    it('passes userId when resolving scoped endpoint config', async () => {
+      const mockGetAppConfig = jest.fn().mockResolvedValue(appConfig({ endpoints: {} }));
+      const deps = createMockDeps({ getAppConfig: mockGetAppConfig });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+
+      await getEndpointsConfig(
+        fakeReq({ user: { id: 'u1', role: 'USER', tenantId: 'tenant-a' } }),
+      );
+
+      expect(mockGetAppConfig).toHaveBeenCalledWith({
+        role: 'USER',
+        userId: 'u1',
+        tenantId: 'tenant-a',
+      });
+    });
   });
 
   describe('checkCapability', () => {
