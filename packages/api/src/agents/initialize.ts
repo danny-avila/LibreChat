@@ -65,6 +65,53 @@ function appendAdditionalInstructions(agent: Agent, text?: string | null): void 
     .join('\n\n');
 }
 
+function getToolName(tool: unknown): string | undefined {
+  if (tool == null || typeof tool !== 'object') {
+    return undefined;
+  }
+  const { name } = tool as { name?: unknown };
+  return typeof name === 'string' ? name : undefined;
+}
+
+function hasToolDefinition(toolDefinitions: LCTool[] | undefined, name: string): boolean {
+  return toolDefinitions?.some((toolDefinition) => toolDefinition.name === name) === true;
+}
+
+function resolveAnthropicToolConflicts({
+  provider,
+  tools,
+  toolDefinitions,
+}: {
+  provider?: string;
+  tools?: unknown[];
+  toolDefinitions?: LCTool[];
+}): unknown[] | undefined {
+  if (provider !== Providers.ANTHROPIC || !tools?.length) {
+    return tools;
+  }
+
+  if (!hasToolDefinition(toolDefinitions, Tools.web_search)) {
+    return tools;
+  }
+
+  let removed = 0;
+  const resolvedTools = tools.filter((tool) => {
+    const shouldRemove = getToolName(tool) === Tools.web_search;
+    if (shouldRemove) {
+      removed += 1;
+    }
+    return !shouldRemove;
+  });
+
+  if (removed > 0) {
+    logger.debug(
+      `[initializeAgent] Removed ${removed} Anthropic native web_search tool(s); LibreChat web_search is enabled.`,
+    );
+  }
+
+  return resolvedTools;
+}
+
 /**
  * Extended agent type with additional fields needed after initialization
  */
@@ -825,14 +872,20 @@ export async function initializeAgent(
 
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
   const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
+  const providerTools = resolveAnthropicToolConflicts({
+    provider: agent.provider,
+    tools: options.tools,
+    toolDefinitions,
+  });
+  const hasProviderTools = (providerTools?.length ?? 0) > 0;
 
-  let tools: GenericTool[] = options.tools?.length
-    ? (options.tools as GenericTool[])
+  let tools: GenericTool[] = hasProviderTools
+    ? (providerTools as GenericTool[])
     : (structuredTools ?? []);
 
   if (
     (agent.provider === Providers.GOOGLE || agent.provider === Providers.VERTEXAI) &&
-    options.tools?.length &&
+    hasProviderTools &&
     hasAgentTools
   ) {
     throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
@@ -840,10 +893,10 @@ export async function initializeAgent(
     (agent.provider === Providers.OPENAI ||
       agent.provider === Providers.AZURE ||
       agent.provider === Providers.ANTHROPIC) &&
-    options.tools?.length &&
+    hasProviderTools &&
     structuredTools?.length
   ) {
-    tools = structuredTools.concat(options.tools as GenericTool[]);
+    tools = structuredTools.concat(providerTools as GenericTool[]);
   }
 
   agent.model_parameters = { ...options.llmConfig } as Agent['model_parameters'];
