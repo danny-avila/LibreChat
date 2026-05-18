@@ -61,6 +61,5 @@ const scheduledTaskSchema = new Schema<IScheduledTask>(
 );
 
 scheduledTaskSchema.index({ userId: 1, status: 1 });
-scheduledTaskSchema.index({ targetType: 1, targetId: 1 });
 
 export default scheduledTaskSchema;

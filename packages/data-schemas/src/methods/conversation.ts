@@ -1,10 +1,9 @@
-import type { FilterQuery, Model, SortOrder } from 'mongoose';
+import type { DeleteResult, FilterQuery, Model, SortOrder } from 'mongoose';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 import type { AppConfig, IConversation } from '~/types';
 import type { MessageMethods } from './message';
-import type { DeleteResult } from 'mongoose';
 
 export interface ConversationMethods {
   getConvoFiles(conversationId: string): Promise<string[]>;
