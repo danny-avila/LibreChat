@@ -199,10 +199,6 @@ router.put('/:roleName/skills', manageRoles, createPermissionUpdateHandler('skil
  * PUT /api/roles/:roleName/scheduled-tasks
  * Update scheduled-task permissions for a specific role
  */
-router.put(
-  '/:roleName/scheduled-tasks',
-  manageRoles,
-  createPermissionUpdateHandler('scheduled-tasks'),
-);
+router.put('/:roleName/scheduled-tasks', manageRoles, createPermissionUpdateHandler('scheduled-tasks'));
 
 module.exports = router;

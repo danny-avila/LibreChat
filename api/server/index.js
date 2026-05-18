@@ -275,7 +275,7 @@ const startServer = async () => {
       GenerationJobManager.configure(streamServices);
       GenerationJobManager.initialize();
 
-      // Initialize Task Queue Service
+      // Initialize Task Queue Service (auto-detects Redis from USE_REDIS env var)
       getTaskQueueService().setJobProcessor(processJob);
 
       const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));

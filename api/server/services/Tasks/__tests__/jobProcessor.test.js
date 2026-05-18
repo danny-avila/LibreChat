@@ -1,5 +1,9 @@
 const { processJob } = require('../jobProcessor');
 const { getScheduledTask, updateScheduledTask, getUserById } = require('~/models');
+
+const TASK_ID = '507f1f77bcf86cd799439011';
+const TASK_ID_MODEL = '507f1f77bcf86cd799439012';
+
 const AgentController = require('~/server/controllers/agents/request');
 const { buildOptions } = require('~/server/services/Endpoints/agents');
 const { getAppConfig } = require('~/server/services/Config');
@@ -18,14 +22,18 @@ jest.mock('~/server/services/Endpoints/agents/title', () => jest.fn());
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
 }));
-jest.mock('@librechat/data-schemas', () => ({
-  logger: {
-    info: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
-  },
-}));
+jest.mock('@librechat/data-schemas', () => {
+  const actual = jest.requireActual('@librechat/data-schemas');
+  return {
+    ...actual,
+    logger: {
+      info: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+      warn: jest.fn(),
+    },
+  };
+});
 
 describe('jobProcessor', () => {
   beforeEach(() => {
@@ -34,27 +42,41 @@ describe('jobProcessor', () => {
     getAppConfig.mockResolvedValue({ interfaceConfig: {} });
   });
 
+  it('should not process when job payload has no taskId', async () => {
+    await processJob({ data: {} });
+
+    expect(getScheduledTask).not.toHaveBeenCalled();
+    expect(AgentController).not.toHaveBeenCalled();
+  });
+
+  it('should not process when taskId is not a valid ObjectId', async () => {
+    await processJob({ data: { taskId: 'not-an-object-id' } });
+
+    expect(getScheduledTask).not.toHaveBeenCalled();
+    expect(AgentController).not.toHaveBeenCalled();
+  });
+
   it('should not process if task is not found', async () => {
     getScheduledTask.mockResolvedValue(null);
 
-    await processJob({ data: { taskId: '123' } });
+    await processJob({ data: { taskId: TASK_ID } });
 
-    expect(getScheduledTask).toHaveBeenCalledWith('123');
+    expect(getScheduledTask).toHaveBeenCalledWith(TASK_ID);
     expect(AgentController).not.toHaveBeenCalled();
   });
 
   it('should not process if task is not active', async () => {
     getScheduledTask.mockResolvedValue({ status: 'paused' });
 
-    await processJob({ data: { taskId: '123' } });
+    await processJob({ data: { taskId: TASK_ID } });
 
-    expect(getScheduledTask).toHaveBeenCalledWith('123');
+    expect(getScheduledTask).toHaveBeenCalledWith(TASK_ID);
     expect(AgentController).not.toHaveBeenCalled();
   });
 
   it('executes a model task by building an ephemeral endpointOption from payload.endpoint/model', async () => {
     const mockTask = {
-      _id: 'task_model',
+      _id: TASK_ID_MODEL,
       userId: 'user1',
       name: 'Morning digest',
       targetType: 'model',
@@ -84,7 +106,7 @@ describe('jobProcessor', () => {
       req.body.conversationId = 'convo-model';
     });
 
-    await processJob({ data: { taskId: 'task_model' } });
+    await processJob({ data: { taskId: TASK_ID_MODEL } });
 
     expect(buildOptions).toHaveBeenCalledWith(
       expect.objectContaining({ user: expect.objectContaining({ id: 'user1' }) }),
@@ -103,12 +125,12 @@ describe('jobProcessor', () => {
       endpoint: 'openAI',
       model_parameters: { model: 'gpt-4o' },
     });
-    expect(capturedReq.scheduledTaskMeta).toEqual({ taskId: 'task_model', isScheduled: true });
+    expect(capturedReq.scheduledTaskMeta).toEqual({ taskId: TASK_ID_MODEL, isScheduled: true });
   });
 
   it('marks temporary runs via req.body.isTemporary so downstream save skips persistence', async () => {
     getScheduledTask.mockResolvedValue({
-      _id: '123',
+      _id: TASK_ID,
       userId: 'user1',
       name: 'Temp task',
       targetType: 'model',
@@ -129,14 +151,14 @@ describe('jobProcessor', () => {
       capturedReq = { isTemporary: req.body.isTemporary };
     });
 
-    await processJob({ data: { taskId: '123' } });
+    await processJob({ data: { taskId: TASK_ID } });
 
     expect(capturedReq.isTemporary).toBe(true);
   });
 
   it('rejects a task that is missing payload.endpoint', async () => {
     getScheduledTask.mockResolvedValue({
-      _id: '123',
+      _id: TASK_ID,
       userId: 'user1',
       name: 'Missing endpoint',
       targetType: 'model',
@@ -145,8 +167,8 @@ describe('jobProcessor', () => {
       payload: { text: 'hello', model: 'gpt-4o' },
     });
 
-    await expect(processJob({ data: { taskId: '123' } })).rejects.toThrow(
-      /missing payload.endpoint/,
+    await expect(processJob({ data: { taskId: TASK_ID } })).rejects.toThrow(
+      /missing payload\.endpoint/,
     );
     expect(AgentController).not.toHaveBeenCalled();
     expect(updateScheduledTask).not.toHaveBeenCalled();
@@ -154,7 +176,7 @@ describe('jobProcessor', () => {
 
   it('should throw error if AgentController fails', async () => {
     getScheduledTask.mockResolvedValue({
-      _id: '123',
+      _id: TASK_ID,
       userId: 'user1',
       name: 'Failing task',
       targetType: 'model',
@@ -165,7 +187,7 @@ describe('jobProcessor', () => {
     buildOptions.mockResolvedValue({ endpoint: 'openAI', model_parameters: { model: 'gpt-4o' } });
     AgentController.mockRejectedValue(new Error('Agent error'));
 
-    await expect(processJob({ data: { taskId: '123' } })).rejects.toThrow('Agent error');
+    await expect(processJob({ data: { taskId: TASK_ID } })).rejects.toThrow('Agent error');
 
     expect(updateScheduledTask).not.toHaveBeenCalled();
   });

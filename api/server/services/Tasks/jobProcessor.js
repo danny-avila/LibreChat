@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, isValidObjectIdString } = require('@librechat/data-schemas');
 const { Constants, parseCompactConvo } = require('librechat-data-provider');
 const { getScheduledTask, updateScheduledTask, getUserById } = require('~/models');
 const AgentController = require('~/server/controllers/agents/request');
@@ -6,15 +6,26 @@ const { initializeClient, buildOptions } = require('~/server/services/Endpoints/
 const addTitle = require('~/server/services/Endpoints/agents/title');
 const { getAppConfig } = require('~/server/services/Config');
 
+const LOG_PREFIX = '[scheduled-tasks]';
+const DEFAULT_TASK_TEXT = 'Scheduled Task Execution';
+
+/**
+ * @param {import('bullmq').Job | { data?: { taskId?: unknown } }} job
+ * @returns {string | null} Mongo task id, or null when the payload is invalid.
+ */
+function parseJobTaskId(job) {
+  const taskId = job?.data?.taskId;
+  if (typeof taskId !== 'string' || !isValidObjectIdString(taskId)) {
+    logger.warn(`${LOG_PREFIX} Invalid or missing taskId in job payload`);
+    return null;
+  }
+  return taskId;
+}
+
 /**
  * Builds a request-like object that AgentController can consume from a
  * scheduled-task definition. Each run starts a fresh conversation so background
  * runs never mutate the user's interactive chats.
- *
- * Scheduled tasks always run as ephemeral-agent model invocations: `endpoint`
- * and `model` come from `task.payload`, and `buildOptions` synthesizes the
- * same `endpointOption` shape that `buildEndpointOption` middleware would
- * produce for an interactive chat turn.
  */
 async function buildRequestFromTask(task, taskId) {
   const payload = task.payload && typeof task.payload === 'object' ? task.payload : {};
@@ -31,15 +42,15 @@ async function buildRequestFromTask(task, taskId) {
   let userRecord = null;
   try {
     userRecord = await getUserById(task.userId, '-password');
-  } catch (err) {
-    logger.warn(`[JobProcessor] Failed to fetch user ${task.userId}:`, err);
+  } catch (error) {
+    logger.warn(`${LOG_PREFIX} Failed to fetch user ${task.userId}`, error);
   }
 
   const appConfig = await getAppConfig({
     role: userRecord?.role,
     tenantId: userRecord?.tenantId,
-  }).catch((err) => {
-    logger.warn('[JobProcessor] Failed to resolve appConfig, continuing with empty config', err);
+  }).catch((error) => {
+    logger.warn(`${LOG_PREFIX} Failed to resolve appConfig, continuing with empty config`, error);
     return null;
   });
 
@@ -48,7 +59,7 @@ async function buildRequestFromTask(task, taskId) {
     config: appConfig || { interfaceConfig: {} },
     body: {
       ...restPayload,
-      text: text || 'Scheduled Task Execution',
+      text: text || DEFAULT_TASK_TEXT,
       conversationId: 'new',
       isTemporary: isTemporary === true,
       ephemeralAgent,
@@ -61,50 +72,46 @@ async function buildRequestFromTask(task, taskId) {
   };
 
   if (!endpoint) {
-    const err = new Error(`Scheduled task ${taskId} is missing payload.endpoint`);
-    logger.error(`[JobProcessor] ${err.message}`);
-    throw err;
+    const message = `Task ${taskId} is missing payload.endpoint`;
+    logger.error(`${LOG_PREFIX} ${message}`);
+    throw new Error(message);
   }
 
+  let parsedBody = {};
   try {
-    /**
-     * `buildOptions` destructures `{ spec, iconURL, agent_id, ...model_parameters }`
-     * from `parsedBody`, so any other key ends up in `model_parameters` and
-     * reaches the LLM provider. Interactive chats route through
-     * `parseCompactConvo` which Zod-picks only schema fields (model,
-     * temperature, etc.); we do the same here so `endpoint`, `conversationId`,
-     * `text`, and similar request-scope fields cannot leak into the model call.
-     */
-    let parsedBody = {};
-    try {
-      parsedBody = parseCompactConvo({
+    parsedBody =
+      parseCompactConvo({
         endpoint,
         conversation: { ...payload, endpoint, model },
       }) || {};
-    } catch (parseErr) {
-      logger.warn(
-        `[JobProcessor] parseCompactConvo failed for task ${taskId}, falling back to {model}:`,
-        parseErr,
-      );
-      parsedBody = { model };
-    }
+  } catch (error) {
+    logger.warn(
+      `${LOG_PREFIX} parseCompactConvo failed for task ${taskId}, falling back to model only`,
+      error,
+    );
+    parsedBody = { model };
+  }
 
+  try {
     const builtOption = await buildOptions(req, endpoint, {
       ...parsedBody,
       agent_id: Constants.EPHEMERAL_AGENT_ID,
     });
     req.body.endpointOption = builtOption;
-  } catch (err) {
+  } catch (error) {
     logger.error(
-      `[JobProcessor] Failed to build endpoint option for task ${taskId} (endpoint=${endpoint}):`,
-      err,
+      `${LOG_PREFIX} Failed to build endpoint option for task ${taskId} (endpoint=${endpoint})`,
+      error,
     );
-    throw err;
+    throw error;
   }
 
   return req;
 }
 
+/**
+ * Minimal Express `res` stub so AgentController can run outside HTTP.
+ */
 function buildResponseMock() {
   return {
     on: () => {},
@@ -113,7 +120,7 @@ function buildResponseMock() {
     end: () => {},
     write: () => true,
     setHeader: () => {},
-    status: function status() {
+    status() {
       return this;
     },
     send: () => {},
@@ -122,51 +129,53 @@ function buildResponseMock() {
   };
 }
 
-const processJob = async (job) => {
-  const { taskId } = job.data;
+/**
+ * BullMQ worker entry point for a single scheduled-task run.
+ *
+ * @param {import('bullmq').Job} job
+ */
+async function processJob(job) {
+  const taskId = parseJobTaskId(job);
+  if (!taskId) {
+    return;
+  }
 
   let task;
   try {
     task = await getScheduledTask(taskId);
   } catch (error) {
-    logger.error(`[JobProcessor] Failed to load scheduled task ${taskId}:`, error);
+    logger.error(`${LOG_PREFIX} Error loading task ${taskId}`, error);
     throw error;
   }
 
   if (!task) {
-    logger.error(`[JobProcessor] Scheduled task ${taskId} not found; skipping job.`);
+    logger.warn(`${LOG_PREFIX} Task ${taskId} not found, skipping job`);
     return;
   }
+
   if (task.status !== 'active') {
-    logger.info(`Scheduled task ${taskId} is not active. Status: ${task.status}`);
+    logger.info(`${LOG_PREFIX} Task ${taskId} skipped (status=${task.status})`);
     return;
   }
 
-  logger.info(`Executing scheduled task ${taskId} for user ${task.userId}`);
+  logger.info(`${LOG_PREFIX} Executing task ${taskId} for user ${task.userId}`);
 
-  const req = await buildRequestFromTask(task, taskId);
   const res = buildResponseMock();
-  const next = (err) => {
-    if (err) {
-      logger.error('[JobProcessor] next called with error:', err);
+  const next = (error) => {
+    if (error) {
+      logger.error(`${LOG_PREFIX} Agent middleware error for task ${taskId}`, error);
     }
   };
 
   try {
-    /**
-     * The agent flow tags the conversation via `req.scheduledTaskMeta` →
-     * `BaseClient.saveMessageToDatabase` (sets `isScheduled` + `taskId` on the
-     * first save). ResumableAgentController returns immediately, so we can't
-     * tag the doc here — it would race the agent's own first save and either
-     * no-op (with `noUpsert`) or fight the agent's writes.
-     */
+    const req = await buildRequestFromTask(task, taskId);
     await AgentController(req, res, next, initializeClient, addTitle);
     await updateScheduledTask(taskId, { lastRunAt: new Date() }, task.userId);
-    logger.info(`Successfully executed scheduled task ${taskId}`);
+    logger.info(`${LOG_PREFIX} Successfully executed task ${taskId}`);
   } catch (error) {
-    logger.error(`Error processing scheduled task ${taskId}:`, error);
+    logger.error(`${LOG_PREFIX} Error executing task ${taskId}`, error);
     throw error;
   }
-};
+}
 
 module.exports = { processJob };

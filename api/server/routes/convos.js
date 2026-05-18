@@ -34,7 +34,10 @@ router.get('/', async (req, res) => {
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
   const includeScheduled = isEnabled(req.query.includeScheduled);
-  const taskId = req.query.taskId;
+  const taskId =
+    typeof req.query.taskId === 'string' && req.query.taskId.trim()
+      ? req.query.taskId.trim()
+      : undefined;
   const search = req.query.search ? decodeURIComponent(req.query.search) : undefined;
   const sortBy = req.query.sortBy || 'updatedAt';
   const sortDirection = req.query.sortDirection || 'desc';
