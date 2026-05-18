@@ -12,6 +12,15 @@ import { getAgentDraft, saveAgentDraft, clearAllAgentDrafts } from '../drafts';
 
 let mockCurrentAgentId: string | undefined;
 
+const AGENT_SELECT_LABEL = 'Agent Select';
+const ADVANCED_PANEL_LABEL = 'Advanced Panel';
+const LOADING_LABEL = 'Loading';
+const MODEL_PANEL_LABEL = 'Model Panel';
+const SAVE_AGENT_LABEL = 'Save Agent';
+const AGENTS_BUTTON_LABEL = 'Agents';
+const FILES_BUTTON_LABEL = 'Files';
+const FILES_PANEL_LABEL = 'Files panel';
+
 type MockButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: string;
   variant?: string;
@@ -122,12 +131,12 @@ jest.mock('~/common', () => {
 
 jest.mock('../AgentSelect', () => ({
   __esModule: true,
-  default: () => <div>Agent Select</div>,
+  default: () => <div>{AGENT_SELECT_LABEL}</div>,
 }));
 
 jest.mock('../AgentConfig', () => ({
   __esModule: true,
-  default: () => {
+  default: function MockAgentConfig() {
     const { useFormContext } = jest.requireActual(
       'react-hook-form',
     ) as typeof import('react-hook-form');
@@ -145,22 +154,22 @@ jest.mock('../AgentConfig', () => ({
 
 jest.mock('../AgentFooter', () => ({
   __esModule: true,
-  default: () => <button type="submit">Save Agent</button>,
+  default: () => <button type="submit">{SAVE_AGENT_LABEL}</button>,
 }));
 
 jest.mock('../Advanced/AdvancedPanel', () => ({
   __esModule: true,
-  default: () => <div>Advanced Panel</div>,
+  default: () => <div>{ADVANCED_PANEL_LABEL}</div>,
 }));
 
 jest.mock('../AgentPanelSkeleton', () => ({
   __esModule: true,
-  default: () => <div>Loading</div>,
+  default: () => <div>{LOADING_LABEL}</div>,
 }));
 
 jest.mock('../ModelPanel', () => ({
   __esModule: true,
-  default: () => <div>Model Panel</div>,
+  default: () => <div>{MODEL_PANEL_LABEL}</div>,
 }));
 
 function PanelControls() {
@@ -169,10 +178,10 @@ function PanelControls() {
   return (
     <>
       <button type="button" onClick={() => setActive('agents')}>
-        Agents
+        {AGENTS_BUTTON_LABEL}
       </button>
       <button type="button" onClick={() => setActive('files')}>
-        Files
+        {FILES_BUTTON_LABEL}
       </button>
     </>
   );
@@ -191,7 +200,7 @@ function Harness() {
       title: 'com_sidepanel_attach_files',
       icon: Icon,
       id: 'files',
-      Component: () => <div>Files panel</div>,
+      Component: () => <div>{FILES_PANEL_LABEL}</div>,
     },
   ] as NavLink[];
 
@@ -223,10 +232,10 @@ describe('AgentPanel draft preservation', () => {
       target: { value: 'gpt-4o-mini' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Files' }));
-    expect(screen.getByText('Files panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: FILES_BUTTON_LABEL }));
+    expect(screen.getByText(FILES_PANEL_LABEL)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Agents' }));
+    fireEvent.click(screen.getByRole('button', { name: AGENTS_BUTTON_LABEL }));
 
     expect(screen.getByLabelText('Draft name')).toHaveValue('Navigation survivor');
     expect(screen.getByLabelText('Draft instructions')).toHaveValue('Keep these instructions.');
