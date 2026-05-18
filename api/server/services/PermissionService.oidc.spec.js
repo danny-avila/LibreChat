@@ -264,6 +264,37 @@ describe('syncUserOidcGroupsFromToken', () => {
       expect(Group.insertMany).not.toHaveBeenCalled();
     });
 
+    it('should add user to existing group whose memberIds field is undefined', async () => {
+      const user = {
+        email: 'test@example.com',
+        provider: 'openid',
+        idOnTheSource: 'user-123',
+      };
+      const tokenset = { access_token: 'token' };
+
+      extractGroupsFromToken.mockReturnValue(['admin']);
+
+      // memberIds is optional in the schema; absent field must not throw
+      const existingGroup = {
+        _id: 'group-id',
+        idOnTheSource: 'admin',
+        name: 'admin',
+      };
+
+      Group.find = jest.fn().mockResolvedValue([existingGroup]);
+      Group.insertMany = jest.fn().mockResolvedValue([]);
+      Group.updateMany = jest.fn().mockResolvedValue({});
+
+      await expect(syncUserOidcGroupsFromToken(user, tokenset)).resolves.not.toThrow();
+
+      expect(Group.updateMany).toHaveBeenCalledWith(
+        { _id: { $in: ['group-id'] } },
+        { $addToSet: { memberIds: 'user-123' } },
+        {},
+      );
+      expect(Group.insertMany).not.toHaveBeenCalled();
+    });
+
     it('should not add user if already a member', async () => {
       const user = {
         email: 'test@example.com',
@@ -749,7 +780,9 @@ describe('syncUserOidcGroupsFromToken', () => {
       );
     });
 
-    it('should accept non-reserved custom values for OPENID_GROUP_SOURCE', async () => {
+    it("should fall back to 'oidc' for non-enum OPENID_GROUP_SOURCE values (e.g. 'keycloak')", async () => {
+      // Group.source schema enum is local|entra|oidc; non-enum values would
+      // pass our guard and then fail Mongoose validation, silently skipping sync.
       process.env.OPENID_GROUP_SOURCE = 'keycloak';
 
       const user = {
@@ -767,7 +800,7 @@ describe('syncUserOidcGroupsFromToken', () => {
       await syncUserOidcGroupsFromToken(user, tokenset);
 
       expect(Group.insertMany).toHaveBeenCalledWith(
-        expect.arrayContaining([expect.objectContaining({ source: 'keycloak' })]),
+        expect.arrayContaining([expect.objectContaining({ source: 'oidc' })]),
         { ordered: false },
       );
     });

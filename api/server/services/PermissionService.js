@@ -679,18 +679,12 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
     // Get configuration
     const claimPath = process.env.OPENID_GROUPS_CLAIM_PATH || 'realm_access.roles';
     const tokenKind = process.env.OPENID_GROUPS_TOKEN_KIND || 'access';
-    // Reject reserved sources owned by other sync paths (would corrupt their groups)
-    const RESERVED_GROUP_SOURCES = ['entra', 'local'];
-    const configuredSource = process.env.OPENID_GROUP_SOURCE;
-    let groupSource = 'oidc';
-    if (configuredSource) {
-      if (RESERVED_GROUP_SOURCES.includes(configuredSource)) {
-        logger.warn(
-          `[PermissionService.syncUserOidcGroupsFromToken] OPENID_GROUP_SOURCE='${configuredSource}' is reserved; falling back to 'oidc'`,
-        );
-      } else {
-        groupSource = configuredSource;
-      }
+    // Group.source schema enum is 'local' | 'entra' | 'oidc'; only 'oidc' is valid here
+    const groupSource = 'oidc';
+    if (process.env.OPENID_GROUP_SOURCE && process.env.OPENID_GROUP_SOURCE !== 'oidc') {
+      logger.warn(
+        `[PermissionService.syncUserOidcGroupsFromToken] OPENID_GROUP_SOURCE='${process.env.OPENID_GROUP_SOURCE}' is not allowed; falling back to 'oidc'`,
+      );
     }
     const exclusionPattern = process.env.OPENID_GROUPS_EXCLUDE_PATTERN || null;
 
@@ -786,7 +780,9 @@ const syncUserOidcGroupsFromToken = async (user, tokenset, session = null) => {
           ...tenantFilter,
         });
       } else if (
-        !existing.memberIds.some((memberId) => String(memberId) === String(user.idOnTheSource))
+        !(existing.memberIds || []).some(
+          (memberId) => String(memberId) === String(user.idOnTheSource),
+        )
       ) {
         groupsToUpdate.push(existing._id);
       }
