@@ -19,8 +19,19 @@ function getMCPImageDataMaxBytes(): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MCP_IMAGE_DATA_MAX_BYTES;
 }
 
-function getImageDataBytes(data: string): number {
-  return Buffer.byteLength(data, 'utf8');
+function getBase64Padding(data: string): number {
+  if (data.endsWith('==')) {
+    return 2;
+  }
+  if (data.endsWith('=')) {
+    return 1;
+  }
+  return 0;
+}
+
+function estimateBase64ImageBytes(data: string): number {
+  const padding = getBase64Padding(data);
+  return Math.max(0, Math.floor((data.length * 3) / 4) - padding);
 }
 
 function assertImageDataWithinLimit(item: t.ImageContent): void {
@@ -29,12 +40,14 @@ function assertImageDataWithinLimit(item: t.ImageContent): void {
   }
 
   const maxBytes = getMCPImageDataMaxBytes();
-  const dataBytes = getImageDataBytes(item.data);
-  if (dataBytes <= maxBytes) {
+  const estimatedBytes = estimateBase64ImageBytes(item.data);
+  if (estimatedBytes <= maxBytes) {
     return;
   }
 
-  throw new Error(`MCP image result exceeds maximum size of ${maxBytes} bytes: ${dataBytes} bytes`);
+  throw new Error(
+    `MCP image result exceeds maximum size of ${maxBytes} bytes: ${estimatedBytes} bytes`,
+  );
 }
 
 const RECOGNIZED_PROVIDERS = new Set([

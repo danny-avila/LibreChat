@@ -169,6 +169,21 @@ describe('formatToolContent', () => {
       );
     });
 
+    it('should allow base64 image data when decoded size is within the cap', () => {
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = '4';
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'QUJDRA==', mimeType: 'image/png' }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toBe('');
+      expect(artifacts?.content?.[0]).toEqual({
+        type: 'image_url',
+        image_url: { url: 'data:image/png;base64,QUJDRA==' },
+      });
+    });
+
     it('should reject oversized image data for unrecognized providers before stringifying', () => {
       process.env.MCP_IMAGE_DATA_MAX_BYTES = '3';
       const result: t.MCPToolCallResponse = {
