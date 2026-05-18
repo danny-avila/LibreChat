@@ -11,6 +11,7 @@ jest.mock('~/hooks', () => ({
   useGetAgentsConfig: jest.fn(),
   useFileHandlingNoChatContext: jest.fn(),
   useLocalize: jest.fn(),
+  useHasAccess: jest.fn(),
 }));
 
 jest.mock('~/hooks/Files/useSharePointFileHandling', () => ({
@@ -82,6 +83,7 @@ const mockUseAgentToolPermissions = jest.requireMock('~/hooks').useAgentToolPerm
 const mockUseAgentCapabilities = jest.requireMock('~/hooks').useAgentCapabilities;
 const mockUseGetAgentsConfig = jest.requireMock('~/hooks').useGetAgentsConfig;
 const mockUseFileHandlingNoChatContext = jest.requireMock('~/hooks').useFileHandlingNoChatContext;
+const mockUseHasAccess = jest.requireMock('~/hooks').useHasAccess;
 const mockUseLocalize = jest.requireMock('~/hooks').useLocalize;
 const mockUseSharePointFileHandling = jest.requireMock(
   '~/hooks/Files/useSharePointFileHandling',
@@ -111,6 +113,7 @@ function setupMocks(overrides: { provider?: string } = {}) {
   });
   mockUseGetAgentsConfig.mockReturnValue({ agentsConfig: {} });
   mockUseFileHandlingNoChatContext.mockReturnValue({ handleFileChange: jest.fn() });
+  mockUseHasAccess.mockReturnValue(true);
   const sharePointReturnValue = {
     handleSharePointFiles: jest.fn(),
     isProcessing: false,
@@ -296,6 +299,31 @@ describe('AttachFileMenu', () => {
 
     it('does NOT show File Search when enabled but not allowed by agent', () => {
       setupMocks();
+      mockUseAgentCapabilities.mockReturnValue({
+        contextEnabled: false,
+        fileSearchEnabled: true,
+        codeEnabled: false,
+      });
+      renderMenu({ endpointType: EModelEndpoint.openAI, agentId: 'agent_without_fs' });
+      openMenu();
+      expect(screen.queryByText('Upload for File Search')).not.toBeInTheDocument();
+    });
+
+    it('shows File Search for non-agent conversations with RBAC allowed', () => {
+      setupMocks();
+      mockUseAgentCapabilities.mockReturnValue({
+        contextEnabled: false,
+        fileSearchEnabled: true,
+        codeEnabled: false,
+      });
+      renderMenu({ endpointType: EModelEndpoint.openAI });
+      openMenu();
+      expect(screen.getByText('Upload for File Search')).toBeInTheDocument();
+    });
+
+    it('does NOT show File Search for non-agent conversations when RBAC denied', () => {
+      setupMocks();
+      mockUseHasAccess.mockReturnValue(false);
       mockUseAgentCapabilities.mockReturnValue({
         contextEnabled: false,
         fileSearchEnabled: true,

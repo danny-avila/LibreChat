@@ -16,13 +16,17 @@ import {
   isBedrockDocumentType,
   defaultAgentCapabilities,
   isDocumentSupportedProvider,
+  PermissionTypes,
+  Permissions,
 } from 'librechat-data-provider';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,
   useGetAgentsConfig,
   useLocalize,
+  useHasAccess,
 } from '~/hooks';
+import { isEphemeralAgent } from '~/common';
 import { ephemeralAgentByConvoId } from '~/store';
 import { useDragDropContext } from '~/Providers';
 
@@ -54,6 +58,10 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     agentId,
     ephemeralAgent,
   );
+  const canUseFileSearch = useHasAccess({
+    permissionType: PermissionTypes.FILE_SEARCH,
+    permission: Permissions.USE,
+  });
 
   const options = useMemo(() => {
     const _options: FileOption[] = [];
@@ -116,7 +124,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
         condition: files.every((file) => getFileType(file)?.startsWith('image/')),
       });
     }
-    if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
+    if (capabilities.fileSearchEnabled && canUseFileSearch && (isEphemeralAgent(agentId) || fileSearchAllowedByAgent)) {
       _options.push({
         label: localize('com_ui_upload_file_search'),
         value: EToolResources.file_search,
@@ -148,7 +156,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     capabilities,
     useResponsesApi,
     codeAllowedByAgent,
-    fileSearchAllowedByAgent,
+    canUseFileSearch,
   ]);
 
   if (!isVisible) {

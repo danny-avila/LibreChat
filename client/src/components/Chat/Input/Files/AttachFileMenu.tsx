@@ -23,15 +23,19 @@ import {
   defaultAgentCapabilities,
   bedrockDocumentExtensions,
   isDocumentSupportedProvider,
+  PermissionTypes,
+  Permissions,
 } from 'librechat-data-provider';
 import type { EndpointFileConfig, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
+import { isEphemeralAgent } from '~/common';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,
   useGetAgentsConfig,
   useFileHandlingNoChatContext,
   useLocalize,
+  useHasAccess,
 } from '~/hooks';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { SharePointPickerDialog } from '~/components/SharePoint';
@@ -110,6 +114,10 @@ const AttachFileMenu = ({
     agentId,
     ephemeralAgent,
   );
+  const canUseFileSearch = useHasAccess({
+    permissionType: PermissionTypes.FILE_SEARCH,
+    permission: Permissions.USE,
+  });
 
   const handleUploadClick = useCallback(
     (fileType?: FileUploadType) => {
@@ -205,7 +213,7 @@ const AttachFileMenu = ({
         });
       }
 
-      if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
+      if (capabilities.fileSearchEnabled && canUseFileSearch && (isEphemeralAgent(agentId) || fileSearchAllowedByAgent)) {
         items.push({
           label: localize('com_ui_upload_file_search'),
           onClick: () => {
@@ -266,7 +274,7 @@ const AttachFileMenu = ({
     setEphemeralAgent,
     sharePointEnabled,
     codeAllowedByAgent,
-    fileSearchAllowedByAgent,
+    canUseFileSearch,
     setIsSharePointDialogOpen,
   ]);
 
