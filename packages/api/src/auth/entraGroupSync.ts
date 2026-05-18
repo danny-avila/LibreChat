@@ -4,6 +4,7 @@ import type { IUser, UserGroupMethods } from '@librechat/data-schemas';
 import type { RemoteAuthFetch } from './fetch';
 
 import { fetchRemoteAuth } from './fetch';
+import { normalizeOpenIdIssuer } from './openid';
 import { isEnabled } from '~/utils';
 
 export type EntraGroupSyncOptions = {
@@ -80,7 +81,7 @@ function unique(values: string[]): string[] {
 }
 
 function getDiscoveryUrl(issuer: string): string {
-  const issuerUrl = new URL(issuer);
+  const issuerUrl = new URL(normalizeOpenIdIssuer(issuer) ?? issuer);
   const pathname = issuerUrl.pathname.endsWith('/') ? issuerUrl.pathname : `${issuerUrl.pathname}/`;
   issuerUrl.pathname = `${pathname}${WELL_KNOWN_OPENID_CONFIGURATION}`;
   issuerUrl.search = '';

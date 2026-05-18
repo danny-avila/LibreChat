@@ -391,7 +391,7 @@ function getFederatedCacheOptions(
 
 function getEntraGraphConfig(oidcConfig: EnabledOidcConfig): EntraGraphConfig {
   return {
-    issuer: process.env.OPENID_ISSUER ?? oidcConfig.issuer,
+    issuer: oidcConfig.issuer,
     clientId: process.env.OPENID_CLIENT_ID,
     clientSecret: process.env.OPENID_CLIENT_SECRET,
   };

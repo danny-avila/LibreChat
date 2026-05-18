@@ -130,6 +130,31 @@ describe('enrichOpenIdProfile', () => {
     });
   });
 
+  it('does not duplicate the discovery path when issuer is already a discovery URL', async () => {
+    const fetchMock = fetcher([
+      jsonResponse({ userinfo_endpoint: 'https://issuer.example.com/userinfo' }),
+      jsonResponse({ sub: 'sub-123', email: 'userinfo@example.com' }),
+    ]);
+
+    await enrichOpenIdProfile({
+      claims,
+      accessToken: 'access-token',
+      subject: 'sub-123',
+      config: {
+        ...config,
+        issuer: 'https://issuer.example.com/tenant/v2.0/.well-known/openid-configuration',
+      },
+      fetchUserInfo: true,
+      fetcher: fetchMock,
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://issuer.example.com/tenant/v2.0/.well-known/openid-configuration',
+      { method: 'GET' },
+    );
+  });
+
   it('exchanges the request token before userinfo when OBO is required', async () => {
     process.env.OPENID_ON_BEHALF_FLOW_FOR_USERINFO_REQUIRED = 'true';
     process.env.OPENID_ON_BEHALF_FLOW_USERINFO_SCOPE = 'custom.userinfo';

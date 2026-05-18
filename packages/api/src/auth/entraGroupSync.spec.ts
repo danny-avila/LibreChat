@@ -238,6 +238,39 @@ describe('syncUserEntraGroupMemberships', () => {
     );
   });
 
+  it('does not duplicate the discovery path when issuer is already a discovery URL', async () => {
+    const deps = methods();
+    const fetchMock = fetcher([
+      jsonResponse({ token_endpoint: 'https://issuer.example.com/token' }),
+      jsonResponse({ access_token: 'graph-token' }),
+      jsonResponse({ value: ['group-a'] }),
+      jsonResponse({
+        responses: [
+          {
+            id: 'group-a',
+            status: 200,
+            body: { id: 'group-a', displayName: 'Group A' },
+          },
+        ],
+      }),
+    ]);
+
+    await sync({
+      graphConfig: {
+        ...graphConfig,
+        issuer: 'https://issuer.example.com/tenant/v2.0/.well-known/openid-configuration',
+      },
+      methods: deps,
+      fetcher: fetchMock,
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://issuer.example.com/tenant/v2.0/.well-known/openid-configuration',
+      { method: 'GET' },
+    );
+  });
+
   it('retries throttled group detail batch entries before syncing missing groups', async () => {
     jest.useFakeTimers();
     const deps = methods();

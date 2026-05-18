@@ -2,6 +2,7 @@ import { isRemoteOidcUrlAllowed } from 'librechat-data-provider';
 import type { OpenIdAccountClaims, OpenIdAccountProfile } from './openidAccount';
 import type { RemoteAuthFetch } from './fetch';
 import { fetchRemoteAuth } from './fetch';
+import { normalizeOpenIdIssuer } from './openid';
 import { isEnabled } from '~/utils';
 
 export type OpenIdRuntimeConfig = {
@@ -44,7 +45,7 @@ function toError(error: unknown): Error | undefined {
 }
 
 function getDiscoveryUrl(issuer: string): string {
-  const issuerUrl = new URL(issuer);
+  const issuerUrl = new URL(normalizeOpenIdIssuer(issuer) ?? issuer);
   const pathname = issuerUrl.pathname.endsWith('/') ? issuerUrl.pathname : `${issuerUrl.pathname}/`;
   issuerUrl.pathname = `${pathname}${WELL_KNOWN_OPENID_CONFIGURATION}`;
   issuerUrl.search = '';

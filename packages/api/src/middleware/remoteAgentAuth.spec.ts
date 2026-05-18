@@ -1246,6 +1246,7 @@ describe('createRemoteAgentAuth', () => {
     });
 
     it('uses required userinfo profile data and does not persist request tokens on create', async () => {
+      process.env.OPENID_ISSUER = 'https://browser-openid.example.com';
       setupOidcMocks({
         sub: 'sub123',
         email: 'claims@example.com',
@@ -1280,6 +1281,9 @@ describe('createRemoteAgentAuth', () => {
           accessToken: FAKE_TOKEN,
           subject: 'sub123',
           fetchUserInfo: true,
+          config: expect.objectContaining({
+            issuer: BASE_ISSUER,
+          }),
         }),
       );
       expect(deps.createUser).toHaveBeenCalledWith(
@@ -1445,7 +1449,7 @@ describe('createRemoteAgentAuth', () => {
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
     });
 
-    it('syncs remote Entra groups for a newly created user when create lifecycle sync is enabled', async () => {
+    it('syncs remote Entra groups with the remote issuer when create lifecycle sync is enabled', async () => {
       process.env.OPENID_ISSUER = 'https://existing-openid.example.com';
       process.env.OPENID_CLIENT_ID = 'existing-client-id';
       process.env.OPENID_CLIENT_SECRET = 'existing-client-secret';
@@ -1475,7 +1479,7 @@ describe('createRemoteAgentAuth', () => {
           user: expect.objectContaining({ id: 'created-user-id', idOnTheSource: 'oid-created' }),
           accessToken: FAKE_TOKEN,
           graphConfig: {
-            issuer: 'https://existing-openid.example.com',
+            issuer: BASE_ISSUER,
             clientId: 'existing-client-id',
             clientSecret: 'existing-client-secret',
           },
