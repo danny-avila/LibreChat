@@ -313,4 +313,38 @@ describe('AgentPanel draft preservation', () => {
     expect(getAgentDraft('agent-123')).toBeUndefined();
     expect(mockLastAgentSelectHasDraft).toBe(false);
   });
+
+  it('restores a draft when the current agent changes while mounted', async () => {
+    mockCurrentAgentId = 'agent-123';
+    const { rerender } = render(<Harness />);
+
+    fireEvent.change(screen.getByLabelText('Draft name'), {
+      target: { value: 'Previous agent draft' },
+    });
+    saveAgentDraft('agent-456', {
+      id: 'agent-456',
+      name: 'Mounted switch draft',
+      description: '',
+      instructions: 'Draft for the switched agent',
+      model: 'gpt-4o',
+      model_parameters: {},
+      provider: { label: 'OpenAI', value: 'openAI' },
+      tools: [],
+      tool_options: {},
+      category: 'general',
+      execute_code: false,
+      file_search: false,
+      web_search: false,
+    } as AgentForm);
+
+    mockCurrentAgentId = 'agent-456';
+    rerender(<Harness />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Draft name')).toHaveValue('Mounted switch draft');
+    });
+    expect(screen.getByLabelText('Draft instructions')).toHaveValue('Draft for the switched agent');
+    expect(getAgentDraft('agent-123')?.name).toBe('Previous agent draft');
+    expect(mockLastAgentSelectHasDraft).toBe(true);
+  });
 });

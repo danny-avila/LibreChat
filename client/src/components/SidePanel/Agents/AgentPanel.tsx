@@ -229,6 +229,11 @@ const isPersistableDraftField = (name?: string): boolean => {
   );
 };
 
+const getDraftFormValues = (draftValues?: Partial<AgentForm>): AgentForm => ({
+  ...getDefaultAgentFormValues(),
+  ...draftValues,
+});
+
 export default function AgentPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -262,13 +267,7 @@ export default function AgentPanel() {
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const draftValues = useMemo(() => getAgentDraft(current_agent_id), [current_agent_id]);
-  const defaultValues = useMemo(
-    () => ({
-      ...getDefaultAgentFormValues(),
-      ...draftValues,
-    }),
-    [draftValues],
-  );
+  const defaultValues = useMemo(() => getDraftFormValues(draftValues), [draftValues]);
   const methods = useForm<AgentForm>({
     defaultValues,
     mode: 'onChange',
@@ -338,10 +337,14 @@ export default function AgentPanel() {
     }
 
     currentAgentIdRef.current = current_agent_id;
-    const nextHasDraft = getAgentDraft(current_agent_id) != null;
+    const nextDraft = getAgentDraft(current_agent_id);
+    const nextHasDraft = nextDraft != null;
     shouldPersistDraftRef.current = nextHasDraft;
     setHasDraft(nextHasDraft);
-  }, [current_agent_id, getValues]);
+    if (nextDraft) {
+      reset(getDraftFormValues(nextDraft));
+    }
+  }, [current_agent_id, getValues, reset]);
 
   useEffect(() => {
     if (hasDraft) {
