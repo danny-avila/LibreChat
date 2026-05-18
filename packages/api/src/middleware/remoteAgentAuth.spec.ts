@@ -150,7 +150,11 @@ type FindUserCondition = {
 };
 type FindUserQuery = FindUserCondition & { $or?: FindUserCondition[] };
 
-const mockUser = { _id: 'uid123', id: 'uid123', email: 'agent@example.com' };
+const mockUser = {
+  _id: 'uid123' as unknown as IUser['_id'],
+  id: 'uid123',
+  email: 'agent@example.com',
+};
 const defaultProvisioning = {
   enabled: false,
 };
@@ -305,20 +309,32 @@ function makeFindUser(...users: IUser[]): jest.MockedFunction<UserMethods['findU
   }) as jest.MockedFunction<UserMethods['findUser']>;
 }
 
+function mockMethod<T extends (...args: any[]) => any>(implementation: T): jest.MockedFunction<T> {
+  return jest.fn<ReturnType<T>, Parameters<T>>(implementation) as unknown as jest.MockedFunction<T>;
+}
+
 function makeDeps(appConfig: AppConfig = makeConfig()) {
+  const updateResult = {
+    acknowledged: true,
+    matchedCount: 0,
+    modifiedCount: 0,
+    upsertedCount: 0,
+    upsertedId: null,
+  };
+
   return {
     findUser: makeFindUser(makeUser()),
-    createUser: jest.fn(async () => makeUser()),
-    updateUser: jest.fn(async (_userId, update) => makeUser(update as Partial<IUser>)),
-    bulkUpdateGroups: jest.fn(async () => ({ modifiedCount: 0 })) as jest.MockedFunction<
-      UserGroupMethods['bulkUpdateGroups']
-    >,
-    findGroupsByExternalIds: jest.fn(async () => []) as jest.MockedFunction<
-      UserGroupMethods['findGroupsByExternalIds']
-    >,
-    upsertGroupByExternalId: jest.fn(async () => null) as jest.MockedFunction<
-      UserGroupMethods['upsertGroupByExternalId']
-    >,
+    createUser: mockMethod<UserMethods['createUser']>(async () => makeUser()),
+    updateUser: mockMethod<UserMethods['updateUser']>(async (_userId, update) =>
+      makeUser(update as Partial<IUser>),
+    ),
+    bulkUpdateGroups: mockMethod<UserGroupMethods['bulkUpdateGroups']>(async () => updateResult),
+    findGroupsByExternalIds: mockMethod<UserGroupMethods['findGroupsByExternalIds']>(
+      async () => [],
+    ),
+    upsertGroupByExternalId: mockMethod<UserGroupMethods['upsertGroupByExternalId']>(
+      async () => null,
+    ),
     getAppConfig: jest.fn().mockResolvedValue(appConfig),
     apiKeyMiddleware: jest.fn((_req: unknown, _res: unknown, next: () => void) => next()),
   };
@@ -1196,7 +1212,6 @@ describe('createRemoteAgentAuth', () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
 
       const created = makeUser({
-        _id: 'created-user-id',
         id: 'created-user-id',
         email: 'agent@example.com',
         openidId: 'sub123',
@@ -1254,7 +1269,7 @@ describe('createRemoteAgentAuth', () => {
       );
       deps.findUser.mockResolvedValue(null);
       deps.createUser.mockResolvedValue(
-        makeUser({ _id: 'created-user-id', id: 'created-user-id', email: 'userinfo@example.com' }),
+        makeUser({ id: 'created-user-id', email: 'userinfo@example.com' }),
       );
       const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
 
@@ -1277,7 +1292,8 @@ describe('createRemoteAgentAuth', () => {
         true,
         true,
       );
-      const createPayload = deps.createUser.mock.calls[0]?.[0] as Record<string, unknown>;
+      const createPayload = deps.createUser.mock.calls[0]![0] as Record<string, unknown>;
+      expect(createPayload).toBeDefined();
       expectNoPersistedTokenFields(createPayload);
       expect(req.user).toMatchObject({
         email: 'userinfo@example.com',
@@ -1333,7 +1349,7 @@ describe('createRemoteAgentAuth', () => {
       );
       deps.findUser.mockResolvedValue(null);
       deps.createUser.mockResolvedValue(
-        makeUser({ _id: 'created-user-id', id: 'created-user-id', email: 'claims@example.com' }),
+        makeUser({ id: 'created-user-id', email: 'claims@example.com' }),
       );
       const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
 
@@ -1436,7 +1452,6 @@ describe('createRemoteAgentAuth', () => {
       setupOidcMocks({ sub: 'sub123', oid: 'oid-created', email: 'agent@example.com' });
 
       const created = makeUser({
-        _id: 'created-user-id',
         id: 'created-user-id',
         email: 'agent@example.com',
         openidId: 'sub123',
@@ -1489,7 +1504,7 @@ describe('createRemoteAgentAuth', () => {
       );
       deps.findUser.mockResolvedValue(null);
       deps.createUser.mockResolvedValue(
-        makeUser({ _id: 'created-user-id', id: 'created-user-id', openidId: 'sub123' }),
+        makeUser({ id: 'created-user-id', openidId: 'sub123' }),
       );
 
       await createRemoteAgentAuth(deps)(
@@ -2281,7 +2296,7 @@ describe('createRemoteAgentAuth', () => {
           openidIssuer: BASE_ISSUER,
         }),
       );
-      const updatePayload = mockUpdateUser.mock.calls[0]?.[1] as Record<string, unknown>;
+      const updatePayload = mockUpdateUser.mock.calls[0]![1] as Record<string, unknown>;
       expectNoPersistedTokenFields(updatePayload);
     });
   });

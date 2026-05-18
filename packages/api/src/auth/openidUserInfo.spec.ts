@@ -30,7 +30,7 @@ function fetcher(responses: Response[]): typeof fetch {
       throw new Error('unexpected fetch');
     }
     return response;
-  }) as jest.MockedFunction<typeof fetch>;
+  }) as unknown as jest.MockedFunction<typeof fetch>;
 }
 
 function restoreEnvValue(key: string, value: string | undefined): void {
@@ -167,7 +167,8 @@ describe('enrichOpenIdProfile', () => {
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: expect.any(URLSearchParams),
     });
-    const tokenRequest = (fetchMock as jest.Mock).mock.calls[1][1].body as URLSearchParams;
+    const tokenRequest = (fetchMock as jest.MockedFunction<typeof fetch>).mock.calls[1][1]
+      ?.body as URLSearchParams;
     expect(Object.fromEntries(tokenRequest.entries())).toEqual({
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
       scope: 'custom.userinfo',
@@ -358,7 +359,7 @@ describe('enrichOpenIdProfile', () => {
     const error = new Error('network failed');
     const fetchMock = jest.fn(async () => {
       throw error;
-    }) as jest.MockedFunction<typeof fetch>;
+    }) as unknown as jest.MockedFunction<typeof fetch>;
 
     const result = await enrichOpenIdProfile({
       claims,

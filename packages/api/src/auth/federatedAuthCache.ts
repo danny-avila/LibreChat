@@ -1,5 +1,4 @@
 import { CacheKeys, Time } from 'librechat-data-provider';
-import type { Keyv } from 'keyv';
 import { standardCache } from '~/cache';
 import { normalizeOpenIdIssuer } from './openid';
 
@@ -29,7 +28,11 @@ export type FederatedAuthCacheKeyInput = {
   subject: string;
 };
 
-type FederatedAuthCacheStore = Pick<Keyv, 'get' | 'set' | 'delete'>;
+type FederatedAuthCacheStore = {
+  get(key: string): Promise<unknown>;
+  set(key: string, value: unknown, ttl?: number): Promise<unknown>;
+  delete(key: string): Promise<unknown>;
+};
 
 const BASE_TENANT_SEGMENT = 'base';
 

@@ -43,13 +43,34 @@ function duplicateKeyError(): Error & { code: number } {
   return error;
 }
 
+function mockMethod<T extends (...args: any[]) => any>(implementation: T): jest.MockedFunction<T> {
+  return jest.fn<ReturnType<T>, Parameters<T>>(implementation) as unknown as jest.MockedFunction<T>;
+}
+
+function mockFindUser(
+  implementation: UserMethods['findUser'] = async () => null,
+): jest.MockedFunction<UserMethods['findUser']> {
+  return mockMethod<UserMethods['findUser']>(implementation);
+}
+
+function mockCreateUser(
+  implementation: UserMethods['createUser'] = async () => user(),
+): jest.MockedFunction<UserMethods['createUser']> {
+  return mockMethod<UserMethods['createUser']>(implementation);
+}
+
+function mockUpdateUser(
+  implementation: UserMethods['updateUser'] = async (_userId, update) =>
+    user({ ...(update as Partial<IUser>) }),
+): jest.MockedFunction<UserMethods['updateUser']> {
+  return mockMethod<UserMethods['updateUser']>(implementation);
+}
+
 function methods(overrides: Partial<OpenIdAccountMethods> = {}): OpenIdAccountMethods {
   return {
-    findUser: jest.fn(async () => null) as jest.MockedFunction<UserMethods['findUser']>,
-    createUser: jest.fn(async () => user()) as jest.MockedFunction<UserMethods['createUser']>,
-    updateUser: jest.fn(async (_userId, update) =>
-      user({ ...(update as Partial<IUser>) }),
-    ) as jest.MockedFunction<UserMethods['updateUser']>,
+    findUser: mockFindUser(),
+    createUser: mockCreateUser(),
+    updateUser: mockUpdateUser(),
     ...overrides,
   };
 }
@@ -198,7 +219,7 @@ describe('resolveOpenIdAccount', () => {
       idOnTheSource: 'oid-123',
     });
     const deps = methods({
-      createUser: jest.fn(async () => created) as jest.MockedFunction<UserMethods['createUser']>,
+      createUser: mockCreateUser(async () => created),
     });
 
     const result = await resolveOpenIdAccount(input({ tenantId: 'tenant-a', methods: deps }));
@@ -287,11 +308,10 @@ describe('resolveOpenIdAccount', () => {
       role: SystemRoles.USER,
     });
     const deps = methods({
-      findUser: jest
-        .fn()
+      findUser: mockFindUser()
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(existing) as jest.MockedFunction<UserMethods['findUser']>,
-      updateUser: jest.fn(async () => updated) as jest.MockedFunction<UserMethods['updateUser']>,
+        .mockResolvedValueOnce(existing),
+      updateUser: mockUpdateUser(async () => updated),
     });
 
     const result = await resolveOpenIdAccount(input({ methods: deps }));
@@ -309,10 +329,10 @@ describe('resolveOpenIdAccount', () => {
   it('syncs existing profile fields only when enabled', async () => {
     const existing = user({ username: 'old-user', name: 'Old User' });
     const deps = methods({
-      findUser: jest.fn(async () => existing) as jest.MockedFunction<UserMethods['findUser']>,
-      updateUser: jest.fn(async (_userId, update) =>
+      findUser: mockFindUser(async () => existing),
+      updateUser: mockUpdateUser(async (_userId, update) =>
         user({ ...existing, ...(update as Partial<IUser>) }),
-      ) as jest.MockedFunction<UserMethods['updateUser']>,
+      ),
     });
 
     await resolveOpenIdAccount(
@@ -335,7 +355,7 @@ describe('resolveOpenIdAccount', () => {
   it('rejects existing tenant users from no-tenant provisioning mode before update', async () => {
     const existing = user({ tenantId: 'tenant-a' });
     const deps = methods({
-      findUser: jest.fn(async () => existing) as jest.MockedFunction<UserMethods['findUser']>,
+      findUser: mockFindUser(async () => existing),
     });
 
     const result = await resolveOpenIdAccount(input({ methods: deps }));
@@ -347,7 +367,7 @@ describe('resolveOpenIdAccount', () => {
   it('resolves no-tenant existing-users-only tenant users without mutation', async () => {
     const existing = user({ tenantId: 'tenant-a' });
     const deps = methods({
-      findUser: jest.fn(async () => existing) as jest.MockedFunction<UserMethods['findUser']>,
+      findUser: mockFindUser(async () => existing),
     });
 
     const result = await resolveOpenIdAccount(
@@ -368,7 +388,7 @@ describe('resolveOpenIdAccount', () => {
   it('rejects users whose tenant does not match the request tenant before update', async () => {
     const existing = user({ tenantId: 'tenant-b' });
     const deps = methods({
-      findUser: jest.fn(async () => existing) as jest.MockedFunction<UserMethods['findUser']>,
+      findUser: mockFindUser(async () => existing),
     });
 
     const result = await resolveOpenIdAccount(input({ tenantId: 'tenant-a', methods: deps }));
@@ -380,15 +400,14 @@ describe('resolveOpenIdAccount', () => {
   it('accepts a duplicate create race only when retry lookup resolves a safe same-scope user', async () => {
     const existing = user();
     const deps = methods({
-      findUser: jest
-        .fn()
+      findUser: mockFindUser()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(existing) as jest.MockedFunction<UserMethods['findUser']>,
-      createUser: jest.fn(async () => {
+        .mockResolvedValueOnce(existing),
+      createUser: mockCreateUser(async () => {
         throw duplicateKeyError();
-      }) as jest.MockedFunction<UserMethods['createUser']>,
-      updateUser: jest.fn(async () => existing) as jest.MockedFunction<UserMethods['updateUser']>,
+      }),
+      updateUser: mockUpdateUser(async () => existing),
     });
 
     const result = await resolveOpenIdAccount(input({ methods: deps }));
@@ -399,16 +418,13 @@ describe('resolveOpenIdAccount', () => {
 
   it('rejects duplicate retry lookup that resolves a tenant user from base context', async () => {
     const deps = methods({
-      findUser: jest
-        .fn()
+      findUser: mockFindUser()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(user({ tenantId: 'tenant-a' })) as jest.MockedFunction<
-        UserMethods['findUser']
-      >,
-      createUser: jest.fn(async () => {
+        .mockResolvedValueOnce(user({ tenantId: 'tenant-a' })),
+      createUser: mockCreateUser(async () => {
         throw duplicateKeyError();
-      }) as jest.MockedFunction<UserMethods['createUser']>,
+      }),
     });
 
     const result = await resolveOpenIdAccount(input({ methods: deps }));
@@ -419,16 +435,13 @@ describe('resolveOpenIdAccount', () => {
 
   it('rejects duplicate retry lookup that resolves a different request tenant', async () => {
     const deps = methods({
-      findUser: jest
-        .fn()
+      findUser: mockFindUser()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(user({ tenantId: 'tenant-b' })) as jest.MockedFunction<
-        UserMethods['findUser']
-      >,
-      createUser: jest.fn(async () => {
+        .mockResolvedValueOnce(user({ tenantId: 'tenant-b' })),
+      createUser: mockCreateUser(async () => {
         throw duplicateKeyError();
-      }) as jest.MockedFunction<UserMethods['createUser']>,
+      }),
     });
 
     const result = await resolveOpenIdAccount(input({ tenantId: 'tenant-a', methods: deps }));
@@ -440,14 +453,11 @@ describe('resolveOpenIdAccount', () => {
   it('rereads created users under the explicit tenant scope when create returns a partial user', async () => {
     const created = user({ tenantId: 'tenant-a' });
     const deps = methods({
-      findUser: jest
-        .fn()
+      findUser: mockFindUser()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(created) as jest.MockedFunction<UserMethods['findUser']>,
-      createUser: jest.fn(async () => ({ email: 'user@example.com' })) as jest.MockedFunction<
-        UserMethods['createUser']
-      >,
+        .mockResolvedValueOnce(created),
+      createUser: mockCreateUser(async () => ({ email: 'user@example.com' })),
     });
 
     const result = await resolveOpenIdAccount(input({ tenantId: 'tenant-a', methods: deps }));
@@ -467,14 +477,11 @@ describe('resolveOpenIdAccount', () => {
   it('rereads created users under the explicit base scope when no tenant is present', async () => {
     const created = user();
     const deps = methods({
-      findUser: jest
-        .fn()
+      findUser: mockFindUser()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(created) as jest.MockedFunction<UserMethods['findUser']>,
-      createUser: jest.fn(async () => ({ email: 'user@example.com' })) as jest.MockedFunction<
-        UserMethods['createUser']
-      >,
+        .mockResolvedValueOnce(created),
+      createUser: mockCreateUser(async () => ({ email: 'user@example.com' })),
     });
 
     const result = await resolveOpenIdAccount(input({ methods: deps }));

@@ -22,6 +22,18 @@ const options: EntraGroupSyncOptions = {
   syncGroupsForExisting: true,
 };
 
+const updateResult = {
+  acknowledged: true,
+  matchedCount: 0,
+  modifiedCount: 0,
+  upsertedCount: 0,
+  upsertedId: null,
+};
+
+function mockMethod<T extends (...args: any[]) => any>(implementation: T): jest.MockedFunction<T> {
+  return jest.fn<ReturnType<T>, Parameters<T>>(implementation) as unknown as jest.MockedFunction<T>;
+}
+
 function user(overrides: Partial<IUser> = {}): IUser {
   const _id = new Types.ObjectId();
   return {
@@ -37,15 +49,13 @@ function user(overrides: Partial<IUser> = {}): IUser {
 
 function methods(overrides: Partial<EntraGroupSyncDbMethods> = {}): EntraGroupSyncDbMethods {
   return {
-    bulkUpdateGroups: jest.fn(async () => ({ modifiedCount: 0 })) as jest.MockedFunction<
-      UserGroupMethods['bulkUpdateGroups']
-    >,
-    findGroupsByExternalIds: jest.fn(async () => []) as jest.MockedFunction<
-      UserGroupMethods['findGroupsByExternalIds']
-    >,
-    upsertGroupByExternalId: jest.fn(async () => null) as jest.MockedFunction<
-      UserGroupMethods['upsertGroupByExternalId']
-    >,
+    bulkUpdateGroups: mockMethod<UserGroupMethods['bulkUpdateGroups']>(async () => updateResult),
+    findGroupsByExternalIds: mockMethod<UserGroupMethods['findGroupsByExternalIds']>(
+      async () => [],
+    ),
+    upsertGroupByExternalId: mockMethod<UserGroupMethods['upsertGroupByExternalId']>(
+      async () => null,
+    ),
     ...overrides,
   };
 }
@@ -66,7 +76,7 @@ function fetcher(responses: Response[]): typeof fetch {
       throw new Error('unexpected fetch');
     }
     return response;
-  }) as jest.MockedFunction<typeof fetch>;
+  }) as unknown as jest.MockedFunction<typeof fetch>;
 }
 
 async function sync(
@@ -134,9 +144,9 @@ describe('syncUserEntraGroupMemberships', () => {
   it('exchanges the request token and syncs existing, missing, owned, and stale groups', async () => {
     const existingGroup = { idOnTheSource: 'group-a' } as IGroup;
     const deps = methods({
-      findGroupsByExternalIds: jest.fn(async () => [existingGroup]) as jest.MockedFunction<
-        UserGroupMethods['findGroupsByExternalIds']
-      >,
+      findGroupsByExternalIds: mockMethod<UserGroupMethods['findGroupsByExternalIds']>(
+        async () => [existingGroup],
+      ),
     });
     const fetchMock = fetcher([
       jsonResponse({ token_endpoint: 'https://issuer.example.com/token' }),
@@ -267,7 +277,7 @@ describe('syncUserEntraGroupMemberships', () => {
 
   it('returns failed when missing group details remain unresolved after retries', async () => {
     jest.useFakeTimers();
-    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
     const deps = methods();
     const syncPromise = sync({
       methods: deps,
@@ -342,7 +352,7 @@ describe('syncUserEntraGroupMemberships', () => {
   });
 
   it('logs failures and returns failed without throwing', async () => {
-    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
     const result = await sync({
       fetcher: fetcher([
         jsonResponse({ token_endpoint: 'https://issuer.example.com/token' }),
@@ -355,7 +365,7 @@ describe('syncUserEntraGroupMemberships', () => {
   });
 
   it('returns failed and logs when graph sync throws after token exchange', async () => {
-    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
     const result = await sync({
       fetcher: fetcher([
         jsonResponse({ token_endpoint: 'https://issuer.example.com/token' }),

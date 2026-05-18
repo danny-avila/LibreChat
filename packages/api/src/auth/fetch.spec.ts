@@ -25,7 +25,7 @@ describe('fetchRemoteAuth', () => {
   beforeEach(() => {
     jest.useRealTimers();
     fetchMock.mockReset();
-    (ProxyAgent as jest.Mock).mockClear();
+    (ProxyAgent as unknown as jest.Mock).mockClear();
     delete process.env.PROXY;
     delete process.env.REMOTE_AUTH_FETCH_TIMEOUT_MS;
   });
@@ -36,9 +36,9 @@ describe('fetchRemoteAuth', () => {
   });
 
   it('uses a proxy dispatcher and abort signal for remote auth fetches', async () => {
-    const response = { ok: true, status: 200, json: jest.fn() } as Response;
+    const response = { ok: true, status: 200, json: jest.fn() } as unknown as Response;
     process.env.PROXY = 'http://proxy.local:8080';
-    fetchMock.mockResolvedValueOnce(response as Awaited<ReturnType<typeof undiciFetch>>);
+    fetchMock.mockResolvedValueOnce(response as unknown as Awaited<ReturnType<typeof undiciFetch>>);
 
     await expect(fetchRemoteAuth('https://issuer.example.com/.well-known/openid-configuration'))
       .resolves.toBe(response);
@@ -95,7 +95,7 @@ describe('fetchRemoteAuth', () => {
           }),
       ),
     } as Partial<Response> as Response;
-    fetchMock.mockResolvedValueOnce(response as Awaited<ReturnType<typeof undiciFetch>>);
+    fetchMock.mockResolvedValueOnce(response as unknown as Awaited<ReturnType<typeof undiciFetch>>);
 
     const fetched = await fetchRemoteAuth('https://issuer.example.com/userinfo');
     const assertion = expect(fetched.json()).rejects.toThrow('aborted while reading body');
