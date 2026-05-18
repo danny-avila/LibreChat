@@ -8,7 +8,7 @@ export const useCreateScheduledTask = () => {
     mutationKey: [MutationKeys.createScheduledTask],
     mutationFn: (payload: TCreateScheduledTask) => dataService.createScheduledTask(payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [QueryKeys.scheduledTasks] });
+      queryClient.invalidateQueries([QueryKeys.scheduledTasks]);
     },
   });
 };
@@ -20,7 +20,7 @@ export const useUpdateScheduledTask = () => {
     mutationFn: ({ id, payload }: { id: string; payload: TUpdateScheduledTask }) =>
       dataService.updateScheduledTask(id, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [QueryKeys.scheduledTasks] });
+      queryClient.invalidateQueries([QueryKeys.scheduledTasks]);
     },
   });
 };
@@ -31,7 +31,7 @@ export const useDeleteScheduledTask = () => {
     mutationKey: [MutationKeys.deleteScheduledTask],
     mutationFn: (id: string) => dataService.deleteScheduledTask(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [QueryKeys.scheduledTasks] });
+      queryClient.invalidateQueries([QueryKeys.scheduledTasks]);
     },
   });
 };
