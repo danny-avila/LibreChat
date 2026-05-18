@@ -4,6 +4,7 @@ import {
   Bot,
   Brain,
   Bookmark,
+  CalendarClock,
   NotebookPen,
   ScrollText,
   ArrowRightToLine,
@@ -35,7 +36,6 @@ import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
 import ScheduledTasksPanel from '~/components/SidePanel/ScheduledTasks/Panel';
-import { CalendarClock } from 'lucide-react';
 
 export default function useSideNavLinks({
   hidePanel,
