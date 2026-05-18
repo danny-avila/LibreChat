@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set Up Node.js
         uses: actions/setup-node@v4
@@ -45,12 +47,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: sync-translations
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
       # 1. Check out the repository.
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # 2. Download translation files from locize.
       - name: Download Translations from locize
@@ -59,11 +62,24 @@ jobs:
           project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
           path: "client/src/locales"
 
-      # 3. Create a Pull Request using built-in functionality.
+      # 3. Create a short-lived GitHub App token so this workflow does not
+      # depend on allowing GITHUB_TOKEN to create pull requests globally.
+      - name: Create pull request token
+        id: pr-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.LOCIZE_PR_APP_ID }}
+          private-key: ${{ secrets.LOCIZE_PR_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # 4. Create a Pull Request using built-in functionality.
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.pr-token.outputs.token }}
+          add-paths: |
+            client/src/locales/**
           sign-commits: true
           commit-message: "🌍 i18n: Update translation.json with latest translations"
           base: main
