@@ -320,16 +320,26 @@ export default function AgentPanel() {
   }, [clearDraftsForAgentIds, reset, setCurrentAgentId]);
 
   const shouldPersistDraft = hasPersistableDirtyFields(dirtyFields);
+  const shouldPersistAvatarResetDraft =
+    dirtyFields?.avatar_action === true && getValues('avatar_action') === 'reset';
 
   const isDirtyPersistableDraftField = useCallback(
     (name?: string): boolean => {
+      const [fieldName] = name?.split('.') ?? [];
+      if (fieldName === 'avatar_action') {
+        return (
+          getFieldState(name as FieldPath<AgentForm>).isDirty &&
+          getValues('avatar_action') === 'reset'
+        );
+      }
+
       if (!isPersistableDraftField(name)) {
         return false;
       }
 
       return getFieldState(name as FieldPath<AgentForm>).isDirty;
     },
-    [getFieldState],
+    [getFieldState, getValues],
   );
 
   useEffect(() => {
@@ -367,13 +377,13 @@ export default function AgentPanel() {
   }, [hasDraft]);
 
   useEffect(() => {
-    if (!shouldPersistDraft) {
+    if (!shouldPersistDraft && !shouldPersistAvatarResetDraft) {
       return;
     }
 
     shouldPersistDraftRef.current = true;
     persistAgentDraft(currentAgentIdRef.current, getValues());
-  }, [getValues, persistAgentDraft, shouldPersistDraft]);
+  }, [getValues, persistAgentDraft, shouldPersistAvatarResetDraft, shouldPersistDraft]);
 
   useEffect(() => {
     const subscription = watch((_, { name }) => {

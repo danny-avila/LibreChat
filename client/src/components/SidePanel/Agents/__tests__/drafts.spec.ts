@@ -93,4 +93,21 @@ describe('agent drafts', () => {
     expect(getAgentDraft('agent-1', 'user-a')?.name).toBe('User A saved-agent draft');
     expect(getAgentDraft('agent-1', 'user-b')).toBeUndefined();
   });
+
+  it('preserves avatar reset intent without upload files', () => {
+    saveAgentDraft(
+      undefined,
+      createForm({
+        avatar_action: 'reset',
+        avatar_file: null,
+        avatar_preview: '/images/avatar.png',
+      }),
+    );
+
+    const draft = getAgentDraft(undefined);
+
+    expect(draft?.avatar_action).toBe('reset');
+    expect(draft?.avatar_preview).toBe('');
+    expect(draft?.avatar_file).toBeUndefined();
+  });
 });

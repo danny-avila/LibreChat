@@ -23,6 +23,8 @@ const AGENTS_BUTTON_LABEL = 'Agents';
 const FILES_BUTTON_LABEL = 'Files';
 const FILES_PANEL_LABEL = 'Files panel';
 const PROGRAMMATIC_UPDATE_LABEL = 'Programmatic agent update';
+const AVATAR_ACTION_LABEL = 'Avatar action';
+const RESET_AVATAR_LABEL = 'Reset avatar';
 const MOCK_USER_ID = 'user-123';
 
 type MockButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -166,13 +168,20 @@ jest.mock('../AgentConfig', () => ({
     const { useFormContext } = jest.requireActual(
       'react-hook-form',
     ) as typeof import('react-hook-form');
-    const { register } = useFormContext();
+    const { register, setValue } = useFormContext<AgentForm>();
 
     return (
       <div>
         <input aria-label="Draft name" {...register('name')} />
         <textarea aria-label="Draft instructions" {...register('instructions')} />
         <input aria-label="Draft model" {...register('model')} />
+        <input aria-label={AVATAR_ACTION_LABEL} {...register('avatar_action')} />
+        <button
+          type="button"
+          onClick={() => setValue('avatar_action', 'reset', { shouldDirty: true })}
+        >
+          {RESET_AVATAR_LABEL}
+        </button>
       </div>
     );
   },
@@ -375,5 +384,23 @@ describe('AgentPanel draft preservation', () => {
     });
     expect(getAgentDraft(undefined, 'user-456')).toBeUndefined();
     expect(getAgentDraft(undefined, MOCK_USER_ID)?.name).toBe('First user draft');
+  });
+
+  it('restores avatar reset-only drafts after switching to Files and back', async () => {
+    render(<Harness />);
+
+    fireEvent.click(screen.getByRole('button', { name: RESET_AVATAR_LABEL }));
+    await waitFor(() => {
+      expect(getAgentDraft(undefined, MOCK_USER_ID)?.avatar_action).toBe('reset');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: FILES_BUTTON_LABEL }));
+    expect(screen.getByText(FILES_PANEL_LABEL)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: AGENTS_BUTTON_LABEL }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(AVATAR_ACTION_LABEL)).toHaveValue('reset');
+    });
   });
 });

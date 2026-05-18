@@ -21,9 +21,14 @@ export function sanitizeAgentDraft(values: AgentForm): AgentDraftValues {
   const {
     avatar_file: _avatarFile,
     avatar_preview: _avatarPreview,
-    avatar_action: _avatarAction,
+    avatar_action: avatarAction,
     ...draft
   } = values;
+
+  if (avatarAction === 'reset') {
+    draft.avatar_action = avatarAction;
+    draft.avatar_preview = '';
+  }
 
   if (typeof draft.agent === 'object' && draft.agent != null) {
     draft.agent = {
