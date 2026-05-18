@@ -272,9 +272,16 @@ class AgentClient extends BaseClient {
           }))
         : []),
     ];
+    const sharedRunAttachmentIds = new Set();
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
+
+      for (const file of attachments) {
+        if (file?.file_id) {
+          sharedRunAttachmentIds.add(file.file_id);
+        }
+      }
 
       if (this.message_file_map) {
         this.message_file_map[latestMessage.messageId] = attachments;
@@ -417,7 +424,9 @@ class AgentClient extends BaseClient {
 
     const agentScopedContextEntries = await Promise.all(
       allAgents.map(async ({ agentId }) => {
-        const attachments = getAgentContextAttachments(agentId);
+        const attachments = getAgentContextAttachments(agentId).filter(
+          (file) => !file?.file_id || !sharedRunAttachmentIds.has(file.file_id),
+        );
         if (!attachments || attachments.length === 0) {
           return [agentId, ''];
         }

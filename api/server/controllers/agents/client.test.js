@@ -1551,6 +1551,33 @@ describe('AgentClient - titleConvo', () => {
       expect(handoffAgent.additional_instructions).not.toContain('Primary private context');
     });
 
+    it('does not duplicate a file that is both request context and scoped context', async () => {
+      const sharedFile = makeTextFile('shared-file', 'shared.txt', 'Shared duplicate context');
+
+      client.options.attachments = [sharedFile];
+      client.options.agentContextAttachmentsByAgentId = new Map([['primary-agent', [sharedFile]]]);
+      client.agentConfigs = new Map();
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Use the available context.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+
+      const occurrences = (
+        mockAgent.additional_instructions.match(/Shared duplicate context/g) ?? []
+      ).length;
+      expect(occurrences).toBe(1);
+    });
+
     it('keeps direct chats with context-doc agents working without request attachments', async () => {
       const primaryContext = makeTextFile(
         'primary-context',
