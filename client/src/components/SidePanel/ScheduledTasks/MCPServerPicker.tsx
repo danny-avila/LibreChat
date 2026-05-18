@@ -4,7 +4,7 @@ import { getStatusColor } from '~/components/MCP/mcpServerUtils';
 import { useMCPServerManager, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-interface Props {
+interface MCPServerPickerProps {
   value: string[];
   onChange: (servers: string[]) => void;
 }
@@ -15,7 +15,7 @@ interface Props {
  * `config.title` + description + status dot) but renders as a plain checkbox
  * list so it can sit inside the builder form instead of an Ariakit menu.
  */
-export default function MCPServerPicker({ value, onChange }: Props) {
+export default function MCPServerPicker({ value, onChange }: MCPServerPickerProps) {
   const localize = useLocalize();
   const { selectableServers, connectionStatus, isInitializing } = useMCPServerManager();
   const selected = new Set(value);
