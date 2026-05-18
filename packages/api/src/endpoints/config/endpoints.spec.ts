@@ -23,7 +23,13 @@ function createMockDeps(overrides: Partial<EndpointsConfigDeps> = {}): Endpoints
   };
 }
 
-function fakeReq(overrides: Partial<ServerRequest> = {}): ServerRequest {
+type TestRequestOverrides = {
+  body?: Partial<ServerRequest['body']>;
+  config?: AppConfig;
+  user?: { id?: string; role?: string; tenantId?: string };
+};
+
+function fakeReq(overrides: TestRequestOverrides = {}): ServerRequest {
   return { user: { id: 'u1', role: 'USER' }, ...overrides } as ServerRequest;
 }
 
