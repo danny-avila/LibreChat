@@ -1,4 +1,4 @@
-import { FC } from 'react';
+import { FC, memo } from 'react';
 import { ModelData } from "~/store/reports";
 
 import {
@@ -35,17 +35,11 @@ interface GraphCCcostProps {
     filteredTopCostCenters: ModelData[];
 }
 
-export default function GraphCCcost({ filteredTopCostCenters }: GraphCCcostProps) {
-    // Filtra apenas centros de custo que têm dados de custo e ordena por custo decrescente
-    const costCentersWithCost = filteredTopCostCenters
-        .filter(cc => cc.Custo && cc.Custo > 0)
-        .sort((a, b) => (b.Custo || 0) - (a.Custo || 0))
-        .slice(0, 10); // Top 10 centros de custo mais caros
-
+function GraphCCcost({ filteredTopCostCenters }: GraphCCcostProps) {
     return (    
         <ChartContainer title="Custo por Centro de Custo">
             <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={costCentersWithCost} layout="vertical" margin={{ top: 5, right: 60, left: 30, bottom: 5 }}>
+            <BarChart data={filteredTopCostCenters} layout="vertical" margin={{ top: 5, right: 60, left: 30, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis 
                     type="number" 
@@ -60,7 +54,7 @@ export default function GraphCCcost({ filteredTopCostCenters }: GraphCCcostProps
                     radius={[0, 4, 4, 0]}
                     label={{ position: 'right', fill: '#ffffff', fontSize: 12, formatter: (value) => `$${typeof value === 'number' ? value.toFixed(2) : value}` }}
                 >
-                    {costCentersWithCost.map((entry, index) => (
+                    {filteredTopCostCenters.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.fill} />
                     ))}
                 </Bar>
@@ -69,3 +63,5 @@ export default function GraphCCcost({ filteredTopCostCenters }: GraphCCcostProps
         </ChartContainer>
     )
 }
+
+export default memo(GraphCCcost);

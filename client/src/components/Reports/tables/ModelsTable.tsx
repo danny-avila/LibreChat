@@ -19,15 +19,16 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { ArrowUpDown, ChevronLeft, ChevronRight, DollarSign, Search } from 'lucide-react';
-import React, { useMemo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { ModelData, REPORT_LABELS } from '~/store/reports';
+import { formatReportCost } from '~/utils/formatReportCost';
 
 interface ModelsTableProps {
   data: ModelData[];
   isLoading?: boolean;
 }
 
-export default function ModelsTable({ data, isLoading }: ModelsTableProps) {
+function ModelsTable({ data, isLoading }: ModelsTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([{ id: 'Volume', desc: true }]);
   const [globalFilter, setGlobalFilter] = React.useState('');
   const [costFilter, setCostFilter] = React.useState({ min: '', max: '' });
@@ -110,14 +111,7 @@ export default function ModelsTable({ data, isLoading }: ModelsTableProps) {
         cell: ({ row }) => {
           const cost = row.getValue('Custo') as number | undefined;
           return (
-            <div className="text-left font-bold text-green-400">
-              {cost !== undefined && cost !== null
-                ? `$${cost.toLocaleString('pt-BR', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}`
-                : 'N/A'}
-            </div>
+            <div className="text-left font-bold text-green-400">{formatReportCost(cost)}</div>
           );
         },
       },
@@ -325,3 +319,5 @@ export default function ModelsTable({ data, isLoading }: ModelsTableProps) {
     </div>
   );
 }
+
+export default memo(ModelsTable);

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import {
   Bar,
   BarChart,
@@ -15,7 +16,7 @@ interface GraphUserCostProps {
     filteredTopUsersCost: UserData[];
 }
 
-export default function GraphUserCost({ filteredTopUsersCost }: GraphUserCostProps) {
+function GraphUserCost({ filteredTopUsersCost }: GraphUserCostProps) {
     return (
     <ChartContainer title={REPORT_LABELS.TYPES.TOP_USERS_COST}>
               <ResponsiveContainer width="100%" height="100%">
@@ -70,3 +71,5 @@ export default function GraphUserCost({ filteredTopUsersCost }: GraphUserCostPro
             </ChartContainer>
     )
 }
+
+export default memo(GraphUserCost);

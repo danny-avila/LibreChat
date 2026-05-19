@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { ModelData, REPORT_LABELS } from "~/store/reports";
 
 import {
@@ -35,7 +36,7 @@ interface GraphTopModelsProps {
     filteredTopModels: ModelData[];
 }
 
-export default function GraphTopModels({ filteredTopModels }: GraphTopModelsProps) {
+function GraphTopModels({ filteredTopModels }: GraphTopModelsProps) {
     return (    
         <ChartContainer title={REPORT_LABELS.TYPES.TOP_MODELS}>
             <ResponsiveContainer width="100%" height="100%">
@@ -58,3 +59,5 @@ export default function GraphTopModels({ filteredTopModels }: GraphTopModelsProp
         </ChartContainer>
     )
 }
+
+export default memo(GraphTopModels);

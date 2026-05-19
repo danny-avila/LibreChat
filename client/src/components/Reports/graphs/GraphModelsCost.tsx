@@ -1,4 +1,4 @@
-import { FC } from 'react';
+import { FC, memo } from 'react';
 import { ModelData, REPORT_LABELS } from "~/store/reports";
 
 import {
@@ -33,17 +33,11 @@ interface GraphModelsCostProps {
     filteredTopModels: ModelData[];
 }
 
-export default function GraphModelsCost({ filteredTopModels }: GraphModelsCostProps) {
-    // Filtra apenas modelos que têm dados de custo e ordena por custo decrescente
-    const modelsWithCost = filteredTopModels
-        .filter(model => model.Custo && model.Custo > 0)
-        .sort((a, b) => (b.Custo || 0) - (a.Custo || 0))
-        .slice(0, 10); // Top 10 modelos mais caros
-
+function GraphModelsCost({ filteredTopModels }: GraphModelsCostProps) {
     return (    
         <ChartContainer title={REPORT_LABELS.TYPES.MODELS_COST}>
             <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={modelsWithCost} layout="vertical" margin={{ top: 5, right: 80, left: 30, bottom: 5 }}>
+            <BarChart data={filteredTopModels} layout="vertical" margin={{ top: 5, right: 80, left: 30, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis 
                     type="number" 
@@ -58,7 +52,7 @@ export default function GraphModelsCost({ filteredTopModels }: GraphModelsCostPr
                     radius={[0, 4, 4, 0]}
                     label={{ position: 'right', fill: '#ffffff', fontSize: 12, formatter: (value) => `$${typeof value === 'number' ? value.toFixed(2) : value}` }}
                 >
-                    {modelsWithCost.map((entry, index) => (
+                    {filteredTopModels.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.fill} />
                     ))}
                 </Bar>
@@ -67,3 +61,5 @@ export default function GraphModelsCost({ filteredTopModels }: GraphModelsCostPr
         </ChartContainer>
     )
 }
+
+export default memo(GraphModelsCost);

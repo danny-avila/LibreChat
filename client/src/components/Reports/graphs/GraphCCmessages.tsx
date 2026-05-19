@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { ModelData } from "~/store/reports";
 
 import {
@@ -16,7 +17,7 @@ interface GraphCCmessagesProps {
     filteredTopCostCenters: ModelData[];
 }
 
-export default function GraphCCmessages({ filteredTopCostCenters }: GraphCCmessagesProps) {
+function GraphCCmessages({ filteredTopCostCenters }: GraphCCmessagesProps) {
     return (
         <ChartContainer title="Volume de Mensagens por Centro de Custo">
             <ResponsiveContainer width="100%" height="100%">
@@ -67,3 +68,5 @@ export default function GraphCCmessages({ filteredTopCostCenters }: GraphCCmessa
         </ChartContainer>
     )
 }
+
+export default memo(GraphCCmessages);

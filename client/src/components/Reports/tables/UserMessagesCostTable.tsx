@@ -19,15 +19,16 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { ArrowUpDown, ChevronLeft, ChevronRight, DollarSign, Search } from 'lucide-react';
-import React, { useMemo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { REPORT_LABELS, UserData } from '~/store/reports';
+import { formatReportCost } from '~/utils/formatReportCost';
 
 interface UserMessagesTableProps {
   data: UserData[];
   isLoading?: boolean;
 }
 
-export default function UserMessagesTable({ data, isLoading }: UserMessagesTableProps) {
+function UserMessagesTable({ data, isLoading }: UserMessagesTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([{ id: 'Volume', desc: true }]);
   const [globalFilter, setGlobalFilter] = React.useState('');
   const [costFilter, setCostFilter] = React.useState({ min: '', max: '' });
@@ -120,11 +121,7 @@ export default function UserMessagesTable({ data, isLoading }: UserMessagesTable
         ),
         cell: ({ row }) => (
           <div className="font-bold text-left text-green-400">
-            $
-            {(row.getValue('Custo') as number).toLocaleString('pt-BR', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
+            {formatReportCost(row.getValue('Custo') as number)}
           </div>
         ),
       },
@@ -332,3 +329,5 @@ export default function UserMessagesTable({ data, isLoading }: UserMessagesTable
     </div>
   );
 }
+
+export default memo(UserMessagesTable);

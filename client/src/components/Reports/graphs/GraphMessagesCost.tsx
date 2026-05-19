@@ -1,6 +1,6 @@
 import { REPORT_LABELS, ReportUtils, UsageCostData } from "~/store/reports";
 
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import {
   Area,
   AreaChart,
@@ -17,7 +17,7 @@ import {
 
 
 
-export default function GraphUserCost({ usageCostData, loading }: { usageCostData: UsageCostData[], loading: boolean }) {
+function GraphMessagesCost({ usageCostData, loading }: { usageCostData: UsageCostData[], loading: boolean }) {
     const chartData = useMemo(() => {
         return usageCostData.map(item => ({
           ...item,
@@ -84,4 +84,6 @@ export default function GraphUserCost({ usageCostData, loading }: { usageCostDat
         </>
     )
 }
+
+export default memo(GraphMessagesCost);
 

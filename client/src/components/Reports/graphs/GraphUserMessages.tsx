@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { REPORT_LABELS, UserData } from "~/store/reports";
 
 import {
@@ -16,7 +17,7 @@ interface GraphUserMessagesProps {
     filteredTopUsersVolume: UserData[];
 }
 
-export default function GraphUserMessages({ filteredTopUsersVolume }: GraphUserMessagesProps) {
+function GraphUserMessages({ filteredTopUsersVolume }: GraphUserMessagesProps) {
     return (
         <ChartContainer title={REPORT_LABELS.TYPES.TOP_USERS_VOLUME}>
               <ResponsiveContainer width="100%" height="100%">
@@ -71,3 +72,5 @@ export default function GraphUserMessages({ filteredTopUsersVolume }: GraphUserM
             </ChartContainer>
     )
 }
+
+export default memo(GraphUserMessages);

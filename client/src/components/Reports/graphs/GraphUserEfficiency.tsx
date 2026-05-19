@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { UserData } from "~/store/reports";
 
 import {
@@ -16,7 +17,7 @@ interface GraphUserEfficiencyProps {
     userEfficiencyData: UserData[];
 }
 
-export default function GraphUserEfficiency({ userEfficiencyData }: GraphUserEfficiencyProps) {
+function GraphUserEfficiency({ userEfficiencyData }: GraphUserEfficiencyProps) {
     return (
         <ChartContainer title="Eficiência de Usuários - Custo por Mensagem">
             <ResponsiveContainer width="100%" height="100%">
@@ -62,3 +63,5 @@ export default function GraphUserEfficiency({ userEfficiencyData }: GraphUserEff
         </ChartContainer>
     )
 }
+
+export default memo(GraphUserEfficiency);
