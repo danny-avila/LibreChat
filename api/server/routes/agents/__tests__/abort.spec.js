@@ -74,6 +74,10 @@ describe('Agent Abort Endpoint', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGenerationJobManager.getJob.mockReset();
+    mockGenerationJobManager.abortJob.mockReset();
+    mockGenerationJobManager.getActiveJobIdsForUser.mockReset();
+    mockSaveMessage.mockReset();
   });
 
   describe('POST /chat/abort', () => {
@@ -325,7 +329,6 @@ describe('Agent Abort Endpoint', () => {
     describe('Job Not Found', () => {
       it('should skip paused fallback jobs and abort the running job', async () => {
         mockGenerationJobManager.getJob
-          .mockResolvedValueOnce(null)
           .mockResolvedValueOnce({
             status: 'requires_action',
             metadata: { userId: 'test-user-123' },
@@ -355,7 +358,7 @@ describe('Agent Abort Endpoint', () => {
       });
 
       it('should not abort paused fallback jobs', async () => {
-        mockGenerationJobManager.getJob.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        mockGenerationJobManager.getJob.mockResolvedValueOnce({
           status: 'requires_action',
           metadata: { userId: 'test-user-123' },
         });
