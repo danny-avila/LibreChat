@@ -135,21 +135,12 @@ export class MCPServersRegistry {
   /**
    * Returns the config for a single server. When `configServers` is provided, config-source
    * servers are resolved from it directly (no global state, no cross-tenant race).
-   * Precedence matches `getAllServerConfigs`: User DB beats Config-tier beats YAML, so a
-   * per-user server (`source: 'user'`) is never shadowed by an admin-panel override of the
-   * same name.
    */
   public async getServerConfig(
     serverName: string,
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<t.ParsedServerConfig | undefined> {
-    if (configServers?.[serverName] && userId) {
-      const userDbConfig = await this.dbConfigsRepo.get(serverName, userId);
-      if (userDbConfig?.source === 'user') {
-        return userDbConfig;
-      }
-    }
     if (configServers?.[serverName]) {
       return configServers[serverName];
     }
@@ -190,9 +181,13 @@ export class MCPServersRegistry {
     this.warnOnOperatorManagedNameCollisions(configServers, base, 'Config');
     const result: Record<string, t.ParsedServerConfig> = { ...base };
     for (const [name, override] of Object.entries(configServers)) {
-      if (result[name]?.source !== 'user') {
-        result[name] = override;
+      if (result[name]?.source === 'user') {
+        logger.debug(`[MCP][config][${name}] Admin override shadowed by user-tier entry`);
+        continue;
       }
+      if (override.inspectionFailed && result[name]) continue;
+      const baseSource = result[name]?.source;
+      result[name] = baseSource ? { ...override, source: baseSource } : override;
     }
     return result;
   }

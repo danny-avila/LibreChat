@@ -22,25 +22,25 @@ const mockMongoose = {} as typeof import('mongoose');
 const sseConfig: t.MCPOptions = {
   type: 'sse',
   url: 'https://mcp.example.com/sse',
-} as unknown as t.MCPOptions;
+};
 
 const altSseConfig: t.MCPOptions = {
   type: 'sse',
   url: 'https://mcp.other-tenant.com/sse',
-} as unknown as t.MCPOptions;
+};
 
 const yamlConfig: t.MCPOptions = {
   type: 'stdio',
   command: 'node',
   args: ['tools.js'],
-} as unknown as t.MCPOptions;
+};
 
 function makeParsedConfig(overrides: Partial<t.ParsedServerConfig> = {}): t.ParsedServerConfig {
   return {
-    ...overrides,
     tools: 'tool_a, tool_b',
     capabilities: '{}',
     initDuration: 42,
+    ...overrides,
   } as unknown as t.ParsedServerConfig;
 }
 
