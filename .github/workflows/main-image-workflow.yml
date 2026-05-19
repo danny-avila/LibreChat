@@ -40,9 +40,9 @@ jobs:
 
       - name: Compute build metadata
         run: |
-          echo "BUILD_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
-          echo "BUILD_BRANCH=${{ github.ref_name }}" >> $GITHUB_ENV
-          echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+          printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          printf 'BUILD_BRANCH=main\n' >> "$GITHUB_ENV"
+          printf 'BUILD_DATE=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
 
       # Set up QEMU
       - name: Set up QEMU
