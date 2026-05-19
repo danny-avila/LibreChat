@@ -237,11 +237,15 @@ router.post('/chat/abort', async (req, res) => {
       userId,
       req.user.tenantId,
     );
-    if (activeJobIds.length > 0) {
-      // Abort the most recent active job for this user
-      jobStreamId = activeJobIds[0];
-      job = await GenerationJobManager.getJob(jobStreamId);
+    for (const activeJobId of activeJobIds) {
+      const activeJob = await GenerationJobManager.getJob(activeJobId);
+      if (activeJob?.status !== 'running') {
+        continue;
+      }
+      jobStreamId = activeJobId;
+      job = activeJob;
       logger.debug(`[AgentStream] Found active job for user: ${jobStreamId}`);
+      break;
     }
   }
 
