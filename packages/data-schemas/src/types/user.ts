@@ -80,6 +80,7 @@ export interface IUser extends Document {
       auth: string;
     };
   }>;
+  lastActiveAt: Date
 }
 
 export interface BalanceConfig {

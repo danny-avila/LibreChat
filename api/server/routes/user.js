@@ -10,6 +10,7 @@ const {
   verifyEmailController,
   deleteUserController,
   getUserController,
+  updateFarmerLastActiveAtController
 } = require('~/server/controllers/UserController');
 const {
   verifyEmailLimiter,
@@ -33,5 +34,6 @@ router.post('/plugins', requireJwtAuth, updateUserPluginsController);
 router.delete('/delete', requireJwtAuth, canDeleteAccount, configMiddleware, deleteUserController);
 router.post('/verify', verifyEmailController);
 router.post('/verify/resend', verifyEmailLimiter, resendVerificationController);
+router.patch('/profile/farmer/last-active-at', requireJwtAuth, updateFarmerLastActiveAtController);
 
 module.exports = router;

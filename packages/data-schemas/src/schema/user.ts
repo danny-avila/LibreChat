@@ -216,6 +216,9 @@ const userSchema = new Schema<IUser>(
       type: [PushSubscriptionSchema],
       default: [],
     },
+    lastActiveAt:{
+      type: Date
+    },
   },
   { timestamps: true },
 );

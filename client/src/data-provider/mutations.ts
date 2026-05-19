@@ -1138,3 +1138,15 @@ export const useSaveFarmerProfileMutation = (
     onMutate: options?.onMutate,
   });
 };
+
+export const useUpdateFarmerLastActiveAt = (): UseMutationResult<
+  { message: string },
+  unknown,
+  void,
+  unknown
+> => {
+    console.log("--------------in useUpdateFarmerLastActiveAt----------")
+  return useMutation({
+    mutationFn: () => dataService.updateFarmerLastActiveAt(),
+  });
+};

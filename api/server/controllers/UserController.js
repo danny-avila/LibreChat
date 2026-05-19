@@ -206,6 +206,41 @@ const updateFarmerPlatformController = async (req, res) => {
   }
 };
 
+const updateFarmerLastActiveAtController = async (req, res) => {
+  try {
+    const currentDate = new Date();
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      {
+        $set: {
+          lastActiveAt: currentDate,
+        },
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        message: 'User not found',
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Last active updated',
+      lastActiveAt: updatedUser.lastActiveAt,
+    });
+  } catch (error) {
+    logger.error('Error updating lastActiveAt:', error);
+
+    return res.status(500).json({
+      message: 'Error updating last active time',
+    });
+  }
+};
+
 const saveFarmerProfileController = async (req, res) => {
   try {
     const farmerProfile = req.body;
@@ -609,6 +644,7 @@ module.exports = {
   acceptSecondTermsController,
   saveFarmerProfileController,
   updateFarmerPlatformController,
+  updateFarmerLastActiveAtController,
   deleteUserController,
   verifyEmailController,
   updateUserPluginsController,
