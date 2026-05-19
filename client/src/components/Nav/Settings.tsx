@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
 import { MessageSquare, Command, DollarSign, Info } from 'lucide-react';
@@ -35,7 +35,13 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
   const tabRefs = useRef({});
   const { hasAnyPersonalizationFeature, hasMemoryOptOut } = usePersonalizationAccess();
-  const aboutEnabled = startupConfig != null && startupConfig.interface?.buildInfo !== false;
+  const aboutEnabled = startupConfig?.interface?.buildInfo !== false;
+
+  useEffect(() => {
+    if (!aboutEnabled && activeTab === SettingsTabValues.ABOUT) {
+      setActiveTab(SettingsTabValues.GENERAL);
+    }
+  }, [aboutEnabled, activeTab]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const tabs: SettingsTabValues[] = [
