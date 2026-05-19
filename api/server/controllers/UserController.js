@@ -111,7 +111,10 @@ const getTermsStatusController = async (req, res) => {
           missingFields.push('location');
         }
       } else if (field === 'cropsCultivated') {
-        if (!user.farmerProfile?.cropsCultivated || user.farmerProfile.cropsCultivated.length === 0) {
+        if (
+          !user.farmerProfile?.cropsCultivated ||
+          user.farmerProfile.cropsCultivated.length === 0
+        ) {
           missingFields.push('cropsCultivated');
         }
       } else {
@@ -179,7 +182,7 @@ const updateFarmerPlatformController = async (req, res) => {
     }
 
     const alreadyExists = existingUser.farmerProfile?.platformHistory?.some(
-      (entry) => entry.os === req.body.platform
+      (entry) => entry.os === req.body.platform,
     );
 
     const updateQuery = {
