@@ -44,7 +44,9 @@ COPY --chown=node:node . .
 RUN \
     # React client build with configurable memory
     NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend; \
-    if [ ! -f /app/client/dist/index.html ] && [ -f /app/client/build/index.html ]; then mkdir -p /app/client/dist && cp -r /app/client/build/* /app/client/dist/; fi; \
+    echo "Checking client dist..."; \
+    ls -la /app/client; \
+    ls -la /app/client/dist || true; \
     test -f /app/client/dist/index.html; \
     npm prune --production; \
     npm cache clean --force
@@ -62,6 +64,7 @@ CMD ["npm", "run", "backend"]
 # COPY --from=node /app/client/dist /usr/share/nginx/html
 # COPY client/nginx.conf /etc/nginx/conf.d/default.conf
 # ENTRYPOINT ["nginx", "-g", "daemon off;"]
+
 
 
 
