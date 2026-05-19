@@ -53,8 +53,15 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}
+          # Bump short-SHA above branch ref so steps.meta.outputs.version (used
+          # downstream as image.tag in helm upgrade) becomes the immutable
+          # 7-char commit SHA. Without this, default priorities make `version`
+          # the branch name ('billechat'), which keeps the rendered Deployment
+          # manifest identical across pushes — Helm bumps its revision but
+          # K8s sees no spec change and never restarts pods. The branch and
+          # `latest` tags still get pushed to ACR for humans / manual pulls.
           tags: |
-            type=sha,prefix=
+            type=sha,prefix=,priority=1000
             type=ref,event=branch
             type=raw,value=latest
 
