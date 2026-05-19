@@ -19,7 +19,7 @@ export interface IServerConfigsRepositoryInterface {
   get(serverName: string, userId?: string): Promise<ParsedServerConfig | undefined>;
 
   //ACL Entry get all accessible mcp config definitions + any mcp configured with agents
-  getAll(userId?: string): Promise<Record<string, ParsedServerConfig>>;
+  getAll(userId?: string, role?: string): Promise<Record<string, ParsedServerConfig>>;
 
   reset(): Promise<void>;
 }
