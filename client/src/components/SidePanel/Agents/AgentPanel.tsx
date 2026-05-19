@@ -319,12 +319,9 @@ export default function AgentPanel() {
     [debouncedPersistAgentDraft],
   );
 
-  const handleAgentChange = useCallback(
-    (selectedAgentId?: string | null) => {
-      clearDraftsForAgentIds([currentAgentIdRef.current, selectedAgentId]);
-    },
-    [clearDraftsForAgentIds],
-  );
+  const handleAgentChange = useCallback(() => {
+    clearDraftsForAgentIds([currentAgentIdRef.current]);
+  }, [clearDraftsForAgentIds]);
 
   const handleCreateNewAgent = useCallback(() => {
     clearDraftsForAgentIds([currentAgentIdRef.current, undefined]);
@@ -365,8 +362,10 @@ export default function AgentPanel() {
   );
 
   useEffect(() => {
-    const agentChanged = currentAgentIdRef.current !== current_agent_id;
-    const userChanged = draftUserIdRef.current !== draftUserId;
+    const previousAgentId = currentAgentIdRef.current;
+    const previousUserId = draftUserIdRef.current;
+    const agentChanged = previousAgentId !== current_agent_id;
+    const userChanged = previousUserId !== draftUserId;
 
     if (!agentChanged && !userChanged) {
       return;
@@ -377,12 +376,25 @@ export default function AgentPanel() {
     }
 
     if (agentChanged && !userChanged && shouldPersistDraftRef.current) {
-      saveAgentDraft(currentAgentIdRef.current, getValues(), draftUserIdRef.current);
+      saveAgentDraft(previousAgentId, getValues(), previousUserId);
+    }
+
+    const nextDraft = getAgentDraft(current_agent_id, draftUserId);
+    if (
+      agentChanged &&
+      !userChanged &&
+      previousAgentId == null &&
+      shouldPersistDraftRef.current &&
+      !nextDraft
+    ) {
+      // AgentPanelSwitch can restore the chat agent id after a remount while a new-agent draft is visible.
+      setCurrentAgentId(undefined);
+      setHasDraft(shouldPersistDraftRef.current);
+      return;
     }
 
     currentAgentIdRef.current = current_agent_id;
     draftUserIdRef.current = draftUserId;
-    const nextDraft = getAgentDraft(current_agent_id, draftUserId);
     const nextHasDraft = nextDraft != null;
     shouldPersistDraftRef.current = nextHasDraft;
     setHasDraft(nextHasDraft);
@@ -394,7 +406,14 @@ export default function AgentPanel() {
     if (userChanged) {
       reset(getDefaultAgentFormValues());
     }
-  }, [current_agent_id, debouncedPersistAgentDraft, draftUserId, getValues, reset]);
+  }, [
+    current_agent_id,
+    debouncedPersistAgentDraft,
+    draftUserId,
+    getValues,
+    reset,
+    setCurrentAgentId,
+  ]);
 
   useEffect(() => {
     if (hasDraft) {

@@ -26,6 +26,7 @@ const PROGRAMMATIC_UPDATE_LABEL = 'Programmatic agent update';
 const AVATAR_ACTION_LABEL = 'Avatar action';
 const RESET_AVATAR_LABEL = 'Reset avatar';
 const DELETE_AGENT_LABEL = 'Delete Agent';
+const SELECT_AGENT_WITH_DRAFT_LABEL = 'Select agent with draft';
 const MOCK_USER_ID = 'user-123';
 
 type MockButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -35,6 +36,7 @@ type MockButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
 type MockAgentSelectProps = {
   hasDraft?: boolean;
+  onAgentChange?: (selectedAgentId?: string | null) => void;
 };
 
 type MockAgentFooterProps = {
@@ -146,7 +148,7 @@ jest.mock('~/common', () => {
 
 jest.mock('../AgentSelect', () => ({
   __esModule: true,
-  default: function MockAgentSelect({ hasDraft }: MockAgentSelectProps) {
+  default: function MockAgentSelect({ hasDraft, onAgentChange }: MockAgentSelectProps) {
     const { useFormContext } = jest.requireActual(
       'react-hook-form',
     ) as typeof import('react-hook-form');
@@ -161,6 +163,9 @@ jest.mock('../AgentSelect', () => ({
           onClick={() => setValue('name', 'Saved from API', { shouldDirty: false })}
         >
           {PROGRAMMATIC_UPDATE_LABEL}
+        </button>
+        <button type="button" onClick={() => onAgentChange?.('agent-456')}>
+          {SELECT_AGENT_WITH_DRAFT_LABEL}
         </button>
       </>
     );
@@ -382,6 +387,77 @@ describe('AgentPanel draft preservation', () => {
     expect(screen.getByLabelText('Draft instructions')).toHaveValue('Draft for the switched agent');
     expect(getAgentDraft('agent-123', MOCK_USER_ID)?.name).toBe('Previous agent draft');
     expect(mockLastAgentSelectHasDraft).toBe(true);
+  });
+
+  it('preserves a selected agent draft when leaving another agent', async () => {
+    mockCurrentAgentId = 'agent-123';
+    const { rerender } = render(<Harness />);
+
+    fireEvent.change(screen.getByLabelText('Draft name'), {
+      target: { value: 'Draft for current agent' },
+    });
+    await waitFor(() => {
+      expect(getAgentDraft('agent-123', MOCK_USER_ID)?.name).toBe('Draft for current agent');
+    });
+
+    saveAgentDraft(
+      'agent-456',
+      {
+        id: 'agent-456',
+        name: 'Destination agent draft',
+        description: '',
+        instructions: 'Keep the destination draft',
+        model: 'gpt-4o',
+        model_parameters: {} as AgentForm['model_parameters'],
+        provider: { label: 'OpenAI', value: 'openAI' },
+        tools: [],
+        tool_options: {},
+        category: 'general',
+        execute_code: false,
+        file_search: false,
+        web_search: false,
+      } as AgentForm,
+      MOCK_USER_ID,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: SELECT_AGENT_WITH_DRAFT_LABEL }));
+
+    expect(getAgentDraft('agent-123', MOCK_USER_ID)).toBeUndefined();
+    expect(getAgentDraft('agent-456', MOCK_USER_ID)?.name).toBe('Destination agent draft');
+
+    mockCurrentAgentId = 'agent-456';
+    rerender(<Harness />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Draft name')).toHaveValue('Destination agent draft');
+    });
+  });
+
+  it('keeps remounted new-agent drafts keyed as new when a chat agent id is restored', async () => {
+    const { rerender } = render(<Harness />);
+
+    fireEvent.change(screen.getByLabelText('Draft name'), {
+      target: { value: 'New agent draft' },
+    });
+    await waitFor(() => {
+      expect(getAgentDraft(undefined, MOCK_USER_ID)?.name).toBe('New agent draft');
+    });
+
+    mockCurrentAgentId = 'agent-123';
+    rerender(<Harness />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Draft name')).toHaveValue('New agent draft');
+    });
+
+    fireEvent.change(screen.getByLabelText('Draft name'), {
+      target: { value: 'New agent draft continued' },
+    });
+
+    await waitFor(() => {
+      expect(getAgentDraft(undefined, MOCK_USER_ID)?.name).toBe('New agent draft continued');
+    });
+    expect(getAgentDraft('agent-123', MOCK_USER_ID)).toBeUndefined();
   });
 
   it('does not carry drafts across user changes while mounted', async () => {
