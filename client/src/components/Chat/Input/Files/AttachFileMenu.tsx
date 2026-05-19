@@ -320,7 +320,7 @@ const AttachFileMenu = ({
           trigger={menuTrigger}
           items={dropdownItems}
           iconClassName="mr-0"
-          placement="top-start" // NJ: customized dropwdown so it displays above the chat.
+          placement="top-start" // NJ: customized dropdown so it displays above the chat.
           gutter={60}
         />
       </FileUpload>

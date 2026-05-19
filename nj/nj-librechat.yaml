@@ -10,7 +10,7 @@ version: 1.3.6
 
 # Cache settings: Set to true to enable caching
 cache: true
-fileStrategy: "s3"
+fileStrategy: 's3'
 
 # Custom interface configuration
 interface:
@@ -24,15 +24,15 @@ interface:
   modelSelect: true
 
   # We're purposefully disabling most LibreChat features (for now)
-  agents: 
+  agents:
     use: true
-    create: false # Can be overriden with env var INTERFACE_AGENTS
+    create: false # Can be overridden with env var INTERFACE_AGENTS
     share: false
-    public: false 
+    public: false
   bookmarks: false
   endpointsMenu: false
   fileCitations: false
-  fileSearch: false # Can be overriden with env var INTERFACE_FILE_SEARCH
+  fileSearch: false # Can be overridden with env var INTERFACE_FILE_SEARCH
   marketplace:
     use: false
   memories: false
@@ -61,37 +61,37 @@ interface:
 endpoints:
   bedrock:
     availableRegions:
-      - "us-east-1"
-    titleModel: "us.anthropic.claude-sonnet-4-6"
+      - 'us-east-1'
+    titleModel: 'us.anthropic.claude-sonnet-4-6'
     guardrailConfig:
       guardrailIdentifier: '${GUARDRAIL_ID}'
       guardrailVersion: '${GUARDRAIL_VERSION}'
-      trace: "enabled"
-      streamProcessingMode: "async" # streams responses faster, but may output inappropriate content before the scan completes
+      trace: 'enabled'
+      streamProcessingMode: 'async' # streams responses faster, but may output inappropriate content before the scan completes
 
   agents:
     capabilities:
-      - "context"
-      - "ocr"
-      - "file_search"
+      - 'context'
+      - 'ocr'
+      - 'file_search'
 
 # We explicitly spec our models (since we only have a few models and this makes the selector simpler)
 modelSpecs:
   list:
     - name: claude-sonnet-4-6
-      label: "Claude Sonnet 4.6"
+      label: 'Claude Sonnet 4.6'
       preset:
-        endpoint: "bedrock"
-        model: "us.anthropic.claude-sonnet-4-6"
-    - name: "Claude Sonnet 4.5"
-      label: "Claude Sonnet 4.5"
+        endpoint: 'bedrock'
+        model: 'us.anthropic.claude-sonnet-4-6'
+    - name: 'Claude Sonnet 4.5'
+      label: 'Claude Sonnet 4.5'
       default: true
       preset:
-        endpoint: "bedrock"
-        model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        endpoint: 'bedrock'
+        model: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
 
 ocr:
-  strategy: "document_parser"
+  strategy: 'document_parser'
 
 fileConfig:
   serverFileSizeLimit: 15 # Global multer limit (MB)
