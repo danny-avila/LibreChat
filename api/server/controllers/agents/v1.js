@@ -189,6 +189,7 @@ const isSubagentsCapabilityEnabled = (req) => {
  * @param {object} params
  * @param {string[]} params.tools - Raw tool strings from the request
  * @param {string} params.userId - Requesting user ID for MCP server access check
+ * @param {string} [params.role] - Requesting user's role for ACL principal resolution
  * @param {Record<string, unknown>} params.availableTools - Global non-MCP tool cache
  * @param {string[]} [params.existingTools] - Tools already persisted on the agent document
  * @param {Record<string, unknown>} [params.configServers] - Config-source MCP servers resolved from appConfig overrides
@@ -197,6 +198,7 @@ const isSubagentsCapabilityEnabled = (req) => {
 const filterAuthorizedTools = async ({
   tools,
   userId,
+  role,
   availableTools,
   existingTools,
   configServers,
@@ -219,7 +221,9 @@ const filterAuthorizedTools = async ({
     if (mcpServerConfigs === undefined) {
       try {
         mcpServerConfigs =
-          (await getMCPServersRegistry().getAllServerConfigs(userId, configServers)) ?? {};
+          (role
+            ? await getMCPServersRegistry().getAllServerConfigs(userId, configServers, role)
+            : await getMCPServersRegistry().getAllServerConfigs(userId, configServers)) ?? {};
       } catch (e) {
         logger.warn(
           '[filterAuthorizedTools] MCP registry unavailable, filtering all MCP tools',
@@ -387,6 +391,7 @@ const createAgentHandler = async (req, res) => {
     agentData.tools = await filterAuthorizedTools({
       tools,
       userId,
+      role: req.user.role,
       availableTools,
       configServers,
     });
@@ -620,6 +625,7 @@ const updateAgentHandler = async (req, res) => {
         const approvedNew = await filterAuthorizedTools({
           tools: newMCPTools,
           userId: req.user.id,
+          role: req.user.role,
           availableTools,
           configServers,
         });
@@ -781,6 +787,7 @@ const duplicateAgentHandler = async (req, res) => {
       newAgentData.tools = await filterAuthorizedTools({
         tools: newAgentData.tools,
         userId,
+        role: req.user.role,
         availableTools,
         existingTools: newAgentData.tools,
         configServers,
@@ -1155,6 +1162,7 @@ const revertAgentVersionHandler = async (req, res) => {
       const filteredTools = await filterAuthorizedTools({
         tools: updatedAgent.tools,
         userId: req.user.id,
+        role: req.user.role,
         availableTools,
         existingTools: updatedAgent.tools,
         configServers,
