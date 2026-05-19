@@ -404,13 +404,13 @@ describe('MCPServersRegistry', () => {
   });
 
   describe('admin-panel overrides for YAML-defined servers', () => {
-    const yamlLangfuseConfig: t.ParsedServerConfig = {
+    const yamlLangfuseConfig = Object.freeze({
       type: 'streamable-http',
       url: 'https://langfuse.com/api/public/mcp',
       requiresOAuth: false,
       source: 'yaml',
       updatedAt: FIXED_TIME,
-    };
+    }) as t.ParsedServerConfig;
 
     it('flows config-tier override on a YAML-defined server through to getAllServerConfigs', async () => {
       await registry['cacheConfigsRepo'].add('langfuse-docs', yamlLangfuseConfig);
@@ -533,6 +533,26 @@ describe('MCPServersRegistry', () => {
       expect((result['langfuse-docs'] as t.StreamableHTTPOptions).headers).toEqual({
         Authorization: 'Bearer yaml-token',
       });
+    });
+
+    it('healthy YAML entry survives end-to-end when inspect throws for YAML server', async () => {
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlLangfuseConfig);
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+      inspectSpy.mockRejectedValueOnce(new Error('network timeout'));
+
+      const configServers = await registry.ensureConfigServers({
+        'langfuse-docs': {
+          type: 'streamable-http',
+          url: 'https://langfuse.com/api/public/mcp',
+          iconPath: 'https://example.com/icon.svg',
+        } as t.MCPOptions,
+      });
+      const result = await registry.getAllServerConfigs('user-1', configServers);
+
+      expect(result['langfuse-docs'].source).toBe('yaml');
+      expect(result['langfuse-docs'].inspectionFailed).toBeUndefined();
+      expect(result['langfuse-docs'].url).toBe('https://langfuse.com/api/public/mcp');
     });
 
     it('preserves YAML source tag when config-tier override succeeds', async () => {

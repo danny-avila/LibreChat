@@ -163,11 +163,16 @@ export class MCPServersRegistry {
   }
 
   /**
-   * Returns all server configs visible to the given user.
-   * Precedence (lowest to highest): YAML cache → Config-tier overrides → User DB.
-   * Config-tier entries supplied via `configServers` overlay YAML entries by name; user-DB
-   * entries (`source: 'user'`) are preserved against config-tier overlays so per-user servers
-   * are never replaced by admin-panel overrides.
+   * Returns the full server config map after merging YAML cache, Config-tier overrides,
+   * and User-DB entries.
+   *
+   * Precedence (lowest to highest): YAML cache > Config-tier overrides (success only) > User DB.
+   * Two guards keep the merge safe:
+   *   1. Config-tier entries carrying `inspectionFailed: true` never overlay an existing
+   *      base entry; the healthy base is preserved for the duration of the retry window.
+   *   2. User-DB entries (`source: 'user'`) are never replaced by Config-tier overlays.
+   * On a successful overlay the base entry's `source` field is preserved so downstream
+   * recovery logic routes to the correct storage location.
    */
   public async getAllServerConfigs(
     userId?: string,
