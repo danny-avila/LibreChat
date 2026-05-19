@@ -1,10 +1,17 @@
 import { Socket } from 'node:net';
 import { IncomingMessage } from 'node:http';
+import { Agent as HttpsAgent } from 'node:https';
 import type { Span } from '@opentelemetry/api';
+import type { RequestOptions } from 'node:http';
 
 interface HttpInstrumentationOptions {
   requestHook?: (span: Span, request: object) => void;
   startIncomingSpanHook?: (request: IncomingMessage) => Record<string, string>;
+  startOutgoingSpanHook?: (request: RequestOptions) => Record<string, string>;
+}
+
+interface UndiciInstrumentationOptions {
+  startSpanHook?: (request: { origin?: string; path?: string }) => Record<string, string>;
 }
 
 const mockStart = jest.fn();
@@ -21,7 +28,10 @@ const mockHttpInstrumentation = jest.fn((options?: HttpInstrumentationOptions) =
 const mockIORedisInstrumentation = jest.fn(() => ({ name: 'ioredis' }));
 const mockMongoDBInstrumentation = jest.fn(() => ({ name: 'mongodb' }));
 const mockMongooseInstrumentation = jest.fn(() => ({ name: 'mongoose' }));
-const mockUndiciInstrumentation = jest.fn(() => ({ name: 'undici' }));
+const mockUndiciInstrumentation = jest.fn((options?: UndiciInstrumentationOptions) => ({
+  name: 'undici',
+  options,
+}));
 const mockResourceFromAttributes = jest.fn((attributes: object) => ({ attributes }));
 
 jest.mock(
@@ -223,6 +233,188 @@ describe('telemetry SDK lifecycle', () => {
     });
     expect(JSON.stringify(attributes)).not.toContain('secret-code');
     expect(JSON.stringify(attributes)).not.toContain('secret-state');
+  });
+
+  it('redacts outgoing HTTP URL query attributes before client spans are exported', () => {
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
+    const startOutgoingSpanHook = instrumentationOptions?.startOutgoingSpanHook;
+
+    if (!startOutgoingSpanHook) {
+      throw new Error('HTTP instrumentation startOutgoingSpanHook was not configured');
+    }
+
+    const attributes = startOutgoingSpanHook({
+      protocol: 'http:',
+      hostname: '127.0.0.1',
+      port: 33169,
+      path: '/custom-action?api_key=LC_ACTION_QUERY_SECRET_67890&user_text=sensitive+prompt+words',
+    });
+
+    expect(attributes).toEqual({
+      'http.target': '/custom-action?api_key=[REDACTED]&user_text=[REDACTED]',
+      'http.url': 'http://127.0.0.1:33169/custom-action?api_key=[REDACTED]&user_text=[REDACTED]',
+      'url.full': 'http://127.0.0.1:33169/custom-action?api_key=[REDACTED]&user_text=[REDACTED]',
+      'url.path': '/custom-action',
+      'url.query': 'api_key=[REDACTED]&user_text=[REDACTED]',
+    });
+    expect(JSON.stringify(attributes)).not.toContain('LC_ACTION_QUERY_SECRET_67890');
+    expect(JSON.stringify(attributes)).not.toContain('sensitive+prompt+words');
+  });
+
+  it('redacts delimiter-less outgoing query segments and preserves separate HTTP ports', () => {
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
+    const startOutgoingSpanHook = instrumentationOptions?.startOutgoingSpanHook;
+
+    if (!startOutgoingSpanHook) {
+      throw new Error('HTTP instrumentation startOutgoingSpanHook was not configured');
+    }
+
+    const attributes = startOutgoingSpanHook({
+      protocol: 'https:',
+      host: 'api.example.com',
+      port: 8443,
+      path: '/custom-action?LC_ACTION_QUERY_SECRET_67890&user_text=sensitive+prompt+words',
+    });
+
+    expect(attributes).toEqual({
+      'http.target': '/custom-action?[REDACTED]&user_text=[REDACTED]',
+      'http.url': 'https://api.example.com:8443/custom-action?[REDACTED]&user_text=[REDACTED]',
+      'url.full': 'https://api.example.com:8443/custom-action?[REDACTED]&user_text=[REDACTED]',
+      'url.path': '/custom-action',
+      'url.query': '[REDACTED]&user_text=[REDACTED]',
+    });
+    expect(JSON.stringify(attributes)).not.toContain('LC_ACTION_QUERY_SECRET_67890');
+    expect(JSON.stringify(attributes)).not.toContain('sensitive+prompt+words');
+  });
+
+  it('keeps outgoing HTTP URLs absolute when request options omit an origin', () => {
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
+    const startOutgoingSpanHook = instrumentationOptions?.startOutgoingSpanHook;
+
+    if (!startOutgoingSpanHook) {
+      throw new Error('HTTP instrumentation startOutgoingSpanHook was not configured');
+    }
+
+    const attributes = startOutgoingSpanHook({
+      protocol: 'http:',
+      path: '/custom-action?api_key=LC_ACTION_QUERY_SECRET_67890',
+    });
+
+    expect(attributes).toEqual({
+      'http.target': '/custom-action?api_key=[REDACTED]',
+      'http.url': 'http://localhost/custom-action?api_key=[REDACTED]',
+      'url.full': 'http://localhost/custom-action?api_key=[REDACTED]',
+      'url.path': '/custom-action',
+      'url.query': 'api_key=[REDACTED]',
+    });
+    expect(JSON.stringify(attributes)).not.toContain('LC_ACTION_QUERY_SECRET_67890');
+  });
+
+  it('uses the agent protocol for outgoing URL attributes when request protocol is absent', () => {
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
+    const startOutgoingSpanHook = instrumentationOptions?.startOutgoingSpanHook;
+
+    if (!startOutgoingSpanHook) {
+      throw new Error('HTTP instrumentation startOutgoingSpanHook was not configured');
+    }
+
+    const attributes = startOutgoingSpanHook({
+      agent: new HttpsAgent(),
+      hostname: 'api.example.com',
+      path: '/custom-action?api_key=LC_ACTION_QUERY_SECRET_67890',
+    });
+
+    expect(attributes).toEqual({
+      'http.target': '/custom-action?api_key=[REDACTED]',
+      'http.url': 'https://api.example.com/custom-action?api_key=[REDACTED]',
+      'url.full': 'https://api.example.com/custom-action?api_key=[REDACTED]',
+      'url.path': '/custom-action',
+      'url.query': 'api_key=[REDACTED]',
+    });
+    expect(JSON.stringify(attributes)).not.toContain('LC_ACTION_QUERY_SECRET_67890');
+  });
+
+  it('does not infer HTTPS from port 443 without protocol context', () => {
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
+    const startOutgoingSpanHook = instrumentationOptions?.startOutgoingSpanHook;
+
+    if (!startOutgoingSpanHook) {
+      throw new Error('HTTP instrumentation startOutgoingSpanHook was not configured');
+    }
+
+    const attributes = startOutgoingSpanHook({
+      hostname: 'api.example.com',
+      port: 443,
+      path: '/custom-action?api_key=LC_ACTION_QUERY_SECRET_67890',
+    });
+
+    expect(attributes).toEqual({
+      'http.target': '/custom-action?api_key=[REDACTED]',
+      'http.url': 'http://api.example.com:443/custom-action?api_key=[REDACTED]',
+      'url.full': 'http://api.example.com:443/custom-action?api_key=[REDACTED]',
+      'url.path': '/custom-action',
+      'url.query': 'api_key=[REDACTED]',
+    });
+    expect(JSON.stringify(attributes)).not.toContain('LC_ACTION_QUERY_SECRET_67890');
+  });
+
+  it('brackets IPv6 hostnames in outgoing HTTP URL attributes', () => {
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockHttpInstrumentation.mock.calls[0]?.[0];
+    const startOutgoingSpanHook = instrumentationOptions?.startOutgoingSpanHook;
+
+    if (!startOutgoingSpanHook) {
+      throw new Error('HTTP instrumentation startOutgoingSpanHook was not configured');
+    }
+
+    const attributes = startOutgoingSpanHook({
+      protocol: 'http:',
+      hostname: '::1',
+      port: 8080,
+      path: '/custom-action?api_key=LC_ACTION_QUERY_SECRET_67890',
+    });
+
+    expect(attributes).toEqual({
+      'http.target': '/custom-action?api_key=[REDACTED]',
+      'http.url': 'http://[::1]:8080/custom-action?api_key=[REDACTED]',
+      'url.full': 'http://[::1]:8080/custom-action?api_key=[REDACTED]',
+      'url.path': '/custom-action',
+      'url.query': 'api_key=[REDACTED]',
+    });
+    expect(JSON.stringify(attributes)).not.toContain('LC_ACTION_QUERY_SECRET_67890');
+  });
+
+  it('redacts outgoing Undici URL query attributes before fetch spans are exported', () => {
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+    const instrumentationOptions = mockUndiciInstrumentation.mock.calls[0]?.[0];
+    const startSpanHook = instrumentationOptions?.startSpanHook;
+
+    if (!startSpanHook) {
+      throw new Error('Undici instrumentation startSpanHook was not configured');
+    }
+
+    const attributes = startSpanHook({
+      origin: 'https://api.openweathermap.org',
+      path: '/data/3.0/onecall?appid=OPENWEATHER_SECRET_123&lat=40.71&lon=-74.01',
+    });
+
+    expect(attributes).toEqual({
+      'http.target': '/data/3.0/onecall?appid=[REDACTED]&lat=[REDACTED]&lon=[REDACTED]',
+      'http.url':
+        'https://api.openweathermap.org/data/3.0/onecall?appid=[REDACTED]&lat=[REDACTED]&lon=[REDACTED]',
+      'url.full':
+        'https://api.openweathermap.org/data/3.0/onecall?appid=[REDACTED]&lat=[REDACTED]&lon=[REDACTED]',
+      'url.path': '/data/3.0/onecall',
+      'url.query': 'appid=[REDACTED]&lat=[REDACTED]&lon=[REDACTED]',
+    });
+    expect(JSON.stringify(attributes)).not.toContain('OPENWEATHER_SECRET_123');
+    expect(JSON.stringify(attributes)).not.toContain('40.71');
+    expect(JSON.stringify(attributes)).not.toContain('-74.01');
   });
 
   it('reflects lifecycle status from the controller getter', async () => {

@@ -2,14 +2,24 @@ const { getConvo } = require('~/models');
 
 // Middleware to validate conversationId and user relationship
 const validateMessageReq = async (req, res, next) => {
-  let conversationId = req.params.conversationId || req.body.conversationId;
+  const body = req.body ?? {};
+  const paramConversationId = req.params?.conversationId;
+  const bodyConversationId = body.conversationId;
+  const nestedConversationId = body.message?.conversationId;
+
+  if (
+    (paramConversationId &&
+      ((bodyConversationId && paramConversationId !== bodyConversationId) ||
+        (nestedConversationId && paramConversationId !== nestedConversationId))) ||
+    (bodyConversationId && nestedConversationId && bodyConversationId !== nestedConversationId)
+  ) {
+    return res.status(400).json({ error: 'Conversation ID mismatch' });
+  }
+
+  const conversationId = paramConversationId || bodyConversationId || nestedConversationId;
 
   if (conversationId === 'new') {
     return res.status(200).send([]);
-  }
-
-  if (!conversationId && req.body.message) {
-    conversationId = req.body.message.conversationId;
   }
 
   const conversation = await getConvo(req.user.id, conversationId);

@@ -9,7 +9,8 @@ import {
 } from 'librechat-data-provider';
 import { createRun } from '~/agents/run';
 
-// Mock winston logger
+// Mock winston logger — `format` must be callable so @librechat/data-schemas
+// dist module-load completes cleanly; see api/test/__mocks__/logger.js.
 jest.mock('winston', () => ({
   createLogger: jest.fn(() => ({
     debug: jest.fn(),
@@ -17,8 +18,26 @@ jest.mock('winston', () => ({
     error: jest.fn(),
     info: jest.fn(),
   })),
-  format: { combine: jest.fn(), colorize: jest.fn(), simple: jest.fn() },
-  transports: { Console: jest.fn() },
+  format: Object.assign(
+    jest.fn((fn) => () => ({ transform: fn })),
+    {
+      combine: jest.fn(),
+      colorize: jest.fn(),
+      simple: jest.fn(),
+      label: jest.fn(),
+      timestamp: jest.fn(),
+      printf: jest.fn(),
+      errors: jest.fn(),
+      splat: jest.fn(),
+      json: jest.fn(),
+    },
+  ),
+  addColors: jest.fn(),
+  transports: {
+    Console: jest.fn(),
+    DailyRotateFile: jest.fn(),
+    File: jest.fn(),
+  },
 }));
 
 // Mock env utilities so header resolution doesn't fail
