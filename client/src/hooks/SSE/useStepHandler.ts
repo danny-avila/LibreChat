@@ -517,9 +517,15 @@ export default function useStepHandler({
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const updatedMessages = messages.map((msg) =>
-            msg.messageId === responseMessageId ? updatedResponse : msg,
+          const currentMessages = getMessages() || messages;
+          const hasResponseMessage = currentMessages.some(
+            (msg) => msg.messageId === responseMessageId,
           );
+          const updatedMessages = hasResponseMessage
+            ? currentMessages.map((msg) =>
+                msg.messageId === responseMessageId ? updatedResponse : msg,
+              )
+            : [...currentMessages, updatedResponse];
 
           setMessages(updatedMessages);
         }
@@ -724,9 +730,15 @@ export default function useStepHandler({
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const updatedMessages = messages.map((msg) =>
-            msg.messageId === responseMessageId ? updatedResponse : msg,
+          const currentMessages = getMessages() || messages;
+          const hasResponseMessage = currentMessages.some(
+            (msg) => msg.messageId === responseMessageId,
           );
+          const updatedMessages = hasResponseMessage
+            ? currentMessages.map((msg) =>
+                msg.messageId === responseMessageId ? updatedResponse : msg,
+              )
+            : [...currentMessages, updatedResponse];
 
           setMessages(updatedMessages);
         }
@@ -767,9 +779,15 @@ export default function useStepHandler({
           );
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const updatedMessages = messages.map((msg) =>
-            msg.messageId === responseMessageId ? updatedResponse : msg,
+          const currentMessages = getMessages() || messages;
+          const hasResponseMessage = currentMessages.some(
+            (msg) => msg.messageId === responseMessageId,
           );
+          const updatedMessages = hasResponseMessage
+            ? currentMessages.map((msg) =>
+                msg.messageId === responseMessageId ? updatedResponse : msg,
+              )
+            : [...currentMessages, updatedResponse];
 
           setMessages(updatedMessages);
         }

@@ -234,6 +234,71 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('should preserve multiple tool call steps for the same preliminary response', () => {
+      const responseMessage = createResponseMessage();
+      let currentMessages = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission({ initialResponse: responseMessage });
+
+      const firstRunStep = createToolCallRunStep({
+        id: 'step-oauth-eli',
+        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+        index: 0,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-eli',
+              name: `oauth${Constants.mcp_delimiter}ELI`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const secondRunStep = createToolCallRunStep({
+        id: 'step-oauth-vespa',
+        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+        index: 1,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-vespa',
+              name: `oauth${Constants.mcp_delimiter}Vespa`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: firstRunStep },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: secondRunStep },
+          submission,
+        );
+      });
+
+      const responseMsg = currentMessages.find((m) => !m.isCreatedByUser);
+      expect(responseMsg?.content).toHaveLength(2);
+      expect(responseMsg?.content?.[0]?.tool_call?.name).toBe(
+        `oauth${Constants.mcp_delimiter}ELI`,
+      );
+      expect(responseMsg?.content?.[1]?.tool_call?.name).toBe(
+        `oauth${Constants.mcp_delimiter}Vespa`,
+      );
+    });
+
     it('should replay buffered deltas after registering step', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);

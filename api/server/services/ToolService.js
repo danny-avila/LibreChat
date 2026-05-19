@@ -597,7 +597,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   const configServers = await resolveConfigServers(req);
   const pendingOAuthServers = new Set();
 
-  const createOAuthEmitter = (serverName) => {
+  const createOAuthEmitter = (serverName, index) => {
     return async (authURL) => {
       const flowId = `${req.user.id}:${serverName}:${Date.now()}`;
       const stepId = 'step_oauth_login_' + serverName;
@@ -611,7 +611,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
         id: stepId,
         type: StepTypes.TOOL_CALLS,
-        index: 0,
+        index,
         stepDetails: {
           type: StepTypes.TOOL_CALLS,
           tool_calls: [toolCall],
@@ -640,6 +640,37 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       } else {
         logger.warn(
           `[Tool Definitions] Cannot emit OAuth event for ${serverName}: no streamId and res not available`,
+        );
+      }
+    };
+  };
+
+  const createOAuthEndEmitter = (serverName) => {
+    return async () => {
+      const stepId = 'step_oauth_login_' + serverName;
+      const toolCall = {
+        name: buildOAuthToolCallName(serverName),
+        type: 'tool_call_chunk',
+      };
+
+      const runStepDeltaEvent = {
+        event: GraphEvents.ON_RUN_STEP_DELTA,
+        data: {
+          id: stepId,
+          delta: {
+            type: StepTypes.TOOL_CALLS,
+            tool_calls: [toolCall],
+          },
+        },
+      };
+
+      if (streamId) {
+        await GenerationJobManager.emitChunk(streamId, runStepDeltaEvent);
+      } else if (res && !res.writableEnded) {
+        sendEvent(res, runStepDeltaEvent);
+      } else {
+        logger.warn(
+          `[Tool Definitions] Cannot emit OAuth completion for ${serverName}: no streamId and res not available`,
         );
       }
     };
@@ -781,7 +812,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       `[Tool Definitions] OAuth required for ${serverNames.length} server(s): ${serverNames.join(', ')}. Emitting events and waiting.`,
     );
 
-    const oauthWaitPromises = serverNames.map(async (serverName) => {
+    const oauthWaitPromises = serverNames.map(async (serverName, index) => {
       try {
         const result = await reinitMCPServer({
           user: req.user,
@@ -790,7 +821,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           userMCPAuthMap,
           flowManager,
           returnOnOAuth: false,
-          oauthStart: createOAuthEmitter(serverName),
+          oauthStart: createOAuthEmitter(serverName, index),
+          oauthEnd: createOAuthEndEmitter(serverName),
           connectionTimeout: Time.TWO_MINUTES,
         });
 

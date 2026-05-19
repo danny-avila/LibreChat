@@ -11,6 +11,8 @@ const {
 const mockGetEndpointsConfig = jest.fn();
 const mockGetMCPServerTools = jest.fn();
 const mockGetCachedTools = jest.fn();
+const mockSendEvent = jest.fn();
+const mockEmitChunk = jest.fn();
 jest.mock('~/server/services/Config', () => ({
   getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
   getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
@@ -23,6 +25,10 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   loadToolDefinitions: (...args) => mockLoadToolDefinitions(...args),
   getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
+  sendEvent: (...args) => mockSendEvent(...args),
+  GenerationJobManager: {
+    emitChunk: (...args) => mockEmitChunk(...args),
+  },
 }));
 
 const mockLoadToolsUtil = jest.fn();
@@ -93,6 +99,7 @@ const {
   processRequiredActions,
   resolveAgentCapabilities,
 } = require('../ToolService');
+const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 
 function createMockReq(capabilities) {
   return {
@@ -381,6 +388,71 @@ describe('ToolService - Action Capability Gating', () => {
       expect(result.toolDefinitions).toEqual([mcpTool]);
       expect(mockGetServerConfig).not.toHaveBeenCalled();
       expect(mockGetMCPServerTools).toHaveBeenCalledWith(req.user.id, serverName);
+    });
+
+    it('emits separate MCP OAuth login steps and completion deltas for multiple pending servers', async () => {
+      const req = createMockReq([AgentCapabilities.tools]);
+      const res = { writableEnded: false };
+      const servers = ['ELI', 'Vespa'];
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig([AgentCapabilities.tools]));
+
+      mockLoadToolDefinitions
+        .mockImplementationOnce(async (_args, deps) => {
+          await deps.getOrFetchMCPServerTools(req.user.id, servers[0]);
+          await deps.getOrFetchMCPServerTools(req.user.id, servers[1]);
+          return {
+            toolDefinitions: [],
+            toolRegistry: new Map(),
+            hasDeferredTools: false,
+          };
+        })
+        .mockResolvedValue({
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        });
+
+      reinitMCPServer.mockImplementation(
+        async ({ serverName, returnOnOAuth, oauthStart, oauthEnd }) => {
+          if (returnOnOAuth === false) {
+            await oauthStart(`https://auth.example.com/${serverName}`);
+            await oauthEnd();
+            return { availableTools: { [`tool_${serverName}`]: {} } };
+          }
+
+          await oauthStart(`https://auth.example.com/${serverName}`);
+          return { availableTools: null };
+        },
+      );
+
+      await loadAgentTools({
+        req,
+        res,
+        agent: {
+          id: 'agent_123',
+          tools: servers.map((server) => `search${Constants.mcp_delimiter}${server}`),
+        },
+        definitionsOnly: true,
+      });
+
+      const runStepEvents = mockSendEvent.mock.calls
+        .map(([, event]) => event)
+        .filter((event) => event.data?.stepDetails?.type === 'tool_calls');
+      const deltaEvents = mockSendEvent.mock.calls
+        .map(([, event]) => event)
+        .filter((event) => event.data?.delta?.type === 'tool_calls');
+      const authDeltaEvents = deltaEvents.filter((event) => event.data.delta.auth);
+      const completionDeltaEvents = deltaEvents.filter((event) => event.data.delta.auth == null);
+
+      expect(runStepEvents.map((event) => event.data.index)).toEqual([0, 1]);
+      expect(authDeltaEvents.map((event) => event.data.id)).toEqual([
+        'step_oauth_login_ELI',
+        'step_oauth_login_Vespa',
+      ]);
+      expect(completionDeltaEvents.map((event) => event.data.id)).toEqual([
+        'step_oauth_login_ELI',
+        'step_oauth_login_Vespa',
+      ]);
     });
   });
 
