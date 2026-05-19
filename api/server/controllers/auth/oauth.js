@@ -45,7 +45,9 @@ function createOAuthHandler(redirectUri = domains.client) {
 
         /** Get refresh token from tokenset for OpenID users */
         const refreshToken =
-          req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token;
+          req.user.provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS) === true
+            ? req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token
+            : undefined;
         const expiresAt = Date.now() + sessionExpiry;
 
         const callbackUrl = new URL(redirectUri);

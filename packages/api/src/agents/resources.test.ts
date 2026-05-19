@@ -84,6 +84,8 @@ describe('primeResources', () => {
         agentId: 'agent_test',
       });
       expect(result.attachments).toEqual(mockOcrFiles);
+      expect(result.agentContextAttachments).toEqual(mockOcrFiles);
+      expect(result.requestAttachments).toBeUndefined();
       expect(result.tool_resources).toEqual({});
     });
   });
@@ -423,6 +425,8 @@ describe('primeResources', () => {
       expect(result.attachments).toHaveLength(2);
       expect(result.attachments?.[0]?.file_id).toBe('ocr-file-1');
       expect(result.attachments?.[1]?.file_id).toBe('file1');
+      expect(result.agentContextAttachments).toEqual(mockOcrFiles);
+      expect(result.requestAttachments).toEqual(mockAttachmentFiles);
     });
 
     it('should include both context (as `ocr` resource) files and attachment files', async () => {
@@ -475,6 +479,8 @@ describe('primeResources', () => {
       expect(result.attachments).toHaveLength(2);
       expect(result.attachments?.[0]?.file_id).toBe('ocr-file-1');
       expect(result.attachments?.[1]?.file_id).toBe('file1');
+      expect(result.agentContextAttachments).toEqual(mockOcrFiles);
+      expect(result.requestAttachments).toEqual(mockAttachmentFiles);
     });
 
     it('should prevent duplicate files when same file exists in context tool_resource and attachments', async () => {
@@ -528,6 +534,8 @@ describe('primeResources', () => {
       expect(result.attachments).toHaveLength(2);
       expect(result.attachments?.filter((f) => f?.file_id === 'shared-file-id')).toHaveLength(1);
       expect(result.attachments?.find((f) => f?.file_id === 'unique-file')).toBeDefined();
+      expect(result.agentContextAttachments).toEqual(mockOcrFiles);
+      expect(result.requestAttachments).toEqual(mockAttachmentFiles);
     });
 
     it('should still categorize duplicate files for tool_resources', async () => {

@@ -385,15 +385,17 @@ const getUserEffectivePermissions = async (req, res) => {
  */
 const searchPrincipals = async (req, res) => {
   try {
-    const { q: query, limit = 20, types } = req.query;
+    const { q: rawQuery, limit = 20, types } = req.query;
 
-    if (!query || query.trim().length === 0) {
+    if (typeof rawQuery !== 'string' || rawQuery.trim().length === 0) {
       return res.status(400).json({
         error: 'Query parameter "q" is required and must not be empty',
       });
     }
 
-    if (query.trim().length < 2) {
+    const query = rawQuery.trim();
+
+    if (query.length < 2) {
       return res.status(400).json({
         error: 'Query must be at least 2 characters long',
       });
@@ -410,7 +412,7 @@ const searchPrincipals = async (req, res) => {
       typeFilters = validTypes.length > 0 ? validTypes : null;
     }
 
-    const localResults = await db.searchPrincipals(query.trim(), searchLimit, typeFilters);
+    const localResults = await db.searchPrincipals(query, searchLimit, typeFilters);
     let allPrincipals = [...localResults];
 
     const useEntraId = entraIdPrincipalFeatureEnabled(req.user);
@@ -437,7 +439,7 @@ const searchPrincipals = async (req, res) => {
           const graphResults = await searchEntraIdPrincipals(
             accessToken,
             req.user.openidId,
-            query.trim(),
+            query,
             graphType,
             searchLimit - localResults.length,
           );
@@ -466,7 +468,7 @@ const searchPrincipals = async (req, res) => {
     }
     const scoredResults = allPrincipals.map((item) => ({
       ...item,
-      _searchScore: db.calculateRelevanceScore(item, query.trim()),
+      _searchScore: db.calculateRelevanceScore(item, query),
     }));
 
     const finalResults = db
@@ -478,7 +480,7 @@ const searchPrincipals = async (req, res) => {
       });
 
     res.status(200).json({
-      query: query.trim(),
+      query,
       limit: searchLimit,
       types: typeFilters,
       results: finalResults,
@@ -492,7 +494,6 @@ const searchPrincipals = async (req, res) => {
     logger.error('Error searching principals:', error);
     res.status(500).json({
       error: 'Failed to search principals',
-      details: error.message,
     });
   }
 };
