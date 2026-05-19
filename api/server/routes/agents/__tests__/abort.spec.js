@@ -284,6 +284,56 @@ describe('Agent Abort Endpoint', () => {
     });
 
     describe('Job Not Found', () => {
+      it('should skip paused fallback jobs and abort the running job', async () => {
+        mockGenerationJobManager.getJob
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            status: 'requires_action',
+            metadata: { userId: 'test-user-123' },
+          })
+          .mockResolvedValueOnce({
+            status: 'running',
+            metadata: { userId: 'test-user-123' },
+          });
+        mockGenerationJobManager.getActiveJobIdsForUser.mockResolvedValue([
+          'paused-stream',
+          'running-stream',
+        ]);
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: null,
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'new' });
+
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual({ success: true, aborted: 'running-stream' });
+        expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith('running-stream');
+      });
+
+      it('should not abort paused fallback jobs', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValueOnce(null).mockResolvedValueOnce({
+          status: 'requires_action',
+          metadata: { userId: 'test-user-123' },
+        });
+        mockGenerationJobManager.getActiveJobIdsForUser.mockResolvedValue(['paused-stream']);
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'new' });
+
+        expect(response.status).toBe(404);
+        expect(response.body).toEqual({
+          error: 'Job not found',
+          streamId: null,
+        });
+        expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+      });
+
       it('should return 404 when job is not found', async () => {
         mockGenerationJobManager.getJob.mockResolvedValue(null);
         mockGenerationJobManager.getActiveJobIdsForUser.mockResolvedValue([]);
