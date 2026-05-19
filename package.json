@@ -151,6 +151,7 @@
     "@opentelemetry/sdk-node": "^0.218.0",
     "@opentelemetry/sdk-trace-node": "^2.7.1",
     "@opentelemetry/semantic-conventions": "^1.41.1",
+    "@react-spring/web": "^10.0.3",
     "axios": "^1.13.5",
     "framer-motion": "^12.39.0"
   },
