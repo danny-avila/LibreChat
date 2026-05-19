@@ -1,0 +1,143 @@
+{
+    "family":  "librechat-task",
+    "taskRoleArn":  "arn:aws:iam::730335261767:role/ecsTaskRole",
+    "executionRoleArn":  "arn:aws:iam::730335261767:role/ecsTaskExecutionRole",
+    "networkMode":  "awsvpc",
+    "containerDefinitions":  [
+                                 {
+                                     "name":  "librechat-container",
+                                     "image":  "730335261767.dkr.ecr.us-east-1.amazonaws.com/librechat:manualfix2",
+                                     "cpu":  0,
+                                     "portMappings":  [
+                                                          {
+                                                              "containerPort":  3080,
+                                                              "hostPort":  3080,
+                                                              "protocol":  "tcp"
+                                                          }
+                                                      ],
+                                     "essential":  true,
+                                     "environment":  [
+                                                         {
+                                                             "name":  "POSTGRES_USER",
+                                                             "value":  "postgres"
+                                                         },
+                                                         {
+                                                             "name":  "JWT_REFRESH_SECRET",
+                                                             "value":  "9761e0b9cd1a4910e892c5f439875799c248b8100cb8571527ad587f70931f30"
+                                                         },
+                                                         {
+                                                             "name":  "REFRESH_TOKEN_EXPIRY",
+                                                             "value":  "1000 * 60 * 60 * 24 * 360"
+                                                         },
+                                                         {
+                                                             "name":  "PORT",
+                                                             "value":  "3080"
+                                                         },
+                                                         {
+                                                             "name":  "CONSOLE_JSON",
+                                                             "value":  "true"
+                                                         },
+                                                         {
+                                                             "name":  "MONGO_URI",
+                                                             "value":  "mongodb://juristai:juristai@juristai-librechat-docdb.cluster-c340uw66gy3h.us-east-1.docdb.amazonaws.com:27017/?tls=true\u0026tlsCAFile=global-bundle.pem\u0026replicaSet=rs0\u0026readPreference=secondaryPreferred\u0026retryWrites=false"
+                                                         },
+                                                         {
+                                                             "name":  "DEBUG_OPENAI",
+                                                             "value":  "true"
+                                                         },
+                                                         {
+                                                             "name":  "HOST",
+                                                             "value":  "0.0.0.0"
+                                                         },
+                                                         {
+                                                             "name":  "POSTGRES_DB",
+                                                             "value":  "librechat"
+                                                         },
+                                                         {
+                                                             "name":  "ALLOW_REGISTRATION",
+                                                             "value":  "true"
+                                                         },
+                                                         {
+                                                             "name":  "SESSION_EXPIRY",
+                                                             "value":  "1000 * 60 * 60 * 24 * 360"
+                                                         },
+                                                         {
+                                                             "name":  "MEILI_MASTER_KEY",
+                                                             "value":  ""
+                                                         },
+                                                         {
+                                                             "name":  "ALLOW_SOCIAL_LOGIN",
+                                                             "value":  "false"
+                                                         },
+                                                         {
+                                                             "name":  "PGVECTOR_HOST",
+                                                             "value":  "ip-10-0-2-38.ec2.internal"
+                                                         },
+                                                         {
+                                                             "name":  "JWT_SECRET",
+                                                             "value":  "9761e0b9cd1a4910e892c5f439875799c248b8100cb8571527ad587f70931f30"
+                                                         },
+                                                         {
+                                                             "name":  "RAG_PORT",
+                                                             "value":  "8000"
+                                                         },
+                                                         {
+                                                             "name":  "CREDS_IV",
+                                                             "value":  "bda67cdaa09f2fd5c02a0198f23f7757"
+                                                         },
+                                                         {
+                                                             "name":  "RAG_API_URL",
+                                                             "value":  "http://librechat-alb-1920668103.us-east-1.elb.amazonaws.com:8000"
+                                                         },
+                                                         {
+                                                             "name":  "BAN_VIOLATIONS",
+                                                             "value":  "false"
+                                                         },
+                                                         {
+                                                             "name":  "CREDS_KEY",
+                                                             "value":  "44786ffe9aaf27a6daa7f4b5e0622cbfb0128ab88ed216139f8456707274beac"
+                                                         },
+                                                         {
+                                                             "name":  "OPENAI_API_KEY",
+                                                             "value":  "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"
+                                                         },
+                                                         {
+                                                             "name":  "ASSISTANTS_API_KEY",
+                                                             "value":  "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"
+                                                         },
+                                                         {
+                                                             "name":  "MEILI_HOST",
+                                                             "value":  "http://ip-10-0-2-61.ec2.internal:7700"
+                                                         }
+                                                     ],
+                                     "mountPoints":  [
+
+                                                     ],
+                                     "volumesFrom":  [
+
+                                                     ],
+                                     "logConfiguration":  {
+                                                              "logDriver":  "awslogs",
+                                                              "options":  {
+                                                                              "awslogs-group":  "/ecs/librechat",
+                                                                              "awslogs-region":  "us-east-1",
+                                                                              "awslogs-stream-prefix":  "librechat-container"
+                                                                          }
+                                                          },
+                                     "systemControls":  [
+
+                                                        ]
+                                 }
+                             ],
+    "volumes":  [
+
+                ],
+    "placementConstraints":  [
+
+                             ],
+    "requiresCompatibilities":  [
+                                    "FARGATE"
+                                ],
+    "cpu":  "1024",
+    "memory":  "2048"
+}
