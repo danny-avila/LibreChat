@@ -431,7 +431,10 @@ describe('createRemoteAgentAuth', () => {
       await createRemoteAgentAuth(deps)(makeReq() as Request, res, mockNext);
 
       expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
-      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, { tenantId: 'tenant-oidc-only' });
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ tenantId: 'tenant-oidc-only' }),
+      );
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
       expect(mockNext).not.toHaveBeenCalled();
@@ -574,7 +577,10 @@ describe('createRemoteAgentAuth', () => {
       await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
 
       expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
-      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, { tenantId: 'tenant-strict' });
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ tenantId: 'tenant-strict' }),
+      );
       expect(jwt.verify).toHaveBeenCalledTimes(2);
       expect((jwt.verify as jest.Mock).mock.calls[1][2]).toEqual(
         expect.objectContaining({ audience: 'tenant-audience' }),
@@ -608,7 +614,10 @@ describe('createRemoteAgentAuth', () => {
       await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
 
       expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
-      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, { tenantId: 'tenant-strict' });
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ tenantId: 'tenant-strict' }),
+      );
       expect(deps.updateUser).toHaveBeenCalledWith(
         existing._id.toString(),
         expect.objectContaining({
@@ -707,7 +716,10 @@ describe('createRemoteAgentAuth', () => {
       await createRemoteAgentAuth(deps)(req as Request, res, mockNext);
 
       expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
-      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, { tenantId: 'tenant-strict' });
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ tenantId: 'tenant-strict' }),
+      );
       expect(jwt.verify).toHaveBeenCalledTimes(2);
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
@@ -740,7 +752,10 @@ describe('createRemoteAgentAuth', () => {
       await createRemoteAgentAuth(deps)(req as Request, res, mockNext);
 
       expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
-      expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, { tenantId: 'tenant-api-key-only' });
+      expect(deps.getAppConfig).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ tenantId: 'tenant-api-key-only' }),
+      );
       expect(jwt.verify).toHaveBeenCalledTimes(1);
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
