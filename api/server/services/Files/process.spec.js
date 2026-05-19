@@ -781,30 +781,31 @@ describe('processDeleteRequest', () => {
     expect(result).toEqual({ deletedFileIds: ['expired-file'], failedFileIds: [] });
   });
 
-  it('reports metadata delete failures without throwing after storage deletion succeeds', async () => {
+  it('throws metadata delete failures after storage deletion succeeds', async () => {
     const deleteFile = jest.fn().mockResolvedValue(undefined);
     const metadataError = new Error('mongo unavailable');
     getStrategyFunctions.mockReturnValue({ deleteFile });
     db.deleteFiles.mockRejectedValue(metadataError);
 
-    const result = await processDeleteRequest({
-      req: {
-        body: {},
-        config: {},
-        user: { id: 'user-123', tenantId: 'tenant-a' },
-      },
-      files: [
-        {
-          file_id: 'expired-file',
-          filepath: '/images/user-123/expired.png',
-          source: FileSources.local,
+    await expect(
+      processDeleteRequest({
+        req: {
+          body: {},
+          config: {},
+          user: { id: 'user-123', tenantId: 'tenant-a' },
         },
-      ],
-    });
+        files: [
+          {
+            file_id: 'expired-file',
+            filepath: '/images/user-123/expired.png',
+            source: FileSources.local,
+          },
+        ],
+      }),
+    ).rejects.toThrow('mongo unavailable');
 
     expect(db.deleteFiles).toHaveBeenCalledWith(['expired-file']);
     expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
-    expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['expired-file'] });
   });
 });
 

@@ -77,6 +77,17 @@ describe('retention helpers', () => {
     await expect(getRetentionExpiry(request(), dependencies)).resolves.toEqual({});
   });
 
+  it('returns expiry when the conversation has no expiration but explicit temporary intent is present', async () => {
+    dependencies.getConvo.mockResolvedValue({ expiredAt: null });
+
+    const result = await getRetentionExpiry(
+      request({ body: { conversationId: 'convo-1', isTemporary: true } }),
+      dependencies,
+    );
+
+    expect(result).toEqual({ expiredAt: expirationDate });
+  });
+
   it('returns no retention fields when conversation is missing and isTemporary is false', async () => {
     dependencies.getConvo.mockResolvedValue(null);
 

@@ -275,6 +275,7 @@ const processDeleteRequest = async ({ req, files }) => {
       logger.error('Error deleting file metadata after storage deletion', error);
       deletedFileIds.forEach((fileId) => failedFileIds.add(fileId));
       metadataDeletedFileIds = [];
+      throw error;
     }
     if (metadataDeletedFileIds.length > 0) {
       try {

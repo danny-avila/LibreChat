@@ -214,7 +214,7 @@ describe('useFileHandling', () => {
       const formData: FormData = mockMutate.mock.calls[0][0];
       expect(formData.get('endpoint')).toBe(EModelEndpoint.agents);
       expect(formData.get('endpointType')).toBe(EModelEndpoint.agents);
-      expect(formData.get('conversationId')).toBe('convo-1');
+      expect(formData.get('conversationId')).toBeNull();
     });
 
     it('does not enter assistants upload path when override is agents', async () => {
@@ -318,6 +318,11 @@ describe('useFileHandling', () => {
 
     it('does not send temporary flag for assistant builder uploads', async () => {
       mockIsTemporary = true;
+      mockConversation = {
+        conversationId: 'temporary-convo',
+        endpoint: 'openAI',
+        endpointType: 'custom',
+      };
 
       const useFileHandling = await loadHook();
       const { result } = renderHook(() =>
@@ -335,11 +340,17 @@ describe('useFileHandling', () => {
       expect(mockMutate).toHaveBeenCalledTimes(1);
       const formData: FormData = mockMutate.mock.calls[0][0];
       expect(formData.get('assistant_id')).toBe('asst-123');
+      expect(formData.get('conversationId')).toBeNull();
       expect(formData.get('isTemporary')).toBeNull();
     });
 
     it('does not send temporary flag for agent builder uploads', async () => {
       mockIsTemporary = true;
+      mockConversation = {
+        conversationId: 'temporary-convo',
+        endpoint: 'openAI',
+        endpointType: 'custom',
+      };
 
       const useFileHandling = await loadHook();
       const { result } = renderHook(() =>
@@ -358,6 +369,7 @@ describe('useFileHandling', () => {
       expect(mockMutate).toHaveBeenCalledTimes(1);
       const formData: FormData = mockMutate.mock.calls[0][0];
       expect(formData.get('agent_id')).toBe('agent-123');
+      expect(formData.get('conversationId')).toBeNull();
       expect(formData.get('isTemporary')).toBeNull();
     });
   });

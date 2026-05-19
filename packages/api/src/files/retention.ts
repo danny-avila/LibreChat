@@ -110,6 +110,9 @@ async function computeRetentionExpiry(
       if (convo) {
         const expiredAt = getConversationExpirationDate(convo);
         if (expiredAt == null) {
+          if (isBooleanOrStringTrue(req?.body?.isTemporary)) {
+            return createRetentionExpiry(req, dependencies);
+          }
           return {};
         }
 
