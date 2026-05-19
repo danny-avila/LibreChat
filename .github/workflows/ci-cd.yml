@@ -74,17 +74,13 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build Docker image
-        run: docker build -t "${{ steps.image.outputs.image_uri }}" .
-
-      - name: Tag Docker image as latest
-        if: github.event_name != 'pull_request'
-        run: docker tag "${{ steps.image.outputs.image_uri }}" "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest"
+        run: docker build --no-cache -t "${{ steps.image.outputs.image_uri }}" .      - name: Verify LibreChat frontend artifact
+        run: docker run --rm "${{ steps.image.outputs.image_uri }}" sh -c "test -f /app/client/dist/index.html && echo client dist OK"
 
       - name: Push Docker images
         if: github.event_name != 'pull_request'
         run: |
           docker push "${{ steps.image.outputs.image_uri }}"
-          docker push "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:latest"
 
   deploy:
     name: Deploy to ECS
@@ -278,3 +274,4 @@ jobs:
             --services "${ECS_SERVICE}" \
             --region "${AWS_REGION}" \
             --query "services[0].taskDefinition"
+
