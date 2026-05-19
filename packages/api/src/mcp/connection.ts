@@ -1283,7 +1283,7 @@ export class MCPConnection extends EventEmitter {
         isTransient,
       } = extractSSEErrorMessage(error);
 
-      if (errorCode === 400 || errorCode === 404 || errorCode === 405) {
+      if (errorCode === 400 || errorCode === 404 || errorCode === 405 || errorCode === 406) {
         const hasSession =
           'sessionId' in transport &&
           (transport as { sessionId?: string }).sessionId != null &&
