@@ -31,15 +31,15 @@ jest.mock('@librechat/client', () => ({
 }));
 
 jest.mock('./SettingsTabs', () => ({
-  General: () => <div>general-panel</div>,
-  Chat: () => <div>chat-panel</div>,
-  Commands: () => <div>commands-panel</div>,
-  Speech: () => <div>speech-panel</div>,
-  Personalization: () => <div>personalization-panel</div>,
-  Data: () => <div>data-panel</div>,
-  Balance: () => <div>balance-panel</div>,
-  Account: () => <div>account-panel</div>,
-  About: () => <div>about-panel</div>,
+  General: () => <div data-testid="general-panel" />,
+  Chat: () => <div data-testid="chat-panel" />,
+  Commands: () => <div data-testid="commands-panel" />,
+  Speech: () => <div data-testid="speech-panel" />,
+  Personalization: () => <div data-testid="personalization-panel" />,
+  Data: () => <div data-testid="data-panel" />,
+  Balance: () => <div data-testid="balance-panel" />,
+  Account: () => <div data-testid="account-panel" />,
+  About: () => <div data-testid="about-panel" />,
 }));
 
 function renderSettings() {
@@ -72,14 +72,14 @@ describe('Settings', () => {
     const { rerender } = renderSettings();
 
     await user.click(screen.getByText('com_nav_setting_about'));
-    expect(screen.getByText('about-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('about-panel')).toBeInTheDocument();
 
     mockUseGetStartupConfig.mockReturnValue({ data: { interface: { buildInfo: false } } });
     rerender(<Settings open={true} onOpenChange={jest.fn()} />);
 
     await waitFor(() => {
-      expect(screen.queryByText('about-panel')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('about-panel')).not.toBeInTheDocument();
     });
-    expect(screen.getByText('general-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('general-panel')).toBeInTheDocument();
   });
 });
