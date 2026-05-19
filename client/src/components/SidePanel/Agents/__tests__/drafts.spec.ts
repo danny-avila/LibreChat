@@ -4,7 +4,13 @@
 import { AgentCapabilities } from 'librechat-data-provider';
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import type { AgentForm, ExtendedFile } from '~/common';
-import { getAgentDraft, saveAgentDraft, clearAgentDraft, clearAllAgentDrafts } from '../drafts';
+import {
+  getAgentDraft,
+  saveAgentDraft,
+  clearAgentDraft,
+  getAgentDraftKey,
+  clearAllAgentDrafts,
+} from '../drafts';
 
 const createForm = (overrides: Partial<AgentForm> = {}): AgentForm => {
   const file = new File(['avatar'], 'avatar.png', { type: 'image/png' });
@@ -21,7 +27,7 @@ const createForm = (overrides: Partial<AgentForm> = {}): AgentForm => {
     description: 'Draft description',
     instructions: 'Draft instructions',
     model: 'gpt-4o',
-    model_parameters: {},
+    model_parameters: {} as AgentForm['model_parameters'],
     tools: ['mcp__server__tool'],
     tool_options: {},
     provider: { label: 'OpenAI', value: 'openAI' },
@@ -109,5 +115,10 @@ describe('agent drafts', () => {
     expect(draft?.avatar_action).toBe('reset');
     expect(draft?.avatar_preview).toBe('');
     expect(draft?.avatar_file).toBeUndefined();
+  });
+
+  it('uses nullish draft key fallbacks without rewriting empty strings', () => {
+    expect(getAgentDraftKey(undefined, undefined)).toBe('anonymous:new');
+    expect(getAgentDraftKey('', '')).toBe(':');
   });
 });

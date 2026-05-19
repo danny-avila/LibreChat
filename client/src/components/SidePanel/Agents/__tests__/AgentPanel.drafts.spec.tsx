@@ -3,7 +3,7 @@
  */
 import * as React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import type { AgentForm, NavLink } from '~/common';
 import { ActivePanelProvider, useActivePanel } from '~/Providers/ActivePanelContext';
 import Nav from '~/components/SidePanel/Nav';
@@ -25,6 +25,7 @@ const FILES_PANEL_LABEL = 'Files panel';
 const PROGRAMMATIC_UPDATE_LABEL = 'Programmatic agent update';
 const AVATAR_ACTION_LABEL = 'Avatar action';
 const RESET_AVATAR_LABEL = 'Reset avatar';
+const DELETE_AGENT_LABEL = 'Delete Agent';
 const MOCK_USER_ID = 'user-123';
 
 type MockButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -34,6 +35,10 @@ type MockButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
 type MockAgentSelectProps = {
   hasDraft?: boolean;
+};
+
+type MockAgentFooterProps = {
+  onDraftClear?: (agentId: string) => void;
 };
 
 jest.mock('@librechat/client', () => ({
@@ -189,7 +194,14 @@ jest.mock('../AgentConfig', () => ({
 
 jest.mock('../AgentFooter', () => ({
   __esModule: true,
-  default: () => <button type="submit">{SAVE_AGENT_LABEL}</button>,
+  default: ({ onDraftClear }: MockAgentFooterProps) => (
+    <>
+      <button type="button" onClick={() => onDraftClear?.('agent-123')}>
+        {DELETE_AGENT_LABEL}
+      </button>
+      <button type="submit">{SAVE_AGENT_LABEL}</button>
+    </>
+  ),
 }));
 
 jest.mock('../Advanced/AdvancedPanel', () => ({
@@ -256,6 +268,10 @@ describe('AgentPanel draft preservation', () => {
     clearAllAgentDrafts();
   });
 
+  afterEach(() => {
+    localStorage.removeItem('side:active-panel');
+  });
+
   it('restores unsaved new-agent values after switching to Files and back', () => {
     render(<Harness />);
 
@@ -289,7 +305,7 @@ describe('AgentPanel draft preservation', () => {
         description: '',
         instructions: 'Unsaved saved-agent instructions',
         model: 'gpt-4o',
-        model_parameters: {},
+        model_parameters: {} as AgentForm['model_parameters'],
         provider: { label: 'OpenAI', value: 'openAI' },
         tools: [],
         tool_options: {},
@@ -345,7 +361,7 @@ describe('AgentPanel draft preservation', () => {
         description: '',
         instructions: 'Draft for the switched agent',
         model: 'gpt-4o',
-        model_parameters: {},
+        model_parameters: {} as AgentForm['model_parameters'],
         provider: { label: 'OpenAI', value: 'openAI' },
         tools: [],
         tool_options: {},
@@ -374,7 +390,9 @@ describe('AgentPanel draft preservation', () => {
     fireEvent.change(screen.getByLabelText('Draft name'), {
       target: { value: 'First user draft' },
     });
-    expect(getAgentDraft(undefined, MOCK_USER_ID)?.name).toBe('First user draft');
+    await waitFor(() => {
+      expect(getAgentDraft(undefined, MOCK_USER_ID)?.name).toBe('First user draft');
+    });
 
     mockUserId = 'user-456';
     rerender(<Harness />);
@@ -401,6 +419,29 @@ describe('AgentPanel draft preservation', () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText(AVATAR_ACTION_LABEL)).toHaveValue('reset');
+    });
+  });
+
+  it('does not recreate a deleted agent draft when the active agent changes', async () => {
+    mockCurrentAgentId = 'agent-123';
+    const { rerender } = render(<Harness />);
+
+    fireEvent.change(screen.getByLabelText('Draft name'), {
+      target: { value: 'Edited before delete' },
+    });
+
+    await waitFor(() => {
+      expect(getAgentDraft('agent-123', MOCK_USER_ID)?.name).toBe('Edited before delete');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: DELETE_AGENT_LABEL }));
+    expect(getAgentDraft('agent-123', MOCK_USER_ID)).toBeUndefined();
+
+    mockCurrentAgentId = 'agent-456';
+    rerender(<Harness />);
+
+    await waitFor(() => {
+      expect(getAgentDraft('agent-123', MOCK_USER_ID)).toBeUndefined();
     });
   });
 });

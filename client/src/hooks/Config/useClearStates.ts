@@ -1,4 +1,5 @@
 import { useRecoilCallback } from 'recoil';
+import { clearAllAgentDrafts } from '~/components/SidePanel/Agents/drafts';
 import { clearLocalStorage } from '~/utils/localStorage';
 import store from '~/store';
 
@@ -44,6 +45,7 @@ export default function useClearStates() {
         }
 
         clearLocalStorage(skipFirst);
+        clearAllAgentDrafts();
       },
     [],
   );

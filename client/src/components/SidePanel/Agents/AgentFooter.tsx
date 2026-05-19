@@ -25,12 +25,14 @@ export default function AgentFooter({
   updateMutation,
   setActivePanel,
   setCurrentAgentId,
+  onDraftClear,
   isAvatarUploading = false,
 }: Pick<
   AgentPanelProps,
   'setCurrentAgentId' | 'createMutation' | 'activePanel' | 'setActivePanel'
 > & {
   updateMutation: ReturnType<typeof useUpdateAgentMutation>;
+  onDraftClear?: (agentId: string) => void;
   isAvatarUploading?: boolean;
 }) {
   const localize = useLocalize();
@@ -88,6 +90,7 @@ export default function AgentFooter({
               agent_id={agent_id}
               setCurrentAgentId={setCurrentAgentId}
               createMutation={createMutation}
+              onDraftClear={onDraftClear}
             />
           )}
         {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN || canShareThisAgent) &&

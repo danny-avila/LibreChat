@@ -1,29 +1,38 @@
 import type { AgentForm, ExtendedFile } from '~/common';
 
-export const NEW_AGENT_DRAFT_KEY = 'new';
+const NEW_AGENT_DRAFT_KEY = 'new';
 
 export type AgentDraftValues = Partial<AgentForm>;
 
 const drafts = new Map<string, AgentDraftValues>();
 
 export function getAgentDraftKey(agentId?: string | null, userId?: string | null): string {
-  return `${userId || 'anonymous'}:${agentId || NEW_AGENT_DRAFT_KEY}`;
+  return `${userId ?? 'anonymous'}:${agentId ?? NEW_AGENT_DRAFT_KEY}`;
 }
 
-const sanitizeFile = ({ file: _file, ...value }: ExtendedFile): ExtendedFile => value;
+const sanitizeFile = (value: ExtendedFile): ExtendedFile => {
+  if (!value.file) {
+    return value;
+  }
+
+  const { file: _file, ...sanitized } = value;
+  return sanitized;
+};
 
 const sanitizeFileEntries = (
   entries?: Array<[string, ExtendedFile]>,
 ): Array<[string, ExtendedFile]> | undefined =>
   entries?.map(([id, file]): [string, ExtendedFile] => [id, sanitizeFile(file)]);
 
+/** Strips non-serializable File objects and avatar upload state; preserves avatar reset intent. */
 export function sanitizeAgentDraft(values: AgentForm): AgentDraftValues {
   const {
     avatar_file: _avatarFile,
     avatar_preview: _avatarPreview,
     avatar_action: avatarAction,
-    ...draft
+    ...baseDraft
   } = values;
+  const draft: AgentDraftValues = { ...baseDraft };
 
   if (avatarAction === 'reset') {
     draft.avatar_action = avatarAction;
