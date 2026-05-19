@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
-
 import { isEnabled } from '~/utils/common';
 
 export const OAUTH_CSRF_COOKIE = 'oauth_csrf';
