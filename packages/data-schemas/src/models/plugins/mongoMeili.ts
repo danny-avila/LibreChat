@@ -109,6 +109,13 @@ const buildIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
 const hasActiveExpiration = (expiredAt?: Date | null): boolean =>
   _.isNil(expiredAt) || new Date(expiredAt).getTime() > Date.now();
 
+/**
+ * `isTemporary` defaults to `false` on the schema, so hydrated legacy documents
+ * can appear non-temporary even when the field is absent from MongoDB. `$isDefault`
+ * lets us distinguish that schema default from an explicit stored flag, and
+ * `$locals` carries the pre-save answer into post hooks after Mongoose mutates
+ * document state.
+ */
 const hasExplicitTemporaryFlag = (doc: DocumentWithMeiliIndex): boolean =>
   typeof doc.$locals?.[explicitTemporaryFlagKey] === 'boolean'
     ? (doc.$locals[explicitTemporaryFlagKey] as boolean)
@@ -118,6 +125,11 @@ const captureExplicitTemporaryFlag = (doc: DocumentWithMeiliIndex): void => {
   doc.$locals[explicitTemporaryFlagKey] = doc.isTemporary != null && !doc.$isDefault('isTemporary');
 };
 
+/**
+ * Index only retained non-temporary records whose flag was explicitly stored,
+ * plus legacy permanent records that have no retention deadline. Legacy records
+ * with an expiration are treated as temporary and stay out of search.
+ */
 const isIndexableDocument = (doc: DocumentWithMeiliIndex): boolean =>
   (doc.isTemporary === false &&
     hasExplicitTemporaryFlag(doc) &&

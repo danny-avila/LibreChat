@@ -10,37 +10,22 @@ export const activeExpirationFilter = <
   T extends RetentionFilterDocument = RetentionFilterDocument,
 >(): FilterQuery<T> =>
   ({
-    $or: [
-      { expiredAt: null },
-      { expiredAt: { $exists: false } },
-      { expiredAt: { $gt: new Date() } },
-    ],
+    $or: [{ expiredAt: null }, { expiredAt: { $gt: new Date() } }],
   }) as FilterQuery<T>;
 
 export const legacyPermanentExpirationFilter = <
   T extends RetentionFilterDocument = RetentionFilterDocument,
 >(): FilterQuery<T> =>
-  ({
-    $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
-  }) as FilterQuery<T>;
+  ({ expiredAt: null }) as FilterQuery<T>;
 
 export const buildRetentionVisibilityFilter = <
   T extends RetentionFilterDocument = RetentionFilterDocument,
 >(): FilterQuery<T> =>
   ({
     $or: [
-      {
-        isTemporary: false,
-        ...activeExpirationFilter<T>(),
-      },
-      {
-        isTemporary: { $exists: false },
-        ...legacyPermanentExpirationFilter<T>(),
-      },
-      {
-        isTemporary: null,
-        ...legacyPermanentExpirationFilter<T>(),
-      },
+      { isTemporary: false, expiredAt: null },
+      { isTemporary: false, expiredAt: { $gt: new Date() } },
+      { isTemporary: null, expiredAt: null },
     ],
   }) as FilterQuery<T>;
 

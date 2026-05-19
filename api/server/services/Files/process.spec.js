@@ -26,156 +26,14 @@ jest.mock('librechat-data-provider', () => {
 });
 
 jest.mock('@librechat/api', () => {
-  const { FileSources, EModelEndpoint, checkOpenAIStorage, defaultAssistantsVersion } =
-    jest.requireActual('librechat-data-provider');
-  const defaultSweepInterval = 60 * 60 * 1000;
-
-  const getSweepInterval = () => {
-    const interval = process.env.FILE_RETENTION_SWEEP_INTERVAL_MS;
-    if (interval == null || interval.trim() === '') {
-      return defaultSweepInterval;
-    }
-    const value = Number(interval);
-    return !Number.isFinite(value) || value < 0 || (value > 0 && value < 1)
-      ? defaultSweepInterval
-      : value;
-  };
-
-  const getExpiredFileEndpoint = (source) =>
-    source === FileSources.azure ? EModelEndpoint.azureAssistants : EModelEndpoint.assistants;
-
-  const hasEndpointConfig = (appConfig, source) =>
-    source === FileSources.azure
-      ? Boolean(appConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants)
-      : Boolean(appConfig?.endpoints?.[EModelEndpoint.assistants]);
-
-  const getAssistantVersion = ({ appConfig, source, endpoint }) => {
-    const endpointVersion = appConfig?.endpoints?.[endpoint]?.version;
-    if (endpointVersion != null) {
-      return String(endpointVersion).replace(/^v/, '');
-    }
-    if (source === FileSources.azure) {
-      const azureAssistantsConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants;
-      if (typeof azureAssistantsConfig === 'object' && azureAssistantsConfig?.version != null) {
-        return String(azureAssistantsConfig.version).replace(/^v/, '');
-      }
-    }
-    return String(
-      defaultAssistantsVersion[endpoint] ?? defaultAssistantsVersion.assistants ?? 2,
-    ).replace(/^v/, '');
-  };
-
-  const createSweepReq = ({ appConfig, file, userId }) => {
-    const source = file.source ?? FileSources.local;
-    const endpoint = getExpiredFileEndpoint(source);
-    const version = getAssistantVersion({ appConfig, source, endpoint });
-    const baseUrl = `/api/assistants/v${version}`;
-    return {
-      baseUrl,
-      originalUrl: `${baseUrl}/files`,
-      path: '/files',
-      method: 'DELETE',
-      headers: {},
-      query: {},
-      params: {},
-      config: appConfig,
-      body: { endpoint, version },
-      user: { id: userId, tenantId: file.tenantId },
-    };
-  };
-
-  const sweepExpiredFiles = async (
-    { appConfig, limit = 100, loadAppConfig } = {},
-    { getExpiredFiles, processDeleteRequest, logger },
-  ) => {
-    const files = (await getExpiredFiles(limit)) ?? [];
-    let resolvedAppConfig = appConfig;
-    let deleted = 0;
-    let failed = 0;
-
-    for (const file of files) {
-      const userId = file.user?.toString?.() ?? file.user;
-      if (!userId) {
-        logger.warn(`[sweepExpiredFiles] Skipping expired file without user: ${file.file_id}`);
-        failed++;
-        continue;
-      }
-
-      try {
-        const source = file.source ?? FileSources.local;
-        if (
-          checkOpenAIStorage(source) &&
-          !hasEndpointConfig(resolvedAppConfig, source) &&
-          typeof loadAppConfig === 'function'
-        ) {
-          resolvedAppConfig = (await loadAppConfig()) ?? resolvedAppConfig;
-        }
-        const req = createSweepReq({ appConfig: resolvedAppConfig, file, userId });
-        const { deletedFileIds, failedFileIds } = await processDeleteRequest({
-          req,
-          files: [file],
-        });
-        if (failedFileIds.includes(file.file_id)) {
-          failed++;
-        } else if (deletedFileIds.includes(file.file_id)) {
-          deleted++;
-        } else {
-          failed++;
-          logger.error(
-            `[sweepExpiredFiles] Delete request finished without resolving expired file ${file.file_id}`,
-          );
-        }
-      } catch (error) {
-        failed++;
-        logger.error(`[sweepExpiredFiles] Error deleting expired file ${file.file_id}:`, error);
-      }
-    }
-
-    if (deleted > 0 || failed > 0) {
-      logger.info(
-        `[sweepExpiredFiles] Processed ${files.length} expired files: ${deleted} deleted, ${failed} failed`,
-      );
-    }
-
-    return { scanned: files.length, deleted, failed };
-  };
-
-  const startExpiredFileSweep = (options = {}, { sweepExpiredFiles, runAsSystem, logger }) => {
-    const intervalMs = getSweepInterval();
-    if (intervalMs === 0) {
-      logger.info('[sweepExpiredFiles] Disabled by FILE_RETENTION_SWEEP_INTERVAL_MS=0');
-      return null;
-    }
-
-    let isSweeping = false;
-    const runSweep = async () => {
-      if (isSweeping) {
-        return;
-      }
-      isSweeping = true;
-      try {
-        await runAsSystem(() => sweepExpiredFiles(options));
-      } catch (error) {
-        logger.error('[sweepExpiredFiles] Background sweep failed:', error);
-      } finally {
-        isSweeping = false;
-      }
-    };
-
-    runSweep();
-    const interval = setInterval(runSweep, intervalMs);
-    interval.unref?.();
-    return interval;
-  };
-
   return {
     sanitizeFilename: jest.fn((n) => n),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
     getStorageMetadata: jest.fn(() => ({})),
     getRetentionExpiry: jest.fn(() => ({})),
-    sweepExpiredFiles,
-    startExpiredFileSweep,
+    sweepExpiredFiles: jest.fn().mockResolvedValue({ scanned: 0, deleted: 0, failed: 0 }),
+    startExpiredFileSweep: jest.fn().mockReturnValue('sweep-interval'),
   };
 });
 
@@ -234,7 +92,11 @@ jest.mock('~/server/services/Files/Audio/STTService', () => ({
   STTService: { getInstance: jest.fn() },
 }));
 
-const { getRetentionExpiry } = require('@librechat/api');
+const {
+  getRetentionExpiry,
+  sweepExpiredFiles: sweepExpiredFilesWithDeps,
+  startExpiredFileSweep: startExpiredFileSweepWithDeps,
+} = require('@librechat/api');
 const {
   EToolResources,
   FileSources,
@@ -251,6 +113,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const db = require('~/models');
 const {
   processAgentFileUpload,
+  processDeleteRequest,
   processFileURL,
   sweepExpiredFiles,
   startExpiredFileSweep,
@@ -888,233 +751,117 @@ describe('processFileURL', () => {
   });
 });
 
+describe('processDeleteRequest', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('removes metadata when backing storage is already missing', async () => {
+    const missingError = Object.assign(new Error('no such file'), { code: 'ENOENT' });
+    const deleteFile = jest.fn().mockRejectedValue(missingError);
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+
+    const result = await processDeleteRequest({
+      req: {
+        body: {},
+        config: {},
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+      },
+      files: [
+        {
+          file_id: 'expired-file',
+          filepath: '/images/user-123/expired.png',
+          source: FileSources.local,
+        },
+      ],
+    });
+
+    expect(db.deleteFiles).toHaveBeenCalledWith(['expired-file']);
+    expect(result).toEqual({ deletedFileIds: ['expired-file'], failedFileIds: [] });
+  });
+
+  it('reports metadata delete failures without throwing after storage deletion succeeds', async () => {
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    const metadataError = new Error('mongo unavailable');
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    db.deleteFiles.mockRejectedValue(metadataError);
+
+    const result = await processDeleteRequest({
+      req: {
+        body: {},
+        config: {},
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+      },
+      files: [
+        {
+          file_id: 'expired-file',
+          filepath: '/images/user-123/expired.png',
+          source: FileSources.local,
+        },
+      ],
+    });
+
+    expect(db.deleteFiles).toHaveBeenCalledWith(['expired-file']);
+    expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['expired-file'] });
+  });
+});
+
 describe('sweepExpiredFiles', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('deletes expired file storage before removing file records', async () => {
-    const deleteFile = jest.fn().mockResolvedValue(undefined);
-    getStrategyFunctions.mockReturnValue({ deleteFile });
-    db.getExpiredFiles.mockResolvedValue([
-      {
-        file_id: 'expired-file',
-        filepath: '/images/user-123/expired.png',
-        source: FileSources.local,
-        user: 'user-123',
-        tenantId: 'tenant-a',
-      },
-    ]);
-    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
-
-    const result = await sweepExpiredFiles({
+  it('delegates expired file sweeping to the shared package with backend dependencies', async () => {
+    const options = {
       appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
       limit: 1,
-    });
+    };
+    sweepExpiredFilesWithDeps.mockResolvedValue({ scanned: 1, deleted: 1, failed: 0 });
 
-    expect(deleteFile).toHaveBeenCalledWith(
+    const result = await sweepExpiredFiles(options);
+
+    expect(sweepExpiredFilesWithDeps).toHaveBeenCalledWith(
+      options,
       expect.objectContaining({
-        user: { id: 'user-123', tenantId: 'tenant-a' },
+        getExpiredFiles: db.getExpiredFiles,
+        processDeleteRequest: expect.any(Function),
+        logger: expect.objectContaining({
+          error: expect.any(Function),
+          info: expect.any(Function),
+          warn: expect.any(Function),
+        }),
       }),
-      expect.objectContaining({ file_id: 'expired-file' }),
     );
-    expect(db.deleteFiles).toHaveBeenCalledWith(['expired-file']);
     expect(result).toEqual({ scanned: 1, deleted: 1, failed: 0 });
   });
-
-  it('counts storage delete failures as failed even when metadata is already gone', async () => {
-    const deleteFile = jest.fn().mockRejectedValue(new Error('storage unavailable'));
-    getStrategyFunctions.mockReturnValue({ deleteFile });
-    db.getExpiredFiles.mockResolvedValue([
-      {
-        file_id: 'expired-file',
-        filepath: '/images/user-123/expired.png',
-        source: FileSources.local,
-        user: 'user-123',
-        tenantId: 'tenant-a',
-      },
-    ]);
-    db.deleteFiles.mockResolvedValue({ deletedCount: 0 });
-
-    const result = await sweepExpiredFiles({
-      appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
-      limit: 1,
-    });
-
-    expect(deleteFile).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user: { id: 'user-123', tenantId: 'tenant-a' },
-      }),
-      expect.objectContaining({ file_id: 'expired-file' }),
-    );
-    expect(db.deleteFiles).not.toHaveBeenCalledWith(['expired-file']);
-    expect(result).toEqual({ scanned: 1, deleted: 0, failed: 1 });
-  });
-
-  test.each([
-    [
-      FileSources.openai,
-      EModelEndpoint.assistants,
-      { [EModelEndpoint.assistants]: { version: 'v3' } },
-      '3',
-    ],
-    [
-      FileSources.azure,
-      EModelEndpoint.azureAssistants,
-      {
-        [EModelEndpoint.azureOpenAI]: { assistants: true },
-        [EModelEndpoint.azureAssistants]: { version: 4 },
-      },
-      '4',
-    ],
-  ])(
-    'passes assistant request context when deleting %s expired files',
-    async (source, endpoint, endpoints, version) => {
-      const openaiClient = { files: {} };
-      const deleteFile = jest.fn().mockResolvedValue(undefined);
-      const loadAppConfig = jest.fn().mockResolvedValue({ endpoints });
-
-      getOpenAIClient.mockResolvedValue({ openai: openaiClient });
-      getStrategyFunctions.mockReturnValue({ deleteFile });
-      LB_QueueAsyncCall.mockImplementation(async (fn, args, callback) => {
-        try {
-          callback(null, await fn(...args));
-        } catch (error) {
-          callback(error);
-        }
-      });
-      db.getExpiredFiles.mockResolvedValue([
-        {
-          file_id: `expired-${source}-file`,
-          source,
-          user: 'user-123',
-          tenantId: 'tenant-a',
-        },
-      ]);
-      db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
-
-      const result = await sweepExpiredFiles({
-        appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
-        loadAppConfig,
-        limit: 1,
-      });
-
-      expect(loadAppConfig).toHaveBeenCalledTimes(1);
-      expect(getOpenAIClient).toHaveBeenCalledWith(
-        expect.objectContaining({
-          overrideEndpoint: endpoint,
-          req: expect.objectContaining({
-            baseUrl: `/api/assistants/v${version}`,
-            originalUrl: `/api/assistants/v${version}/files`,
-            body: expect.objectContaining({ endpoint, version }),
-            config: expect.objectContaining({ endpoints }),
-            user: { id: 'user-123', tenantId: 'tenant-a' },
-          }),
-        }),
-      );
-      expect(deleteFile).toHaveBeenCalledWith(
-        expect.objectContaining({
-          baseUrl: `/api/assistants/v${version}`,
-          config: expect.objectContaining({ endpoints }),
-        }),
-        expect.objectContaining({ file_id: `expired-${source}-file` }),
-        openaiClient,
-      );
-      expect(result).toEqual({ scanned: 1, deleted: 1, failed: 0 });
-    },
-  );
 });
 
 describe('startExpiredFileSweep', () => {
-  const originalInterval = process.env.FILE_RETENTION_SWEEP_INTERVAL_MS;
-
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  afterEach(() => {
-    jest.useRealTimers();
-    if (originalInterval === undefined) {
-      delete process.env.FILE_RETENTION_SWEEP_INTERVAL_MS;
-      return;
-    }
-
-    process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = originalInterval;
-  });
-
-  it('uses the default interval when the sweep interval env var is empty', async () => {
-    jest.useFakeTimers();
-    process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = '';
-    db.getExpiredFiles.mockResolvedValue([]);
-
-    const interval = startExpiredFileSweep({
+  it('delegates background sweep startup to the shared package with system context', () => {
+    const options = {
       appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
-    });
+    };
 
-    await flushPromises();
-    expect(interval).not.toBeNull();
-    expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
+    const interval = startExpiredFileSweep(options);
 
-    jest.advanceTimersByTime(60 * 60 * 1000);
-    await flushPromises();
-    expect(db.getExpiredFiles).toHaveBeenCalledTimes(2);
-
-    clearInterval(interval);
-  });
-
-  it('uses the default interval when the sweep interval env var is sub-millisecond', async () => {
-    jest.useFakeTimers();
-    process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = '0.5';
-    db.getExpiredFiles.mockResolvedValue([]);
-
-    const interval = startExpiredFileSweep({
-      appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
-    });
-
-    await flushPromises();
-    expect(interval).not.toBeNull();
-    expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
-
-    jest.advanceTimersByTime(1);
-    await flushPromises();
-    expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
-
-    jest.advanceTimersByTime(60 * 60 * 1000);
-    await flushPromises();
-    expect(db.getExpiredFiles).toHaveBeenCalledTimes(2);
-
-    clearInterval(interval);
-  });
-
-  it('does not start another sweep while one is in progress', async () => {
-    jest.useFakeTimers();
-    process.env.FILE_RETENTION_SWEEP_INTERVAL_MS = '10';
-    let resolveSweep;
-    db.getExpiredFiles.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveSweep = () => resolve([]);
+    expect(startExpiredFileSweepWithDeps).toHaveBeenCalledWith(
+      options,
+      expect.objectContaining({
+        sweepExpiredFiles: expect.any(Function),
+        runAsSystem: expect.any(Function),
+        logger: expect.objectContaining({
+          error: expect.any(Function),
+          info: expect.any(Function),
+          warn: expect.any(Function),
         }),
+      }),
     );
-
-    const interval = startExpiredFileSweep({
-      appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
-    });
-
-    await flushPromises();
-    expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
-
-    jest.advanceTimersByTime(30);
-    await flushPromises();
-    expect(db.getExpiredFiles).toHaveBeenCalledTimes(1);
-
-    resolveSweep();
-    await flushPromises();
-
-    jest.advanceTimersByTime(10);
-    await flushPromises();
-    expect(db.getExpiredFiles).toHaveBeenCalledTimes(2);
-
-    clearInterval(interval);
+    expect(interval).toBe('sweep-interval');
   });
 });

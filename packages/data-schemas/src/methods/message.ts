@@ -96,12 +96,6 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
-        } else {
-          const existingMessage = await Message.findOne(
-            { messageId: params.messageId, user: userId },
-            'isTemporary',
-          ).lean<{ isTemporary?: boolean }>();
-          update.isTemporary = existingMessage?.isTemporary === true;
         }
         try {
           update.expiredAt = createTempChatExpirationDate(interfaceConfig);
@@ -136,6 +130,19 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         update,
         { upsert: true, new: true },
       );
+
+      if (
+        interfaceConfig?.retentionMode === RetentionMode.ALL &&
+        typeof isTemporary !== 'boolean' &&
+        (message.isTemporary == null ||
+          (message.isTemporary === false && message.$isDefault('isTemporary')))
+      ) {
+        await Message.updateOne(
+          { _id: message._id, isTemporary: { $ne: false } },
+          { $set: { isTemporary: false } },
+        );
+        message.isTemporary = false;
+      }
 
       return message.toObject();
     } catch (err: unknown) {

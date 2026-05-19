@@ -216,12 +216,6 @@ export function createConversationMethods(
       if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
-        } else {
-          const existingConversation = await Conversation.findOne(
-            { conversationId, user: userId },
-            'isTemporary',
-          ).lean<{ isTemporary?: boolean }>();
-          update.isTemporary = existingConversation?.isTemporary === true;
         }
         try {
           update.expiredAt = createTempChatExpirationDate(interfaceConfig);
@@ -274,6 +268,19 @@ export function createConversationMethods(
       if (!conversation) {
         logger.debug('[saveConvo] Conversation not found, skipping update');
         return null;
+      }
+
+      if (
+        interfaceConfig?.retentionMode === RetentionMode.ALL &&
+        typeof isTemporary !== 'boolean' &&
+        (conversation.isTemporary == null ||
+          (conversation.isTemporary === false && conversation.$isDefault('isTemporary')))
+      ) {
+        await Conversation.updateOne(
+          { _id: conversation._id, isTemporary: { $ne: false } },
+          { $set: { isTemporary: false } },
+        );
+        conversation.isTemporary = false;
       }
 
       return conversation.toObject();

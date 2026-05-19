@@ -25,6 +25,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
 
     const { messageId, conversationId, partIndex } = useMessageContext();
     const normalizedLang = useMemo(() => normalizeLanguage(lang), [lang]);
+    // Read at click time so retention context is current without re-rendering every code block.
     const getIsTemporary = useRecoilCallback(
       ({ snapshot }) =>
         () =>

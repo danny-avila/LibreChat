@@ -1,9 +1,16 @@
 import { RetentionMode } from 'librechat-data-provider';
+import { createFallbackRetentionDate } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 
 type InterfaceConfig = AppConfig['interfaceConfig'];
 
-const FALLBACK_RETENTION_HOURS = 24 * 30;
+const retentionExpiryCache = new WeakMap<
+  RetentionRequest,
+  {
+    key: string;
+    promise: Promise<RetentionExpiry>;
+  }
+>();
 
 export type RetentionConversation = {
   expiredAt?: Date | string | number | null;
@@ -20,10 +27,6 @@ export type RetentionRequest = {
   };
   config?: {
     interfaceConfig?: InterfaceConfig;
-  };
-  _retentionExpiry?: {
-    key: string;
-    promise: Promise<RetentionExpiry>;
   };
 };
 
@@ -44,7 +47,17 @@ export type RetentionDependencies = {
   logger?: RetentionLogger;
 };
 
-export const isRetentionTruthy = (value: unknown): boolean => value === true || value === 'true';
+export type SharedLinkRetentionDependencies = {
+  getConvo: (
+    userId: string,
+    conversationId: string,
+  ) => Promise<RetentionConversation | null | undefined>;
+  createExpirationDate: (interfaceConfig?: InterfaceConfig) => Date;
+  logger?: RetentionLogger;
+};
+
+export const isBooleanOrStringTrue = (value: unknown): boolean =>
+  value === true || value === 'true';
 
 export const getConversationExpirationDate = (
   convo?: RetentionConversation | null,
@@ -68,7 +81,7 @@ const createRetentionExpiry = (
     return { expiredAt: createExpirationDate(req?.config?.interfaceConfig) };
   } catch (err) {
     logger?.error('[getRetentionExpiry] Error creating file expiration date:', err);
-    return { expiredAt: new Date(Date.now() + FALLBACK_RETENTION_HOURS * 60 * 60 * 1000) };
+    return { expiredAt: createFallbackRetentionDate() };
   }
 };
 
@@ -111,14 +124,14 @@ async function computeRetentionExpiry(
         '[getRetentionExpiry] Error checking conversation retention:',
         err,
       );
-      if (isRetentionTruthy(req?.body?.isTemporary)) {
+      if (isBooleanOrStringTrue(req?.body?.isTemporary)) {
         return createRetentionExpiry(req, dependencies);
       }
       return {};
     }
   }
 
-  if (!isRetentionTruthy(req?.body?.isTemporary)) {
+  if (!isBooleanOrStringTrue(req?.body?.isTemporary)) {
     return {};
   }
 
@@ -134,13 +147,60 @@ export async function getRetentionExpiry(
   }
 
   const key = getRetentionCacheKey(req);
-  if (req._retentionExpiry?.key === key) {
-    return req._retentionExpiry.promise;
+  const cached = retentionExpiryCache.get(req);
+  if (cached?.key === key) {
+    return cached.promise;
   }
 
   const promise = computeRetentionExpiry(req, dependencies);
-  req._retentionExpiry = { key, promise };
+  retentionExpiryCache.set(req, { key, promise });
   return promise;
+}
+
+/**
+ * Resolves the retention deadline for a shared link derived from a conversation.
+ *
+ * Return values are intentionally tri-state:
+ * - `undefined`: no decision can be made because the conversation id or row is missing.
+ * - `null`: the share should be stored without an expiration.
+ * - `Date`: the share should expire at that date; callers reject already-expired dates.
+ */
+export async function getSharedLinkExpiration(
+  {
+    req,
+    conversationId,
+  }: {
+    req: RetentionRequest | null | undefined;
+    conversationId?: string | null;
+  },
+  dependencies: SharedLinkRetentionDependencies,
+): Promise<Date | null | undefined> {
+  const userId = req?.user?.id;
+  if (!conversationId || !userId) {
+    return undefined;
+  }
+
+  const isRetentionAll = req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL;
+  const convo = await dependencies.getConvo(userId, conversationId);
+  if (!convo) {
+    return undefined;
+  }
+
+  const conversationExpiredAt = getConversationExpirationDate(convo);
+  if (conversationExpiredAt == null) {
+    if (!isRetentionAll) {
+      return null;
+    }
+  } else if (!isActiveExpirationDate(conversationExpiredAt)) {
+    return conversationExpiredAt;
+  }
+
+  try {
+    return dependencies.createExpirationDate(req?.config?.interfaceConfig);
+  } catch (err) {
+    dependencies.logger?.error('[getSharedLinkExpiration] Error creating expiration date:', err);
+    return null;
+  }
 }
 
 export const createMinimalRetentionRequest = (

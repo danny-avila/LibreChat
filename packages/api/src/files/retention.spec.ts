@@ -3,8 +3,9 @@ import {
   createMinimalRetentionRequest,
   getConversationExpirationDate,
   getRetentionExpiry,
+  getSharedLinkExpiration,
   isActiveExpirationDate,
-  isRetentionTruthy,
+  isBooleanOrStringTrue,
   type RetentionDependencies,
   type RetentionRequest,
 } from './retention';
@@ -196,10 +197,10 @@ describe('retention helpers', () => {
   });
 
   it('uses strict temporary truthiness semantics', () => {
-    expect(isRetentionTruthy(true)).toBe(true);
-    expect(isRetentionTruthy('true')).toBe(true);
-    expect(isRetentionTruthy(1)).toBe(false);
-    expect(isRetentionTruthy('1')).toBe(false);
+    expect(isBooleanOrStringTrue(true)).toBe(true);
+    expect(isBooleanOrStringTrue('true')).toBe(true);
+    expect(isBooleanOrStringTrue(1)).toBe(false);
+    expect(isBooleanOrStringTrue('1')).toBe(false);
   });
 
   it('creates minimal retention requests for tool calls', () => {
@@ -216,5 +217,46 @@ describe('retention helpers', () => {
     });
 
     expect(createMinimalRetentionRequest()).toBeUndefined();
+  });
+
+  describe('getSharedLinkExpiration', () => {
+    it('returns undefined when the conversation id is missing', async () => {
+      await expect(
+        getSharedLinkExpiration({ req: request() }, dependencies),
+      ).resolves.toBeUndefined();
+      expect(dependencies.getConvo).not.toHaveBeenCalled();
+    });
+
+    it('returns null for non-retained conversations in temporary retention mode', async () => {
+      dependencies.getConvo.mockResolvedValue({ expiredAt: null });
+
+      await expect(
+        getSharedLinkExpiration({ req: request(), conversationId: 'convo-1' }, dependencies),
+      ).resolves.toBeNull();
+    });
+
+    it('returns a fresh expiry for retentionMode ALL conversations without an expiration', async () => {
+      dependencies.getConvo.mockResolvedValue({ expiredAt: null });
+
+      await expect(
+        getSharedLinkExpiration(
+          {
+            req: request({ config: { interfaceConfig: { retentionMode: RetentionMode.ALL } } }),
+            conversationId: 'convo-1',
+          },
+          dependencies,
+        ),
+      ).resolves.toBe(expirationDate);
+    });
+
+    it('returns an expired source conversation date so callers can reject the share', async () => {
+      const expiredAt = new Date(Date.now() - 60 * 60 * 1000);
+      dependencies.getConvo.mockResolvedValue({ expiredAt });
+
+      await expect(
+        getSharedLinkExpiration({ req: request(), conversationId: 'convo-1' }, dependencies),
+      ).resolves.toBe(expiredAt);
+      expect(dependencies.createExpirationDate).not.toHaveBeenCalled();
+    });
   });
 });

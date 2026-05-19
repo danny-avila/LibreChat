@@ -385,6 +385,36 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(storedDoc?._meiliIndex).toBe(false);
   });
 
+  test('findOneAndUpdate on legacy temporary conversations without isTemporary does NOT index', async () => {
+    const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    mockAddDocuments.mockClear();
+    mockUpdateDocuments.mockClear();
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Legacy Temporary Conversation',
+      endpoint: EModelEndpoint.openAI,
+      expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+      _meiliIndex: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await conversationModel.findOneAndUpdate(
+      { conversationId },
+      { $set: { title: 'Updated via findOneAndUpdate' } },
+      { new: true },
+    );
+    const storedDoc = await conversationModel.collection.findOne({ conversationId });
+
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+    expect(mockUpdateDocuments).not.toHaveBeenCalled();
+    expect(storedDoc?._meiliIndex).toBe(false);
+  });
+
   test('sync w/ meili excludes legacy temporary messages without isTemporary', async () => {
     const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
     await messageModel.deleteMany({});

@@ -67,6 +67,15 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
   };
 };
 
+const isMissingStorageError = (err) => {
+  const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
+  if ([404, '404', 'ENOENT', 'NoSuchKey', 'NotFound', 'ResourceNotFound'].includes(code)) {
+    return true;
+  }
+
+  return /not found|no such (file|key)|does not exist/i.test(String(err?.message ?? ''));
+};
+
 /**
  * Enqueues the delete operation to the leaky bucket queue if necessary, or adds it directly to promises.
  *
@@ -97,6 +106,12 @@ function enqueueDeleteOperation({
           [],
           (err, result) => {
             if (err) {
+              if (isMissingStorageError(err)) {
+                resolvedFileIds.add(file.file_id);
+                logger.warn('File storage was already missing during delete', err);
+                resolve(result);
+                return;
+              }
               failedFileIds.add(file.file_id);
               logger.error('Error deleting file from OpenAI source', err);
               reject(err);
@@ -114,6 +129,11 @@ function enqueueDeleteOperation({
       deleteFile(req, file)
         .then(() => resolvedFileIds.add(file.file_id))
         .catch((err) => {
+          if (isMissingStorageError(err)) {
+            resolvedFileIds.add(file.file_id);
+            logger.warn('File storage was already missing during delete', err);
+            return;
+          }
           failedFileIds.add(file.file_id);
           logger.error('Error deleting file', err);
           return Promise.reject(err);
@@ -247,17 +267,26 @@ const processDeleteRequest = async ({ req, files }) => {
 
   await Promise.allSettled(promises);
   const deletedFileIds = [...resolvedFileIds];
+  let metadataDeletedFileIds = deletedFileIds;
   if (deletedFileIds.length > 0) {
-    await db.deleteFiles(deletedFileIds);
     try {
-      await db.removeAgentResourceFilesFromAllAgents({ file_ids: deletedFileIds });
+      await db.deleteFiles(deletedFileIds);
     } catch (error) {
-      logger.error('Error cleaning up orphaned agent file references', error);
+      logger.error('Error deleting file metadata after storage deletion', error);
+      deletedFileIds.forEach((fileId) => failedFileIds.add(fileId));
+      metadataDeletedFileIds = [];
+    }
+    if (metadataDeletedFileIds.length > 0) {
+      try {
+        await db.removeAgentResourceFilesFromAllAgents({ file_ids: metadataDeletedFileIds });
+      } catch (error) {
+        logger.error('Error cleaning up orphaned agent file references', error);
+      }
     }
   }
 
   return {
-    deletedFileIds,
+    deletedFileIds: metadataDeletedFileIds,
     failedFileIds: [...failedFileIds],
   };
 };
@@ -1006,7 +1035,11 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     ...(await getRetentionExpiry(req)),
     tenantId: req.user.tenantId,
   };
-  await db.createFile(file, true);
+  try {
+    await db.createFile(file, true);
+  } catch (error) {
+    logger.warn('Error saving OpenAI image output file metadata', error);
+  }
   return file;
 };
 
