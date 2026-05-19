@@ -1,3 +1,4 @@
+const { trace, SpanStatusCode, metrics } = require('@opentelemetry/api');
 const { logger } = require('@librechat/data-schemas');
 const { Constants, ViolationTypes } = require('librechat-data-provider');
 const {
@@ -13,6 +14,15 @@ const { disposeClient, clientRegistry, requestDataMap } = require('~/server/clea
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
 const { saveMessage, getConvo } = require('~/models');
+
+const agentTracer = trace.getTracer('billechat-api');
+const agentMeter = metrics.getMeter('billechat-api');
+const agentRequestCounter = agentMeter.createCounter('agent.requests', {
+  description: 'Agent request count',
+});
+const agentRequestDuration = agentMeter.createHistogram('agent.request.duration_ms', {
+  description: 'Agent request latency in ms',
+});
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -79,6 +89,8 @@ async function attachConversationCreatedAt(req, { userId, conversationId, isNewC
  * Returns streamId immediately, client subscribes separately via SSE.
  */
 const ResumableAgentController = async (req, res, next, initializeClient, addTitle) => {
+  const agentRequestStart = Date.now();
+  const agentSpan = agentTracer.startSpan('agent.request');
   const {
     text,
     isRegenerate,
@@ -106,6 +118,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
   req.body.conversationId = conversationId;
+
+  agentSpan.setAttributes({
+    'agent.conversation_id': conversationId,
+    'agent.is_new_convo': isNewConvo,
+    'agent.endpoint': endpointOption?.endpoint ?? 'unknown',
+    'agent.model': endpointOption?.modelOptions?.model ?? endpointOption?.model_parameters?.model ?? 'unknown',
+  });
 
   let client = null;
 
@@ -380,6 +399,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId);
           await decrementPendingRequest(userId);
+          agentRequestCounter.add(1, { status: 'success', endpoint: endpointOption?.endpoint ?? 'unknown' });
+          agentRequestDuration.record(Date.now() - agentRequestStart, { endpoint: endpointOption?.endpoint ?? 'unknown' });
+          agentSpan.end();
         } else {
           const finalEvent = {
             final: true,
@@ -400,6 +422,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId, 'Request aborted');
           await decrementPendingRequest(userId);
+          agentRequestCounter.add(1, { status: 'aborted', endpoint: endpointOption?.endpoint ?? 'unknown' });
+          agentRequestDuration.record(Date.now() - agentRequestStart, { endpoint: endpointOption?.endpoint ?? 'unknown' });
+          agentSpan.end();
         }
 
         if (shouldGenerateTitle) {
@@ -427,12 +452,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         if (wasAborted) {
           logger.debug(`[ResumableAgentController] Generation aborted for ${streamId}`);
-          // abortJob already handled emitDone and completeJob
+          agentRequestCounter.add(1, { status: 'aborted', endpoint: endpointOption?.endpoint ?? 'unknown' });
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
           await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
           GenerationJobManager.completeJob(streamId, error.message);
+          agentSpan.recordException(error);
+          agentSpan.setStatus({ code: SpanStatusCode.ERROR });
+          agentRequestCounter.add(1, { status: 'error', endpoint: endpointOption?.endpoint ?? 'unknown' });
         }
+
+        agentRequestDuration.record(Date.now() - agentRequestStart, { endpoint: endpointOption?.endpoint ?? 'unknown' });
+        agentSpan.end();
 
         await decrementPendingRequest(userId);
 
@@ -455,6 +486,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
+    agentSpan.recordException(error);
+    agentSpan.setStatus({ code: SpanStatusCode.ERROR });
+    agentRequestCounter.add(1, { status: 'error', endpoint: endpointOption?.endpoint ?? 'unknown' });
+    agentRequestDuration.record(Date.now() - agentRequestStart, { endpoint: endpointOption?.endpoint ?? 'unknown' });
+    agentSpan.end();
     if (!res.headersSent) {
       res.status(500).json({ error: error.message || 'Failed to start generation' });
     } else {

@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const fetch = require('node-fetch');
+const { trace, SpanStatusCode, metrics } = require('@opentelemetry/api');
 const { logger } = require('@librechat/data-schemas');
 const {
   countTokens,
@@ -29,6 +30,13 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
 const db = require('~/models');
+
+const tracer = trace.getTracer('billechat-api');
+const meter = metrics.getMeter('billechat-api');
+const chatTurnCounter = meter.createCounter('chat.turns', { description: 'Chat turn count' });
+const chatTurnDuration = meter.createHistogram('chat.turn.duration_ms', {
+  description: 'Chat turn latency in ms',
+});
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -407,6 +415,15 @@ class BaseClient {
   }
 
   async sendMessage(message, opts = {}) {
+    const startTime = Date.now();
+    return tracer.startActiveSpan('chat.send_message', async (span) => {
+      try {
+        span.setAttributes({
+          'chat.model': this.modelOptions?.model ?? this.model ?? 'unknown',
+          'chat.endpoint': this.options.endpoint ?? 'unknown',
+          'chat.conversation_id': opts.conversationId ?? 'new',
+          'chat.is_edited': !!opts.isEdited,
+        });
     const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
@@ -701,7 +718,32 @@ class BaseClient {
     );
     this.savedMessageIds.add(responseMessage.messageId);
     delete responseMessage.tokenCount;
-    return responseMessage;
+        chatTurnCounter.add(1, {
+          model: this.modelOptions?.model ?? this.model ?? 'unknown',
+          endpoint: this.options.endpoint ?? 'unknown',
+        });
+        chatTurnDuration.record(Date.now() - startTime, {
+          model: this.modelOptions?.model ?? this.model ?? 'unknown',
+          endpoint: this.options.endpoint ?? 'unknown',
+        });
+        span.end();
+        return responseMessage;
+      } catch (err) {
+        span.recordException(err);
+        span.setStatus({ code: SpanStatusCode.ERROR });
+        chatTurnCounter.add(1, {
+          model: this.modelOptions?.model ?? this.model ?? 'unknown',
+          endpoint: this.options.endpoint ?? 'unknown',
+          error: true,
+        });
+        chatTurnDuration.record(Date.now() - startTime, {
+          model: this.modelOptions?.model ?? this.model ?? 'unknown',
+          endpoint: this.options.endpoint ?? 'unknown',
+        });
+        span.end();
+        throw err;
+      }
+    });
   }
 
   async loadHistory(conversationId, parentMessageId = null) {
