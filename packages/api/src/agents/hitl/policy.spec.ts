@@ -8,16 +8,16 @@ import {
 } from './policy';
 
 describe('isHITLEnabled', () => {
-  test('default-on when no policy configured (SDK default)', () => {
-    expect(isHITLEnabled(undefined)).toBe(true);
+  test('default-off when no policy configured', () => {
+    expect(isHITLEnabled(undefined)).toBe(false);
   });
 
-  test('default-on when policy is configured but `enabled` is omitted', () => {
-    expect(isHITLEnabled({})).toBe(true);
-    expect(isHITLEnabled({ mode: 'default', allow: ['read_*'] })).toBe(true);
+  test('default-off when policy is configured but `enabled` is omitted', () => {
+    expect(isHITLEnabled({})).toBe(false);
+    expect(isHITLEnabled({ mode: 'default', allow: ['read_*'] })).toBe(false);
   });
 
-  test('explicit false is the only off signal', () => {
+  test('explicit false is off', () => {
     expect(isHITLEnabled({ enabled: false })).toBe(false);
   });
 
@@ -215,5 +215,15 @@ describe('buildPendingAction', () => {
     expect(withTtl.expiresAt).toBeDefined();
     expect(withTtl.expiresAt).toBeGreaterThanOrEqual(before + ttl);
     expect(withTtl.expiresAt).toBeLessThanOrEqual(after + ttl);
+  });
+
+  test('honours ttlMs 0 as immediate expiry', () => {
+    const before = Date.now();
+    const action = buildPendingAction(toolApprovalPayload, { ...ctx, ttlMs: 0 });
+    const after = Date.now();
+
+    expect(action.expiresAt).toBeDefined();
+    expect(action.expiresAt).toBeGreaterThanOrEqual(before);
+    expect(action.expiresAt).toBeLessThanOrEqual(after);
   });
 });
