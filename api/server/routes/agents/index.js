@@ -231,7 +231,10 @@ router.post('/chat/abort', async (req, res) => {
   // streamId === conversationId, so try any of the provided IDs
   // Skip "new" as it's a placeholder for new conversations, not an actual ID
   let jobStreamId =
-    streamId || (conversationId !== 'new' ? conversationId : null) || abortKey?.split(':')[0];
+    streamId ||
+    (conversationId !== 'new' ? conversationId : null) ||
+    abortKey?.split(':')[0] ||
+    null;
   let job = jobStreamId ? await GenerationJobManager.getJob(jobStreamId) : null;
 
   // Fallback: if job not found and we have a userId, look up active jobs for user
