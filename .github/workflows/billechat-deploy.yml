@@ -12,6 +12,7 @@ on:
       - 'helm/**'
       - 'Dockerfile'
       - 'librechat.yaml'
+      - '.github/workflows/billechat-deploy.yml'
   workflow_dispatch:
 
 concurrency:
