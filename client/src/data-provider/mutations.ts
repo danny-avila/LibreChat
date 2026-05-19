@@ -1145,7 +1145,6 @@ export const useUpdateFarmerLastActiveAt = (): UseMutationResult<
   void,
   unknown
 > => {
-    console.log("--------------in useUpdateFarmerLastActiveAt----------")
   return useMutation({
     mutationFn: () => dataService.updateFarmerLastActiveAt(),
   });
