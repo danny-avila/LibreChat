@@ -29,6 +29,8 @@ const KEYS = {
   runSteps: (streamId: string) => `stream:{${streamId}}:runsteps`,
   /** Running jobs set for cleanup (global set - single slot) */
   runningJobs: 'stream:running',
+  /** Jobs paused for human review (global set - single slot) */
+  requiresActionJobs: 'stream:requires_action',
   /** User's active jobs set, tenant-qualified when tenantId is available */
   userJobs: (userId: string, tenantId?: string) =>
     tenantId ? `stream:user:{${tenantId}:${userId}}:jobs` : `stream:user:{${userId}}:jobs`,
@@ -167,6 +169,7 @@ export class RedisJobStore implements IJobStore {
       await this.redis.hset(key, this.serializeJob(job));
       await this.redis.expire(key, this.ttl.running);
       await this.redis.sadd(KEYS.runningJobs, streamId);
+      await this.redis.srem(KEYS.requiresActionJobs, streamId);
       await this.redis.sadd(userJobsKey, streamId);
       if (this.ttl.userJobsSet > 0) {
         await this.redis.expire(userJobsKey, this.ttl.userJobsSet);
@@ -176,6 +179,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.hset(key, this.serializeJob(job));
       pipeline.expire(key, this.ttl.running);
       pipeline.sadd(KEYS.runningJobs, streamId);
+      pipeline.srem(KEYS.requiresActionJobs, streamId);
       pipeline.sadd(userJobsKey, streamId);
       if (this.ttl.userJobsSet > 0) {
         pipeline.expire(userJobsKey, this.ttl.userJobsSet);
@@ -204,49 +208,19 @@ export class RedisJobStore implements IJobStore {
     }
 
     const fields = Object.entries(serialized).flat();
-    const updated = await this.redis.eval(
-      'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HSET", KEYS[1], unpack(ARGV)) return 1 else return 0 end',
-      1,
-      key,
-      ...fields,
-    );
-
-    if (updated === 0) {
-      return;
-    }
 
     if (updates.status === 'requires_action') {
-      // Job paused for human review — non-terminal.
-      // Remove from runningJobs so getJobCountByStatus('running') stays accurate,
-      // refresh the hash TTL so the user has the full window to respond, and
-      // leave chunks/runSteps/user-active-set untouched so resume can rebuild state.
-      if (this.isCluster) {
-        await this.redis.srem(KEYS.runningJobs, streamId);
-        await this.redis.expire(key, this.ttl.running);
-      } else {
-        const pipeline = this.redis.pipeline();
-        pipeline.srem(KEYS.runningJobs, streamId);
-        pipeline.expire(key, this.ttl.running);
-        await pipeline.exec();
-      }
+      await this.transitionToRequiresAction(key, streamId, fields);
       return;
     }
 
     if (updates.status === 'running') {
-      // Resume from requires_action — re-add to runningJobs (idempotent), refresh TTL,
-      // and explicitly clear any stale pendingAction (serializeJob skips `undefined`,
-      // so the only way to remove a hash field is HDEL).
-      if (this.isCluster) {
-        await this.redis.sadd(KEYS.runningJobs, streamId);
-        await this.redis.expire(key, this.ttl.running);
-        await this.redis.hdel(key, 'pendingAction');
-      } else {
-        const pipeline = this.redis.pipeline();
-        pipeline.sadd(KEYS.runningJobs, streamId);
-        pipeline.expire(key, this.ttl.running);
-        pipeline.hdel(key, 'pendingAction');
-        await pipeline.exec();
-      }
+      await this.transitionToRunning(key, streamId, fields);
+      return;
+    }
+
+    const updated = await this.updateExistingJobHash(key, fields);
+    if (!updated) {
       return;
     }
 
@@ -258,6 +232,7 @@ export class RedisJobStore implements IJobStore {
       if (this.isCluster) {
         await this.redis.expire(key, this.ttl.completed);
         await this.redis.srem(KEYS.runningJobs, streamId);
+        await this.redis.srem(KEYS.requiresActionJobs, streamId);
 
         if (this.ttl.chunksAfterComplete === 0) {
           await this.redis.del(KEYS.chunks(streamId));
@@ -278,6 +253,7 @@ export class RedisJobStore implements IJobStore {
         const pipeline = this.redis.pipeline();
         pipeline.expire(key, this.ttl.completed);
         pipeline.srem(KEYS.runningJobs, streamId);
+        pipeline.srem(KEYS.requiresActionJobs, streamId);
 
         if (this.ttl.chunksAfterComplete === 0) {
           pipeline.del(KEYS.chunks(streamId));
@@ -300,6 +276,78 @@ export class RedisJobStore implements IJobStore {
     }
   }
 
+  private async updateExistingJobHash(key: string, fields: string[]): Promise<boolean> {
+    const updated = await this.redis.eval(
+      'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HSET", KEYS[1], unpack(ARGV)) return 1 else return 0 end',
+      1,
+      key,
+      ...fields,
+    );
+    return updated === 1;
+  }
+
+  private async transitionToRequiresAction(
+    key: string,
+    streamId: string,
+    fields: string[],
+  ): Promise<void> {
+    // Job paused for human review — non-terminal. Keep the user-active set
+    // untouched so resume can rebuild state from the persisted job.
+    if (this.isCluster) {
+      const exists = await this.redis.exists(key);
+      if (exists !== 1) {
+        return;
+      }
+      await this.redis.srem(KEYS.runningJobs, streamId);
+      await this.redis.sadd(KEYS.requiresActionJobs, streamId);
+      await this.updateExistingJobHash(key, fields);
+      await this.redis.expire(key, this.ttl.running);
+      return;
+    }
+
+    await this.redis.eval(
+      'if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end redis.call("SREM", KEYS[2], ARGV[1]) redis.call("SADD", KEYS[3], ARGV[1]) redis.call("HSET", KEYS[1], unpack(ARGV, 3)) redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2])) return 1',
+      3,
+      key,
+      KEYS.runningJobs,
+      KEYS.requiresActionJobs,
+      streamId,
+      String(this.ttl.running),
+      ...fields,
+    );
+  }
+
+  private async transitionToRunning(
+    key: string,
+    streamId: string,
+    fields: string[],
+  ): Promise<void> {
+    // Resume from requires_action and clear stale pendingAction. serializeJob skips
+    // `undefined`, so the hash field must be removed explicitly.
+    if (this.isCluster) {
+      const updated = await this.updateExistingJobHash(key, fields);
+      if (!updated) {
+        return;
+      }
+      await this.redis.hdel(key, 'pendingAction');
+      await this.redis.expire(key, this.ttl.running);
+      await this.redis.srem(KEYS.requiresActionJobs, streamId);
+      await this.redis.sadd(KEYS.runningJobs, streamId);
+      return;
+    }
+
+    await this.redis.eval(
+      'if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end redis.call("HSET", KEYS[1], unpack(ARGV, 3)) redis.call("HDEL", KEYS[1], "pendingAction") redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2])) redis.call("SREM", KEYS[2], ARGV[1]) redis.call("SADD", KEYS[3], ARGV[1]) return 1',
+      3,
+      key,
+      KEYS.requiresActionJobs,
+      KEYS.runningJobs,
+      streamId,
+      String(this.ttl.running),
+      ...fields,
+    );
+  }
+
   async deleteJob(streamId: string): Promise<void> {
     this.localGraphCache.delete(streamId);
     this.localCollectedUsageCache.delete(streamId);
@@ -319,6 +367,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.del(KEYS.runSteps(streamId));
       await pipeline.exec();
       await this.redis.srem(KEYS.runningJobs, streamId);
+      await this.redis.srem(KEYS.requiresActionJobs, streamId);
       if (userJobsKey) {
         await this.redis.srem(userJobsKey, streamId);
       }
@@ -328,6 +377,7 @@ export class RedisJobStore implements IJobStore {
       pipeline.del(KEYS.chunks(streamId));
       pipeline.del(KEYS.runSteps(streamId));
       pipeline.srem(KEYS.runningJobs, streamId);
+      pipeline.srem(KEYS.requiresActionJobs, streamId);
       if (userJobsKey) {
         pipeline.srem(userJobsKey, streamId);
       }
@@ -380,6 +430,15 @@ export class RedisJobStore implements IJobStore {
           // Job no longer exists (TTL expired) - remove from set
           if (!job) {
             await this.redis.srem(KEYS.runningJobs, streamId);
+            await this.redis.srem(KEYS.requiresActionJobs, streamId);
+            this.localGraphCache.delete(streamId);
+            this.localCollectedUsageCache.delete(streamId);
+            return 1;
+          }
+
+          if (job.status === 'requires_action') {
+            await this.redis.srem(KEYS.runningJobs, streamId);
+            await this.redis.sadd(KEYS.requiresActionJobs, streamId);
             this.localGraphCache.delete(streamId);
             this.localCollectedUsageCache.delete(streamId);
             return 1;
@@ -390,6 +449,7 @@ export class RedisJobStore implements IJobStore {
           // its own completedTtl so clients can still poll for final status.
           if (job.status !== 'running') {
             await this.redis.srem(KEYS.runningJobs, streamId);
+            await this.redis.srem(KEYS.requiresActionJobs, streamId);
             if (job.userId) {
               await this.redis.srem(KEYS.userJobs(job.userId, job.tenantId), streamId);
             }
@@ -426,10 +486,11 @@ export class RedisJobStore implements IJobStore {
   }
 
   async getJobCount(): Promise<number> {
-    // This is approximate - counts jobs in running set + scans for job keys
-    // For exact count, would need to scan all job:* keys
-    const runningCount = await this.redis.scard(KEYS.runningJobs);
-    return runningCount;
+    const [runningCount, requiresActionCount] = await Promise.all([
+      this.redis.scard(KEYS.runningJobs),
+      this.countJobsInStatusSet(KEYS.requiresActionJobs, 'requires_action'),
+    ]);
+    return runningCount + requiresActionCount;
   }
 
   async getJobCountByStatus(status: JobStatus): Promise<number> {
@@ -437,9 +498,35 @@ export class RedisJobStore implements IJobStore {
       return this.redis.scard(KEYS.runningJobs);
     }
 
-    // For other statuses, we'd need to scan - return 0 for now
-    // In production, consider maintaining separate sets per status if needed
+    if (status === 'requires_action') {
+      return this.countJobsInStatusSet(KEYS.requiresActionJobs, status);
+    }
+
     return 0;
+  }
+
+  private async countJobsInStatusSet(setKey: string, status: JobStatus): Promise<number> {
+    const streamIds = await this.redis.smembers(setKey);
+    if (streamIds.length === 0) {
+      return 0;
+    }
+
+    let count = 0;
+    const staleIds: string[] = [];
+    for (const streamId of streamIds) {
+      const job = await this.getJob(streamId);
+      if (job?.status === status) {
+        count++;
+      } else {
+        staleIds.push(streamId);
+      }
+    }
+
+    if (staleIds.length > 0) {
+      await this.redis.srem(setKey, ...staleIds);
+    }
+
+    return count;
   }
 
   /**
