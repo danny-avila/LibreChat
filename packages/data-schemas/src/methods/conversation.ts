@@ -178,7 +178,7 @@ export function createConversationMethods(
         logger.debug(`[saveConvo] ${metadata.context}`);
       }
 
-      const messages = await getMessages({ conversationId }, '_id');
+      const messages = await getMessages({ conversationId, user: userId }, '_id');
       const update: Record<string, unknown> = { ...convo, messages, user: userId };
 
       if (newConversationId) {
