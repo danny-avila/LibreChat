@@ -41,7 +41,7 @@ RUN \
 
 COPY --chown=node:node . .
 
-RUN \
+RUN set -e; \
     # React client build with configurable memory
     NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend; \
     echo "Checking LibreChat client output..."; \
@@ -66,6 +66,7 @@ CMD ["npm", "run", "backend"]
 # COPY --from=node /app/client/dist /usr/share/nginx/html
 # COPY client/nginx.conf /etc/nginx/conf.d/default.conf
 # ENTRYPOINT ["nginx", "-g", "daemon off;"]
+
 
 
 
