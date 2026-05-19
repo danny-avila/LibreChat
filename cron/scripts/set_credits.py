@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+from datetime import datetime, timezone
 
 import dotenv
 from pymongo import MongoClient, UpdateOne
@@ -18,6 +19,8 @@ with open(BASE_DIR / "json" / "custom-credits.json", "r") as f:
 
 
 def main():
+    now = datetime.now(timezone.utc)
+
     # Weekly reset of credits
     token_credits_threshold = int(5e6)
 
@@ -26,7 +29,7 @@ def main():
     )
     client.LibreChat.balances.update_many(
         {"_id": {"$in": [balance["_id"] for balance in balances_lower_than_token_credits_threshold]}},
-        {"$set": {"tokenCredits": token_credits_threshold}},
+        {"$set": {"tokenCredits": token_credits_threshold, "lastRefill": now}},
     )
 
     # Custom users to update
@@ -47,7 +50,7 @@ def main():
         operations.append(
             UpdateOne(
                 {"user": user_id},  # filtro individual
-                {"$set": {"tokenCredits": token_credits}},  # atualização única
+                {"$set": {"tokenCredits": token_credits, "lastRefill": now}},
             )
         )
 
