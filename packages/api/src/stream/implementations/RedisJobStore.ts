@@ -301,16 +301,18 @@ export class RedisJobStore implements IJobStore {
       await this.redis.srem(KEYS.runningJobs, streamId);
       await this.redis.sadd(KEYS.requiresActionJobs, streamId);
       await this.updateExistingJobHash(key, fields);
-      await this.redis.expire(key, this.ttl.running);
+      await this.refreshLiveJobTtls(key, streamId);
       return;
     }
 
     await this.redis.eval(
-      'if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end redis.call("SREM", KEYS[2], ARGV[1]) redis.call("SADD", KEYS[3], ARGV[1]) redis.call("HSET", KEYS[1], unpack(ARGV, 3)) redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2])) return 1',
-      3,
+      'if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end redis.call("SREM", KEYS[2], ARGV[1]) redis.call("SADD", KEYS[3], ARGV[1]) redis.call("HSET", KEYS[1], unpack(ARGV, 3)) redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2])) redis.call("EXPIRE", KEYS[4], tonumber(ARGV[2])) redis.call("EXPIRE", KEYS[5], tonumber(ARGV[2])) return 1',
+      5,
       key,
       KEYS.runningJobs,
       KEYS.requiresActionJobs,
+      KEYS.chunks(streamId),
+      KEYS.runSteps(streamId),
       streamId,
       String(this.ttl.running),
       ...fields,
@@ -330,22 +332,32 @@ export class RedisJobStore implements IJobStore {
         return;
       }
       await this.redis.hdel(key, 'pendingAction');
-      await this.redis.expire(key, this.ttl.running);
+      await this.refreshLiveJobTtls(key, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
       await this.redis.sadd(KEYS.runningJobs, streamId);
       return;
     }
 
     await this.redis.eval(
-      'if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end redis.call("HSET", KEYS[1], unpack(ARGV, 3)) redis.call("HDEL", KEYS[1], "pendingAction") redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2])) redis.call("SREM", KEYS[2], ARGV[1]) redis.call("SADD", KEYS[3], ARGV[1]) return 1',
-      3,
+      'if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end redis.call("HSET", KEYS[1], unpack(ARGV, 3)) redis.call("HDEL", KEYS[1], "pendingAction") redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2])) redis.call("EXPIRE", KEYS[4], tonumber(ARGV[2])) redis.call("EXPIRE", KEYS[5], tonumber(ARGV[2])) redis.call("SREM", KEYS[2], ARGV[1]) redis.call("SADD", KEYS[3], ARGV[1]) return 1',
+      5,
       key,
       KEYS.requiresActionJobs,
       KEYS.runningJobs,
+      KEYS.chunks(streamId),
+      KEYS.runSteps(streamId),
       streamId,
       String(this.ttl.running),
       ...fields,
     );
+  }
+
+  private async refreshLiveJobTtls(key: string, streamId: string): Promise<void> {
+    const pipeline = this.redis.pipeline();
+    pipeline.expire(key, this.ttl.running);
+    pipeline.expire(KEYS.chunks(streamId), this.ttl.running);
+    pipeline.expire(KEYS.runSteps(streamId), this.ttl.running);
+    await pipeline.exec();
   }
 
   async deleteJob(streamId: string): Promise<void> {
@@ -478,8 +490,52 @@ export class RedisJobStore implements IJobStore {
       }
     }
 
+    cleaned += await this.cleanupRequiresActionIndex();
+
     if (cleaned > 0) {
       logger.debug(`[RedisJobStore] Cleaned up ${cleaned} jobs`);
+    }
+
+    return cleaned;
+  }
+
+  private async cleanupRequiresActionIndex(): Promise<number> {
+    const streamIds = await this.redis.smembers(KEYS.requiresActionJobs);
+    let cleaned = 0;
+
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < streamIds.length; i += BATCH_SIZE) {
+      const batch = streamIds.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(async (streamId) => {
+          const job = await this.getJob(streamId);
+
+          if (!job) {
+            await this.redis.srem(KEYS.requiresActionJobs, streamId);
+            this.localGraphCache.delete(streamId);
+            this.localCollectedUsageCache.delete(streamId);
+            return 1;
+          }
+
+          if (job.status !== 'requires_action') {
+            await this.redis.srem(KEYS.requiresActionJobs, streamId);
+            if (job.status === 'running') {
+              await this.redis.sadd(KEYS.runningJobs, streamId);
+            }
+            return 1;
+          }
+
+          return 0;
+        }),
+      );
+
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          cleaned += result.value;
+        } else {
+          logger.warn(`[RedisJobStore] requires_action cleanup failed for a job:`, result.reason);
+        }
+      }
     }
 
     return cleaned;
