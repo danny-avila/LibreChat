@@ -16,7 +16,7 @@ const { ExpressInstrumentation } = require('@opentelemetry/instrumentation-expre
 const { MongoDBInstrumentation } = require('@opentelemetry/instrumentation-mongodb');
 
 const SUPERLOG_ENDPOINT = 'https://api.20.123.2.194.nip.io';
-const SUPERLOG_KEY = 'superlog_live_AOcEs2uHXuWMRUom-8X51pfgQXMt9QnA';
+const SUPERLOG_KEY = 'superlog_live_jfE-f-cd3LMgn9wKevNZzmyKCKqMfAyp';
 
 const otlpHeaders = { authorization: `Bearer ${SUPERLOG_KEY}` };
 
