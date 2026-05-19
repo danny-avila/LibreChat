@@ -569,7 +569,7 @@ async def get_top_models(
                         "value": "$Volume",
                     }
                 },
-                {"$sort": {"Volume": -1}},
+                {"$sort": {"Custo": -1} if user else {"Volume": -1}},
             ]
         )
 

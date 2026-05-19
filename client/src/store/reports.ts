@@ -158,6 +158,7 @@ export const REPORT_LABELS = {
     USER_MESSAGES_COST: 'Tabela de Mensagens por Usuário',
     MODELS_MESSAGES_COST: 'Tabela de Mensagens por Modelo',
     COST_CENTERS_MESSAGES_COST: 'Tabela de Mensagens por Centro de Custo',
+    USER_MODELS: 'Modelos por Usuário',
   },
 } as const;
 

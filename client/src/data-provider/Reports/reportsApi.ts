@@ -5,7 +5,29 @@ const appendDefaultEndDate = (params: URLSearchParams) => {
   params.append('end_date', today);
 };
 
+/** Alinha parâmetros de data com o backend (build_created_at_match). */
+const appendReportDateParams = (
+  params: URLSearchParams,
+  filters: { startDate?: string; endDate?: string },
+) => {
+  const startDate = filters.startDate?.trim();
+  const endDate = filters.endDate?.trim();
+
+  if (startDate) {
+    params.append('start_date', startDate);
+  }
+  if (endDate) {
+    params.append('end_date', endDate);
+  } else if (startDate) {
+    appendDefaultEndDate(params);
+  }
+  // Sem start/end: não envia → API usa últimos 30 dias
+};
+
 const appendLimitParam = (params: URLSearchParams, filters: { limit?: number | null }) => {
+  if ('limit' in filters && filters.limit === null) {
+    return;
+  }
   const limit = 'limit' in filters ? filters.limit : 10;
   if (limit !== undefined && limit !== null) {
     params.append('limit', limit.toString());
@@ -22,15 +44,7 @@ const fetchUsageCostData = async (filters: any) => {
       params.append('search_by', 'username'); // ou 'name' dependendo do que você quer buscar
     }
 
-    if (filters.startDate) {
-      params.append('start_date', filters.startDate);
-    }
-
-    if (filters.endDate) {
-      params.append('end_date', filters.endDate);
-    } else {
-      appendDefaultEndDate(params);
-    }
+    appendReportDateParams(params, filters);
 
     const url = `${REPORT_CONFIG.URL_BASE}${REPORT_CONFIG.ENDPOINTS.USAGE_COST}${params.toString() ? '?' + params.toString() : ''}`;
 
@@ -105,15 +119,7 @@ const fetchTopUsersVolumeData = async (filters: any) => {
       params.append('search_by', 'username');
     }
 
-    if (filters.startDate) {
-      params.append('start_date', filters.startDate);
-    }
-
-    if (filters.endDate) {
-      params.append('end_date', filters.endDate);
-    } else {
-      appendDefaultEndDate(params);
-    }
+    appendReportDateParams(params, filters);
 
     appendLimitParam(params, filters);
 
@@ -143,15 +149,7 @@ const fetchTopUsersCostData = async (filters: any) => {
       params.append('search_by', 'username');
     }
 
-    if (filters.startDate) {
-      params.append('start_date', filters.startDate);
-    }
-
-    if (filters.endDate) {
-      params.append('end_date', filters.endDate);
-    } else {
-      appendDefaultEndDate(params);
-    }
+    appendReportDateParams(params, filters);
 
     appendLimitParam(params, filters);
 
@@ -182,15 +180,7 @@ const fetchTopModelsData = async (filters: any) => {
       params.append('search_by', 'username');
     }
 
-    if (filters.startDate) {
-      params.append('start_date', filters.startDate);
-    }
-
-    if (filters.endDate) {
-      params.append('end_date', filters.endDate);
-    } else {
-      appendDefaultEndDate(params);
-    }
+    appendReportDateParams(params, filters);
 
     appendLimitParam(params, filters);
 
@@ -261,15 +251,7 @@ const fetchKPIsData = async (filters: any) => {
   try {
     const params = new URLSearchParams();
 
-    if (filters.startDate) {
-      params.append('start_date', filters.startDate);
-    }
-
-    if (filters.endDate) {
-      params.append('end_date', filters.endDate);
-    } else {
-      appendDefaultEndDate(params);
-    }
+    appendReportDateParams(params, filters);
 
     const url = `${REPORT_CONFIG.URL_BASE}${REPORT_CONFIG.ENDPOINTS.KPIS}${params.toString() ? '?' + params.toString() : ''}`;
 
@@ -301,15 +283,7 @@ const fetchUserEfficiencyData = async (filters: any) => {
       params.append('search_by', 'username');
     }
 
-    if (filters.startDate) {
-      params.append('start_date', filters.startDate);
-    }
-
-    if (filters.endDate) {
-      params.append('end_date', filters.endDate);
-    } else {
-      appendDefaultEndDate(params);
-    }
+    appendReportDateParams(params, filters);
 
     appendLimitParam(params, filters);
 
@@ -339,15 +313,7 @@ const fetchTopCostCentersVolumeData = async (filters: any) => {
       params.append('search_by', 'username');
     }
 
-    if (filters.startDate) {
-      params.append('start_date', filters.startDate);
-    }
-
-    if (filters.endDate) {
-      params.append('end_date', filters.endDate);
-    } else {
-      appendDefaultEndDate(params);
-    }
+    appendReportDateParams(params, filters);
 
     appendLimitParam(params, filters);
 
@@ -377,15 +343,7 @@ const fetchTopCostCentersCostData = async (filters: any) => {
       params.append('search_by', 'username');
     }
 
-    if (filters.startDate) {
-      params.append('start_date', filters.startDate);
-    }
-
-    if (filters.endDate) {
-      params.append('end_date', filters.endDate);
-    } else {
-      appendDefaultEndDate(params);
-    }
+    appendReportDateParams(params, filters);
 
     appendLimitParam(params, filters);
 

@@ -4,6 +4,7 @@ import { useReportStore } from '../store/reports';
 const CostCentersTable = lazy(() => import('~/components/Reports/tables/CostCentersTable'));
 const UserMessagesTable = lazy(() => import('~/components/Reports/tables/UserMessagesCostTable'));
 const ModelsTable = lazy(() => import('~/components/Reports/tables/ModelsTable'));
+const UserModelsTable = lazy(() => import('~/components/Reports/tables/UserModelsTable'));
 
 function TableSkeleton() {
   return (
@@ -45,6 +46,12 @@ export default function ReportsTablesSection() {
       <Suspense fallback={<TableSkeleton />}>
         <div className="mb-6">
           <ModelsTable data={allTopModelsData} isLoading={isLoadingTopModels} />
+        </div>
+      </Suspense>
+
+      <Suspense fallback={<TableSkeleton />}>
+        <div className="mb-6">
+          <UserModelsTable users={allTopUsersVolumeData} />
         </div>
       </Suspense>
     </div>
