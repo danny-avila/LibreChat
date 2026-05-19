@@ -569,12 +569,12 @@ function shouldWriteFederatedAuthCache({
 async function readRemoteFederatedAuthCache(
   input: FederatedAuthCacheKeyInput,
   options: FederatedAuthCacheOptions,
-): Promise<FederatedAuthCacheEntry | null> {
+): Promise<{ entry: FederatedAuthCacheEntry | null; failed: boolean }> {
   try {
-    return await readFederatedAuthCache(input, options);
+    return { entry: await readFederatedAuthCache(input, options), failed: false };
   } catch (err) {
-    logger.warn('[remoteAgentAuth] Federated auth cache read failed; treating as miss:', err);
-    return null;
+    logger.warn('[remoteAgentAuth] Federated auth cache read failed:', err);
+    return { entry: null, failed: true };
   }
 }
 
@@ -582,11 +582,13 @@ async function writeRemoteFederatedAuthCache(
   input: FederatedAuthCacheKeyInput,
   entry: FederatedAuthCacheEntry,
   options: FederatedAuthCacheOptions,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await writeFederatedAuthCache(input, entry, options);
+    return true;
   } catch (err) {
     logger.warn('[remoteAgentAuth] Federated auth cache write failed:', err);
+    return false;
   }
 }
 
@@ -833,6 +835,13 @@ async function syncRemoteGroups({
     return { attempted: false, synced: false, reason: 'disabled' };
   }
 
+  const groupContext = getUserLogContext({
+    user,
+    input: cacheInput,
+    lifecycle,
+  });
+  logger.info('[remoteAgentAuth] Remote Entra group sync started', groupContext);
+
   const result = await runTenantScoped(user, () =>
     syncUserEntraGroupMemberships({
       lifecycle,
@@ -843,7 +852,7 @@ async function syncRemoteGroups({
       methods,
     }),
   );
-  const groupContext = getUserLogContext({
+  const resultContext = getUserLogContext({
     user,
     input: cacheInput,
     lifecycle,
@@ -851,11 +860,11 @@ async function syncRemoteGroups({
   });
 
   if (result.synced) {
-    logger.info('[remoteAgentAuth] Remote Entra group sync succeeded', groupContext);
+    logger.info('[remoteAgentAuth] Remote Entra group sync completed', resultContext);
   } else if (result.attempted) {
-    logger.warn('[remoteAgentAuth] Remote Entra group sync failed', groupContext);
+    logger.warn('[remoteAgentAuth] Remote Entra group sync failed', resultContext);
   } else {
-    logger.info('[remoteAgentAuth] Remote Entra group sync skipped', groupContext);
+    logger.info('[remoteAgentAuth] Remote Entra group sync completed', resultContext);
   }
 
   return result;
@@ -872,7 +881,8 @@ async function writeFederatedAuthCacheIfEligible({
   initialOptions: GetAppConfigOptions;
   groupSyncResult: EntraGroupSyncResult;
 }): Promise<void> {
-  if (!cacheInput) {
+  const federatedCacheOptions = getFederatedCacheOptions(context.oidcConfig.federatedAuthCache);
+  if (!cacheInput || !federatedCacheOptions.enabled || federatedCacheOptions.ttlMs <= 0) {
     return;
   }
 
@@ -898,15 +908,19 @@ async function writeFederatedAuthCacheIfEligible({
     return;
   }
 
-  await writeRemoteFederatedAuthCache(
-    cacheInput,
-    cacheEntry,
-    getFederatedCacheOptions(context.oidcConfig.federatedAuthCache),
-  );
-  logger.debug('[remoteAgentAuth] Federated auth cache written', {
+  const cacheContext = {
     ...getCacheLogContext(cacheInput),
     userId: cacheEntry.userId,
-  });
+  };
+  logger.debug('[remoteAgentAuth] Federated auth cache write started', cacheContext);
+  const written = await writeRemoteFederatedAuthCache(
+    cacheInput,
+    cacheEntry,
+    federatedCacheOptions,
+  );
+  if (written) {
+    logger.debug('[remoteAgentAuth] Federated auth cache write completed', cacheContext);
+  }
 }
 
 /**
@@ -1029,13 +1043,18 @@ export function createRemoteAgentAuth({
         return;
       }
 
-      const cachedEntry = await readRemoteFederatedAuthCache(
-        initialCacheInput,
-        federatedCacheOptions,
-      );
+      const cacheReadContext = getCacheLogContext(initialCacheInput);
+      if (federatedCacheOptions.enabled) {
+        logger.debug('[remoteAgentAuth] Federated auth cache read started', cacheReadContext);
+      }
+      const cacheReadResult = federatedCacheOptions.enabled
+        ? await readRemoteFederatedAuthCache(initialCacheInput, federatedCacheOptions)
+        : { entry: null, failed: false };
+      const cachedEntry = cacheReadResult.entry;
       if (cachedEntry) {
-        logger.info('[remoteAgentAuth] Federated auth cache hit', {
-          ...getCacheLogContext(initialCacheInput),
+        logger.debug('[remoteAgentAuth] Federated auth cache read completed', {
+          ...cacheReadContext,
+          outcome: 'hit',
           userId: cachedEntry.userId,
         });
         const cachedUser = hydrateCachedOpenIdUser(cachedEntry, token, payload);
@@ -1053,11 +1072,19 @@ export function createRemoteAgentAuth({
         req.user = cachedUser;
         return next();
       }
-      logger.debug(
-        '[remoteAgentAuth] Federated auth cache miss',
-        getCacheLogContext(initialCacheInput),
-      );
+      if (federatedCacheOptions.enabled && !cacheReadResult.failed) {
+        logger.debug('[remoteAgentAuth] Federated auth cache read completed', {
+          ...cacheReadContext,
+          outcome: 'miss',
+        });
+      }
 
+      if (userInfoOptions.fetchUserInfo) {
+        logger.info(
+          '[remoteAgentAuth] OpenID userinfo fetch started',
+          getCacheLogContext(initialCacheInput),
+        );
+      }
       const userInfoResult = await enrichOpenIdProfile({
         claims: payload,
         accessToken: token,
@@ -1065,8 +1092,16 @@ export function createRemoteAgentAuth({
         config: getEntraGraphConfig(oidcConfig),
         fetchUserInfo: userInfoOptions.fetchUserInfo,
       });
-      if (userInfoResult.status === 'failed') {
-        logger.warn(`[remoteAgentAuth] OpenID userinfo failed: ${userInfoResult.reason}`);
+      if (userInfoOptions.fetchUserInfo && userInfoResult.status === 'fetched') {
+        logger.info(
+          '[remoteAgentAuth] OpenID userinfo fetch completed',
+          getCacheLogContext(initialCacheInput),
+        );
+      } else if (userInfoResult.status === 'failed') {
+        logger.warn('[remoteAgentAuth] OpenID userinfo fetch failed', {
+          ...getCacheLogContext(initialCacheInput),
+          reason: userInfoResult.reason,
+        });
         if (userInfoOptions.requireUserInfo) {
           logger.warn('[remoteAgentAuth] Required OpenID userinfo rejected remote auth', {
             ...(initialCacheInput ? getCacheLogContext(initialCacheInput) : {}),

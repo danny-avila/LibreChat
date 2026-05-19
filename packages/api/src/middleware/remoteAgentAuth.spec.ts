@@ -959,6 +959,27 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).toHaveBeenCalledWith();
     });
 
+    it('does not read, write, or log federated auth cache activity when disabled', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+      const deps = makeDeps(
+        makeConfig({
+          federatedAuthCache: { enabled: false },
+        }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(mockReadFederatedAuthCache).not.toHaveBeenCalled();
+      expect(mockWriteFederatedAuthCache).not.toHaveBeenCalled();
+      expect(logger.debug).not.toHaveBeenCalledWith(
+        expect.stringContaining('Federated auth cache'),
+        expect.any(Object),
+      );
+      expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@example.com' });
+      expect(mockNext).toHaveBeenCalledWith();
+    });
+
     it('treats federated auth cache read failures as misses', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
       mockReadFederatedAuthCache.mockRejectedValueOnce(new Error('redis unavailable'));
@@ -970,8 +991,16 @@ describe('createRemoteAgentAuth', () => {
       expect(deps.findUser).toHaveBeenCalled();
       expect(req.user).toMatchObject({ id: 'uid123', email: 'agent@example.com' });
       expect(logger.warn).toHaveBeenCalledWith(
-        '[remoteAgentAuth] Federated auth cache read failed; treating as miss:',
+        '[remoteAgentAuth] Federated auth cache read failed:',
         expect.any(Error),
+      );
+      expect(logger.debug).toHaveBeenCalledWith(
+        '[remoteAgentAuth] Federated auth cache read started',
+        expect.any(Object),
+      );
+      expect(logger.debug).not.toHaveBeenCalledWith(
+        '[remoteAgentAuth] Federated auth cache read completed',
+        expect.any(Object),
       );
       expect(mockNext).toHaveBeenCalledWith();
     });
@@ -1006,6 +1035,74 @@ describe('createRemoteAgentAuth', () => {
         }),
         { enabled: true, ttlMs: 120000 },
       );
+      expect(logger.debug).toHaveBeenCalledWith(
+        '[remoteAgentAuth] Federated auth cache write started',
+        expect.objectContaining({ userId: 'uid123' }),
+      );
+      expect(logger.debug).toHaveBeenCalledWith(
+        '[remoteAgentAuth] Federated auth cache write completed',
+        expect.objectContaining({ userId: 'uid123' }),
+      );
+    });
+
+    it('logs only active baseline remote auth work for disabled optional features', async () => {
+      setupOidcMocks({
+        sub: 'sub123',
+        oid: 'oid123',
+        email: 'agent@example.com',
+        preferred_username: 'new-agent@example.com',
+        name: 'New Agent Name',
+      });
+      const deps = makeDeps(
+        makeConfig({
+          provisioning: { enabled: false },
+          userInfo: { fetch: false, require: false },
+          profileSync: { onCreate: true, forExisting: false },
+          groupSync: { onCreate: false, forExisting: false },
+          federatedAuthCache: { enabled: true, ttlSeconds: 300 },
+        }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.createUser).not.toHaveBeenCalled();
+      expect(mockEnrichOpenIdProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ fetchUserInfo: false }),
+      );
+      expect(mockSyncUserEntraGroupMemberships).not.toHaveBeenCalled();
+      expect(deps.updateUser).toHaveBeenCalledWith(
+        'uid123',
+        expect.not.objectContaining({
+          email: 'agent@example.com',
+          username: 'new-agent@example.com',
+          name: 'New Agent Name',
+        }),
+      );
+      expect(mockWriteFederatedAuthCache).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.not.objectContaining({
+          profileSyncedAt: expect.any(Number),
+          groupsSyncedAt: expect.any(Number),
+        }),
+        { enabled: true, ttlMs: 300000 },
+      );
+      expect(logger.info).toHaveBeenCalledWith(
+        '[remoteAgentAuth] OpenID remote user resolved',
+        expect.objectContaining({ lifecycle: 'existing' }),
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(
+        '[remoteAgentAuth] OpenID remote user provisioned',
+        expect.any(Object),
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(
+        expect.stringContaining('Remote Entra group sync'),
+        expect.any(Object),
+      );
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('OpenID userinfo fetch'),
+      );
+      expect(mockNext).toHaveBeenCalledWith();
     });
 
     it('continues authentication when federated auth cache write fails', async () => {
@@ -1021,6 +1118,14 @@ describe('createRemoteAgentAuth', () => {
       expect(logger.warn).toHaveBeenCalledWith(
         '[remoteAgentAuth] Federated auth cache write failed:',
         expect.any(Error),
+      );
+      expect(logger.debug).toHaveBeenCalledWith(
+        '[remoteAgentAuth] Federated auth cache write started',
+        expect.objectContaining({ userId: 'uid123' }),
+      );
+      expect(logger.debug).not.toHaveBeenCalledWith(
+        '[remoteAgentAuth] Federated auth cache write completed',
+        expect.any(Object),
       );
       expect(mockNext).toHaveBeenCalledWith();
     });
@@ -1101,6 +1206,14 @@ describe('createRemoteAgentAuth', () => {
         }),
       );
       expect(req.user).toBeDefined();
+      expect(logger.info).toHaveBeenCalledWith(
+        '[remoteAgentAuth] Remote Entra group sync started',
+        expect.objectContaining({ lifecycle: 'existing' }),
+      );
+      expect(logger.info).toHaveBeenCalledWith(
+        '[remoteAgentAuth] Remote Entra group sync completed',
+        expect.objectContaining({ lifecycle: 'existing' }),
+      );
       expect(mockNext).toHaveBeenCalledWith();
     });
 
@@ -1122,6 +1235,18 @@ describe('createRemoteAgentAuth', () => {
 
       expect(mockSyncUserEntraGroupMemberships).toHaveBeenCalled();
       expect(mockWriteFederatedAuthCache).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        '[remoteAgentAuth] Remote Entra group sync started',
+        expect.objectContaining({ lifecycle: 'existing' }),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[remoteAgentAuth] Remote Entra group sync failed',
+        expect.objectContaining({ reason: 'failed' }),
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(
+        '[remoteAgentAuth] Remote Entra group sync completed',
+        expect.any(Object),
+      );
       expect(req.user).toMatchObject({ id: 'uid123' });
       expect(mockNext).toHaveBeenCalledWith();
     });
@@ -1287,6 +1412,14 @@ describe('createRemoteAgentAuth', () => {
           }),
         }),
       );
+      expect(logger.info).toHaveBeenCalledWith(
+        '[remoteAgentAuth] OpenID userinfo fetch started',
+        expect.objectContaining({ subjectHash: expect.any(String) }),
+      );
+      expect(logger.info).toHaveBeenCalledWith(
+        '[remoteAgentAuth] OpenID userinfo fetch completed',
+        expect.objectContaining({ subjectHash: expect.any(String) }),
+      );
       expect(deps.createUser).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'userinfo@example.com',
@@ -1361,7 +1494,8 @@ describe('createRemoteAgentAuth', () => {
       await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
 
       expect(logger.warn).toHaveBeenCalledWith(
-        '[remoteAgentAuth] OpenID userinfo failed: service_error',
+        '[remoteAgentAuth] OpenID userinfo fetch failed',
+        expect.objectContaining({ reason: 'service_error' }),
       );
       expect(deps.createUser).toHaveBeenCalledWith(
         expect.objectContaining({ email: 'claims@example.com' }),
