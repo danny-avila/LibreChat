@@ -1,6 +1,7 @@
 import { megabyte, mergeFileConfig } from 'librechat-data-provider';
 import type { UserStorageUsageParams } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
+import { resolveRequestTenantId } from '~/middleware/tenant';
 
 export const FILE_STORAGE_LIMIT_ERROR_CODE = 'FILE_STORAGE_LIMIT_EXCEEDED';
 
@@ -29,12 +30,22 @@ export type AssertFileStorageLimitParams = {
 type FileStorageLimitCache = {
   storageLimitLoaded: boolean;
   storageLimit?: number;
-  committedBytes: number;
-  usageByScope: Map<string, number>;
+  usageByScope: Map<string, StorageUsageEntry>;
+};
+
+type StorageUsageEntry = {
+  params: UserStorageUsageParams;
+  currentUsage: number;
+};
+
+type RecordFileStorageUsageOptions = {
+  fileId?: UserStorageUsageParams['excludeFileId'];
+  skillFile?: UserStorageUsageParams['excludeSkillFile'];
 };
 
 type StorageLimitRequest = {
   config?: ServerRequest['config'];
+  tenantId?: string;
   user?: {
     id?: string;
     tenantId?: string;
@@ -62,8 +73,7 @@ function getStorageLimitCache(req: StorageLimitRequest): FileStorageLimitCache {
   const storageReq = req as StorageLimitRequest;
   storageReq.fileStorageLimitCache ??= {
     storageLimitLoaded: false,
-    committedBytes: 0,
-    usageByScope: new Map<string, number>(),
+    usageByScope: new Map<string, StorageUsageEntry>(),
   };
   return storageReq.fileStorageLimitCache;
 }
@@ -90,6 +100,40 @@ function getUsageCacheKey(params: UserStorageUsageParams): string {
         }
       : null,
   });
+}
+
+function idsMatch(
+  left?: { toString: () => string } | string | null,
+  right?: { toString: () => string } | string | null,
+): boolean {
+  return left != null && right != null && left.toString() === right.toString();
+}
+
+function skillFilesMatch(
+  excludeSkillFile: UserStorageUsageParams['excludeSkillFile'],
+  skillFile: UserStorageUsageParams['excludeSkillFile'],
+): boolean {
+  if (!excludeSkillFile || !skillFile) {
+    return false;
+  }
+  if (idsMatch(excludeSkillFile.id, skillFile.id)) {
+    return true;
+  }
+  return (
+    idsMatch(excludeSkillFile.skillId, skillFile.skillId) &&
+    excludeSkillFile.relativePath != null &&
+    excludeSkillFile.relativePath === skillFile.relativePath
+  );
+}
+
+function isExcludedFromScope(
+  params: UserStorageUsageParams,
+  options: RecordFileStorageUsageOptions,
+): boolean {
+  return (
+    idsMatch(params.excludeFileId, options.fileId) ||
+    skillFilesMatch(params.excludeSkillFile, options.skillFile)
+  );
 }
 
 export function isFileStorageLimitError(error: unknown): error is FileStorageLimitError {
@@ -123,19 +167,22 @@ export async function assertFileStorageLimit({
 
   const usageParams: UserStorageUsageParams = {
     userId,
-    tenantId: req.user?.tenantId,
+    tenantId: resolveRequestTenantId(req),
     excludeFileId,
     excludeSkillFile,
   };
   const cache = getStorageLimitCache(req);
   const usageCacheKey = getUsageCacheKey(usageParams);
-  let currentUsage = cache.usageByScope.get(usageCacheKey);
-  if (currentUsage === undefined) {
-    currentUsage = await getUserStorageUsage(usageParams);
-    cache.usageByScope.set(usageCacheKey, currentUsage);
+  let usageEntry = cache.usageByScope.get(usageCacheKey);
+  if (usageEntry === undefined) {
+    usageEntry = {
+      params: usageParams,
+      currentUsage: await getUserStorageUsage(usageParams),
+    };
+    cache.usageByScope.set(usageCacheKey, usageEntry);
   }
 
-  if (currentUsage + cache.committedBytes + bytes <= storageLimit) {
+  if (usageEntry.currentUsage + bytes <= storageLimit) {
     return;
   }
 
@@ -145,6 +192,7 @@ export async function assertFileStorageLimit({
 export function recordFileStorageUsage(
   req: StorageLimitRequest,
   incomingBytes?: number | null,
+  options: RecordFileStorageUsageOptions = {},
 ): void {
   const bytes = normalizeIncomingBytes(incomingBytes);
   if (bytes === 0) {
@@ -152,5 +200,10 @@ export function recordFileStorageUsage(
   }
 
   const cache = getStorageLimitCache(req);
-  cache.committedBytes += bytes;
+  cache.usageByScope.forEach((entry) => {
+    if (isExcludedFromScope(entry.params, options)) {
+      return;
+    }
+    entry.currentUsage += bytes;
+  });
 }

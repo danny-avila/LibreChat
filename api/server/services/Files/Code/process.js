@@ -84,11 +84,26 @@ const deleteClaimedCodeFile = async (fileId) => {
   }
 };
 
+const removeCacheBuster = (filepath) =>
+  typeof filepath === 'string' ? filepath.replace(/\?v=\d+$/, '') : filepath;
+
+const getStorageFileId = (fileId, isUpdate) => (isUpdate ? `${fileId}-${v4()}` : fileId);
+
+const cleanupReplacedCodeFile = async (req, previousFile, nextFile) => {
+  const previousPath = removeCacheBuster(previousFile?.filepath);
+  const nextPath = removeCacheBuster(nextFile?.filepath);
+  if (!previousPath || previousPath === nextPath) {
+    return;
+  }
+
+  await cleanupStoredCodeFile(req, { ...previousFile, filepath: previousPath });
+};
+
 const createCodeFileWithStorageLimit = async (req, file, options = {}) => {
   try {
     await assertCodeOutputStorageLimit(req, file.bytes, { excludeFileId: file.file_id });
     await createFile(file, true);
-    recordFileStorageUsage(req, file.bytes);
+    recordFileStorageUsage(req, file.bytes, { fileId: file.file_id });
   } catch (error) {
     if (isFileStorageLimitError(error)) {
       if (options.cleanupStorage !== false) {
@@ -500,7 +515,8 @@ const processCodeOutput = async ({
 
     if (isImage) {
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
-      const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
+      const storageFileId = getStorageFileId(file_id, isUpdate);
+      const _file = await convertImage(req, buffer, 'high', `${storageFileId}${fileExt}`);
       const filepath = usage > 1 ? `${_file.filepath}?v=${Date.now()}` : _file.filepath;
       const storageMetadata = getStorageMetadata({
         filepath: _file.filepath,
@@ -531,6 +547,9 @@ const processCodeOutput = async ({
         cleanupFile: { ...file, filepath: _file.filepath },
         deleteClaimOnFailure: !isUpdate,
       });
+      if (isUpdate) {
+        await cleanupReplacedCodeFile(req, claimed, { ...file, filepath: _file.filepath });
+      }
       return { file: Object.assign(file, { messageId, toolCallId }) };
     }
 
@@ -586,8 +605,9 @@ const processCodeOutput = async ({
      * the conservative cross-platform NAME_MAX (Linux ext4, NTFS, APFS).
      */
     const NAME_MAX = 255;
-    const flatName = flattenArtifactPath(safeName, NAME_MAX - file_id.length - 2);
-    const fileName = `${file_id}__${flatName}`;
+    const storageFileId = getStorageFileId(file_id, isUpdate);
+    const flatName = flattenArtifactPath(safeName, NAME_MAX - storageFileId.length - 2);
+    const fileName = `${storageFileId}__${flatName}`;
     const filepath = await saveBuffer({
       userId: req.user.id,
       buffer,
@@ -666,6 +686,9 @@ const processCodeOutput = async ({
         previewRevision,
       };
       await createCodeFileWithStorageLimit(req, file, { deleteClaimOnFailure: !isUpdate });
+      if (isUpdate) {
+        await cleanupReplacedCodeFile(req, claimed, file);
+      }
       return {
         file: Object.assign(file, { messageId, toolCallId }),
         finalize: () =>
@@ -704,6 +727,9 @@ const processCodeOutput = async ({
     };
 
     await createCodeFileWithStorageLimit(req, file, { deleteClaimOnFailure: !isUpdate });
+    if (isUpdate) {
+      await cleanupReplacedCodeFile(req, claimed, file);
+    }
     return { file: Object.assign(file, { messageId, toolCallId }) };
   } catch (error) {
     if (isFileStorageLimitError(error)) {

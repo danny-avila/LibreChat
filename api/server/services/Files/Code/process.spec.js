@@ -367,15 +367,21 @@ describe('Code Process', () => {
 
       it('should update existing image file with cache-busted filepath', async () => {
         const imageParams = { ...baseParams, name: 'chart.png' };
+        const deleteStoredFile = jest.fn();
+        getStrategyFunctions.mockReturnValue({ deleteFile: deleteStoredFile });
         mockClaimCodeFile.mockResolvedValue({
           file_id: 'existing-img-id',
           usage: 1,
           createdAt: '2024-01-01T00:00:00.000Z',
+          filepath: '/images/user-123/existing-img-id.webp',
+          source: 'local',
         });
 
         const imageBuffer = Buffer.alloc(500);
         mockAxios.mockResolvedValue({ data: imageBuffer });
-        convertImage.mockResolvedValue({ filepath: '/images/user-123/existing-img-id.webp' });
+        convertImage.mockResolvedValue({
+          filepath: '/images/user-123/existing-img-id-mock-uuid-1234.webp',
+        });
 
         const { file: result } = await processCodeOutput(imageParams);
 
@@ -383,14 +389,50 @@ describe('Code Process', () => {
           mockReq,
           imageBuffer,
           'high',
-          'existing-img-id.png',
+          'existing-img-id-mock-uuid-1234.png',
         );
         expect(result.file_id).toBe('existing-img-id');
         expect(result.usage).toBe(2);
-        expect(result.filepath).toMatch(/^\/images\/user-123\/existing-img-id\.webp\?v=\d+$/);
+        expect(result.filepath).toMatch(
+          /^\/images\/user-123\/existing-img-id-mock-uuid-1234\.webp\?v=\d+$/,
+        );
+        expect(deleteStoredFile).toHaveBeenCalledWith(
+          mockReq,
+          expect.objectContaining({ filepath: '/images/user-123/existing-img-id.webp' }),
+        );
         expect(logger.debug).toHaveBeenCalledWith(
           expect.stringContaining('Updating existing file'),
         );
+      });
+
+      it('cleans only the new image blob when an over-limit image update fails', async () => {
+        const imageParams = { ...baseParams, name: 'chart.png' };
+        const error = Object.assign(new Error('storage limit exceeded.'), {
+          code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+          status: 413,
+        });
+        const deleteStoredFile = jest.fn();
+        getStrategyFunctions.mockReturnValue({ deleteFile: deleteStoredFile });
+        mockClaimCodeFile.mockResolvedValue({
+          file_id: 'existing-img-id',
+          usage: 1,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          filepath: '/images/user-123/existing-img-id.webp',
+          source: 'local',
+        });
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(500) });
+        convertImage.mockResolvedValue({
+          filepath: '/images/user-123/existing-img-id-mock-uuid-1234.webp',
+          bytes: 400,
+        });
+        assertFileStorageLimit.mockRejectedValueOnce(error);
+
+        await expect(processCodeOutput(imageParams)).rejects.toThrow('storage limit exceeded');
+
+        expect(deleteFile).not.toHaveBeenCalledWith('existing-img-id');
+        expect(deleteStoredFile.mock.calls.map(([, file]) => file.filepath)).toEqual([
+          '/images/user-123/existing-img-id-mock-uuid-1234.webp',
+        ]);
       });
     });
 

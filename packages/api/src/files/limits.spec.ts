@@ -9,8 +9,13 @@ import {
 
 const megabyte = 1024 * 1024;
 
-function createReq(storageLimit?: number, tenantId?: string): ServerRequest {
+function createReq(
+  storageLimit?: number,
+  tenantId?: string,
+  requestTenantId?: string,
+): ServerRequest {
   return {
+    tenantId: requestTenantId,
     config: {
       fileConfig: storageLimit === undefined ? {} : { storageLimit },
     },
@@ -18,7 +23,7 @@ function createReq(storageLimit?: number, tenantId?: string): ServerRequest {
       id: '64f000000000000000000001',
       tenantId,
     },
-  } as ServerRequest;
+  } as unknown as ServerRequest;
 }
 
 function createUsageMock(currentUsage: number) {
@@ -99,6 +104,20 @@ describe('assertFileStorageLimit', () => {
     });
   });
 
+  it('uses the resolved request tenant for the usage lookup', async () => {
+    const getUserStorageUsage = createUsageMock(1);
+
+    await assertFileStorageLimit({
+      req: createReq(1, 'tenant-user', 'tenant-request'),
+      incomingBytes: 1,
+      getUserStorageUsage,
+    });
+
+    expect(getUserStorageUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-request' }),
+    );
+  });
+
   it('reuses request-scoped usage and includes bytes recorded after persistence', async () => {
     const getUserStorageUsage = createUsageMock(0);
     const req = createReq(1);
@@ -122,6 +141,54 @@ describe('assertFileStorageLimit', () => {
         getUserStorageUsage,
       }),
     ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not double-count recorded bytes when a fresh exclusion scope reads persisted usage', async () => {
+    const getUserStorageUsage = jest
+      .fn<Promise<number>, [UserStorageUsageParams]>()
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(200);
+    const req = createReq(1);
+
+    await assertFileStorageLimit({
+      req,
+      incomingBytes: 100,
+      getUserStorageUsage,
+    });
+    recordFileStorageUsage(req, 200, { fileId: 'image-file-id' });
+
+    await expect(
+      assertFileStorageLimit({
+        req,
+        incomingBytes: megabyte - 200,
+        getUserStorageUsage,
+        excludeFileId: 'assistant-file-id',
+      }),
+    ).resolves.toBeUndefined();
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not add recorded bytes to cache scopes that exclude that file', async () => {
+    const getUserStorageUsage = createUsageMock(0);
+    const req = createReq(1);
+
+    await assertFileStorageLimit({
+      req,
+      incomingBytes: 1,
+      getUserStorageUsage,
+      excludeFileId: 'file-1',
+    });
+    recordFileStorageUsage(req, 200, { fileId: 'file-1' });
+
+    await expect(
+      assertFileStorageLimit({
+        req,
+        incomingBytes: megabyte,
+        getUserStorageUsage,
+        excludeFileId: 'file-1',
+      }),
+    ).resolves.toBeUndefined();
     expect(getUserStorageUsage).toHaveBeenCalledTimes(1);
   });
 

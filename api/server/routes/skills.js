@@ -267,7 +267,9 @@ async function uploadFileHandler(req, res) {
         author: req.user._id,
         tenantId,
       });
-      recordFileStorageUsage(req, file.size);
+      recordFileStorageUsage(req, file.size, {
+        skillFile: { id: result?._id, skillId, relativePath },
+      });
     } catch (dbError) {
       // Clean up the stored blob so it doesn't leak on DB failure
       try {

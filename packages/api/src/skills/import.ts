@@ -593,7 +593,7 @@ async function handleZip(
       // Upsert the SkillFile DB record (runs path validation internally).
       // If the DB write fails, clean up the stored blob to prevent orphans.
       try {
-        await deps.upsertSkillFile({
+        const savedSkillFile = await deps.upsertSkillFile({
           skillId: skill._id,
           relativePath,
           file_id: fileId,
@@ -608,7 +608,9 @@ async function handleZip(
           author: authorId,
           tenantId,
         });
-        recordFileStorageUsage(req, fileBuffer.length);
+        recordFileStorageUsage(req, fileBuffer.length, {
+          skillFile: { id: savedSkillFile?._id, skillId: skill._id, relativePath },
+        });
         savedFiles.push({
           filepath,
           storageKey,

@@ -172,7 +172,7 @@ const createFileWithStorageLimit = async (req, fileInfo, disableTTL, options = {
   try {
     await assertUploadStorageLimit(req, fileInfo.bytes, { excludeFileId: fileInfo.file_id });
     const result = await db.createFile(fileInfo, disableTTL);
-    recordFileStorageUsage(req, fileInfo.bytes);
+    recordFileStorageUsage(req, fileInfo.bytes, { fileId: fileInfo.file_id });
     return result;
   } catch (error) {
     if (isFileStorageLimitError(error) && options.cleanup !== false) {
