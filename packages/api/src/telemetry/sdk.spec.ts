@@ -107,9 +107,9 @@ jest.mock(
   { virtual: true },
 );
 
-async function flushSignalShutdown(): Promise<void> {
-  await new Promise((resolve) => setImmediate(resolve));
-}
+jest.mock('../app/shutdown', () => ({
+  registerShutdownTask: jest.fn(),
+}));
 
 describe('telemetry SDK lifecycle', () => {
   let emitWarningSpy: jest.SpyInstance;
@@ -494,56 +494,27 @@ describe('telemetry SDK lifecycle', () => {
     expect(controller.status).toBe('stopped');
   });
 
-  it.each<NodeJS.Signals>(['SIGTERM', 'SIGINT'])(
-    'does not force process exit when another %s handler is registered',
-    async (signal) => {
-      const otherHandler = jest.fn();
-      const killSpy = jest.spyOn(process, 'kill').mockImplementation(() => true);
-      initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
-      process.once(signal, otherHandler);
-
-      process.emit(signal, signal);
-      await flushSignalShutdown();
-
-      expect(mockShutdown).toHaveBeenCalledTimes(1);
-      expect(otherHandler).toHaveBeenCalledTimes(1);
-      expect(killSpy).not.toHaveBeenCalled();
-
-      killSpy.mockRestore();
-    },
-  );
-
-  it.each<NodeJS.Signals>(['SIGTERM', 'SIGINT'])(
-    'reraises the shutdown %s signal when telemetry is the only signal handler',
-    async (signal) => {
-      const killSpy = jest.spyOn(process, 'kill').mockImplementation(() => true);
-      initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
-
-      process.emit(signal, signal);
-      await flushSignalShutdown();
-
-      expect(mockShutdown).toHaveBeenCalledTimes(1);
-      expect(killSpy).toHaveBeenCalledWith(process.pid, signal);
-
-      killSpy.mockRestore();
-    },
-  );
-
-  it('warns and reraises the signal when shutdown rejects', async () => {
-    mockShutdown.mockRejectedValueOnce(new Error('signal shutdown failed'));
-    const killSpy = jest.spyOn(process, 'kill').mockImplementation(() => true);
+  it('registers a shutdown task with the coordinator when initialized', async () => {
+    const { registerShutdownTask } = await import('../app/shutdown');
     initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
 
-    process.emit('SIGTERM', 'SIGTERM');
-    await flushSignalShutdown();
+    expect(registerShutdownTask).toHaveBeenCalledWith('telemetry', expect.any(Function));
+  });
 
-    expect(mockShutdown).toHaveBeenCalledTimes(1);
+  it('the registered shutdown task warns when telemetry shutdown rejects', async () => {
+    const { registerShutdownTask } = await import('../app/shutdown');
+    mockShutdown.mockRejectedValueOnce(new Error('flush failed'));
+    initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
+
+    const taskFn = (registerShutdownTask as jest.Mock).mock.calls.at(-1)?.[1] as
+      | (() => Promise<void>)
+      | undefined;
+    expect(taskFn).toBeDefined();
+    await taskFn?.();
+
     expect(emitWarningSpy).toHaveBeenCalledWith(
-      'OpenTelemetry shutdown failed: signal shutdown failed',
+      'OpenTelemetry shutdown failed: flush failed',
       { code: 'LIBRECHAT_OTEL' },
     );
-    expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGTERM');
-
-    killSpy.mockRestore();
   });
 });
