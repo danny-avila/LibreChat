@@ -23,12 +23,16 @@ export type UserStorageUsageParams = {
 
 /** Factory function that takes mongoose instance and returns the file methods */
 export function createFileMethods(mongoose: typeof import('mongoose')) {
-  function toObjectId(value: ObjectIdInput): string | Types.ObjectId {
+  function toObjectId(value: ObjectIdInput, label: string): Types.ObjectId {
     if (value instanceof mongoose.Types.ObjectId) {
       return value;
     }
 
-    return mongoose.Types.ObjectId.isValid(value) ? new mongoose.Types.ObjectId(value) : value;
+    if (mongoose.Types.ObjectId.isValid(value)) {
+      return new mongoose.Types.ObjectId(value);
+    }
+
+    throw new Error(`Invalid ${label}`);
   }
 
   async function sumFileBytes(match: FilterQuery<IMongoFile>): Promise<number> {
@@ -55,7 +59,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     excludeFileId,
     excludeSkillFile,
   }: UserStorageUsageParams): Promise<number> {
-    const userObjectId = toObjectId(userId);
+    const userObjectId = toObjectId(userId, 'userId');
     const scopedTenantId = tenantId ?? null;
     const fileMatch: FilterQuery<IMongoFile> = {
       user: userObjectId,
@@ -73,11 +77,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     }
 
     if (excludeSkillFile?.id) {
-      skillFileMatch._id = { $ne: toObjectId(excludeSkillFile.id) };
+      skillFileMatch._id = { $ne: toObjectId(excludeSkillFile.id, 'excludeSkillFile.id') };
     } else if (excludeSkillFile?.skillId && excludeSkillFile.relativePath) {
       skillFileMatch.$nor = [
         {
-          skillId: toObjectId(excludeSkillFile.skillId),
+          skillId: toObjectId(excludeSkillFile.skillId, 'excludeSkillFile.skillId'),
           relativePath: excludeSkillFile.relativePath,
         },
       ];

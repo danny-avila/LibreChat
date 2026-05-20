@@ -254,6 +254,14 @@ describe('File Methods', () => {
       await expect(fileMethods.getUserStorageUsage({ userId, tenantId: 't1' })).resolves.toBe(150);
     });
 
+    it('defines compound indexes for storage usage lookups', () => {
+      const fileIndexes = File.schema.indexes().map(([fields]) => fields);
+      const skillFileIndexes = SkillFile.schema.indexes().map(([fields]) => fields);
+
+      expect(fileIndexes).toContainEqual({ user: 1, tenantId: 1 });
+      expect(skillFileIndexes).toContainEqual({ author: 1, tenantId: 1 });
+    });
+
     it('uses legacy no-tenant scope when tenantId is absent', async () => {
       const userId = new mongoose.Types.ObjectId();
       const skillId = new mongoose.Types.ObjectId();
@@ -313,6 +321,19 @@ describe('File Methods', () => {
           excludeSkillFile: { skillId, relativePath: 'replace.txt' },
         }),
       ).resolves.toBe(50);
+    });
+
+    it('rejects invalid ObjectId inputs instead of under-counting usage', async () => {
+      await expect(fileMethods.getUserStorageUsage({ userId: 'not-an-object-id' })).rejects.toThrow(
+        'Invalid userId',
+      );
+
+      await expect(
+        fileMethods.getUserStorageUsage({
+          userId: new mongoose.Types.ObjectId(),
+          excludeSkillFile: { skillId: 'not-an-object-id', relativePath: 'replace.txt' },
+        }),
+      ).rejects.toThrow('Invalid excludeSkillFile.skillId');
     });
   });
 

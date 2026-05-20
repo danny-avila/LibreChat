@@ -9,6 +9,7 @@ const {
   getStorageMetadata,
   isFileStorageLimitError,
   assertFileStorageLimit,
+  recordFileStorageUsage,
   resolveRequestTenantId,
   restoreTenantContextFromReq,
 } = require('@librechat/api');
@@ -266,6 +267,7 @@ async function uploadFileHandler(req, res) {
         author: req.user._id,
         tenantId,
       });
+      recordFileStorageUsage(req, file.size);
     } catch (dbError) {
       // Clean up the stored blob so it doesn't leak on DB failure
       try {

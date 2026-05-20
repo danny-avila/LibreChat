@@ -88,6 +88,7 @@ jest.mock('@librechat/api', () => {
     getStorageMetadata: jest.fn(() => ({})),
     isFileStorageLimitError: jest.fn((error) => error?.code === 'FILE_STORAGE_LIMIT_EXCEEDED'),
     assertFileStorageLimit: jest.fn().mockResolvedValue(undefined),
+    recordFileStorageUsage: jest.fn(),
     /* Identity helpers mirror codeapi's validator. The real impl
      * lives in `packages/api/src/files/code/identity.ts` with its
      * own dedicated `identity.spec.ts`; here we just stub the

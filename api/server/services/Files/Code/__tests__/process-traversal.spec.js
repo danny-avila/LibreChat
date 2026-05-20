@@ -36,6 +36,7 @@ jest.mock('@librechat/api', () => {
     getStorageMetadata: jest.fn(() => ({})),
     isFileStorageLimitError: jest.fn((error) => error?.code === 'FILE_STORAGE_LIMIT_EXCEEDED'),
     assertFileStorageLimit: jest.fn().mockResolvedValue(undefined),
+    recordFileStorageUsage: jest.fn(),
     /* Pass-through `withTimeout`: this suite asserts traversal sanitization,
      * not deferred preview timing. */
     withTimeout: async (promise) => promise,

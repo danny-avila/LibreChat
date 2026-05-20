@@ -127,5 +127,6 @@ const skillFileSchema: Schema<ISkillFileDocument> = new Schema(
 
 skillFileSchema.index({ skillId: 1, relativePath: 1 }, { unique: true });
 skillFileSchema.index({ skillId: 1, category: 1 });
+skillFileSchema.index({ author: 1, tenantId: 1 });
 
 export default skillFileSchema;

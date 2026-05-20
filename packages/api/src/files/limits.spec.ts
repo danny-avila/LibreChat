@@ -4,6 +4,7 @@ import {
   FILE_STORAGE_LIMIT_ERROR_CODE,
   assertFileStorageLimit,
   isFileStorageLimitError,
+  recordFileStorageUsage,
 } from './limits';
 
 const megabyte = 1024 * 1024;
@@ -97,20 +98,63 @@ describe('assertFileStorageLimit', () => {
       excludeSkillFile,
     });
   });
+
+  it('reuses request-scoped usage and includes bytes recorded after persistence', async () => {
+    const getUserStorageUsage = createUsageMock(0);
+    const req = createReq(1);
+
+    await assertFileStorageLimit({
+      req,
+      incomingBytes: 100,
+      getUserStorageUsage,
+    });
+    recordFileStorageUsage(req, 200);
+    await assertFileStorageLimit({
+      req,
+      incomingBytes: megabyte - 200,
+      getUserStorageUsage,
+    });
+
+    await expect(
+      assertFileStorageLimit({
+        req,
+        incomingBytes: megabyte - 199,
+        getUserStorageUsage,
+      }),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats NaN incoming bytes as zero bytes', async () => {
+    const getUserStorageUsage = createUsageMock(megabyte);
+
+    await expect(
+      assertFileStorageLimit({
+        req: createReq(1),
+        incomingBytes: Number.NaN,
+        getUserStorageUsage,
+      }),
+    ).resolves.toBeUndefined();
+  });
 });
 
 describe('isFileStorageLimitError', () => {
   it('matches storage limit errors by code', async () => {
     const getUserStorageUsage = createUsageMock(megabyte);
 
-    try {
-      await assertFileStorageLimit({
-        req: createReq(1),
-        incomingBytes: 1,
-        getUserStorageUsage,
-      });
-    } catch (error) {
-      expect(isFileStorageLimitError(error)).toBe(true);
-    }
+    const error = await assertFileStorageLimit({
+      req: createReq(1),
+      incomingBytes: 1,
+      getUserStorageUsage,
+    }).catch((caught) => caught);
+
+    expect(isFileStorageLimitError(error)).toBe(true);
+  });
+
+  it('rejects non-storage-limit errors', () => {
+    expect(isFileStorageLimitError(new Error('plain'))).toBe(false);
+    expect(isFileStorageLimitError(null)).toBe(false);
+    expect(isFileStorageLimitError(undefined)).toBe(false);
+    expect(isFileStorageLimitError({ code: 'SOMETHING_ELSE' })).toBe(false);
   });
 });

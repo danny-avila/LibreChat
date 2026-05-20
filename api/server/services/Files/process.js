@@ -26,6 +26,7 @@ const {
   getStorageMetadata,
   isFileStorageLimitError,
   assertFileStorageLimit,
+  recordFileStorageUsage,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -103,6 +104,25 @@ const cleanupStoredFile = async ({ req, file, openai }) => {
   }
 };
 
+const cleanupVectorFile = async ({ req, file }) => {
+  const { deleteFile } = getStrategyFunctions(FileSources.vectordb);
+  if (!deleteFile) {
+    return;
+  }
+
+  try {
+    await deleteFile(req, {
+      ...file,
+      source: FileSources.vectordb,
+      embedded: true,
+      user: file.user ?? req.user.id,
+      tenantId: file.tenantId ?? req.user.tenantId,
+    });
+  } catch (cleanupError) {
+    logger.error('[fileStorageLimit] Failed to clean up over-limit vector storage:', cleanupError);
+  }
+};
+
 const cleanupPersistedFile = async ({ req, file, openai }) => {
   await cleanupStoredFile({ req, file, openai });
   if (!file?.file_id) {
@@ -151,7 +171,9 @@ const cleanupAssistantStoredFile = async ({ req, metadata, openai, file }) => {
 const createFileWithStorageLimit = async (req, fileInfo, disableTTL, options = {}) => {
   try {
     await assertUploadStorageLimit(req, fileInfo.bytes, { excludeFileId: fileInfo.file_id });
-    return await db.createFile(fileInfo, disableTTL);
+    const result = await db.createFile(fileInfo, disableTTL);
+    recordFileStorageUsage(req, fileInfo.bytes);
+    return result;
   } catch (error) {
     if (isFileStorageLimitError(error) && options.cleanup !== false) {
       await cleanupStoredFile({ req, file: fileInfo, openai: options.openai });
@@ -455,11 +477,7 @@ const processFileURL = async ({
       throw new Error(`Strategy "${fileStrategy}" did not save "${fileName}"`);
     }
 
-    const {
-      bytes = 0,
-      type = '',
-      dimensions = {},
-    } = typeof savedFile === 'string' ? {} : savedFile;
+    const { bytes, type = '', dimensions = {} } = typeof savedFile === 'string' ? {} : savedFile;
     const fallbackFileName =
       fileStrategy === FileSources.local || fileStrategy === FileSources.firebase
         ? `${userId}/${fileName}`
@@ -478,11 +496,24 @@ const processFileURL = async ({
       storageKey: typeof savedFile === 'string' ? undefined : savedFile.storageKey,
       storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,
     });
+    if (req && !Number.isFinite(bytes)) {
+      await cleanupStoredFile({
+        req,
+        file: {
+          filepath,
+          ...storageMetadata,
+          source: fileStrategy,
+          user: userId,
+          tenantId,
+        },
+      });
+      throw new Error(`Strategy "${fileStrategy}" did not return byte metadata for "${fileName}"`);
+    }
 
     const fileInfo = {
       user: userId,
       file_id: v4(),
-      bytes,
+      bytes: Math.max(0, bytes ?? 0),
       filepath,
       ...storageMetadata,
       filename: fileName,
@@ -494,6 +525,8 @@ const processFileURL = async ({
       width: dimensions.width,
       height: dimensions.height,
     };
+    // Some legacy tool tests call this helper without an Express request; runtime callers pass req
+    // so generated files go through retention and storage quota enforcement.
     return req
       ? await createFileWithStorageLimit(req, fileInfo, true)
       : await db.createFile(fileInfo, true);
@@ -1050,6 +1083,15 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   }
 
   let filepath = _filepath;
+  const originalStoredFile = {
+    file_id,
+    bytes,
+    filepath,
+    storageKey: _storageKey,
+    storageRegion: _storageRegion,
+    source,
+    tenantId: req.user.tenantId,
+  };
   let storageMetadata = getStorageMetadata({
     filepath,
     source,
@@ -1057,19 +1099,20 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     storageRegion: _storageRegion,
   });
 
+  let imageFile;
   if (isImage) {
-    const result = await processImageFile({
+    imageFile = await processImageFile({
       req,
       file,
       metadata: { file_id: v4() },
       returnFile: true,
     });
-    filepath = result.filepath;
+    filepath = imageFile.filepath;
     storageMetadata = getStorageMetadata({
       filepath,
-      source: result.source,
-      storageKey: result.storageKey,
-      storageRegion: result.storageRegion,
+      source: imageFile.source,
+      storageKey: imageFile.storageKey,
+      storageRegion: imageFile.storageRegion,
     });
   }
 
@@ -1096,7 +1139,21 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     ...retentionExpiry,
   };
 
-  const result = await createFileWithStorageLimit(req, fileInfo, true);
+  let result;
+  try {
+    result = await createFileWithStorageLimit(req, fileInfo, true);
+  } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      if (imageFile) {
+        await cleanupPersistedFile({ req, file: imageFile });
+        await cleanupStoredFile({ req, file: originalStoredFile });
+      }
+      if (tool_resource === EToolResources.file_search && embedded) {
+        await cleanupVectorFile({ req, file: fileInfo });
+      }
+    }
+    throw error;
+  }
   if (!messageAttachment && tool_resource) {
     await db.addAgentResourceFile({
       file_id,
@@ -1112,6 +1169,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 /**
  * @param {object} params - The params object.
  * @param {OpenAI} params.openai - The OpenAI client instance.
+ * @param {ServerRequest} params.req - The Express request object associated with the client.
  * @param {string} params.file_id - The ID of the file to retrieve.
  * @param {string} params.userId - The user ID.
  * @param {string} [params.filename] - The name of the file. `undefined` for `file_citation` annotations.
@@ -1120,12 +1178,14 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
  */
 const processOpenAIFile = async ({
   openai,
+  req,
   file_id,
   userId,
   filename,
   saveFile = false,
   updateUsage = false,
 }) => {
+  const request = req ?? openai.req;
   const _file = await openai.files.retrieve(file_id);
   const originalName = filename ?? (_file.filename ? path.basename(_file.filename) : undefined);
   const filepath = `${openai.baseURL}/files/${userId}/${file_id}${
@@ -1133,7 +1193,7 @@ const processOpenAIFile = async ({
   }`;
   const type = mime.getType(originalName ?? file_id);
   const source =
-    openai.req.body.endpoint === EModelEndpoint.azureAssistants
+    request.body.endpoint === EModelEndpoint.azureAssistants
       ? FileSources.azure
       : FileSources.openai;
   const file = {
@@ -1145,14 +1205,14 @@ const processOpenAIFile = async ({
     user: userId,
     context: _file.purpose,
     source,
-    model: openai.req.body.model,
+    model: request.body.model,
     filename: originalName ?? file_id,
-    ...(await getRetentionExpiry(openai.req)),
-    tenantId: openai.req?.user?.tenantId,
+    ...(await getRetentionExpiry(request)),
+    tenantId: request.user?.tenantId,
   };
 
   if (saveFile) {
-    await createFileWithStorageLimit(openai.req, file, true, { openai });
+    await createFileWithStorageLimit(request, file, true, { openai });
   } else if (updateUsage) {
     try {
       await db.updateFileUsage({ file_id });
@@ -1178,7 +1238,6 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
   const currentDate = new Date();
   const formattedDate = currentDate.toISOString();
   const appConfig = req.config;
-  await assertUploadStorageLimit(req, buffer.length, { excludeFileId: file_id });
   const _file = await convertImage(req, buffer, undefined, `${file_id}${fileExt}`);
 
   // Create only one file record with the correct information
@@ -1231,7 +1290,13 @@ async function retrieveAndProcessFile({
   }
 
   let basename = _basename;
-  const processArgs = { openai, file_id, filename: basename, userId: client.req.user.id };
+  const processArgs = {
+    openai,
+    req: client.req,
+    file_id,
+    filename: basename,
+    userId: client.req.user.id,
+  };
 
   // If no basename provided, return only the file metadata
   if (!basename) {

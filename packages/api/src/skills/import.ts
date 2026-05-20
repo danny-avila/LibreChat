@@ -12,7 +12,7 @@ import type {
   CreateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
-import { isFileStorageLimitError } from '~/files/limits';
+import { isFileStorageLimitError, recordFileStorageUsage } from '~/files/limits';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 
 /** Security limits for zip processing. */
@@ -183,7 +183,7 @@ async function cleanupStoredImportFiles(
     return;
   }
 
-  await Promise.allSettled(
+  await Promise.all(
     files.map((file) =>
       deleteFile(req, file).catch((error) =>
         logger.error(`[importSkill] Import rollback cleanup failed:`, error),
@@ -608,6 +608,7 @@ async function handleZip(
           author: authorId,
           tenantId,
         });
+        recordFileStorageUsage(req, fileBuffer.length);
         savedFiles.push({
           filepath,
           storageKey,

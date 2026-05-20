@@ -19,6 +19,7 @@ const {
   getStorageMetadata,
   isFileStorageLimitError,
   assertFileStorageLimit,
+  recordFileStorageUsage,
   buildCodeEnvDownloadQuery,
 } = require('@librechat/api');
 const {
@@ -87,6 +88,7 @@ const createCodeFileWithStorageLimit = async (req, file, options = {}) => {
   try {
     await assertCodeOutputStorageLimit(req, file.bytes, { excludeFileId: file.file_id });
     await createFile(file, true);
+    recordFileStorageUsage(req, file.bytes);
   } catch (error) {
     if (isFileStorageLimitError(error)) {
       if (options.cleanupStorage !== false) {
