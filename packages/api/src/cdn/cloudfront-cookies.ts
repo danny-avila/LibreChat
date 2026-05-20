@@ -312,6 +312,10 @@ function getCloudFrontCookieSkipReason(scope: CloudFrontCookieScope): string | n
   return null;
 }
 
+function shouldLogCloudFrontCookieSkip(reason: string): boolean {
+  return reason !== 'cloudfront_disabled';
+}
+
 function getScopeRefreshReason(
   previousScope: CloudFrontCookieScope | null,
   currentScope: CloudFrontCookieScope,
@@ -540,14 +544,16 @@ export function maybeRefreshCloudFrontAuthCookies(
     const timing = getCloudFrontCookieTiming();
 
     if (skipReason) {
-      logger.debug('[maybeRefreshCloudFrontAuthCookies] CloudFront auth cookies skipped', {
-        attempted: false,
-        refreshed: false,
-        reason: skipReason,
-        has_user_id: Boolean(scope.userId),
-        has_tenant_scope: Boolean(scope.tenantId),
-        has_storage_region: Boolean(scope.storageRegion),
-      });
+      if (shouldLogCloudFrontCookieSkip(skipReason)) {
+        logger.debug('[maybeRefreshCloudFrontAuthCookies] CloudFront auth cookies skipped', {
+          attempted: false,
+          refreshed: false,
+          reason: skipReason,
+          has_user_id: Boolean(scope.userId),
+          has_tenant_scope: Boolean(scope.tenantId),
+          has_storage_region: Boolean(scope.storageRegion),
+        });
+      }
       return {
         enabled: false,
         attempted: false,

@@ -1,6 +1,7 @@
 import { klona } from 'klona';
 import winston from 'winston';
 import traverse from '../utils/object-traverse';
+import { SYSTEM_TENANT_ID } from './tenantContext';
 import type { TraverseContext } from '../utils/object-traverse';
 
 const SPLAT_SYMBOL = Symbol.for('splat');
@@ -8,6 +9,7 @@ const MESSAGE_SYMBOL = Symbol.for('message');
 const CONSOLE_JSON_STRING_LENGTH: number =
   parseInt(process.env.CONSOLE_JSON_STRING_LENGTH || '', 10) || 255;
 const DEBUG_MESSAGE_LENGTH: number = parseInt(process.env.DEBUG_MESSAGE_LENGTH || '', 10) || 150;
+const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'] as const;
 
 const sensitiveKeys: RegExp[] = [
   /^(sk-)[^\s]+/, // OpenAI API key pattern
@@ -104,6 +106,25 @@ const condenseArray = (item: unknown): string | unknown => {
   return item;
 };
 
+function formatRequestContext(metadata: Record<string, unknown>): string {
+  const context: Partial<Record<(typeof LOG_CONTEXT_KEYS)[number], string>> = {};
+  LOG_CONTEXT_KEYS.forEach((key) => {
+    const value = metadata[key];
+    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
+      return;
+    }
+    if (typeof value === 'string' && value) {
+      context[key] = value;
+    }
+  });
+  return Object.keys(context).length > 0 ? JSON.stringify(context) : '';
+}
+
+function appendRequestContext(line: string, metadata: Record<string, unknown>): string {
+  const context = formatRequestContext(metadata);
+  return context ? `${line} ${context}` : line;
+}
+
 /**
  * Formats log messages for debugging purposes.
  * - Truncates long strings within log messages.
@@ -131,7 +152,7 @@ const debugTraverse = winston.format.printf(
 
     try {
       if (level !== 'debug') {
-        return msgParts[0];
+        return appendRequestContext(msgParts[0], metadata);
       }
 
       if (!metadata) {
@@ -144,22 +165,25 @@ const debugTraverse = winston.format.printf(
       const debugValue = Array.isArray(splatArray) ? splatArray[0] : undefined;
 
       if (!debugValue) {
-        return msgParts[0];
+        return appendRequestContext(msgParts[0], metadata);
       }
 
       if (debugValue && Array.isArray(debugValue)) {
         msgParts.push(`\n${JSON.stringify(debugValue.map(condenseArray))}`);
-        return msgParts.join('');
+        return appendRequestContext(msgParts.join(''), metadata);
       }
 
       if (typeof debugValue !== 'object') {
         msgParts.push(` ${debugValue}`);
-        return msgParts.join('');
+        return appendRequestContext(msgParts.join(''), metadata);
       }
 
       msgParts.push('\n{');
 
       const copy = klona(metadata);
+      if (copy.tenantId === SYSTEM_TENANT_ID) {
+        delete copy.tenantId;
+      }
       try {
         const traversal = traverse(copy);
         traversal.forEach(function (this: TraverseContext, value: unknown) {

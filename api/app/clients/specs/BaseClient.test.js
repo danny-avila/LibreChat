@@ -1,5 +1,5 @@
 const { Constants } = require('librechat-data-provider');
-const { initializeFakeClient } = require('./FakeClient');
+const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
 jest.mock('~/db/connect');
 jest.mock('~/server/services/Config', () => ({
@@ -38,7 +38,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-const { getConvo, saveConvo, saveMessage } = require('~/models');
+const { getConvo, getMessages, saveConvo, saveMessage } = require('~/models');
 
 jest.mock('@librechat/agents', () => {
   const actual = jest.requireActual('@librechat/agents');
@@ -620,6 +620,27 @@ describe('BaseClient', () => {
       const chatMessages2 = await TestClient.loadHistory(conversationId, '3');
       expect(TestClient.currentMessages).toHaveLength(3);
       expect(chatMessages2[chatMessages2.length - 1].text).toEqual("What's up");
+    });
+
+    test('loadHistory should scope database reads to the current user', async () => {
+      const user = 'user-123';
+      TestClient = new FakeClient(apiKey, options);
+      TestClient.user = user;
+      getMessages.mockResolvedValueOnce([
+        {
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'Hello',
+          messageId: '1',
+          conversationId,
+        },
+      ]);
+
+      const chatMessages = await TestClient.loadHistory(conversationId, '1');
+
+      expect(getMessages).toHaveBeenCalledWith({ conversationId, user });
+      expect(chatMessages).toHaveLength(1);
+      expect(chatMessages[0].text).toBe('Hello');
     });
 
     /* Most of the new sendMessage logic revolving around edited/continued AI messages

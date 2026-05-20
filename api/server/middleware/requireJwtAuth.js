@@ -35,8 +35,8 @@ const refreshCloudFrontCookies =
  * Switches between JWT and OpenID authentication based on cookies and environment settings.
  *
  * After successful authentication (req.user populated), automatically chains into
- * `tenantContextMiddleware` to propagate `req.user.tenantId` into AsyncLocalStorage
- * for downstream Mongoose tenant isolation.
+ * `tenantContextMiddleware` to propagate request context into AsyncLocalStorage
+ * for downstream Mongoose tenant isolation and structured logging.
  */
 const requireJwtAuth = (req, res, next) => {
   const cookieHeader = req.headers.cookie;
@@ -71,12 +71,11 @@ const requireJwtAuth = (req, res, next) => {
       }
       req.user = user;
       req.authStrategy = strategy;
-      refreshCloudFrontCookies(req, res, (refreshErr) => {
-        if (refreshErr) {
-          return next(refreshErr);
+      tenantContextMiddleware(req, res, (tenantErr) => {
+        if (tenantErr) {
+          return next(tenantErr);
         }
-        // req.user is now populated by passport — set up tenant ALS context
-        tenantContextMiddleware(req, res, next);
+        refreshCloudFrontCookies(req, res, next);
       });
     })(req, res, next);
   };

@@ -476,6 +476,34 @@ describe('User Methods - Database Tests', () => {
       expect(results).toEqual([]);
     });
 
+    test('should treat regex metacharacters as literal search text', async () => {
+      await User.create({
+        name: 'Literal .* User',
+        email: 'literal-star@test.com',
+        username: 'literal-star',
+        provider: 'local',
+      });
+
+      const results = await methods.searchUsers({ searchPattern: '.*' });
+
+      expect(results).toHaveLength(1);
+      expect((results[0] as unknown as t.IUser).name).toBe('Literal .* User');
+    });
+
+    test('should handle invalid regex syntax as literal search text', async () => {
+      await User.create({
+        name: 'Regex [invalid User',
+        email: 'regex-invalid@test.com',
+        username: 'regex-invalid',
+        provider: 'local',
+      });
+
+      const results = await methods.searchUsers({ searchPattern: '[invalid' });
+
+      expect(results).toHaveLength(1);
+      expect((results[0] as unknown as t.IUser).name).toBe('Regex [invalid User');
+    });
+
     test('should apply field selection', async () => {
       const results = await methods.searchUsers({
         searchPattern: 'john',

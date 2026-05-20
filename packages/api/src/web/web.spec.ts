@@ -689,8 +689,7 @@ describe('web.ts', () => {
       const originalEnv = process.env;
       process.env = {
         ...originalEnv,
-        SERPER_API_KEY: 'test-key',
-        // Missing other keys to force authentication failure
+        JINA_API_KEY: 'test-key',
       };
 
       // Initialize webSearchConfig with environment variable references
@@ -710,10 +709,9 @@ describe('web.ts', () => {
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
         authFields.forEach((field: string) => {
-          if (field === 'SERPER_API_KEY') {
+          if (field === 'JINA_API_KEY') {
             result[field] = 'test-key';
           }
-          // Other fields are intentionally missing
         });
         return Promise.resolve(result);
       });
@@ -1104,6 +1102,47 @@ describe('web.ts', () => {
           call[0].authFields.includes('JINA_API_KEY'),
       );
       expect(cohereCalls.length).toBe(0);
+    });
+
+    it('should fallback to no reranker when rerankerType is omitted and no reranker is authenticated', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'searxng' as SearchProviders,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'SEARXNG_INSTANCE_URL') {
+            result[field] = 'https://search.example';
+          } else if (field === 'SEARXNG_API_KEY') {
+            result[field] = 'searxng-api-key';
+          } else if (field === 'FIRECRAWL_API_KEY') {
+            result[field] = 'firecrawl-api-key';
+          } else if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'https://api.firecrawl.dev';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.rerankerType).toBe('none');
+      expect(result.authTypes).toContainEqual(['rerankers', AuthType.SYSTEM_DEFINED]);
     });
 
     it('should handle invalid specified service gracefully', async () => {
