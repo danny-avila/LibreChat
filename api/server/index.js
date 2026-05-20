@@ -22,6 +22,7 @@ const {
   createStreamServices,
   initializeFileStorage,
   preAuthTenantMiddleware,
+  setupGracefulShutdown,
   updateInterfacePermissions,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -240,7 +241,7 @@ const startServer = async () => {
   /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
   app.use(ErrorController);
 
-  app.listen(port, host, async (err) => {
+  const server = app.listen(port, host, async (err) => {
     if (err) {
       logger.error('Failed to start server:', err);
       process.exit(1);
@@ -283,6 +284,8 @@ const startServer = async () => {
       process.exit(1);
     }
   });
+
+  setupGracefulShutdown(server);
 };
 
 /**
