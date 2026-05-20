@@ -3,8 +3,9 @@
 
 import { useState } from 'react';
 import type { TFile } from 'librechat-data-provider';
-import FileCell from '~/nj/components/SidePanel/Files/FileCell';
 import icons from '@uswds/uswds/img/sprite.svg';
+import { groupFiles } from '~/nj/components/SidePanel/Files/filesLogic';
+import FilesSection from '~/nj/components/SidePanel/Files/FilesSection';
 
 /**
  * Our replacement for the built-in LibreChat files panel.
@@ -24,6 +25,13 @@ export default function FilesPanel({
   const filteredFiles = filenameFilter
     ? files.filter((file) => file.filename.toLowerCase().includes(filenameFilter.toLowerCase()))
     : files;
+
+  const groupedFiles = groupFiles(filteredFiles);
+
+  // Used to determine which section should be the "last" section
+  const hasTodayFiles = groupedFiles.today.length > 0;
+  const hasYesterdayFiles = groupedFiles.yesterday.length > 0;
+  const hasPreviousFiles = groupedFiles.previous.length > 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -48,12 +56,40 @@ export default function FilesPanel({
         />
       </div>
 
-      {/* Files */}
-      {filteredFiles.map((file: TFile) => (
-        <button key={file.file_id} onClick={() => handleFileClick(file)}>
-          <FileCell file={file} />
-        </button>
-      ))}
+      {/* Pinned */}
+      <FilesSection
+        title="Pinned"
+        files={groupedFiles.pinned}
+        handleFileClick={handleFileClick}
+        showMoreText="Show more pinned files"
+        emptyText="Nothing pinned yet. To pin a file, hover over it and choose pin file from the menu."
+        isLastVisibleSection={!hasPreviousFiles && !hasYesterdayFiles && !hasTodayFiles}
+      />
+
+      {/* Date-based groups */}
+      <FilesSection
+        title="Today"
+        files={groupedFiles.today}
+        handleFileClick={handleFileClick}
+        showMoreText="Show more files from today"
+        isLastVisibleSection={!hasPreviousFiles && !hasYesterdayFiles}
+      />
+
+      <FilesSection
+        title="Yesterday"
+        files={groupedFiles.yesterday}
+        handleFileClick={handleFileClick}
+        showMoreText="Show more files from yesterday"
+        isLastVisibleSection={!hasPreviousFiles}
+      />
+
+      <FilesSection
+        title="Previous"
+        files={groupedFiles.previous}
+        handleFileClick={handleFileClick}
+        showMoreText="Show more files"
+        isLastVisibleSection={true}
+      />
     </div>
   );
 }
