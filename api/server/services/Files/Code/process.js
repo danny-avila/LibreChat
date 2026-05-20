@@ -88,8 +88,7 @@ const removeCacheBuster = (filepath) =>
   typeof filepath === 'string' ? filepath.replace(/\?v=\d+$/, '') : filepath;
 
 const getStorageFileId = (fileId, isUpdate) => (isUpdate ? `${fileId}-${v4()}` : fileId);
-const getStorageLimitOptions = (fileId, isUpdate) =>
-  isUpdate ? { excludeFileId: fileId } : undefined;
+const getStorageLimitOptions = (fileId, isUpdate) => (isUpdate ? { excludeFileId: fileId } : {});
 
 const cleanupReplacedCodeFile = async (req, previousFile, nextFile) => {
   const previousPath = removeCacheBuster(previousFile?.filepath);

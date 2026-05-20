@@ -333,12 +333,15 @@ describe('Code Process', () => {
         const { file: result } = await processCodeOutput(imageParams);
 
         expect(result.bytes).toBe(convertedBytes);
+        expect(assertFileStorageLimit).toHaveBeenCalledTimes(1);
         expect(assertFileStorageLimit).toHaveBeenCalledWith(
           expect.objectContaining({
             incomingBytes: convertedBytes,
           }),
         );
-        expect(assertFileStorageLimit.mock.calls[0][0]).not.toHaveProperty('excludeFileId');
+        expect(assertFileStorageLimit).toHaveBeenCalledWith(
+          expect.not.objectContaining({ excludeFileId: expect.anything() }),
+        );
         expect(createFile).toHaveBeenCalled();
       });
 
