@@ -101,14 +101,11 @@ const {
   EToolResources,
   FileSources,
   FileContext,
-  EModelEndpoint,
   RetentionMode,
   AgentCapabilities,
 } = require('librechat-data-provider');
 const { mergeFileConfig } = require('librechat-data-provider');
-const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { checkCapability } = require('~/server/services/Config');
-const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const db = require('~/models');
 const {
@@ -127,12 +124,6 @@ const ODS_MIME = 'application/vnd.oasis.opendocument.spreadsheet';
 const ODT_MIME = 'application/vnd.oasis.opendocument.text';
 const ODP_MIME = 'application/vnd.oasis.opendocument.presentation';
 const ODG_MIME = 'application/vnd.oasis.opendocument.graphics';
-
-const flushPromises = async () => {
-  for (let i = 0; i < 10; i++) {
-    await Promise.resolve();
-  }
-};
 
 const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null } = {}) => ({
   user: { id: 'user-123', tenantId: 'tenant-a' },
