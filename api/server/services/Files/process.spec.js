@@ -119,6 +119,7 @@ const {
   processAgentFileUpload,
   processDeleteRequest,
   processFileURL,
+  processImageFile,
   processFileUpload,
   sweepExpiredFiles,
   startExpiredFileSweep,
@@ -192,7 +193,11 @@ describe('processAgentFileUpload', () => {
     req.file.size = 1024;
 
     await expect(
-      processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { ...makeMetadata(), tool_resource: EToolResources.file_search },
+      }),
     ).rejects.toThrow('storage limit exceeded');
 
     expect(getStrategyFunctions).not.toHaveBeenCalled();
@@ -204,7 +209,7 @@ describe('processAgentFileUpload', () => {
       code: 'FILE_STORAGE_LIMIT_EXCEEDED',
       status: 413,
     });
-    assertFileStorageLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(error);
+    assertFileStorageLimit.mockRejectedValueOnce(error);
     const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
     req.file.size = 16;
 
@@ -214,6 +219,41 @@ describe('processAgentFileUpload', () => {
 
     expect(db.createFile).not.toHaveBeenCalled();
     expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+  });
+
+  test('checks context upload quota against extracted text bytes, not raw upload bytes', async () => {
+    const rawUploadBytes = 10 * 1024 * 1024;
+    const extractedBytes = 42;
+    const rawBytesError = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    assertFileStorageLimit.mockImplementation(({ incomingBytes }) => {
+      if (incomingBytes === rawUploadBytes) {
+        return Promise.reject(rawBytesError);
+      }
+      return Promise.resolve();
+    });
+    getStrategyFunctions.mockReturnValue({
+      handleFileUpload: jest.fn().mockResolvedValue({
+        text: 'small extracted text',
+        bytes: extractedBytes,
+        filepath: 'doc://result',
+      }),
+    });
+    const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+    req.file.size = rawUploadBytes;
+
+    await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+    expect(assertFileStorageLimit).toHaveBeenCalledTimes(1);
+    expect(assertFileStorageLimit).toHaveBeenCalledWith(
+      expect.objectContaining({ incomingBytes: extractedBytes }),
+    );
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({ bytes: extractedBytes, source: FileSources.text }),
+      true,
+    );
   });
 
   describe('OCR strategy selection', () => {
@@ -548,6 +588,56 @@ describe('processAgentFileUpload', () => {
   });
 });
 
+describe('processImageFile storage-limit checks', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    assertFileStorageLimit.mockResolvedValue(undefined);
+    db.createFile.mockImplementation((fileInfo) => Promise.resolve(fileInfo));
+    mockRes.status.mockReturnThis();
+    mockRes.json.mockReturnValue({});
+  });
+
+  it('checks quota against persisted image bytes, not raw upload bytes', async () => {
+    const rawUploadBytes = 10 * 1024 * 1024;
+    const persistedBytes = 256;
+    const rawBytesError = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    assertFileStorageLimit.mockImplementation(({ incomingBytes }) => {
+      if (incomingBytes === rawUploadBytes) {
+        return Promise.reject(rawBytesError);
+      }
+      return Promise.resolve();
+    });
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/image.png',
+      bytes: persistedBytes,
+      width: 32,
+      height: 32,
+    });
+    getStrategyFunctions.mockReturnValue({ handleImageUpload });
+    const req = makeReq({ mimetype: 'image/png' });
+    req.file.size = rawUploadBytes;
+    req.config.imageOutputType = 'png';
+
+    await processImageFile({
+      req,
+      res: mockRes,
+      metadata: { file_id: 'image-file-id', endpoint: 'agents' },
+    });
+
+    expect(handleImageUpload).toHaveBeenCalled();
+    expect(assertFileStorageLimit).toHaveBeenCalledTimes(1);
+    expect(assertFileStorageLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        incomingBytes: persistedBytes,
+        excludeFileId: 'image-file-id',
+      }),
+    );
+  });
+});
+
 describe('processFileUpload assistant storage-limit cleanup', () => {
   const makeAssistantImageReq = () => ({
     user: { id: 'user-123', tenantId: 'tenant-a' },
@@ -627,10 +717,7 @@ describe('processFileUpload assistant storage-limit cleanup', () => {
     const openai = makeOpenAI();
     const { deleteOpenAIFile } = setupAssistantStrategies();
     getOpenAIClient.mockResolvedValue({ openai });
-    assertFileStorageLimit
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(error);
+    assertFileStorageLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(error);
 
     await expect(
       processFileUpload({
@@ -680,7 +767,6 @@ describe('processFileUpload assistant storage-limit cleanup', () => {
     assertFileStorageLimit
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(error);
 
     await expect(
@@ -718,6 +804,8 @@ describe('processFileUpload assistant storage-limit cleanup', () => {
 describe('processFileURL', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    assertFileStorageLimit.mockResolvedValue(undefined);
+    db.createFile.mockResolvedValue({ file_id: 'created-file-id' });
   });
 
   it('throws and skips DB persistence when saveURL returns null', async () => {

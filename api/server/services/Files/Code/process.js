@@ -486,15 +486,6 @@ const processCodeOutput = async ({
       );
     }
 
-    try {
-      await assertCodeOutputStorageLimit(req, buffer.length, { excludeFileId: file_id });
-    } catch (error) {
-      if (isFileStorageLimitError(error) && !isUpdate) {
-        await deleteClaimedCodeFile(file_id);
-      }
-      throw error;
-    }
-
     /**
      * Preserve the original `messageId` on update. Each `processCodeOutput`
      * call would otherwise overwrite it with the current run's run id, which
@@ -557,6 +548,15 @@ const processCodeOutput = async ({
           expiresAt: currentDate.getTime() + 86400000,
         }),
       };
+    }
+
+    try {
+      await assertCodeOutputStorageLimit(req, buffer.length, { excludeFileId: file_id });
+    } catch (error) {
+      if (isFileStorageLimitError(error) && !isUpdate) {
+        await deleteClaimedCodeFile(file_id);
+      }
+      throw error;
     }
 
     const detectedType = await determineFileType(buffer, true);

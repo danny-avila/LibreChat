@@ -654,7 +654,8 @@ router.post('/', async (req, res) => {
     } catch (error) {
       logger.error('[/files] Error deleting file:', error);
     }
-    res.status(500).json({ message });
+    const status = Number(error?.status ?? error?.statusCode) || 500;
+    res.status(status).json({ message });
   } finally {
     if (cleanup) {
       try {

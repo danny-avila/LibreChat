@@ -524,8 +524,6 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
 
-  await assertUploadStorageLimit(req, file?.size);
-
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
     file,
@@ -776,7 +774,9 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
 
-  await assertUploadStorageLimit(req, file?.size);
+  if (tool_resource !== EToolResources.context) {
+    await assertUploadStorageLimit(req, file?.size);
+  }
 
   let messageAttachment = !!metadata.message_file;
 

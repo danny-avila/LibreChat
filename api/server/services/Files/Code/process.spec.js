@@ -309,6 +309,38 @@ describe('Code Process', () => {
         expect(result.filename).toBe('chart.png');
       });
 
+      it('checks storage quota against converted image bytes, not raw artifact bytes', async () => {
+        const imageParams = { ...baseParams, name: 'chart.png' };
+        const rawArtifactBytes = 10 * 1024 * 1024;
+        const convertedBytes = 512;
+        const rawBytesError = Object.assign(new Error('storage limit exceeded.'), {
+          code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+          status: 413,
+        });
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(rawArtifactBytes) });
+        convertImage.mockResolvedValue({
+          filepath: '/uploads/converted-image.webp',
+          bytes: convertedBytes,
+        });
+        assertFileStorageLimit.mockImplementation(({ incomingBytes }) => {
+          if (incomingBytes === rawArtifactBytes) {
+            return Promise.reject(rawBytesError);
+          }
+          return Promise.resolve();
+        });
+
+        const { file: result } = await processCodeOutput(imageParams);
+
+        expect(result.bytes).toBe(convertedBytes);
+        expect(assertFileStorageLimit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            incomingBytes: convertedBytes,
+            excludeFileId: 'mock-uuid-1234',
+          }),
+        );
+        expect(createFile).toHaveBeenCalled();
+      });
+
       it('persists tenantId on image code output records when present', async () => {
         const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
         const imageBuffer = Buffer.alloc(500);
