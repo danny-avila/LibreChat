@@ -123,6 +123,23 @@ const cleanupVectorFile = async ({ req, file }) => {
   }
 };
 
+const cleanupCodeEnvFile = async ({ req, file }) => {
+  if (!file?.metadata?.codeEnvRef) {
+    return;
+  }
+
+  const { deleteFile } = getStrategyFunctions(FileSources.execute_code);
+  if (!deleteFile) {
+    return;
+  }
+
+  try {
+    await deleteFile(req, file);
+  } catch (cleanupError) {
+    logger.error('[fileStorageLimit] Failed to clean up over-limit code env file:', cleanupError);
+  }
+};
+
 const cleanupPersistedFile = async ({ req, file, openai }) => {
   await cleanupStoredFile({ req, file, openai });
   if (!file?.file_id) {
@@ -1157,6 +1174,9 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       }
       if (tool_resource === EToolResources.file_search && embedded) {
         await cleanupVectorFile({ req, file: fileInfo });
+      }
+      if (tool_resource === EToolResources.execute_code) {
+        await cleanupCodeEnvFile({ req, file: fileInfo });
       }
     }
     throw error;
