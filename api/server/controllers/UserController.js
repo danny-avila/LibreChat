@@ -111,7 +111,10 @@ const getTermsStatusController = async (req, res) => {
           missingFields.push('location');
         }
       } else if (field === 'cropsCultivated') {
-        if (!user.farmerProfile?.cropsCultivated || user.farmerProfile.cropsCultivated.length === 0) {
+        if (
+          !user.farmerProfile?.cropsCultivated ||
+          user.farmerProfile.cropsCultivated.length === 0
+        ) {
           missingFields.push('cropsCultivated');
         }
       } else {
@@ -179,7 +182,7 @@ const updateFarmerPlatformController = async (req, res) => {
     }
 
     const alreadyExists = existingUser.farmerProfile?.platformHistory?.some(
-      (entry) => entry.os === req.body.platform
+      (entry) => entry.os === req.body.platform,
     );
 
     const updateQuery = {
@@ -203,6 +206,41 @@ const updateFarmerPlatformController = async (req, res) => {
   } catch (error) {
     logger.error('Error updating farmer platform:', error);
     res.status(500).json({ message: 'Error updating platform' });
+  }
+};
+
+const updateFarmerLastActiveAtController = async (req, res) => {
+  try {
+    const currentDate = new Date();
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      {
+        $set: {
+          lastActiveAt: currentDate,
+        },
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        message: 'User not found',
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Last active updated',
+      lastActiveAt: updatedUser.lastActiveAt,
+    });
+  } catch (error) {
+    logger.error('Error updating lastActiveAt:', error);
+
+    return res.status(500).json({
+      message: 'Error updating last active time',
+    });
   }
 };
 
@@ -609,6 +647,7 @@ module.exports = {
   acceptSecondTermsController,
   saveFarmerProfileController,
   updateFarmerPlatformController,
+  updateFarmerLastActiveAtController,
   deleteUserController,
   verifyEmailController,
   updateUserPluginsController,

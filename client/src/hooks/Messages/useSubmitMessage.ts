@@ -3,7 +3,7 @@ import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { replaceSpecialVars } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { useUpdateFarmerPlatformMutation } from '~/data-provider';
+import { useUpdateFarmerPlatformMutation, useUpdateFarmerLastActiveAt } from '~/data-provider';
 import store from '~/store';
 
 export default function useSubmitMessage() {
@@ -12,7 +12,7 @@ export default function useSubmitMessage() {
   const updateFarmerPlatform = useUpdateFarmerPlatformMutation();
   const { conversation: addedConvo } = useAddedChatContext();
   const { ask, index, getMessages, setMessages, latestMessage } = useChatContext();
-
+  const updateLastActiveAt = useUpdateFarmerLastActiveAt();
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
 
@@ -37,6 +37,7 @@ export default function useSubmitMessage() {
       else if (/macintosh|mac os x/i.test(ua)) platform = 'MacOS';
       else if (/linux/i.test(ua)) platform = 'Linux';
       updateFarmerPlatform.mutate(platform);
+      updateLastActiveAt.mutate();
       ask(
         {
           text: data.text,
@@ -48,7 +49,7 @@ export default function useSubmitMessage() {
       );
       methods.reset();
     },
-    [ask, methods, addedConvo, setMessages, getMessages, latestMessage, updateFarmerPlatform],
+    [ask, methods, addedConvo, setMessages, getMessages, latestMessage, updateFarmerPlatform, updateLastActiveAt],
   );
 
   const submitPrompt = useCallback(

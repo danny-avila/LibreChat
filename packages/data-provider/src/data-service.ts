@@ -938,6 +938,10 @@ export function updateFarmerPlatform(platform: string): Promise<{ message: strin
   return request.patch(endpoints.farmerProfilePlatform(), { platform });
 }
 
+export function updateFarmerLastActiveAt(): Promise<{ message: string }> {
+  return request.patch(endpoints.farmerProfileLastActiveAt());
+}
+
 export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }
