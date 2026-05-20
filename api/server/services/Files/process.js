@@ -123,6 +123,18 @@ const cleanupVectorFile = async ({ req, file }) => {
   }
 };
 
+const cleanupFileMetadata = async ({ fileId }) => {
+  if (!fileId) {
+    return;
+  }
+
+  try {
+    await db.deleteFiles([fileId]);
+  } catch (cleanupError) {
+    logger.error('[fileStorageLimit] Failed to clean up over-limit file metadata:', cleanupError);
+  }
+};
+
 const cleanupCodeEnvFile = async ({ req, file }) => {
   if (!file?.metadata?.codeEnvRef) {
     return;
@@ -146,11 +158,7 @@ const cleanupPersistedFile = async ({ req, file, openai }) => {
     return;
   }
 
-  try {
-    await db.deleteFiles([file.file_id]);
-  } catch (cleanupError) {
-    logger.error('[fileStorageLimit] Failed to clean up over-limit file metadata:', cleanupError);
-  }
+  await cleanupFileMetadata({ fileId: file.file_id });
 };
 
 const detachAssistantStoredFile = async ({ req, metadata, openai, fileId }) => {
@@ -936,12 +944,17 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
       const result = await createFileWithStorageLimit(req, fileInfo, true, { cleanup: false });
       if (!messageAttachment && tool_resource) {
-        await db.addAgentResourceFile({
-          file_id,
-          agent_id,
-          tool_resource,
-          updatingUserId: req?.user?.id,
-        });
+        try {
+          await db.addAgentResourceFile({
+            file_id,
+            agent_id,
+            tool_resource,
+            updatingUserId: req?.user?.id,
+          });
+        } catch (error) {
+          await cleanupFileMetadata({ fileId: file_id });
+          throw error;
+        }
       }
       return res
         .status(200)
@@ -1100,6 +1113,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   }
 
   let filepath = _filepath;
+  let fileSource = source;
+  let fileType = file.mimetype;
   const originalStoredFile = {
     file_id,
     bytes,
@@ -1132,9 +1147,14 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       throw error;
     }
     filepath = imageFile.filepath;
+    bytes = imageFile.bytes ?? bytes;
+    height = imageFile.height ?? height;
+    width = imageFile.width ?? width;
+    fileSource = imageFile.source ?? source;
+    fileType = imageFile.type ?? file.mimetype;
     storageMetadata = getStorageMetadata({
       filepath,
-      source: imageFile.source,
+      source: fileSource,
       storageKey: imageFile.storageKey,
       storageRegion: imageFile.storageRegion,
     });
@@ -1153,9 +1173,9 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       model: messageAttachment ? undefined : req.body.model,
       metadata: fileInfoMetadata,
-      type: file.mimetype,
+      type: fileType,
       embedded,
-      source,
+      source: fileSource,
       height,
       width,
       tenantId: req.user.tenantId,
@@ -1182,12 +1202,29 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     throw error;
   }
   if (!messageAttachment && tool_resource) {
-    await db.addAgentResourceFile({
-      file_id,
-      agent_id,
-      tool_resource,
-      updatingUserId: req?.user?.id,
-    });
+    try {
+      await db.addAgentResourceFile({
+        file_id,
+        agent_id,
+        tool_resource,
+        updatingUserId: req?.user?.id,
+      });
+    } catch (error) {
+      if (imageFile) {
+        await cleanupFileMetadata({ fileId: fileInfo.file_id });
+        await cleanupPersistedFile({ req, file: imageFile });
+        await cleanupStoredFile({ req, file: originalStoredFile });
+      } else {
+        await cleanupPersistedFile({ req, file: fileInfo });
+      }
+      if (tool_resource === EToolResources.file_search && embedded) {
+        await cleanupVectorFile({ req, file: fileInfo });
+      }
+      if (tool_resource === EToolResources.execute_code) {
+        await cleanupCodeEnvFile({ req, file: fileInfo });
+      }
+      throw error;
+    }
   }
 
   res.status(200).json({ message: 'Agent file uploaded and processed successfully', ...result });
@@ -1275,7 +1312,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     type: mime.getType(fileExt),
     createdAt: formattedDate,
     updatedAt: formattedDate,
-    source: getFileStrategy(appConfig, { isImage: true }),
+    source: appConfig.fileStrategy,
     context: FileContext.assistants_output,
     file_id,
     filename,
