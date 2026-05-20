@@ -963,6 +963,17 @@ describe('ServerConfigsDB', () => {
     });
 
     describe('user access', () => {
+      it('should reuse resolved principals for direct and agent access lookups', async () => {
+        const findByIdSpy = jest.spyOn(mongoose.models.User, 'findById');
+
+        try {
+          await serverConfigsDB.getAll(userId, 'USER');
+          expect(findByIdSpy).toHaveBeenCalledTimes(1);
+        } finally {
+          findByIdSpy.mockRestore();
+        }
+      });
+
       it('should return servers directly accessible by user', async () => {
         const config1 = createSSEConfig('User Server 1');
         const config2 = createSSEConfig('User Server 2');

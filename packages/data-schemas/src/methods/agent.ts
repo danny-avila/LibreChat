@@ -1,10 +1,25 @@
 import crypto from 'node:crypto';
-import { Constants, ResourceType, actionDelimiter } from 'librechat-data-provider';
+import { Constants, EToolResources, ResourceType, actionDelimiter } from 'librechat-data-provider';
+import type { AgentToolResources } from 'librechat-data-provider';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IAgent, IAclEntry } from '~/types';
 import logger from '~/config/winston';
 
 const { mcp_delimiter } = Constants;
+
+/**
+ * Mirrors `TOOL_RESOURCE_KEYS` in `@librechat/api` — the subset of
+ * `EToolResources` that actually carries `file_ids` on an agent document.
+ * `code_interpreter` is excluded (it belongs to the Assistants API, not
+ * `AgentToolResources`) to avoid emitting dead MongoDB clauses.
+ */
+const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
+  EToolResources.execute_code,
+  EToolResources.file_search,
+  EToolResources.image_edit,
+  EToolResources.context,
+  EToolResources.ocr,
+];
 
 export interface AgentDeps {
   /** Removes all ACL permissions for a resource. Injected from PermissionService. */
@@ -256,7 +271,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
    */
   async function getAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    return (await Agent.findOne(searchParameter).lean()) as IAgent | null;
+    return await Agent.findOne(searchParameter).lean<IAgent>();
   }
 
   /**
@@ -264,7 +279,51 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
    */
   async function getAgents(searchParameter: FilterQuery<IAgent>): Promise<IAgent[]> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    return (await Agent.find(searchParameter).lean()) as IAgent[];
+    return await Agent.find(searchParameter).lean<IAgent[]>();
+  }
+
+  async function hasAgentWithMCPServerName({
+    agentIds,
+    serverName,
+  }: {
+    agentIds: Types.ObjectId[];
+    serverName: string;
+  }): Promise<boolean> {
+    if (agentIds.length === 0) {
+      return false;
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const agent = await Agent.exists({
+      _id: { $in: agentIds },
+      mcpServerNames: serverName,
+    });
+
+    return agent !== null;
+  }
+
+  async function getMCPServerNamesByAgentIds(agentIds: Types.ObjectId[]): Promise<string[]> {
+    if (agentIds.length === 0) {
+      return [];
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const agents = await Agent.find(
+      {
+        _id: { $in: agentIds },
+        mcpServerNames: { $exists: true, $not: { $size: 0 } },
+      },
+      { mcpServerNames: 1 },
+    ).lean<Array<Pick<IAgent, 'mcpServerNames'>>>();
+
+    const serverNames = new Set<string>();
+    for (const agent of agents) {
+      for (const serverName of agent.mcpServerNames ?? []) {
+        serverNames.add(serverName);
+      }
+    }
+
+    return Array.from(serverNames);
   }
 
   /**
@@ -478,6 +537,37 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
   }
 
   /**
+   * Removes the given file_ids from every agent's `tool_resources.*.file_ids`
+   * so file deletion cannot leave orphaned stubs behind (see issue #12776).
+   */
+  async function removeAgentResourceFilesFromAllAgents({
+    file_ids,
+  }: {
+    file_ids: string[];
+  }): Promise<{ matchedCount: number; modifiedCount: number }> {
+    if (!file_ids || file_ids.length === 0) {
+      return { matchedCount: 0, modifiedCount: 0 };
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+
+    const orQuery = TOOL_RESOURCE_KEYS.map((key) => ({
+      [`tool_resources.${key}.file_ids`]: { $in: file_ids },
+    }));
+
+    const pullAllOps = TOOL_RESOURCE_KEYS.reduce<Record<string, string[]>>((acc, key) => {
+      acc[`tool_resources.${key}.file_ids`] = file_ids;
+      return acc;
+    }, {});
+
+    const result = await Agent.updateMany({ $or: orQuery }, { $pullAll: pullAllOps });
+    return {
+      matchedCount: result.matchedCount ?? 0,
+      modifiedCount: result.modifiedCount ?? 0,
+    };
+  }
+
+  /**
    * Deletes an agent based on the provided search parameter.
    */
   async function deleteAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
@@ -602,11 +692,13 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     otherParams = {},
     limit = null,
     after = null,
+    includeSkillConfig = false,
   }: {
     accessibleIds?: Types.ObjectId[];
     otherParams?: Record<string, unknown>;
     limit?: number | null;
     after?: string | null;
+    includeSkillConfig?: boolean;
   }): Promise<{
     object: string;
     data: Array<Record<string, unknown>>;
@@ -654,7 +746,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
       }
     }
 
-    let query = Agent.find(baseQuery, {
+    const projection: Record<string, 1> = {
       id: 1,
       _id: 1,
       name: 1,
@@ -665,7 +757,14 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
       category: 1,
       support_contact: 1,
       is_promoted: 1,
-    }).sort({ updatedAt: -1, _id: 1 });
+    };
+
+    if (includeSkillConfig) {
+      projection.skills = 1;
+      projection.skills_enabled = 1;
+    }
+
+    let query = Agent.find(baseQuery, projection).sort({ updatedAt: -1, _id: 1 });
 
     if (isPaginated && normalizedLimit) {
       query = query.limit(normalizedLimit + 1);
@@ -728,9 +827,13 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     delete revertToVersion.author;
     delete revertToVersion.updatedBy;
 
-    return (await Agent.findOneAndUpdate(searchParameter, revertToVersion, {
+    const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertToVersion, {
       new: true,
-    }).lean()) as IAgent;
+    }).lean<IAgent>();
+    if (!revertedAgent) {
+      throw new Error('Agent not found');
+    }
+    return revertedAgent;
   }
 
   /**
@@ -764,6 +867,8 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     getAgent,
     getAgents,
     createAgent,
+    hasAgentWithMCPServerName,
+    getMCPServerNamesByAgentIds,
     updateAgent,
     deleteAgent,
     deleteUserAgents,
@@ -774,6 +879,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     removeAgentResourceFiles,
     generateActionMetadataHash,
     removeAgentFromUserFavorites,
+    removeAgentResourceFilesFromAllAgents,
   };
 }
 

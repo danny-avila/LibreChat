@@ -15,15 +15,14 @@ jest.mock('@librechat/data-schemas', () => ({
 let mongoServer: MongoMemoryServer;
 let Balance: mongoose.Model<IBalance>;
 
-const findBalanceByUser = (userId: string) =>
-  Balance.findOne({ user: userId }).lean() as Promise<IBalance | null>;
+const findBalanceByUser = (userId: string) => Balance.findOne({ user: userId }).lean<IBalance>();
 
 const upsertBalanceFields = (userId: string, fields: IBalanceUpdate) =>
   Balance.findOneAndUpdate(
     { user: userId },
     { $set: fields },
     { upsert: true, new: true },
-  ).lean() as Promise<IBalance | null>;
+  ).lean<IBalance>();
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -381,6 +380,34 @@ describe('createSetBalanceConfig', () => {
       expect(balanceRecord?.autoRefillEnabled).toBe(false);
       // lastRefill should have default value from schema
       expect(balanceRecord?.lastRefill).toBeInstanceOf(Date);
+    });
+
+    test('should pass user identity when resolving balance config', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: { enabled: false },
+      });
+
+      const middleware = createSetBalanceConfig({
+        getAppConfig,
+        findBalanceByUser,
+        upsertBalanceFields,
+      });
+
+      const req = createMockRequest(userId);
+      req.user = {
+        ...req.user,
+        role: 'USER',
+        tenantId: 'tenant-a',
+      } as typeof req.user;
+
+      await middleware(req as ServerRequest, createMockResponse() as ServerResponse, mockNext);
+
+      expect(getAppConfig).toHaveBeenCalledWith({
+        role: 'USER',
+        userId: userId.toString(),
+        tenantId: 'tenant-a',
+      });
     });
   });
 

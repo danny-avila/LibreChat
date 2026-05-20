@@ -18,12 +18,17 @@ jest.mock('@modelcontextprotocol/sdk/client/auth.js', () => ({
   discoverOAuthProtectedResourceMetadata: jest.fn(),
   registerClient: jest.fn(),
   exchangeAuthorization: jest.fn(),
+  extractWWWAuthenticateParams: jest.fn(() => ({})),
 }));
 
 jest.mock('../../mcp/oauth/tokens', () => ({
   MCPTokenStorage: {
     getClientInfoAndMetadata: jest.fn(),
   },
+}));
+
+jest.mock('../../mcp/oauth/resourceHint', () => ({
+  probeResourceMetadataHint: jest.fn().mockResolvedValue(null),
 }));
 
 import {
@@ -34,6 +39,7 @@ import {
   exchangeAuthorization,
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import { MCPTokenStorage } from '../../mcp/oauth/tokens';
+import { probeResourceMetadataHint } from '../../mcp/oauth/resourceHint';
 import { FlowStateManager } from '../../flow/manager';
 
 const mockStartAuthorization = startAuthorization as jest.MockedFunction<typeof startAuthorization>;
@@ -53,6 +59,9 @@ const mockGetClientInfoAndMetadata =
   MCPTokenStorage.getClientInfoAndMetadata as jest.MockedFunction<
     typeof MCPTokenStorage.getClientInfoAndMetadata
   >;
+const mockProbeResourceMetadataHint = probeResourceMetadataHint as jest.MockedFunction<
+  typeof probeResourceMetadataHint
+>;
 
 describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
   const mockServerName = 'test-server';
@@ -2406,6 +2415,190 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       expect(result.authorizationUrl).toBeDefined();
       // No PRM, so the authorization URL must not carry a `resource` parameter
       expect(result.authorizationUrl).not.toContain('resource=');
+    });
+  });
+
+  describe('WWW-Authenticate resource_metadata hint (RFC 9728 §5.1 / issue #12761)', () => {
+    const serverUrl = 'https://example.com/mcp';
+    const hintUrl = 'https://example.com/.well-known/oauth-protected-resource';
+
+    beforeEach(() => {
+      // Default the probe to "no hint" so earlier suites that don't set it aren't affected.
+      mockProbeResourceMetadataHint.mockResolvedValue(null);
+    });
+
+    it('threads the hint URL into discoverOAuthProtectedResourceMetadata when present', async () => {
+      mockProbeResourceMetadataHint.mockResolvedValueOnce({
+        resourceMetadataUrl: new URL(hintUrl),
+        bearerChallenge: true,
+        headAuthChallenge: true,
+      });
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: serverUrl,
+        authorization_servers: ['https://auth.example.com'],
+      });
+
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'new-client-id',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://auth.example.com/authorize?client_id=new-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow('test-server', serverUrl, 'user-123', {}, undefined);
+
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalledTimes(1);
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalledWith(
+        serverUrl,
+        expect.objectContaining({ resourceMetadataUrl: new URL(hintUrl) }),
+        expect.any(Function),
+      );
+    });
+
+    it('passes undefined resourceMetadataUrl when no hint is available', async () => {
+      mockProbeResourceMetadataHint.mockResolvedValueOnce(null);
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: serverUrl,
+        authorization_servers: ['https://auth.example.com'],
+      });
+
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'new-client-id',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://auth.example.com/authorize?client_id=new-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow('test-server', serverUrl, 'user-123', {}, undefined);
+
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalledWith(
+        serverUrl,
+        expect.objectContaining({ resourceMetadataUrl: undefined }),
+        expect.any(Function),
+      );
+    });
+
+    it('prefers the hint over path-aware metadata when they diverge', async () => {
+      // The regression scenario from issue #12761: path-aware discovery would return
+      // stale metadata pointing at a defunct authorization server. The hint URL must
+      // take precedence so the SDK fetches the authoritative document instead.
+      mockProbeResourceMetadataHint.mockResolvedValueOnce({
+        resourceMetadataUrl: new URL(hintUrl),
+        bearerChallenge: true,
+        headAuthChallenge: true,
+      });
+
+      // Whatever the hint URL returns is what reaches the handler — stale path-aware
+      // data never gets a chance to be used, because the SDK follows the hint instead.
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: serverUrl,
+        authorization_servers: ['https://auth.example.com'],
+      });
+
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'new-client-id',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://auth.example.com/authorize?client_id=new-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        serverUrl,
+        'user-123',
+        {},
+        undefined,
+      );
+
+      expect(result.authorizationUrl).toContain('auth.example.com');
+      // Exactly one SDK call — no separate path-aware retry.
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalledTimes(1);
+    });
+
+    it('invokes the probe with the OAuth-aware fetch so oauthHeaders reach the server', async () => {
+      // Regression guard: without the wrapper, admin-configured `oauthHeaders` (e.g. a
+      // gateway API key that fronts the MCP endpoint) would be stripped from the probe,
+      // causing the gateway to 401 us for the wrong reason and masking the real hint.
+      mockProbeResourceMetadataHint.mockResolvedValueOnce(null);
+
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: serverUrl,
+        authorization_servers: ['https://auth.example.com'],
+      });
+
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      mockRegisterClient.mockResolvedValueOnce({
+        client_id: 'new-client-id',
+        redirect_uris: ['http://localhost:3080/api/mcp/test-server/oauth/callback'],
+        logo_uri: undefined,
+        tos_uri: undefined,
+      });
+
+      mockStartAuthorization.mockResolvedValueOnce({
+        authorizationUrl: new URL('https://auth.example.com/authorize?client_id=new-client-id'),
+        codeVerifier: 'test-code-verifier',
+      });
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        'test-server',
+        serverUrl,
+        'user-123',
+        { 'X-Gateway-Key': 'secret' },
+        undefined,
+      );
+
+      expect(mockProbeResourceMetadataHint).toHaveBeenCalledTimes(1);
+      // Second argument must be a fetchFn (the OAuth-aware wrapper), not `undefined`.
+      const fetchFnArg = mockProbeResourceMetadataHint.mock.calls[0][1];
+      expect(typeof fetchFnArg).toBe('function');
     });
   });
 });

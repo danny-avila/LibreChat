@@ -470,12 +470,13 @@ export class RedisEventTransport implements IEventTransport {
 
         // If last subscriber left, unsubscribe from Redis and notify
         if (state.count === 0) {
-          // Clear any pending flush timeout and buffered messages
-          if (state.reorderBuffer.flushTimeout) {
-            clearTimeout(state.reorderBuffer.flushTimeout);
-            state.reorderBuffer.flushTimeout = null;
-          }
-          state.reorderBuffer.pending.clear();
+          /**
+           * Preserve callbacks for reconnect, but drop ordering state from the
+           * previous attachment. Reconnects always call syncReorderBuffer(), so
+           * keeping nextSeq here only risks poisoning a later generation when
+           * the shared Redis sequence key has already been reset elsewhere.
+           */
+          this.resetReorderBuffer(streamId);
 
           this.subscriber.unsubscribe(channel).catch((err) => {
             logger.error(`[RedisEventTransport] Failed to unsubscribe from ${channel}:`, err);

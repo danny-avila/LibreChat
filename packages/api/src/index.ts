@@ -33,10 +33,14 @@ export * from './flow/manager';
 export * from './middleware';
 /* Memory */
 export * from './memory';
+/* Model Specs */
+export * from './modelSpecs';
 /* Agents */
 export * from './agents';
 /* Prompts */
 export * from './prompts';
+/* Skills */
+export * from './skills';
 /* Endpoints */
 export * from './endpoints';
 /* Files */

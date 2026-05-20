@@ -1,5 +1,5 @@
 const { Constants } = require('librechat-data-provider');
-const { initializeFakeClient } = require('./FakeClient');
+const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
 jest.mock('~/db/connect');
 jest.mock('~/server/services/Config', () => ({
@@ -38,7 +38,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-const { getConvo, saveConvo, saveMessage } = require('~/models');
+const { getConvo, getMessages, saveConvo, saveMessage } = require('~/models');
 
 jest.mock('@librechat/agents', () => {
   const actual = jest.requireActual('@librechat/agents');
@@ -622,6 +622,27 @@ describe('BaseClient', () => {
       expect(chatMessages2[chatMessages2.length - 1].text).toEqual("What's up");
     });
 
+    test('loadHistory should scope database reads to the current user', async () => {
+      const user = 'user-123';
+      TestClient = new FakeClient(apiKey, options);
+      TestClient.user = user;
+      getMessages.mockResolvedValueOnce([
+        {
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'Hello',
+          messageId: '1',
+          conversationId,
+        },
+      ]);
+
+      const chatMessages = await TestClient.loadHistory(conversationId, '1');
+
+      expect(getMessages).toHaveBeenCalledWith({ conversationId, user });
+      expect(chatMessages).toHaveLength(1);
+      expect(chatMessages[0].text).toBe('Hello');
+    });
+
     /* Most of the new sendMessage logic revolving around edited/continued AI messages
      *  can be summarized by the following test. The condition will load the entire history up to
      *  the message that is being edited, which will trigger the AI API to 'continue' the response.
@@ -950,6 +971,45 @@ describe('BaseClient', () => {
       TestClient.options = savedOptions;
       saveMessage.mockReset();
       saveConvo.mockReset();
+    });
+
+    test('saveMessageToDatabase reuses conversation resolved on the request', async () => {
+      const existingConvo = {
+        conversationId: 'cached-convo-id',
+        endpoint: 'openai',
+        endpointType: 'openai',
+        temperature: 0.7,
+      };
+      const user = { id: 'user-id' };
+      const req = { user, resolvedConversation: existingConvo };
+
+      getConvo.mockClear();
+      saveMessage.mockResolvedValue({ messageId: 'msg-1' });
+      saveConvo.mockResolvedValue(existingConvo);
+
+      TestClient = initializeFakeClient(apiKey, { ...options, endpoint: 'openai', req }, []);
+
+      await TestClient.saveMessageToDatabase(
+        {
+          messageId: 'msg-1',
+          conversationId: existingConvo.conversationId,
+          isCreatedByUser: true,
+          text: 'hi',
+        },
+        { endpoint: 'openai' },
+        user,
+      );
+
+      expect(getConvo).not.toHaveBeenCalled();
+      expect(req).not.toHaveProperty('resolvedConversation');
+      expect(TestClient.fetchedConvo).toBe(true);
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ conversationId: existingConvo.conversationId }),
+        expect.objectContaining({
+          unsetFields: expect.objectContaining({ temperature: 1 }),
+        }),
+      );
     });
 
     test('userMessagePromise is awaited before saving response message', async () => {

@@ -40,6 +40,11 @@ jest.mock('@librechat/api', () => ({
   }),
   createChunk: jest.fn().mockReturnValue({}),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
+  scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
+  resolveAgentScopedSkillIds: jest
+    .fn()
+    .mockImplementation(({ accessibleSkillIds }) => accessibleSkillIds),
+  loadSkillStates: jest.fn().mockResolvedValue({ skillStates: {}, defaultActiveOnShare: false }),
   sendFinalChunk: jest.fn(),
   createSafeUser: jest.fn().mockReturnValue({ id: 'user-123' }),
   validateRequest: jest
@@ -56,6 +61,15 @@ jest.mock('@librechat/api', () => ({
   createErrorResponse: jest.fn(),
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
+  extractManualSkills: jest.fn().mockReturnValue(undefined),
+  injectSkillPrimes: jest.fn().mockReturnValue({
+    initialMessages: [],
+    indexTokenCountMap: {},
+    inserted: 0,
+    insertIdx: -1,
+    alwaysApplyDropped: 0,
+    alwaysApplyDedupedFromManual: 0,
+  }),
   buildNonStreamingResponse: jest.fn().mockReturnValue({ id: 'resp-123' }),
   createOpenAIStreamTracker: jest.fn().mockReturnValue({
     addText: jest.fn(),
@@ -112,6 +126,19 @@ jest.mock('~/server/controllers/agents/callbacks', () => ({
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
   checkPermission: jest.fn().mockResolvedValue(true),
+}));
+
+jest.mock('~/server/services/Files/strategies', () => ({
+  getStrategyFunctions: jest.fn().mockReturnValue({}),
+}));
+
+jest.mock('~/server/services/Files/Code/crud', () => ({
+  batchUploadCodeEnvFiles: jest.fn().mockResolvedValue({ session_id: '', files: [] }),
+}));
+
+jest.mock('~/server/services/Files/Code/process', () => ({
+  getSessionInfo: jest.fn().mockResolvedValue(null),
+  checkIfActive: jest.fn().mockReturnValue(false),
 }));
 
 const mockUpdateBalance = jest.fn().mockResolvedValue({});

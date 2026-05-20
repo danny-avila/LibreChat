@@ -35,6 +35,10 @@ export interface LoadToolDefinitionsParams {
   toolOptions?: AgentToolOptions;
   /** Whether deferred tools feature is enabled */
   deferredToolsEnabled?: boolean;
+  /** Whether programmatic tool calling is enabled */
+  programmaticToolsEnabled?: boolean;
+  /** Whether code execution is enabled and requested by this agent */
+  codeExecutionEnabled?: boolean;
 }
 
 export interface ActionToolDefinition {
@@ -48,11 +52,6 @@ export interface LoadToolDefinitionsDeps {
   getOrFetchMCPServerTools: (userId: string, serverName: string) => Promise<MCPServerTools | null>;
   /** Checks if a tool name is a known built-in tool */
   isBuiltInTool: (toolName: string) => boolean;
-  /** Loads auth values for tool search (passed to buildToolClassification) */
-  loadAuthValues: (params: {
-    userId: string;
-    authFields: string[];
-  }) => Promise<Record<string, string>>;
   /** Loads action tool definitions (schemas) from OpenAPI specs */
   getActionToolDefinitions?: (
     agentId: string,
@@ -76,9 +75,16 @@ export async function loadToolDefinitions(
   params: LoadToolDefinitionsParams,
   deps: LoadToolDefinitionsDeps,
 ): Promise<LoadToolDefinitionsResult> {
-  const { userId, agentId, tools, toolOptions = {}, deferredToolsEnabled = false } = params;
-  const { getOrFetchMCPServerTools, isBuiltInTool, loadAuthValues, getActionToolDefinitions } =
-    deps;
+  const {
+    userId,
+    agentId,
+    tools,
+    toolOptions = {},
+    deferredToolsEnabled = false,
+    programmaticToolsEnabled = false,
+    codeExecutionEnabled = false,
+  } = params;
+  const { getOrFetchMCPServerTools, isBuiltInTool, getActionToolDefinitions } = deps;
 
   const emptyResult: LoadToolDefinitionsResult = {
     toolDefinitions: [],
@@ -196,8 +202,9 @@ export async function loadToolDefinitions(
     userId,
     agentId,
     loadedTools,
-    loadAuthValues,
     deferredToolsEnabled,
+    programmaticToolsEnabled,
+    codeExecutionEnabled,
     definitionsOnly: true,
     agentToolOptions: toolOptions,
   });

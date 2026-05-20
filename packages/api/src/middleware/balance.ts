@@ -14,11 +14,33 @@ import { getBalanceConfig } from '~/app/config';
 export interface BalanceMiddlewareOptions {
   getAppConfig: (options?: {
     role?: string;
+    userId?: string;
     tenantId?: string;
     refresh?: boolean;
   }) => Promise<AppConfig>;
   findBalanceByUser: (userId: string) => Promise<IBalance | null>;
   upsertBalanceFields: (userId: string, fields: IBalanceUpdate) => Promise<IBalance | null>;
+}
+
+const balanceUpdateLocks = new Map<string, Promise<void>>();
+
+async function runBalanceUpdate(userId: string, task: () => Promise<void>): Promise<void> {
+  const previous = balanceUpdateLocks.get(userId) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(task);
+  const tail = current.then(
+    () => undefined,
+    () => undefined,
+  );
+
+  balanceUpdateLocks.set(userId, tail);
+
+  try {
+    await current;
+  } finally {
+    if (balanceUpdateLocks.get(userId) === tail) {
+      balanceUpdateLocks.delete(userId);
+    }
+  }
 }
 
 /**
@@ -98,6 +120,7 @@ export function createSetBalanceConfig({
       const user = req.user as IUser & { _id: string | ObjectId };
       const appConfig = await getAppConfig({
         role: user?.role,
+        userId: user?.id,
         tenantId: user?.tenantId,
       });
       const balanceConfig = getBalanceConfig(appConfig);
@@ -112,14 +135,16 @@ export function createSetBalanceConfig({
         return next();
       }
       const userId = typeof user._id === 'string' ? user._id : user._id.toString();
-      const userBalanceRecord = await findBalanceByUser(userId);
-      const updateFields = buildUpdateFields(balanceConfig, userBalanceRecord, userId);
+      await runBalanceUpdate(userId, async () => {
+        const userBalanceRecord = await findBalanceByUser(userId);
+        const updateFields = buildUpdateFields(balanceConfig, userBalanceRecord, userId);
 
-      if (Object.keys(updateFields).length === 0) {
-        return next();
-      }
+        if (Object.keys(updateFields).length === 0) {
+          return;
+        }
 
-      await upsertBalanceFields(userId, updateFields);
+        await upsertBalanceFields(userId, updateFields);
+      });
 
       next();
     } catch (error) {

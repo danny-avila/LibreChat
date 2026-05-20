@@ -5,19 +5,35 @@ import type { MemoryArtifact } from 'librechat-data-provider';
 import { createMemoryTool, processMemory } from '../memory';
 
 // Mock the logger
+// `winston.format` must be a callable factory (real winston returns a Format
+// constructor) so that `@librechat/data-schemas` dist code can complete its
+// module-load — see api/test/__mocks__/logger.js for the canonical shape.
 jest.mock('winston', () => ({
   createLogger: jest.fn(() => ({
     debug: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
+    info: jest.fn(),
   })),
-  format: {
-    combine: jest.fn(),
-    colorize: jest.fn(),
-    simple: jest.fn(),
-  },
+  format: Object.assign(
+    jest.fn((fn) => () => ({ transform: fn })),
+    {
+      combine: jest.fn(),
+      colorize: jest.fn(),
+      simple: jest.fn(),
+      label: jest.fn(),
+      timestamp: jest.fn(),
+      printf: jest.fn(),
+      errors: jest.fn(),
+      splat: jest.fn(),
+      json: jest.fn(),
+    },
+  ),
+  addColors: jest.fn(),
   transports: {
     Console: jest.fn(),
+    DailyRotateFile: jest.fn(),
+    File: jest.fn(),
   },
 }));
 

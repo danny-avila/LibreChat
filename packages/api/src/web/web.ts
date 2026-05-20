@@ -2,28 +2,35 @@ import {
   AuthType,
   SafeSearchTypes,
   SearchCategories,
+  SearchProviders,
+  ScraperProviders,
   extractVariableName,
 } from 'librechat-data-provider';
 import { webSearchAuth } from '@librechat/data-schemas';
-import type {
-  RerankerTypes,
-  TCustomConfig,
-  SearchProviders,
-  ScraperProviders,
-  TWebSearchConfig,
-} from 'librechat-data-provider';
+import type { RerankerTypes, TCustomConfig, TWebSearchConfig } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
 import { isSSRFTarget, resolveHostnameSSRF } from '../auth';
 
 /**
- * URL-type keys in TWebSearchKeys (not API keys or version strings).
- * Must stay in sync with URL-typed fields in webSearchAuth (packages/data-schemas).
+ * User-provided URL keys that may pass through after SSRF preflight.
  */
-const WEB_SEARCH_URL_KEYS = new Set<TWebSearchKeys>([
+const USER_PROVIDED_URL_KEYS = new Set<TWebSearchKeys>([
   'searxngInstanceUrl',
   'firecrawlApiUrl',
   'jinaApiUrl',
 ]);
+
+/**
+ * URL keys that require explicit admin opt-in before user-provided values may pass through.
+ */
+const USER_PROVIDED_OPT_IN_URL_KEYS = new Set<TWebSearchKeys>([
+  'tavilySearchUrl',
+  'tavilyExtractUrl',
+]);
+
+function isUserProvidedEnabled(field: string): boolean {
+  return process.env[field] === AuthType.USER_PROVIDED;
+}
 
 /**
  * Returns true if the URL should be blocked for SSRF risk.
@@ -123,6 +130,12 @@ export async function loadWebSearchAuth({
       specificService = webSearchConfig.scraperProvider as unknown as ServiceType;
     } else if (category === SearchCategories.RERANKERS && webSearchConfig?.rerankerType) {
       specificService = webSearchConfig.rerankerType as unknown as ServiceType;
+
+      // Special case: skipping the reranker means skipping auth as well
+      if (specificService === 'none') {
+        authResult.rerankerType = specificService as RerankerTypes;
+        return [true, false];
+      }
     }
 
     // If a specific service is specified, only check that one
@@ -187,15 +200,30 @@ export async function loadWebSearchAuth({
           }
 
           const isFieldUserProvided = value != null && process.env[field] !== value;
-          const isUrlKey = originalKey != null && WEB_SEARCH_URL_KEYS.has(originalKey);
+          const isUserProvidedUrlKey =
+            originalKey != null && USER_PROVIDED_URL_KEYS.has(originalKey);
+          const isUserProvidedOptInUrlKey =
+            originalKey != null && USER_PROVIDED_OPT_IN_URL_KEYS.has(originalKey);
+          const isUserProvidedUrlEnabled =
+            isUserProvidedUrlKey || (isUserProvidedOptInUrlKey && isUserProvidedEnabled(field));
           let contributed = false;
 
-          if (isUrlKey && isFieldUserProvided && (await isSSRFUrl(value))) {
+          if (isUserProvidedOptInUrlKey && isFieldUserProvided && !isUserProvidedUrlEnabled) {
             if (!optionalSet.has(field)) {
               allFieldsAuthenticated = false;
               break;
             }
-          } else if (originalKey) {
+            continue;
+          }
+
+          if (isUserProvidedUrlEnabled && isFieldUserProvided && (await isSSRFUrl(value))) {
+            if (!optionalSet.has(field)) {
+              allFieldsAuthenticated = false;
+              break;
+            }
+            continue;
+          }
+          if (originalKey) {
             authResult[originalKey] = value;
             contributed = true;
           }
@@ -220,6 +248,10 @@ export async function loadWebSearchAuth({
         continue;
       }
     }
+    if (category === SearchCategories.RERANKERS && !webSearchConfig?.rerankerType) {
+      authResult.rerankerType = 'none' as RerankerTypes;
+      return [true, false];
+    }
     return [false, isUserProvided];
   }
 
@@ -239,10 +271,23 @@ export async function loadWebSearchAuth({
     authTypes.push([category, isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED]);
   }
 
-  authResult.safeSearch = webSearchConfig?.safeSearch ?? SafeSearchTypes.MODERATE;
-  authResult.scraperTimeout =
-    webSearchConfig?.scraperTimeout ?? webSearchConfig?.firecrawlOptions?.timeout ?? 7500;
+  const scraperProvider =
+    authResult.scraperProvider ?? webSearchConfig?.scraperProvider ?? ScraperProviders.FIRECRAWL;
+  let scraperOptionsTimeout: number | undefined;
+  if (scraperProvider === ScraperProviders.TAVILY) {
+    scraperOptionsTimeout = webSearchConfig?.tavilyScraperOptions?.timeout;
+  } else if (scraperProvider === ScraperProviders.FIRECRAWL) {
+    scraperOptionsTimeout = webSearchConfig?.firecrawlOptions?.timeout;
+  }
+
+  const searchProvider = authResult.searchProvider ?? webSearchConfig?.searchProvider;
+  if (searchProvider !== SearchProviders.TAVILY) {
+    authResult.safeSearch = webSearchConfig?.safeSearch ?? SafeSearchTypes.MODERATE;
+  }
+  authResult.scraperTimeout = webSearchConfig?.scraperTimeout ?? scraperOptionsTimeout ?? 7500;
   authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
+  authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
+  authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;
 
   return {
     authTypes,

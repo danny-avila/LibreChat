@@ -1,4 +1,9 @@
-import { AuthType, EModelEndpoint } from 'librechat-data-provider';
+import {
+  AuthType,
+  EModelEndpoint,
+  BEDROCK_OUTPUT_128K_BETA,
+  BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA,
+} from 'librechat-data-provider';
 import { initializeBedrock } from './initialize';
 import type { BaseInitializeParams, BedrockLLMConfigResult } from '~/types';
 import { checkUserKeyExpiry } from '~/utils';
@@ -23,6 +28,7 @@ jest.mock('~/utils', () => ({
 }));
 
 const mockedCheckUserKeyExpiry = jest.mocked(checkUserKeyExpiry);
+const BEDROCK_CLAUDE_4_BETAS = [BEDROCK_OUTPUT_128K_BETA, BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA];
 
 const createMockParams = (
   overrides: Partial<{
@@ -123,6 +129,7 @@ describe('initializeBedrock', () => {
         guardrailIdentifier: 'test-guardrail-id',
         guardrailVersion: '1',
         trace: 'enabled' as const,
+        streamProcessingMode: 'async',
       };
 
       const params = createMockParams({
@@ -202,6 +209,122 @@ describe('initializeBedrock', () => {
 
       expect(result.llmConfig.guardrailConfig).toEqual(guardrailConfig);
       expect(result.llmConfig.guardrailConfig?.trace).toBe('enabled_full');
+    });
+
+    it.each([
+      {
+        description: 'guardrailIdentifier only',
+        envVars: { GUARDRAIL_ID: 'gr-abc123xyz' },
+        input: {
+          guardrailIdentifier: '${GUARDRAIL_ID}',
+          guardrailVersion: '1',
+        },
+        expected: {
+          guardrailIdentifier: 'gr-abc123xyz',
+          guardrailVersion: '1',
+        },
+      },
+      {
+        description: 'guardrailVersion only',
+        envVars: { GUARDRAIL_VERSION: 'DRAFT' },
+        input: {
+          guardrailIdentifier: 'static-guardrail-id',
+          guardrailVersion: '${GUARDRAIL_VERSION}',
+        },
+        expected: {
+          guardrailIdentifier: 'static-guardrail-id',
+          guardrailVersion: 'DRAFT',
+        },
+      },
+      {
+        description: 'both guardrailIdentifier and guardrailVersion',
+        envVars: { PROD_GUARDRAIL_ID: 'gr-production-123', PROD_GUARDRAIL_VERSION: '5' },
+        input: {
+          guardrailIdentifier: '${PROD_GUARDRAIL_ID}',
+          guardrailVersion: '${PROD_GUARDRAIL_VERSION}',
+          trace: 'enabled' as const,
+        },
+        expected: {
+          guardrailIdentifier: 'gr-production-123',
+          guardrailVersion: '5',
+          trace: 'enabled',
+        },
+      },
+      {
+        description: 'direct values when no env variable syntax is used',
+        envVars: {},
+        input: {
+          guardrailIdentifier: 'direct-guardrail-id',
+          guardrailVersion: '3',
+        },
+        expected: {
+          guardrailIdentifier: 'direct-guardrail-id',
+          guardrailVersion: '3',
+        },
+      },
+      {
+        description: 'fallback to original string when env variable is not set',
+        envVars: {},
+        deleteEnvVars: ['NONEXISTENT_GUARDRAIL_ID'],
+        input: {
+          guardrailIdentifier: '${NONEXISTENT_GUARDRAIL_ID}',
+          guardrailVersion: '1',
+        },
+        expected: {
+          guardrailIdentifier: '${NONEXISTENT_GUARDRAIL_ID}',
+          guardrailVersion: '1',
+        },
+      },
+      {
+        description: 'env variable with whitespace around it',
+        envVars: { TRIMMED_GUARDRAIL_ID: 'gr-trimmed-123' },
+        input: {
+          guardrailIdentifier: '  ${TRIMMED_GUARDRAIL_ID}  ',
+          guardrailVersion: '2',
+        },
+        expected: {
+          guardrailIdentifier: 'gr-trimmed-123',
+          guardrailVersion: '2',
+        },
+      },
+      {
+        description: 'preserve trace field when resolving env variables',
+        envVars: { GUARDRAIL_WITH_TRACE: 'gr-with-trace' },
+        input: {
+          guardrailIdentifier: '${GUARDRAIL_WITH_TRACE}',
+          guardrailVersion: '1',
+          trace: 'enabled_full' as const,
+        },
+        expected: {
+          guardrailIdentifier: 'gr-with-trace',
+          guardrailVersion: '1',
+          trace: 'enabled_full',
+        },
+      },
+    ])('should resolve environment variables: $description', async ({ envVars, deleteEnvVars, input, expected }) => {
+      // Set up environment variables
+      Object.entries(envVars).forEach(([key, value]) => {
+        process.env[key] = value;
+      });
+
+      // Delete specified environment variables
+      deleteEnvVars?.forEach((key) => {
+        delete process.env[key];
+      });
+
+      const params = createMockParams({
+        config: {
+          endpoints: {
+            [EModelEndpoint.bedrock]: {
+              guardrailConfig: input,
+            },
+          },
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(result.llmConfig.guardrailConfig).toEqual(expected);
     });
   });
 
@@ -627,9 +750,7 @@ describe('initializeBedrock', () => {
 
       expect(amrf.thinking).toEqual({ type: 'adaptive' });
       expect(result.llmConfig.maxTokens).toBeUndefined();
-      expect(amrf.anthropic_beta).toEqual(
-        expect.arrayContaining(['output-128k-2025-02-19', 'context-1m-2025-08-07']),
-      );
+      expect(amrf.anthropic_beta).toEqual(expect.arrayContaining(BEDROCK_CLAUDE_4_BETAS));
     });
 
     it('should pass effort via output_config for Opus 4.6', async () => {
@@ -645,6 +766,22 @@ describe('initializeBedrock', () => {
 
       expect(amrf.thinking).toEqual({ type: 'adaptive' });
       expect(amrf.output_config).toEqual({ effort: 'medium' });
+    });
+
+    it('should preserve user-provided anthropic beta values for Opus 4.6', async () => {
+      const params = createMockParams({
+        model_parameters: {
+          model: 'anthropic.claude-opus-4-6-v1',
+          additionalModelRequestFields: {
+            anthropic_beta: ['context-1m-2025-08-07'],
+          },
+        },
+      });
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      const amrf = result.llmConfig.additionalModelRequestFields as Record<string, unknown>;
+
+      expect(amrf.anthropic_beta).toEqual(['context-1m-2025-08-07', ...BEDROCK_CLAUDE_4_BETAS]);
     });
 
     it('should respect user-provided maxTokens for Opus 4.6', async () => {

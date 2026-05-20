@@ -1,5 +1,7 @@
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
+import { RetentionMode } from 'librechat-data-provider';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 import type { AppConfig, IConversation } from '~/types';
@@ -16,7 +18,12 @@ export interface ConversationMethods {
   saveConvo(
     ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
     data: { conversationId: string; newConversationId?: string; [key: string]: unknown },
-    metadata?: { context?: string; unsetFields?: Record<string, number>; noUpsert?: boolean },
+    metadata?: {
+      context?: string;
+      unsetFields?: Record<string, number>;
+      noUpsert?: boolean;
+      createdAtOnInsert?: Date;
+    },
   ): Promise<IConversation | { message: string } | null>;
   bulkSaveConvos(conversations: Array<Record<string, unknown>>): Promise<unknown>;
   getConvosByCursor(
@@ -42,6 +49,10 @@ export interface ConversationMethods {
     convoMap: Record<string, unknown>;
   }>;
   getConvo(user: string, conversationId: string): Promise<IConversation | null>;
+  getConvoRetention(
+    user: string,
+    conversationId: string,
+  ): Promise<Pick<IConversation, 'expiredAt'> | null>;
   getConvoTitle(user: string, conversationId: string): Promise<string | null>;
   deleteConvos(
     user: string,
@@ -60,13 +71,20 @@ export function createConversationMethods(
     return messageMethods;
   }
 
+  function getVisibleConversationRetentionFilter(): FilterQuery<IConversation> {
+    return buildRetentionVisibilityFilter<IConversation>();
+  }
+
   /**
    * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
    */
   async function searchConversation(conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne({ conversationId }, 'conversationId user').lean();
+      return await Conversation.findOne(
+        { conversationId },
+        'conversationId user',
+      ).lean<IConversation>();
     } catch (error) {
       logger.error('[searchConversation] Error searching conversation', error);
       throw new Error('Error searching conversation');
@@ -79,10 +97,28 @@ export function createConversationMethods(
   async function getConvo(user: string, conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne({ user, conversationId }).lean();
+      return await Conversation.findOne({ user, conversationId }).lean<IConversation>();
     } catch (error) {
       logger.error('[getConvo] Error getting single conversation', error);
       throw new Error('Error getting single conversation');
+    }
+  }
+
+  /**
+   * Retrieves only the retention deadline for a conversation.
+   */
+  async function getConvoRetention(
+    user: string,
+    conversationId: string,
+  ): Promise<Pick<IConversation, 'expiredAt'> | null> {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOne({ user, conversationId }, 'expiredAt').lean<
+        Pick<IConversation, 'expiredAt'>
+      >();
+    } catch (error) {
+      logger.error('[getConvoRetention] Error getting conversation retention fields', error);
+      throw new Error('Error getting conversation retention fields');
     }
   }
 
@@ -125,8 +161,7 @@ export function createConversationMethods(
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       return (
-        ((await Conversation.findOne({ conversationId }, 'files').lean()) as IConversation | null)
-          ?.files ?? []
+        (await Conversation.findOne({ conversationId }, 'files').lean<IConversation>())?.files ?? []
       );
     } catch (error) {
       logger.error('[getConvoFiles] Error getting conversation files', error);
@@ -156,7 +191,12 @@ export function createConversationMethods(
       newConversationId?: string;
       [key: string]: unknown;
     },
-    metadata?: { context?: string; unsetFields?: Record<string, number>; noUpsert?: boolean },
+    metadata?: {
+      context?: string;
+      unsetFields?: Record<string, number>;
+      noUpsert?: boolean;
+      createdAtOnInsert?: Date;
+    },
   ) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
@@ -166,28 +206,53 @@ export function createConversationMethods(
         logger.debug(`[saveConvo] ${metadata.context}`);
       }
 
-      const messages = await getMessages({ conversationId }, '_id');
+      const messages = await getMessages({ conversationId, user: userId }, '_id');
       const update: Record<string, unknown> = { ...convo, messages, user: userId };
 
       if (newConversationId) {
         update.conversationId = newConversationId;
       }
 
-      if (isTemporary) {
+      if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
+        if (typeof isTemporary === 'boolean') {
+          update.isTemporary = isTemporary;
+        }
         try {
           update.expiredAt = createTempChatExpirationDate(interfaceConfig);
         } catch (err) {
           logger.error('Error creating temporary chat expiration date:', err);
           logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
-          update.expiredAt = null;
+          update.expiredAt = createFallbackRetentionDate();
         }
-      } else {
+      } else if (isTemporary === true) {
+        update.isTemporary = true;
+        try {
+          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
+        } catch (err) {
+          logger.error('Error creating temporary chat expiration date:', err);
+          logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
+          update.expiredAt = createFallbackRetentionDate();
+        }
+      } else if (isTemporary === false) {
+        update.isTemporary = false;
         update.expiredAt = null;
+      }
+
+      const createdAtOnInsert =
+        metadata?.createdAtOnInsert instanceof Date &&
+        !Number.isNaN(metadata.createdAtOnInsert.getTime())
+          ? metadata.createdAtOnInsert
+          : undefined;
+      if (createdAtOnInsert) {
+        update.updatedAt = new Date();
       }
 
       const updateOperation: Record<string, unknown> = { $set: update };
       if (metadata?.unsetFields && Object.keys(metadata.unsetFields).length > 0) {
         updateOperation.$unset = metadata.unsetFields;
+      }
+      if (createdAtOnInsert) {
+        updateOperation.$setOnInsert = { createdAt: createdAtOnInsert };
       }
 
       const conversation = await Conversation.findOneAndUpdate(
@@ -196,12 +261,26 @@ export function createConversationMethods(
         {
           new: true,
           upsert: metadata?.noUpsert !== true,
+          ...(createdAtOnInsert ? { timestamps: false } : {}),
         },
       );
 
       if (!conversation) {
         logger.debug('[saveConvo] Conversation not found, skipping update');
         return null;
+      }
+
+      if (
+        interfaceConfig?.retentionMode === RetentionMode.ALL &&
+        typeof isTemporary !== 'boolean' &&
+        (conversation.isTemporary == null ||
+          (conversation.isTemporary === false && conversation.$isDefault('isTemporary')))
+      ) {
+        await Conversation.updateOne(
+          { _id: conversation._id, isTemporary: { $ne: false } },
+          { $set: { isTemporary: false } },
+        );
+        conversation.isTemporary = false;
       }
 
       return conversation.toObject();
@@ -277,9 +356,7 @@ export function createConversationMethods(
       filters.push({ tags: { $in: tags } } as FilterQuery<IConversation>);
     }
 
-    filters.push({
-      $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
-    } as FilterQuery<IConversation>);
+    filters.push(getVisibleConversationRetentionFilter());
 
     if (search) {
       try {
@@ -358,16 +435,21 @@ export function createConversationMethods(
         )
         .sort(sortObj)
         .limit(limit + 1)
-        .lean();
+        .lean<IConversation[]>();
 
       let nextCursor: string | null = null;
       if (convos.length > limit) {
         convos.pop();
-        const lastReturned = convos[convos.length - 1] as Record<string, unknown>;
-        const primaryValue = lastReturned[finalSortBy];
+        const lastReturned = convos[convos.length - 1];
+        let primaryValue: string | Date | undefined = lastReturned.updatedAt;
+        if (finalSortBy === 'title') {
+          primaryValue = lastReturned.title;
+        } else if (finalSortBy === 'createdAt') {
+          primaryValue = lastReturned.createdAt;
+        }
         const primaryStr =
-          finalSortBy === 'title' ? primaryValue : (primaryValue as Date).toISOString();
-        const secondaryStr = (lastReturned.updatedAt as Date).toISOString();
+          finalSortBy === 'title' ? primaryValue : new Date(primaryValue ?? 0).toISOString();
+        const secondaryStr = new Date(lastReturned.updatedAt ?? 0).toISOString();
         const composite = { primary: primaryStr, secondary: secondaryStr };
         nextCursor = Buffer.from(JSON.stringify(composite)).toString('base64');
       }
@@ -399,8 +481,8 @@ export function createConversationMethods(
       const results = await Conversation.find({
         user,
         conversationId: { $in: conversationIds },
-        $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
-      }).lean();
+        ...getVisibleConversationRetentionFilter(),
+      }).lean<IConversation[]>();
 
       results.sort(
         (a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime(),
@@ -486,6 +568,7 @@ export function createConversationMethods(
     getConvosByCursor,
     getConvosQueried,
     getConvo,
+    getConvoRetention,
     getConvoTitle,
     deleteConvos,
   };

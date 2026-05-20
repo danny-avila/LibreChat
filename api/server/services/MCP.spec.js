@@ -922,13 +922,18 @@ describe('User parameter passing tests', () => {
       // Should not call reinitMCPServer since domain check failed
       expect(mockReinitMCPServer).not.toHaveBeenCalled();
 
-      // Verify getAppConfig was called with user role
-      expect(mockGetAppConfig).toHaveBeenCalledWith({ role: 'user' });
+      // Verify getAppConfig was called with the user scope
+      expect(mockGetAppConfig).toHaveBeenCalledWith({
+        role: 'user',
+        tenantId: undefined,
+        userId: 'domain-test-user',
+      });
 
       // Verify domain validation was called with correct parameters
       expect(mockIsMCPDomainAllowed).toHaveBeenCalledWith(
         { url: 'https://disallowed-domain.com/sse' },
         ['allowed-domain.com'],
+        undefined,
       );
     });
 
@@ -970,8 +975,12 @@ describe('User parameter passing tests', () => {
       // Should create tool successfully
       expect(result).toBeDefined();
 
-      // Verify getAppConfig was called with user role
-      expect(mockGetAppConfig).toHaveBeenCalledWith({ role: 'admin' });
+      // Verify getAppConfig was called with the user scope
+      expect(mockGetAppConfig).toHaveBeenCalledWith({
+        role: 'admin',
+        tenantId: undefined,
+        userId: 'domain-test-user',
+      });
     });
 
     it('should skip domain validation for stdio transports (no URL)', async () => {
@@ -1046,8 +1055,12 @@ describe('User parameter passing tests', () => {
       // Should not call reinitMCPServer since domain check failed early
       expect(mockReinitMCPServer).not.toHaveBeenCalled();
 
-      // Verify getAppConfig was called with user role
-      expect(mockGetAppConfig).toHaveBeenCalledWith({ role: 'user' });
+      // Verify getAppConfig was called with the user scope
+      expect(mockGetAppConfig).toHaveBeenCalledWith({
+        role: 'user',
+        tenantId: undefined,
+        userId: 'domain-test-user',
+      });
     });
 
     it('should use user role when fetching domain restrictions', async () => {
@@ -1099,9 +1112,17 @@ describe('User parameter passing tests', () => {
         availableTools,
       });
 
-      // Verify getAppConfig was called with correct roles
-      expect(mockGetAppConfig).toHaveBeenNthCalledWith(1, { role: 'admin' });
-      expect(mockGetAppConfig).toHaveBeenNthCalledWith(2, { role: 'user' });
+      // Verify getAppConfig was called with the correct user scopes
+      expect(mockGetAppConfig).toHaveBeenNthCalledWith(1, {
+        role: 'admin',
+        tenantId: undefined,
+        userId: 'admin-user',
+      });
+      expect(mockGetAppConfig).toHaveBeenNthCalledWith(2, {
+        role: 'user',
+        tenantId: undefined,
+        userId: 'regular-user',
+      });
     });
   });
 

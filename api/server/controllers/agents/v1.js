@@ -10,7 +10,9 @@ const {
   collectEdgeAgentIds,
   mergeAgentOcrConversion,
   MAX_AVATAR_REFRESH_AGENTS,
+  collectToolResourceFileIds,
   convertOcrToContextInPlace,
+  stripFileIdsFromToolResources,
 } = require('@librechat/api');
 const {
   Time,
@@ -24,6 +26,8 @@ const {
   EToolResources,
   PermissionBits,
   actionDelimiter,
+  AgentCapabilities,
+  EModelEndpoint,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
@@ -51,27 +55,67 @@ const systemTools = {
 
 const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const getSafeModelParameters = (modelParameters) => {
+  const { useResponsesApi } = modelParameters ?? {};
+  return typeof useResponsesApi === 'boolean' ? { useResponsesApi } : {};
+};
+const hasEditBit = (permission) => (permission & PermissionBits.EDIT) === PermissionBits.EDIT;
+
+const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
+  const skillScopeEnabled = agent.skills_enabled === true;
+  delete agent.skills_enabled;
+
+  if (!skillScopeEnabled) {
+    delete agent.skills;
+    return agent;
+  }
+
+  const configuredSkills = Array.isArray(agent.skills) ? agent.skills : [];
+  if (configuredSkills.length === 0) {
+    delete agent.skills;
+    if (accessibleSkillSet.size > 0) {
+      agent.skills_enabled = true;
+    }
+    return agent;
+  }
+
+  const visibleSkills = configuredSkills
+    .map((skillId) => String(skillId))
+    .filter((skillId) => accessibleSkillSet.has(skillId));
+
+  if (visibleSkills.length === 0) {
+    delete agent.skills;
+    return agent;
+  }
+
+  agent.skills = visibleSkills;
+  agent.skills_enabled = true;
+  return agent;
+};
 
 /**
- * Validates that the requesting user has VIEW access to every agent referenced in edges.
- * Agents that do not exist in the database are skipped — at create time, the `from` field
- * often references the agent being built, which has no DB record yet.
- * @param {import('librechat-data-provider').GraphEdge[]} edges
+ * Looks up each referenced agent id in Mongo, splits them into three
+ * buckets the caller needs for validation: ids that don't exist at all,
+ * ids the user lacks VIEW permission on, and ids that are fully
+ * accessible. Missing ids are intentionally NOT treated as unauthorized
+ * — for `edges`, a self-referential `from` can legitimately name the
+ * agent being created (no DB record yet); callers that should reject
+ * missing ids (like the subagent path) read the `missing` bucket
+ * instead.
+ * @param {Iterable<string>} agentIds
  * @param {string} userId
- * @param {string} userRole - Used for group/role principal resolution
- * @returns {Promise<string[]>} Agent IDs the user cannot VIEW (empty if all accessible)
+ * @param {string} userRole
+ * @returns {Promise<{ missing: string[], unauthorized: string[] }>}
  */
-const validateEdgeAgentAccess = async (edges, userId, userRole) => {
-  const edgeAgentIds = collectEdgeAgentIds(edges);
-  if (edgeAgentIds.size === 0) {
-    return [];
-  }
+const classifyAgentReferences = async (agentIds, userId, userRole) => {
+  const ids = [...new Set(agentIds)];
+  if (ids.length === 0) return { missing: [], unauthorized: [] };
 
-  const agents = await db.getAgents({ id: { $in: [...edgeAgentIds] } });
+  const agents = await db.getAgents({ id: { $in: ids } });
+  const foundIds = new Set(agents.map((a) => a.id));
+  const missing = ids.filter((id) => !foundIds.has(id));
 
-  if (agents.length === 0) {
-    return [];
-  }
+  if (agents.length === 0) return { missing, unauthorized: [] };
 
   const permissionsMap = await getResourcePermissionsMap({
     userId,
@@ -80,12 +124,57 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
     resourceIds: agents.map((a) => a._id),
   });
 
-  return agents
+  const unauthorized = agents
     .filter((a) => {
       const bits = permissionsMap.get(a._id.toString()) ?? 0;
       return (bits & PermissionBits.VIEW) === 0;
     })
     .map((a) => a.id);
+
+  return { missing, unauthorized };
+};
+
+/**
+ * Validates VIEW access for every agent referenced in `edges`.
+ * Missing ids are NOT errors here — at create time a self-referential
+ * `from` often names the agent being built, which has no DB record
+ * yet. Only unauthorized (existing but unviewable) ids are returned.
+ */
+const validateEdgeAgentAccess = async (edges, userId, userRole) => {
+  const { unauthorized } = await classifyAgentReferences(
+    collectEdgeAgentIds(edges),
+    userId,
+    userRole,
+  );
+  return unauthorized;
+};
+
+/**
+ * Validates `subagents.agent_ids` more strictly than edges: both
+ * missing AND unauthorized ids are errors. `subagents.agent_ids`
+ * can't self-reference (subagents spawn *other* agents), so a
+ * missing id is always a typo or a reference to a deleted agent —
+ * `initializeClient` would silently drop it at runtime, leaving the
+ * persisted config out of sync with actual spawn targets (Codex P2).
+ * Returning the split lets the caller report each bucket with the
+ * appropriate status.
+ */
+const validateSubagentReferences = (subagents, userId, userRole) =>
+  classifyAgentReferences(subagents?.agent_ids ?? [], userId, userRole);
+
+/**
+ * Returns true when the agents-endpoint `subagents` capability is
+ * enabled in this request's resolved app config. When disabled,
+ * `initializeClient` already strips the `subagents` block at runtime
+ * so persisted `agent_ids` are inert — gating the ACL check on this
+ * keeps stale references in legacy records from blocking unrelated
+ * edits after a capability-off rollback (Codex P2).
+ * @param {Express.Request} req
+ */
+const isSubagentsCapabilityEnabled = (req) => {
+  const capabilities = req.config?.endpoints?.[EModelEndpoint.agents]?.capabilities;
+  if (!Array.isArray(capabilities)) return false;
+  return capabilities.includes(AgentCapabilities.subagents);
 };
 
 /**
@@ -100,6 +189,7 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
  * @param {object} params
  * @param {string[]} params.tools - Raw tool strings from the request
  * @param {string} params.userId - Requesting user ID for MCP server access check
+ * @param {string} [params.role] - Requesting user's role for ACL principal resolution
  * @param {Record<string, unknown>} params.availableTools - Global non-MCP tool cache
  * @param {string[]} [params.existingTools] - Tools already persisted on the agent document
  * @param {Record<string, unknown>} [params.configServers] - Config-source MCP servers resolved from appConfig overrides
@@ -108,6 +198,7 @@ const validateEdgeAgentAccess = async (edges, userId, userRole) => {
 const filterAuthorizedTools = async ({
   tools,
   userId,
+  role,
   availableTools,
   existingTools,
   configServers,
@@ -130,7 +221,9 @@ const filterAuthorizedTools = async ({
     if (mcpServerConfigs === undefined) {
       try {
         mcpServerConfigs =
-          (await getMCPServersRegistry().getAllServerConfigs(userId, configServers)) ?? {};
+          (role
+            ? await getMCPServersRegistry().getAllServerConfigs(userId, configServers, role)
+            : await getMCPServersRegistry().getAllServerConfigs(userId, configServers)) ?? {};
       } catch (e) {
         logger.warn(
           '[filterAuthorizedTools] MCP registry unavailable, filtering all MCP tools',
@@ -169,6 +262,49 @@ const filterAuthorizedTools = async ({
 };
 
 /**
+ * Removes file IDs from tool resources unless the referenced file is owned by
+ * the agent owner.
+ * @param {object} params
+ * @param {object} params.tool_resources
+ * @param {string | object} params.ownerId
+ * @param {string} params.logPrefix
+ * @returns {Promise<number>} Count of removed file references.
+ */
+const pruneToolResourceFileIdsForOwner = async ({ tool_resources, ownerId, logPrefix }) => {
+  const referencedFileIds = collectToolResourceFileIds(tool_resources);
+  if (referencedFileIds.length === 0) {
+    return 0;
+  }
+  if (!ownerId) {
+    return stripFileIdsFromToolResources(tool_resources, referencedFileIds).removedCount;
+  }
+  const ownerIdStr = ownerId.toString();
+
+  try {
+    const ownerFiles = await db.getFiles({ file_id: { $in: referencedFileIds } }, null, {
+      file_id: 1,
+      user: 1,
+    });
+    const allowedIds = new Set(
+      (ownerFiles ?? [])
+        .filter((file) => file.user && file.user.toString() === ownerIdStr)
+        .map((file) => file.file_id),
+    );
+    const disallowedIds = referencedFileIds.filter((id) => !allowedIds.has(id));
+    if (disallowedIds.length > 0) {
+      logger.warn(`${logPrefix} Pruning ${disallowedIds.length} invalid file reference(s)`);
+      return stripFileIdsFromToolResources(tool_resources, disallowedIds).removedCount;
+    }
+    return 0;
+  } catch (fileCheckError) {
+    logger.warn(`${logPrefix} File ownership check failed, pruning incoming file references`, {
+      error: fileCheckError?.message,
+    });
+    return stripFileIdsFromToolResources(tool_resources, referencedFileIds).removedCount;
+  }
+};
+
+/**
  * Creates an Agent.
  * @route POST /Agents
  * @param {ServerRequest} req - The request object.
@@ -187,11 +323,57 @@ const createAgentHandler = async (req, res) => {
 
     const { id: userId, role: userRole } = req.user;
 
+    if (agentData.tool_resources) {
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: agentData.tool_resources,
+        ownerId: userId,
+        logPrefix: '[/Agents]',
+      });
+    }
+
     if (agentData.edges?.length) {
       const unauthorized = await validateEdgeAgentAccess(agentData.edges, userId, userRole);
       if (unauthorized.length > 0) {
         return res.status(403).json({
           error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
+
+    /**
+     * Only validate subagent ACL when the feature is actually enabled
+     * on BOTH the endpoint (capability flag in appConfig) AND the
+     * agent payload. Runtime (`initializeClient` + `run.ts`) checks
+     * `subagents?.enabled` as a truthy predicate — so `undefined` /
+     * `null` / missing `enabled` all disable the feature. The ACL
+     * check must match exactly: only enforce when `enabled === true`.
+     * Otherwise a payload that omits `enabled` (e.g. API clients, or
+     * legacy records that never set the field) could 403 here while
+     * runtime would happily no-op on the subagent tool. Disable-path
+     * is also untouched: toggling `enabled: false` always passes the
+     * gate, so a user who lost VIEW on a child can still save the
+     * disable edit.
+     */
+    if (
+      isSubagentsCapabilityEnabled(req) &&
+      agentData.subagents?.enabled === true &&
+      agentData.subagents?.agent_ids?.length
+    ) {
+      const { missing, unauthorized } = await validateSubagentReferences(
+        agentData.subagents,
+        userId,
+        userRole,
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in subagents do not exist',
+          agent_ids: missing,
+        });
+      }
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in subagents',
           agent_ids: unauthorized,
         });
       }
@@ -209,6 +391,7 @@ const createAgentHandler = async (req, res) => {
     agentData.tools = await filterAuthorizedTools({
       tools,
       userId,
+      role: req.user.role,
       availableTools,
       configServers,
     });
@@ -317,6 +500,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         author: agent.author,
         provider: agent.provider,
         model: agent.model,
+        model_parameters: getSafeModelParameters(agent.model_parameters),
         isPublic: agent.isPublic,
         version: agent.version,
         // Safe metadata
@@ -369,6 +553,38 @@ const updateAgentHandler = async (req, res) => {
       }
     }
 
+    /** Same guard as the create path: capability on the endpoint,
+     *  AND `subagents.enabled === true` on the payload (runtime's
+     *  truthy check treats `undefined` / `null` / `false` as
+     *  disabled, so the ACL check must too). Missing or explicitly-
+     *  disabled payloads always pass the gate — that preserves the
+     *  "can always save a disable edit" behavior a user might need
+     *  after losing VIEW on a referenced child. */
+    if (
+      isSubagentsCapabilityEnabled(req) &&
+      updateData.subagents?.enabled === true &&
+      updateData.subagents?.agent_ids?.length
+    ) {
+      const { id: userId, role: userRole } = req.user;
+      const { missing, unauthorized } = await validateSubagentReferences(
+        updateData.subagents,
+        userId,
+        userRole,
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in subagents do not exist',
+          agent_ids: missing,
+        });
+      }
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in subagents',
+          agent_ids: unauthorized,
+        });
+      }
+    }
+
     // Convert OCR to context in incoming updateData
     convertOcrToContextInPlace(updateData);
 
@@ -387,6 +603,14 @@ const updateAgentHandler = async (req, res) => {
       updateData.tools = ocrConversion.tools;
     }
 
+    if (updateData.tool_resources) {
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: updateData.tool_resources,
+        ownerId: existingAgent.author,
+        logPrefix: `[/Agents/:id] Agent ${id}`,
+      });
+    }
+
     if (updateData.tools) {
       const existingToolSet = new Set(existingAgent.tools ?? []);
       const newMCPTools = updateData.tools.filter(
@@ -401,6 +625,7 @@ const updateAgentHandler = async (req, res) => {
         const approvedNew = await filterAuthorizedTools({
           tools: newMCPTools,
           userId: req.user.id,
+          role: req.user.role,
           availableTools,
           configServers,
         });
@@ -562,9 +787,18 @@ const duplicateAgentHandler = async (req, res) => {
       newAgentData.tools = await filterAuthorizedTools({
         tools: newAgentData.tools,
         userId,
+        role: req.user.role,
         availableTools,
         existingTools: newAgentData.tools,
         configServers,
+      });
+    }
+
+    if (newAgentData.tool_resources) {
+      await pruneToolResourceFileIdsForOwner({
+        tool_resources: newAgentData.tool_resources,
+        ownerId: userId,
+        logPrefix: '[/Agents/:id/duplicate]',
       });
     }
 
@@ -654,6 +888,7 @@ const getListAgentsHandler = async (req, res) => {
     } else if (typeof requiredPermission !== 'number') {
       requiredPermission = PermissionBits.VIEW;
     }
+    const canReturnSkillConfig = hasEditBit(requiredPermission);
     // Base filter
     const filter = {};
 
@@ -727,6 +962,7 @@ const getListAgentsHandler = async (req, res) => {
       otherParams: filter,
       limit,
       after: cursor,
+      includeSkillConfig: true,
     });
 
     const agents = data?.data ?? [];
@@ -734,10 +970,24 @@ const getListAgentsHandler = async (req, res) => {
       return res.json(data);
     }
 
+    let accessibleSkillSet = null;
+    if (!canReturnSkillConfig) {
+      const accessibleSkillIds = await findAccessibleResources({
+        userId,
+        role: req.user.role,
+        resourceType: ResourceType.SKILL,
+        requiredPermissions: PermissionBits.VIEW,
+      });
+      accessibleSkillSet = new Set(accessibleSkillIds.map((oid) => oid.toString()));
+    }
+
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
 
     const urlCache = cachedRefresh?.urlCache;
     data.data = agents.map((agent) => {
+      if (accessibleSkillSet) {
+        sanitizeViewerSkillScope(agent, accessibleSkillSet);
+      }
       try {
         if (agent?._id && publicSet.has(agent._id.toString())) {
           agent.isPublic = true;
@@ -806,6 +1056,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       userId: req.user.id,
       manual: 'false',
       agentId: agent_id,
+      tenantId: req.user.tenantId,
     });
 
     const image = {
@@ -818,7 +1069,11 @@ const uploadAgentAvatarHandler = async (req, res) => {
     if (_avatar && _avatar.source) {
       const { deleteFile } = getStrategyFunctions(_avatar.source);
       try {
-        await deleteFile(req, { filepath: _avatar.filepath });
+        await deleteFile(req, {
+          filepath: _avatar.filepath,
+          user: req.user.id,
+          tenantId: req.user.tenantId,
+        });
         await db.deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
       } catch (error) {
         logger.error('[/:agent_id/avatar] Error deleting old avatar', error);
@@ -897,6 +1152,7 @@ const revertAgentVersionHandler = async (req, res) => {
     // Permissions are enforced via route middleware (ACL EDIT)
 
     let updatedAgent = await db.revertAgentVersion({ id }, version_index);
+    const revertUpdates = {};
 
     if (updatedAgent.tools?.length) {
       const [availableTools, configServers] = await Promise.all([
@@ -906,17 +1162,29 @@ const revertAgentVersionHandler = async (req, res) => {
       const filteredTools = await filterAuthorizedTools({
         tools: updatedAgent.tools,
         userId: req.user.id,
+        role: req.user.role,
         availableTools,
         existingTools: updatedAgent.tools,
         configServers,
       });
       if (filteredTools.length !== updatedAgent.tools.length) {
-        updatedAgent = await db.updateAgent(
-          { id },
-          { tools: filteredTools },
-          { updatingUserId: req.user.id },
-        );
+        revertUpdates.tools = filteredTools;
       }
+    }
+
+    if (updatedAgent.tool_resources) {
+      const removedCount = await pruneToolResourceFileIdsForOwner({
+        tool_resources: updatedAgent.tool_resources,
+        ownerId: existingAgent.author,
+        logPrefix: '[/Agents/:id/revert]',
+      });
+      if (removedCount > 0) {
+        revertUpdates.tool_resources = updatedAgent.tool_resources;
+      }
+    }
+
+    if (Object.keys(revertUpdates).length > 0) {
+      updatedAgent = await db.updateAgent({ id }, revertUpdates, { updatingUserId: req.user.id });
     }
 
     if (updatedAgent.author) {

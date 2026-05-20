@@ -11,6 +11,7 @@ import {
   summarizationConfigSchema,
 } from '../src/config';
 import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
+import { specsConfigSchema } from '../src/models';
 import { FileSources } from '../src/types/files';
 
 describe('paramDefinitionSchema', () => {
@@ -160,10 +161,8 @@ describe('tModelSpecPresetSchema', () => {
     }
   });
 
-  it('strips frontend-only fields', () => {
+  it('strips client-managed and preset-override fields', () => {
     const result = tModelSpecPresetSchema.safeParse({
-      greeting: 'Hello!',
-      iconURL: 'https://example.com/icon.png',
       spec: 'some-spec',
       presetOverride: { model: 'other' },
       model: 'gpt-4o',
@@ -171,10 +170,22 @@ describe('tModelSpecPresetSchema', () => {
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data).not.toHaveProperty('greeting');
-      expect(result.data).not.toHaveProperty('iconURL');
       expect(result.data).not.toHaveProperty('spec');
       expect(result.data).not.toHaveProperty('presetOverride');
+    }
+  });
+
+  it('preserves admin-configurable display fields (greeting, iconURL)', () => {
+    const result = tModelSpecPresetSchema.safeParse({
+      greeting: 'Hello!',
+      iconURL: 'https://example.com/icon.png',
+      model: 'gpt-4o',
+      endpoint: EModelEndpoint.openAI,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toHaveProperty('greeting', 'Hello!');
+      expect(result.data).toHaveProperty('iconURL', 'https://example.com/icon.png');
     }
   });
 
@@ -341,6 +352,125 @@ describe('agentsEndpointSchema', () => {
     if (result.success) {
       expect(result.data).not.toHaveProperty('baseURL');
     }
+  });
+
+  it('allows explicitly disabled remote OIDC auth without issuer', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: false,
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('requires a valid issuer when remote OIDC auth is enabled', () => {
+    const missingIssuer = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            audience: 'remote-agent-api',
+          },
+        },
+      },
+    });
+    const invalidIssuer = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'my-realm',
+            audience: 'remote-agent-api',
+          },
+        },
+      },
+    });
+
+    expect(missingIssuer.success).toBe(false);
+    expect(invalidIssuer.success).toBe(false);
+  });
+
+  it('requires an audience when remote OIDC auth is enabled', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('requires HTTPS remote OIDC issuer and JWKS URLs outside localhost', () => {
+    const insecureIssuer = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'http://auth.example.com',
+            audience: 'remote-agent-api',
+          },
+        },
+      },
+    });
+    const insecureJwksUri = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+            audience: 'remote-agent-api',
+            jwksUri: 'http://auth.example.com/jwks',
+          },
+        },
+      },
+    });
+
+    expect(insecureIssuer.success).toBe(false);
+    expect(insecureJwksUri.success).toBe(false);
+  });
+
+  it('allows localhost HTTP remote OIDC URLs for development', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'http://localhost:8080/realms/test',
+            audience: 'remote-agent-api',
+            jwksUri: 'http://127.0.0.1:8080/realms/test/protocol/openid-connect/certs',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('requires space-separated remote OIDC scopes', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+            audience: 'remote-agent-api',
+            scope: 'remote_agent,admin',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 
@@ -608,5 +738,48 @@ describe('summarizationTriggerSchema', () => {
       trigger: { type: 'token_ratio', value: 0.8 },
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('specsConfigSchema', () => {
+  it('accepts an empty list (defaults applied)', () => {
+    const result = specsConfigSchema.safeParse({ list: [] });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list).toEqual([]);
+      expect(result.data.enforce).toBe(false);
+      expect(result.data.prioritize).toBe(true);
+    }
+  });
+
+  it('defaults list to [] when omitted', () => {
+    const result = specsConfigSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list).toEqual([]);
+    }
+  });
+
+  it('accepts a populated list', () => {
+    const result = specsConfigSchema.safeParse({
+      enforce: true,
+      list: [
+        {
+          name: 'spec-1',
+          label: 'Spec 1',
+          hideBadgeRow: true,
+          preset: { endpoint: EModelEndpoint.openAI },
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list[0].hideBadgeRow).toBe(true);
+    }
+  });
+
+  it('still rejects null list', () => {
+    const result = specsConfigSchema.safeParse({ list: null });
+    expect(result.success).toBe(false);
   });
 });

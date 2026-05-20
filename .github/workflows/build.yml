@@ -3,6 +3,9 @@ name: Linux_Container_Workflow
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   RUNNER_VERSION: 2.293.0
 
@@ -12,26 +15,26 @@ jobs:
     steps:
       # checkout the repo
       - name: 'Checkout GitHub Action'
-        uses: actions/checkout@main
+        uses: actions/checkout@v4
 
       - name: 'Login via Azure CLI'
-        uses: azure/login@v1
+        uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: 'Build GitHub Runner container image'
-        uses: azure/docker-login@v1
+        uses: docker/login-action@v3
         with:
-          login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+          registry: ${{ secrets.REGISTRY_LOGIN_SERVER }}
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
       - run: |
           docker build --build-arg RUNNER_VERSION=${{ env.RUNNER_VERSION }} -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/pwd9000-github-runner-lin:${{ env.RUNNER_VERSION }} .
 
       - name: 'Push container image to ACR'
-        uses: azure/docker-login@v1
+        uses: docker/login-action@v3
         with:
-          login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+          registry: ${{ secrets.REGISTRY_LOGIN_SERVER }}
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
       - run: |

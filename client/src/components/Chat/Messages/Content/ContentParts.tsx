@@ -10,10 +10,14 @@ import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { MessageContext, SearchContext } from '~/Providers';
 import { EditTextPart, EmptyText } from './Parts';
+import PendingSkillCall from './Parts/PendingSkillCall';
 import MemoryArtifacts from './MemoryArtifacts';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
+
+const getToolCallId = (part: TMessageContentParts): string =>
+  (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
 
 type PartWithContextProps = {
   part: TMessageContentParts;
@@ -27,6 +31,7 @@ type PartWithContextProps = {
   isCreatedByUser: boolean;
   isLast: boolean;
   partAttachments: TAttachment[] | undefined;
+  hideAttachments?: boolean;
 };
 
 const PartWithContext = memo(function PartWithContext({
@@ -41,6 +46,7 @@ const PartWithContext = memo(function PartWithContext({
   isCreatedByUser,
   isLast,
   partAttachments,
+  hideAttachments,
 }: PartWithContextProps) {
   const contextValue = useMemo(
     () => ({
@@ -65,6 +71,7 @@ const PartWithContext = memo(function PartWithContext({
         isCreatedByUser={isCreatedByUser}
         isLast={isLastPart}
         showCursor={isLastPart && isLast}
+        hideAttachments={hideAttachments}
       />
     </MessageContext.Provider>
   );
@@ -73,6 +80,15 @@ const PartWithContext = memo(function PartWithContext({
 type ContentPartsProps = {
   content: Array<TMessageContentParts | undefined> | undefined;
   messageId: string;
+  /**
+   * Skill names the user invoked manually via the `$` popover on this turn.
+   * `createdHandler` seeds this on the assistant placeholder from
+   * `submission.manualSkills`, and `finalHandler`'s server-backed
+   * `responseMessage` replacement drops it — so the field is naturally
+   * present only for the lifetime of the stream. Scalar string array (not
+   * the full message object) so `React.memo` stays shallow-happy.
+   */
+  manualSkills?: string[];
   conversationId?: string | null;
   attachments?: TAttachment[];
   searchResults?: { [key: string]: SearchResultData };
@@ -99,6 +115,7 @@ const ContentParts = memo(function ContentParts({
   edit,
   isLast,
   content,
+  manualSkills,
   messageId,
   enterEdit,
   siblingIdx,
@@ -113,9 +130,65 @@ const ContentParts = memo(function ContentParts({
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
+  /**
+   * Interim skill cards — rendered in a separate slot ABOVE the Parts
+   * iteration based purely on the `manualSkills` message field. `content`
+   * is only read to determine the "Running → Ran" visual transition
+   * (`hasRealContent`), never to gate visibility, so backend deltas /
+   * optimistic emissions can't race the pending cards off the screen.
+   *
+   * Lifecycle:
+   *  - `useChatFunctions` seeds `manualSkills` on the assistant placeholder
+   *    at construction → cards appear immediately on submit, with the
+   *    shimmering "Running X" state (no content yet).
+   *  - Through the stream, `useStepHandler` spreads the response on every
+   *    update so `manualSkills` rides along; once the first real content
+   *    part lands, `hasRealContent` flips true and the cards switch to
+   *    the static "Ran X" state — matching what users see for
+   *    model-invoked skills as they finish priming.
+   *  - At finalize, `finalHandler` replaces the message with the server
+   *    response (no `manualSkills` field) → interim cards disappear and
+   *    the real `skill` tool_call part in `content` takes over.
+   *
+   * Skipped on the user side (they get `SkillPills` on the user
+   * bubble) and when no skills were invoked on this turn.
+   */
+  const pendingSkills = useMemo(
+    () => (!isCreatedByUser && manualSkills != null ? manualSkills : []),
+    [isCreatedByUser, manualSkills],
+  );
+  const hasPendingSkills = pendingSkills.length > 0;
+
+  /**
+   * True once the assistant has started streaming something meaningful —
+   * any non-text part, OR a text part with non-empty content. Drives the
+   * "Running X → Ran X" transition on pending cards. An empty-text
+   * placeholder (some endpoints seed one in `initialResponse.content` on
+   * assistant-side) does NOT count as real content, to avoid flipping
+   * the transition before the model has actually produced anything.
+   */
+  const hasRealContent = useMemo(
+    () =>
+      (content ?? []).some((part) => {
+        if (part == null) {
+          return false;
+        }
+        if (part.type !== ContentTypes.TEXT) {
+          return true;
+        }
+        const text = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
+        return text.length > 0;
+      }),
+    [content],
+  );
+
+  const renderPendingSkills = () =>
+    pendingSkills.map((name) => (
+      <PendingSkillCall key={`pending-skill-${name}`} skillName={name} loaded={hasRealContent} />
+    ));
+
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
-      const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
       return (
         <PartWithContext
           key={`provider-${messageId}-${idx}`}
@@ -129,7 +202,7 @@ const ContentParts = memo(function ContentParts({
           isCreatedByUser={isCreatedByUser}
           nextType={content?.[idx + 1]?.type}
           isSubmitting={effectiveIsSubmitting}
-          partAttachments={attachmentMap[toolCallId]}
+          partAttachments={attachmentMap[getToolCallId(part)]}
         />
       );
     },
@@ -145,16 +218,76 @@ const ContentParts = memo(function ContentParts({
     ],
   );
 
-  // Early return: no content
-  if (!content) {
+  const renderGroupedPart = useCallback(
+    (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
+      return (
+        <PartWithContext
+          key={`provider-${messageId}-${idx}`}
+          idx={idx}
+          part={part}
+          isLast={isLast}
+          messageId={messageId}
+          isLastPart={isLastPart}
+          conversationId={conversationId}
+          isLatestMessage={isLatestMessage}
+          isCreatedByUser={isCreatedByUser}
+          nextType={content?.[idx + 1]?.type}
+          isSubmitting={effectiveIsSubmitting}
+          partAttachments={attachmentMap[getToolCallId(part)]}
+          hideAttachments
+        />
+      );
+    },
+    [
+      attachmentMap,
+      content,
+      conversationId,
+      effectiveIsSubmitting,
+      isCreatedByUser,
+      isLast,
+      isLatestMessage,
+      messageId,
+    ],
+  );
+
+  const sequentialParts = useMemo<PartWithIndex[]>(() => {
+    if (!content) {
+      return [];
+    }
+    const result: PartWithIndex[] = [];
+    content.forEach((part, idx) => {
+      if (part) {
+        result.push({ part, idx });
+      }
+    });
+    return result;
+  }, [content]);
+
+  const groupedParts = useMemo(
+    () =>
+      groupSequentialToolCalls(sequentialParts).map((group) => {
+        if (group.type === 'single') {
+          return group;
+        }
+        const groupAttachments = group.parts.flatMap(
+          ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
+        );
+        return { ...group, groupAttachments };
+      }),
+    [sequentialParts, attachmentMap],
+  );
+
+  // Early return: no content to render AND no pending skill cards
+  if (!content && !hasPendingSkills) {
     return null;
   }
 
-  // Edit mode: render editable text parts
+  // Edit mode: render editable text parts. Interim skill cards are a
+  // mid-stream concern, not relevant in edit mode.
   if (edit === true && enterEdit && setSiblingIdx) {
     return (
       <>
-        {content.map((part, idx) => {
+        {(content ?? []).map((part, idx) => {
           if (!part) {
             return null;
           }
@@ -190,37 +323,34 @@ const ContentParts = memo(function ContentParts({
     );
   }
 
-  const showEmptyCursor = content.length === 0 && effectiveIsSubmitting;
-  const lastContentIdx = content.length - 1;
+  const safeContent = content ?? [];
+  const showEmptyCursor = safeContent.length === 0 && effectiveIsSubmitting;
+  const lastContentIdx = safeContent.length - 1;
 
   // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)
-  const hasParallelContent = content.some((part) => part?.groupId != null);
+  const hasParallelContent = safeContent.some((part) => part?.groupId != null);
   if (hasParallelContent) {
     return (
-      <ParallelContentRenderer
-        content={content}
-        messageId={messageId}
-        conversationId={conversationId}
-        attachments={attachments}
-        searchResults={searchResults}
-        isSubmitting={effectiveIsSubmitting}
-        renderPart={renderPart}
-      />
+      <>
+        {renderPendingSkills()}
+        <ParallelContentRenderer
+          content={content}
+          messageId={messageId}
+          conversationId={conversationId}
+          attachments={attachments}
+          searchResults={searchResults}
+          isSubmitting={effectiveIsSubmitting}
+          renderPart={renderPart}
+        />
+      </>
     );
   }
 
   // Sequential content: render parts in order (90% of cases)
-  const sequentialParts: PartWithIndex[] = [];
-  content.forEach((part, idx) => {
-    if (part) {
-      sequentialParts.push({ part, idx });
-    }
-  });
-  const groupedParts = groupSequentialToolCalls(sequentialParts);
-
   return (
     <SearchContext.Provider value={{ searchResults }}>
       <MemoryArtifacts attachments={attachments} />
+      {renderPendingSkills()}
       {showEmptyCursor && (
         <Container>
           <EmptyText />
@@ -237,8 +367,9 @@ const ContentParts = memo(function ContentParts({
             parts={group.parts}
             isSubmitting={effectiveIsSubmitting}
             isLast={group.parts.some((p) => p.idx === lastContentIdx)}
-            renderPart={renderPart}
+            renderPart={renderGroupedPart}
             lastContentIdx={lastContentIdx}
+            groupAttachments={group.groupAttachments}
           />
         );
       })}
