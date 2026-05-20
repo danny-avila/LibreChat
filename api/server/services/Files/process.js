@@ -73,7 +73,9 @@ const isMissingStorageError = (err) => {
     return true;
   }
 
-  return /not found|no such (file|key)|does not exist/i.test(String(err?.message ?? ''));
+  return /(?:file|object|blob|key|resource) (?:not found|does not exist)|no such (?:file|key)/i.test(
+    String(err?.message ?? ''),
+  );
 };
 
 /**
@@ -156,6 +158,7 @@ function enqueueDeleteOperation({
  * @param {string} [params.req.body.tool_resource] - The tool resource if assistant file uploaded is associated to a tool resource.
  *
  * @returns {Promise<{ deletedFileIds: string[], failedFileIds: string[] }>}
+ * @throws {Error} When storage deletion cannot be scheduled or file metadata cleanup fails.
  */
 const processDeleteRequest = async ({ req, files }) => {
   const appConfig = req.config;

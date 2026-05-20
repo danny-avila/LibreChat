@@ -781,6 +781,29 @@ describe('processDeleteRequest', () => {
     expect(result).toEqual({ deletedFileIds: ['expired-file'], failedFileIds: [] });
   });
 
+  it('does not treat unrelated not found messages as missing storage', async () => {
+    const deleteFile = jest.fn().mockRejectedValue(new Error('Configuration not found'));
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+
+    const result = await processDeleteRequest({
+      req: {
+        body: {},
+        config: {},
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+      },
+      files: [
+        {
+          file_id: 'expired-file',
+          filepath: '/images/user-123/expired.png',
+          source: FileSources.local,
+        },
+      ],
+    });
+
+    expect(db.deleteFiles).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['expired-file'] });
+  });
+
   it('throws metadata delete failures after storage deletion succeeds', async () => {
     const deleteFile = jest.fn().mockResolvedValue(undefined);
     const metadataError = new Error('mongo unavailable');
