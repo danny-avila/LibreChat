@@ -13,6 +13,7 @@ import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
 import * as permissions from './accessPermissions';
+import * as nj from './nj/files';
 
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
@@ -722,6 +723,9 @@ export const deleteFiles = async (payload: {
   request.deleteWithOptions(endpoints.files(), {
     data: payload,
   });
+
+export const updateFile = (payload: nj.UpdateFileMetadataBody): Promise<f.TFile> =>
+  request.patch(endpoints.fileUpdate(payload.file_id), payload);
 
 /* Speech */
 

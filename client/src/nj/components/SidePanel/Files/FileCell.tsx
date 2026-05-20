@@ -1,11 +1,26 @@
+import { useState } from 'react';
 import type { TFile } from 'librechat-data-provider';
+import icons from '@uswds/uswds/img/sprite.svg';
+import { cn } from '~/utils';
+import FileOptions from './FileOptions';
 
 /**
  * Displays a file in `FilesPanel`.
  */
-export default function FileCell({ file }: { file: TFile }) {
+export default function FileCell({
+  file,
+  onFileClick,
+}: {
+  file: TFile;
+  onFileClick: (file: TFile) => void;
+}) {
+  const [isPopoverActive, setIsPopoverActive] = useState(false);
+
   return (
-    <div className="flex gap-3">
+    <button
+      className="group flex w-full items-center gap-3 rounded p-2 hover:bg-surface-active-alt"
+      onClick={() => !isPopoverActive && onFileClick(file)}
+    >
       {/* TODO: Dynamic icon based on mimetype */}
       <div className="h-10 w-10 flex-shrink-0 rounded bg-gray-200" />
       <div className="flex min-w-0 flex-col gap-1">
@@ -14,7 +29,31 @@ export default function FileCell({ file }: { file: TFile }) {
           {formatDate(file.createdAt)}
         </span>
       </div>
-    </div>
+      <div className="ml-auto flex items-center">
+        {file.pinned && (
+          <svg
+            className="usa-icon usa-icon--size-3 text-jersey-blue"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <use href={`${icons}#push_pin`} />
+          </svg>
+        )}
+        <div
+          className={cn(
+            'flex',
+            !isPopoverActive &&
+              'pointer-events-none opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100',
+          )}
+        >
+          <FileOptions
+            file={file}
+            isPopoverActive={isPopoverActive}
+            setIsPopoverActive={setIsPopoverActive}
+          />
+        </div>
+      </div>
+    </button>
   );
 }
 

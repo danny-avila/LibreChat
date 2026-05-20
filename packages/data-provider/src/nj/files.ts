@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { TFile } from '../types/files';
 
 export const updateFileSchema = z
   .object({
@@ -9,3 +10,15 @@ export const updateFileSchema = z
   .refine((data) => data.pinned !== undefined || data.filename !== undefined, {
     message: 'At least one of pinned or filename must be provided',
   });
+
+export type UpdateFileMetadataBody = {
+  file_id: string;
+  pinned?: boolean;
+  filename?: string;
+};
+
+export type UpdateFileMutationOptions = {
+  onSuccess?: (data: TFile, variables: UpdateFileMetadataBody, context?: unknown) => void;
+  onMutate?: (variables: UpdateFileMetadataBody) => void | Promise<unknown>;
+  onError?: (error: unknown, variables: UpdateFileMetadataBody, context?: unknown) => void;
+};

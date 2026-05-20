@@ -48,6 +48,7 @@ jest.mock('@librechat/client', () => ({
     <thead {...props}>{children}</thead>
   ),
   useToastContext: () => ({ showToast: mockShowToast }),
+  DropdownPopup: () => null,
 }));
 
 jest.mock('~/Providers', () => ({
@@ -72,6 +73,10 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('~/components/Chat/Input/Files/MyFilesModal', () => ({
   MyFilesModal: () => null,
+}));
+
+jest.mock('~/nj/data-provider/file-mutations', () => ({
+  useUpdateFileMutation: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 
 jest.mock('../PanelFileCell', () => ({ row }: { row: { original: TFile } }) => (

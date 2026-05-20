@@ -44,11 +44,9 @@ export default function FilesSection({
 
       {/* Files (or empty text if none) */}
       {files.length !== 0 ? (
-        <div className="flex flex-col gap-4 pl-2">
+        <div className="flex flex-col">
           {filesToShow.map((file: TFile) => (
-            <button key={file.file_id} onClick={() => handleFileClick(file)}>
-              <FileCell file={file} />
-            </button>
+            <FileCell key={file.file_id} file={file} onFileClick={handleFileClick} />
           ))}
         </div>
       ) : (
