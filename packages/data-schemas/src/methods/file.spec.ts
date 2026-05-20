@@ -207,19 +207,21 @@ describe('File Methods', () => {
       bytes: number;
       tenantId?: string;
     }) =>
-      SkillFile.create({
-        skillId,
-        relativePath,
-        file_id: uuidv4(),
-        filename: path.basename(relativePath),
-        filepath: `/uploads/${relativePath}`,
-        source: 'local',
-        mimeType: 'text/plain',
-        bytes,
-        isExecutable: false,
-        author,
-        tenantId,
-      });
+      runAsSystem(() =>
+        SkillFile.create({
+          skillId,
+          relativePath,
+          file_id: uuidv4(),
+          filename: path.basename(relativePath),
+          filepath: `/uploads/${relativePath}`,
+          source: 'local',
+          mimeType: 'text/plain',
+          bytes,
+          isExecutable: false,
+          author,
+          tenantId,
+        }),
+      );
 
     it('sums File and authored SkillFile bytes by user and tenant', async () => {
       const userId = new mongoose.Types.ObjectId();
