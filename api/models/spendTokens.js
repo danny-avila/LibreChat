@@ -1,5 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { createTransaction, createStructuredTransaction } = require('./Transaction');
+const { getMultiplier } = require('./tx');
 /**
  * Creates up to two transactions to record the spending of tokens.
  *
@@ -86,4 +87,48 @@ const spendStructuredTokens = async (txData, tokenUsage) => {
   return { prompt, completion };
 };
 
-module.exports = { spendTokens, spendStructuredTokens };
+/**
+ * Records MemoryRun usage as a single combined transaction (prompt + completion cost).
+ *
+ * @function
+ * @async
+ * @param {txData} txData - Transaction data (must include model, context: 'memory', endpointTokenConfig).
+ * @param {Object} tokenUsage
+ * @param {Number} tokenUsage.promptTokens
+ * @param {Number} tokenUsage.completionTokens
+ * @returns {Promise<void>}
+ */
+const spendMemoryTokens = async (txData, tokenUsage) => {
+  const promptTokens = Math.max(Number(tokenUsage.promptTokens) || 0, 0);
+  const completionTokens = Math.max(Number(tokenUsage.completionTokens) || 0, 0);
+  const totalTokens = promptTokens + completionTokens;
+
+  if (totalTokens === 0) {
+    return;
+  }
+
+  const { model, endpointTokenConfig } = txData;
+  const promptRate = Math.abs(
+    getMultiplier({ tokenType: 'prompt', model, endpointTokenConfig }),
+  );
+  const completionRate = Math.abs(
+    getMultiplier({ tokenType: 'completion', model, endpointTokenConfig }),
+  );
+  const totalCost = promptTokens * promptRate + completionTokens * completionRate;
+  const blendedRate = totalCost / totalTokens;
+
+  try {
+    await createTransaction({
+      ...txData,
+      tokenType: 'credits',
+      rawAmount: -totalTokens,
+      rate: blendedRate,
+      inputTokens: promptTokens,
+      writeTokens: completionTokens,
+    });
+  } catch (err) {
+    logger.error('[spendMemoryTokens]', err);
+  }
+};
+
+module.exports = { spendTokens, spendStructuredTokens, spendMemoryTokens };

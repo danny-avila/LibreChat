@@ -2,7 +2,12 @@ import { Response } from 'express';
 import { Providers } from '@librechat/agents';
 import { Tools } from 'librechat-data-provider';
 import type { MemoryArtifact } from 'librechat-data-provider';
-import { createMemoryTool, processMemory } from '../memory';
+import {
+  aggregateMemoryUsage,
+  createMemoryTool,
+  MEMORY_USAGE_CONTEXT,
+  processMemory,
+} from '../memory';
 
 // Mock the logger
 jest.mock('winston', () => ({
@@ -40,9 +45,34 @@ jest.mock('@librechat/agents', () => ({
     AZURE: 'azure',
   },
   GraphEvents: {
-    TOOL_END: 'tool_end',
+    ...jest.requireActual('@librechat/agents').GraphEvents,
   },
 }));
+
+describe('aggregateMemoryUsage', () => {
+  it('sums input and output tokens across steps', () => {
+    const result = aggregateMemoryUsage([
+      { input_tokens: 100, output_tokens: 50 },
+      { prompt_tokens: 200, completion_tokens: 75 },
+    ]);
+    expect(result).toEqual({ promptTokens: 300, completionTokens: 125 });
+  });
+
+  it('includes reasoning tokens in completion total', () => {
+    const result = aggregateMemoryUsage([
+      {
+        input_tokens: 1000,
+        output_tokens: 100,
+        reasoning_tokens: 400,
+      },
+    ]);
+    expect(result).toEqual({ promptTokens: 1000, completionTokens: 500 });
+  });
+
+  it('exports memory context constant', () => {
+    expect(MEMORY_USAGE_CONTEXT).toBe('memory');
+  });
+});
 
 describe('createMemoryTool', () => {
   let mockSetMemory: jest.Mock;
@@ -197,11 +227,23 @@ describe('processMemory - GPT-5+ handling', () => {
       write: jest.fn(),
     };
 
-    // Setup the Run.create mock
-    const { Run } = jest.requireMock('@librechat/agents');
-    (Run.create as jest.Mock).mockResolvedValue({
-      processStream: jest.fn().mockResolvedValue('Memory processed'),
-    });
+    // Setup the Run.create mock (simulates ModelEndHandler collecting usage)
+    const { Run, GraphEvents } = jest.requireMock('@librechat/agents');
+    (Run.create as jest.Mock).mockImplementation(
+      async ({ customHandlers }: { customHandlers?: Record<string, { collectedUsage?: unknown[] }> }) => {
+        const modelEndHandler = customHandlers?.[GraphEvents.CHAT_MODEL_END];
+        return {
+          processStream: jest.fn().mockImplementation(async () => {
+            modelEndHandler?.collectedUsage?.push({
+              input_tokens: 1000,
+              output_tokens: 200,
+              reasoning_tokens: 50,
+            });
+            return 'Memory processed';
+          }),
+        };
+      },
+    );
   });
 
   it('should remove temperature for GPT-5 models', async () => {
@@ -241,6 +283,63 @@ describe('processMemory - GPT-5+ handling', () => {
     const callArgs = (Run.create as jest.Mock).mock.calls[0][0];
     expect(callArgs.graphConfig.llmConfig.temperature).toBeUndefined();
     expect(callArgs.graphConfig.llmConfig.maxTokens).toBeUndefined();
+  });
+
+  it('should register CHAT_MODEL_END handler for usage collection', async () => {
+    const { GraphEvents } = jest.requireMock('@librechat/agents');
+    await processMemory({
+      res: mockRes as Response,
+      userId: 'test-user',
+      setMemory: mockSetMemory,
+      deleteMemory: mockDeleteMemory,
+      messages: [],
+      memory: 'Test memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      instructions: 'Test instructions',
+      llmConfig: {
+        provider: Providers.OPENAI,
+        model: 'grok-4-1-fast-reasoning',
+      },
+    });
+
+    const { Run } = jest.requireMock('@librechat/agents');
+    expect(Run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customHandlers: expect.objectContaining({
+          [GraphEvents.CHAT_MODEL_END]: expect.anything(),
+        }),
+      }),
+    );
+  });
+
+  it('should call onMemoryUsage with aggregated tokens after MemoryRun', async () => {
+    const onMemoryUsage = jest.fn().mockResolvedValue(undefined);
+
+    await processMemory({
+      res: mockRes as Response,
+      userId: 'test-user',
+      setMemory: mockSetMemory,
+      deleteMemory: mockDeleteMemory,
+      messages: [],
+      memory: 'Test memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      instructions: 'Test instructions',
+      llmConfig: {
+        provider: Providers.OPENAI,
+        model: 'grok-4-1-fast-reasoning',
+      },
+      onMemoryUsage,
+    });
+
+    expect(onMemoryUsage).toHaveBeenCalledWith({
+      model: 'grok-4-1-fast-reasoning',
+      promptTokens: 1000,
+      completionTokens: 250,
+      userId: 'test-user',
+      conversationId: 'conv-123',
+    });
   });
 
   it('should handle GPT-5+ models with existing modelKwargs', async () => {

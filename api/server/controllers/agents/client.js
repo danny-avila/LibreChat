@@ -11,9 +11,11 @@ const {
   resolveHeaders,
   createSafeUser,
   getBalanceConfig,
+  getCustomEndpointConfig,
   memoryInstructions,
   getTransactionsConfig,
   createMemoryProcessor,
+  MEMORY_USAGE_CONTEXT,
   filterMalformedContentParts,
 } = require('@librechat/api');
 const {
@@ -39,7 +41,7 @@ const {
   removeNullishValues,
 } = require('librechat-data-provider');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
+const { spendTokens, spendStructuredTokens, spendMemoryTokens } = require('~/models/spendTokens');
 const { getFormattedMemories, deleteMemory, setMemory } = require('~/models');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getProviderConfig } = require('~/server/services/Endpoints');
@@ -518,10 +520,10 @@ class AgentClient extends BaseClient {
   /**
    * Creates a promise that resolves with the memory promise result or undefined after a timeout
    * @param {Promise<(TAttachment | null)[] | undefined>} memoryPromise - The memory promise to await
-   * @param {number} timeoutMs - Timeout in milliseconds (default: 3000)
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 30000)
    * @returns {Promise<(TAttachment | null)[] | undefined>}
    */
-  async awaitMemoryWithTimeout(memoryPromise, timeoutMs = 3000) {
+  async awaitMemoryWithTimeout(memoryPromise, timeoutMs = 30000) {
     if (!memoryPromise) {
       return;
     }
@@ -535,7 +537,9 @@ class AgentClient extends BaseClient {
       return attachments;
     } catch (error) {
       if (error.message === 'Memory processing timeout') {
-        logger.warn('[AgentClient] Memory processing timed out after 3 seconds');
+        logger.warn(
+          `[AgentClient] Memory processing timed out after ${timeoutMs}ms; memory UI artifacts may be missing`,
+        );
       } else {
         logger.error('[AgentClient] Error processing memory:', error);
       }
@@ -625,12 +629,30 @@ class AgentClient extends BaseClient {
       agent.model_parameters,
     );
 
+    const balanceConfig = getBalanceConfig(appConfig);
+    const memoryModel = llmConfig.model ?? agent.model;
+    const memoryProvider = memoryConfig.agent?.provider ?? agent.provider;
+    /** Pricing from memory agent endpoint (e.g. custom `xai` tokenConfig in librechat.yaml), not the chat agent. */
+    const memoryEndpointTokenConfig =
+      agent.endpointTokenConfig ??
+      getCustomEndpointConfig({ endpoint: memoryProvider, appConfig })?.tokenConfig;
+
     /** @type {import('@librechat/api').MemoryConfig} */
     const config = {
       validKeys: memoryConfig.validKeys,
       instructions: agent.instructions,
       llmConfig,
       tokenLimit: memoryConfig.tokenLimit,
+      onMemoryUsage: async ({ promptTokens, completionTokens, model }) => {
+        await this.recordTokenUsage({
+          model: model ?? memoryModel,
+          balance: balanceConfig,
+          promptTokens,
+          completionTokens,
+          context: MEMORY_USAGE_CONTEXT,
+          endpointTokenConfig: memoryEndpointTokenConfig,
+        });
+      },
     };
 
     const userId = this.options.req.user.id + '';
@@ -1372,7 +1394,11 @@ class AgentClient extends BaseClient {
       }
     } finally {
       try {
-        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+        const memoryArtifactWaitMs = appConfig.memory?.artifactWaitMs ?? 30000;
+        const attachments = await this.awaitMemoryWithTimeout(
+          memoryPromise,
+          memoryArtifactWaitMs,
+        );
         if (attachments && attachments.length > 0) {
           this.artifactPromises.push(...attachments);
         }
@@ -1632,6 +1658,7 @@ class AgentClient extends BaseClient {
    * @param {OpenAIUsageMetadata} [params.usage]
    * @param {AppConfig['balance']} [params.balance]
    * @param {string} [params.context='message']
+   * @param {import('librechat-data-provider').EndpointTokenConfig} [params.endpointTokenConfig]
    * @returns {Promise<void>}
    */
   async recordTokenUsage({
@@ -1641,21 +1668,28 @@ class AgentClient extends BaseClient {
     promptTokens,
     completionTokens,
     context = 'message',
+    endpointTokenConfig,
   }) {
+    const tokenConfig = endpointTokenConfig ?? this.options.endpointTokenConfig;
+    const txPayload = {
+      model,
+      context,
+      balance,
+      conversationId: this.conversationId,
+      user: this.user ?? this.options.req.user?.id,
+      endpointTokenConfig: tokenConfig,
+    };
+
     try {
-      await spendTokens(
-        {
-          model,
-          context,
-          balance,
-          conversationId: this.conversationId,
-          user: this.user ?? this.options.req.user?.id,
-          endpointTokenConfig: this.options.endpointTokenConfig,
-        },
-        { promptTokens, completionTokens },
-      );
+      if (context === MEMORY_USAGE_CONTEXT) {
+        await spendMemoryTokens(txPayload, { promptTokens, completionTokens });
+        return;
+      }
+
+      await spendTokens(txPayload, { promptTokens, completionTokens });
 
       if (
+        context !== MEMORY_USAGE_CONTEXT &&
         usage &&
         typeof usage === 'object' &&
         'reasoning_tokens' in usage &&
@@ -1668,7 +1702,7 @@ class AgentClient extends BaseClient {
             context: 'reasoning',
             conversationId: this.conversationId,
             user: this.user ?? this.options.req.user?.id,
-            endpointTokenConfig: this.options.endpointTokenConfig,
+            endpointTokenConfig: tokenConfig,
           },
           { completionTokens: usage.reasoning_tokens },
         );

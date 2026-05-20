@@ -144,6 +144,7 @@ export const REPORT_LABELS = {
   },
   KPIS: {
     TOTAL_REVENUE: 'Custo Total (Período)',
+    MEMORY_COST: 'Custo Memória',
     NEW_USERS: 'Novos Usuários',
     ACTIVE_USERS: 'Total Usuários Ativos',
   },
@@ -229,6 +230,7 @@ export interface UsageCostData {
 // Interface para KPIs
 export interface KPIData {
   totalCost: number;
+  memoryCost: number;
   newUsers: number;
   activeAccounts: number;
 }
@@ -603,7 +605,7 @@ export const useReportStore = create<ReportState>()(
           set({ kpiData: data });
         } catch (error) {
           console.error('Erro ao buscar KPIs:', error);
-          set({ kpiData: { totalCost: 0, newUsers: 0, activeAccounts: 0 } });
+          set({ kpiData: { totalCost: 0, memoryCost: 0, newUsers: 0, activeAccounts: 0 } });
         } finally {
           set({ isLoadingKPIs: false });
         }

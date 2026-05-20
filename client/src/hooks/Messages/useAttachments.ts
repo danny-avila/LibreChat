@@ -12,10 +12,24 @@ export default function useAttachments({
   attachments?: TAttachment[];
 }) {
   const messageAttachmentsMap = useRecoilValue(store.messageAttachmentsMap);
-  const messageAttachments = useMemo(
-    () => attachments ?? messageAttachmentsMap[messageId ?? ''] ?? [],
-    [attachments, messageAttachmentsMap, messageId],
-  );
+  const messageAttachments = useMemo(() => {
+    const fromMessage = attachments ?? [];
+    const fromStream = messageAttachmentsMap[messageId ?? ''] ?? [];
+    if (fromMessage.length === 0) {
+      return fromStream;
+    }
+    if (fromStream.length === 0) {
+      return fromMessage;
+    }
+    const seen = new Set(fromMessage.map((a) => a.toolCallId ?? a.file_id ?? JSON.stringify(a)));
+    return [
+      ...fromMessage,
+      ...fromStream.filter((a) => {
+        const id = a.toolCallId ?? a.file_id ?? JSON.stringify(a);
+        return !seen.has(id);
+      }),
+    ];
+  }, [attachments, messageAttachmentsMap, messageId]);
 
   const searchResults = useSearchResultsByTurn(messageAttachments);
 

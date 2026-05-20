@@ -815,6 +815,8 @@ export const memorySchema = z.object({
   charLimit: z.number().optional().default(10000),
   personalize: z.boolean().default(true),
   messageWindowSize: z.number().optional().default(5),
+  /** Max ms to wait for MemoryRun artifacts after the main agent finishes (default 30s). */
+  artifactWaitMs: z.number().optional().default(30000),
   agent: z
     .union([
       z.object({

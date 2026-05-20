@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { tool } from '@langchain/core/tools';
 import { Tools } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
-import { Run, Providers, GraphEvents } from '@librechat/agents';
+import type { UsageMetadata } from '@langchain/core/messages';
+import { Run, Providers, GraphEvents, ModelEndHandler } from '@librechat/agents';
 import type {
   OpenAIClientOptions,
   StreamEventData,
@@ -29,11 +30,64 @@ type ToolEndMetadata = Record<string, unknown> & {
   thread_id?: string;
 };
 
+/** Transaction context value for MemoryRun LLM usage (see transactions.context). */
+export const MEMORY_USAGE_CONTEXT = 'memory' as const;
+
+export type OnMemoryUsageParams = {
+  promptTokens: number;
+  completionTokens: number;
+  model: string;
+  userId: string | ObjectId;
+  conversationId: string;
+};
+
+export type OnMemoryUsage = (params: OnMemoryUsageParams) => Promise<void>;
+
 export interface MemoryConfig {
   validKeys?: string[];
   instructions?: string;
   llmConfig?: Partial<LLMConfig>;
   tokenLimit?: number;
+  onMemoryUsage?: OnMemoryUsage;
+}
+
+type MemoryUsageMetadata = UsageMetadata & {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  reasoning_tokens?: number;
+  completion_tokens_details?: { reasoning_tokens?: number };
+};
+
+/** Aggregates usage from one or more MemoryRun model steps (includes reasoning in completion). */
+export function aggregateMemoryUsage(collectedUsage: UsageMetadata[]): {
+  promptTokens: number;
+  completionTokens: number;
+} {
+  let promptTokens = 0;
+  let completionTokens = 0;
+
+  for (const rawUsage of collectedUsage) {
+    if (!rawUsage) {
+      continue;
+    }
+
+    const usage = rawUsage as MemoryUsageMetadata;
+
+    promptTokens += Number(usage.input_tokens ?? usage.prompt_tokens ?? 0);
+
+    let output = Number(usage.output_tokens ?? usage.completion_tokens ?? 0);
+    const reasoning =
+      Number(usage.reasoning_tokens ?? 0) ||
+      Number(usage.completion_tokens_details?.reasoning_tokens ?? 0);
+
+    if (reasoning > 0) {
+      output += reasoning;
+    }
+
+    completionTokens += output;
+  }
+
+  return { promptTokens, completionTokens };
 }
 
 export const memoryInstructions =
@@ -282,6 +336,7 @@ export async function processMemory({
   llmConfig,
   tokenLimit,
   totalTokens = 0,
+  onMemoryUsage,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -296,6 +351,7 @@ export async function processMemory({
   tokenLimit?: number;
   totalTokens?: number;
   llmConfig?: Partial<LLMConfig>;
+  onMemoryUsage?: OnMemoryUsage;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -364,8 +420,10 @@ ${memory ?? 'No existing memories'}`;
 
     const artifactPromises: Promise<TAttachment | null>[] = [];
     const memoryCallback = createMemoryCallback({ res, artifactPromises });
+    const collectedUsage: UsageMetadata[] = [];
     const customHandlers = {
       [GraphEvents.TOOL_END]: new BasicToolEndHandler(memoryCallback),
+      [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage),
     };
 
     const run = await Run.create({
@@ -403,6 +461,37 @@ ${memory ?? 'No existing memories'}`;
     } else {
       logger.warn('Memory Agent processed memory but returned no content');
     }
+
+    if (onMemoryUsage && collectedUsage.length > 0) {
+      const model =
+        (finalLLMConfig as { model?: string }).model ??
+        (llmConfig as { model?: string } | undefined)?.model ??
+        'unknown';
+      const { promptTokens, completionTokens } = aggregateMemoryUsage(collectedUsage);
+
+      if (promptTokens > 0 || completionTokens > 0) {
+        logger.info('[MemoryUsage]', {
+          model,
+          conversationId,
+          promptTokens,
+          completionTokens,
+          steps: collectedUsage.length,
+        });
+
+        try {
+          await onMemoryUsage({
+            model,
+            promptTokens,
+            completionTokens,
+            userId,
+            conversationId,
+          });
+        } catch (usageError) {
+          logger.error('[MemoryUsage] Failed to record memory token usage', usageError);
+        }
+      }
+    }
+
     return await Promise.all(artifactPromises);
   } catch (error) {
     logger.error('Memory Agent failed to process memory', error);
@@ -424,7 +513,7 @@ export async function createMemoryProcessor({
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
 }): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
-  const { validKeys, instructions, llmConfig, tokenLimit } = config;
+  const { validKeys, instructions, llmConfig, tokenLimit, onMemoryUsage } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
 
   const { withKeys, withoutKeys, totalTokens } = await memoryMethods.getFormattedMemories({
@@ -449,6 +538,7 @@ export async function createMemoryProcessor({
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
+          onMemoryUsage,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', error);

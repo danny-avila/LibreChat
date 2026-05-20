@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { spendTokens, spendStructuredTokens } = require('./spendTokens');
+const { spendTokens, spendStructuredTokens, spendMemoryTokens } = require('./spendTokens');
 const { createTransaction, createAutoRefillTransaction } = require('./Transaction');
 
 require('~/db/models');
@@ -733,5 +733,50 @@ describe('spendTokens', () => {
     const balance = await Balance.findOne({ user: userId });
     expect(balance).toBeDefined();
     expect(balance.tokenCredits).toBeLessThan(10000); // Balance should be reduced
+  });
+
+  it('spendMemoryTokens should create one credits row with combined prompt + completion cost', async () => {
+    const endpointTokenConfig = {
+      'grok-4-1-fast-reasoning': { prompt: 0.2, completion: 0.5 },
+    };
+    const txData = {
+      user: userId,
+      conversationId: 'test-convo',
+      model: 'grok-4-1-fast-reasoning',
+      context: 'memory',
+      endpointTokenConfig,
+      balance: { enabled: false },
+    };
+
+    await spendMemoryTokens(txData, { promptTokens: 1118, completionTokens: 200 });
+
+    const transactions = await Transaction.find({ user: userId, context: 'memory' });
+    expect(transactions).toHaveLength(1);
+
+    const tx = transactions[0];
+    expect(tx.tokenType).toBe('credits');
+    expect(tx.model).toBe('grok-4-1-fast-reasoning');
+    expect(tx.rawAmount).toBe(-1318);
+    expect(tx.inputTokens).toBe(1118);
+    expect(tx.writeTokens).toBe(200);
+
+    const expectedCost = 1118 * 0.2 + 200 * 0.5;
+    expect(tx.tokenValue).toBeCloseTo(-expectedCost, 5);
+    expect(tx.rate).toBeCloseTo(expectedCost / 1318, 5);
+  });
+
+  it('spendMemoryTokens should skip when token counts are zero', async () => {
+    const txData = {
+      user: userId,
+      conversationId: 'test-convo',
+      model: 'grok-4-1-fast-reasoning',
+      context: 'memory',
+      balance: { enabled: false },
+    };
+
+    await spendMemoryTokens(txData, { promptTokens: 0, completionTokens: 0 });
+
+    const transactions = await Transaction.find({ user: userId, context: 'memory' });
+    expect(transactions).toHaveLength(0);
   });
 });

@@ -143,7 +143,14 @@ function calculateTokenValue(txn) {
     return;
   }
 
-  const { valueKey, tokenType, model, endpointTokenConfig } = txn;
+  const { valueKey, tokenType, model, endpointTokenConfig, context, rate } = txn;
+
+  /** MemoryRun uses blended rate (prompt + completion); do not look up credits in tokenConfig */
+  if (context === 'memory' && tokenType === 'credits' && rate != null && txn.rawAmount != null) {
+    txn.tokenValue = txn.rawAmount * rate;
+    return;
+  }
+
   const multiplier = Math.abs(getMultiplier({ valueKey, tokenType, model, endpointTokenConfig }));
   txn.rate = multiplier;
   txn.tokenValue = txn.rawAmount * multiplier;

@@ -549,6 +549,9 @@ async def get_top_models(
                 return []
             match["user"] = user_data["_id"]
 
+        # Exclude MemoryRun billing so model charts reflect chat usage only
+        match["context"] = {"$ne": "memory"}
+
         pipeline.append({"$match": match})
 
         pipeline.extend(
@@ -626,6 +629,18 @@ async def get_kpis(start_date: str | None = None, end_date: str | None = None):
         cost_result = aggregate_transactions(cost_pipeline)
         total_cost = round(cost_result[0]["totalCost"], 4) if cost_result else 0.0
 
+        # 1b. CUSTO DO MEMORYRUN (context: memory)
+        memory_cost_pipeline = []
+        memory_match: dict = {"context": "memory"}
+        if date_match:
+            memory_match["createdAt"] = date_match
+        memory_cost_pipeline.append({"$match": memory_match})
+        memory_cost_pipeline.extend(
+            [{"$group": {"_id": None, "memoryCost": {"$sum": {"$divide": ["$tokenValue", -1_000_000]}}}}]
+        )
+        memory_cost_result = aggregate_transactions(memory_cost_pipeline)
+        memory_cost = round(memory_cost_result[0]["memoryCost"], 4) if memory_cost_result else 0.0
+
         # 2. USUÁRIOS NOVOS NO PERÍODO (criados na collection users)
         user_pipeline = []
         if date_match:
@@ -645,7 +660,12 @@ async def get_kpis(start_date: str | None = None, end_date: str | None = None):
         # if DEBUG_REPORTS:
         #     print(f"[DEBUG] KPIs calculados: {active_accounts}")
 
-        result = {"totalCost": total_cost, "newUsers": new_users, "activeAccounts": active_accounts}
+        result = {
+            "totalCost": total_cost,
+            "memoryCost": memory_cost,
+            "newUsers": new_users,
+            "activeAccounts": active_accounts,
+        }
 
         if DEBUG_REPORTS:
             print(f"[DEBUG] KPIs calculados: {result}")
@@ -654,7 +674,7 @@ async def get_kpis(start_date: str | None = None, end_date: str | None = None):
 
     except Exception as e:
         print(f"[DEBUG] Erro ao calcular KPIs: {e}")
-        return {"totalCost": 0.0, "newUsers": 0, "activeAccounts": 0}
+        return {"totalCost": 0.0, "memoryCost": 0.0, "newUsers": 0, "activeAccounts": 0}
 
 
 # USER EFFICIENCY - COST PER MESSAGE

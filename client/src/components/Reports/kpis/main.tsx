@@ -68,6 +68,14 @@ export default function MainKpis({ kpiData, filters, setFilter, clearFilters }: 
             </div>
             <div className="min-w-[180px] flex-1">
               <KPICard
+                title={REPORT_LABELS.KPIS.MEMORY_COST}
+                value={`$${(kpiData?.memoryCost || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                change="MemoryRun (context: memory)"
+                changeType="positive"
+              />
+            </div>
+            <div className="min-w-[180px] flex-1">
+              <KPICard
                 title={REPORT_LABELS.KPIS.NEW_USERS}
                 value={(kpiData?.newUsers || 0).toString()}
                 change="Período selecionado"

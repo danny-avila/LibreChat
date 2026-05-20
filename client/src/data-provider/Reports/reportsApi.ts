@@ -268,8 +268,9 @@ const fetchKPIsData = async (filters: any) => {
     console.error('Erro ao buscar KPIs:', error);
     return {
       totalCost: 0,
+      memoryCost: 0,
       newUsers: 0,
-      activeAccounts: 0
+      activeAccounts: 0,
     };
   }
 };
