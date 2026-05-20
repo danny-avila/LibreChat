@@ -233,6 +233,69 @@ describe('File Methods', () => {
     });
   });
 
+  describe('getExpiredFiles', () => {
+    it('returns only files whose expiredAt date has passed', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const now = new Date('2030-01-01T00:00:00.000Z');
+      const expiredFileId = uuidv4();
+      const futureFileId = uuidv4();
+      const permanentFileId = uuidv4();
+      const missingExpiryFileId = uuidv4();
+
+      await fileMethods.createFile(
+        {
+          file_id: expiredFileId,
+          user: userId,
+          filename: 'expired.txt',
+          filepath: '/uploads/expired.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: new Date('2029-12-31T23:59:59.000Z'),
+        },
+        true,
+      );
+      await fileMethods.createFile(
+        {
+          file_id: futureFileId,
+          user: userId,
+          filename: 'future.txt',
+          filepath: '/uploads/future.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: new Date('2030-01-01T00:00:01.000Z'),
+        },
+        true,
+      );
+      await fileMethods.createFile(
+        {
+          file_id: permanentFileId,
+          user: userId,
+          filename: 'permanent.txt',
+          filepath: '/uploads/permanent.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: null,
+        },
+        true,
+      );
+      await fileMethods.createFile(
+        {
+          file_id: missingExpiryFileId,
+          user: userId,
+          filename: 'missing-expiry.txt',
+          filepath: '/uploads/missing-expiry.txt',
+          type: 'text/plain',
+          bytes: 100,
+        },
+        true,
+      );
+
+      const files = await fileMethods.getExpiredFiles(100, now);
+
+      expect(files.map((file) => file.file_id)).toEqual([expiredFileId]);
+    });
+  });
+
   describe('getToolFilesByIds', () => {
     it('should retrieve files for file_search tool (embedded files)', async () => {
       const userId = new mongoose.Types.ObjectId();

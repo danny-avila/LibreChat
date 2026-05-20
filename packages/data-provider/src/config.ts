@@ -45,6 +45,7 @@ export const excludedKeys = new Set([
   'createdAt',
   'updatedAt',
   'expiredAt',
+  'isTemporary',
   'messages',
   'isArchived',
   'tags',
@@ -895,6 +896,11 @@ const mcpServersSchema = z
 
 export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 
+export enum RetentionMode {
+  ALL = 'all',
+  TEMPORARY = 'temporary',
+}
+
 export const interfaceSchema = z
   .object({
     privacyPolicy: z
@@ -937,6 +943,7 @@ export const interfaceSchema = z
     temporaryChat: z.boolean().optional(),
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
     autoSubmitFromUrl: z.boolean().optional(),
+    retentionMode: z.nativeEnum(RetentionMode).default(RetentionMode.TEMPORARY),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     peoplePicker: z

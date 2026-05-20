@@ -167,6 +167,15 @@ interface:
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
+  # Retention mode: "all" applies expiry to all data types, "temporary" (default) only to temporary chats
+  # Before switching from "all" back to "temporary", remove retention deadlines from non-temporary data
+  # that should stop expiring:
+  # db.conversations.updateMany({ isTemporary: false, expiredAt: { $ne: null } }, { $unset: { expiredAt: 1 } })
+  # db.messages.updateMany({ isTemporary: false, expiredAt: { $ne: null } }, { $unset: { expiredAt: 1 } })
+  # MongoDB does not drop superseded indexes automatically. After upgrading, old Meili indexes
+  # such as "_meiliIndex_1_expiredAt_1" can be dropped from conversations/messages once the new
+  # "_meiliIndex_1_isTemporary_1_expiredAt_1" indexes exist.
+  # retentionMode: "temporary"
 
 # Example Cloudflare turnstile (optional)
 #turnstile:
