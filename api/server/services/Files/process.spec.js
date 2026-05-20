@@ -1392,6 +1392,42 @@ describe('generated image quota paths', () => {
     );
   });
 
+  it('retrieveAndProcessFile does not delete existing OpenAI files when metadata quota rejects', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+      body: { endpoint: EModelEndpoint.assistants, model: 'gpt-4o' },
+      config: { fileConfig: { storageLimit: 1 } },
+    };
+    const openai = {
+      baseURL: 'https://api.openai.test',
+      files: {
+        retrieve: jest.fn().mockResolvedValue({
+          bytes: 512,
+          filename: 'remote.txt',
+          purpose: 'assistants_output',
+        }),
+      },
+    };
+    const deleteFile = jest.fn();
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    assertFileStorageLimit.mockRejectedValueOnce(error);
+
+    await expect(
+      retrieveAndProcessFile({
+        openai,
+        client: { req },
+        file_id: 'openai-file-id',
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(deleteFile).not.toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
   it('retrieveAndProcessFile rejects over-limit OpenAI image outputs before metadata persistence', async () => {
     const error = Object.assign(new Error('storage limit exceeded.'), {
       code: 'FILE_STORAGE_LIMIT_EXCEEDED',

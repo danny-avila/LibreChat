@@ -1219,7 +1219,7 @@ const processOpenAIFile = async ({
   };
 
   if (saveFile) {
-    await createFileWithStorageLimit(request, file, true, { openai });
+    await createFileWithStorageLimit(request, file, true, { cleanup: false });
   } else if (updateUsage) {
     try {
       await db.updateFileUsage({ file_id });
