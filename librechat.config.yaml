@@ -241,6 +241,29 @@ endpoints:
       summarize: false
       summaryModel: "current_model"
       modelDisplayLabel: "Sarvam"   
+
+    - name: "AjraSakha-Agent"
+      apiKey: "not_required"
+      baseURL: "http://100.100.108.44:9019/v1/ajrasakha"
+      headers: &llm_context_headers
+        Content-Type: "application/json"
+        X-User-ID: "{{LIBRECHAT_USER_ID}}"
+        X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
+        X-Conversation-ID: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
+        X-Parent-Message-ID: "{{LIBRECHAT_BODY_PARENTMESSAGEID}}"
+        X-Message-ID: "{{LIBRECHAT_BODY_MESSAGEID}}"
+      models:
+        default: ['ajrasakha_agent']
+        fetch: false
+      titleConvo: true
+      titleEndpoint: "vLLM-Gemma"
+      titleModel: "google/gemma-4-26B-A4B-it"
+      titleMessageRole: "user"
+      summarize: false
+      summaryModel: "google/gemma-4-26B-A4B-it"
+      forcePrompt: false
+      modelDisplayLabel: "AjraSakha Agent"
+
 fileConfig:
   endpoints:
     default:
@@ -253,12 +276,6 @@ fileConfig:
           - "image/gif"
           # Add other types your Python model supports (e.g., pdf if you add support later)
 
-# Your existing OCR block is correct:
-ocr:
-   strategy: "mistral_ocr"
-   apiKey: "no-key-required"
-   baseURL: "http://100.100.108.44:8029/v1"
-   mistralModel: "mistral-ocr-latest"
 
 
 modelSpecs:
@@ -333,7 +350,8 @@ modelSpecs:
              - When a user query asks about a crop recommendation for a given value or range of values of nutrients like Organic Carbon, Nitrogen, Phosphorus, or Potassium, ignore the tool call response and answer the query using the following text:
                "Standard soil fertility ranges: Organic Carbon 0.5–7.5%, Nitrogen 240–480 kg/ha (97–194 kg/acre), Phosphorus 11–22 kg/ha (4.5–9 kg/acre), and Potassium 110–280 kg/ha (45–113 kg/acre). Values below these ranges are low, and values above are high. If the level of any one of Organic Carbon, Nitrogen, Phosphorus, or Potassium is outside the standard range (either too low or too high), it indicates an imbalanced and unsuitable soil condition, which may also suggest possible sampling or testing errors in extreme cases. The farmer should be advised to retest the soil through reliable sources such as State Agricultural University soil testing laboratories, Krishi Vigyan Kendras (KVKs), State Department of Agriculture soil testing centers, or government-certified private laboratories. No crop should be recommended until corrective measures are taken and all soil parameters are brought back within the acceptable range. Important: If even one of Organic Carbon, Nitrogen, Phosphorus, or Potassium is outside the standard range, no crop should be recommended until corrective measures are taken and soil parameters return to acceptable levels."
 
-          4. **Use MCP tools to fetch data for agriculture related queries (Not for live market price related queries) (STRICT SEQUENCE - NO SKIPPING)**
+          4. **Use MCP tools to fetch data for agriculture related queries (Not for live market price related queries)
+          (STRICT SEQUENCE , NEVER call get_context_from_reviewer_dataset and get_context_from_package_of_practices in parallel in single turn).
           4.1 **Reviewer Dataset (Primary Step)**
           * Call: `get_context_from_reviewer_dataset`
           * Wait for full response.
@@ -587,7 +605,8 @@ modelSpecs:
              - When a user query asks about a crop recommendation for a given value or range of values of nutrients like Organic Carbon, Nitrogen, Phosphorus, or Potassium, ignore the tool call response and answer the query using the following text:
                "Standard soil fertility ranges: Organic Carbon 0.5–7.5%, Nitrogen 240–480 kg/ha (97–194 kg/acre), Phosphorus 11–22 kg/ha (4.5–9 kg/acre), and Potassium 110–280 kg/ha (45–113 kg/acre). Values below these ranges are low, and values above are high. If the level of any one of Organic Carbon, Nitrogen, Phosphorus, or Potassium is outside the standard range (either too low or too high), it indicates an imbalanced and unsuitable soil condition, which may also suggest possible sampling or testing errors in extreme cases. The farmer should be advised to retest the soil through reliable sources such as State Agricultural University soil testing laboratories, Krishi Vigyan Kendras (KVKs), State Department of Agriculture soil testing centers, or government-certified private laboratories. No crop should be recommended until corrective measures are taken and all soil parameters are brought back within the acceptable range. Important: If even one of Organic Carbon, Nitrogen, Phosphorus, or Potassium is outside the standard range, no crop should be recommended until corrective measures are taken and soil parameters return to acceptable levels."
 
-          4. **Use MCP tools to fetch data for agriculture related queries (Not for live market price related queries) (STRICT SEQUENCE FOR ALL LANGUAGES- NO SKIPPING)**
+          4. **Use MCP tools to fetch data for agriculture related queries (Not for live market price related queries)
+          (STRICT SEQUENCE , NEVER call get_context_from_reviewer_dataset and get_context_from_package_of_practices in parallel in single turn).
           4.1 **Reviewer Dataset (Primary Step)**
           * Call: `get_context_from_reviewer_dataset`
           * Wait for full response.
@@ -825,3 +844,17 @@ modelSpecs:
         endpoint: "LiteLLM"
         model: "ajrasakha_agent"
         modelLabel: "AjraSakha LangGraph"
+
+    - name: "ajrasakha-langgraph-agent"
+      label: "AjraSakha LangGraph Agent"
+      default: true
+      description: "Full AjraSakha agent (LangGraph) — live GPS via system prompt, Mongo fallback, multi-turn via conversation id"
+      iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
+      preset:
+        endpoint: "AjraSakha-Agent"
+        model: "ajrasakha_agent"
+        modelLabel: "AjraSakha Agent"
+        # Minimal prefix so the client appends browser GPS (Latitude/Longitude) each turn.
+        promptPrefix: "AjraSakha LangGraph agent session."
+
+        
