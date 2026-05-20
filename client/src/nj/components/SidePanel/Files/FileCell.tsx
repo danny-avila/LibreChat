@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { TFile } from 'librechat-data-provider';
 import icons from '@uswds/uswds/img/sprite.svg';
-import { cn } from '~/utils';
+import { useUpdateFileMutation } from '~/nj/data-provider/file-mutations';
+import RenameForm from '~/components/Conversations/RenameForm';
+import { useLocalize } from '~/hooks';
+import { cn, logger } from '~/utils';
 import FileOptions from './FileOptions';
+import { NotificationSeverity } from '~/common';
+import { useToastContext } from '@librechat/client';
 
 /**
  * Displays a file in `FilesPanel`.
@@ -14,21 +19,72 @@ export default function FileCell({
   file: TFile;
   onFileClick: (file: TFile) => void;
 }) {
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
+  const updateMutation = useUpdateFileMutation({
+    onSuccess: () => {
+      setRenaming(false);
+    },
+    onError: (err) => {
+      logger.error('Error renaming file', err);
+      showToast({
+        message: 'Failed to rename file',
+        severity: NotificationSeverity.ERROR,
+        showIcon: true,
+      });
+    },
+  });
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [filenameInput, setFilenameInput] = useState(file.filename);
+
+  useEffect(() => {
+    setFilenameInput(file.filename);
+  }, [file.filename]);
+
+  const handleRenameSubmit = (newName: string) => {
+    const trimmed = newName.trim();
+    if (trimmed && trimmed !== file.filename) {
+      updateMutation.mutate({ file_id: file.file_id, filename: trimmed });
+    } else {
+      setRenaming(false);
+    }
+  };
+
+  const handleRenameCancel = () => {
+    setFilenameInput(file.filename);
+    setRenaming(false);
+  };
 
   return (
     <button
       className="group flex w-full items-center gap-3 rounded p-2 hover:bg-surface-active-alt"
-      onClick={() => !isPopoverActive && onFileClick(file)}
+      onClick={() => {
+        if (!isPopoverActive && !renaming) {
+          onFileClick(file);
+        }
+      }}
     >
       {/* TODO: Dynamic icon based on mimetype */}
       <div className="h-10 w-10 flex-shrink-0 rounded bg-gray-200" />
-      <div className="flex min-w-0 flex-col gap-1">
-        <span className="truncate text-start text-sm font-medium">{file.filename}</span>
-        <span className="text-token-text-secondary text-start text-xs">
-          {formatDate(file.createdAt)}
-        </span>
-      </div>
+      {renaming ? (
+        <div className="relative h-10 min-w-0 flex-1">
+          <RenameForm
+            titleInput={filenameInput}
+            setTitleInput={setFilenameInput}
+            onSubmit={handleRenameSubmit}
+            onCancel={handleRenameCancel}
+            localize={localize}
+          />
+        </div>
+      ) : (
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="truncate text-start text-sm font-medium">{file.filename}</span>
+          <span className="text-token-text-secondary text-start text-xs">
+            {formatDate(file.createdAt)}
+          </span>
+        </div>
+      )}
       <div className="ml-auto flex items-center">
         {file.pinned && (
           <svg
@@ -50,6 +106,7 @@ export default function FileCell({
             file={file}
             isPopoverActive={isPopoverActive}
             setIsPopoverActive={setIsPopoverActive}
+            onRename={() => setRenaming(true)}
           />
         </div>
       </div>

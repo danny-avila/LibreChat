@@ -1,22 +1,24 @@
 import { useId } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { DropdownPopup, useToastContext } from '@librechat/client';
-import { Ellipsis, Pin } from 'lucide-react';
+import { Ellipsis, Pen, Pin } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import type { TFile } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
 import { useUpdateFileMutation } from '~/nj/data-provider/file-mutations';
 import { logger } from '~/utils';
 import { NotificationSeverity } from '~/common';
+import { useLocalize } from '~/hooks';
 
 export default function FileOptions({
   file,
   isPopoverActive,
   setIsPopoverActive,
+  onRename,
 }: {
   file: TFile;
   isPopoverActive: boolean;
   setIsPopoverActive: (open: boolean) => void;
+  onRename: () => void;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -37,6 +39,11 @@ export default function FileOptions({
       label: file.pinned ? localize('com_ui_unpin') : localize('com_ui_pin'),
       onClick: () => updateMutation.mutate({ file_id: file.file_id, pinned: !file.pinned }),
       icon: <Pin className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+    },
+    {
+      label: localize('com_ui_rename'),
+      onClick: onRename,
+      icon: <Pen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
     },
   ];
 
