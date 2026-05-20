@@ -41,25 +41,42 @@ jest.mock('@librechat/data-schemas', () => {
   const tenantStorage = new AsyncLocalStorage();
   return {
     getTenantId: () => tenantStorage.getStore()?.tenantId,
+    getUserId: () => tenantStorage.getStore()?.userId,
+    getRequestId: () => tenantStorage.getStore()?.requestId,
     tenantStorage,
   };
 });
 
 // Mock @librechat/api — the real tenantContextMiddleware is TS and cannot be
 // required directly from CJS tests. This thin wrapper mirrors the real logic
-// (read req.user.tenantId, call tenantStorage.run) using the same data-schemas
+// (read request context, call tenantStorage.run) using the same data-schemas
 // primitives. The real implementation is covered by packages/api tenant.spec.ts.
 jest.mock('@librechat/api', () => {
   const { tenantStorage } = require('@librechat/data-schemas');
+  const normalizeContextValue = (value) => {
+    const trimmed = value?.trim?.();
+    return trimmed || undefined;
+  };
+  const getUserId = (user) =>
+    normalizeContextValue(user?.id?.toString?.()) ?? normalizeContextValue(user?._id?.toString?.());
+  const getRequestId = (req) =>
+    normalizeContextValue(req.requestId) ??
+    normalizeContextValue(req.id) ??
+    normalizeContextValue(req.headers?.['x-request-id']) ??
+    normalizeContextValue(req.headers?.['x-correlation-id']);
   return {
     isEnabled: jest.fn(() => false),
     maybeRefreshCloudFrontAuthCookiesMiddleware: jest.fn((req, res, next) => next()),
     tenantContextMiddleware: (req, res, next) => {
-      const tenantId = req.user?.tenantId;
-      if (!tenantId) {
+      const context = {
+        tenantId: normalizeContextValue(req.user?.tenantId),
+        userId: getUserId(req.user),
+        requestId: getRequestId(req),
+      };
+      if (!context.tenantId && !context.userId && !context.requestId) {
         return next();
       }
-      return tenantStorage.run({ tenantId }, async () => next());
+      return tenantStorage.run(context, async () => next());
     },
   };
 });
@@ -67,7 +84,7 @@ jest.mock('@librechat/api', () => {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 const requireJwtAuth = require('../requireJwtAuth');
-const { getTenantId } = require('@librechat/data-schemas');
+const { getTenantId, getUserId } = require('@librechat/data-schemas');
 const { isEnabled, maybeRefreshCloudFrontAuthCookiesMiddleware } = require('@librechat/api');
 const passport = require('passport');
 
@@ -148,6 +165,27 @@ describe('requireJwtAuth tenant context chaining', () => {
       res,
       expect.any(Function),
     );
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('refreshes CloudFront auth cookies inside the request context', () => {
+    let observedContext;
+    maybeRefreshCloudFrontAuthCookiesMiddleware.mockImplementationOnce(
+      (_req, _res, middlewareNext) => {
+        observedContext = {
+          tenantId: getTenantId(),
+          userId: getUserId(),
+        };
+        middlewareNext();
+      },
+    );
+    const req = mockReq({ id: 'user-123', tenantId: 'tenant-abc', role: 'user' });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(observedContext).toEqual({ tenantId: 'tenant-abc', userId: 'user-123' });
     expect(next).toHaveBeenCalled();
   });
 

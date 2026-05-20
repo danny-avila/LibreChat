@@ -448,6 +448,8 @@ const getCloudFrontAuthCookieSkipReason = (scope) => {
   return null;
 };
 
+const shouldLogCloudFrontAuthCookieSkip = (reason) => reason !== 'cloudfront_disabled';
+
 /**
  * Refreshes CloudFront signed cookies for authenticated image/avatar access.
  * @param {ServerRequest | null} req
@@ -477,15 +479,17 @@ const setCloudFrontAuthCookies = (req, res, user, options = {}) => {
   };
   const skipReason = getCloudFrontAuthCookieSkipReason(scope);
   if (skipReason) {
-    logger.debug('[setCloudFrontAuthCookies] CloudFront auth cookies skipped', {
-      attempted: false,
-      set: false,
-      reason: skipReason,
-      has_user_id: Boolean(scope.userId),
-      has_tenant_scope: Boolean(scope.tenantId),
-      has_storage_region: Boolean(scope.storageRegion),
-      has_previous_scope: Boolean(getPreviousCloudFrontScope(req)?.userId),
-    });
+    if (shouldLogCloudFrontAuthCookieSkip(skipReason)) {
+      logger.debug('[setCloudFrontAuthCookies] CloudFront auth cookies skipped', {
+        attempted: false,
+        set: false,
+        reason: skipReason,
+        has_user_id: Boolean(scope.userId),
+        has_tenant_scope: Boolean(scope.tenantId),
+        has_storage_region: Boolean(scope.storageRegion),
+        has_previous_scope: Boolean(getPreviousCloudFrontScope(req)?.userId),
+      });
+    }
     return false;
   }
 

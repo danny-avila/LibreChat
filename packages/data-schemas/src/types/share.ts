@@ -43,11 +43,13 @@ export interface SharedMessagesResult {
 export interface CreateShareResult {
   shareId: string;
   conversationId: string;
+  targetMessageId?: string;
 }
 
 export interface UpdateShareResult {
   shareId: string;
   conversationId: string;
+  targetMessageId?: string;
 }
 
 export interface DeleteShareResult {
@@ -58,6 +60,7 @@ export interface DeleteShareResult {
 
 export interface GetShareLinkResult {
   shareId: string | null;
+  targetMessageId?: string;
   success: boolean;
 }
 

@@ -1,6 +1,7 @@
 import mongoose, { FilterQuery } from 'mongoose';
 import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
+import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
@@ -259,7 +260,8 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       return [];
     }
 
-    const regex = new RegExp(searchPattern.trim(), 'i');
+    const trimmedPattern = searchPattern.trim();
+    const regex = new RegExp(escapeRegExp(trimmedPattern), 'i');
     const User = mongoose.models.User;
 
     const query = User.find({
@@ -273,8 +275,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     const users = await query.lean<IUser[]>();
 
     // Score results by relevance
-    const exactRegex = new RegExp(`^${searchPattern.trim()}$`, 'i');
-    const startsWithPattern = searchPattern.trim().toLowerCase();
+    const startsWithPattern = trimmedPattern.toLowerCase();
 
     const scoredUsers = users.map((user) => {
       const searchableFields = [user.name, user.email, user.username].filter(
@@ -287,7 +288,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
         let score = 0;
 
         // Exact match gets highest score
-        if (exactRegex.test(field)) {
+        if (fieldLower === startsWithPattern) {
           score = 100;
         }
         // Starts with query gets high score
@@ -298,7 +299,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
         else if (fieldLower.includes(startsWithPattern)) {
           score = 50;
         }
-        // Default score for regex match
+        // Default score for database match
         else {
           score = 10;
         }

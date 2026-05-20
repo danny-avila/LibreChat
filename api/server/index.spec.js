@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
@@ -31,6 +32,56 @@ jest.mock('~/config', () => ({
     getAppToolFunctions: jest.fn().mockResolvedValue({}),
   }),
 }));
+
+jest.mock(
+  '@librechat/api/telemetry',
+  () => ({
+    initializeTelemetry: jest.fn(() => ({
+      enabled: false,
+      status: 'disabled',
+      shutdown: jest.fn(),
+    })),
+    telemetryMiddleware: jest.fn((_req, _res, next) => next()),
+    telemetryErrorMiddleware: jest.fn((err, _req, _res, next) => next(err)),
+  }),
+  { virtual: true },
+);
+
+describe('Telemetry wiring', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+
+  it('loads telemetry before other server imports', () => {
+    const firstStatement = source
+      .split('\n')
+      .map((line) => line.trim())
+      .find(Boolean);
+
+    expect(firstStatement).toBe("const telemetry = require('./telemetry');");
+  });
+
+  it('mounts telemetry middleware after static assets and before routes', () => {
+    const telemetryMiddlewareIndex = source.indexOf('app.use(telemetry.telemetryMiddleware);');
+    const staticAssetsIndex = source.indexOf('app.use(staticCache(appConfig.paths.assets));');
+    const apiRoutesIndex = source.indexOf("app.use('/api/auth'");
+
+    expect(telemetryMiddlewareIndex).toBeGreaterThan(-1);
+    expect(staticAssetsIndex).toBeGreaterThan(-1);
+    expect(apiRoutesIndex).toBeGreaterThan(-1);
+    expect(staticAssetsIndex).toBeLessThan(telemetryMiddlewareIndex);
+    expect(telemetryMiddlewareIndex).toBeLessThan(apiRoutesIndex);
+  });
+
+  it('mounts telemetry error middleware before ErrorController', () => {
+    const telemetryErrorMiddlewareIndex = source.indexOf(
+      'app.use(telemetry.telemetryErrorMiddleware);',
+    );
+    const errorControllerIndex = source.indexOf('app.use(ErrorController);');
+
+    expect(telemetryErrorMiddlewareIndex).toBeGreaterThan(-1);
+    expect(errorControllerIndex).toBeGreaterThan(-1);
+    expect(telemetryErrorMiddlewareIndex).toBeLessThan(errorControllerIndex);
+  });
+});
 
 describe('Server Configuration', () => {
   // Increase the default timeout to allow for Mongo cleanup

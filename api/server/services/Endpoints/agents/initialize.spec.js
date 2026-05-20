@@ -183,6 +183,15 @@ describe('initializeClient — processAgent ACL gate', () => {
     });
 
     const edges = [{ from: PRIMARY_ID, to: AUTHORIZED_ID, edgeType: 'handoff' }];
+    const requestAttachment = { file_id: 'request_file', filename: 'request.txt' };
+    const primaryContextAttachment = { file_id: 'primary_context', filename: 'primary.txt' };
+    const handoffContextAttachment = { file_id: 'handoff_context', filename: 'handoff.txt' };
+    const primaryConfig = {
+      ...makePrimaryConfig(edges),
+      attachments: [primaryContextAttachment, requestAttachment],
+      requestAttachments: [requestAttachment],
+      agentContextAttachments: [primaryContextAttachment],
+    };
     const handoffConfig = {
       id: AUTHORIZED_ID,
       edges: [],
@@ -190,14 +199,13 @@ describe('initializeClient — processAgent ACL gate', () => {
       toolRegistry: new Map(),
       userMCPAuthMap: null,
       tool_resources: {},
+      agentContextAttachments: [handoffContextAttachment],
     };
 
     let callCount = 0;
     mockInitializeAgent.mockImplementation(() => {
       callCount++;
-      return callCount === 1
-        ? Promise.resolve(makePrimaryConfig(edges))
-        : Promise.resolve(handoffConfig);
+      return callCount === 1 ? Promise.resolve(primaryConfig) : Promise.resolve(handoffConfig);
     });
 
     await initializeClient({
@@ -210,6 +218,13 @@ describe('initializeClient — processAgent ACL gate', () => {
     expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
     expect(agentClientArgs.agent.edges).toHaveLength(1);
     expect(agentClientArgs.agent.edges[0].to).toBe(AUTHORIZED_ID);
+    expect(agentClientArgs.attachments).toEqual([requestAttachment]);
+    expect(agentClientArgs.agentContextAttachmentsByAgentId.get(PRIMARY_ID)).toEqual([
+      primaryContextAttachment,
+    ]);
+    expect(agentClientArgs.agentContextAttachmentsByAgentId.get(AUTHORIZED_ID)).toEqual([
+      handoffContextAttachment,
+    ]);
   });
 });
 

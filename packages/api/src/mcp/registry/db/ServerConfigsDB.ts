@@ -6,7 +6,7 @@ import {
   PermissionBits,
 } from 'librechat-data-provider';
 import { logger, encryptV2, decryptV2, createMethods } from '@librechat/data-schemas';
-import type { AllMethods, MCPServerDocument } from '@librechat/data-schemas';
+import type { AllMethods, IAgent, MCPServerDocument } from '@librechat/data-schemas';
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { AccessControlService } from '~/acl/accessControlService';
@@ -370,14 +370,9 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           mcpServerNames: { $exists: true, $not: { $size: 0 } },
         },
         { mcpServerNames: 1 },
-      ).lean();
+      ).lean<Pick<IAgent, 'mcpServerNames'>[]>();
 
-      agentMCPServerNames = [
-        ...new Set(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          agentsWithMCP.flatMap((a: any) => a.mcpServerNames || []),
-        ),
-      ];
+      agentMCPServerNames = [...new Set(agentsWithMCP.flatMap((a) => a.mcpServerNames ?? []))];
     }
 
     const directResults = await this._dbMethods.getListMCPServersByIds({
