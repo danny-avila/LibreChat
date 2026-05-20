@@ -105,11 +105,11 @@
       "secrets": [
         {
           "name": "OPENAI_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:730335261767:secret:OPENAI_API_KEY-QBq4C1"
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:730335261767:secret:OPENAI_API_KEY-QBq4C1:OPENAI_API_KEY::"
         },
         {
           "name": "ASSISTANTS_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:730335261767:secret:OPENAI_API_KEY-QBq4C1"
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:730335261767:secret:OPENAI_API_KEY-QBq4C1:OPENAI_API_KEY::"
         }
       ],
       "mountPoints": [],
