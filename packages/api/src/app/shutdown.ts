@@ -94,10 +94,21 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 
 function closeHttpServer(): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (!httpServer) {
+    if (!httpServer || !httpServer.listening) {
+      // SIGTERM can arrive during startup before the listen socket is open,
+      // in which case there is nothing to drain. Node also surfaces this as
+      // an ERR_SERVER_NOT_RUNNING error in the close callback — treated
+      // below as a successful close so a routine shutdown doesn't trip
+      // orchestrator restart/backoff with exit code 1.
       resolve();
       return;
     }
-    httpServer.close((err) => (err ? reject(err) : resolve()));
+    httpServer.close((err) => {
+      if (!err || (err as NodeJS.ErrnoException).code === 'ERR_SERVER_NOT_RUNNING') {
+        resolve();
+        return;
+      }
+      reject(err);
+    });
   });
 }

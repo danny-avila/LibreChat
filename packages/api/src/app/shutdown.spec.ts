@@ -27,6 +27,10 @@ describe('setupGracefulShutdown', () => {
 
   beforeEach(() => {
     server = http.createServer();
+    // Most tests exercise the close path, so we fake `listening` to true.
+    // Tests that want to exercise the not-listening short-circuit override
+    // this back to false.
+    Object.defineProperty(server, 'listening', { value: true, configurable: true });
     exitSpy = jest.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
     originalSigterm = process.listeners('SIGTERM').slice() as NodeJS.SignalsListener[];
     originalSigint = process.listeners('SIGINT').slice() as NodeJS.SignalsListener[];
@@ -109,6 +113,38 @@ describe('setupGracefulShutdown', () => {
     await flush();
     await flush();
     expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('treats ERR_SERVER_NOT_RUNNING from close() as a successful shutdown', async () => {
+    const notRunning: NodeJS.ErrnoException = Object.assign(new Error('Server is not running.'), {
+      code: 'ERR_SERVER_NOT_RUNNING',
+    });
+    // Force listening=true so the pre-check doesn't short-circuit;
+    // we want to exercise the post-check that ignores ERR_SERVER_NOT_RUNNING.
+    Object.defineProperty(server, 'listening', { value: true, configurable: true });
+    jest.spyOn(server, 'close').mockImplementation((cb?: (err?: Error) => void) => {
+      if (cb) {
+        setImmediate(() => cb(notRunning));
+      }
+      return server;
+    });
+    setupGracefulShutdown(server);
+    triggerSignal('SIGTERM');
+    await flush();
+    await flush();
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it('skips close() entirely when the server is not listening yet', async () => {
+    // SIGTERM during the startup window (before app.listen finishes binding
+    // the socket) must not be treated as a failed shutdown.
+    Object.defineProperty(server, 'listening', { value: false, configurable: true });
+    const closeSpy = jest.spyOn(server, 'close');
+    setupGracefulShutdown(server);
+    triggerSignal('SIGTERM');
+    await flush();
+    expect(closeSpy).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
   it('is idempotent — a second signal does not trigger another shutdown', async () => {
