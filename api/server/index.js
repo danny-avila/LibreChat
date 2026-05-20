@@ -54,6 +54,7 @@ const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
 const app = express();
+let serverReady = false;
 
 const startServer = async () => {
   const { metricsMiddleware, metricsRouter } = createMetrics();
@@ -114,6 +115,13 @@ const startServer = async () => {
   }
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
+  app.get('/livez', (_req, res) => res.status(200).send('OK'));
+  app.get('/readyz', (_req, res) => {
+    if (!serverReady) {
+      return res.status(503).send('NOT_READY');
+    }
+    return res.status(200).send('OK');
+  });
 
   /* Middleware */
   app.use(metricsMiddleware);
@@ -279,7 +287,10 @@ const startServer = async () => {
       if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
         memoryDiagnostics.start();
       }
+      serverReady = true;
+      logger.info('Server readiness checks passing.');
     } catch (initErr) {
+      serverReady = false;
       logger.error('Post-listen initialization failed:', initErr);
       process.exit(1);
     }
