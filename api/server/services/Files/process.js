@@ -103,6 +103,51 @@ const cleanupStoredFile = async ({ req, file, openai }) => {
   }
 };
 
+const cleanupPersistedFile = async ({ req, file, openai }) => {
+  await cleanupStoredFile({ req, file, openai });
+  if (!file?.file_id) {
+    return;
+  }
+
+  try {
+    await db.deleteFiles([file.file_id]);
+  } catch (cleanupError) {
+    logger.error('[fileStorageLimit] Failed to clean up over-limit file metadata:', cleanupError);
+  }
+};
+
+const detachAssistantStoredFile = async ({ req, metadata, openai, fileId }) => {
+  if (!openai || !metadata?.assistant_id || metadata.message_file) {
+    return;
+  }
+
+  try {
+    if (metadata.tool_resource) {
+      await deleteResourceFileId({
+        req,
+        openai,
+        file_id: fileId,
+        assistant_id: metadata.assistant_id,
+        tool_resource: metadata.tool_resource,
+      });
+      return;
+    }
+
+    await openai.beta.assistants.files.del(metadata.assistant_id, fileId);
+  } catch (cleanupError) {
+    logger.error('[fileStorageLimit] Failed to detach over-limit assistant file:', cleanupError);
+  }
+};
+
+const cleanupAssistantStoredFile = async ({ req, metadata, openai, file }) => {
+  if (!file?.file_id) {
+    return;
+  }
+
+  await detachAssistantStoredFile({ req, metadata, openai, fileId: file.file_id });
+  await cleanupStoredFile({ req, file, openai });
+};
+
 const createFileWithStorageLimit = async (req, fileInfo, disableTTL, options = {}) => {
   try {
     await assertUploadStorageLimit(req, fileInfo.bytes, { excludeFileId: fileInfo.file_id });
@@ -621,66 +666,97 @@ const processFileUpload = async ({ req, res, metadata }) => {
     openai,
   });
 
+  const assistantFileId = id ?? file_id;
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
     await openai.beta.assistants.files.create(metadata.assistant_id, {
-      file_id: id,
+      file_id: assistantFileId,
     });
   } else if (isAssistantUpload && !metadata.message_file) {
     await addResourceFileId({
       req,
       openai,
-      file_id: id,
+      file_id: assistantFileId,
       assistant_id: metadata.assistant_id,
       tool_resource: metadata.tool_resource,
     });
   }
 
-  let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
+  const assistantStoredFile = isAssistantUpload
+    ? {
+        user: req.user.id,
+        file_id: assistantFileId,
+        bytes,
+        filepath: `${openai.baseURL}/files/${assistantFileId}`,
+        filename: filename ?? sanitizeFilename(file.originalname),
+        source,
+        tenantId: req.user.tenantId,
+      }
+    : null;
+  let filepath = isAssistantUpload ? `${openai.baseURL}/files/${assistantFileId}` : _filepath;
   let storageMetadata = getStorageMetadata({
     filepath,
     source,
     storageKey: _storageKey,
     storageRegion: _storageRegion,
   });
+  let imageFile;
   if (isAssistantUpload && file.mimetype.startsWith('image')) {
-    const result = await processImageFile({
-      req,
-      file,
-      metadata: { file_id: v4() },
-      returnFile: true,
-    });
-    filepath = result.filepath;
+    try {
+      imageFile = await processImageFile({
+        req,
+        file,
+        metadata: { file_id: v4() },
+        returnFile: true,
+      });
+    } catch (error) {
+      if (isFileStorageLimitError(error)) {
+        await cleanupAssistantStoredFile({ req, metadata, openai, file: assistantStoredFile });
+      }
+      throw error;
+    }
+    filepath = imageFile.filepath;
     storageMetadata = getStorageMetadata({
       filepath,
-      source: result.source,
-      storageKey: result.storageKey,
-      storageRegion: result.storageRegion,
+      source: imageFile.source,
+      storageKey: imageFile.storageKey,
+      storageRegion: imageFile.storageRegion,
     });
   }
 
-  const result = await createFileWithStorageLimit(
-    req,
-    {
-      user: req.user.id,
-      file_id: id ?? file_id,
-      temp_file_id,
-      bytes,
-      filepath,
-      ...storageMetadata,
-      filename: filename ?? sanitizeFilename(file.originalname),
-      context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
-      model: isAssistantUpload ? req.body.model : undefined,
-      type: file.mimetype,
-      ...(await getRetentionExpiry(req)),
-      embedded,
-      source,
-      height,
-      width,
-      tenantId: req.user.tenantId,
-    },
-    true,
-    { openai },
-  );
+  const fileInfo = {
+    user: req.user.id,
+    file_id: assistantFileId,
+    temp_file_id,
+    bytes,
+    filepath,
+    ...storageMetadata,
+    filename: filename ?? sanitizeFilename(file.originalname),
+    context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
+    model: isAssistantUpload ? req.body.model : undefined,
+    type: file.mimetype,
+    ...(await getRetentionExpiry(req)),
+    embedded,
+    source,
+    height,
+    width,
+    tenantId: req.user.tenantId,
+  };
+
+  let result;
+  try {
+    result = await createFileWithStorageLimit(req, fileInfo, true, {
+      openai,
+      cleanup: !isAssistantUpload,
+    });
+  } catch (error) {
+    if (isFileStorageLimitError(error) && isAssistantUpload) {
+      if (imageFile) {
+        await cleanupPersistedFile({ req, file: imageFile });
+      }
+      await cleanupAssistantStoredFile({ req, metadata, openai, file: fileInfo });
+    }
+    throw error;
+  }
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
 

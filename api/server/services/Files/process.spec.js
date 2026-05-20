@@ -105,17 +105,21 @@ const {
   EToolResources,
   FileSources,
   FileContext,
+  EModelEndpoint,
   RetentionMode,
   AgentCapabilities,
 } = require('librechat-data-provider');
 const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
+const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const db = require('~/models');
 const {
   processAgentFileUpload,
   processDeleteRequest,
   processFileURL,
+  processFileUpload,
   sweepExpiredFiles,
   startExpiredFileSweep,
 } = require('./process');
@@ -541,6 +545,173 @@ describe('processAgentFileUpload', () => {
       const persisted = db.createFile.mock.calls[0][0];
       expect(persisted.metadata).not.toHaveProperty('fileIdentifier');
     });
+  });
+});
+
+describe('processFileUpload assistant storage-limit cleanup', () => {
+  const makeAssistantImageReq = () => ({
+    user: { id: 'user-123', tenantId: 'tenant-a' },
+    file: {
+      path: '/tmp/image.png',
+      originalname: 'image.png',
+      filename: 'image.png',
+      mimetype: 'image/png',
+      size: 128,
+    },
+    body: { model: 'gpt-4o' },
+    config: {
+      fileConfig: { storageLimit: 1 },
+      fileStrategy: FileSources.local,
+      imageOutputType: 'png',
+    },
+  });
+
+  const makeOpenAI = () => ({
+    baseURL: 'https://api.openai.test/v1',
+    files: {
+      del: jest.fn().mockResolvedValue({ deleted: true }),
+    },
+    beta: {
+      assistants: {
+        files: {
+          create: jest.fn().mockResolvedValue({}),
+          del: jest.fn().mockResolvedValue({ deleted: true }),
+        },
+      },
+    },
+  });
+
+  const setupAssistantStrategies = () => {
+    const deleteOpenAIFile = jest.fn((req, file, openai) => openai.files.del(file.file_id));
+    const deleteLocalFile = jest.fn().mockResolvedValue(undefined);
+    const uploadAssistantFile = jest.fn().mockResolvedValue({
+      id: 'file-openai',
+      bytes: 200,
+      filename: 'image.png',
+    });
+    const uploadLocalImage = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/local-image.png',
+      bytes: 300,
+      width: 32,
+      height: 32,
+    });
+
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.openai
+        ? { handleFileUpload: uploadAssistantFile, deleteFile: deleteOpenAIFile }
+        : { handleImageUpload: uploadLocalImage, deleteFile: deleteLocalFile },
+    );
+
+    return {
+      deleteOpenAIFile,
+      deleteLocalFile,
+      uploadAssistantFile,
+      uploadLocalImage,
+    };
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    assertFileStorageLimit.mockResolvedValue(undefined);
+    db.createFile.mockResolvedValue({ file_id: 'created-file-id' });
+    db.deleteFiles.mockResolvedValue(undefined);
+    mockRes.status.mockReturnThis();
+    mockRes.json.mockReturnValue({});
+  });
+
+  it('removes an assistant tool-resource file when image persistence fails quota after upload', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const openai = makeOpenAI();
+    const { deleteOpenAIFile } = setupAssistantStrategies();
+    getOpenAIClient.mockResolvedValue({ openai });
+    assertFileStorageLimit
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(error);
+
+    await expect(
+      processFileUpload({
+        req: makeAssistantImageReq(),
+        res: mockRes,
+        metadata: {
+          endpoint: EModelEndpoint.assistants,
+          assistant_id: 'asst-1',
+          tool_resource: EToolResources.file_search,
+          file_id: 'metadata-file-id',
+        },
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(addResourceFileId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_id: 'file-openai',
+        assistant_id: 'asst-1',
+        tool_resource: EToolResources.file_search,
+      }),
+    );
+    expect(deleteResourceFileId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_id: 'file-openai',
+        assistant_id: 'asst-1',
+        tool_resource: EToolResources.file_search,
+      }),
+    );
+    expect(deleteOpenAIFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ file_id: 'file-openai', source: FileSources.openai }),
+      openai,
+    );
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('rolls back the local assistant image record when assistant metadata persistence fails quota', async () => {
+    const error = Object.assign(new Error('storage limit exceeded.'), {
+      code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+      status: 413,
+    });
+    const openai = makeOpenAI();
+    const { deleteOpenAIFile, deleteLocalFile } = setupAssistantStrategies();
+    getOpenAIClient.mockResolvedValue({ openai });
+    db.createFile.mockImplementation((fileInfo) => Promise.resolve(fileInfo));
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    assertFileStorageLimit
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(error);
+
+    await expect(
+      processFileUpload({
+        req: makeAssistantImageReq(),
+        res: mockRes,
+        metadata: {
+          endpoint: EModelEndpoint.assistants,
+          assistant_id: 'asst-1',
+          file_id: 'metadata-file-id',
+        },
+      }),
+    ).rejects.toThrow('storage limit exceeded');
+
+    expect(openai.beta.assistants.files.del).toHaveBeenCalledWith('asst-1', 'file-openai');
+    expect(deleteOpenAIFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ file_id: 'file-openai', source: FileSources.openai }),
+      openai,
+    );
+    expect(deleteLocalFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        file_id: 'mock-uuid',
+        filepath: '/images/user-123/local-image.png',
+        source: FileSources.local,
+      }),
+      undefined,
+    );
+    expect(db.deleteFiles).toHaveBeenCalledWith(['mock-uuid']);
+    expect(db.createFile).toHaveBeenCalledTimes(1);
   });
 });
 
