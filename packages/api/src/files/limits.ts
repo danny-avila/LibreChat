@@ -45,6 +45,7 @@ type RecordFileStorageUsageOptions = {
 
 type StorageLimitRequest = {
   config?: ServerRequest['config'];
+  /** Tenant resolved by request middleware; preferred over user.tenantId when present. */
   tenantId?: string;
   user?: {
     id?: string;
@@ -70,12 +71,11 @@ function normalizeIncomingBytes(incomingBytes?: number | null): number {
 }
 
 function getStorageLimitCache(req: StorageLimitRequest): FileStorageLimitCache {
-  const storageReq = req as StorageLimitRequest;
-  storageReq.fileStorageLimitCache ??= {
+  req.fileStorageLimitCache ??= {
     storageLimitLoaded: false,
     usageByScope: new Map<string, StorageUsageEntry>(),
   };
-  return storageReq.fileStorageLimitCache;
+  return req.fileStorageLimitCache;
 }
 
 function getStorageLimit(req: StorageLimitRequest): number | undefined {

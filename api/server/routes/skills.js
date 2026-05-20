@@ -252,7 +252,6 @@ async function uploadFileHandler(req, res) {
 
     let result;
     try {
-      await assertSkillFileStorageLimit(req, file.size, excludeSkillFile);
       result = await upsertSkillFile({
         skillId,
         relativePath,

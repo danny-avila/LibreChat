@@ -336,9 +336,9 @@ describe('Code Process', () => {
         expect(assertFileStorageLimit).toHaveBeenCalledWith(
           expect.objectContaining({
             incomingBytes: convertedBytes,
-            excludeFileId: 'mock-uuid-1234',
           }),
         );
+        expect(assertFileStorageLimit.mock.calls[0][0]).not.toHaveProperty('excludeFileId');
         expect(createFile).toHaveBeenCalled();
       });
 

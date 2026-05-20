@@ -88,6 +88,8 @@ const removeCacheBuster = (filepath) =>
   typeof filepath === 'string' ? filepath.replace(/\?v=\d+$/, '') : filepath;
 
 const getStorageFileId = (fileId, isUpdate) => (isUpdate ? `${fileId}-${v4()}` : fileId);
+const getStorageLimitOptions = (fileId, isUpdate) =>
+  isUpdate ? { excludeFileId: fileId } : undefined;
 
 const cleanupReplacedCodeFile = async (req, previousFile, nextFile) => {
   const previousPath = removeCacheBuster(previousFile?.filepath);
@@ -101,9 +103,10 @@ const cleanupReplacedCodeFile = async (req, previousFile, nextFile) => {
 
 const createCodeFileWithStorageLimit = async (req, file, options = {}) => {
   try {
-    await assertCodeOutputStorageLimit(req, file.bytes, { excludeFileId: file.file_id });
-    await createFile(file, true);
+    await assertCodeOutputStorageLimit(req, file.bytes, options.limitOptions);
+    const result = await createFile(file, true);
     recordFileStorageUsage(req, file.bytes, { fileId: file.file_id });
+    return result;
   } catch (error) {
     if (isFileStorageLimitError(error)) {
       if (options.cleanupStorage !== false) {
@@ -496,6 +499,7 @@ const processCodeOutput = async ({
     });
     const file_id = claimed.file_id;
     const isUpdate = file_id !== newFileId;
+    const limitOptions = getStorageLimitOptions(file_id, isUpdate);
 
     if (isUpdate) {
       logger.debug(
@@ -546,6 +550,7 @@ const processCodeOutput = async ({
       await createCodeFileWithStorageLimit(req, file, {
         cleanupFile: { ...file, filepath: _file.filepath },
         deleteClaimOnFailure: !isUpdate,
+        limitOptions,
       });
       if (isUpdate) {
         await cleanupReplacedCodeFile(req, claimed, { ...file, filepath: _file.filepath });
@@ -572,7 +577,7 @@ const processCodeOutput = async ({
     }
 
     try {
-      await assertCodeOutputStorageLimit(req, buffer.length, { excludeFileId: file_id });
+      await assertCodeOutputStorageLimit(req, buffer.length, limitOptions);
     } catch (error) {
       if (isFileStorageLimitError(error) && !isUpdate) {
         await deleteClaimedCodeFile(file_id);
@@ -685,7 +690,10 @@ const processCodeOutput = async ({
         previewError: null,
         previewRevision,
       };
-      await createCodeFileWithStorageLimit(req, file, { deleteClaimOnFailure: !isUpdate });
+      await createCodeFileWithStorageLimit(req, file, {
+        deleteClaimOnFailure: !isUpdate,
+        limitOptions,
+      });
       if (isUpdate) {
         await cleanupReplacedCodeFile(req, claimed, file);
       }
@@ -726,7 +734,10 @@ const processCodeOutput = async ({
       previewRevision: null,
     };
 
-    await createCodeFileWithStorageLimit(req, file, { deleteClaimOnFailure: !isUpdate });
+    await createCodeFileWithStorageLimit(req, file, {
+      deleteClaimOnFailure: !isUpdate,
+      limitOptions,
+    });
     if (isUpdate) {
       await cleanupReplacedCodeFile(req, claimed, file);
     }

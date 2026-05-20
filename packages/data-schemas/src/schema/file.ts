@@ -7,7 +7,6 @@ const file: Schema<IMongoFile> = new Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      index: true,
       required: true,
     },
     conversationId: {

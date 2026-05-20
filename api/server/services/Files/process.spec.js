@@ -476,6 +476,49 @@ describe('processAgentFileUpload', () => {
   });
 
   describe('storage-limit cleanup after secondary processing', () => {
+    it('cleans up original agent image storage when image persistence quota fails', async () => {
+      const error = Object.assign(new Error('storage limit exceeded.'), {
+        code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+        status: 413,
+      });
+      const handleFileUpload = jest.fn().mockResolvedValue({
+        bytes: 700,
+        filename: 'image.png',
+        filepath: '/uploads/user-123/original.png',
+      });
+      const handleImageUpload = jest.fn().mockResolvedValue({
+        filepath: '/images/user-123/resized.png',
+        bytes: 100,
+        width: 32,
+        height: 32,
+      });
+      const deleteFile = jest.fn().mockResolvedValue(undefined);
+      getStrategyFunctions.mockReturnValue({ handleFileUpload, handleImageUpload, deleteFile });
+      assertFileStorageLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(error);
+      const req = makeReq({ mimetype: 'image/png' });
+      req.config.imageOutputType = 'png';
+
+      await expect(
+        processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: { file_id: 'agent-file-id', message_file: true },
+        }),
+      ).rejects.toThrow('storage limit exceeded');
+
+      expect(deleteFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/images/user-123/resized.png' }),
+        undefined,
+      );
+      expect(deleteFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/uploads/user-123/original.png' }),
+        undefined,
+      );
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
+
     it('cleans up agent image side effects when final metadata quota check fails', async () => {
       const error = Object.assign(new Error('storage limit exceeded.'), {
         code: 'FILE_STORAGE_LIMIT_EXCEEDED',

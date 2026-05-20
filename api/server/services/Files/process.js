@@ -620,7 +620,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     }`;
   }
   const fileName = `${file_id}-${filename}`;
-  await assertUploadStorageLimit(req, bytes);
+  await assertUploadStorageLimit(req, bytes, { excludeFileId: file_id });
   const filepath = await saveBuffer({
     userId: req.user.id,
     fileName,
@@ -671,7 +671,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
   const { file_id, temp_file_id = null } = metadata;
   const { file } = req;
 
-  await assertUploadStorageLimit(req, file?.size);
+  await assertUploadStorageLimit(req, file?.size, { excludeFileId: file_id });
 
   /** @type {OpenAI | undefined} */
   let openai;
@@ -808,7 +808,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
 
   if (tool_resource !== EToolResources.context) {
-    await assertUploadStorageLimit(req, file?.size);
+    await assertUploadStorageLimit(req, file?.size, { excludeFileId: file_id });
   }
 
   let messageAttachment = !!metadata.message_file;
@@ -1101,12 +1101,19 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
   let imageFile;
   if (isImage) {
-    imageFile = await processImageFile({
-      req,
-      file,
-      metadata: { file_id: v4() },
-      returnFile: true,
-    });
+    try {
+      imageFile = await processImageFile({
+        req,
+        file,
+        metadata: { file_id: v4() },
+        returnFile: true,
+      });
+    } catch (error) {
+      if (isFileStorageLimitError(error)) {
+        await cleanupStoredFile({ req, file: originalStoredFile });
+      }
+      throw error;
+    }
     filepath = imageFile.filepath;
     storageMetadata = getStorageMetadata({
       filepath,
@@ -1407,7 +1414,7 @@ async function saveBase64Image(
   const image = await resizeImageBuffer(inputBuffer, effectiveResolution, endpoint);
   const source = getFileStrategy(appConfig, { isImage: true });
   const { saveBuffer } = getStrategyFunctions(source);
-  await assertUploadStorageLimit(req, image.bytes);
+  await assertUploadStorageLimit(req, image.bytes, { excludeFileId: file_id });
   const filepath = await saveBuffer({
     userId: req.user.id,
     fileName: filename,

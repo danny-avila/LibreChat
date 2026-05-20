@@ -641,6 +641,7 @@ async function handleZip(
     } catch (error) {
       if (isFileStorageLimitError(error)) {
         await cleanupStoredImportFiles(deps, req, savedFiles);
+        // Runtime deleteSkill cascades SkillFile rows; blob cleanup above handles saved storage.
         await deps
           .deleteSkill(skill._id.toString())
           .catch((rollbackError) =>

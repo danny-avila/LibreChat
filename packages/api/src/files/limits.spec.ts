@@ -192,6 +192,33 @@ describe('assertFileStorageLimit', () => {
     expect(getUserStorageUsage).toHaveBeenCalledTimes(1);
   });
 
+  it('does not add recorded bytes to cache scopes that exclude that skill file', async () => {
+    const getUserStorageUsage = createUsageMock(0);
+    const req = createReq(1);
+    const excludeSkillFile = {
+      skillId: '64f0000000000000000000aa',
+      relativePath: 'actions/run.ts',
+    };
+
+    await assertFileStorageLimit({
+      req,
+      incomingBytes: 1,
+      getUserStorageUsage,
+      excludeSkillFile,
+    });
+    recordFileStorageUsage(req, 200, { skillFile: excludeSkillFile });
+
+    await expect(
+      assertFileStorageLimit({
+        req,
+        incomingBytes: megabyte,
+        getUserStorageUsage,
+        excludeSkillFile,
+      }),
+    ).resolves.toBeUndefined();
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(1);
+  });
+
   it('treats NaN incoming bytes as zero bytes', async () => {
     const getUserStorageUsage = createUsageMock(megabyte);
 
@@ -223,5 +250,8 @@ describe('isFileStorageLimitError', () => {
     expect(isFileStorageLimitError(null)).toBe(false);
     expect(isFileStorageLimitError(undefined)).toBe(false);
     expect(isFileStorageLimitError({ code: 'SOMETHING_ELSE' })).toBe(false);
+    expect(isFileStorageLimitError(Object.assign(new Error('coded'), { code: 'OTHER' }))).toBe(
+      false,
+    );
   });
 });
