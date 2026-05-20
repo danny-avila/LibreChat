@@ -8,6 +8,7 @@ import {
   applicationMimeTypes,
   defaultOCRMimeTypes,
   supportedMimeTypes,
+  fileConfigSchema,
   mergeFileConfig,
   inferMimeType,
   textMimeTypes,
@@ -846,6 +847,20 @@ describe('getEndpointFileConfig', () => {
       expect(merged.skills?.fileSizeLimit).toBe(15 * 1024 * 1024);
     });
 
+    it('should convert storageLimit from MB to bytes', () => {
+      const merged = mergeFileConfig({
+        storageLimit: 25,
+      });
+
+      expect(merged.storageLimit).toBe(25 * 1024 * 1024);
+    });
+
+    it('should leave storageLimit unset by default', () => {
+      const merged = mergeFileConfig(undefined);
+
+      expect(merged.storageLimit).toBeUndefined();
+    });
+
     it('should default skills fileSizeLimit to 50 MB', () => {
       const merged = mergeFileConfig(undefined);
 
@@ -1275,6 +1290,16 @@ describe('getEndpointFileConfig', () => {
       expect(result.totalSizeLimit).toBe(0);
       expect(result.supportedMimeTypes).toEqual([]);
     });
+  });
+});
+
+describe('fileConfigSchema', () => {
+  it('should accept storageLimit', () => {
+    expect(fileConfigSchema.safeParse({ storageLimit: 100 }).success).toBe(true);
+  });
+
+  it('should reject negative storageLimit', () => {
+    expect(fileConfigSchema.safeParse({ storageLimit: -1 }).success).toBe(false);
   });
 });
 

@@ -24,6 +24,8 @@ const {
   parseText,
   processAudioFile,
   getStorageMetadata,
+  isFileStorageLimitError,
+  assertFileStorageLimit,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -65,6 +67,52 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
 
     return uploadFunction({ req, file: sanitizedFile, file_id, ...restParams });
   };
+};
+
+const assertUploadStorageLimit = (req, incomingBytes, options = {}) =>
+  assertFileStorageLimit({
+    req,
+    incomingBytes,
+    getUserStorageUsage: db.getUserStorageUsage,
+    ...options,
+  });
+
+const cleanupStoredFile = async ({ req, file, openai }) => {
+  const source = file?.source ?? FileSources.local;
+  if (source === FileSources.text) {
+    return;
+  }
+
+  const { deleteFile } = getStrategyFunctions(source);
+  if (!deleteFile) {
+    return;
+  }
+
+  try {
+    await deleteFile(
+      req,
+      {
+        ...file,
+        user: file.user ?? req.user.id,
+        tenantId: file.tenantId ?? req.user.tenantId,
+      },
+      openai,
+    );
+  } catch (cleanupError) {
+    logger.error('[fileStorageLimit] Failed to clean up over-limit file storage:', cleanupError);
+  }
+};
+
+const createFileWithStorageLimit = async (req, fileInfo, disableTTL, options = {}) => {
+  try {
+    await assertUploadStorageLimit(req, fileInfo.bytes, { excludeFileId: fileInfo.file_id });
+    return await db.createFile(fileInfo, disableTTL);
+  } catch (error) {
+    if (isFileStorageLimitError(error) && options.cleanup !== false) {
+      await cleanupStoredFile({ req, file: fileInfo, openai: options.openai });
+    }
+    throw error;
+  }
 };
 
 const isMissingStorageError = (err) => {
@@ -386,25 +434,28 @@ const processFileURL = async ({
       storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,
     });
 
-    return await db.createFile(
-      {
-        user: userId,
-        file_id: v4(),
-        bytes,
-        filepath,
-        ...storageMetadata,
-        filename: fileName,
-        source: fileStrategy,
-        type,
-        context,
-        ...(await getRetentionExpiry(req)),
-        tenantId,
-        width: dimensions.width,
-        height: dimensions.height,
-      },
-      true,
-    );
+    const fileInfo = {
+      user: userId,
+      file_id: v4(),
+      bytes,
+      filepath,
+      ...storageMetadata,
+      filename: fileName,
+      source: fileStrategy,
+      type,
+      context,
+      ...(await getRetentionExpiry(req)),
+      tenantId,
+      width: dimensions.width,
+      height: dimensions.height,
+    };
+    return req
+      ? await createFileWithStorageLimit(req, fileInfo, true)
+      : await db.createFile(fileInfo, true);
   } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      throw error;
+    }
     logger.error(`Error while processing the image with ${fileStrategy}:`, error);
     throw new Error(`Failed to process the image with ${fileStrategy}. ${error.message}`);
   }
@@ -428,6 +479,8 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
 
+  await assertUploadStorageLimit(req, file?.size);
+
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
     file,
@@ -436,7 +489,8 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   });
   const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
 
-  const result = await db.createFile(
+  const result = await createFileWithStorageLimit(
+    req,
     {
       user: req.user.id,
       file_id,
@@ -490,6 +544,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     }`;
   }
   const fileName = `${file_id}-${filename}`;
+  await assertUploadStorageLimit(req, bytes);
   const filepath = await saveBuffer({
     userId: req.user.id,
     fileName,
@@ -497,7 +552,8 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     tenantId: req.user.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  return await db.createFile(
+  return await createFileWithStorageLimit(
+    req,
     {
       user: req.user.id,
       file_id,
@@ -537,6 +593,9 @@ const processFileUpload = async ({ req, res, metadata }) => {
   const source = isAssistantUpload ? assistantSource : appConfig.fileStrategy;
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id = null } = metadata;
+  const { file } = req;
+
+  await assertUploadStorageLimit(req, file?.size);
 
   /** @type {OpenAI | undefined} */
   let openai;
@@ -544,7 +603,6 @@ const processFileUpload = async ({ req, res, metadata }) => {
     ({ openai } = await getOpenAIClient({ req }));
   }
 
-  const { file } = req;
   const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
   const {
     id,
@@ -600,7 +658,8 @@ const processFileUpload = async ({ req, res, metadata }) => {
     });
   }
 
-  const result = await db.createFile(
+  const result = await createFileWithStorageLimit(
+    req,
     {
       user: req.user.id,
       file_id: id ?? file_id,
@@ -620,6 +679,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
       tenantId: req.user.tenantId,
     },
     true,
+    { openai },
   );
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
@@ -639,6 +699,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
+
+  await assertUploadStorageLimit(req, file?.size);
 
   let messageAttachment = !!metadata.message_file;
 
@@ -746,6 +808,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         ...retentionExpiry,
       };
 
+      const result = await createFileWithStorageLimit(req, fileInfo, true, { cleanup: false });
       if (!messageAttachment && tool_resource) {
         await db.addAgentResourceFile({
           file_id,
@@ -754,7 +817,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
           updatingUserId: req?.user?.id,
         });
       }
-      const result = await db.createFile(fileInfo, true);
       return res
         .status(200)
         .json({ message: 'Agent file uploaded and processed successfully', ...result });
@@ -851,6 +913,25 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       entity_id,
     });
 
+    try {
+      await assertUploadStorageLimit(req, storageResult.bytes, { excludeFileId: file_id });
+    } catch (error) {
+      if (isFileStorageLimitError(error)) {
+        await cleanupStoredFile({
+          req,
+          file: {
+            file_id,
+            filepath: storageResult.filepath,
+            storageKey: storageResult.storageKey,
+            storageRegion: storageResult.storageRegion,
+            source,
+            tenantId: req.user.tenantId,
+          },
+        });
+      }
+      throw error;
+    }
+
     // SECOND: Upload to Vector DB
     const { uploadVectors } = require('./VectorDB/crud');
 
@@ -900,15 +981,6 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     storageRegion: _storageRegion,
   });
 
-  if (!messageAttachment && tool_resource) {
-    await db.addAgentResourceFile({
-      file_id,
-      agent_id,
-      tool_resource,
-      updatingUserId: req?.user?.id,
-    });
-  }
-
   if (isImage) {
     const result = await processImageFile({
       req,
@@ -948,7 +1020,15 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     ...retentionExpiry,
   };
 
-  const result = await db.createFile(fileInfo, true);
+  const result = await createFileWithStorageLimit(req, fileInfo, true);
+  if (!messageAttachment && tool_resource) {
+    await db.addAgentResourceFile({
+      file_id,
+      agent_id,
+      tool_resource,
+      updatingUserId: req?.user?.id,
+    });
+  }
 
   res.status(200).json({ message: 'Agent file uploaded and processed successfully', ...result });
 };
@@ -996,7 +1076,7 @@ const processOpenAIFile = async ({
   };
 
   if (saveFile) {
-    await db.createFile(file, true);
+    await createFileWithStorageLimit(openai.req, file, true, { openai });
   } else if (updateUsage) {
     try {
       await db.updateFileUsage({ file_id });
@@ -1022,6 +1102,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
   const currentDate = new Date();
   const formattedDate = currentDate.toISOString();
   const appConfig = req.config;
+  await assertUploadStorageLimit(req, buffer.length, { excludeFileId: file_id });
   const _file = await convertImage(req, buffer, undefined, `${file_id}${fileExt}`);
 
   // Create only one file record with the correct information
@@ -1040,8 +1121,11 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     tenantId: req.user.tenantId,
   };
   try {
-    await db.createFile(file, true);
+    await createFileWithStorageLimit(req, file, true);
   } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      throw error;
+    }
     logger.warn('Error saving OpenAI image output file metadata', error);
   }
   return file;
@@ -1182,6 +1266,7 @@ async function saveBase64Image(
   const image = await resizeImageBuffer(inputBuffer, effectiveResolution, endpoint);
   const source = getFileStrategy(appConfig, { isImage: true });
   const { saveBuffer } = getStrategyFunctions(source);
+  await assertUploadStorageLimit(req, image.bytes);
   const filepath = await saveBuffer({
     userId: req.user.id,
     fileName: filename,
@@ -1189,7 +1274,8 @@ async function saveBase64Image(
     tenantId: req.user.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  return await db.createFile(
+  return await createFileWithStorageLimit(
+    req,
     {
       type,
       source,

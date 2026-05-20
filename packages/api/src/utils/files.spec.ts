@@ -539,6 +539,11 @@ describe('resolveUploadErrorMessage', () => {
     );
   });
 
+  test('surfaces storage limit errors', () => {
+    const msg = 'storage limit exceeded. Delete files before uploading more.';
+    expect(resolveUploadErrorMessage({ message: msg })).toBe(msg);
+  });
+
   test('surfaces "Unable to extract text from" errors', () => {
     const msg = 'Unable to extract text from "doc.pdf". The document may be image-based.';
     expect(resolveUploadErrorMessage({ message: msg })).toBe(msg);

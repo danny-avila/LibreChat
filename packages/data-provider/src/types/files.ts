@@ -55,6 +55,7 @@ export type FileConfig = {
     fileSizeLimit?: number;
   };
   fileTokenLimit?: number;
+  storageLimit?: number;
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
   clientImageResize?: {
@@ -83,6 +84,7 @@ export type FileConfigInput = {
     fileSizeLimit?: number;
   };
   serverFileSizeLimit?: number;
+  storageLimit?: number;
   avatarSizeLimit?: number;
   clientImageResize?: {
     enabled?: boolean;

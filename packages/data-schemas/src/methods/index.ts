@@ -4,7 +4,7 @@ import { createRoleMethods, RoleConflictError } from './role';
 import type { RoleMethods, RoleDeps } from './role';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createKeyMethods, type KeyMethods } from './key';
-import { createFileMethods, type FileMethods } from './file';
+import { createFileMethods, type FileMethods, type UserStorageUsageParams } from './file';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
 /* Agent Categories */
@@ -238,6 +238,7 @@ export type {
   RoleMethods,
   KeyMethods,
   FileMethods,
+  UserStorageUsageParams,
   MemoryMethods,
   AgentCategoryMethods,
   AgentApiKeyMethods,

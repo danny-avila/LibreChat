@@ -10,9 +10,11 @@ jest.mock('librechat-data-provider', () => {
     ...actual,
     mergeFileConfig: jest.fn((dynamic) => {
       const skillFileSizeLimit = dynamic?.skills?.fileSizeLimit;
+      const storageLimit = dynamic?.storageLimit;
       return {
         ...actual.fileConfig,
         ...dynamic,
+        ...(storageLimit !== undefined ? { storageLimit: storageLimit * 1024 * 1024 } : {}),
         skills: {
           ...(actual.fileConfig.skills ?? { fileSizeLimit: 50 * 1024 * 1024 }),
           ...(skillFileSizeLimit !== undefined
@@ -393,6 +395,37 @@ describe('Skill routes', () => {
         }),
       );
     });
+
+    it('rejects over-limit imported skill files before saving blobs', async () => {
+      mockFileConfig = { storageLimit: 0 };
+      const saveBuffer = jest.fn().mockResolvedValue('/uploads/should-not-save.sh');
+      const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+      getStrategyFunctions.mockReturnValueOnce({ saveBuffer });
+
+      const zip = new JSZip();
+      zip.file(
+        'SKILL.md',
+        [
+          '---',
+          'name: over-limit-skill',
+          'description: Storage limit import test.',
+          '---',
+          '# Over Limit',
+        ].join('\n'),
+      );
+      zip.file('scripts/imported-script.sh', 'echo imported');
+      const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+      const res = await request(app).post('/api/skills/import').attach('file', buffer, {
+        filename: 'over-limit-skill.skill',
+        contentType: 'application/zip',
+      });
+
+      expect(res.status).toBe(413);
+      expect(res.body.error).toMatch(/storage limit/i);
+      expect(saveBuffer).not.toHaveBeenCalled();
+      await expect(Skill.findOne({ name: 'over-limit-skill' })).resolves.toBeNull();
+    });
   });
 
   describe('GET /api/skills', () => {
@@ -513,6 +546,29 @@ describe('Skill routes', () => {
       const res = await request(app).post(`/api/skills/${created.body._id}/files`);
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/no file/i);
+    });
+
+    it('rejects over-limit single skill-file uploads before saving blobs', async () => {
+      mockFileConfig = { storageLimit: 0 };
+      const created = await createSkillAsOwner();
+      const saveBuffer = jest.fn().mockResolvedValue('/uploads/should-not-save.sh');
+      const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+      getStrategyFunctions.mockReturnValueOnce({ saveBuffer });
+
+      const res = await request(app)
+        .post(`/api/skills/${created.body._id}/files`)
+        .field('relativePath', 'scripts/new.sh')
+        .attach('file', Buffer.from('echo no'), {
+          filename: 'new.sh',
+          contentType: 'text/x-shellscript',
+        });
+
+      expect(res.status).toBe(413);
+      expect(res.body.error).toMatch(/storage limit/i);
+      expect(saveBuffer).not.toHaveBeenCalled();
+      await expect(
+        SkillFile.findOne({ skillId: created.body._id, relativePath: 'scripts/new.sh' }),
+      ).resolves.toBeNull();
     });
   });
 

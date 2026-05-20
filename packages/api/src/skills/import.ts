@@ -12,6 +12,7 @@ import type {
   CreateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
+import { isFileStorageLimitError } from '~/files/limits';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 
 /** Security limits for zip processing. */
@@ -20,6 +21,15 @@ const MAX_DECOMPRESSED_BYTES = 500 * 1024 * 1024; // 500 MB total decompressed
 const MAX_ENTRIES = 500;
 const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const SKILL_MD = 'SKILL.md';
+
+type StoredImportFile = {
+  filepath: string;
+  source: string;
+  storageKey?: string;
+  storageRegion?: string;
+  user: Types.ObjectId;
+  tenantId?: string;
+};
 
 export interface ImportLimits {
   maxZipBytes: number;
@@ -160,6 +170,25 @@ function isDuplicateKeyError(error: unknown): boolean {
     typeof error === 'object' &&
     'code' in error &&
     (error as { code: unknown }).code === 11000
+  );
+}
+
+async function cleanupStoredImportFiles(
+  deps: ImportSkillDeps,
+  req: Request,
+  files: StoredImportFile[],
+): Promise<void> {
+  const deleteFile = deps.deleteFile;
+  if (!deleteFile || files.length === 0) {
+    return;
+  }
+
+  await Promise.allSettled(
+    files.map((file) =>
+      deleteFile(req, file).catch((error) =>
+        logger.error(`[importSkill] Import rollback cleanup failed:`, error),
+      ),
+    ),
   );
 }
 
@@ -465,6 +494,7 @@ async function handleZip(
 
   // Process additional files (everything except SKILL.md)
   const fileResults: Array<{ path: string; status: 'ok' | 'error'; error?: string }> = [];
+  const savedFiles: StoredImportFile[] = [];
   let totalDecompressed = 0;
 
   for (const [entryPath, zipEntry] of Object.entries(zip.files)) {
@@ -578,6 +608,14 @@ async function handleZip(
           author: authorId,
           tenantId,
         });
+        savedFiles.push({
+          filepath,
+          storageKey,
+          storageRegion,
+          source,
+          user: authorId,
+          tenantId,
+        });
       } catch (dbError) {
         if (deps.deleteFile) {
           await deps
@@ -598,6 +636,19 @@ async function handleZip(
 
       fileResults.push({ path: relativePath, status: 'ok' });
     } catch (error) {
+      if (isFileStorageLimitError(error)) {
+        await cleanupStoredImportFiles(deps, req, savedFiles);
+        await deps
+          .deleteSkill(skill._id.toString())
+          .catch((rollbackError) =>
+            logger.error(
+              `[importSkill] Failed to roll back over-limit skill import:`,
+              rollbackError,
+            ),
+          );
+        return res.status(error.status).json({ error: error.message });
+      }
+
       logger.error(`[importSkill] Failed to process file ${relativePath}:`, error);
       fileResults.push({
         path: relativePath,

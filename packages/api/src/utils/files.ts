@@ -6,6 +6,7 @@ import { readFile, stat } from 'fs/promises';
 const USER_FACING_UPLOAD_ERRORS = [
   'Invalid file format',
   'exceeds token limit',
+  'storage limit',
   'Unable to extract text from',
 ] as const;
 

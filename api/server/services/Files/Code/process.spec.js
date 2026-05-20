@@ -86,6 +86,8 @@ jest.mock('@librechat/api', () => {
      * if a case needs to assert the 'html' value. */
     getExtractedTextFormat: (...args) => mockGetExtractedTextFormat(...args),
     getStorageMetadata: jest.fn(() => ({})),
+    isFileStorageLimitError: jest.fn((error) => error?.code === 'FILE_STORAGE_LIMIT_EXCEEDED'),
+    assertFileStorageLimit: jest.fn().mockResolvedValue(undefined),
     /* Identity helpers mirror codeapi's validator. The real impl
      * lives in `packages/api/src/files/code/identity.ts` with its
      * own dedicated `identity.spec.ts`; here we just stub the
@@ -117,8 +119,10 @@ jest.mock('@librechat/agents', () => ({
 const mockClaimCodeFile = jest.fn();
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
+  deleteFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
   updateFile: jest.fn(),
+  getUserStorageUsage: jest.fn().mockResolvedValue(0),
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
 }));
 
@@ -148,7 +152,7 @@ jest.mock('~/server/utils', () => ({
 
 const http = require('http');
 const https = require('https');
-const { createFile, getFiles } = require('~/models');
+const { createFile, deleteFile, getFiles } = require('~/models');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
@@ -159,6 +163,7 @@ const {
   codeServerHttpsAgent,
   getCodeApiAuthHeaders,
   getStorageMetadata,
+  assertFileStorageLimit,
 } = require('@librechat/api');
 
 const { processCodeOutput, getSessionInfo, readSandboxFile, primeFiles } = require('./process');
@@ -186,6 +191,7 @@ describe('Code Process', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    assertFileStorageLimit.mockResolvedValue(undefined);
     // Default mock: atomic claim returns a new file record (no existing file)
     mockClaimCodeFile.mockResolvedValue({
       file_id: 'mock-uuid-1234',
@@ -243,6 +249,23 @@ describe('Code Process', () => {
   });
 
   describe('processCodeOutput', () => {
+    it('rejects over-limit artifacts before saving or persisting them', async () => {
+      const error = Object.assign(new Error('storage limit exceeded.'), {
+        code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+        status: 413,
+      });
+      const saveBuffer = jest.fn().mockResolvedValue('/uploads/should-not-save.txt');
+      getStrategyFunctions.mockReturnValue({ saveBuffer });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+      assertFileStorageLimit.mockRejectedValueOnce(error);
+
+      await expect(processCodeOutput(baseParams)).rejects.toThrow('storage limit exceeded');
+
+      expect(saveBuffer).not.toHaveBeenCalled();
+      expect(createFile).not.toHaveBeenCalled();
+      expect(deleteFile).toHaveBeenCalledWith('mock-uuid-1234');
+    });
+
     it('forwards Code API auth headers when downloading generated output', async () => {
       getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer codeapi-token' });
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });

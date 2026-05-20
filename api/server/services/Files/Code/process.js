@@ -17,6 +17,8 @@ const {
   extractCodeArtifactText,
   getExtractedTextFormat,
   getStorageMetadata,
+  isFileStorageLimitError,
+  assertFileStorageLimit,
   buildCodeEnvDownloadQuery,
 } = require('@librechat/api');
 const {
@@ -33,13 +35,70 @@ const {
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
+const {
+  createFile,
+  deleteFile,
+  getFiles,
+  updateFile,
+  claimCodeFile,
+  getUserStorageUsage,
+} = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { determineFileType } = require('~/server/utils');
 
 const axios = createAxiosInstance();
+
+const assertCodeOutputStorageLimit = (req, incomingBytes, options = {}) =>
+  assertFileStorageLimit({
+    req,
+    incomingBytes,
+    getUserStorageUsage,
+    ...options,
+  });
+
+const cleanupStoredCodeFile = async (req, file) => {
+  const { deleteFile: deleteStoredFile } = getStrategyFunctions(file.source ?? FileSources.local);
+  if (!deleteStoredFile) {
+    return;
+  }
+
+  try {
+    await deleteStoredFile(req, {
+      ...file,
+      user: file.user ?? req.user.id,
+      tenantId: file.tenantId ?? req.user.tenantId,
+    });
+  } catch (cleanupError) {
+    logger.error('[processCodeOutput] Failed to clean up over-limit artifact:', cleanupError);
+  }
+};
+
+const deleteClaimedCodeFile = async (fileId) => {
+  try {
+    await deleteFile(fileId);
+  } catch (cleanupError) {
+    logger.error('[processCodeOutput] Failed to clean up over-limit file claim:', cleanupError);
+  }
+};
+
+const createCodeFileWithStorageLimit = async (req, file, options = {}) => {
+  try {
+    await assertCodeOutputStorageLimit(req, file.bytes, { excludeFileId: file.file_id });
+    await createFile(file, true);
+  } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      if (options.cleanupStorage !== false) {
+        await cleanupStoredCodeFile(req, options.cleanupFile ?? file);
+      }
+      if (options.deleteClaimOnFailure) {
+        await deleteClaimedCodeFile(file.file_id);
+      }
+    }
+    throw error;
+  }
+};
 
 /**
  * Creates a fallback download URL response when file cannot be processed locally.
@@ -427,6 +486,15 @@ const processCodeOutput = async ({
       );
     }
 
+    try {
+      await assertCodeOutputStorageLimit(req, buffer.length, { excludeFileId: file_id });
+    } catch (error) {
+      if (isFileStorageLimitError(error) && !isUpdate) {
+        await deleteClaimedCodeFile(file_id);
+      }
+      throw error;
+    }
+
     /**
      * Preserve the original `messageId` on update. Each `processCodeOutput`
      * call would otherwise overwrite it with the current run's run id, which
@@ -466,7 +534,10 @@ const processCodeOutput = async ({
         metadata: { codeEnvRef },
         ...(await getRetentionExpiry(req)),
       };
-      await createFile(file, true);
+      await createCodeFileWithStorageLimit(req, file, {
+        cleanupFile: { ...file, filepath: _file.filepath },
+        deleteClaimOnFailure: !isUpdate,
+      });
       return { file: Object.assign(file, { messageId, toolCallId }) };
     }
 
@@ -592,7 +663,7 @@ const processCodeOutput = async ({
         previewError: null,
         previewRevision,
       };
-      await createFile(file, true);
+      await createCodeFileWithStorageLimit(req, file, { deleteClaimOnFailure: !isUpdate });
       return {
         file: Object.assign(file, { messageId, toolCallId }),
         finalize: () =>
@@ -630,9 +701,14 @@ const processCodeOutput = async ({
       previewRevision: null,
     };
 
-    await createFile(file, true);
+    await createCodeFileWithStorageLimit(req, file, { deleteClaimOnFailure: !isUpdate });
     return { file: Object.assign(file, { messageId, toolCallId }) };
   } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      logger.warn(`[processCodeOutput] Storage limit blocked artifact "${name}"`);
+      throw error;
+    }
+
     if (error?.message === 'Path traversal detected in filename') {
       logger.warn(
         `[processCodeOutput] Path traversal blocked for file "${name}" | conv=${conversationId}`,

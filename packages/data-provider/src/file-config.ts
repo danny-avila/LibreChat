@@ -471,6 +471,7 @@ export const fileConfigSchema = z.object({
   endpoints: z.record(endpointFileConfigSchema).optional(),
   skills: skillFileConfigSchema.optional(),
   serverFileSizeLimit: z.number().min(0).optional(),
+  storageLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
   fileTokenLimit: z.number().min(0).optional(),
   imageGeneration: z
@@ -683,6 +684,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
   if (dynamic.serverFileSizeLimit !== undefined) {
     mergedConfig.serverFileSizeLimit = mbToBytes(dynamic.serverFileSizeLimit);
+  }
+
+  if (dynamic.storageLimit !== undefined) {
+    mergedConfig.storageLimit = mbToBytes(dynamic.storageLimit);
   }
 
   if (dynamic.avatarSizeLimit !== undefined) {

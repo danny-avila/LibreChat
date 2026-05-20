@@ -1,0 +1,116 @@
+import type { UserStorageUsageParams } from '@librechat/data-schemas';
+import type { ServerRequest } from '~/types';
+import {
+  FILE_STORAGE_LIMIT_ERROR_CODE,
+  assertFileStorageLimit,
+  isFileStorageLimitError,
+} from './limits';
+
+const megabyte = 1024 * 1024;
+
+function createReq(storageLimit?: number, tenantId?: string): ServerRequest {
+  return {
+    config: {
+      fileConfig: storageLimit === undefined ? {} : { storageLimit },
+    },
+    user: {
+      id: '64f000000000000000000001',
+      tenantId,
+    },
+  } as ServerRequest;
+}
+
+function createUsageMock(currentUsage: number) {
+  return jest.fn<Promise<number>, [UserStorageUsageParams]>(async () => currentUsage);
+}
+
+describe('assertFileStorageLimit', () => {
+  it('no-ops when storageLimit is undefined', async () => {
+    const getUserStorageUsage = createUsageMock(10 * megabyte);
+
+    await expect(
+      assertFileStorageLimit({
+        req: createReq(),
+        incomingBytes: 1,
+        getUserStorageUsage,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(getUserStorageUsage).not.toHaveBeenCalled();
+  });
+
+  it('allows usage equal to the limit', async () => {
+    const getUserStorageUsage = createUsageMock(megabyte - 10);
+
+    await expect(
+      assertFileStorageLimit({
+        req: createReq(1),
+        incomingBytes: 10,
+        getUserStorageUsage,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects usage above the limit with a user-facing storage limit error', async () => {
+    const getUserStorageUsage = createUsageMock(megabyte);
+
+    await expect(
+      assertFileStorageLimit({
+        req: createReq(1),
+        incomingBytes: 1,
+        getUserStorageUsage,
+      }),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE, status: 413 });
+  });
+
+  it('treats 0 as no new positive-byte storage', async () => {
+    const getUserStorageUsage = createUsageMock(0);
+
+    await expect(
+      assertFileStorageLimit({
+        req: createReq(0),
+        incomingBytes: 1,
+        getUserStorageUsage,
+      }),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('passes tenant and replacement exclusions to the usage lookup', async () => {
+    const getUserStorageUsage = createUsageMock(1);
+    const excludeSkillFile = {
+      skillId: '64f000000000000000000002',
+      relativePath: 'scripts/run.sh',
+    };
+
+    await assertFileStorageLimit({
+      req: createReq(1, 'tenant-a'),
+      incomingBytes: 1,
+      getUserStorageUsage,
+      excludeFileId: 'file-1',
+      excludeSkillFile,
+    });
+
+    expect(getUserStorageUsage).toHaveBeenCalledWith({
+      userId: '64f000000000000000000001',
+      tenantId: 'tenant-a',
+      excludeFileId: 'file-1',
+      excludeSkillFile,
+    });
+  });
+});
+
+describe('isFileStorageLimitError', () => {
+  it('matches storage limit errors by code', async () => {
+    const getUserStorageUsage = createUsageMock(megabyte);
+
+    try {
+      await assertFileStorageLimit({
+        req: createReq(1),
+        incomingBytes: 1,
+        getUserStorageUsage,
+      });
+    } catch (error) {
+      expect(isFileStorageLimitError(error)).toBe(true);
+    }
+  });
+});
