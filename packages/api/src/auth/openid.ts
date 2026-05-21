@@ -20,6 +20,11 @@ type OpenIdLookupField = 'openidId' | 'idOnTheSource';
 type OpenIdUserResolution = { user: IUser | null; error: string | null; migration: boolean };
 
 const OPENID_DISCOVERY_PATH = '/.well-known/openid-configuration';
+const LEGACY_ISSUER_FILTERS: Array<FilterQuery<IUser>['openidIssuer']> = [
+  { $exists: false },
+  null,
+  '',
+];
 
 export function normalizeOpenIdIssuer(issuer: string | undefined): string | undefined {
   const normalized = issuer?.trim().replace(/\/+$/, '');
@@ -56,24 +61,68 @@ function isLegacyOpenIdIssuer(openidIssuer: string | undefined): boolean {
   return openidIssuer != null && loginIssuer != null && openidIssuer === loginIssuer;
 }
 
+function hasOpenIdLookupValue(value: string | undefined): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function getIssuerExactCondition(
+  field: OpenIdLookupField,
+  value: string | undefined,
+  openidIssuer: string | undefined,
+): FilterQuery<IUser> | null {
+  if (!hasOpenIdLookupValue(value) || !openidIssuer) return null;
+  return { [field]: value, openidIssuer };
+}
+
+function getLegacyIssuerConditions(
+  field: OpenIdLookupField,
+  value: string | undefined,
+  openidIssuer: string | undefined,
+): FilterQuery<IUser>[] {
+  if (!hasOpenIdLookupValue(value) || !isLegacyOpenIdIssuer(openidIssuer)) return [];
+  return LEGACY_ISSUER_FILTERS.map((issuerFilter) => ({
+    [field]: value,
+    openidIssuer: issuerFilter,
+  }));
+}
+
 export function getIssuerBoundConditions(
   field: OpenIdLookupField,
   value: string | undefined,
   openidIssuer: string | undefined,
 ): FilterQuery<IUser>[] {
-  if (!value || typeof value !== 'string') return [];
-  if (!openidIssuer) return [];
+  const exactCondition = getIssuerExactCondition(field, value, openidIssuer);
+  if (!exactCondition) return [];
+  return [exactCondition, ...getLegacyIssuerConditions(field, value, openidIssuer)];
+}
 
-  const conditions: FilterQuery<IUser>[] = [{ [field]: value, openidIssuer }];
+function getPrimaryLookupConditions(
+  openidId: string | undefined,
+  idOnTheSource: string | undefined,
+  openidIssuer: string | undefined,
+): FilterQuery<IUser>[] {
+  const exactConditions = [
+    getIssuerExactCondition('openidId', openidId, openidIssuer),
+    getIssuerExactCondition('idOnTheSource', idOnTheSource, openidIssuer),
+  ].filter((condition): condition is FilterQuery<IUser> => condition != null);
 
-  if (isLegacyOpenIdIssuer(openidIssuer)) {
-    conditions.push({
-      [field]: value,
-      $or: [{ openidIssuer: { $exists: false } }, { openidIssuer: null }, { openidIssuer: '' }],
-    });
+  return [
+    ...exactConditions,
+    ...getLegacyIssuerConditions('openidId', openidId, openidIssuer),
+    ...getLegacyIssuerConditions('idOnTheSource', idOnTheSource, openidIssuer),
+  ];
+}
+
+async function findFirstOpenIdUser(
+  findUser: UserMethods['findUser'],
+  conditions: FilterQuery<IUser>[],
+): Promise<IUser | null> {
+  for (const condition of conditions) {
+    const user = await findUser(condition);
+    if (user) return user;
   }
 
-  return conditions;
+  return null;
 }
 
 export function isUserIssuerAllowed(user: IUser, openidIssuer: string | undefined): boolean {
@@ -160,14 +209,11 @@ export async function findOpenIDUser({
   strategyName?: string;
 }): Promise<OpenIdUserResolution> {
   const normalizedIssuer = normalizeOpenIdIssuer(openidIssuer);
-  const primaryConditions = [
-    ...getIssuerBoundConditions('openidId', openidId, normalizedIssuer),
-    ...getIssuerBoundConditions('idOnTheSource', idOnTheSource, normalizedIssuer),
-  ];
+  const primaryConditions = getPrimaryLookupConditions(openidId, idOnTheSource, normalizedIssuer);
 
-  let user = null;
+  let user: IUser | null = null;
   if (primaryConditions.length > 0) {
-    user = await findUser({ $or: primaryConditions });
+    user = await findFirstOpenIdUser(findUser, primaryConditions);
   }
 
   const primaryIssuerResolution = resolveIssuerBoundUser(

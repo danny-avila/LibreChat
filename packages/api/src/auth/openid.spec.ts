@@ -1,7 +1,10 @@
-import { Types } from 'mongoose';
-import { logger } from '@librechat/data-schemas';
+import mongoose, { Types } from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import { logger, createMethods, createModels } from '@librechat/data-schemas';
 import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
+import type { CommandStartedEvent } from 'mongodb';
+import type { FilterQuery } from 'mongoose';
 import { findOpenIDUser, getOpenIdEmail, getOpenIdIssuer, normalizeOpenIdIssuer } from './openid';
 
 function newId() {
@@ -100,7 +103,8 @@ describe('findOpenIDUser', () => {
       });
 
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123', openidIssuer: issuer }],
+        openidId: 'openid_123',
+        openidIssuer: issuer,
       });
       expect(result).toEqual({
         user: mockUser,
@@ -118,7 +122,7 @@ describe('findOpenIDUser', () => {
         username: 'testuser',
       } as IUser;
 
-      mockFindUser.mockResolvedValueOnce(mockUser);
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
@@ -127,11 +131,13 @@ describe('findOpenIDUser', () => {
         idOnTheSource: 'source_123',
       });
 
-      expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [
-          { openidId: 'openid_123', openidIssuer: issuer },
-          { idOnTheSource: 'source_123', openidIssuer: issuer },
-        ],
+      expect(mockFindUser).toHaveBeenNthCalledWith(1, {
+        openidId: 'openid_123',
+        openidIssuer: issuer,
+      });
+      expect(mockFindUser).toHaveBeenNthCalledWith(2, {
+        idOnTheSource: 'source_123',
+        openidIssuer: issuer,
       });
       expect(result).toEqual({
         user: mockUser,
@@ -161,11 +167,10 @@ describe('findOpenIDUser', () => {
         email: 'user@example.com',
       });
 
+      expect(mockFindUser).toHaveBeenCalledTimes(1);
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [
-          { openidId: 'openid_123', openidIssuer: issuer },
-          { idOnTheSource: 'source_123', openidIssuer: issuer },
-        ],
+        openidId: 'openid_123',
+        openidIssuer: issuer,
       });
       expect(result).toEqual({
         user: mockUser,
@@ -194,7 +199,8 @@ describe('findOpenIDUser', () => {
       });
 
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123', openidIssuer: 'https://issuer.example.com' }],
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
       });
       expect(result).toEqual({
         user: mockUser,
@@ -213,7 +219,7 @@ describe('findOpenIDUser', () => {
         username: 'testuser',
       } as IUser;
 
-      mockFindUser.mockResolvedValueOnce(mockUser);
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
@@ -221,18 +227,13 @@ describe('findOpenIDUser', () => {
         findUser: mockFindUser,
       });
 
-      expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [
-          { openidId: 'openid_123', openidIssuer: 'https://issuer.example.com' },
-          {
-            openidId: 'openid_123',
-            $or: [
-              { openidIssuer: { $exists: false } },
-              { openidIssuer: null },
-              { openidIssuer: '' },
-            ],
-          },
-        ],
+      expect(mockFindUser).toHaveBeenNthCalledWith(1, {
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+      });
+      expect(mockFindUser).toHaveBeenNthCalledWith(2, {
+        openidId: 'openid_123',
+        openidIssuer: { $exists: false },
       });
       expect(result).toEqual({
         user: { ...mockUser, openidIssuer: 'https://issuer.example.com' },
@@ -251,7 +252,7 @@ describe('findOpenIDUser', () => {
         username: 'testuser',
       } as IUser;
 
-      mockFindUser.mockResolvedValueOnce(mockUser);
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
@@ -259,18 +260,13 @@ describe('findOpenIDUser', () => {
         findUser: mockFindUser,
       });
 
-      expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [
-          { openidId: 'openid_123', openidIssuer: 'https://issuer.example.com' },
-          {
-            openidId: 'openid_123',
-            $or: [
-              { openidIssuer: { $exists: false } },
-              { openidIssuer: null },
-              { openidIssuer: '' },
-            ],
-          },
-        ],
+      expect(mockFindUser).toHaveBeenNthCalledWith(1, {
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+      });
+      expect(mockFindUser).toHaveBeenNthCalledWith(2, {
+        openidId: 'openid_123',
+        openidIssuer: { $exists: false },
       });
       expect(result).toEqual({
         user: { ...mockUser, openidIssuer: 'https://issuer.example.com' },
@@ -320,9 +316,12 @@ describe('findOpenIDUser', () => {
       });
 
       expect(mockFindUser).toHaveBeenNthCalledWith(1, {
-        $or: [{ openidId: 'openid_123', openidIssuer: issuer }],
+        openidId: 'openid_123',
+        openidIssuer: issuer,
       });
-      expect(mockFindUser).toHaveBeenNthCalledWith(2, { email: 'user@example.com' });
+      expect(mockFindUser).toHaveBeenNthCalledWith(2, {
+        email: 'user@example.com',
+      });
       expect(result).toEqual({
         user: mockUser,
         error: null,
@@ -361,7 +360,8 @@ describe('findOpenIDUser', () => {
 
       expect(mockFindUser).toHaveBeenCalledTimes(1);
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123', openidIssuer: issuer }],
+        openidId: 'openid_123',
+        openidIssuer: issuer,
       });
       expect(result).toEqual({
         user: null,
@@ -674,7 +674,8 @@ describe('findOpenIDUser', () => {
       });
 
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123', openidIssuer: issuer }],
+        openidId: 'openid_123',
+        openidIssuer: issuer,
       });
       expect(result).toEqual({
         user: null,
@@ -760,6 +761,153 @@ describe('findOpenIDUser', () => {
         migration: false,
       });
     });
+  });
+});
+
+type CapturedFindCommand = {
+  find?: unknown;
+  filter?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function planContainsStage(value: unknown, stage: string): boolean {
+  if (!isRecord(value)) return false;
+  if (value.stage === stage) return true;
+
+  return Object.values(value).some((entry) => {
+    if (Array.isArray(entry)) return entry.some((item) => planContainsStage(item, stage));
+    return planContainsStage(entry, stage);
+  });
+}
+
+function getTotalDocsExamined(explain: unknown): number | undefined {
+  if (!isRecord(explain)) return undefined;
+  const executionStats = explain.executionStats;
+  if (!isRecord(executionStats)) return undefined;
+  const totalDocsExamined = executionStats.totalDocsExamined;
+  return typeof totalDocsExamined === 'number' ? totalDocsExamined : undefined;
+}
+
+describe('findOpenIDUser Mongo compatibility', () => {
+  let mongoServer: MongoMemoryServer;
+  let User: mongoose.Model<IUser>;
+  let methods: ReturnType<typeof createMethods>;
+
+  const issuer = 'https://issuer.example.com';
+  const originalOpenIdIssuer = process.env.OPENID_ISSUER;
+
+  async function seedUsers(count: number) {
+    await User.insertMany(
+      Array.from({ length: count }, (_, index) => ({
+        email: `filler-${index}@example.com`,
+        provider: 'openid',
+        openidId: `filler-sub-${index}`,
+        openidIssuer: issuer,
+        idOnTheSource: `filler-oid-${index}`,
+      })),
+    );
+  }
+
+  async function captureFindFilters<T>(run: () => Promise<T>): Promise<{
+    result: T;
+    filters: unknown[];
+  }> {
+    const filters: unknown[] = [];
+    const client = mongoose.connection.getClient();
+    const listener = (event: CommandStartedEvent) => {
+      const command = event.command as CapturedFindCommand;
+      if (event.commandName === 'find' && command.find === User.collection.name) {
+        filters.push(command.filter);
+      }
+    };
+
+    client.on('commandStarted', listener);
+    try {
+      const result = await run();
+      return { result, filters };
+    } finally {
+      client.off('commandStarted', listener);
+    }
+  }
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    await mongoose.connect(mongoServer.getUri(), { monitorCommands: true });
+    createModels(mongoose);
+    User = mongoose.models.User as mongoose.Model<IUser>;
+    methods = createMethods(mongoose);
+  });
+
+  afterAll(async () => {
+    if (originalOpenIdIssuer == null) {
+      delete process.env.OPENID_ISSUER;
+    } else {
+      process.env.OPENID_ISSUER = originalOpenIdIssuer;
+    }
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    process.env.OPENID_ISSUER = issuer;
+    await mongoose.connection.dropDatabase();
+    await User.syncIndexes();
+  });
+
+  it('keeps exact issuer lookup indexable on a seeded user collection', async () => {
+    await seedUsers(1500);
+    await User.create({
+      email: 'target@example.com',
+      provider: 'openid',
+      openidId: 'target-sub',
+      openidIssuer: issuer,
+      idOnTheSource: 'target-oid',
+    });
+
+    const { result, filters } = await captureFindFilters(() =>
+      findOpenIDUser({
+        openidId: 'target-sub',
+        idOnTheSource: 'target-oid',
+        openidIssuer: issuer,
+        findUser: methods.findUser,
+      }),
+    );
+
+    expect(result.user?.email).toBe('target@example.com');
+    expect(filters).toEqual([{ openidId: 'target-sub', openidIssuer: issuer }]);
+
+    const explain = await User.findOne(filters[0] as FilterQuery<IUser>).explain('executionStats');
+    expect(planContainsStage(explain, 'IXSCAN')).toBe(true);
+    expect(getTotalDocsExamined(explain)).toBeLessThanOrEqual(1);
+  });
+
+  it('resolves legacy issuer-less users without nested or disjunctive filters', async () => {
+    await User.create({
+      email: 'legacy@example.com',
+      provider: 'openid',
+      openidId: 'legacy-sub',
+      idOnTheSource: 'legacy-oid',
+    });
+
+    const { result, filters } = await captureFindFilters(() =>
+      findOpenIDUser({
+        openidId: 'legacy-sub',
+        idOnTheSource: 'legacy-oid',
+        openidIssuer: issuer,
+        findUser: methods.findUser,
+      }),
+    );
+
+    expect(result.user?.email).toBe('legacy@example.com');
+    expect(result.migration).toBe(true);
+    expect(filters).toEqual([
+      { openidId: 'legacy-sub', openidIssuer: issuer },
+      { idOnTheSource: 'legacy-oid', openidIssuer: issuer },
+      { openidId: 'legacy-sub', openidIssuer: { $exists: false } },
+    ]);
   });
 });
 
