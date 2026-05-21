@@ -183,11 +183,33 @@ function stringifyThrownValue(error: unknown): string {
   }
 }
 
+function getThrownValueMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error != null && typeof error === 'object') {
+    try {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === 'string') {
+        return message;
+      }
+      if (message != null) {
+        return stringifyThrownValue(message);
+      }
+    } catch {
+      // Fall through to whole-value stringification.
+    }
+  }
+
+  return stringifyThrownValue(error);
+}
+
 function getSafeToolError(error: unknown): {
   message: string;
   logContext: Record<string, unknown>;
 } {
-  const rawMessage = error instanceof Error ? error.message : stringifyThrownValue(error);
+  const rawMessage = getThrownValueMessage(error);
   const message = truncateMiddle(rawMessage, MAX_TOOL_ERROR_MESSAGE_CHARS);
   const stack = error instanceof Error && error.stack ? error.stack : undefined;
 

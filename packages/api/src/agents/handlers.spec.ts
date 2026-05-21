@@ -362,6 +362,43 @@ describe('createToolExecuteHandler', () => {
         errorSpy.mockRestore();
       }
     });
+
+    it('preserves message from thrown plain objects', async () => {
+      const thrown = { message: 'plain object timeout' };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [
+          {
+            name: 'plain_object_tool',
+            invoke: jest.fn(async () => {
+              throw thrown;
+            }),
+          },
+        ] as never[],
+      }));
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      try {
+        const handler = createToolExecuteHandler({ loadTools });
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_plain_object',
+            name: 'plain_object_tool',
+            args: {},
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toBe('plain object timeout');
+        expect(errorSpy).toHaveBeenCalledWith(
+          '[ON_TOOL_EXECUTE] Tool plain_object_tool error',
+          expect.objectContaining({
+            message: 'plain object timeout',
+            messageTruncated: false,
+          }),
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
   });
 
   describe('skill tool model-invocation gate', () => {

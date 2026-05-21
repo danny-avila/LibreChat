@@ -874,10 +874,31 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       connection as unknown as {
         createFetchFunction: (
           getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+          guardStreamableHTTPResponses?: boolean,
         ) => CustomFetch;
       }
     ).createFetchFunction;
     return factory.call(connection, () => null);
+  }
+
+  function getGuardedStreamableHTTPCustomFetch(connection: MCPConnection): CustomFetch {
+    const factory = (
+      connection as unknown as {
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+          guardStreamableHTTPResponses?: boolean,
+        ) => CustomFetch;
+      }
+    ).createFetchFunction;
+    return factory.call(connection, () => null, undefined, undefined, undefined, undefined, true);
   }
 
   it.each<['string' | 'URL' | 'Request']>([['string'], ['URL'], ['Request']])(
@@ -1044,6 +1065,32 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
+  it('should not apply streamable HTTP response caps unless the transport opts in', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = '8';
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"jsonrpc":"2.0","id":1,"result":{"too":"large"}}');
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-unguarded-byte-limit',
+        serverConfig: { type: 'sse', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getCustomFetch(conn);
+      const response = await customFetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'ping', id: 1 }),
+      });
+
+      await expect(response.text()).resolves.toContain('"too":"large"');
+    } finally {
+      await server.close();
+    }
+  });
+
   it('should reject oversized JSON POST responses with the streamable HTTP byte cap', async () => {
     process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = '8';
     const server = await createRawResponseServer((_req, res) => {
@@ -1057,7 +1104,7 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
         useSSRFProtection: false,
       });
 
-      const customFetch = getCustomFetch(conn);
+      const customFetch = getGuardedStreamableHTTPCustomFetch(conn);
       const response = await customFetch(server.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1072,7 +1119,7 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
-  it('should return a bounded JSON-RPC SSE error when a POST response has an oversized line', async () => {
+  it('should reject a POST response with an oversized SSE line before the SSE parser can grow it', async () => {
     process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = '16';
     const server = await createRawResponseServer((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -1085,19 +1132,15 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
         useSSRFProtection: false,
       });
 
-      const customFetch = getCustomFetch(conn);
+      const customFetch = getGuardedStreamableHTTPCustomFetch(conn);
       const response = await customFetch(server.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 7 }),
       });
-      const text = await response.text();
-
-      expect(text).toContain('"id":7');
-      expect(text).toContain('MCP response contained an oversized SSE line');
-      expect(text).toContain('lineLimit=16 bytes');
-      expect(text).toContain('observedLine=17 bytes');
-      expect(text).not.toContain('x'.repeat(64));
+      await expect(response.text()).rejects.toThrow(
+        /MCP response contained an oversized SSE line.*lineLimit=16 bytes.*observedLine=17 bytes/,
+      );
     } finally {
       await server.close();
     }
@@ -1121,7 +1164,7 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
         useSSRFProtection: false,
       });
 
-      const customFetch = getCustomFetch(conn);
+      const customFetch = getGuardedStreamableHTTPCustomFetch(conn);
       const response = await customFetch(server.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
