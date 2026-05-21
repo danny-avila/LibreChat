@@ -247,9 +247,19 @@ function getMCPProxyConfig(options: t.MCPOptions): MCPProxyConfig | undefined {
 }
 
 function getProxyEntryPort(entry: string): { hostname: string; port: number } {
-  const parsed = entry.match(/^(.+):(\d+)$/);
+  const trimmed = entry.trim();
+  const bracketed = trimmed.match(/^\[([^\]]+)\](?::(\d+))?$/);
+  if (bracketed) {
+    return {
+      hostname: bracketed[1].toLowerCase(),
+      port: bracketed[2] ? Number.parseInt(bracketed[2], 10) : 0,
+    };
+  }
+
+  const separatorCount = (trimmed.match(/:/g) ?? []).length;
+  const parsed = separatorCount === 1 ? trimmed.match(/^(.+):(\d+)$/) : null;
   return {
-    hostname: (parsed ? parsed[1] : entry)
+    hostname: (parsed ? parsed[1] : trimmed)
       .replace(/^\*?\./, '')
       .replace(/^\[|\]$/g, '')
       .toLowerCase(),

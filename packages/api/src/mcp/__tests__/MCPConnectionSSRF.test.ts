@@ -1095,6 +1095,78 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
+  it('should honor bare IPv6 NO_PROXY entries without parsing a port suffix', () => {
+    const originalProxy = process.env.PROXY;
+    const originalHttpProxy = process.env.HTTP_PROXY;
+    const originalNoProxy = process.env.NO_PROXY;
+    const originalLowerHttpProxy = process.env.http_proxy;
+    const originalLowerNoProxy = process.env.no_proxy;
+
+    delete process.env.PROXY;
+    delete process.env.http_proxy;
+    delete process.env.no_proxy;
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.NO_PROXY = '::1';
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-standard-env-no-proxy-ipv6',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'http://[::1]:3000/mcp',
+        },
+        useSSRFProtection: false,
+      });
+
+      const privateSelf = conn as unknown as {
+        agents: Array<{ constructor: { name: string } }>;
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+        ) => CustomFetch;
+      };
+      privateSelf.createFetchFunction.call(
+        conn,
+        () => null,
+        undefined,
+        300000,
+        undefined,
+        'http://[::1]:3000/mcp',
+      );
+
+      expect(privateSelf.agents.map((agent) => agent.constructor.name)).toEqual(['Agent', 'Agent']);
+    } finally {
+      if (originalProxy == null) {
+        delete process.env.PROXY;
+      } else {
+        process.env.PROXY = originalProxy;
+      }
+      if (originalHttpProxy == null) {
+        delete process.env.HTTP_PROXY;
+      } else {
+        process.env.HTTP_PROXY = originalHttpProxy;
+      }
+      if (originalNoProxy == null) {
+        delete process.env.NO_PROXY;
+      } else {
+        process.env.NO_PROXY = originalNoProxy;
+      }
+      if (originalLowerHttpProxy == null) {
+        delete process.env.http_proxy;
+      } else {
+        process.env.http_proxy = originalLowerHttpProxy;
+      }
+      if (originalLowerNoProxy == null) {
+        delete process.env.no_proxy;
+      } else {
+        process.env.no_proxy = originalLowerNoProxy;
+      }
+    }
+  });
+
   it('should preflight proxied targets before dispatching network requests', async () => {
     mockedResolveHostnameSSRF.mockResolvedValueOnce(true);
 
