@@ -1185,6 +1185,33 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
+  it('should allow SSE lines above the old 1 MiB default when no line override is set', async () => {
+    delete process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES;
+    const payload = 'x'.repeat(2 * 1024 * 1024);
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.end(`data: ${payload}\n\n`);
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-sse-default-line-limit',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getGuardedStreamableHTTPCustomFetch(conn);
+      const response = await customFetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled' }),
+      });
+
+      await expect(response.text()).resolves.toContain(payload.slice(0, 128));
+    } finally {
+      await server.close();
+    }
+  });
+
   it('should fail an actual streamable HTTP tool call promptly with a clear oversized SSE line error', async () => {
     process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = '512';
     target = await createOversizedToolResultStreamableServer(2048);
