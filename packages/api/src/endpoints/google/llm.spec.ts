@@ -757,6 +757,21 @@ describe('getGoogleConfig', () => {
       );
     });
 
+    it('should remove empty Gemini 3.5 Flash thinkingConfig when all fields are dropped', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+        },
+        dropParams: ['includeThoughts', 'thinkingLevel'],
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('thinkingConfig');
+    });
+
     it('should omit thinkingLevel when unset (empty string) for Gemini 3', () => {
       const credentials = {
         [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',

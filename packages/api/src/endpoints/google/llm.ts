@@ -199,6 +199,8 @@ function applyGemini35FlashOverrides({
 
   if (Object.keys(thinkingConfig).length > 0) {
     configWithThinking.thinkingConfig = thinkingConfig;
+  } else {
+    delete configWithThinking.thinkingConfig;
   }
 
   if (provider === Providers.VERTEXAI && !shouldDropIncludeThoughts) {
