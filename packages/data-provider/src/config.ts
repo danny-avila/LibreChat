@@ -1595,6 +1595,8 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 3.5 Models
+    'gemini-3.5-flash',
     // Gemini 3.1 Models
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',
