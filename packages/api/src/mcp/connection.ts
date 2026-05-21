@@ -74,6 +74,351 @@ const SSE_CONNECT_TIMEOUT = 120000;
 const DEFAULT_INIT_TIMEOUT = 30000;
 /** Max 307/308 redirects to follow per request (prevents redirect loops) */
 const MAX_REDIRECTS = 5;
+const DEFAULT_MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
+const DEFAULT_MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = 1024 * 1024;
+
+function getNonNegativeIntegerEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw == null || raw.trim() === '') {
+    return defaultValue;
+  }
+
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return defaultValue;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : defaultValue;
+}
+
+function bytesToMiB(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(2)} MiB`;
+}
+
+function getMemoryDebugSnapshot(): Record<string, string> {
+  const mem = process.memoryUsage();
+  return {
+    rss: bytesToMiB(mem.rss),
+    heapUsed: bytesToMiB(mem.heapUsed),
+    heapTotal: bytesToMiB(mem.heapTotal),
+    external: bytesToMiB(mem.external),
+    arrayBuffers: bytesToMiB(mem.arrayBuffers ?? 0),
+  };
+}
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+type JSONRPCRequestId = string | number;
+
+function getChunkBytes(chunk: unknown): Uint8Array {
+  if (typeof chunk === 'string') {
+    return textEncoder.encode(chunk);
+  }
+  if (chunk instanceof ArrayBuffer) {
+    return new Uint8Array(chunk);
+  }
+  if (ArrayBuffer.isView(chunk)) {
+    const view = new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    return new Uint8Array(view);
+  }
+  return new Uint8Array();
+}
+
+function copyBytes(bytes: Uint8Array): Uint8Array {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy;
+}
+
+function concatBytes(chunks: Uint8Array[]): Uint8Array {
+  if (chunks.length === 0) {
+    return new Uint8Array();
+  }
+  if (chunks.length === 1) {
+    return chunks[0];
+  }
+  const totalLength = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return combined;
+}
+
+function getBodyText(body: unknown): string | null {
+  if (typeof body === 'string') {
+    return body;
+  }
+  if (body instanceof ArrayBuffer) {
+    return textDecoder.decode(new Uint8Array(body));
+  }
+  if (ArrayBuffer.isView(body)) {
+    return textDecoder.decode(new Uint8Array(body.buffer, body.byteOffset, body.byteLength));
+  }
+  return null;
+}
+
+function getJSONRPCRequestIds(body: unknown): JSONRPCRequestId[] {
+  const bodyText = getBodyText(body);
+  if (!bodyText) {
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    return [];
+  }
+
+  const messages = Array.isArray(parsed) ? parsed : [parsed];
+  return messages.flatMap((message) => {
+    if (!message || typeof message !== 'object') {
+      return [];
+    }
+    const jsonrpcMessage = message as { id?: unknown; method?: unknown };
+    const { id } = jsonrpcMessage;
+    if (typeof jsonrpcMessage.method !== 'string') {
+      return [];
+    }
+    if (typeof id !== 'string' && typeof id !== 'number') {
+      return [];
+    }
+    return [id];
+  });
+}
+
+function buildBlockedMCPResponseMessage(
+  reason: string,
+  details: {
+    maxResponseBytes: number;
+    maxLineBytes: number;
+    totalBytes: number;
+    currentLineBytes: number;
+    chunkCount: number;
+  },
+): string {
+  const limitDetails =
+    reason === 'MCP response exceeded byte limit'
+      ? `limit=${details.maxResponseBytes} bytes, observed=${details.totalBytes} bytes`
+      : `lineLimit=${details.maxLineBytes} bytes, observedLine=${details.currentLineBytes} bytes, observedTotal=${details.totalBytes} bytes`;
+
+  return `[MCP] ${reason} (${limitDetails}, chunks=${details.chunkCount}). The MCP server returned an unsafe streamable HTTP response; narrow the tool result or retry after the server response is fixed.`;
+}
+
+function buildBlockedMCPResponseSSE(requestIds: JSONRPCRequestId[], message: string): Uint8Array {
+  const events = requestIds
+    .map((id) => {
+      const payload = {
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32000,
+          message,
+        },
+      };
+      return `data: ${JSON.stringify(payload)}\n\n`;
+    })
+    .join('');
+  return textEncoder.encode(events);
+}
+
+function getMCPStreamableHTTPResponseLimits(): {
+  maxResponseBytes: number;
+  maxLineBytes: number;
+} {
+  return {
+    maxResponseBytes: getNonNegativeIntegerEnv(
+      'MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES',
+      DEFAULT_MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES,
+    ),
+    maxLineBytes: getNonNegativeIntegerEnv(
+      'MCP_STREAMABLE_HTTP_MAX_LINE_BYTES',
+      DEFAULT_MCP_STREAMABLE_HTTP_MAX_LINE_BYTES,
+    ),
+  };
+}
+
+async function guardMCPStreamableHTTPResponse(
+  response: UndiciResponse,
+  context: {
+    logPrefix: string;
+    method: string;
+    url: string;
+    requestIds?: JSONRPCRequestId[];
+  },
+): Promise<UndiciResponse> {
+  if (context.method === 'GET' || !response.body) {
+    return response;
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  const isEventStream = contentType.toLowerCase().includes('text/event-stream');
+  const { maxResponseBytes, maxLineBytes } = getMCPStreamableHTTPResponseLimits();
+  const canEmitFallbackSSEError = isEventStream && maxLineBytes > 0;
+  if (!isEventStream && maxResponseBytes === 0) {
+    return response;
+  }
+  if (maxResponseBytes === 0 && maxLineBytes === 0) {
+    return response;
+  }
+
+  let totalBytes = 0;
+  let currentLineBytes = 0;
+  let chunkCount = 0;
+  let pendingSSELineChunks: Uint8Array[] = [];
+  const sseEventDataLines: string[] = [];
+  const unresolvedRequestIds = new Set(context.requestIds ?? []);
+
+  const buildAndLogBlockedError = (
+    reason: string,
+    details: Record<string, unknown>,
+  ): Error => {
+    const message = buildBlockedMCPResponseMessage(reason, {
+      maxResponseBytes,
+      maxLineBytes,
+      totalBytes,
+      currentLineBytes,
+      chunkCount,
+    });
+    logger.warn(`${context.logPrefix} MCP streamable HTTP response blocked: ${reason}`, {
+      method: context.method,
+      url: sanitizeUrlForLogging(context.url),
+      status: response.status,
+      contentType,
+      maxResponseBytes,
+      maxLineBytes,
+      totalBytes,
+      currentLineBytes,
+      chunkCount,
+      ...details,
+      memory: getMemoryDebugSnapshot(),
+    });
+    return new Error(message);
+  };
+
+  const trackSSELineForResolvedIds = (lineBytes: Uint8Array): void => {
+    if (unresolvedRequestIds.size === 0) {
+      return;
+    }
+
+    const rawLine = textDecoder.decode(lineBytes).replace(/[\r\n]+$/, '');
+    if (rawLine === '') {
+      if (sseEventDataLines.length === 0) {
+        return;
+      }
+      const data = sseEventDataLines.join('\n');
+      sseEventDataLines.length = 0;
+      try {
+        const parsed = JSON.parse(data) as { id?: unknown };
+        if (typeof parsed.id === 'string' || typeof parsed.id === 'number') {
+          unresolvedRequestIds.delete(parsed.id);
+        }
+      } catch {
+        /** Ignore malformed SSE data here; the SDK parser will report it. */
+      }
+      return;
+    }
+
+    const separatorIndex = rawLine.indexOf(':');
+    const field = separatorIndex === -1 ? rawLine : rawLine.slice(0, separatorIndex);
+    if (field !== 'data') {
+      return;
+    }
+    let value = separatorIndex === -1 ? '' : rawLine.slice(separatorIndex + 1);
+    if (value.startsWith(' ')) {
+      value = value.slice(1);
+    }
+    sseEventDataLines.push(value);
+  };
+
+  const enqueuePendingSSELine = (controller: TransformStreamDefaultController<Uint8Array>) => {
+    if (pendingSSELineChunks.length === 0) {
+      return;
+    }
+    const lineBytes = concatBytes(pendingSSELineChunks);
+    pendingSSELineChunks = [];
+    trackSSELineForResolvedIds(lineBytes);
+    controller.enqueue(lineBytes);
+  };
+
+  const blockResponse = (
+    controller: TransformStreamDefaultController<Uint8Array>,
+    reason: string,
+    details: Record<string, unknown>,
+  ) => {
+    const error = buildAndLogBlockedError(reason, details);
+    const fallbackRequestIds = [...unresolvedRequestIds];
+    if (canEmitFallbackSSEError && fallbackRequestIds.length > 0) {
+      controller.enqueue(buildBlockedMCPResponseSSE(fallbackRequestIds, error.message));
+      controller.terminate();
+      return;
+    }
+    throw error;
+  };
+
+  const guardedBody = (response.body as unknown as ReadableStream<unknown>).pipeThrough(
+    new TransformStream<unknown, Uint8Array>({
+      transform(chunk, controller) {
+        const bytes = getChunkBytes(chunk);
+        if (bytes.byteLength === 0) {
+          return;
+        }
+
+        chunkCount += 1;
+        totalBytes += bytes.byteLength;
+
+        if (maxResponseBytes > 0 && totalBytes > maxResponseBytes) {
+          blockResponse(controller, 'MCP response exceeded byte limit', {
+            chunkBytes: bytes.byteLength,
+          });
+          return;
+        }
+
+        if (isEventStream && maxLineBytes > 0) {
+          let segmentStart = 0;
+          for (let i = 0; i < bytes.byteLength; i++) {
+            const byte = bytes[i];
+            if (byte === 10 || byte === 13) {
+              if (i + 1 > segmentStart) {
+                pendingSSELineChunks.push(copyBytes(bytes.subarray(segmentStart, i + 1)));
+              }
+              enqueuePendingSSELine(controller);
+              segmentStart = i + 1;
+              currentLineBytes = 0;
+              continue;
+            }
+            currentLineBytes += 1;
+            if (currentLineBytes > maxLineBytes) {
+              blockResponse(controller, 'MCP response contained an oversized SSE line', {
+                chunkBytes: bytes.byteLength,
+              });
+              return;
+            }
+          }
+          if (segmentStart < bytes.byteLength) {
+            pendingSSELineChunks.push(copyBytes(bytes.subarray(segmentStart)));
+          }
+          return;
+        }
+
+        controller.enqueue(bytes);
+      },
+      flush(controller) {
+        enqueuePendingSSELine(controller);
+      },
+    }),
+  );
+
+  return new Response(guardedBody as unknown as BodyInit, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers as unknown as HeadersInit,
+  }) as unknown as UndiciResponse;
+}
 
 /**
  * Headers stripped before forwarding a request across an origin boundary on
@@ -579,6 +924,7 @@ export class MCPConnection extends EventEmitter {
     sseBodyTimeout?: number,
     configuredSecretHeaderKeys?: ReadonlySet<string>,
     baseUrl?: string,
+    guardStreamableHTTPResponses = false,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
     const basePort = baseUrl ? getUrlPort(baseUrl) : '';
     const ssrfConnect = this.useSSRFProtection
@@ -587,6 +933,7 @@ export class MCPConnection extends EventEmitter {
     const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
     /** Capture only the fields needed by the fetch closure; see factory note above. */
     const agents = this.agents;
+    const logPrefix = this.getLogPrefix();
     const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
     const postAgent = new Agent({
       bodyTimeout: effectiveTimeout,
@@ -664,18 +1011,27 @@ export class MCPConnection extends EventEmitter {
       let currentInit = buildFetchInit(resolvedInit, dispatcher, requestHeaders);
       let currentUrlString = urlString;
       const originalOrigin = new URL(currentUrlString).origin;
-
       for (let redirects = 0; ; redirects++) {
         const response = await undiciFetch(currentUrlString, currentInit);
         const isMethodPreservingRedirect = response.status === 307 || response.status === 308;
+        const responseContext = {
+          logPrefix,
+          method: (currentInit?.method ?? 'GET').toUpperCase(),
+          url: currentUrlString,
+          requestIds: getJSONRPCRequestIds(currentInit?.body),
+        };
 
         if (!isMethodPreservingRedirect || redirects >= MAX_REDIRECTS) {
-          return response;
+          return guardStreamableHTTPResponses
+            ? guardMCPStreamableHTTPResponse(response, responseContext)
+            : response;
         }
 
         const location = response.headers.get('location');
         if (!location) {
-          return response;
+          return guardStreamableHTTPResponses
+            ? guardMCPStreamableHTTPResponse(response, responseContext)
+            : response;
         }
 
         const targetUrl = new URL(location, currentUrlString);
@@ -904,6 +1260,7 @@ export class MCPConnection extends EventEmitter {
               this.sseReadTimeout || DEFAULT_SSE_READ_TIMEOUT,
               httpConfiguredSecretHeaderKeys,
               options.url,
+              true,
             ) as unknown as FetchLike,
           });
 

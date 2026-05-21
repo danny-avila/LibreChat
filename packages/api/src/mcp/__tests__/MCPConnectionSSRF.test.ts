@@ -258,6 +258,45 @@ async function createStreamableServer(): Promise<Omit<TestServer, 'redirectHit'>
   };
 }
 
+async function createOversizedToolResultStreamableServer(
+  payloadSize: number,
+): Promise<Omit<TestServer, 'redirectHit'>> {
+  const sessions = new Map<string, StreamableHTTPServerTransport>();
+
+  const httpServer = http.createServer(async (req, res) => {
+    const sid = req.headers['mcp-session-id'] as string | undefined;
+    let transport = sid ? sessions.get(sid) : undefined;
+
+    if (!transport) {
+      transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+      const mcp = new McpServer({ name: 'oversized-tool-result', version: '0.0.1' });
+      mcp.tool('oversized', 'Returns an oversized text payload', {}, async () => ({
+        content: [{ type: 'text', text: 'x'.repeat(payloadSize) }],
+      }));
+      await mcp.connect(transport);
+    }
+
+    await transport.handleRequest(req, res);
+
+    if (transport.sessionId && !sessions.has(transport.sessionId)) {
+      sessions.set(transport.sessionId, transport);
+      transport.onclose = () => sessions.delete(transport!.sessionId!);
+    }
+  });
+
+  const destroySockets = trackSockets(httpServer);
+  const port = await getFreePort();
+  await new Promise<void>((resolve) => httpServer.listen(port, '127.0.0.1', resolve));
+
+  return {
+    url: `http://127.0.0.1:${port}/`,
+    close: async () => {
+      await closeMCPSessions(sessions);
+      await destroySockets();
+    },
+  };
+}
+
 describe('MCP SSRF protection – redirect blocking', () => {
   let redirectServer: TestServer;
   let conn: MCPConnection | null;
@@ -457,6 +496,11 @@ interface HeaderCaptureServer {
   close: () => Promise<void>;
 }
 
+interface RawResponseServer {
+  url: string;
+  close: () => Promise<void>;
+}
+
 /**
  * Captures every incoming request's headers, method, and body, then replies
  * with a benign 200 so tests can assert what actually crossed a redirect
@@ -486,6 +530,17 @@ async function createHeaderCaptureServer(): Promise<HeaderCaptureServer> {
     url: `http://127.0.0.1:${port}/`,
     receivedHeaders: headers,
     receivedRequests: requests,
+    close: destroySockets,
+  };
+}
+
+async function createRawResponseServer(handler: http.RequestListener): Promise<RawResponseServer> {
+  const server = http.createServer(handler);
+  const destroySockets = trackSockets(server);
+  const port = await getFreePort();
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return {
+    url: `http://127.0.0.1:${port}/`,
     close: destroySockets,
   };
 }
@@ -823,8 +878,20 @@ describe('MCP SSRF protection – cross-origin credential stripping on redirect'
 describe('MCP SSRF protection – customFetch input shapes', () => {
   let target: Omit<TestServer, 'redirectHit'> | undefined;
   let conn: MCPConnection | null;
+  const originalMaxResponseBytes = process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES;
+  const originalMaxLineBytes = process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES;
 
   afterEach(async () => {
+    if (originalMaxResponseBytes == null) {
+      delete process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES;
+    } else {
+      process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = originalMaxResponseBytes;
+    }
+    if (originalMaxLineBytes == null) {
+      delete process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES;
+    } else {
+      process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = originalMaxLineBytes;
+    }
     await safeDisconnect(conn);
     conn = null;
     if (target) {
@@ -846,10 +913,31 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       connection as unknown as {
         createFetchFunction: (
           getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+          guardStreamableHTTPResponses?: boolean,
         ) => CustomFetch;
       }
     ).createFetchFunction;
     return factory.call(connection, () => null);
+  }
+
+  function getGuardedStreamableHTTPCustomFetch(connection: MCPConnection): CustomFetch {
+    const factory = (
+      connection as unknown as {
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+          guardStreamableHTTPResponses?: boolean,
+        ) => CustomFetch;
+      }
+    ).createFetchFunction;
+    return factory.call(connection, () => null, undefined, undefined, undefined, undefined, true);
   }
 
   it.each<['string' | 'URL' | 'Request']>([['string'], ['URL'], ['Request']])(
@@ -1013,6 +1101,142 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       if (server) {
         await server.close();
       }
+    }
+  });
+
+  it('should not apply streamable HTTP response caps unless the transport opts in', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = '8';
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"jsonrpc":"2.0","id":1,"result":{"too":"large"}}');
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-unguarded-byte-limit',
+        serverConfig: { type: 'sse', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getCustomFetch(conn);
+      const response = await customFetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'ping', id: 1 }),
+      });
+
+      await expect(response.text()).resolves.toContain('"too":"large"');
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('should reject oversized JSON POST responses with the streamable HTTP byte cap', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = '8';
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"jsonrpc":"2.0","id":1,"result":{"too":"large"}}');
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-json-byte-limit',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getGuardedStreamableHTTPCustomFetch(conn);
+      const response = await customFetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'ping', id: 1 }),
+      });
+
+      await expect(response.text()).rejects.toThrow(
+        /MCP response exceeded byte limit.*limit=8 bytes/,
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('should reject a POST response with an oversized SSE line before the SSE parser can grow it', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = '16';
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.end(`data: ${'x'.repeat(64)}\n\n`);
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-sse-line-limit',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getGuardedStreamableHTTPCustomFetch(conn);
+      const response = await customFetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled' }),
+      });
+      await expect(response.text()).rejects.toThrow(
+        /MCP response contained an oversized SSE line.*lineLimit=16 bytes.*observedLine=17 bytes/,
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('should fail an actual streamable HTTP tool call promptly with a clear oversized SSE line error', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = '512';
+    target = await createOversizedToolResultStreamableServer(2048);
+    conn = new MCPConnection({
+      serverName: 'streamable-http-tool-call-sse-line-limit',
+      serverConfig: { type: 'streamable-http', url: target.url },
+      useSSRFProtection: false,
+    });
+
+    await conn.connect();
+    const startedAt = Date.now();
+
+    await expect(
+      conn.client.callTool({ name: 'oversized', arguments: {} }, undefined, { timeout: 3000 }),
+    ).rejects.toThrow(/MCP response contained an oversized SSE line/);
+    expect(Date.now() - startedAt).toBeLessThan(1500);
+  });
+
+  it('should stream valid SSE POST responses without waiting for EOF', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = '4096';
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('data: {"jsonrpc":"2.0","id":1,"result":{}}\n\n');
+      finished.then(() => res.end()).catch(() => res.end());
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-sse-streaming',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getGuardedStreamableHTTPCustomFetch(conn);
+      const response = await customFetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'ping', id: 1 }),
+      });
+      const reader = response.body!.getReader();
+      const { value, done } = await reader.read();
+
+      expect(done).toBe(false);
+      expect(Buffer.from(value as Uint8Array).toString('utf8')).toContain('"result":{}');
+      await reader.cancel().catch(() => undefined);
+      finish();
+    } finally {
+      finish();
+      await server.close();
     }
   });
 });
