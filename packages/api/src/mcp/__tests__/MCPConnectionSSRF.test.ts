@@ -258,6 +258,45 @@ async function createStreamableServer(): Promise<Omit<TestServer, 'redirectHit'>
   };
 }
 
+async function createOversizedToolResultStreamableServer(
+  payloadSize: number,
+): Promise<Omit<TestServer, 'redirectHit'>> {
+  const sessions = new Map<string, StreamableHTTPServerTransport>();
+
+  const httpServer = http.createServer(async (req, res) => {
+    const sid = req.headers['mcp-session-id'] as string | undefined;
+    let transport = sid ? sessions.get(sid) : undefined;
+
+    if (!transport) {
+      transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+      const mcp = new McpServer({ name: 'oversized-tool-result', version: '0.0.1' });
+      mcp.tool('oversized', 'Returns an oversized text payload', {}, async () => ({
+        content: [{ type: 'text', text: 'x'.repeat(payloadSize) }],
+      }));
+      await mcp.connect(transport);
+    }
+
+    await transport.handleRequest(req, res);
+
+    if (transport.sessionId && !sessions.has(transport.sessionId)) {
+      sessions.set(transport.sessionId, transport);
+      transport.onclose = () => sessions.delete(transport!.sessionId!);
+    }
+  });
+
+  const destroySockets = trackSockets(httpServer);
+  const port = await getFreePort();
+  await new Promise<void>((resolve) => httpServer.listen(port, '127.0.0.1', resolve));
+
+  return {
+    url: `http://127.0.0.1:${port}/`,
+    close: async () => {
+      await closeMCPSessions(sessions);
+      await destroySockets();
+    },
+  };
+}
+
 describe('MCP SSRF protection – redirect blocking', () => {
   let redirectServer: TestServer;
   let conn: MCPConnection | null;
@@ -1136,7 +1175,7 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       const response = await customFetch(server.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 7 }),
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled' }),
       });
       await expect(response.text()).rejects.toThrow(
         /MCP response contained an oversized SSE line.*lineLimit=16 bytes.*observedLine=17 bytes/,
@@ -1144,6 +1183,24 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     } finally {
       await server.close();
     }
+  });
+
+  it('should fail an actual streamable HTTP tool call promptly with a clear oversized SSE line error', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = '512';
+    target = await createOversizedToolResultStreamableServer(2048);
+    conn = new MCPConnection({
+      serverName: 'streamable-http-tool-call-sse-line-limit',
+      serverConfig: { type: 'streamable-http', url: target.url },
+      useSSRFProtection: false,
+    });
+
+    await conn.connect();
+    const startedAt = Date.now();
+
+    await expect(
+      conn.client.callTool({ name: 'oversized', arguments: {} }, undefined, { timeout: 3000 }),
+    ).rejects.toThrow(/MCP response contained an oversized SSE line/);
+    expect(Date.now() - startedAt).toBeLessThan(1500);
   });
 
   it('should stream valid SSE POST responses without waiting for EOF', async () => {
