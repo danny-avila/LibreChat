@@ -14,7 +14,9 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
+  applyCspNonce,
   apiNotFound,
+  createContentSecurityPolicy,
   ErrorController,
   performStartupChecks,
   handleJsonParseError,
@@ -315,6 +317,27 @@ if (cluster.isMaster) {
       }
     }
 
+    const sendIndexHtml = (req, res) => {
+      res.set({
+        'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
+        Pragma: process.env.INDEX_PRAGMA || 'no-cache',
+        Expires: process.env.INDEX_EXPIRES || '0',
+      });
+
+      const lang = req.cookies?.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
+      const saneLang = lang.replace(/"/g, '&quot;');
+      const localizedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+      const csp = createContentSecurityPolicy();
+      const responseHtml = csp ? applyCspNonce(localizedIndexHtml, csp.nonce) : localizedIndexHtml;
+
+      if (csp) {
+        res.set(csp.headerName, csp.headerValue);
+      }
+
+      res.type('html');
+      res.send(responseHtml);
+    };
+
     /** Health check endpoint */
     app.get('/health', (_req, res) => res.status(200).send('OK'));
 
@@ -348,6 +371,7 @@ if (cluster.isMaster) {
       logger.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
     }
 
+    app.get('/index.html', sendIndexHtml);
     app.use(staticCache(appConfig.paths.dist));
     app.use(staticCache(appConfig.paths.fonts));
     app.use(staticCache(appConfig.paths.assets));
@@ -405,20 +429,7 @@ if (cluster.isMaster) {
     app.use('/api', apiNotFound);
 
     /** SPA fallback - serve index.html for all unmatched routes */
-    app.use((req, res) => {
-      res.set({
-        'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
-        Pragma: process.env.INDEX_PRAGMA || 'no-cache',
-        Expires: process.env.INDEX_EXPIRES || '0',
-      });
-
-      const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-      const saneLang = lang.replace(/"/g, '&quot;');
-      let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
-
-      res.type('html');
-      res.send(updatedIndexHtml);
-    });
+    app.use(sendIndexHtml);
 
     /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
     app.use(ErrorController);

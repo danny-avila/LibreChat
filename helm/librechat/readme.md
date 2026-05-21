@@ -53,3 +53,23 @@ also register this LibreChat callback URL with your identity provider:
 ```text
 https://<librechat-domain>/api/admin/oauth/openid/callback
 ```
+
+## Content Security Policy
+
+LibreChat's application-level CSP is disabled by default. Enable it through
+`librechat.configEnv` so Kubernetes deployments can roll it out in report-only
+mode before enforcing it:
+
+```yaml
+librechat:
+  configEnv:
+    CSP_ENABLED: "true"
+    CSP_REPORT_ONLY: "true"
+    CSP_REPORT_URI: "https://reports.example.com/csp"
+```
+
+After reviewing reports, set `CSP_REPORT_ONLY: "false"` to enforce the policy.
+Use the `*_EXTRA` variables from `.env.example` for deployment-specific CDNs,
+analytics endpoints, SharePoint frames, or other sources. The chart does not set
+CSP headers at the ingress layer because nonce-based CSP requires a fresh nonce
+for each HTML response.
