@@ -8,6 +8,7 @@ import { cn, logger } from '~/utils';
 import FileOptions from './FileOptions';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '@librechat/client';
+import FileIcon from '~/nj/components/SidePanel/Files/FileIcon';
 
 /**
  * Displays a file in `FilesPanel`.
@@ -65,8 +66,7 @@ export default function FileCell({
         }
       }}
     >
-      {/* TODO: Dynamic icon based on mimetype */}
-      <div className="h-10 w-10 flex-shrink-0 rounded bg-gray-200" />
+      <FileIcon file={file} />
       {renaming ? (
         <div className="relative h-10 min-w-0 flex-1">
           <RenameForm
