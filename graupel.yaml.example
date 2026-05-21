@@ -1,0 +1,65 @@
+# Graupel Configuration
+# Copy this file to `graupel.yaml` and adjust values.
+
+version: 1.3.11
+
+cache: true
+
+# File storage: use S3-compatible (Cloudflare R2)
+fileStrategy: "s3"
+
+interface:
+  endpointsMenu: true
+  modelSelect: true
+  parameters: true
+  presets: false
+
+registration:
+  socialLogins:
+    - google
+    - github
+
+endpoints:
+  # OpenAI — GPT-5 family
+  openAI:
+    titleConvo: true
+    titleModel: "gpt-5-mini"
+    summarize: true
+    summaryModel: "gpt-5-mini"
+    # models are fetched from OpenAI API automatically
+
+  # Anthropic — Claude family
+  anthropic:
+    titleConvo: true
+    titleModel: "claude-haiku-4-5"
+    summarize: true
+    summaryModel: "claude-haiku-4-5"
+
+  # Google — Gemini family
+  google:
+    titleConvo: true
+    titleModel: "gemini-2.5-flash"
+    summarize: true
+    summaryModel: "gemini-2.5-flash"
+
+  # Custom endpoints for providers without native support
+  custom:
+    # xAI — Grok family
+    - name: "xAI"
+      apiKey: "${XAI_API_KEY}"
+      baseURL: "https://api.x.ai/v1"
+      models:
+        default: ["grok-4", "grok-3-mini"]
+      titleConvo: true
+      titleModel: "grok-3-mini"
+      modelDisplayLabel: "xAI"
+
+    # DeepSeek
+    - name: "DeepSeek"
+      apiKey: "${DEEPSEEK_API_KEY}"
+      baseURL: "https://api.deepseek.com/v1"
+      models:
+        default: ["deepseek-chat", "deepseek-reasoner"]
+      titleConvo: true
+      titleModel: "deepseek-chat"
+      modelDisplayLabel: "DeepSeek"
