@@ -296,10 +296,9 @@ describe('applyAdminRefresh', () => {
       });
 
       const [filter] = (deps.findUsers as jest.Mock).mock.calls[0];
-      expect(filter).toMatchObject({
-        $or: expect.arrayContaining([
-          { openidId: SUB, openidIssuer: 'https://issuer.example.com' },
-        ]),
+      expect(filter).toEqual({
+        openidId: SUB,
+        openidIssuer: 'https://issuer.example.com',
       });
     });
 
