@@ -175,11 +175,19 @@ function truncateMiddle(value: string, maxChars: number): string {
   return value.slice(0, headSize) + indicator + value.slice(value.length - tailSize);
 }
 
+function stringifyThrownValue(error: unknown): string {
+  try {
+    return String(error);
+  } catch {
+    return '[Thrown value could not be converted to string]';
+  }
+}
+
 function getSafeToolError(error: unknown): {
   message: string;
   logContext: Record<string, unknown>;
 } {
-  const rawMessage = error instanceof Error ? error.message : String(error);
+  const rawMessage = error instanceof Error ? error.message : stringifyThrownValue(error);
   const message = truncateMiddle(rawMessage, MAX_TOOL_ERROR_MESSAGE_CHARS);
   const stack = error instanceof Error && error.stack ? error.stack : undefined;
 

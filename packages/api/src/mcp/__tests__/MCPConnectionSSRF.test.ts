@@ -457,6 +457,11 @@ interface HeaderCaptureServer {
   close: () => Promise<void>;
 }
 
+interface RawResponseServer {
+  url: string;
+  close: () => Promise<void>;
+}
+
 /**
  * Captures every incoming request's headers, method, and body, then replies
  * with a benign 200 so tests can assert what actually crossed a redirect
@@ -486,6 +491,17 @@ async function createHeaderCaptureServer(): Promise<HeaderCaptureServer> {
     url: `http://127.0.0.1:${port}/`,
     receivedHeaders: headers,
     receivedRequests: requests,
+    close: destroySockets,
+  };
+}
+
+async function createRawResponseServer(handler: http.RequestListener): Promise<RawResponseServer> {
+  const server = http.createServer(handler);
+  const destroySockets = trackSockets(server);
+  const port = await getFreePort();
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return {
+    url: `http://127.0.0.1:${port}/`,
     close: destroySockets,
   };
 }
@@ -823,8 +839,20 @@ describe('MCP SSRF protection – cross-origin credential stripping on redirect'
 describe('MCP SSRF protection – customFetch input shapes', () => {
   let target: Omit<TestServer, 'redirectHit'> | undefined;
   let conn: MCPConnection | null;
+  const originalMaxResponseBytes = process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES;
+  const originalMaxLineBytes = process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES;
 
   afterEach(async () => {
+    if (originalMaxResponseBytes == null) {
+      delete process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES;
+    } else {
+      process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = originalMaxResponseBytes;
+    }
+    if (originalMaxLineBytes == null) {
+      delete process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES;
+    } else {
+      process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = originalMaxLineBytes;
+    }
     await safeDisconnect(conn);
     conn = null;
     if (target) {
@@ -1013,6 +1041,98 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       if (server) {
         await server.close();
       }
+    }
+  });
+
+  it('should reject oversized JSON POST responses with the streamable HTTP byte cap', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = '8';
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"jsonrpc":"2.0","id":1,"result":{"too":"large"}}');
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-json-byte-limit',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getCustomFetch(conn);
+      const response = await customFetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'ping', id: 1 }),
+      });
+
+      await expect(response.text()).rejects.toThrow(/MCP response exceeded byte limit/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('should return a bounded JSON-RPC SSE error when a POST response has an oversized line', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = '16';
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.end(`data: ${'x'.repeat(64)}\n\n`);
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-sse-line-limit',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getCustomFetch(conn);
+      const response = await customFetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', id: 7 }),
+      });
+      const text = await response.text();
+
+      expect(text).toContain('"id":7');
+      expect(text).toContain('MCP response contained an oversized SSE line');
+      expect(text).not.toContain('x'.repeat(64));
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('should stream valid SSE POST responses without waiting for EOF', async () => {
+    process.env.MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = '4096';
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('data: {"jsonrpc":"2.0","id":1,"result":{}}\n\n');
+      finished.then(() => res.end()).catch(() => res.end());
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-sse-streaming',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = getCustomFetch(conn);
+      const response = await customFetch(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'ping', id: 1 }),
+      });
+      const reader = response.body!.getReader();
+      const { value, done } = await reader.read();
+
+      expect(done).toBe(false);
+      expect(Buffer.from(value as Uint8Array).toString('utf8')).toContain('"result":{}');
+      await reader.cancel().catch(() => undefined);
+      finish();
+    } finally {
+      finish();
+      await server.close();
     }
   });
 });

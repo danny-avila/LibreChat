@@ -8,7 +8,10 @@ import {
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
-import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ErrorCode,
+  ResourceListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type {
@@ -83,8 +86,13 @@ function getNonNegativeIntegerEnv(name: string, defaultValue: number): number {
     return defaultValue;
   }
 
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultValue;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return defaultValue;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : defaultValue;
 }
 
 function bytesToMiB(bytes: number): string {
@@ -118,11 +126,50 @@ function getChunkBytes(chunk: unknown): Uint8Array {
   return new Uint8Array();
 }
 
-function toOwnedArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const arrayBuffer = new ArrayBuffer(bytes.byteLength);
-  const copy = new Uint8Array(arrayBuffer);
-  copy.set(bytes);
-  return arrayBuffer;
+function getRequestIdsFromBody(body: unknown): Array<string | number> {
+  let bodyString: string | undefined;
+  if (typeof body === 'string') {
+    bodyString = body;
+  } else if (body instanceof ArrayBuffer) {
+    bodyString = Buffer.from(body).toString('utf8');
+  } else if (ArrayBuffer.isView(body)) {
+    bodyString = Buffer.from(body.buffer, body.byteOffset, body.byteLength).toString('utf8');
+  }
+
+  if (!bodyString) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(bodyString) as unknown;
+    const messages = Array.isArray(parsed) ? parsed : [parsed];
+    return messages.flatMap((message) => {
+      if (!message || typeof message !== 'object') {
+        return [];
+      }
+      const id = (message as { id?: unknown }).id;
+      return typeof id === 'string' || typeof id === 'number' ? [id] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function buildSSEErrorEvents(requestIds: Array<string | number>, message: string): Uint8Array {
+  const events = requestIds
+    .map(
+      (id) =>
+        `data: ${JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: ErrorCode.InternalError,
+            message,
+          },
+        })}\n\n`,
+    )
+    .join('');
+  return textEncoder.encode(events);
 }
 
 function getMCPStreamableHTTPResponseLimits(): {
@@ -147,6 +194,7 @@ async function guardMCPStreamableHTTPResponse(
     logPrefix: string;
     method: string;
     url: string;
+    requestIds: Array<string | number>;
   },
 ): Promise<UndiciResponse> {
   if (context.method === 'GET' || !response.body) {
@@ -154,22 +202,25 @@ async function guardMCPStreamableHTTPResponse(
   }
 
   const contentType = response.headers.get('content-type') ?? '';
-  if (!contentType.toLowerCase().includes('text/event-stream')) {
+  const isEventStream = contentType.toLowerCase().includes('text/event-stream');
+  const { maxResponseBytes, maxLineBytes } = getMCPStreamableHTTPResponseLimits();
+  if (!isEventStream && maxResponseBytes === 0) {
     return response;
   }
-
-  const { maxResponseBytes, maxLineBytes } = getMCPStreamableHTTPResponseLimits();
   if (maxResponseBytes === 0 && maxLineBytes === 0) {
     return response;
   }
 
-  const chunks: ArrayBuffer[] = [];
-  const reader = (response.body as unknown as ReadableStream<unknown>).getReader();
   let totalBytes = 0;
   let currentLineBytes = 0;
   let chunkCount = 0;
 
-  const fail = async (reason: string, details: Record<string, unknown>): Promise<never> => {
+  const fail = (
+    reason: string,
+    details: Record<string, unknown>,
+    controller: TransformStreamDefaultController<Uint8Array>,
+  ): void => {
+    const message = `[MCP] ${reason}. The MCP server returned an unsafe streamable HTTP response; narrow the tool result or retry after the server response is fixed.`;
     logger.warn(`${context.logPrefix} MCP streamable HTTP response blocked: ${reason}`, {
       method: context.method,
       url: sanitizeUrlForLogging(context.url),
@@ -183,53 +234,62 @@ async function guardMCPStreamableHTTPResponse(
       ...details,
       memory: getMemoryDebugSnapshot(),
     });
-    await reader.cancel().catch(() => undefined);
-    throw new Error(
-      `[MCP] ${reason}. The MCP server returned an unsafe streamable HTTP response; narrow the tool result or retry after the server response is fixed.`,
-    );
+    if (isEventStream && context.requestIds.length > 0) {
+      controller.enqueue(buildSSEErrorEvents(context.requestIds, message));
+      controller.terminate();
+      return;
+    }
+    throw new Error(message);
   };
 
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      const bytes = getChunkBytes(value);
-      if (bytes.byteLength === 0) {
-        continue;
-      }
-
-      chunkCount += 1;
-      totalBytes += bytes.byteLength;
-
-      if (maxResponseBytes > 0 && totalBytes > maxResponseBytes) {
-        await fail('MCP response exceeded byte limit', {
-          chunkBytes: bytes.byteLength,
-        });
-      }
-
-      for (const byte of bytes) {
-        if (byte === 10 || byte === 13) {
-          currentLineBytes = 0;
-          continue;
+  const guardedBody = (response.body as unknown as ReadableStream<unknown>).pipeThrough(
+    new TransformStream<unknown, Uint8Array>({
+      transform(chunk, controller) {
+        const bytes = getChunkBytes(chunk);
+        if (bytes.byteLength === 0) {
+          return;
         }
-        currentLineBytes += 1;
-        if (maxLineBytes > 0 && currentLineBytes > maxLineBytes) {
-          await fail('MCP response contained an oversized SSE line', {
-            chunkBytes: bytes.byteLength,
-          });
+
+        chunkCount += 1;
+        totalBytes += bytes.byteLength;
+
+        if (maxResponseBytes > 0 && totalBytes > maxResponseBytes) {
+          fail(
+            'MCP response exceeded byte limit',
+            {
+              chunkBytes: bytes.byteLength,
+            },
+            controller,
+          );
+          return;
         }
-      }
 
-      chunks.push(toOwnedArrayBuffer(bytes));
-    }
-  } finally {
-    reader.releaseLock();
-  }
+        if (isEventStream && maxLineBytes > 0) {
+          for (const byte of bytes) {
+            if (byte === 10 || byte === 13) {
+              currentLineBytes = 0;
+              continue;
+            }
+            currentLineBytes += 1;
+            if (currentLineBytes > maxLineBytes) {
+              fail(
+                'MCP response contained an oversized SSE line',
+                {
+                  chunkBytes: bytes.byteLength,
+                },
+                controller,
+              );
+              return;
+            }
+          }
+        }
 
-  return new Response(new Blob(chunks), {
+        controller.enqueue(bytes);
+      },
+    }),
+  );
+
+  return new Response(guardedBody as unknown as BodyInit, {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers as unknown as HeadersInit,
@@ -833,6 +893,7 @@ export class MCPConnection extends EventEmitter {
           logPrefix,
           method: (currentInit?.method ?? 'GET').toUpperCase(),
           url: currentUrlString,
+          requestIds: getRequestIdsFromBody(currentInit?.body),
         };
 
         if (!isMethodPreservingRedirect || redirects >= MAX_REDIRECTS) {
