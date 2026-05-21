@@ -16,8 +16,6 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 
-const JUST_REFILLED_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 function formatRefillAmount(amount: number): string {
   const sign = amount >= 0 ? '+' : '';
   return `${sign}${new Intl.NumberFormat().format(Math.round(amount))}`;
@@ -56,44 +54,50 @@ function BalanceMenuItem({ data }: { data: TBalanceResponse }) {
   const lastRefillDate = lastRefill ? new Date(lastRefill) : null;
   const validLastRefill =
     lastRefillDate && !isNaN(lastRefillDate.getTime()) ? lastRefillDate : null;
-  const justRefilled =
-    autoRefillEnabled === true &&
-    typeof refillAmount === 'number' &&
-    refillAmount > 0 &&
-    validLastRefill !== null &&
-    Date.now() - validLastRefill.getTime() < JUST_REFILLED_WINDOW_MS;
+
+  const refillConfigured =
+    autoRefillEnabled === true && typeof refillAmount === 'number' && refillAmount > 0;
 
   const eligibilityDate =
-    autoRefillEnabled === true &&
+    refillConfigured &&
     validLastRefill !== null &&
     typeof refillIntervalValue === 'number' &&
     refillIntervalUnit !== undefined
       ? getRefillEligibilityDate(validLastRefill, refillIntervalValue, refillIntervalUnit)
       : null;
-  const nextRefillLabel =
-    !justRefilled && eligibilityDate !== null && eligibilityDate.getTime() > Date.now()
-      ? localize('com_nav_balance_next_refill_in', { 0: formatTimeUntil(eligibilityDate) })
-      : null;
+
+  const refillAvailable =
+    refillConfigured &&
+    (validLastRefill === null || Date.now() >= (eligibilityDate?.getTime() ?? 0));
+
+  const showAvailableBadge = refillAvailable && tokenCredits > 0;
+  const showNextRefillSubtext =
+    !refillAvailable &&
+    tokenCredits <= 0 &&
+    eligibilityDate !== null &&
+    eligibilityDate.getTime() > Date.now();
 
   return (
     <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
       <div>
         {localize('com_nav_balance')}: {formattedBalance}
       </div>
-      {justRefilled && typeof refillAmount === 'number' && validLastRefill !== null && (
+      {showAvailableBadge && typeof refillAmount === 'number' && (
         <TooltipAnchor
           side="right"
-          description={localize('com_nav_balance_just_refilled_info', {
-            0: validLastRefill.toLocaleString(),
-          })}
-          aria-label={localize('com_nav_balance_just_refilled')}
+          description={localize('com_nav_balance_refill_available_info')}
+          aria-label={localize('com_nav_balance_refill_available')}
           className="mt-0.5 inline-block font-medium text-green-600 dark:text-green-400"
         >
           ({formatRefillAmount(refillAmount)})
         </TooltipAnchor>
       )}
-      {nextRefillLabel !== null && (
-        <div className="text-token-text-tertiary mt-0.5 text-xs">{nextRefillLabel}</div>
+      {showNextRefillSubtext && eligibilityDate !== null && (
+        <div className="text-token-text-tertiary mt-0.5 text-xs">
+          {localize('com_nav_balance_next_refill_in', {
+            0: formatTimeUntil(eligibilityDate),
+          })}
+        </div>
       )}
     </div>
   );
