@@ -7,7 +7,7 @@ import { isEnabled } from '~/utils';
 
 type GoogleThinkingLevel = 'THINKING_LEVEL_UNSPECIFIED' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
 type GoogleThinkingConfig = {
-  includeThoughts: boolean;
+  includeThoughts?: boolean;
   thinkingLevel?: GoogleThinkingLevel;
 };
 
@@ -179,7 +179,7 @@ function applyGemini35FlashOverrides({
   const shouldDropIncludeThoughts = droppedParams.has('includeThoughts');
   const shouldDropThinkingLevel = droppedParams.has('thinkingLevel');
   const configWithThinking = config as { thinkingConfig?: GoogleThinkingConfig };
-  const thinkingConfig = configWithThinking.thinkingConfig ?? {};
+  const thinkingConfig: GoogleThinkingConfig = { ...(configWithThinking.thinkingConfig ?? {}) };
 
   if (shouldDropIncludeThoughts) {
     delete thinkingConfig.includeThoughts;
