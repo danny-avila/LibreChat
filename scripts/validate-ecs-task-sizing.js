@@ -9,12 +9,14 @@ const taskJsonChecks = [
     family: 'librechat-task',
     cpu: '512',
     memory: '1024',
+    required: false,
   },
   {
     file: 'taskdef-manualfix2.json',
     family: 'librechat-task',
     cpu: '512',
     memory: '1024',
+    required: true,
   },
 ];
 
@@ -22,6 +24,13 @@ const errors = [];
 
 for (const check of taskJsonChecks) {
   const filePath = path.join(repoRoot, check.file);
+  if (!fs.existsSync(filePath)) {
+    if (check.required) {
+      errors.push(`ERROR: required task definition file is missing: ${check.file}`);
+    }
+    continue;
+  }
+
   const taskDef = JSON.parse(fs.readFileSync(filePath, 'utf8'));
   const cpu = String(taskDef.cpu);
   const memory = String(taskDef.memory);
