@@ -554,9 +554,9 @@ function getUrlPort(url: URL | string): string {
 
 function getTrimmedEnv(...keys: string[]): string | undefined {
   for (const key of keys) {
-    const value = process.env[key]?.trim();
-    if (value) {
-      return value;
+    const rawValue = process.env[key];
+    if (rawValue != null) {
+      return rawValue.trim() || undefined;
     }
   }
   return undefined;
@@ -628,6 +628,9 @@ function shouldBypassEnvProxy(url: URL, noProxy?: string): boolean {
   for (const entry of trimmed.split(/[,\s]/)) {
     if (!entry) {
       continue;
+    }
+    if (entry === '*') {
+      return true;
     }
 
     const proxyEntry = getProxyEntryPort(entry);
