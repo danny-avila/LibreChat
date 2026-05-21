@@ -1,7 +1,7 @@
 {
   "name": "@librechat/client",
   "version": "0.4.59",
-  "description": "React components for LibreChat",
+  "description": "React components for Graupel",
   "repository": {
     "type": "git",
     "url": "https://github.com/danny-avila/LibreChat"

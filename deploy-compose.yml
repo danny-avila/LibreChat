@@ -25,8 +25,8 @@ services:
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
     volumes:
       - type: bind
-        source: ./librechat.yaml
-        target: /app/librechat.yaml
+        source: ./graupel.yaml
+        target: /app/graupel.yaml
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/api/logs
