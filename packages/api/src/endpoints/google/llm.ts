@@ -130,7 +130,8 @@ function normalizeGoogleThinkingLevel(value: unknown): GoogleThinkingLevel | und
 
 function isGemini35Flash(model: string) {
   const normalized = model.toLowerCase();
-  return normalized === GEMINI_3_5_FLASH || normalized.endsWith(`/${GEMINI_3_5_FLASH}`);
+  const modelId = normalized.split('/').pop() ?? normalized;
+  return modelId === GEMINI_3_5_FLASH || modelId.startsWith(`${GEMINI_3_5_FLASH}-`);
 }
 
 function getVertexMultiRegionEndpoint(location: string): string | undefined {
@@ -149,10 +150,12 @@ function applyGemini35FlashOverrides({
   config,
   provider,
   thinking,
+  dropParams,
 }: {
   config: GoogleClientOptions | VertexAIClientOptions;
   provider: Providers;
   thinking: boolean;
+  dropParams?: string[];
 }) {
   const mutableConfig = config as Record<string, unknown>;
   const model = mutableConfig.model;
@@ -168,16 +171,37 @@ function applyGemini35FlashOverrides({
     return;
   }
 
+  const droppedParams = new Set(dropParams ?? []);
+  if (droppedParams.has('thinkingConfig')) {
+    return;
+  }
+
+  const shouldDropIncludeThoughts = droppedParams.has('includeThoughts');
+  const shouldDropThinkingLevel = droppedParams.has('thinkingLevel');
   const configWithThinking = config as { thinkingConfig?: GoogleThinkingConfig };
-  if (!configWithThinking.thinkingConfig) {
-    configWithThinking.thinkingConfig = { includeThoughts: true };
+  const thinkingConfig = configWithThinking.thinkingConfig ?? {};
+
+  if (shouldDropIncludeThoughts) {
+    delete thinkingConfig.includeThoughts;
   }
 
-  if (!configWithThinking.thinkingConfig.thinkingLevel) {
-    configWithThinking.thinkingConfig.thinkingLevel = GEMINI_3_5_FLASH_DEFAULT_THINKING_LEVEL;
+  if (shouldDropThinkingLevel) {
+    delete thinkingConfig.thinkingLevel;
   }
 
-  if (provider === Providers.VERTEXAI) {
+  if (!shouldDropIncludeThoughts && thinkingConfig.includeThoughts == null) {
+    thinkingConfig.includeThoughts = true;
+  }
+
+  if (!shouldDropThinkingLevel && !thinkingConfig.thinkingLevel) {
+    thinkingConfig.thinkingLevel = GEMINI_3_5_FLASH_DEFAULT_THINKING_LEVEL;
+  }
+
+  if (Object.keys(thinkingConfig).length > 0) {
+    configWithThinking.thinkingConfig = thinkingConfig;
+  }
+
+  if (provider === Providers.VERTEXAI && !shouldDropIncludeThoughts) {
     (config as VertexAIClientOptions).includeThoughts = true;
   }
 }
@@ -511,6 +535,7 @@ export function getGoogleConfig(
     config: llmConfig,
     provider,
     thinking,
+    dropParams: Array.isArray(options.dropParams) ? options.dropParams : undefined,
   });
 
   if (provider === Providers.VERTEXAI && shouldSyncVertexEndpoint && !hasCustomVertexEndpoint) {

@@ -663,6 +663,25 @@ describe('getGoogleConfig', () => {
       });
     });
 
+    it('should apply Gemini 3.5 Flash overrides to versioned aliases', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'google/gemini-3.5-flash-latest',
+          temperature: 0.7,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('temperature');
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: 'MEDIUM',
+      });
+    });
+
     it('should remove legacy sampling params for Gemini 3.5 Flash', () => {
       const credentials = {
         [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
@@ -698,6 +717,44 @@ describe('getGoogleConfig', () => {
       expect(result.llmConfig).not.toHaveProperty('top_p');
       expect(result.llmConfig).not.toHaveProperty('top_k');
       expect(result.llmConfig).not.toHaveProperty('thinking_budget');
+    });
+
+    it('should respect dropParams for Gemini 3.5 Flash thinkingConfig', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+        },
+        dropParams: ['thinkingConfig'],
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('thinkingConfig');
+    });
+
+    it('should respect dropParams for Gemini 3.5 Flash includeThoughts', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+        },
+        dropParams: ['includeThoughts'],
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('includeThoughts');
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        thinkingLevel: 'MEDIUM',
+      });
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).not.toHaveProperty(
+        'includeThoughts',
+      );
     });
 
     it('should omit thinkingLevel when unset (empty string) for Gemini 3', () => {
