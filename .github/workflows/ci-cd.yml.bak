@@ -1,4 +1,4 @@
-﻿name: CI/CD Pipeline
+name: CI/CD Pipeline
 
 on:
   push:
@@ -96,12 +96,13 @@ jobs:
       contents: read
     env:
       IMAGE_URI: ${{ needs.build.outputs.image_uri }}
-      OPENAI_SECRET_ARN: arn:aws:secretsmanager:us-east-1:730335261767:secret:OPENAI_API_KEY-QBq4C1:OPENAI_API_KEY::
-      MONGO_URI_SECRET_ARN: arn:aws:secretsmanager:us-east-1:730335261767:secret:juristai/prod/librechat/mongo_uri-73sRPq
       JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+      MONGO_URI: ${{ secrets.MONGO_URI }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       CREDS_IV: ${{ secrets.CREDS_IV }}
       CREDS_KEY: ${{ secrets.CREDS_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ASSISTANTS_API_KEY: ${{ secrets.ASSISTANTS_API_KEY }}
       PGVECTOR_HOST: ${{ secrets.PGVECTOR_HOST }}
       RAG_API_URL: ${{ secrets.RAG_API_URL }}
     steps:
@@ -126,12 +127,13 @@ jobs:
 
           require_value "PGVECTOR_HOST (publish secret)" "${PGVECTOR_HOST}"
           require_value "RAG_API_URL (publish secret)" "${RAG_API_URL}"
-          require_value "OPENAI_SECRET_ARN" "${OPENAI_SECRET_ARN}"
-          require_value "MONGO_URI_SECRET_ARN" "${MONGO_URI_SECRET_ARN}"
+          require_value "MONGO_URI (publish secret)" "${MONGO_URI}"
           require_value "JWT_SECRET (publish secret)" "${JWT_SECRET}"
           require_value "JWT_REFRESH_SECRET (publish secret)" "${JWT_REFRESH_SECRET}"
           require_value "CREDS_KEY (publish secret)" "${CREDS_KEY}"
           require_value "CREDS_IV (publish secret)" "${CREDS_IV}"
+          require_value "OPENAI_API_KEY (publish secret)" "${OPENAI_API_KEY}"
+          require_value "ASSISTANTS_API_KEY (publish secret)" "${ASSISTANTS_API_KEY}"
 
           if [ ${#missing[@]} -gt 0 ]; then
             printf 'Missing required publish environment configuration:\n' >&2
@@ -153,14 +155,13 @@ jobs:
             --arg family "${ECS_TASK_FAMILY}" \
             --arg containerName "${ECS_CONTAINER_NAME}" \
             --arg image "${IMAGE_URI}" \
-            --arg openaiSecretArn "${OPENAI_SECRET_ARN}" \
-            --arg mongoUriSecretArn "${MONGO_URI_SECRET_ARN}" \
             --argjson containerPort "${CONTAINER_PORT}" \
             --arg postgresUser "${POSTGRES_USER}" \
             --arg jwtRefreshSecret "${JWT_REFRESH_SECRET}" \
             --arg refreshTokenExpiry "${REFRESH_TOKEN_EXPIRY}" \
             --arg appPort "${APP_PORT}" \
             --arg consoleJson "${CONSOLE_JSON}" \
+            --arg mongoUri "${MONGO_URI}" \
             --arg debugOpenai "${DEBUG_OPENAI}" \
             --arg appHost "${APP_HOST}" \
             --arg postgresDb "${POSTGRES_DB}" \
@@ -175,6 +176,8 @@ jobs:
             --arg ragApiUrl "${RAG_API_URL}" \
             --arg banViolations "${BAN_VIOLATIONS}" \
             --arg credsKey "${CREDS_KEY}" \
+            --arg openaiApiKey "${OPENAI_API_KEY}" \
+            --arg assistantsApiKey "${ASSISTANTS_API_KEY}" \
             --arg meiliHost "${MEILI_HOST}" \
             --arg logGroup "${LOG_GROUP}" \
             --arg awsRegion "${AWS_REGION}" \
@@ -204,7 +207,9 @@ jobs:
                     { name: "JWT_REFRESH_SECRET", value: $jwtRefreshSecret },
                     { name: "REFRESH_TOKEN_EXPIRY", value: $refreshTokenExpiry },
                     { name: "PORT", value: $appPort },
-                    { name: "CONSOLE_JSON", value: $consoleJson },                    { name: "DEBUG_OPENAI", value: $debugOpenai },
+                    { name: "CONSOLE_JSON", value: $consoleJson },
+                    { name: "MONGO_URI", value: $mongoUri },
+                    { name: "DEBUG_OPENAI", value: $debugOpenai },
                     { name: "HOST", value: $appHost },
                     { name: "POSTGRES_DB", value: $postgresDb },
                     { name: "ALLOW_REGISTRATION", value: $allowRegistration },
@@ -217,11 +222,10 @@ jobs:
                     { name: "CREDS_IV", value: $credsIv },
                     { name: "RAG_API_URL", value: $ragApiUrl },
                     { name: "BAN_VIOLATIONS", value: $banViolations },
-                    { name: "CREDS_KEY", value: $credsKey },                    { name: "MEILI_HOST", value: $meiliHost }                  ],
-                  secrets: [
-                    { name: "OPENAI_API_KEY", valueFrom: $openaiSecretArn },
-                    { name: "ASSISTANTS_API_KEY", valueFrom: $openaiSecretArn },
-                    { name: "MONGO_URI", valueFrom: $mongoUriSecretArn }
+                    { name: "CREDS_KEY", value: $credsKey },
+                    { name: "OPENAI_API_KEY", value: $openaiApiKey },
+                    { name: "ASSISTANTS_API_KEY", value: $assistantsApiKey },
+                    { name: "MEILI_HOST", value: $meiliHost }
                   ],
                   mountPoints: [],
                   volumesFrom: [],
@@ -277,5 +281,3 @@ jobs:
             --services "${ECS_SERVICE}" \
             --region "${AWS_REGION}" \
             --query "services[0].taskDefinition"
-
-
