@@ -92,18 +92,14 @@ describe('checkBalance', () => {
 
       await checkBalance({ req, res, txData: baseTxData }, deps);
 
-      expect(upsertBalanceFields).toHaveBeenCalledWith(
-        'user-1',
-        expect.objectContaining({
-          user: 'user-1',
-          tokenCredits: 5000,
-          autoRefillEnabled: true,
-          refillIntervalValue: 1,
-          refillIntervalUnit: 'days',
-          refillAmount: 1000,
-          lastRefill: expect.any(Date),
-        }),
-      );
+      expect(upsertBalanceFields).toHaveBeenCalledWith('user-1', {
+        user: 'user-1',
+        tokenCredits: 5000,
+        autoRefillEnabled: true,
+        refillIntervalValue: 1,
+        refillIntervalUnit: 'days',
+        refillAmount: 1000,
+      });
     });
 
     it('should not include auto-refill fields when config is partial', async () => {

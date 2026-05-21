@@ -1,4 +1,5 @@
-const { findBalanceByUser } = require('~/models');
+const { maybeAutoRefill } = require('@librechat/api');
+const { findBalanceByUser, createAutoRefillTransaction } = require('~/models');
 
 async function balanceController(req, res) {
   const balanceData = await findBalanceByUser(req.user.id);
@@ -14,7 +15,14 @@ async function balanceController(req, res) {
     delete result.refillIntervalUnit;
     delete result.lastRefill;
     delete result.refillAmount;
+    return res.status(200).json(result);
   }
+
+  result.tokenCredits = await maybeAutoRefill({
+    user: req.user.id,
+    record: result,
+    deps: { createAutoRefillTransaction },
+  });
 
   res.status(200).json(result);
 }
