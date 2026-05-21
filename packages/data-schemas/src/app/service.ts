@@ -85,7 +85,10 @@ export const AppService = async (params?: {
   const summarization = loadSummarizationConfig(config);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
-  const fileStrategy = (config.fileStrategy ?? configDefaults.fileStrategy) as
+  // NJ: We want to be able to use `local` for local dev, thus an optional env var
+  const fileStrategy = (process.env.FILE_STRATEGY ??
+    config.fileStrategy ??
+    configDefaults.fileStrategy) as
     | FileSources.local
     | FileSources.s3
     | FileSources.firebase
