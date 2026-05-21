@@ -18,6 +18,12 @@ describe('Content Security Policy helpers', () => {
     expect(csp?.headerName).toBe('Content-Security-Policy-Report-Only');
     expect(csp?.nonce).toMatch(/^[A-Za-z0-9+/]+={0,2}$/);
     expect(csp?.headerValue).toContain(`script-src 'nonce-${csp?.nonce}' 'strict-dynamic'`);
+    expect(csp?.headerValue).not.toContain(
+      "script-src 'nonce-${csp?.nonce}' 'strict-dynamic' 'self' https:",
+    );
+    expect(csp?.headerValue).not.toContain(
+      "script-src 'nonce-${csp?.nonce}' 'strict-dynamic' 'self' 'unsafe-inline'",
+    );
     expect(csp?.headerValue).toContain("script-src-attr 'none'");
     expect(csp?.headerValue).toContain("object-src 'none'");
     expect(csp?.headerValue).toContain("base-uri 'self'");

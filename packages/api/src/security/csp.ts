@@ -53,7 +53,7 @@ function defaultDirectives(nonce: string): CspDirective[] {
     ['default-src', ["'self'"]],
     ['base-uri', ["'self'"]],
     ['object-src', ["'none'"]],
-    ['script-src', [`'nonce-${nonce}'`, "'strict-dynamic'", "'self'", 'https:', "'unsafe-inline'"]],
+    ['script-src', [`'nonce-${nonce}'`, "'strict-dynamic'", "'self'"]],
     ['script-src-attr', ["'none'"]],
     ['style-src', ["'self'", "'unsafe-inline'"]],
     ['style-src-elem', ["'self'", `'nonce-${nonce}'`, "'unsafe-inline'"]],
