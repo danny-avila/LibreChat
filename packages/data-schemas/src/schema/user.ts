@@ -168,6 +168,10 @@ const userSchema = new Schema<IUser>(
 
 userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
 userSchema.index({ role: 1, tenantId: 1 });
+userSchema.index(
+  { idOnTheSource: 1, openidIssuer: 1, tenantId: 1 },
+  { partialFilterExpression: { idOnTheSource: { $exists: true } } },
+);
 
 const oAuthIdFields = [
   'googleId',
