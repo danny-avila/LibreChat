@@ -39,6 +39,12 @@ const file: Schema<IMongoFile> = new Schema(
       type: String,
       required: true,
     },
+    storageKey: {
+      type: String,
+    },
+    storageRegion: {
+      type: String,
+    },
     object: {
       type: String,
       required: true,
@@ -52,6 +58,46 @@ const file: Schema<IMongoFile> = new Schema(
       required: true,
     },
     text: {
+      type: String,
+    },
+    textFormat: {
+      /* 'html' when the backend produced a sanitized HTML preview
+       * (office-type CDN/mammoth output), 'text' for plain-text
+       * extracts (RAG / pdf-parse / mammoth.extractRawText). Clients
+       * gate office-bucket routing on textFormat === 'html' to
+       * prevent injecting RAG-extracted plain text into the iframe
+       * as HTML. See Codex P1 review on PR #12934. */
+      type: String,
+      enum: ['html', 'text'],
+    },
+    status: {
+      /* Deferred-preview code-execution flow: the immediate persist
+       * step writes the record with 'pending'; the background render
+       * (HTML extraction) updates to 'ready' or 'failed'. Absent on
+       * legacy records and on file kinds that never expect a preview. */
+      type: String,
+      enum: ['pending', 'ready', 'failed'],
+      index: true,
+    },
+    previewError: {
+      type: String,
+      /* Bounded to short machine-readable reasons (`'timeout'`,
+       * `'parser-error'`, `'orphaned'`, `'unexpected'`). Cap prevents a
+       * future codepath from accidentally persisting a stack trace or
+       * full error message — would bloat documents and ship a wall of
+       * text into the UI tooltip. */
+      maxlength: 200,
+    },
+    previewRevision: {
+      /* Generation marker for the deferred-preview lifecycle. Stamped
+       * by the immediate persist step on every emit (each new emit
+       * gets a fresh UUID); the deferred preview render's `updateFile`
+       * only commits when the marker still matches what it was when
+       * extraction started. Without this, two turns reusing the same
+       * `(filename, conversationId)` share a `file_id`, and an older
+       * render finishing after a newer one would silently overwrite
+       * the newer record with stale `text`/`status`. (Codex P1 review
+       * on PR #12957.) */
       type: String,
     },
     context: {
@@ -72,9 +118,28 @@ const file: Schema<IMongoFile> = new Schema(
     width: Number,
     height: Number,
     metadata: {
-      fileIdentifier: String,
+      codeEnvRef: {
+        type: new Schema(
+          {
+            kind: {
+              type: String,
+              enum: ['skill', 'agent', 'user'],
+              required: true,
+            },
+            id: { type: String, required: true },
+            storage_session_id: { type: String, required: true },
+            file_id: { type: String, required: true },
+            version: { type: Number },
+          },
+          { _id: false },
+        ),
+        default: undefined,
+      },
     },
     expiresAt: {
+      /* Short-lived upload TTL managed by MongoDB. This is separate from
+       * retention-scoped `expiredAt`, which is swept by application code
+       * after storage cleanup succeeds. */
       type: Date,
       expires: 3600, // 1 hour in seconds
     },
@@ -82,12 +147,18 @@ const file: Schema<IMongoFile> = new Schema(
       type: String,
       index: true,
     },
+    expiredAt: {
+      /* Retention deadline for persisted files. The file sweep deletes the
+       * backing storage first, then removes this metadata record. */
+      type: Date,
+    },
   },
   {
     timestamps: true,
   },
 );
 
+file.index({ expiredAt: 1 });
 file.index({ createdAt: 1, updatedAt: 1 });
 file.index(
   { filename: 1, conversationId: 1, context: 1, tenantId: 1 },

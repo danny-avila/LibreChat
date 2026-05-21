@@ -19,7 +19,7 @@ import {
   logAxiosError,
   inputSchema,
 } from '~/utils';
-import { standardCache } from '~/cache';
+import { standardCache, tokenConfigCache } from '~/cache';
 
 export interface FetchModelsParams {
   /** User ID for API requests */
@@ -195,8 +195,7 @@ export async function fetchModels({
     const validationResult = inputSchema.safeParse(input);
     if (validationResult.success && createTokenConfig) {
       const endpointTokenConfig = processModelData(input);
-      const cache = standardCache(CacheKeys.TOKEN_CONFIG);
-      await cache.set(tokenKey ?? name, endpointTokenConfig);
+      await tokenConfigCache().set(tokenKey ?? name, endpointTokenConfig);
     }
     models = input.data.map((item: { id: string }) => item.id);
   } catch (error) {
@@ -225,10 +224,12 @@ export interface GetOpenAIModelsOptions {
   assistants?: boolean;
   /** OpenAI API key (if not using environment variable) */
   openAIApiKey?: string;
-  /** Whether user provides their own API key */
-  userProvidedOpenAI?: boolean;
   /** Skip MODEL_QUERIES cache (e.g., for user-provided keys) */
   skipCache?: boolean;
+}
+
+function resolveOpenAIApiKey(opts: GetOpenAIModelsOptions): string | undefined {
+  return opts.openAIApiKey || process.env.OPENAI_API_KEY;
 }
 
 /**
@@ -242,7 +243,7 @@ export async function fetchOpenAIModels(
   _models: string[] = [],
 ): Promise<string[]> {
   let models = _models.slice() ?? [];
-  const apiKey = opts.openAIApiKey ?? process.env.OPENAI_API_KEY;
+  const apiKey = resolveOpenAIApiKey(opts);
   const openaiBaseURL = 'https://api.openai.com/v1';
   let baseURL = openaiBaseURL;
   let reverseProxyUrl = process.env.OPENAI_REVERSE_PROXY;
@@ -311,7 +312,7 @@ export async function getOpenAIModels(opts: GetOpenAIModelsOptions = {}): Promis
     return splitAndTrim(process.env[key]);
   }
 
-  if (opts.userProvidedOpenAI) {
+  if (isUserProvided(resolveOpenAIApiKey(opts))) {
     return models;
   }
 

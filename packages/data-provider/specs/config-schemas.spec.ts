@@ -7,8 +7,11 @@ import {
   interfaceSchema,
   fileStorageSchema,
   fileStrategiesSchema,
+  summarizationTriggerSchema,
+  summarizationConfigSchema,
 } from '../src/config';
 import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
+import { specsConfigSchema } from '../src/models';
 import { FileSources } from '../src/types/files';
 
 describe('paramDefinitionSchema', () => {
@@ -158,10 +161,8 @@ describe('tModelSpecPresetSchema', () => {
     }
   });
 
-  it('strips frontend-only fields', () => {
+  it('strips client-managed and preset-override fields', () => {
     const result = tModelSpecPresetSchema.safeParse({
-      greeting: 'Hello!',
-      iconURL: 'https://example.com/icon.png',
       spec: 'some-spec',
       presetOverride: { model: 'other' },
       model: 'gpt-4o',
@@ -169,10 +170,22 @@ describe('tModelSpecPresetSchema', () => {
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data).not.toHaveProperty('greeting');
-      expect(result.data).not.toHaveProperty('iconURL');
       expect(result.data).not.toHaveProperty('spec');
       expect(result.data).not.toHaveProperty('presetOverride');
+    }
+  });
+
+  it('preserves admin-configurable display fields (greeting, iconURL)', () => {
+    const result = tModelSpecPresetSchema.safeParse({
+      greeting: 'Hello!',
+      iconURL: 'https://example.com/icon.png',
+      model: 'gpt-4o',
+      endpoint: EModelEndpoint.openAI,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toHaveProperty('greeting', 'Hello!');
+      expect(result.data).toHaveProperty('iconURL', 'https://example.com/icon.png');
     }
   });
 
@@ -340,6 +353,125 @@ describe('agentsEndpointSchema', () => {
       expect(result.data).not.toHaveProperty('baseURL');
     }
   });
+
+  it('allows explicitly disabled remote OIDC auth without issuer', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: false,
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('requires a valid issuer when remote OIDC auth is enabled', () => {
+    const missingIssuer = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            audience: 'remote-agent-api',
+          },
+        },
+      },
+    });
+    const invalidIssuer = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'my-realm',
+            audience: 'remote-agent-api',
+          },
+        },
+      },
+    });
+
+    expect(missingIssuer.success).toBe(false);
+    expect(invalidIssuer.success).toBe(false);
+  });
+
+  it('requires an audience when remote OIDC auth is enabled', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('requires HTTPS remote OIDC issuer and JWKS URLs outside localhost', () => {
+    const insecureIssuer = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'http://auth.example.com',
+            audience: 'remote-agent-api',
+          },
+        },
+      },
+    });
+    const insecureJwksUri = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+            audience: 'remote-agent-api',
+            jwksUri: 'http://auth.example.com/jwks',
+          },
+        },
+      },
+    });
+
+    expect(insecureIssuer.success).toBe(false);
+    expect(insecureJwksUri.success).toBe(false);
+  });
+
+  it('allows localhost HTTP remote OIDC URLs for development', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'http://localhost:8080/realms/test',
+            audience: 'remote-agent-api',
+            jwksUri: 'http://127.0.0.1:8080/realms/test/protocol/openid-connect/certs',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('requires space-separated remote OIDC scopes', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+            audience: 'remote-agent-api',
+            scope: 'remote_agent,admin',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('azureEndpointSchema', () => {
@@ -500,5 +632,154 @@ describe('interfaceSchema', () => {
     expect(result).not.toHaveProperty('endpointsMenu');
     expect(result).not.toHaveProperty('sidePanel');
     expect(result.modelSelect).toBe(false);
+  });
+});
+
+describe('summarizationTriggerSchema', () => {
+  it.each([
+    ['token_ratio', 0.8],
+    ['remaining_tokens', 500],
+    ['messages_to_refine', 4],
+  ] as const)('accepts documented trigger type "%s" with a sensible value', (type, value) => {
+    const result = summarizationTriggerSchema.safeParse({ type, value });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects the legacy/typoed "token_count" trigger type', () => {
+    const result = summarizationTriggerSchema.safeParse({
+      type: 'token_count',
+      value: 8000,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown trigger types', () => {
+    const result = summarizationTriggerSchema.safeParse({
+      type: 'never_heard_of_it',
+      value: 1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects negative values on any trigger type', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: -0.5 }).success).toBe(
+      false,
+    );
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: -1 }).success,
+    ).toBe(false);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: -1 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects zero for count-based triggers where it has no meaningful effect', () => {
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: 0 }).success,
+    ).toBe(false);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: 0 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects token_ratio values > 1 to catch the "80 meant as 80%" mistake', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 80 }).success).toBe(
+      false,
+    );
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 1.01 }).success).toBe(
+      false,
+    );
+  });
+
+  it('accepts token_ratio values at the inclusive 0 and 1 bounds per docs', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 0 }).success).toBe(
+      true,
+    );
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 1 }).success).toBe(
+      true,
+    );
+  });
+
+  it('allows remaining_tokens and messages_to_refine values above 1 (token/message counts)', () => {
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: 2000 }).success,
+    ).toBe(true);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: 20 }).success,
+    ).toBe(true);
+  });
+
+  it('rejects non-finite values (Infinity, NaN) for every trigger type', () => {
+    for (const type of ['token_ratio', 'remaining_tokens', 'messages_to_refine'] as const) {
+      expect(summarizationTriggerSchema.safeParse({ type, value: Infinity }).success).toBe(false);
+      expect(summarizationTriggerSchema.safeParse({ type, value: -Infinity }).success).toBe(false);
+      expect(summarizationTriggerSchema.safeParse({ type, value: NaN }).success).toBe(false);
+    }
+  });
+
+  it('requires integer values for count-based triggers', () => {
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'remaining_tokens', value: 500.5 }).success,
+    ).toBe(false);
+    expect(
+      summarizationTriggerSchema.safeParse({ type: 'messages_to_refine', value: 2.5 }).success,
+    ).toBe(false);
+  });
+
+  it('still allows fractional values for token_ratio', () => {
+    expect(summarizationTriggerSchema.safeParse({ type: 'token_ratio', value: 0.8 }).success).toBe(
+      true,
+    );
+  });
+
+  it('parses inside the full summarization config', () => {
+    const result = summarizationConfigSchema.safeParse({
+      enabled: true,
+      trigger: { type: 'token_ratio', value: 0.8 },
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('specsConfigSchema', () => {
+  it('accepts an empty list (defaults applied)', () => {
+    const result = specsConfigSchema.safeParse({ list: [] });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list).toEqual([]);
+      expect(result.data.enforce).toBe(false);
+      expect(result.data.prioritize).toBe(true);
+    }
+  });
+
+  it('defaults list to [] when omitted', () => {
+    const result = specsConfigSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list).toEqual([]);
+    }
+  });
+
+  it('accepts a populated list', () => {
+    const result = specsConfigSchema.safeParse({
+      enforce: true,
+      list: [
+        {
+          name: 'spec-1',
+          label: 'Spec 1',
+          hideBadgeRow: true,
+          preset: { endpoint: EModelEndpoint.openAI },
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list[0].hideBadgeRow).toBe(true);
+    }
+  });
+
+  it('still rejects null list', () => {
+    const result = specsConfigSchema.safeParse({ list: null });
+    expect(result.success).toBe(false);
   });
 });

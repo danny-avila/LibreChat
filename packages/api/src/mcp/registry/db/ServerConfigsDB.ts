@@ -1,12 +1,13 @@
 import { Types } from 'mongoose';
+import { logger, encryptV2, decryptV2, createMethods } from '@librechat/data-schemas';
 import {
   ResourceType,
   AccessRoleIds,
   PrincipalType,
   PermissionBits,
 } from 'librechat-data-provider';
-import { logger, encryptV2, decryptV2, createMethods } from '@librechat/data-schemas';
 import type { AllMethods, MCPServerDocument } from '@librechat/data-schemas';
+
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { AccessControlService } from '~/acl/accessControlService';
@@ -59,13 +60,11 @@ function sanitizeCredentialPlaceholders(
 export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
   private _dbMethods: AllMethods;
   private _aclService: AccessControlService;
-  private _mongoose: typeof import('mongoose');
 
   constructor(mongoose: typeof import('mongoose')) {
     if (!mongoose) {
       throw new Error('ServerConfigsDB requires mongoose instance');
     }
-    this._mongoose = mongoose;
     this._dbMethods = createMethods(mongoose);
     this._aclService = new AccessControlService(mongoose);
   }
@@ -98,13 +97,10 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       return false;
     }
 
-    const Agent = this._mongoose.model('Agent');
-    const exists = await Agent.exists({
-      _id: { $in: accessibleAgentIds },
-      mcpServerNames: serverName,
+    return await this._dbMethods.hasAgentWithMCPServerName({
+      agentIds: accessibleAgentIds,
+      serverName,
     });
-
-    return exists !== null;
   }
 
   /**
@@ -327,62 +323,52 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @param userId optional user id. if not provided only publicly shared mcp configs will be returned
    * @returns record of parsed configs
    */
-  public async getAll(userId?: string): Promise<Record<string, ParsedServerConfig>> {
+  public async getAll(userId?: string, role?: string): Promise<Record<string, ParsedServerConfig>> {
     let directlyAccessibleMCPIds: Types.ObjectId[] = [];
+    let accessibleAgentIds: Types.ObjectId[] = [];
+
     if (!userId) {
       logger.debug(`[ServerConfigsDB.getAll] fetching all publicly shared mcp servers`);
-      directlyAccessibleMCPIds = await this._aclService.findPubliclyAccessibleResources({
-        resourceType: ResourceType.MCPSERVER,
-        requiredPermissions: PermissionBits.VIEW,
-      });
+      [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
+        this._aclService.findPubliclyAccessibleResources({
+          resourceType: ResourceType.MCPSERVER,
+          requiredPermissions: PermissionBits.VIEW,
+        }),
+        this._aclService.findPubliclyAccessibleResources({
+          resourceType: ResourceType.AGENT,
+          requiredPermissions: PermissionBits.VIEW,
+        }),
+      ]);
     } else {
       logger.debug(
         `[ServerConfigsDB.getAll] fetching mcp servers directly shared with the user with ID: ${userId}`,
       );
-      directlyAccessibleMCPIds = await this._aclService.findAccessibleResources({
-        userId,
-        requiredPermissions: PermissionBits.VIEW,
-        resourceType: ResourceType.MCPSERVER,
-      });
+      const principalsList = await this._aclService.getUserPrincipals({ userId, role });
+      [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
+        this._aclService.findAccessibleResourcesForPrincipals({
+          principalsList,
+          requiredPermissions: PermissionBits.VIEW,
+          resourceType: ResourceType.MCPSERVER,
+        }),
+        this._aclService.findAccessibleResourcesForPrincipals({
+          principalsList,
+          requiredPermissions: PermissionBits.VIEW,
+          resourceType: ResourceType.AGENT,
+        }),
+      ]);
     }
 
-    let agentMCPServerNames: string[] = [];
-    let accessibleAgentIds: Types.ObjectId[] = [];
-
-    if (!userId) {
-      accessibleAgentIds = await this._aclService.findPubliclyAccessibleResources({
-        resourceType: ResourceType.AGENT,
-        requiredPermissions: PermissionBits.VIEW,
-      });
-    } else {
-      accessibleAgentIds = await this._aclService.findAccessibleResources({
-        userId,
-        requiredPermissions: PermissionBits.VIEW,
-        resourceType: ResourceType.AGENT,
-      });
-    }
-
-    if (accessibleAgentIds.length > 0) {
-      const Agent = this._mongoose.model('Agent');
-      const agentsWithMCP = await Agent.find(
-        {
-          _id: { $in: accessibleAgentIds },
-          mcpServerNames: { $exists: true, $not: { $size: 0 } },
-        },
-        { mcpServerNames: 1 },
-      ).lean();
-
-      agentMCPServerNames = [
-        ...new Set(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          agentsWithMCP.flatMap((a: any) => a.mcpServerNames || []),
-        ),
-      ];
-    }
-
-    const directResults = await this._dbMethods.getListMCPServersByIds({
+    const agentMCPServerNamesPromise: Promise<string[]> =
+      accessibleAgentIds.length > 0
+        ? this._dbMethods.getMCPServerNamesByAgentIds(accessibleAgentIds)
+        : Promise.resolve([]);
+    const directResultsPromise = this._dbMethods.getListMCPServersByIds({
       ids: directlyAccessibleMCPIds,
     });
+    const [agentMCPServerNames, directResults] = await Promise.all([
+      agentMCPServerNamesPromise,
+      directResultsPromise,
+    ]);
 
     const parsedConfigs: Record<string, ParsedServerConfig> = {};
     const directData = directResults.data || [];

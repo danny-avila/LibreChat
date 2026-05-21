@@ -43,7 +43,8 @@ jest.mock('~/server/services/GraphApiService', () => ({
   searchEntraIdPrincipals: jest.fn(),
 }));
 
-const { updateResourcePermissions } = require('../PermissionsController');
+const db = require('~/models');
+const { updateResourcePermissions, searchPrincipals } = require('../PermissionsController');
 
 const createMockReq = (overrides = {}) => ({
   params: { resourceType: ResourceType.AGENT, resourceId: '507f1f77bcf86cd799439011' },
@@ -65,6 +66,77 @@ const flushPromises = () => new Promise((resolve) => setImmediate(resolve));
 describe('PermissionsController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('searchPrincipals', () => {
+    beforeEach(() => {
+      db.searchPrincipals.mockResolvedValue([]);
+      db.calculateRelevanceScore.mockReturnValue(50);
+      db.sortPrincipalsByRelevance.mockImplementation((results) => results);
+    });
+
+    it('rejects non-string query parameters', async () => {
+      const req = createMockReq({
+        query: { q: ['alice'] },
+      });
+      const res = createMockRes();
+
+      await searchPrincipals(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'Query parameter "q" is required and must not be empty',
+      });
+      expect(db.searchPrincipals).not.toHaveBeenCalled();
+    });
+
+    it('searches with the trimmed literal query', async () => {
+      db.searchPrincipals.mockResolvedValue([
+        {
+          id: 'user-1',
+          type: PrincipalType.USER,
+          name: 'Regex [invalid User',
+          source: 'local',
+        },
+      ]);
+
+      const req = createMockReq({
+        query: { q: '  [invalid  ', limit: '5', types: PrincipalType.USER },
+      });
+      const res = createMockRes();
+
+      await searchPrincipals(req, res);
+
+      expect(db.searchPrincipals).toHaveBeenCalledWith('[invalid', 5, [PrincipalType.USER]);
+      expect(db.calculateRelevanceScore).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Regex [invalid User' }),
+        '[invalid',
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: '[invalid',
+          limit: 5,
+          count: 1,
+        }),
+      );
+    });
+
+    it('does not expose internal error details on search failures', async () => {
+      db.searchPrincipals.mockRejectedValue(new Error('database failure with internal detail'));
+
+      const req = createMockReq({
+        query: { q: 'alice' },
+      });
+      const res = createMockRes();
+
+      await searchPrincipals(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'Failed to search principals',
+      });
+    });
   });
 
   describe('updateResourcePermissions — favorites cleanup', () => {

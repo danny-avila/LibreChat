@@ -511,6 +511,209 @@ describe('MCPTokenStorage', () => {
         expect.stringContaining('does not support refresh tokens'),
       );
     });
+
+    it('should delete client registration and refresh token on invalid_client when deleteTokens provided', async () => {
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:expired-token',
+        expiresIn: -1,
+      });
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:srv1:client',
+        token: 'enc:{"client_id":"cid"}',
+        expiresIn: 86400,
+      });
+
+      const refreshTokens = jest.fn().mockRejectedValue(new Error('invalid_client'));
+
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          deleteTokens: store.deleteTokens,
+          refreshTokens,
+        }),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          name: 'ReauthenticationRequiredError',
+          message: expect.stringContaining('stored client registration is no longer valid'),
+        }),
+      );
+
+      const clientReg = await store.findToken({
+        userId: 'u1',
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:srv1:client',
+      });
+      expect(clientReg).toBeNull();
+
+      const refreshToken = await store.findToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+      });
+      expect(refreshToken).toBeNull();
+    });
+
+    it('should return null and log warning on invalid_client when deleteTokens not provided', async () => {
+      const { logger } = await import('@librechat/data-schemas');
+
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:expired-token',
+        expiresIn: -1,
+      });
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+
+      const refreshTokens = jest.fn().mockRejectedValue(new Error('invalid_client'));
+
+      const result = await MCPTokenStorage.getTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        findToken: store.findToken,
+        createToken: store.createToken,
+        refreshTokens,
+      });
+
+      expect(result).toBeNull();
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('deleteTokens not available'),
+      );
+    });
+
+    it('should handle client_not_found and other vendor-specific rejection patterns', async () => {
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:expired-token',
+        expiresIn: -1,
+      });
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:srv1:client',
+        token: 'enc:{"client_id":"cid"}',
+        expiresIn: 86400,
+      });
+
+      const refreshTokens = jest.fn().mockRejectedValue(new Error('client not found'));
+
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          deleteTokens: store.deleteTokens,
+          refreshTokens,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+
+      expect(
+        await store.findToken({
+          userId: 'u1',
+          type: 'mcp_oauth_client',
+          identifier: 'mcp:srv1:client',
+        }),
+      ).toBeNull();
+      expect(
+        await store.findToken({
+          userId: 'u1',
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:srv1:refresh',
+        }),
+      ).toBeNull();
+    });
+
+    it('should handle case-insensitive error messages for client rejection', async () => {
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:expired-token',
+        expiresIn: -1,
+      });
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+
+      const refreshTokens = jest.fn().mockRejectedValue(new Error('INVALID_CLIENT'));
+
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          deleteTokens: store.deleteTokens,
+          refreshTokens,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+    });
+
+    it('should still throw ReauthenticationRequiredError when deleteClientRegistration fails', async () => {
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:expired-token',
+        expiresIn: -1,
+      });
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+
+      const refreshTokens = jest.fn().mockRejectedValue(new Error('invalid_client'));
+      const failingDeleteTokens = jest.fn().mockRejectedValue(new Error('DB connection lost'));
+
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          deleteTokens: failingDeleteTokens,
+          refreshTokens,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+    });
   });
 
   describe('storeTokens + getTokens round-trip', () => {

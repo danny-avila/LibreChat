@@ -11,6 +11,10 @@ const {
   math,
   isEnabled,
   checkEmailConfig,
+  setCloudFrontCookies,
+  getCloudFrontConfig,
+  parseCloudFrontCookieScope,
+  CLOUDFRONT_SCOPE_COOKIE,
   isEmailDomainAllowed,
   shouldUseSecureCookie,
   resolveAppConfigForUser,
@@ -41,6 +45,23 @@ const domains = {
 };
 
 const genericVerificationMessage = 'Please check your email to verify your email address.';
+const OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
+
+const getUnexpiredOpenIDSessionIdToken = (idToken) => {
+  if (!idToken) {
+    return;
+  }
+
+  const decoded = jwt.decode(idToken);
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    decoded &&
+    typeof decoded === 'object' &&
+    decoded.exp > now + OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS
+  ) {
+    return idToken;
+  }
+};
 
 /**
  * Logout user
@@ -401,13 +422,100 @@ const resetPassword = async (userId, token, password) => {
 };
 
 /**
+ * Reads the previously issued CloudFront cookie scope used for stale cookie cleanup.
+ * @param {ServerRequest | null} [req=null]
+ * @returns {import('@librechat/api').CloudFrontCookieScope | null}
+ */
+const getPreviousCloudFrontScope = (req) =>
+  parseCloudFrontCookieScope(req?.cookies?.[CLOUDFRONT_SCOPE_COOKIE]);
+
+const normalizeCloudFrontScopeValue = (value) => (value == null ? undefined : String(value));
+
+const getCloudFrontScopeValue = (optionsValue, userValue, requestValue) =>
+  normalizeCloudFrontScopeValue(optionsValue ?? userValue ?? requestValue);
+
+const getCloudFrontAuthCookieSkipReason = (scope) => {
+  const config = getCloudFrontConfig();
+  if (!config || config.imageSigning !== 'cookies' || !config.privateKey || !config.keyPairId) {
+    return 'cloudfront_disabled';
+  }
+  if (!config.cookieDomain) {
+    return 'missing_cookie_domain';
+  }
+  if (!scope.userId) {
+    return 'missing_user_id';
+  }
+  return null;
+};
+
+const shouldLogCloudFrontAuthCookieSkip = (reason) => reason !== 'cloudfront_disabled';
+
+/**
+ * Refreshes CloudFront signed cookies for authenticated image/avatar access.
+ * @param {ServerRequest | null} req
+ * @param {ServerResponse} res
+ * @param {Partial<IUser> | null} user
+ * @param {import('@librechat/api').CloudFrontCookieScope & { orgId?: string }} [options={}]
+ * @returns {boolean}
+ */
+const setCloudFrontAuthCookies = (req, res, user, options = {}) => {
+  const storageRegion = getCloudFrontScopeValue(
+    options.storageRegion,
+    user?.storageRegion,
+    req?.user?.storageRegion,
+  );
+  const scope = {
+    userId: getCloudFrontScopeValue(
+      options.userId,
+      user?._id ?? user?.id,
+      req?.user?._id ?? req?.user?.id,
+    ),
+    tenantId: getCloudFrontScopeValue(
+      options.tenantId ?? options.orgId,
+      user?.tenantId ?? user?.orgId,
+      req?.user?.tenantId ?? req?.user?.orgId,
+    ),
+    ...(storageRegion ? { storageRegion } : {}),
+  };
+  const skipReason = getCloudFrontAuthCookieSkipReason(scope);
+  if (skipReason) {
+    if (shouldLogCloudFrontAuthCookieSkip(skipReason)) {
+      logger.debug('[setCloudFrontAuthCookies] CloudFront auth cookies skipped', {
+        attempted: false,
+        set: false,
+        reason: skipReason,
+        has_user_id: Boolean(scope.userId),
+        has_tenant_scope: Boolean(scope.tenantId),
+        has_storage_region: Boolean(scope.storageRegion),
+        has_previous_scope: Boolean(getPreviousCloudFrontScope(req)?.userId),
+      });
+    }
+    return false;
+  }
+
+  const previousScope = getPreviousCloudFrontScope(req);
+  const cookiesSet = setCloudFrontCookies(res, scope, previousScope);
+  logger.debug('[setCloudFrontAuthCookies] CloudFront auth cookies refreshed', {
+    attempted: true,
+    set: cookiesSet,
+    reason: cookiesSet ? undefined : 'set_failed',
+    has_user_id: true,
+    has_tenant_scope: Boolean(scope.tenantId),
+    has_storage_region: Boolean(scope.storageRegion),
+    has_previous_scope: Boolean(previousScope?.userId),
+  });
+  return cookiesSet;
+};
+
+/**
  * Set Auth Tokens
  * @param {String | ObjectId} userId
  * @param {ServerResponse} res
- * @param {ISession | null} [session=null]
+ * @param {ISession | null} [_session=null]
+ * @param {ServerRequest | null} [req=null]
  * @returns
  */
-const setAuthTokens = async (userId, res, _session = null) => {
+const setAuthTokens = async (userId, res, _session = null, req = null) => {
   try {
     let session = _session;
     let refreshToken;
@@ -440,11 +548,29 @@ const setAuthTokens = async (userId, res, _session = null) => {
       secure: shouldUseSecureCookie(),
       sameSite: 'strict',
     });
+
+    setCloudFrontAuthCookies(req, res, user, { userId: user?._id ?? userId });
+
     return token;
   } catch (error) {
     logger.error('[setAuthTokens] Error in setting authentication tokens:', error);
     throw error;
   }
+};
+
+const resolveOpenIDAuthTokenOptions = (optionsOrUserId, existingRefreshToken, tenantId) => {
+  if (optionsOrUserId != null && typeof optionsOrUserId === 'object') {
+    if (
+      'userId' in optionsOrUserId ||
+      'existingRefreshToken' in optionsOrUserId ||
+      'tenantId' in optionsOrUserId
+    ) {
+      return optionsOrUserId;
+    }
+    return {};
+  }
+
+  return { userId: optionsOrUserId, existingRefreshToken, tenantId };
 };
 
 /**
@@ -457,11 +583,27 @@ const setAuthTokens = async (userId, res, _session = null) => {
  * - The tokenset object containing access and refresh tokens
  * @param {Object} req - request object (for session access)
  * @param {Object} res - response object
- * @param {string} [userId] - Optional MongoDB user ID for image path validation
+ * @param {Object} [options] - Optional token/cookie context
+ * @param {string} [options.userId] - Optional MongoDB user ID for image path validation
+ * @param {string} [options.existingRefreshToken] - Optional existing refresh token to preserve
+ * @param {string} [options.tenantId] - Optional tenant identifier for CloudFront cookie scoping
  * @returns {String} - id_token (preferred) or access_token as the app auth token
  */
-const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) => {
+const setOpenIDAuthTokens = (
+  tokenset,
+  req,
+  res,
+  optionsOrUserId = null,
+  existingRefreshTokenArg,
+  tenantIdArg,
+) => {
   try {
+    const { userId, existingRefreshToken, tenantId } = resolveOpenIDAuthTokenOptions(
+      optionsOrUserId,
+      existingRefreshTokenArg,
+      tenantIdArg,
+    );
+
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
       return;
@@ -471,10 +613,6 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
       DEFAULT_REFRESH_TOKEN_EXPIRY,
     );
     const expirationDate = new Date(Date.now() + expiryInMilliseconds);
-    if (tokenset == null) {
-      logger.error('[setOpenIDAuthTokens] No tokenset found in request');
-      return;
-    }
     if (!tokenset.access_token) {
       logger.error('[setOpenIDAuthTokens] No access token found in tokenset');
       return;
@@ -494,7 +632,12 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
      * audience (e.g., Microsoft Graph API), which fails JWKS validation.
      * Falls back to access_token for providers where id_token is not available.
      */
-    const appAuthToken = tokenset.id_token || tokenset.access_token;
+    const sessionIdToken = req.session?.openidTokens?.idToken;
+    const appAuthToken =
+      tokenset.id_token ||
+      getUnexpiredOpenIDSessionIdToken(sessionIdToken) ||
+      tokenset.access_token;
+    const logoutIdToken = tokenset.id_token || sessionIdToken;
 
     /**
      * Always set refresh token cookie so it survives express session expiry.
@@ -516,9 +659,10 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
     if (req.session) {
       req.session.openidTokens = {
         accessToken: tokenset.access_token,
-        idToken: tokenset.id_token,
+        idToken: logoutIdToken,
         refreshToken: refreshToken,
         expiresAt: expirationDate.getTime(),
+        lastRefreshedAt: Date.now(),
       };
     } else {
       logger.warn('[setOpenIDAuthTokens] No session available, falling back to cookies');
@@ -557,6 +701,9 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         sameSite: 'strict',
       });
     }
+
+    setCloudFrontAuthCookies(req, res, req.user, { userId, tenantId });
+
     return appAuthToken;
   } catch (error) {
     logger.error('[setOpenIDAuthTokens] Error in setting authentication tokens:', error);
@@ -630,6 +777,7 @@ module.exports = {
   setAuthTokens,
   resetPassword,
   setOpenIDAuthTokens,
+  setCloudFrontAuthCookies,
   requestPasswordReset,
   resendVerificationEmail,
 };

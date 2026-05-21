@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, ReactNode } from 'react';
 
 const STORAGE_KEY = 'side:active-panel';
-const DEFAULT_PANEL = 'conversations';
+export const DEFAULT_PANEL = 'conversations';
 
 function getInitialActivePanel(): string {
   const saved = localStorage.getItem(STORAGE_KEY);

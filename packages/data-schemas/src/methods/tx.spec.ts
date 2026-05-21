@@ -2279,23 +2279,85 @@ describe('Claude Model Tests', () => {
       );
     });
   });
+
+  it('should return correct prompt and completion rates for Claude Opus 4.7', () => {
+    expect(getMultiplier({ model: 'claude-opus-4-7', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-opus-4-7'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-opus-4-7', tokenType: 'completion' })).toBe(
+      tokenValues['claude-opus-4-7'].completion,
+    );
+  });
+
+  it('should handle Claude Opus 4.7 model name variations', () => {
+    const modelVariations = [
+      'claude-opus-4-7',
+      'claude-opus-4-7-20260401',
+      'claude-opus-4-7-latest',
+      'anthropic/claude-opus-4-7',
+      'claude-opus-4-7/anthropic',
+      'claude-opus-4-7-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-opus-4-7');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-opus-4-7'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-opus-4-7'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Opus 4.7', () => {
+    expect(getCacheMultiplier({ model: 'claude-opus-4-7', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-opus-4-7'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-opus-4-7', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-opus-4-7'].read,
+    );
+  });
 });
 
 describe('Premium Token Pricing', () => {
-  const premiumModel = 'claude-opus-4-6';
+  const premiumModel = 'gemini-3.1';
   const premiumEntry = premiumTokenValues[premiumModel];
   const { threshold } = premiumEntry;
   const belowThreshold = threshold - 1;
   const aboveThreshold = threshold + 1;
   const wellAboveThreshold = threshold * 2;
 
-  it('should have premium pricing defined for claude-opus-4-6', () => {
+  it('should have premium pricing defined for gemini-3.1', () => {
     expect(premiumEntry).toBeDefined();
     expect(premiumEntry.threshold).toBeDefined();
     expect(premiumEntry.prompt).toBeDefined();
     expect(premiumEntry.completion).toBeDefined();
     expect(premiumEntry.prompt).toBeGreaterThan(tokenValues[premiumModel].prompt);
     expect(premiumEntry.completion).toBeGreaterThan(tokenValues[premiumModel].completion);
+  });
+
+  it('should not apply premium pricing to Claude 1M GA models', () => {
+    const claudeModels = ['claude-opus-4-6', 'claude-opus-4-7', 'claude-sonnet-4-6'];
+    claudeModels.forEach((model) => {
+      expect(premiumTokenValues[model]).toBeUndefined();
+      expect(getPremiumRate(model, 'prompt', wellAboveThreshold)).toBeNull();
+      expect(
+        getMultiplier({
+          model,
+          tokenType: 'prompt',
+          inputTokenCount: wellAboveThreshold,
+        }),
+      ).toBe(tokenValues[model].prompt);
+      expect(
+        getMultiplier({
+          model,
+          tokenType: 'completion',
+          inputTokenCount: wellAboveThreshold,
+        }),
+      ).toBe(tokenValues[model].completion);
+    });
   });
 
   it('should return null from getPremiumRate when inputTokenCount is below threshold', () => {

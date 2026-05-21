@@ -1,14 +1,12 @@
 name: Backend Unit Tests
 on:
   pull_request:
-    branches:
-      - main
-      - dev
-      - dev-staging
-      - release/*
     paths:
       - 'api/**'
       - 'packages/**'
+
+permissions:
+  contents: read
 
 env:
   NODE_ENV: CI

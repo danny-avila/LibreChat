@@ -7,7 +7,7 @@ import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import { useCodeBlockContext } from '~/Providers';
-import { handleDoubleClick } from '~/utils';
+import { handleDoubleClick, triggerDownload } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -15,6 +15,16 @@ type TCodeProps = {
   inline?: boolean;
   className?: string;
   children: React.ReactNode;
+};
+
+const isSingleLineCode = (children: React.ReactNode): boolean => {
+  if (typeof children === 'string') {
+    return !children.includes('\n');
+  }
+  if (Array.isArray(children)) {
+    return children.every((child) => typeof child === 'string' && !child.includes('\n'));
+  }
+  return false;
 };
 
 export const code: React.ElementType = memo(function MarkdownCode({
@@ -29,7 +39,7 @@ export const code: React.ElementType = memo(function MarkdownCode({
   const lang = match && match[1];
   const isMath = lang === 'math';
   const isMermaid = lang === 'mermaid';
-  const isSingleLine = typeof children === 'string' && children.split('\n').length === 1;
+  const isSingleLine = isSingleLineCode(children);
 
   const { getNextIndex, resetCounter } = useCodeBlockContext();
   const blockIndex = useRef(getNextIndex(isMath || isMermaid || isSingleLine)).current;
@@ -78,7 +88,7 @@ export const codeNoExecution: React.ElementType = memo(function MarkdownCodeNoEx
   } else if (lang === 'mermaid') {
     const content = typeof children === 'string' ? children : String(children);
     return <Mermaid>{content}</Mermaid>;
-  } else if (typeof children === 'string' && children.split('\n').length === 1) {
+  } else if (isSingleLineCode(children)) {
     return (
       <code onDoubleClick={handleDoubleClick} className={className}>
         {children}
@@ -117,7 +127,7 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
     return { file_id: '', filename: '', filepath: '' };
   }, [user?.id, href]);
 
-  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id);
+  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id, { direct: false });
   const props: { target?: string; onClick?: React.MouseEventHandler } = { target: '_blank' };
 
   if (!file_id || !filename) {
@@ -140,13 +150,7 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
         });
         return;
       }
-      const link = document.createElement('a');
-      link.href = stream.data;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(stream.data);
+      triggerDownload(stream.data, filename);
     } catch (error) {
       console.error('Error downloading file:', error);
     }

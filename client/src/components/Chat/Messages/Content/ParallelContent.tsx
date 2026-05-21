@@ -191,7 +191,7 @@ export const ParallelColumns = memo(function ParallelColumns({
 });
 
 type ParallelContentRendererProps = {
-  content: Array<TMessageContentParts | undefined>;
+  content?: Array<TMessageContentParts | undefined>;
   messageId: string;
   conversationId?: string | null;
   attachments?: TAttachment[];
@@ -218,7 +218,7 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
     [content],
   );
 
-  const lastContentIdx = content.length - 1;
+  const lastContentIdx = (content?.length ?? 0) - 1;
 
   // Split sequential parts into before/after parallel sections
   const { before, after } = useMemo(() => {

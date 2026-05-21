@@ -1,13 +1,16 @@
-import { Types, ClientSession, DeleteResult } from 'mongoose';
-import { AllMethods, IAclEntry, createMethods, logger } from '@librechat/data-schemas';
+import { Types } from 'mongoose';
+import { createMethods, logger } from '@librechat/data-schemas';
 import { AccessRoleIds, PrincipalType, ResourceType } from 'librechat-data-provider';
+import type { AllMethods, IAclEntry } from '@librechat/data-schemas';
+import type { ClientSession, DeleteResult } from 'mongoose';
+
+import type { ResolvedPrincipal } from '~/types/principal';
 
 export class AccessControlService {
   private _dbMethods: AllMethods;
-  private _aclModel;
+
   constructor(mongoose: typeof import('mongoose')) {
     this._dbMethods = createMethods(mongoose);
-    this._aclModel = mongoose.models.AclEntry;
   }
 
   /**
@@ -124,18 +127,54 @@ export class AccessControlService {
     requiredPermissions: number;
   }): Promise<Types.ObjectId[]> {
     try {
+      const principalsList = await this.getUserPrincipals({ userId, role });
+      return await this.findAccessibleResourcesForPrincipals({
+        principalsList,
+        resourceType,
+        requiredPermissions,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`[PermissionService.findAccessibleResources] Error: ${error.message}`);
+        // Re-throw validation errors
+        if (error.message.includes('requiredPermissions must be')) {
+          throw error;
+        }
+      }
+      return [];
+    }
+  }
+
+  public async getUserPrincipals({
+    userId,
+    role,
+  }: {
+    userId: string | Types.ObjectId;
+    role?: string;
+  }): Promise<ResolvedPrincipal[]> {
+    return await this._dbMethods.getUserPrincipals({ userId, role });
+  }
+
+  public async findAccessibleResourcesForPrincipals({
+    principalsList,
+    resourceType,
+    requiredPermissions,
+  }: {
+    principalsList: ResolvedPrincipal[];
+    resourceType: string;
+    requiredPermissions: number;
+  }): Promise<Types.ObjectId[]> {
+    try {
       if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
         throw new Error('requiredPermissions must be a positive number');
       }
 
       this.validateResourceType(resourceType as ResourceType);
 
-      // Get all principals for the user (user + groups + public)
-      const principalsList = await this._dbMethods.getUserPrincipals({ userId, role });
-
       if (principalsList.length === 0) {
         return [];
       }
+
       return await this._dbMethods.findAccessibleResources(
         principalsList,
         resourceType,
@@ -143,8 +182,9 @@ export class AccessControlService {
       );
     } catch (error) {
       if (error instanceof Error) {
-        logger.error(`[PermissionService.findAccessibleResources] Error: ${error.message}`);
-        // Re-throw validation errors
+        logger.error(
+          `[PermissionService.findAccessibleResourcesForPrincipals] Error: ${error.message}`,
+        );
         if (error.message.includes('requiredPermissions must be')) {
           throw error;
         }
@@ -174,16 +214,7 @@ export class AccessControlService {
 
       this.validateResourceType(resourceType);
 
-      // Find all public ACL entries where the public principal has at least the required permission bits
-      const entries = await this._aclModel
-        .find({
-          principalType: PrincipalType.PUBLIC,
-          resourceType,
-          permBits: { $bitsAllSet: requiredPermissions },
-        })
-        .distinct('resourceId');
-
-      return entries;
+      return await this._dbMethods.findPublicResourceIds(resourceType, requiredPermissions);
     } catch (error) {
       if (error instanceof Error) {
         logger.error(`[PermissionService.findPubliclyAccessibleResources] Error: ${error.message}`);
@@ -275,7 +306,7 @@ export class AccessControlService {
         throw new Error(`Invalid resource ID: ${resourceId}`);
       }
 
-      const result = await this._aclModel.deleteMany({
+      const result = await this._dbMethods.deleteAclEntries({
         resourceType,
         resourceId,
       });

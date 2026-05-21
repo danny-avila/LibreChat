@@ -23,6 +23,17 @@ jest.mock('~/server/services/Config', () => ({
   loadCustomConfig: jest.fn(),
 }));
 
+jest.mock('@librechat/api', () => ({
+  sendEvent: jest.fn(),
+  MCPOAuthHandler: jest.fn(),
+  isMCPDomainAllowed: jest.fn(),
+  normalizeServerName: jest.fn((name) => name),
+  normalizeJsonSchema: jest.fn((schema) => schema),
+  GenerationJobManager: jest.fn(),
+  resolveJsonSchemaRefs: jest.fn((schema) => schema),
+  buildOAuthToolCallName: jest.fn((name) => name),
+}));
+
 jest.mock('~/cache', () => ({ getLogStores: jest.fn() }));
 jest.mock('~/models', () => ({
   findToken: jest.fn(),
@@ -99,9 +110,13 @@ describe('resolveAllMcpConfigs', () => {
       cfg_srv: { name: 'cfg_srv' },
       yaml_srv: { name: 'yaml_srv' },
     });
-    expect(mockRegistry.getAllServerConfigs).toHaveBeenCalledWith('u1', {
-      cfg_srv: { name: 'cfg_srv' },
-    });
+    expect(mockRegistry.getAllServerConfigs).toHaveBeenCalledWith(
+      'u1',
+      {
+        cfg_srv: { name: 'cfg_srv' },
+      },
+      'user',
+    );
   });
 
   it('continues with empty configServers when ensureConfigServers fails', async () => {

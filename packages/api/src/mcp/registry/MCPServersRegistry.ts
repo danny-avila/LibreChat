@@ -44,6 +44,7 @@ export class MCPServersRegistry {
   private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly configCacheRepo: IServerConfigsRepositoryInterface;
   private readonly allowedDomains?: string[] | null;
+  private readonly allowedAddresses?: string[] | null;
   private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
   private readonly readThroughCacheAll: Keyv<Record<string, t.ParsedServerConfig>>;
   private readonly pendingGetAllPromises = new Map<
@@ -61,11 +62,16 @@ export class MCPServersRegistry {
   private yamlServerNames: Set<string> | null = null;
   private yamlServerNamesPromise: Promise<Set<string>> | null = null;
 
-  constructor(mongoose: typeof import('mongoose'), allowedDomains?: string[] | null) {
+  constructor(
+    mongoose: typeof import('mongoose'),
+    allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
+  ) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, false);
     this.configCacheRepo = ServerConfigsCacheFactory.create(CONFIG_CACHE_NAMESPACE, false);
     this.allowedDomains = allowedDomains;
+    this.allowedAddresses = allowedAddresses;
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
 
@@ -84,6 +90,7 @@ export class MCPServersRegistry {
   public static createInstance(
     mongoose: typeof import('mongoose'),
     allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
   ): MCPServersRegistry {
     if (!mongoose) {
       throw new Error(
@@ -96,7 +103,11 @@ export class MCPServersRegistry {
       return MCPServersRegistry.instance;
     }
     logger.info('[MCPServersRegistry] Creating new instance');
-    MCPServersRegistry.instance = new MCPServersRegistry(mongoose, allowedDomains);
+    MCPServersRegistry.instance = new MCPServersRegistry(
+      mongoose,
+      allowedDomains,
+      allowedAddresses,
+    );
     return MCPServersRegistry.instance;
   }
 
@@ -110,6 +121,10 @@ export class MCPServersRegistry {
 
   public getAllowedDomains(): string[] | null | undefined {
     return this.allowedDomains;
+  }
+
+  public getAllowedAddresses(): string[] | null | undefined {
+    return this.allowedAddresses;
   }
 
   /** Returns true when no explicit allowedDomains allowlist is configured, enabling SSRF TOCTOU protection */
@@ -155,11 +170,12 @@ export class MCPServersRegistry {
   public async getAllServerConfigs(
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
+    role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
     if (configServers == null || !Object.keys(configServers).length) {
-      return this.getBaseServerConfigs(userId);
+      return this.getBaseServerConfigs(userId, role);
     }
-    const base = await this.getBaseServerConfigs(userId);
+    const base = await this.getBaseServerConfigs(userId, role);
     return { ...configServers, ...base };
   }
 
@@ -170,6 +186,7 @@ export class MCPServersRegistry {
    */
   private async getBaseServerConfigs(
     userId?: string,
+    role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
     const cacheKey = userId ?? '__no_user__';
 
@@ -182,7 +199,7 @@ export class MCPServersRegistry {
       return pending;
     }
 
-    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId);
+    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId, role);
     this.pendingGetAllPromises.set(cacheKey, fetchPromise);
 
     try {
@@ -195,10 +212,11 @@ export class MCPServersRegistry {
   private async fetchBaseServerConfigs(
     cacheKey: string,
     userId?: string,
+    role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
     const result = {
       ...(await this.cacheConfigsRepo.getAll()),
-      ...(await this.dbConfigsRepo.getAll(userId)),
+      ...(await this.dbConfigsRepo.getAll(userId, role)),
     };
 
     await this.readThroughCacheAll.set(cacheKey, result);
@@ -238,6 +256,7 @@ export class MCPServersRegistry {
         config,
         undefined,
         this.allowedDomains,
+        this.allowedAddresses,
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
@@ -281,6 +300,7 @@ export class MCPServersRegistry {
         configForInspection,
         undefined,
         this.allowedDomains,
+        this.allowedAddresses,
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Reinspection failed for server "${serverName}":`, error);
@@ -329,6 +349,7 @@ export class MCPServersRegistry {
         configForInspection,
         undefined,
         this.allowedDomains,
+        this.allowedAddresses,
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
@@ -435,7 +456,13 @@ export class MCPServersRegistry {
 
     try {
       const inspected = await withTimeout(
-        MCPServerInspector.inspect(serverName, rawConfig, undefined, this.allowedDomains),
+        MCPServerInspector.inspect(
+          serverName,
+          rawConfig,
+          undefined,
+          this.allowedDomains,
+          this.allowedAddresses,
+        ),
         CONFIG_SERVER_INIT_TIMEOUT_MS,
         `${prefix} Server initialization timed out`,
       );

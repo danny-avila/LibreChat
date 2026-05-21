@@ -1,7 +1,11 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { generateCheckAccess, isActionDomainAllowed } = require('@librechat/api');
+const {
+  generateCheckAccess,
+  isActionDomainAllowed,
+  validateActionOAuthMetadata,
+} = require('@librechat/api');
 const {
   Permissions,
   ResourceType,
@@ -118,6 +122,7 @@ router.post(
       const isDomainAllowed = await isActionDomainAllowed(
         metadata.domain,
         appConfig?.actions?.allowedDomains,
+        appConfig?.actions?.allowedAddresses,
       );
       if (!isDomainAllowed) {
         return res.status(400).json({ message: 'Domain not allowed' });
@@ -152,6 +157,12 @@ router.post(
           return res.status(403).json({ message: 'Action does not belong to this agent' });
         }
         metadata = { ...action.metadata, ...metadata };
+      }
+
+      try {
+        await validateActionOAuthMetadata(metadata.auth, appConfig?.actions?.allowedAddresses);
+      } catch (error) {
+        return res.status(400).json({ message: error.message });
       }
 
       const { actions: _actions = [], author: agent_author } = agent ?? {};

@@ -43,6 +43,10 @@ function getFileStrategy(appConfig, { isAvatar = false, isImage = false, context
 
   if (isAvatar || context === FileContext.avatar) {
     selectedStrategy = strategies.avatar || defaultStrategy;
+  } else if (context === FileContext.skill_file) {
+    // Skill files: explicit skills strategy → fall back by type → default
+    selectedStrategy =
+      strategies.skills || (isImage ? strategies.image : strategies.document) || defaultStrategy;
   } else if (isImage || context === FileContext.image_generation) {
     selectedStrategy = strategies.image || defaultStrategy;
   } else {

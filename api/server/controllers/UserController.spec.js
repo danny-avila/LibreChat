@@ -28,6 +28,7 @@ jest.mock('~/models', () => {
     deleteAssistants: jest.fn().mockResolvedValue(undefined),
     deleteUserById: jest.fn().mockResolvedValue(undefined),
     deleteUserPrompts: jest.fn().mockResolvedValue(undefined),
+    deleteUserSkills: jest.fn().mockResolvedValue(undefined),
     deleteMessages: jest.fn().mockResolvedValue(undefined),
     deleteBalances: jest.fn().mockResolvedValue(undefined),
     deleteActions: jest.fn().mockResolvedValue(undefined),
@@ -74,7 +75,7 @@ jest.mock('@librechat/api', () => ({
 }));
 
 jest.mock('~/server/services/Files/process', () => ({
-  processDeleteRequest: jest.fn().mockResolvedValue(undefined),
+  processDeleteRequest: jest.fn().mockResolvedValue({ deletedFileIds: [], failedFileIds: [] }),
 }));
 
 jest.mock('~/server/services/Config', () => ({

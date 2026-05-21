@@ -1,5 +1,6 @@
 export * from './agents';
 export * from './audio';
+export * from './code';
 export * from './context';
 export * from './documents/crud';
 export * from './encode';
@@ -8,5 +9,7 @@ export * from './mistral/crud';
 export * from './ocr';
 export * from './parse';
 export * from './rag';
+export * from './retention';
+export * from './sweep';
 export * from './validation';
 export * from './text';
