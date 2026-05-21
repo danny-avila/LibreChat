@@ -140,11 +140,13 @@ function applyTenantFilter(
   return tenantId ? ({ ...filter, tenantId } as FilterQuery<IUser>) : filter;
 }
 
-async function findFirstAdminUser(
+async function findLatestAdminUser(
   deps: AdminRefreshDeps,
   filters: FilterQuery<IUser>[],
   tenantId: string | undefined,
 ): Promise<IUser | undefined> {
+  let latestUser: IUser | undefined;
+
   for (const baseFilter of filters) {
     const [user] = await deps.findUsers(
       applyTenantFilter(baseFilter, tenantId),
@@ -154,10 +156,13 @@ async function findFirstAdminUser(
         limit: 1,
       },
     );
-    if (user) return user;
+    if (!user) continue;
+    if (!latestUser || (user.updatedAt?.getTime() ?? 0) > (latestUser.updatedAt?.getTime() ?? 0)) {
+      latestUser = user;
+    }
   }
 
-  return undefined;
+  return latestUser;
 }
 
 async function resolveAdminUser(
@@ -203,7 +208,7 @@ async function resolveAdminUser(
   const filters =
     issuerBound.length > 0 ? issuerBound : ([{ openidId }] as Array<FilterQuery<IUser>>);
 
-  return findFirstAdminUser(deps, filters, expectedTenantId);
+  return findLatestAdminUser(deps, filters, expectedTenantId);
 }
 
 function readClaims(tokenset: RefreshTokenset): AdminRefreshClaims {
