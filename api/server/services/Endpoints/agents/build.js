@@ -1,6 +1,27 @@
 const { logger } = require('@librechat/data-schemas');
 const { isAgentsEndpoint, removeNullishValues, Constants } = require('librechat-data-provider');
+const { getJuristaiToolNames } = require('~/server/services/juristaiTools');
 const { loadAgent } = require('~/models/Agent');
+
+/**
+ * Appends curated django-hub tool names to the agent's tools array so they are
+ * advertised to the model. No-op unless JURISTAI_DJANGO_TOOLS_ENABLED is set.
+ */
+const appendJuristaiTools = async (req, agent) => {
+  if (!agent) {
+    return agent;
+  }
+  try {
+    const names = await getJuristaiToolNames(req);
+    if (names.length > 0) {
+      const existing = Array.isArray(agent.tools) ? agent.tools : [];
+      agent.tools = Array.from(new Set([...existing, ...names]));
+    }
+  } catch (error) {
+    logger.error('[buildOptions] Failed to append django-hub tools to agent', error);
+  }
+  return agent;
+};
 
 const DEFAULT_AGENT_ID = process.env.DEFAULT_AGENT_ID ?? 'agent_lhpnDhDHKBbh96Ra1s1Qu';
 
@@ -76,13 +97,15 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
     agent_id: resolvedAgentId,
     endpoint,
     model_parameters: normalizedModelParameters,
-  }).catch((error) => {
-    logger.error(
-      `[/agents/:${resolvedAgentId}] Error retrieving agent during build options step`,
-      error,
-    );
-    return undefined;
-  });
+  })
+    .then((agent) => appendJuristaiTools(req, agent))
+    .catch((error) => {
+      logger.error(
+        `[/agents/:${resolvedAgentId}] Error retrieving agent during build options step`,
+        error,
+      );
+      return undefined;
+    });
 
   /** @type {import('librechat-data-provider').TConversation | undefined} */
   const addedConvo = req.body?.addedConvo;

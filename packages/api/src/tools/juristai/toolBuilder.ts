@@ -1,4 +1,5 @@
 import { openapiToFunction } from 'librechat-data-provider';
+import type { ZodTypeAny } from 'zod';
 import type { OpenAPIV3 } from 'openapi-types';
 import type { ActionRequest, FunctionSignature } from 'librechat-data-provider';
 
@@ -22,6 +23,8 @@ export interface JuristaiToolDefinition {
   description: string;
   parameters: FunctionSignature['parameters'];
   requestBuilder: ActionRequest;
+  /** Zod schema for argument validation, consumed by createActionTool. */
+  zodSchema?: ZodTypeAny;
 }
 
 const sanitizeName = (operationId: string): string => operationId.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -35,7 +38,10 @@ export function buildJuristaiTools(
     servers: [{ url: djangoBaseUrl.replace(/\/+$/, '') }],
   };
 
-  const { functionSignatures, requestBuilders } = openapiToFunction(specWithServer, true);
+  const { functionSignatures, requestBuilders, zodSchemas } = openapiToFunction(
+    specWithServer,
+    true,
+  );
   const tools: JuristaiToolDefinition[] = [];
 
   for (const signature of functionSignatures) {
@@ -50,6 +56,7 @@ export function buildJuristaiTools(
       description: signature.description,
       parameters: signature.parameters,
       requestBuilder,
+      zodSchema: zodSchemas?.[operationId],
     });
   }
 

@@ -47,6 +47,11 @@ const {
   domainParser,
 } = require('./ActionService');
 const {
+  JURISTAI_TOOL_PREFIX,
+  getJuristaiToolDefinitions,
+  loadJuristaiToolsForExecution,
+} = require('~/server/services/juristaiTools');
+const {
   getEndpointsConfig,
   getMCPServerTools,
   getCachedTools,
@@ -759,6 +764,32 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     }
   }
 
+  try {
+    const juristaiNames = filteredTools.filter((name) => name.startsWith(JURISTAI_TOOL_PREFIX));
+    if (juristaiNames.length > 0) {
+      const juristaiDefs = await getJuristaiToolDefinitions(req, juristaiNames);
+      for (const def of juristaiDefs) {
+        if (!toolRegistry.has(def.name)) {
+          toolRegistry.set(def.name, {
+            name: def.name,
+            description: def.description,
+            parameters: def.parameters,
+            allowed_callers: ['direct'],
+          });
+        }
+        if (!toolDefinitions.some((existing) => existing.name === def.name)) {
+          toolDefinitions.push({
+            name: def.name,
+            description: def.description,
+            parameters: def.parameters,
+          });
+        }
+      }
+    }
+  } catch (error) {
+    logger.error('[loadToolDefinitionsWrapper] Error merging juristai tool definitions:', error);
+  }
+
   return {
     toolRegistry,
     userMCPAuthMap,
@@ -1192,7 +1223,12 @@ async function loadToolsForExecution({
     : requestedNonSpecialToolNames;
 
   const actionToolNames = allToolNamesToLoad.filter((name) => name.includes(actionDelimiter));
-  const regularToolNames = allToolNamesToLoad.filter((name) => !name.includes(actionDelimiter));
+  const juristaiToolNames = allToolNamesToLoad.filter((name) =>
+    name.startsWith(JURISTAI_TOOL_PREFIX),
+  );
+  const regularToolNames = allToolNamesToLoad.filter(
+    (name) => !name.includes(actionDelimiter) && !name.startsWith(JURISTAI_TOOL_PREFIX),
+  );
 
   /** @type {Record<string, unknown>} */
   if (regularToolNames.length > 0) {
@@ -1235,6 +1271,16 @@ async function loadToolsForExecution({
       actionToolNames,
     });
     allLoadedTools.push(...actionTools);
+  }
+
+  if (juristaiToolNames.length > 0) {
+    const juristaiTools = await loadJuristaiToolsForExecution({
+      req,
+      res,
+      streamId,
+      toolNames: juristaiToolNames,
+    });
+    allLoadedTools.push(...juristaiTools);
   }
 
   if (isPTC && allLoadedTools.length > 0) {
