@@ -172,6 +172,24 @@ function buildSSEErrorEvents(requestIds: Array<string | number>, message: string
   return textEncoder.encode(events);
 }
 
+function buildBlockedMCPResponseMessage(
+  reason: string,
+  details: {
+    maxResponseBytes: number;
+    maxLineBytes: number;
+    totalBytes: number;
+    currentLineBytes: number;
+    chunkCount: number;
+  },
+): string {
+  const limitDetails =
+    reason === 'MCP response exceeded byte limit'
+      ? `limit=${details.maxResponseBytes} bytes, observed=${details.totalBytes} bytes`
+      : `lineLimit=${details.maxLineBytes} bytes, observedLine=${details.currentLineBytes} bytes, observedTotal=${details.totalBytes} bytes`;
+
+  return `[MCP] ${reason} (${limitDetails}, chunks=${details.chunkCount}). The MCP server returned an unsafe streamable HTTP response; narrow the tool result or retry after the server response is fixed.`;
+}
+
 function getMCPStreamableHTTPResponseLimits(): {
   maxResponseBytes: number;
   maxLineBytes: number;
@@ -220,7 +238,13 @@ async function guardMCPStreamableHTTPResponse(
     details: Record<string, unknown>,
     controller: TransformStreamDefaultController<Uint8Array>,
   ): void => {
-    const message = `[MCP] ${reason}. The MCP server returned an unsafe streamable HTTP response; narrow the tool result or retry after the server response is fixed.`;
+    const message = buildBlockedMCPResponseMessage(reason, {
+      maxResponseBytes,
+      maxLineBytes,
+      totalBytes,
+      currentLineBytes,
+      chunkCount,
+    });
     logger.warn(`${context.logPrefix} MCP streamable HTTP response blocked: ${reason}`, {
       method: context.method,
       url: sanitizeUrlForLogging(context.url),

@@ -1064,7 +1064,9 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
         body: JSON.stringify({ jsonrpc: '2.0', method: 'ping', id: 1 }),
       });
 
-      await expect(response.text()).rejects.toThrow(/MCP response exceeded byte limit/);
+      await expect(response.text()).rejects.toThrow(
+        /MCP response exceeded byte limit.*limit=8 bytes/,
+      );
     } finally {
       await server.close();
     }
@@ -1093,6 +1095,8 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
 
       expect(text).toContain('"id":7');
       expect(text).toContain('MCP response contained an oversized SSE line');
+      expect(text).toContain('lineLimit=16 bytes');
+      expect(text).toContain('observedLine=17 bytes');
       expect(text).not.toContain('x'.repeat(64));
     } finally {
       await server.close();
