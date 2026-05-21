@@ -294,7 +294,7 @@ describe('createToolExecuteHandler', () => {
           },
         ] as never[],
       }));
-      const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => undefined);
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
       try {
         const handler = createToolExecuteHandler({ loadTools });
         const [result] = await invokeHandler(handler, [
@@ -315,7 +315,7 @@ describe('createToolExecuteHandler', () => {
             messageLength: oversizedMessage.length,
           }),
         );
-        const [, logContext] = errorSpy.mock.calls[0] as [string, { stack?: string }];
+        const [, logContext] = errorSpy.mock.calls[0] as unknown as [string, { stack?: string }];
         expect(logContext.stack!.length).toBeLessThanOrEqual(4_000);
       } finally {
         errorSpy.mockRestore();
@@ -338,7 +338,7 @@ describe('createToolExecuteHandler', () => {
           },
         ] as never[],
       }));
-      const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => undefined);
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
       try {
         const handler = createToolExecuteHandler({ loadTools });
         const [result] = await invokeHandler(handler, [
