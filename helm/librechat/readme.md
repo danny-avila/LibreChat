@@ -39,11 +39,12 @@ kind: Secret
 ## Admin Panel SSO
 
 When deploying the admin panel at a separate URL, set `librechat.adminPanelUrl`
-to the external admin panel origin:
+to the external admin panel base URL. It may include a path, but it should not
+end with a trailing `/` because LibreChat appends `/auth/...` callback paths.
 
 ```yaml
 librechat:
-  adminPanelUrl: https://admin.example.com
+  adminPanelUrl: https://admin.example.com/admin
 ```
 
 This renders `ADMIN_PANEL_URL` for LibreChat's admin OAuth flow. For OpenID SSO,

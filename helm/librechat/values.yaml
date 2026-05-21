@@ -33,9 +33,10 @@ global:
     #        key: client_id
 
 librechat:
-  # External admin panel origin used for admin OAuth/SSO redirects.
+  # External admin panel base URL used for admin OAuth/SSO redirects.
   # Required when deploying the admin panel on a separate URL.
-  # Example: https://admin.example.com
+  # May include a path. Do not include a trailing slash.
+  # Example: https://admin.example.com/admin
   adminPanelUrl: ""
 
   configEnv:

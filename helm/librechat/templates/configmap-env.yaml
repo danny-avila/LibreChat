@@ -18,7 +18,7 @@ data:
   {{- if and (not (dig "configEnv" "REDIS_URI" "" .Values.librechat)) .Values.redis.enabled }}
   REDIS_URI: redis://{{ include "common.names.fullname" .Subcharts.redis }}-master.{{ .Release.Namespace | lower }}.svc.cluster.local:6379
   {{- end }}
-  {{- if and .Values.librechat.adminPanelUrl (not (hasKey (default dict .Values.librechat.configEnv) "ADMIN_PANEL_URL")) }}
+  {{- if and .Values.librechat.adminPanelUrl (not (dig "configEnv" "ADMIN_PANEL_URL" "" .Values.librechat)) }}
   ADMIN_PANEL_URL: {{ .Values.librechat.adminPanelUrl | quote }}
   {{- end }}
   {{- if .Values.librechat.configEnv }}
