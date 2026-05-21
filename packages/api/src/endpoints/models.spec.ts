@@ -482,6 +482,105 @@ describe('fetchModels with Ollama specific logic', () => {
   });
 });
 
+describe('fetchModels with NEAR AI Cloud catalog logic', () => {
+  beforeEach(() => {
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        models: [
+          {
+            modelId: 'zai-org/GLM-5.1-FP8',
+            metadata: {
+              architecture: { inputModalities: ['text'], outputModalities: ['text'] },
+            },
+          },
+          {
+            modelId: 'Qwen/Qwen3.6-35B-A3B-FP8',
+            metadata: {
+              architecture: { inputModalities: ['text'], outputModalities: ['text'] },
+            },
+          },
+          {
+            modelId: 'Qwen/Qwen3-VL-30B-A3B-Instruct',
+            metadata: {
+              architecture: { inputModalities: ['text', 'image'], outputModalities: ['text'] },
+            },
+          },
+          {
+            modelId: 'openai/privacy-filter',
+            metadata: {
+              architecture: { inputModalities: ['text'], outputModalities: ['text'] },
+            },
+          },
+          {
+            modelId: 'Qwen/Qwen3-Reranker-0.6B',
+            metadata: {
+              architecture: { inputModalities: ['text'], outputModalities: ['text'] },
+            },
+          },
+          {
+            modelId: 'openai/whisper-large-v3',
+            metadata: {
+              architecture: { inputModalities: ['audio'], outputModalities: ['text'] },
+            },
+          },
+          {
+            modelId: 'black-forest-labs/FLUX.2-klein-4B',
+            metadata: {
+              architecture: { inputModalities: ['text'], outputModalities: ['image'] },
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('fetches chat-capable models from the public NEAR AI Cloud catalog', async () => {
+    const models = await fetchModels({
+      apiKey: 'near-key',
+      baseURL: 'https://cloud-api.near.ai/v1',
+      name: 'nearai',
+    });
+
+    expect(models).toEqual([
+      'zai-org/GLM-5.1-FP8',
+      'Qwen/Qwen3.6-35B-A3B-FP8',
+      'Qwen/Qwen3-VL-30B-A3B-Instruct',
+    ]);
+    expect(mockedAxios.get).toHaveBeenCalledWith('https://cloud-api.near.ai/v1/model/list', {
+      headers: {},
+      timeout: 5000,
+    });
+  });
+
+  it('falls back to OpenAI-compatible model fetch when the NEAR AI catalog fails', async () => {
+    mockedAxios.get
+      .mockRejectedValueOnce(new Error('NEAR catalog unavailable'))
+      .mockResolvedValueOnce({
+        data: {
+          data: [{ id: 'fallback-model' }],
+        },
+      });
+
+    const models = await fetchModels({
+      apiKey: 'near-key',
+      baseURL: 'https://cloud-api.near.ai/v1',
+      name: 'nearai',
+    });
+
+    expect(models).toEqual(['fallback-model']);
+    expect(logAxiosError).toHaveBeenCalledWith({
+      message:
+        'Failed to fetch models from NEAR AI Cloud catalog. Attempting to fetch via OpenAI-compatible endpoint.',
+      error: expect.any(Error),
+    });
+    expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('fetchModels URL construction with trailing slashes', () => {
   beforeEach(() => {
     mockedAxios.get.mockResolvedValue({

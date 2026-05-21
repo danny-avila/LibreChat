@@ -505,6 +505,19 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # NEAR AI Cloud Example
+    - name: 'nearai'
+      apiKey: '${NEARAI_API_KEY}'
+      baseURL: 'https://cloud-api.near.ai/v1'
+      models:
+        # TEE-backed model defaults. When fetch is true, LibreChat loads the current
+        # chat-capable catalog from https://cloud-api.near.ai/v1/model/list.
+        default: ['zai-org/GLM-5.1-FP8', 'Qwen/Qwen3.6-35B-A3B-FP8', 'google/gemma-4-31B-it']
+        fetch: true
+      titleConvo: true
+      titleModel: 'zai-org/GLM-5.1-FP8'
+      modelDisplayLabel: 'NEAR AI'
+
     # Helicone Example
     - name: 'Helicone'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.

@@ -21,6 +21,11 @@ import {
 } from '~/utils';
 import { standardCache, tokenConfigCache } from '~/cache';
 
+const NEARAI_CLOUD_HOST = 'cloud-api.near.ai';
+const NEARAI_MODEL_LIST_PATH = '/model/list';
+const TEXT_MODALITY = 'text';
+const AUDIO_MODALITY = 'audio';
+
 export interface FetchModelsParams {
   /** User ID for API requests */
   user?: string;
@@ -46,6 +51,75 @@ export interface FetchModelsParams {
   userObject?: Partial<IUser>;
   /** Skip MODEL_QUERIES cache (e.g., for user-provided keys) */
   skipCache?: boolean;
+}
+
+interface NearAIModel {
+  modelId?: string;
+  metadata?: {
+    architecture?: {
+      inputModalities?: string[];
+      outputModalities?: string[];
+    };
+  };
+}
+
+interface NearAIModelListResponse {
+  models?: NearAIModel[];
+}
+
+function isNearAIEndpoint(name?: string, baseURL?: string | null): boolean {
+  const endpointName = name?.toLowerCase().replace(/[\s_-]/g, '') ?? '';
+  const endpointURL = baseURL?.toLowerCase() ?? '';
+
+  return endpointName === KnownEndpoints.nearai || endpointURL.includes(NEARAI_CLOUD_HOST);
+}
+
+function getNearAIModelListURL(baseURL: string): string {
+  const trimmedURL = baseURL.replace(/\/+$/, '');
+
+  if (trimmedURL.endsWith('/v1')) {
+    return `${trimmedURL}${NEARAI_MODEL_LIST_PATH}`;
+  }
+
+  return `${trimmedURL}/v1${NEARAI_MODEL_LIST_PATH}`;
+}
+
+function isNearAIChatModel(model: NearAIModel): model is NearAIModel & { modelId: string } {
+  if (!model.modelId) {
+    return false;
+  }
+
+  const modelId = model.modelId.toLowerCase();
+  if (modelId.includes('privacy-filter') || modelId.includes('reranker')) {
+    return false;
+  }
+
+  const architecture = model.metadata?.architecture;
+  const inputModalities = architecture?.inputModalities ?? [];
+  const outputModalities = architecture?.outputModalities ?? [];
+
+  return outputModalities.includes(TEXT_MODALITY) && !inputModalities.includes(AUDIO_MODALITY);
+}
+
+async function fetchNearAIModels(
+  baseURL: string,
+  options: { headers?: Record<string, string> | null; user?: Partial<IUser> } = {},
+): Promise<string[]> {
+  if (!baseURL) {
+    return [];
+  }
+
+  const resolvedHeaders = resolveHeaders({
+    headers: options.headers ?? undefined,
+    user: options.user,
+  });
+
+  const response = await axios.get<NearAIModelListResponse>(getNearAIModelListURL(baseURL), {
+    headers: resolvedHeaders,
+    timeout: 5000,
+  });
+
+  return (response.data.models ?? []).filter(isNearAIChatModel).map((model) => model.modelId);
 }
 
 /**
@@ -152,6 +226,25 @@ export async function fetchModels({
         await modelsCache.set(cacheKey, ollamaModels, Time.TWO_MINUTES);
       }
       return ollamaModels;
+    }
+  }
+
+  if (isNearAIEndpoint(name, baseURL)) {
+    let nearAIModels: string[] | null = null;
+    try {
+      nearAIModels = await fetchNearAIModels(baseURL ?? '', { headers, user: userObject });
+    } catch (nearAIError) {
+      logAxiosError({
+        message:
+          'Failed to fetch models from NEAR AI Cloud catalog. Attempting to fetch via OpenAI-compatible endpoint.',
+        error: nearAIError as Error,
+      });
+    }
+    if (nearAIModels !== null) {
+      if (modelsCache && cacheKey && nearAIModels.length > 0) {
+        await modelsCache.set(cacheKey, nearAIModels, Time.TWO_MINUTES);
+      }
+      return nearAIModels;
     }
   }
 
