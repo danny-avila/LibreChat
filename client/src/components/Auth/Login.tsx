@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { ErrorTypes, registerPage } from 'librechat-data-provider';
-import { OpenIDIcon, useToastContext } from '@librechat/client';
+import { useToastContext } from '@librechat/client';
 import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
 import { getLoginError, persistRedirectToSession } from '~/utils';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
-import SocialButton from '~/components/Auth/SocialButton';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
@@ -22,9 +21,6 @@ function Login() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
-  const disableAutoRedirect = searchParams.get('redirect') === 'false';
-
-  const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
 
   useEffect(() => {
     const redirectTo = searchParams.get('redirect_to');
@@ -48,55 +44,6 @@ function Login() {
       setSearchParams(newParams, { replace: true });
     }
   }, [searchParams, setSearchParams, showToast, localize, location.state]);
-
-  useEffect(() => {
-    if (disableAutoRedirect) {
-      setIsAutoRedirectDisabled(true);
-      const newParams = new URLSearchParams(searchParams);
-      newParams.delete('redirect');
-      setSearchParams(newParams, { replace: true });
-    }
-  }, [disableAutoRedirect, searchParams, setSearchParams]);
-
-  const shouldAutoRedirect =
-    startupConfig?.openidLoginEnabled &&
-    startupConfig?.openidAutoRedirect &&
-    startupConfig?.serverDomain &&
-    !isAutoRedirectDisabled;
-
-  useEffect(() => {
-    if (shouldAutoRedirect) {
-      console.log('Auto-redirecting to OpenID provider...');
-      window.location.href = `${startupConfig.serverDomain}/oauth/openid`;
-    }
-  }, [shouldAutoRedirect, startupConfig]);
-
-  if (shouldAutoRedirect) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center p-4">
-        <p className="text-lg font-semibold">
-          {localize('com_ui_redirecting_to_provider', { 0: startupConfig.openidLabel })}
-        </p>
-        <div className="mt-4">
-          <SocialButton
-            key="openid"
-            enabled={startupConfig.openidLoginEnabled}
-            serverDomain={startupConfig.serverDomain}
-            oauthPath="openid"
-            Icon={() =>
-              startupConfig.openidImageUrl ? (
-                <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
-              ) : (
-                <OpenIDIcon />
-              )
-            }
-            label={startupConfig.openidLabel}
-            id="openid"
-          />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <>
