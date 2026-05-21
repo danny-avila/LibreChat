@@ -16,7 +16,6 @@ const { createAgent, createFile } = require('~/models');
 jest.mock('~/server/services/Files/process', () => ({
   processDeleteRequest: jest.fn().mockResolvedValue({ deletedFileIds: [], failedFileIds: [] }),
   filterFile: jest.fn(),
-  processFileUpload: jest.fn(),
   processAgentFileUpload: jest.fn().mockImplementation(async ({ res }) => {
     // processAgentFileUpload sends response directly via res.json()
     return res.status(200).json({
@@ -28,10 +27,6 @@ jest.mock('~/server/services/Files/process', () => ({
 
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({})),
-}));
-
-jest.mock('~/server/controllers/assistants/helpers', () => ({
-  getOpenAIClient: jest.fn(),
 }));
 
 jest.mock('~/server/services/Tools/credentials', () => ({

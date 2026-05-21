@@ -15,9 +15,6 @@ jest.mock('~/server/utils/import', () => require(MOCKS).importUtils());
 jest.mock('~/cache/getLogStores', () => require(MOCKS).logStores());
 jest.mock('~/server/routes/files/multer', () => require(MOCKS).multerSetup());
 jest.mock('multer', () => require(MOCKS).multerLib());
-jest.mock('~/server/services/Endpoints/azureAssistants', () => require(MOCKS).assistantEndpoint());
-jest.mock('~/server/services/Endpoints/assistants', () => require(MOCKS).assistantEndpoint());
-
 describe('Convos Routes', () => {
   let app;
   let convosRouter;

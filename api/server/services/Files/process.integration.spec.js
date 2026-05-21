@@ -35,15 +35,6 @@ jest.mock('@librechat/api', () => ({
   processAudioFile: jest.fn(),
 }));
 
-jest.mock('~/server/controllers/assistants/v2', () => ({
-  addResourceFileId: jest.fn(),
-  deleteResourceFileId: jest.fn(),
-}));
-
-jest.mock('~/server/controllers/assistants/helpers', () => ({
-  getOpenAIClient: jest.fn(),
-}));
-
 jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn(),
 }));

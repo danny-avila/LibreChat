@@ -35,17 +35,12 @@ jest.mock('~/models', () => ({
 
 jest.mock('~/server/services/Files/process', () => ({
   filterFile: jest.fn(),
-  processFileUpload: jest.fn(),
   processDeleteRequest: jest.fn().mockResolvedValue({ deletedFileIds: [], failedFileIds: [] }),
   processAgentFileUpload: jest.fn(),
 }));
 
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({})),
-}));
-
-jest.mock('~/server/controllers/assistants/helpers', () => ({
-  getOpenAIClient: jest.fn(),
 }));
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({

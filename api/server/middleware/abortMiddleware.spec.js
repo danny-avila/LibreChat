@@ -41,7 +41,6 @@ jest.mock('@librechat/api', () => ({
 }));
 
 jest.mock('librechat-data-provider', () => ({
-  isAssistantsEndpoint: jest.fn().mockReturnValue(false),
   ErrorTypes: { INVALID_REQUEST: 'INVALID_REQUEST', NO_SYSTEM_MESSAGES: 'NO_SYSTEM_MESSAGES' },
 }));
 
@@ -67,10 +66,6 @@ jest.mock('~/models', () => ({
   spendStructuredTokens: (...args) => mockSpendStructuredTokens(...args),
   getMultiplier: mockGetMultiplier,
   getCacheMultiplier: mockGetCacheMultiplier,
-}));
-
-jest.mock('./abortRun', () => ({
-  abortRun: jest.fn(),
 }));
 
 const { spendCollectedUsage } = require('./abortMiddleware');
