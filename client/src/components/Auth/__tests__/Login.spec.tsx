@@ -121,7 +121,7 @@ jest.mock('react-router-dom', () => ({
 
 test('renders login form', () => {
   const { getByLabelText, getByRole } = setup();
-  expect(getByLabelText(/email/i)).toBeInTheDocument();
+  expect(getByLabelText(/username/i)).toBeInTheDocument();
   expect(getByLabelText(/password/i)).toBeInTheDocument();
   expect(getByTestId(document.body, 'login-button')).toBeInTheDocument();
   expect(getByRole('link', { name: /Sign up/i })).toBeInTheDocument();
@@ -164,11 +164,11 @@ test('calls loginUser.mutate on login', async () => {
     },
   });
 
-  const emailInput = getByLabelText(/email/i);
+  const usernameInput = getByLabelText(/username/i);
   const passwordInput = getByLabelText(/password/i);
   const submitButton = getByTestId(document.body, 'login-button');
 
-  await userEvent.type(emailInput, 'test@test.com');
+  await userEvent.type(usernameInput, 'alice');
   await userEvent.type(passwordInput, 'password');
   await userEvent.click(submitButton);
 
@@ -194,11 +194,11 @@ test('Navigates to / on successful login', async () => {
     },
   });
 
-  const emailInput = getByLabelText(/email/i);
+  const usernameInput = getByLabelText(/username/i);
   const passwordInput = getByLabelText(/password/i);
   const submitButton = getByTestId(document.body, 'login-button');
 
-  await userEvent.type(emailInput, 'test@test.com');
+  await userEvent.type(usernameInput, 'alice');
   await userEvent.type(passwordInput, 'password');
   await userEvent.click(submitButton);
 

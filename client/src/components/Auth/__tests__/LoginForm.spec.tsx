@@ -108,37 +108,57 @@ test('renders login form', () => {
   const { getByLabelText } = render(
     <Login onSubmit={mockLogin} startupConfig={mockStartupConfig} />,
   );
-  expect(getByLabelText(/email/i)).toBeInTheDocument();
+  expect(getByLabelText(/username/i)).toBeInTheDocument();
   expect(getByLabelText(/password/i)).toBeInTheDocument();
 });
 
-test('submits login form', async () => {
-  const { getByLabelText, getByRole } = render(
+test('submits login form with synthesized email from bare username', async () => {
+  mockLogin.mockClear();
+  const { getByLabelText } = render(
     <Login onSubmit={mockLogin} startupConfig={mockStartupConfig} />,
   );
-  const emailInput = getByLabelText(/email/i);
+  const usernameInput = getByLabelText(/username/i);
   const passwordInput = getByLabelText(/password/i);
   const submitButton = getByTestId(document.body, 'login-button');
 
-  await userEvent.type(emailInput, 'test@example.com');
+  await userEvent.type(usernameInput, 'alice');
   await userEvent.type(passwordInput, 'password');
   await userEvent.click(submitButton);
 
-  expect(mockLogin).toHaveBeenCalledWith({ email: 'test@example.com', password: 'password' });
+  expect(mockLogin).toHaveBeenCalledWith({ email: 'alice@spe.local', password: 'password' });
 });
 
-test('displays validation error messages', async () => {
-  const { getByLabelText, getByRole, getByText } = render(
+test('preserves a literal email-shaped value at submit (does not double-suffix)', async () => {
+  mockLogin.mockClear();
+  const { getByLabelText } = render(
     <Login onSubmit={mockLogin} startupConfig={mockStartupConfig} />,
   );
-  const emailInput = getByLabelText(/email/i);
+  const usernameInput = getByLabelText(/username/i);
   const passwordInput = getByLabelText(/password/i);
   const submitButton = getByTestId(document.body, 'login-button');
 
-  await userEvent.type(emailInput, 'test');
+  await userEvent.type(usernameInput, 'legacy@example.com');
+  await userEvent.type(passwordInput, 'password');
+  await userEvent.click(submitButton);
+
+  expect(mockLogin).toHaveBeenCalledWith({
+    email: 'legacy@example.com',
+    password: 'password',
+  });
+});
+
+test('displays validation error messages', async () => {
+  const { getByLabelText, getByText } = render(
+    <Login onSubmit={mockLogin} startupConfig={mockStartupConfig} />,
+  );
+  const usernameInput = getByLabelText(/username/i);
+  const passwordInput = getByLabelText(/password/i);
+  const submitButton = getByTestId(document.body, 'login-button');
+
+  await userEvent.type(usernameInput, 'a');
   await userEvent.type(passwordInput, 'pass');
   await userEvent.click(submitButton);
 
-  expect(getByText(/You must enter a valid email address/i)).toBeInTheDocument();
+  expect(getByText(/Username must be at least 2 characters/i)).toBeInTheDocument();
   expect(getByText(/Password must be at least 8 characters/i)).toBeInTheDocument();
 });

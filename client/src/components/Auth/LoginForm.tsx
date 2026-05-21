@@ -4,9 +4,17 @@ import { Turnstile } from '@marsidev/react-turnstile';
 import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import type { TAuthContext } from '~/common';
-import { useResendVerificationEmail, useGetStartupConfig } from '~/data-provider';
-import { validateEmail } from '~/utils';
+import { useResendVerificationEmail } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+
+/** Mirrors the backend SPE_USERNAME_DOMAIN default. Env vars don't reach the
+ *  browser in this deployment, so this constant is kept in sync manually. */
+const USERNAME_DOMAIN = 'spe.local';
+
+/** If the user typed a bare username, append @spe.local so the wire shape is
+ *  what the backend Mongoose schema expects (the email regex still gates writes). */
+const synthesizeEmail = (value: string): string =>
+  value.includes('@') ? value : `${value}@${USERNAME_DOMAIN}`;
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
@@ -27,8 +35,6 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   const [showResendLink, setShowResendLink] = useState<boolean>(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
-  const { data: config } = useGetStartupConfig();
-  const useUsernameLogin = config?.ldap?.username;
   const validTheme = isDark(theme) ? 'dark' : 'light';
   const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
 
@@ -85,21 +91,21 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
         className="mt-6"
         aria-label="Login form"
         method="POST"
-        onSubmit={handleSubmit((data) => onSubmit(data))}
+        onSubmit={handleSubmit((data) =>
+          onSubmit({ ...data, email: synthesizeEmail(data.email) }),
+        )}
       >
         <div className="mb-4">
           <div className="relative">
             <input
               type="text"
               id="email"
-              autoComplete={useUsernameLogin ? 'username' : 'email'}
-              aria-label={localize('com_auth_email')}
+              autoComplete="username"
+              aria-label={localize('com_auth_username')}
               {...register('email', {
-                required: localize('com_auth_email_required'),
-                maxLength: { value: 120, message: localize('com_auth_email_max_length') },
-                validate: useUsernameLogin
-                  ? undefined
-                  : (value) => validateEmail(value, localize('com_auth_email_pattern')),
+                required: localize('com_auth_username_required'),
+                minLength: { value: 2, message: localize('com_auth_username_min_length') },
+                maxLength: { value: 80, message: localize('com_auth_username_max_length') },
               })}
               aria-invalid={!!errors.email}
               className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-green-500 focus:outline-none"
@@ -109,9 +115,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               htmlFor="email"
               className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-green-600 dark:peer-focus:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
             >
-              {useUsernameLogin
-                ? localize('com_auth_username').replace(/ \(.*$/, '')
-                : localize('com_auth_email_address')}
+              {localize('com_auth_username')}
             </label>
           </div>
           {renderError('email')}

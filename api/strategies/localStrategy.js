@@ -27,13 +27,13 @@ async function passportLogin(req, email, password, done) {
     if (!user) {
       logError('Passport Local Strategy - User Not Found', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
-      return done(null, false, { message: 'Email does not exist.' });
+      return done(null, false, { message: 'Username does not exist.' });
     }
 
     if (!user.password) {
       logError('Passport Local Strategy - User has no password', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
-      return done(null, false, { message: 'Email does not exist.' });
+      return done(null, false, { message: 'Invalid username or password.' });
     }
 
     const isMatch = await comparePassword(user, password, { compare: bcrypt.compare });
@@ -63,7 +63,7 @@ async function passportLogin(req, email, password, done) {
     if (!user.emailVerified && !unverifiedAllowed) {
       logError('Passport Local Strategy - Email not verified', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
-      return done(null, user, { message: 'Email not verified.' });
+      return done(null, user, { message: 'Account not verified.' });
     }
 
     logger.info(`[Login] [Login successful] [Username: ${email}] [Request-IP: ${req.ip}]`);

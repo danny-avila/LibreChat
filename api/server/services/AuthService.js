@@ -35,7 +35,7 @@ const {
   deleteUserById,
   generateRefreshToken,
 } = require('~/models');
-const { registerSchema } = require('~/strategies/validators');
+const { registerSchema, synthesizeEmail } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
 const { sendEmail } = require('~/server/utils');
 
@@ -207,7 +207,15 @@ const registerUser = async (user, additionalData = {}) => {
     return { status: 404, message: errorMessage };
   }
 
-  const { email, password, name, username, provider } = user;
+  const { password, name, username, provider } = user;
+  /** Synthesize a stored email from the username when the caller didn't supply one
+   *  (the Registration form sends only the username). Mirrors the LDAP strategy's
+   *  `username + '@ldap.local'` trick so the rest of the auth pipeline — which
+   *  keys off `email` — works unchanged. */
+  const email =
+    typeof user.email === 'string' && user.email.includes('@')
+      ? user.email
+      : synthesizeEmail(username);
 
   let newUserId;
   try {
@@ -215,7 +223,7 @@ const registerUser = async (user, additionalData = {}) => {
     if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
-      logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
+      logger.error(`[registerUser] [Registration not allowed] [Email: ${email}]`);
       return { status: 403, message: errorMessage };
     }
 
@@ -245,6 +253,8 @@ const registerUser = async (user, additionalData = {}) => {
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       password: bcrypt.hashSync(password, salt),
+      /** Mark verified at creation: the username-only flow has no email-verification step. */
+      emailVerified: true,
       ...additionalData,
     };
 

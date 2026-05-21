@@ -419,8 +419,10 @@ export type TRegisterUserResponse = {
 
 export type TRegisterUser = {
   name: string;
-  email: string;
   username: string;
+  /** Optional on the wire: the Registration form omits it and the backend
+   *  synthesizes `<username>@${SPE_USERNAME_DOMAIN}` (see AuthService.registerUser). */
+  email?: string;
   password: string;
   confirm_password?: string;
   token?: string;

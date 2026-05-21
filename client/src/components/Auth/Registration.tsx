@@ -73,7 +73,7 @@ const Registration: React.FC = () => {
           autoComplete={id}
           aria-label={localize(label)}
           {...register(
-            id as 'name' | 'email' | 'username' | 'password' | 'confirm_password',
+            id as 'name' | 'username' | 'password' | 'confirm_password',
             validation,
           )}
           aria-invalid={!!errors[id]}
@@ -139,6 +139,7 @@ const Registration: React.FC = () => {
               },
             })}
             {renderInput('username', 'com_auth_username', 'text', {
+              required: localize('com_auth_username_required'),
               minLength: {
                 value: 2,
                 message: localize('com_auth_username_min_length'),
@@ -146,21 +147,6 @@ const Registration: React.FC = () => {
               maxLength: {
                 value: 80,
                 message: localize('com_auth_username_max_length'),
-              },
-            })}
-            {renderInput('email', 'com_auth_email', 'email', {
-              required: localize('com_auth_email_required'),
-              minLength: {
-                value: 1,
-                message: localize('com_auth_email_min_length'),
-              },
-              maxLength: {
-                value: 120,
-                message: localize('com_auth_email_max_length'),
-              },
-              pattern: {
-                value: /\S+@\S+\.\S+/,
-                message: localize('com_auth_email_pattern'),
               },
             })}
             {renderInput('password', 'com_auth_password', 'password', {

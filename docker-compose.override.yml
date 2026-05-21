@@ -17,7 +17,10 @@ services:
     - type: bind
       source: ./librechat.yaml
       target: /app/librechat.yaml
-    image: registry.librechat.ai/danny-avila/librechat:latest
+    image: librechat-custom:latest
+    build:
+      context: .
+      target: node
 
 # ---------------------------------------------------
 
