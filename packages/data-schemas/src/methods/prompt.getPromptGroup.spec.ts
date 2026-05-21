@@ -10,6 +10,7 @@ logger.silent = true;
 type PromptModel = mongoose.Model<unknown>;
 type PromptGroupModel = mongoose.Model<unknown>;
 type Methods = ReturnType<typeof createMethods>;
+type MongoExplainStage = Record<string, unknown>;
 
 let mongoServer: MongoMemoryServer;
 let Prompt: PromptModel;
@@ -40,6 +41,46 @@ async function seedGroupAndPrompt(opts: { tenantId?: string; promptTenantId?: st
     tenantId: opts.tenantId,
   });
   return { group, prompt };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function collectRecords(value: unknown, predicate: (record: Record<string, unknown>) => boolean) {
+  const matches: Array<Record<string, unknown>> = [];
+
+  function visit(candidate: unknown) {
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) {
+        visit(item);
+      }
+      return;
+    }
+
+    if (!isRecord(candidate)) return;
+    if (predicate(candidate)) {
+      matches.push(candidate);
+    }
+
+    for (const child of Object.values(candidate)) {
+      visit(child);
+    }
+  }
+
+  visit(value);
+  return matches;
+}
+
+function hasIndexedIdPlan(explain: unknown): boolean {
+  return collectRecords(explain, (record) => {
+    const stage = record.stage;
+    if (stage === 'IDHACK' || stage === 'EXPRESS_IXSCAN') return true;
+    if (stage !== 'IXSCAN') return false;
+
+    const keyPattern = record.keyPattern;
+    return isRecord(keyPattern) && keyPattern._id === 1;
+  }).length > 0;
 }
 
 beforeAll(async () => {
@@ -144,6 +185,42 @@ describe('getPromptGroup', () => {
           expect(lookup.localField).toBeDefined();
           expect(lookup.foreignField).toBeDefined();
         }
+      } finally {
+        aggregateSpy.mockRestore();
+      }
+    });
+
+    it('uses indexed _id execution paths for the group match and production prompt lookup', async () => {
+      const { group } = await seedGroupAndPrompt({ tenantId: TENANT_A });
+      const aggregateSpy = jest.spyOn(PromptGroup, 'aggregate');
+
+      try {
+        await withTenant(TENANT_A, () => methods.getPromptGroup({ _id: group._id }));
+
+        const pipeline: PipelineStage[] = aggregateSpy.mock.calls[0][0];
+        const [matchStage] = pipeline;
+        expect(matchStage).toEqual({ $match: { _id: group._id } });
+
+        const lookupStage = pipeline.find((stage) => '$lookup' in stage);
+        expect(lookupStage).toMatchObject({
+          $lookup: {
+            from: 'prompts',
+            localField: 'productionId',
+            foreignField: '_id',
+            as: 'productionPrompt',
+          },
+        });
+
+        const explain = await PromptGroup.aggregate(pipeline).explain('executionStats');
+        const stages = isRecord(explain) && Array.isArray(explain.stages) ? explain.stages : [];
+        const lookupExplain = stages.find(
+          (stage): stage is MongoExplainStage =>
+            isRecord(stage) && isRecord(stage.$lookup) && stage.$lookup.from === 'prompts',
+        );
+
+        expect(hasIndexedIdPlan(explain)).toBe(true);
+        expect(lookupExplain?.indexesUsed).toContain('_id_');
+        expect(lookupExplain?.totalDocsExamined).toBeLessThanOrEqual(1);
       } finally {
         aggregateSpy.mockRestore();
       }
