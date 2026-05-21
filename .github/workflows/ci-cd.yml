@@ -204,7 +204,8 @@ jobs:
                     { name: "JWT_REFRESH_SECRET", value: $jwtRefreshSecret },
                     { name: "REFRESH_TOKEN_EXPIRY", value: $refreshTokenExpiry },
                     { name: "PORT", value: $appPort },
-                    { name: "CONSOLE_JSON", value: $consoleJson },                    { name: "DEBUG_OPENAI", value: $debugOpenai },
+                    { name: "CONSOLE_JSON", value: $consoleJson },
+                    { name: "DEBUG_OPENAI", value: $debugOpenai },
                     { name: "HOST", value: $appHost },
                     { name: "POSTGRES_DB", value: $postgresDb },
                     { name: "ALLOW_REGISTRATION", value: $allowRegistration },
@@ -217,7 +218,9 @@ jobs:
                     { name: "CREDS_IV", value: $credsIv },
                     { name: "RAG_API_URL", value: $ragApiUrl },
                     { name: "BAN_VIOLATIONS", value: $banViolations },
-                    { name: "CREDS_KEY", value: $credsKey },                    { name: "MEILI_HOST", value: $meiliHost }                  ],
+                    { name: "CREDS_KEY", value: $credsKey },
+                    { name: "MEILI_HOST", value: $meiliHost }
+                  ],
                   secrets: [
                     { name: "OPENAI_API_KEY", valueFrom: $openaiSecretArn },
                     { name: "ASSISTANTS_API_KEY", valueFrom: $openaiSecretArn },
@@ -277,5 +280,3 @@ jobs:
             --services "${ECS_SERVICE}" \
             --region "${AWS_REGION}" \
             --query "services[0].taskDefinition"
-
-
