@@ -6,6 +6,14 @@ import type { ExtendedFile } from '~/common';
 import DataTable from '../PanelTable';
 import { columns } from '../PanelColumns';
 
+const mockLogFileCountError = jest.fn();
+const mockLogCombinedFileSizeError = jest.fn();
+
+jest.mock('~/nj/analytics/logHelpers', () => ({
+  logFileCountError: (...args: unknown[]) => mockLogFileCountError(...args),
+  logCombinedFileSizeError: (...args: unknown[]) => mockLogCombinedFileSizeError(...args),
+}));
+
 const mockShowToast = jest.fn();
 const mockAddFile = jest.fn();
 
@@ -132,6 +140,8 @@ describe('PanelTable handleFileClick', () => {
   beforeEach(() => {
     mockShowToast.mockClear();
     mockAddFile.mockClear();
+    mockLogFileCountError.mockClear();
+    mockLogCombinedFileSizeError.mockClear();
     mockFiles = new Map();
     mockConversation = { endpoint: 'openAI' };
     mockRawFileConfig = {
@@ -184,6 +194,8 @@ describe('PanelTable handleFileClick', () => {
         status: 'error',
       }),
     );
+    expect(mockLogFileCountError).toHaveBeenCalledTimes(1);
+    expect(mockLogFileCountError).toHaveBeenCalledWith(5);
   });
 
   it('blocks attachment when totalSizeLimit would be exceeded', () => {
@@ -204,6 +216,11 @@ describe('PanelTable handleFileClick', () => {
         message: expect.stringContaining('com_ui_attach_error_total_size'),
         status: 'error',
       }),
+    );
+    expect(mockLogCombinedFileSizeError).toHaveBeenCalledTimes(1);
+    expect(mockLogCombinedFileSizeError).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ file_id: 'existing-1' })]),
+      expect.arrayContaining([expect.objectContaining({ file_id: largeFile.file_id })]),
     );
   });
 

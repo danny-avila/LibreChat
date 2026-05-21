@@ -37,6 +37,12 @@ import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
 import FilesPanel from '~/nj/components/SidePanel/Files/FilesPanel';
+import {
+  logCombinedFileSizeError,
+  logFileCountError,
+  logFileSizeError,
+  logFileTypeError,
+} from '~/nj/analytics/logHelpers';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -144,6 +150,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
       }
 
       if (endpointFileConfig.fileLimit && files.size >= endpointFileConfig.fileLimit) {
+        logFileCountError(files.size);
         showToast({
           message: `${localize('com_ui_attach_error_limit')} ${endpointFileConfig.fileLimit} files (${endpoint})`,
           status: 'error',
@@ -152,6 +159,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
       }
 
       if (fileData.bytes >= (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
+        logFileSizeError(fileData);
         showToast({
           message: `${localize('com_ui_attach_error_size')} ${
             (endpointFileConfig.fileSizeLimit ?? 0) / megabyte
@@ -162,6 +170,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
       }
 
       if (!defaultFileConfig.checkType(file.type, endpointFileConfig.supportedMimeTypes ?? [])) {
+        logFileTypeError(fileData);
         showToast({
           message: `${localize('com_ui_attach_error_type')} ${file.type} (${endpoint})`,
           status: 'error',
@@ -177,6 +186,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         }
         currentTotalSize -= existing?.size ?? 0;
         if (currentTotalSize + fileData.bytes > endpointFileConfig.totalSizeLimit) {
+          logCombinedFileSizeError(Array.from(files.values()), [fileData]);
           showToast({
             message: `${localize('com_ui_attach_error_total_size')} ${endpointFileConfig.totalSizeLimit / megabyte} MB (${endpoint})`,
             status: 'error',

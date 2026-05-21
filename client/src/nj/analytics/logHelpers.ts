@@ -1,4 +1,5 @@
 import { logEvent } from '~/nj/analytics/logEvent';
+import type { TFile } from 'librechat-data-provider';
 import { ErrorTypes, TMessage } from 'librechat-data-provider';
 import { ExtendedFile } from '~/common';
 
@@ -42,28 +43,35 @@ export function logIfPromptLengthError(error: object) {
   logEvent('submit_prompt_client_error_prompt_length', extraParameters);
 }
 
+function getFileSize(file: ExtendedFile | File | TFile): number {
+  return 'bytes' in file ? file.bytes : file.size;
+}
+
 /** Error when a file type is unhandled. */
-export function logFileTypeError(file: File) {
+export function logFileTypeError(file: File | TFile) {
   logEvent('submit_prompt_client_error_file_type', { object_type: file.type });
 }
 
 /** Error when a single file is too large. */
-export function logFileSizeError(file: File) {
+export function logFileSizeError(file: File | TFile) {
   logEvent('submit_prompt_client_error_file_size', {
     object_type: file.type,
-    object_size: file.size,
+    object_size: getFileSize(file),
   });
 }
 
 /** Error when the combined sizes of all files is too large. */
-export function logCombinedFileSizeError(existingFiles: ExtendedFile[], newFiles: File[]) {
+export function logCombinedFileSizeError(
+  existingFiles: ExtendedFile[],
+  newFiles: File[] | TFile[],
+) {
   const existingFileMetadata = existingFiles.map((file) => ({
     type: file.type ?? '',
-    size: file.size,
+    size: getFileSize(file),
   }));
   const newFileMetadata = newFiles.map((file) => ({
     type: file.type,
-    size: file.size,
+    size: getFileSize(file),
   }));
   const allMetadata = existingFileMetadata.concat(newFileMetadata);
 
