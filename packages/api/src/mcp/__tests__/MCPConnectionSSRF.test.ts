@@ -13,6 +13,7 @@
 
 import * as net from 'net';
 import * as http from 'http';
+import { lookup } from 'node:dns/promises';
 import { randomUUID } from 'crypto';
 import { Request as UndiciRequest } from 'undici';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -36,6 +37,10 @@ jest.mock('@librechat/data-schemas', () => ({
     error: jest.fn(),
     debug: jest.fn(),
   },
+}));
+
+jest.mock('node:dns/promises', () => ({
+  lookup: jest.fn(),
 }));
 
 jest.mock('~/auth', () => ({
@@ -62,9 +67,17 @@ jest.mock('~/mcp/mcpConfig', () => ({
 const mockedResolveHostnameSSRF = resolveHostnameSSRF as jest.MockedFunction<
   typeof resolveHostnameSSRF
 >;
+const mockedLookup = lookup as unknown as jest.MockedFunction<
+  (hostname: string, options: { all: true }) => Promise<Array<{ address: string; family: number }>>
+>;
 const mockedCreateSSRFSafeUndiciConnect = createSSRFSafeUndiciConnect as jest.MockedFunction<
   typeof createSSRFSafeUndiciConnect
 >;
+
+beforeEach(() => {
+  mockedLookup.mockReset();
+  mockedLookup.mockResolvedValue([{ address: '203.0.113.10', family: 4 }]);
+});
 
 function getLookupCallback(
   optionsOrCallback: unknown,
@@ -941,6 +954,66 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     return factory.call(connection, () => null, undefined, undefined, undefined, undefined, true);
   }
 
+  function createBaseUrlFetch(connection: MCPConnection, baseUrl: string): CustomFetch {
+    const factory = (
+      connection as unknown as {
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+        ) => CustomFetch;
+      }
+    ).createFetchFunction;
+    return factory.call(connection, () => null, undefined, 300000, undefined, baseUrl);
+  }
+
+  function createBaseUrlDispatchers(connection: MCPConnection, baseUrl: string): string[] {
+    const privateSelf = connection as unknown as {
+      agents: Array<{ constructor: { name: string } }>;
+    };
+    createBaseUrlFetch(connection, baseUrl);
+    return privateSelf.agents.map((agent) => agent.constructor.name);
+  }
+
+  const proxyEnvKeys = [
+    'PROXY',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'no_proxy',
+  ] as const;
+  type ProxyEnvKey = (typeof proxyEnvKeys)[number];
+
+  function snapshotProxyEnv(): Partial<Record<ProxyEnvKey, string>> {
+    const snapshot: Partial<Record<ProxyEnvKey, string>> = {};
+    for (const key of proxyEnvKeys) {
+      if (process.env[key] != null) {
+        snapshot[key] = process.env[key];
+      }
+    }
+    return snapshot;
+  }
+
+  function restoreProxyEnv(snapshot: Partial<Record<ProxyEnvKey, string>>): void {
+    for (const key of proxyEnvKeys) {
+      if (snapshot[key] == null) {
+        delete process.env[key];
+      } else {
+        process.env[key] = snapshot[key];
+      }
+    }
+  }
+
+  function clearProxyEnv(): void {
+    for (const key of proxyEnvKeys) {
+      delete process.env[key];
+    }
+  }
+
   it('should allocate proxy dispatchers for streamable-http when proxy is configured', () => {
     conn = new MCPConnection({
       serverName: 'customfetch-proxy-dispatchers',
@@ -1327,6 +1400,82 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
+  it('should honor CIDR and IP range patterns in NO_PROXY lists', async () => {
+    const originalEnv = snapshotProxyEnv();
+    clearProxyEnv();
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.NO_PROXY = '10.0.0.0/8,192.168.1.10-192.168.1.20';
+
+    const expectDispatcherNamesForUrl = async (
+      url: string,
+      expectedNames: string[],
+    ): Promise<void> => {
+      await safeDisconnect(conn);
+      conn = new MCPConnection({
+        serverName: `customfetch-no-proxy-${url}`,
+        serverConfig: {
+          type: 'streamable-http',
+          url,
+        },
+        useSSRFProtection: false,
+      });
+      expect(createBaseUrlDispatchers(conn, url)).toEqual(expectedNames);
+    };
+
+    try {
+      await expectDispatcherNamesForUrl('http://10.2.3.4/mcp', ['Agent', 'Agent']);
+      await expectDispatcherNamesForUrl('http://192.168.1.15/mcp', ['Agent', 'Agent']);
+      await expectDispatcherNamesForUrl('http://192.168.1.25/mcp', ['ProxyAgent', 'ProxyAgent']);
+    } finally {
+      restoreProxyEnv(originalEnv);
+    }
+  });
+
+  it('should keep bare and wildcard NO_PROXY host semantics distinct', async () => {
+    const originalEnv = snapshotProxyEnv();
+    clearProxyEnv();
+    process.env.HTTPS_PROXY = 'http://https-proxy.example.com:8080';
+
+    const expectDispatcherNamesForUrl = async (
+      noProxy: string,
+      url: string,
+      expectedNames: string[],
+    ): Promise<void> => {
+      await safeDisconnect(conn);
+      process.env.NO_PROXY = noProxy;
+      conn = new MCPConnection({
+        serverName: `customfetch-no-proxy-host-${noProxy}-${url}`,
+        serverConfig: {
+          type: 'streamable-http',
+          url,
+        },
+        useSSRFProtection: false,
+      });
+      expect(createBaseUrlDispatchers(conn, url)).toEqual(expectedNames);
+    };
+
+    try {
+      await expectDispatcherNamesForUrl('example.com', 'https://example.com/mcp', [
+        'Agent',
+        'Agent',
+      ]);
+      await expectDispatcherNamesForUrl('example.com', 'https://api.example.com/mcp', [
+        'ProxyAgent',
+        'ProxyAgent',
+      ]);
+      await expectDispatcherNamesForUrl('*.example.com', 'https://api.example.com/mcp', [
+        'Agent',
+        'Agent',
+      ]);
+      await expectDispatcherNamesForUrl('*.example.com', 'https://example.com/mcp', [
+        'ProxyAgent',
+        'ProxyAgent',
+      ]);
+    } finally {
+      restoreProxyEnv(originalEnv);
+    }
+  });
+
   it('should let empty lowercase proxy env vars disable uppercase fallbacks', () => {
     const originalProxy = process.env.PROXY;
     const originalHttpProxy = process.env.HTTP_PROXY;
@@ -1474,6 +1623,40 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
+  it('should recompute proxy dispatchers from the resolved request URL', async () => {
+    const originalEnv = snapshotProxyEnv();
+    const capture = await createHeaderCaptureServer();
+    clearProxyEnv();
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.NO_PROXY = '127.0.0.1';
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-recompute-proxy-dispatcher',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'http://mcp.example.com/mcp',
+        },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = createBaseUrlFetch(conn, 'http://mcp.example.com/mcp');
+      const response = await customFetch(capture.url);
+
+      expect(response.status).toBe(200);
+      await response.body?.cancel();
+      expect(capture.receivedRequests).toHaveLength(1);
+      expect(
+        (conn as unknown as { agents: Array<{ constructor: { name: string } }> }).agents.map(
+          (agent) => agent.constructor.name,
+        ),
+      ).toEqual(['ProxyAgent', 'ProxyAgent', 'Agent']);
+    } finally {
+      restoreProxyEnv(originalEnv);
+      await capture.close();
+    }
+  });
+
   it('should preflight proxied targets before dispatching network requests', async () => {
     mockedResolveHostnameSSRF.mockResolvedValueOnce(true);
 
@@ -1493,6 +1676,32 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       /proxied MCP request target/,
     );
     expect(mockedResolveHostnameSSRF).toHaveBeenCalledWith('blocked.example.com', null, '80');
+  });
+
+  it('should fail closed when proxied target DNS cannot be resolved before dispatch', async () => {
+    mockedResolveHostnameSSRF.mockResolvedValueOnce(false);
+    mockedLookup.mockRejectedValueOnce(
+      Object.assign(new Error('getaddrinfo ENOTFOUND'), {
+        code: 'ENOTFOUND',
+      }),
+    );
+
+    conn = new MCPConnection({
+      serverName: 'customfetch-proxy-ssrf-dns-fail-closed',
+      serverConfig: {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        proxy: 'http://proxy.example.com:8080',
+      },
+      useSSRFProtection: true,
+    });
+
+    const customFetch = getCustomFetch(conn);
+
+    await expect(customFetch('http://proxy-only.internal/mcp')).rejects.toThrow(
+      /could not be resolved before proxying/,
+    );
+    expect(mockedLookup).toHaveBeenCalledWith('proxy-only.internal', { all: true });
   });
 
   it.each<['string' | 'URL' | 'Request']>([['string'], ['URL'], ['Request']])(

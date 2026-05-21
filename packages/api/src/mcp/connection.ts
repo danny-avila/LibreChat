@@ -1,3 +1,5 @@
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
 import { fetch as undiciFetch, Agent, ProxyAgent } from 'undici';
@@ -27,6 +29,13 @@ import { mcpConfig } from './mcpConfig';
 
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
 type ManagedDispatcher = Agent | ProxyAgent;
+type ParsedIP = { version: 4 | 6; bits: 32 | 128; value: bigint };
+
+const BIGINT_ZERO = BigInt(0);
+const BIGINT_ONE = BigInt(1);
+const BIGINT_EIGHT = BigInt(8);
+const BIGINT_SIXTEEN = BigInt(16);
+const UINT16_MASK = BigInt(0xffff);
 
 type MCPProxyConfig =
   | {
@@ -588,24 +597,170 @@ function getMCPProxyConfig(options: t.MCPOptions): MCPProxyConfig | undefined {
   };
 }
 
-function getProxyEntryPort(entry: string): { hostname: string; port: number } {
+function parseIPv4ToBigInt(ip: string): bigint | null {
+  const octets = ip.split('.');
+  if (octets.length !== 4) {
+    return null;
+  }
+
+  let value = BIGINT_ZERO;
+  for (const octet of octets) {
+    if (!/^\d{1,3}$/.test(octet)) {
+      return null;
+    }
+    const parsed = Number.parseInt(octet, 10);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 255) {
+      return null;
+    }
+    value = (value << BIGINT_EIGHT) + BigInt(parsed);
+  }
+  return value;
+}
+
+function parseIPv6ToBigInt(ip: string): bigint | null {
+  let normalized = ip.toLowerCase().replace(/^\[|\]$/g, '');
+  const zoneIndex = normalized.indexOf('%');
+  if (zoneIndex !== -1) {
+    normalized = normalized.slice(0, zoneIndex);
+  }
+
+  if (normalized.includes('.')) {
+    const lastColon = normalized.lastIndexOf(':');
+    if (lastColon === -1) {
+      return null;
+    }
+    const ipv4Value = parseIPv4ToBigInt(normalized.slice(lastColon + 1));
+    if (ipv4Value == null) {
+      return null;
+    }
+    const hi = Number((ipv4Value >> BIGINT_SIXTEEN) & UINT16_MASK).toString(16);
+    const lo = Number(ipv4Value & UINT16_MASK).toString(16);
+    normalized = `${normalized.slice(0, lastColon)}:${hi}:${lo}`;
+  }
+
+  const halves = normalized.split('::');
+  if (halves.length > 2) {
+    return null;
+  }
+
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const missing = halves.length === 2 ? 8 - left.length - right.length : 0;
+  if (missing < 0 || (halves.length === 1 && left.length !== 8)) {
+    return null;
+  }
+
+  const parts = [...left, ...Array<string>(missing).fill('0'), ...right];
+  if (parts.length !== 8 || parts.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) {
+    return null;
+  }
+
+  return parts.reduce(
+    (value, part) => (value << BIGINT_SIXTEEN) + BigInt(Number.parseInt(part, 16)),
+    BIGINT_ZERO,
+  );
+}
+
+function parseIPLiteral(value: string): ParsedIP | null {
+  const normalized = value
+    .toLowerCase()
+    .trim()
+    .replace(/^\[|\]$/g, '');
+  const version = isIP(normalized);
+  if (version === 4) {
+    const parsed = parseIPv4ToBigInt(normalized);
+    return parsed == null ? null : { version: 4, bits: 32, value: parsed };
+  }
+  if (version === 6) {
+    const parsed = parseIPv6ToBigInt(normalized);
+    return parsed == null ? null : { version: 6, bits: 128, value: parsed };
+  }
+  return null;
+}
+
+function ipMatchesCIDR(hostname: string, cidr: string): boolean {
+  const [rangeAddress, prefixLength, extra] = cidr.split('/');
+  if (!rangeAddress || prefixLength == null || extra != null || !/^\d+$/.test(prefixLength)) {
+    return false;
+  }
+
+  const hostIP = parseIPLiteral(hostname);
+  const rangeIP = parseIPLiteral(rangeAddress);
+  if (!hostIP || !rangeIP || hostIP.version !== rangeIP.version) {
+    return false;
+  }
+
+  const prefix = Number.parseInt(prefixLength, 10);
+  if (!Number.isInteger(prefix) || prefix < 0 || prefix > rangeIP.bits) {
+    return false;
+  }
+
+  const bits = BigInt(rangeIP.bits);
+  const mask =
+    prefix === 0
+      ? BIGINT_ZERO
+      : (((BIGINT_ONE << bits) - BIGINT_ONE) << BigInt(rangeIP.bits - prefix)) &
+        ((BIGINT_ONE << bits) - BIGINT_ONE);
+  return (hostIP.value & mask) === (rangeIP.value & mask);
+}
+
+function ipMatchesRange(hostname: string, range: string): boolean {
+  const [startAddress, endAddress, extra] = range.split('-');
+  if (!startAddress || !endAddress || extra != null) {
+    return false;
+  }
+
+  const hostIP = parseIPLiteral(hostname);
+  const startIP = parseIPLiteral(startAddress);
+  const endIP = parseIPLiteral(endAddress);
+  if (
+    !hostIP ||
+    !startIP ||
+    !endIP ||
+    hostIP.version !== startIP.version ||
+    hostIP.version !== endIP.version
+  ) {
+    return false;
+  }
+
+  const min = startIP.value <= endIP.value ? startIP.value : endIP.value;
+  const max = startIP.value <= endIP.value ? endIP.value : startIP.value;
+  return hostIP.value >= min && hostIP.value <= max;
+}
+
+function matchesNoProxyIPPattern(hostname: string, entryHostname: string): boolean {
+  if (entryHostname.includes('/')) {
+    return ipMatchesCIDR(hostname, entryHostname);
+  }
+  if (entryHostname.includes('-')) {
+    return ipMatchesRange(hostname, entryHostname);
+  }
+  return false;
+}
+
+function getProxyEntryPort(entry: string): {
+  hostname: string;
+  port: number;
+  matchSubdomains: boolean;
+} {
   const trimmed = entry.trim();
   const bracketed = trimmed.match(/^\[([^\]]+)\](?::(\d+))?$/);
   if (bracketed) {
     return {
       hostname: bracketed[1].toLowerCase(),
       port: bracketed[2] ? Number.parseInt(bracketed[2], 10) : 0,
+      matchSubdomains: false,
     };
   }
 
   const separatorCount = (trimmed.match(/:/g) ?? []).length;
   const parsed = separatorCount === 1 ? trimmed.match(/^(.+):(\d+)$/) : null;
+  const hostname = (parsed ? parsed[1] : trimmed).replace(/^\[|\]$/g, '').toLowerCase();
+  const matchSubdomains = hostname.startsWith('*.') || hostname.startsWith('.');
   return {
-    hostname: (parsed ? parsed[1] : trimmed)
-      .replace(/^\*?\./, '')
-      .replace(/^\[|\]$/g, '')
-      .toLowerCase(),
+    hostname: hostname.replace(/^\*\./, '').replace(/^\./, ''),
     port: parsed ? Number.parseInt(parsed[2], 10) : 0,
+    matchSubdomains,
   };
 }
 
@@ -637,7 +792,16 @@ function shouldBypassEnvProxy(url: URL, noProxy?: string): boolean {
     if (proxyEntry.port && proxyEntry.port !== port) {
       continue;
     }
-    if (hostname === proxyEntry.hostname || hostname.endsWith(`.${proxyEntry.hostname}`)) {
+    if (matchesNoProxyIPPattern(hostname, proxyEntry.hostname)) {
+      return true;
+    }
+    if (proxyEntry.matchSubdomains) {
+      if (hostname.endsWith(`.${proxyEntry.hostname}`)) {
+        return true;
+      }
+      continue;
+    }
+    if (hostname === proxyEntry.hostname) {
       return true;
     }
   }
@@ -700,6 +864,20 @@ function createMCPDispatcher(options: {
   });
 }
 
+async function assertProxiedRequestTargetResolvable(hostname: string): Promise<void> {
+  if (parseIPLiteral(hostname)) {
+    return;
+  }
+
+  try {
+    await lookup(hostname, { all: true });
+  } catch {
+    throw new Error(
+      `SSRF protection: proxied MCP request target "${hostname}" could not be resolved before proxying`,
+    );
+  }
+}
+
 async function assertProxiedRequestTargetAllowed(
   urlString: string,
   proxyConfig: MCPProxyConfig | undefined,
@@ -717,6 +895,7 @@ async function assertProxiedRequestTargetAllowed(
     (await resolveHostnameSSRF(targetUrl.hostname, allowedAddresses, port));
 
   if (!isBlockedTarget) {
+    await assertProxiedRequestTargetResolvable(targetUrl.hostname);
     return;
   }
 
@@ -1113,69 +1292,80 @@ export class MCPConnection extends EventEmitter {
     guardStreamableHTTPResponses = false,
   ): (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse> {
     const proxyConfig = this.proxyConfig;
-    const initialProxyUrl = baseUrl ? getProxyUrlForRequest(proxyConfig, baseUrl) : undefined;
-    const basePort = baseUrl ? getUrlPort(baseUrl) : '';
-    const ssrfConnect =
-      this.useSSRFProtection && !initialProxyUrl
-        ? createSSRFSafeUndiciConnect(this.allowedAddresses, basePort)
-        : undefined;
-    const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
     const useSSRFProtection = this.useSSRFProtection;
     const allowedAddresses = this.allowedAddresses;
     /** Capture only the fields needed by the fetch closure; see factory note above. */
     const agents = this.agents;
     const logPrefix = this.getLogPrefix();
     const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
-    const postAgent = createMCPDispatcher({
-      bodyTimeout: effectiveTimeout,
-      headersTimeout: effectiveTimeout,
-      proxyUrl: initialProxyUrl,
-      ...connectOpts,
-    });
-    this.agents.push(postAgent);
+    const requestDispatchers = new Map<string, ManagedDispatcher>();
+    const ssrfConnects = new Map<string, ReturnType<typeof createSSRFSafeUndiciConnect>>();
 
-    let getAgent: ManagedDispatcher | undefined;
-    if (sseBodyTimeout != null) {
-      getAgent = createMCPDispatcher({
-        bodyTimeout: sseBodyTimeout,
-        headersTimeout: effectiveTimeout,
-        proxyUrl: initialProxyUrl,
-        ...connectOpts,
-      });
-      this.agents.push(getAgent);
-    }
+    const getSSRFConnect = (
+      targetPort: string,
+      dispatcherAllowedAddresses: string[] | null | undefined,
+      forceSafeDirectConnect: boolean,
+    ): ReturnType<typeof createSSRFSafeUndiciConnect> => {
+      const key = `${forceSafeDirectConnect ? 'redirect' : 'configured'}:${targetPort}`;
+      const existingConnect = ssrfConnects.get(key);
+      if (existingConnect) {
+        return existingConnect;
+      }
 
-    const safeRedirectAgents = new Map<string, ManagedDispatcher>();
+      const connect = forceSafeDirectConnect
+        ? createSSRFSafeUndiciConnect()
+        : createSSRFSafeUndiciConnect(dispatcherAllowedAddresses, targetPort);
+      ssrfConnects.set(key, connect);
+      return connect;
+    };
+
     /**
-     * Allowlist mode keeps the original MCP URL admin-approved, but redirect
-     * targets are server-controlled. These agents add connect-time DNS checks
-     * for those cross-origin hops so DNS rebinding cannot beat the standalone
-     * resolveHostnameSSRF pre-check.
+     * Proxy selection depends on the resolved request URL, not just the
+     * configured MCP base URL. SSE message endpoints can be absolute URLs, so
+     * cache dispatchers by the target URL's proxy decision and connect policy.
      */
-    const getSafeRedirectDispatcher = (
+    const getRequestDispatcher = (
       isGetRequest: boolean,
       targetUrlString: string,
+      dispatcherAllowedAddresses: string[] | null | undefined,
+      forceSafeDirectConnect = false,
     ): ManagedDispatcher => {
       const bodyTimeout =
         isGetRequest && sseBodyTimeout != null ? sseBodyTimeout : effectiveTimeout;
-      const redirectProxyUrl = getProxyUrlForRequest(proxyConfig, targetUrlString);
-      const key = `${bodyTimeout}:${redirectProxyUrl ?? 'direct'}`;
-      const existingAgent = safeRedirectAgents.get(key);
+      const proxyUrl = getProxyUrlForRequest(proxyConfig, targetUrlString);
+      const targetPort = getUrlPort(targetUrlString);
+      const needsSSRFConnect = !proxyUrl && (useSSRFProtection || forceSafeDirectConnect);
+      const key = [
+        bodyTimeout,
+        proxyUrl ?? 'direct',
+        needsSSRFConnect ? targetPort : 'open',
+        forceSafeDirectConnect ? 'redirect' : 'configured',
+      ].join(':');
+      const existingAgent = requestDispatchers.get(key);
       if (existingAgent) {
         return existingAgent;
       }
 
-      const redirectSSRFConnect = redirectProxyUrl ? undefined : createSSRFSafeUndiciConnect();
+      const connect = needsSSRFConnect
+        ? getSSRFConnect(targetPort, dispatcherAllowedAddresses, forceSafeDirectConnect)
+        : undefined;
       const agent = createMCPDispatcher({
         bodyTimeout,
         headersTimeout: effectiveTimeout,
-        proxyUrl: redirectProxyUrl,
-        ...(redirectSSRFConnect != null ? { connect: redirectSSRFConnect } : {}),
+        proxyUrl,
+        ...(connect != null ? { connect } : {}),
       });
-      safeRedirectAgents.set(key, agent);
+      requestDispatchers.set(key, agent);
       agents.push(agent);
       return agent;
     };
+
+    if (baseUrl) {
+      getRequestDispatcher(false, baseUrl, allowedAddresses);
+      if (sseBodyTimeout != null) {
+        getRequestDispatcher(true, baseUrl, allowedAddresses);
+      }
+    }
 
     return async function customFetch(
       input: UndiciRequestInfo,
@@ -1193,7 +1383,6 @@ export class MCPConnection extends EventEmitter {
       const { urlString, resolvedInit } = await resolveFetchInput(input, init);
 
       const isGet = (resolvedInit?.method ?? 'GET').toUpperCase() === 'GET';
-      const dispatcher = isGet && getAgent ? getAgent : postAgent;
       const requestHeaders = getHeaders();
       /**
        * Headers that originated from user/server configuration — runtime
@@ -1206,9 +1395,14 @@ export class MCPConnection extends EventEmitter {
         ...(configuredSecretHeaderKeys ?? []),
       ]);
 
-      let currentInit = buildFetchInit(resolvedInit, dispatcher, requestHeaders);
       let currentUrlString = urlString;
       let currentAllowedAddresses = allowedAddresses;
+      let forceRedirectSSRFConnect = false;
+      let currentInit = buildFetchInit(
+        resolvedInit,
+        getRequestDispatcher(isGet, currentUrlString, currentAllowedAddresses),
+        requestHeaders,
+      );
       const originalOrigin = new URL(currentUrlString).origin;
       for (let redirects = 0; ; redirects++) {
         await assertProxiedRequestTargetAllowed(
@@ -1277,6 +1471,7 @@ export class MCPConnection extends EventEmitter {
 
         if (isCrossOriginRedirect) {
           currentAllowedAddresses = null;
+          forceRedirectSSRFConnect = true;
           /**
            * Once a server-controlled cross-origin hop is seen, keep the safe
            * dispatcher for the rest of this redirect chain. Restoring the
@@ -1287,7 +1482,22 @@ export class MCPConnection extends EventEmitter {
            */
           currentInit = {
             ...currentInit,
-            dispatcher: getSafeRedirectDispatcher(isGet, targetUrl.href),
+            dispatcher: getRequestDispatcher(
+              isGet,
+              targetUrl.href,
+              currentAllowedAddresses,
+              forceRedirectSSRFConnect,
+            ),
+          };
+        } else {
+          currentInit = {
+            ...currentInit,
+            dispatcher: getRequestDispatcher(
+              isGet,
+              targetUrl.href,
+              currentAllowedAddresses,
+              forceRedirectSSRFConnect,
+            ),
           };
         }
 
@@ -1383,20 +1593,33 @@ export class MCPConnection extends EventEmitter {
            * The connect timeout is extended because proxies may delay initial response.
            */
           const sseTimeout = this.timeout || SSE_CONNECT_TIMEOUT;
-          const sseProxyUrl = getProxyUrlForRequest(this.proxyConfig, options.url);
-          const ssrfConnect =
-            this.useSSRFProtection && !sseProxyUrl
-              ? createSSRFSafeUndiciConnect(this.allowedAddresses, getUrlPort(url))
-              : undefined;
-          const sseAgent = createMCPDispatcher({
-            bodyTimeout: sseTimeout,
-            headersTimeout: sseTimeout,
-            keepAliveTimeout: sseTimeout,
-            keepAliveMaxTimeout: sseTimeout * 2,
-            proxyUrl: sseProxyUrl,
-            ...(ssrfConnect != null ? { connect: ssrfConnect } : {}),
-          });
-          this.agents.push(sseAgent);
+          const sseAgents = new Map<string, ManagedDispatcher>();
+          const getSSEDispatcher = (targetUrlString: string): ManagedDispatcher => {
+            const proxyUrl = getProxyUrlForRequest(this.proxyConfig, targetUrlString);
+            const targetPort = getUrlPort(targetUrlString);
+            const key = `${proxyUrl ?? 'direct'}:${this.useSSRFProtection && !proxyUrl ? targetPort : 'open'}`;
+            const existingAgent = sseAgents.get(key);
+            if (existingAgent) {
+              return existingAgent;
+            }
+
+            const connect =
+              this.useSSRFProtection && !proxyUrl
+                ? createSSRFSafeUndiciConnect(this.allowedAddresses, targetPort)
+                : undefined;
+            const agent = createMCPDispatcher({
+              bodyTimeout: sseTimeout,
+              headersTimeout: sseTimeout,
+              keepAliveTimeout: sseTimeout,
+              keepAliveMaxTimeout: sseTimeout * 2,
+              proxyUrl,
+              ...(connect != null ? { connect } : {}),
+            });
+            sseAgents.set(key, agent);
+            this.agents.push(agent);
+            return agent;
+          };
+          getSSEDispatcher(options.url);
           const sseConfiguredSecretHeaderKeys: ReadonlySet<string> = new Set(
             Object.keys(headers).map((key) => key.toLowerCase()),
           );
@@ -1425,7 +1648,7 @@ export class MCPConnection extends EventEmitter {
                 return undiciFetch(urlString, {
                   ...resolvedInit,
                   redirect: 'manual',
-                  dispatcher: sseAgent,
+                  dispatcher: getSSEDispatcher(urlString),
                   headers: fetchHeaders,
                 });
               },
