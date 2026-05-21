@@ -154,8 +154,46 @@ export interface ToolExecuteOptions {
 const MAX_READABLE_BYTES = 262_144;
 const MAX_BINARY_BYTES = 5 * 1024 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
+const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
+const MAX_TOOL_ERROR_STACK_CHARS = 4_000;
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+function truncateMiddle(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  const indicator = `\n\n... [truncated: ${value.length} chars exceeded ${maxChars} limit] ...\n\n`;
+  const available = maxChars - indicator.length;
+  if (available <= 0) {
+    return value.slice(0, maxChars);
+  }
+
+  const headSize = Math.ceil(available * 0.7);
+  const tailSize = available - headSize;
+  return value.slice(0, headSize) + indicator + value.slice(value.length - tailSize);
+}
+
+function getSafeToolError(error: unknown): {
+  message: string;
+  logContext: Record<string, unknown>;
+} {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const message = truncateMiddle(rawMessage, MAX_TOOL_ERROR_MESSAGE_CHARS);
+  const stack = error instanceof Error && error.stack ? error.stack : undefined;
+
+  return {
+    message,
+    logContext: {
+      name: error instanceof Error ? error.name : typeof error,
+      message,
+      messageLength: rawMessage.length,
+      messageTruncated: message.length !== rawMessage.length,
+      stack: stack ? truncateMiddle(stack, MAX_TOOL_ERROR_STACK_CHARS) : undefined,
+    },
+  };
+}
 
 function addLineNumbers(content: string): string {
   const lines = content.split('\n');
@@ -1195,13 +1233,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     status: 'success' as const,
                   };
                 } catch (toolError) {
-                  const error = toolError as Error;
-                  logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error:`, error);
+                  const { message, logContext } = getSafeToolError(toolError);
+                  logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, logContext);
                   return {
                     toolCallId: tc.id,
                     status: 'error' as const,
                     content: '',
-                    errorMessage: error.message,
+                    errorMessage: message,
                   };
                 }
               }),

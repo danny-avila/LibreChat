@@ -74,6 +74,167 @@ const SSE_CONNECT_TIMEOUT = 120000;
 const DEFAULT_INIT_TIMEOUT = 30000;
 /** Max 307/308 redirects to follow per request (prevents redirect loops) */
 const MAX_REDIRECTS = 5;
+const DEFAULT_MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
+const DEFAULT_MCP_STREAMABLE_HTTP_MAX_LINE_BYTES = 1024 * 1024;
+
+function getNonNegativeIntegerEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw == null || raw.trim() === '') {
+    return defaultValue;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultValue;
+}
+
+function bytesToMiB(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(2)} MiB`;
+}
+
+function getMemoryDebugSnapshot(): Record<string, string> {
+  const mem = process.memoryUsage();
+  return {
+    rss: bytesToMiB(mem.rss),
+    heapUsed: bytesToMiB(mem.heapUsed),
+    heapTotal: bytesToMiB(mem.heapTotal),
+    external: bytesToMiB(mem.external),
+    arrayBuffers: bytesToMiB(mem.arrayBuffers ?? 0),
+  };
+}
+
+const textEncoder = new TextEncoder();
+
+function getChunkBytes(chunk: unknown): Uint8Array {
+  if (typeof chunk === 'string') {
+    return textEncoder.encode(chunk);
+  }
+  if (chunk instanceof ArrayBuffer) {
+    return new Uint8Array(chunk);
+  }
+  if (ArrayBuffer.isView(chunk)) {
+    const view = new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    return new Uint8Array(view);
+  }
+  return new Uint8Array();
+}
+
+function toOwnedArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const arrayBuffer = new ArrayBuffer(bytes.byteLength);
+  const copy = new Uint8Array(arrayBuffer);
+  copy.set(bytes);
+  return arrayBuffer;
+}
+
+function getMCPStreamableHTTPResponseLimits(): {
+  maxResponseBytes: number;
+  maxLineBytes: number;
+} {
+  return {
+    maxResponseBytes: getNonNegativeIntegerEnv(
+      'MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES',
+      DEFAULT_MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES,
+    ),
+    maxLineBytes: getNonNegativeIntegerEnv(
+      'MCP_STREAMABLE_HTTP_MAX_LINE_BYTES',
+      DEFAULT_MCP_STREAMABLE_HTTP_MAX_LINE_BYTES,
+    ),
+  };
+}
+
+async function guardMCPStreamableHTTPResponse(
+  response: UndiciResponse,
+  context: {
+    logPrefix: string;
+    method: string;
+    url: string;
+  },
+): Promise<UndiciResponse> {
+  if (context.method === 'GET' || !response.body) {
+    return response;
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('text/event-stream')) {
+    return response;
+  }
+
+  const { maxResponseBytes, maxLineBytes } = getMCPStreamableHTTPResponseLimits();
+  if (maxResponseBytes === 0 && maxLineBytes === 0) {
+    return response;
+  }
+
+  const chunks: ArrayBuffer[] = [];
+  const reader = (response.body as unknown as ReadableStream<unknown>).getReader();
+  let totalBytes = 0;
+  let currentLineBytes = 0;
+  let chunkCount = 0;
+
+  const fail = async (reason: string, details: Record<string, unknown>): Promise<never> => {
+    logger.warn(`${context.logPrefix} MCP streamable HTTP response blocked: ${reason}`, {
+      method: context.method,
+      url: sanitizeUrlForLogging(context.url),
+      status: response.status,
+      contentType,
+      maxResponseBytes,
+      maxLineBytes,
+      totalBytes,
+      currentLineBytes,
+      chunkCount,
+      ...details,
+      memory: getMemoryDebugSnapshot(),
+    });
+    await reader.cancel().catch(() => undefined);
+    throw new Error(
+      `[MCP] ${reason}. The MCP server returned an unsafe streamable HTTP response; narrow the tool result or retry after the server response is fixed.`,
+    );
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      const bytes = getChunkBytes(value);
+      if (bytes.byteLength === 0) {
+        continue;
+      }
+
+      chunkCount += 1;
+      totalBytes += bytes.byteLength;
+
+      if (maxResponseBytes > 0 && totalBytes > maxResponseBytes) {
+        await fail('MCP response exceeded byte limit', {
+          chunkBytes: bytes.byteLength,
+        });
+      }
+
+      for (const byte of bytes) {
+        if (byte === 10 || byte === 13) {
+          currentLineBytes = 0;
+          continue;
+        }
+        currentLineBytes += 1;
+        if (maxLineBytes > 0 && currentLineBytes > maxLineBytes) {
+          await fail('MCP response contained an oversized SSE line', {
+            chunkBytes: bytes.byteLength,
+          });
+        }
+      }
+
+      chunks.push(toOwnedArrayBuffer(bytes));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return new Response(new Blob(chunks), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers as unknown as HeadersInit,
+  }) as unknown as UndiciResponse;
+}
 
 /**
  * Headers stripped before forwarding a request across an origin boundary on
@@ -587,6 +748,7 @@ export class MCPConnection extends EventEmitter {
     const connectOpts = ssrfConnect != null ? { connect: ssrfConnect } : {};
     /** Capture only the fields needed by the fetch closure; see factory note above. */
     const agents = this.agents;
+    const logPrefix = this.getLogPrefix();
     const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
     const postAgent = new Agent({
       bodyTimeout: effectiveTimeout,
@@ -664,18 +826,22 @@ export class MCPConnection extends EventEmitter {
       let currentInit = buildFetchInit(resolvedInit, dispatcher, requestHeaders);
       let currentUrlString = urlString;
       const originalOrigin = new URL(currentUrlString).origin;
-
       for (let redirects = 0; ; redirects++) {
         const response = await undiciFetch(currentUrlString, currentInit);
         const isMethodPreservingRedirect = response.status === 307 || response.status === 308;
+        const responseContext = {
+          logPrefix,
+          method: (currentInit?.method ?? 'GET').toUpperCase(),
+          url: currentUrlString,
+        };
 
         if (!isMethodPreservingRedirect || redirects >= MAX_REDIRECTS) {
-          return response;
+          return guardMCPStreamableHTTPResponse(response, responseContext);
         }
 
         const location = response.headers.get('location');
         if (!location) {
-          return response;
+          return guardMCPStreamableHTTPResponse(response, responseContext);
         }
 
         const targetUrl = new URL(location, currentUrlString);
