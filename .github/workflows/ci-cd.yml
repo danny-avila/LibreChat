@@ -96,8 +96,8 @@ jobs:
       contents: read
     env:
       IMAGE_URI: ${{ needs.build.outputs.image_uri }}
-      OPENAI_SECRET_ARN: arn:aws:secretsmanager:us-east-1:730335261767:secret:OPENAI_API_KEY-QBq4C1:OPENAI_API_KEY::
-      MONGO_URI_SECRET_ARN: arn:aws:secretsmanager:us-east-1:730335261767:secret:juristai/prod/librechat/mongo_uri-73sRPq
+      OPENAI_SECRET_ARN: "arn:aws:secretsmanager:us-east-1:730335261767:secret:OPENAI_API_KEY-QBq4C1:OPENAI_API_KEY::"
+      MONGO_URI_SECRET_ARN: "arn:aws:secretsmanager:us-east-1:730335261767:secret:juristai/prod/librechat/mongo_uri-73sRPq"
       JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       CREDS_IV: ${{ secrets.CREDS_IV }}
