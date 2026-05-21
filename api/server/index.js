@@ -1,4 +1,4 @@
-require('dotenv').config();
+const telemetry = require('./telemetry');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
@@ -13,6 +13,7 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
   apiNotFound,
+  createMetrics,
   ErrorController,
   memoryDiagnostics,
   performStartupChecks,
@@ -20,26 +21,28 @@ const {
   GenerationJobManager,
   createStreamServices,
   initializeFileStorage,
-  updateInterfacePermissions,
   preAuthTenantMiddleware,
+  setupGracefulShutdown,
+  updateInterfacePermissions,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
-const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const {
-  getRoleByName,
   updateAccessPermissions,
-  seedDatabase,
   sweepOrphanedPreviews,
+  getRoleByName,
+  seedDatabase,
 } = require('~/models');
+const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
+const { startExpiredFileSweep } = require('./services/Files/process');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
+const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
-const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
@@ -51,8 +54,14 @@ const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
 const app = express();
+let serverReady = false;
 
 const startServer = async () => {
+  const { metricsMiddleware, metricsRouter } = createMetrics();
+  if (!process.env.METRICS_SECRET) {
+    logger.warn('[metrics] METRICS_SECRET is not set - /metrics will return 401 for all requests');
+  }
+
   if (typeof Bun !== 'undefined') {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
@@ -83,6 +92,7 @@ const startServer = async () => {
   });
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
+  startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
@@ -105,8 +115,16 @@ const startServer = async () => {
   }
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
+  app.get('/livez', (_req, res) => res.status(200).send('OK'));
+  app.get('/readyz', (_req, res) => {
+    if (!serverReady) {
+      return res.status(503).send('NOT_READY');
+    }
+    return res.status(200).send('OK');
+  });
 
   /* Middleware */
+  app.use(metricsMiddleware);
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
@@ -138,6 +156,10 @@ const startServer = async () => {
   app.use(staticCache(appConfig.paths.dist));
   app.use(staticCache(appConfig.paths.fonts));
   app.use(staticCache(appConfig.paths.assets));
+
+  if (telemetry.enabled) {
+    app.use(telemetry.telemetryMiddleware);
+  }
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
@@ -199,6 +221,8 @@ const startServer = async () => {
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
 
+  app.use('/metrics', metricsRouter);
+
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
 
@@ -218,10 +242,14 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
+  /** Record trace errors before the final error controller. */
+  if (telemetry.enabled) {
+    app.use(telemetry.telemetryErrorMiddleware);
+  }
   /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
   app.use(ErrorController);
 
-  app.listen(port, host, async (err) => {
+  const server = app.listen(port, host, async (err) => {
     if (err) {
       logger.error('Failed to start server:', err);
       process.exit(1);
@@ -259,11 +287,16 @@ const startServer = async () => {
       if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
         memoryDiagnostics.start();
       }
+      serverReady = true;
+      logger.info('Server readiness checks passing.');
     } catch (initErr) {
+      serverReady = false;
       logger.error('Post-listen initialization failed:', initErr);
       process.exit(1);
     }
   });
+
+  setupGracefulShutdown(server);
 };
 
 /**

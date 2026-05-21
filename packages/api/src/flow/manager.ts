@@ -2,6 +2,7 @@ import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
+import { registerShutdownTask } from '../app/shutdown';
 
 export const PENDING_STALE_MS = 2 * 60 * 1000;
 
@@ -40,17 +41,14 @@ export class FlowStateManager<T = unknown> {
   }
 
   private setupCleanupHandlers() {
-    const cleanup = () => {
+    // Register cleanup with the centralized graceful-shutdown coordinator
+    // (see ../app/shutdown.ts) rather than attaching direct signal
+    // handlers — multiple competing handlers race the HTTP drain.
+    registerShutdownTask('flow manager cleanup', () => {
       logger.info('Cleaning up FlowStateManager intervals...');
       this.intervals.forEach((interval) => clearInterval(interval));
       this.intervals.clear();
-      process.exit(0);
-    };
-
-    process.on('SIGTERM', cleanup);
-    process.on('SIGINT', cleanup);
-    process.on('SIGQUIT', cleanup);
-    process.on('SIGHUP', cleanup);
+    });
   }
 
   /**

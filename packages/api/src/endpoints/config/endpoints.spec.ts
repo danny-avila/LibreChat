@@ -1,16 +1,45 @@
+import { Types } from 'mongoose';
 import {
   AgentCapabilities,
   EModelEndpoint,
+  PrincipalType,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
-import { createEndpointsConfigService } from './endpoints';
-import type { AppConfig } from '@librechat/data-schemas';
+
+import type { AppConfig, IConfig } from '@librechat/data-schemas';
+import type { AppConfigServiceDeps } from '~/app/service';
 import type { EndpointsConfigDeps } from './endpoints';
 import type { ServerRequest } from '~/types';
+
+import { createEndpointsConfigService } from './endpoints';
+import { createAppConfigService } from '~/app/service';
 
 function appConfig(partial: Record<string, unknown>): AppConfig {
   return partial as unknown as AppConfig;
 }
+
+function configDoc(partial: Record<string, unknown>): IConfig {
+  return partial as unknown as IConfig;
+}
+
+function createAppConfigCache() {
+  const store = new Map<string, unknown>();
+  return {
+    get: jest.fn((key: string) => Promise.resolve(store.get(key))),
+    set: jest.fn((key: string, value: unknown) => {
+      store.set(key, value);
+      return Promise.resolve(undefined);
+    }),
+    delete: jest.fn((key: string) => {
+      store.delete(key);
+      return Promise.resolve(true);
+    }),
+  };
+}
+
+type ConfigPrincipals = NonNullable<
+  Parameters<AppConfigServiceDeps['getApplicableConfigs']>[0]
+>;
 
 function createMockDeps(overrides: Partial<EndpointsConfigDeps> = {}): EndpointsConfigDeps {
   return {
@@ -23,7 +52,13 @@ function createMockDeps(overrides: Partial<EndpointsConfigDeps> = {}): Endpoints
   };
 }
 
-function fakeReq(overrides: Partial<ServerRequest> = {}): ServerRequest {
+type TestRequestOverrides = {
+  body?: Partial<ServerRequest['body']>;
+  config?: AppConfig;
+  user?: { id?: string; role?: string; tenantId?: string };
+};
+
+function fakeReq(overrides: TestRequestOverrides = {}): ServerRequest {
   return { user: { id: 'u1', role: 'USER' }, ...overrides } as ServerRequest;
 }
 
@@ -171,6 +206,83 @@ describe('createEndpointsConfigService', () => {
       await getEndpointsConfig(fakeReq({ config: appConfig({ endpoints: {} }) }));
 
       expect(mockGetAppConfig).not.toHaveBeenCalled();
+    });
+
+    it('passes userId when resolving scoped endpoint config', async () => {
+      const mockGetAppConfig = jest.fn().mockResolvedValue(appConfig({ endpoints: {} }));
+      const deps = createMockDeps({ getAppConfig: mockGetAppConfig });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+
+      await getEndpointsConfig(
+        fakeReq({ user: { id: 'u1', role: 'USER', tenantId: 'tenant-a' } }),
+      );
+
+      expect(mockGetAppConfig).toHaveBeenCalledWith({
+        role: 'USER',
+        userId: 'u1',
+        tenantId: 'tenant-a',
+      });
+    });
+
+    it('exposes custom endpoints from group-scoped overrides for grouped users', async () => {
+      const groupId = new Types.ObjectId('6a0aea2172e2d59d4658c9d2');
+      const getUserPrincipals = jest.fn().mockResolvedValue([
+        { principalType: PrincipalType.ROLE, principalId: 'USER' },
+        { principalType: PrincipalType.USER, principalId: 'u1' },
+        { principalType: PrincipalType.GROUP, principalId: groupId },
+      ]);
+      const getApplicableConfigs = jest.fn((principals: ConfigPrincipals = []) =>
+        Promise.resolve(
+          principals.some(
+            (principal) =>
+              principal.principalType === PrincipalType.GROUP &&
+              String(principal.principalId) === groupId.toString(),
+          )
+            ? [
+                configDoc({
+                  principalType: PrincipalType.GROUP,
+                  principalId: groupId,
+                  priority: 20,
+                  isActive: true,
+                  overrides: {
+                    endpoints: {
+                      custom: [
+                        {
+                          name: 'FOO',
+                          apiKey: '${FOO_KEY}',
+                          baseURL: '${FOO_URL}',
+                          models: { fetch: true },
+                        },
+                      ],
+                    },
+                  },
+                }),
+              ]
+            : [],
+        ),
+      );
+      const { getAppConfig } = createAppConfigService({
+        loadBaseConfig: jest.fn().mockResolvedValue(appConfig({ endpoints: {} })),
+        setCachedTools: jest.fn().mockResolvedValue(undefined),
+        getCache: jest.fn().mockReturnValue(createAppConfigCache()),
+        cacheKeys: { APP_CONFIG: 'app_config' },
+        getApplicableConfigs,
+        getUserPrincipals,
+      });
+      const { getEndpointsConfig } = createEndpointsConfigService({
+        getAppConfig,
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({}),
+      });
+
+      const result = await getEndpointsConfig(fakeReq({ user: { id: 'u1', role: 'USER' } }));
+
+      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: 'u1', role: 'USER' });
+      expect(getApplicableConfigs).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ principalType: PrincipalType.GROUP, principalId: groupId }),
+        ]),
+      );
+      expect(result?.FOO).toEqual(expect.objectContaining({ type: EModelEndpoint.custom }));
     });
   });
 

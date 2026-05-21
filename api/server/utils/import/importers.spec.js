@@ -3,6 +3,7 @@ const path = require('path');
 const {
   EModelEndpoint,
   Constants,
+  RetentionMode,
   openAISettings,
   anthropicSettings,
 } = require('librechat-data-provider');
@@ -28,6 +29,7 @@ jest.mock('~/server/controllers/ModelController', () => ({
 jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn(),
   bulkSaveMessages: jest.fn(),
+  bulkIncrementTagCounts: jest.fn(),
 }));
 
 afterEach(() => {
@@ -1045,6 +1047,23 @@ describe('importLibreChatConvo', () => {
       const result = builder.finishConversation();
       expect(result.conversation.endpoint).toBe(EModelEndpoint.openAI);
       expect(result.conversation.model).toBe(openAISettings.model.default);
+    });
+
+    it('applies all-data retention to imported conversations and messages', () => {
+      const requestUserId = 'user-123';
+      const builder = new ImportBatchBuilder(requestUserId, {
+        retentionMode: RetentionMode.ALL,
+        temporaryChatRetention: 24,
+      });
+      builder.startConversation(EModelEndpoint.openAI);
+      const message = builder.addUserMessage('Retained import');
+      const result = builder.finishConversation('Imported retained chat');
+
+      expect(message.isTemporary).toBe(false);
+      expect(message.expiredAt).toBeInstanceOf(Date);
+      expect(result.conversation.isTemporary).toBe(false);
+      expect(result.conversation.expiredAt).toBeInstanceOf(Date);
+      expect(result.conversation.expiredAt).toBe(message.expiredAt);
     });
   });
 });

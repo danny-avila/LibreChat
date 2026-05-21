@@ -20,6 +20,12 @@ jest.mock('@librechat/data-schemas', () => ({
   getTenantId: (...args) => mockGetTenantId(...args),
 }));
 
+const mockGetCloudFrontConfig = jest.fn(() => null);
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  getCloudFrontConfig: (...args) => mockGetCloudFrontConfig(...args),
+}));
+
 const request = require('supertest');
 const express = require('express');
 const configRoute = require('../config');
@@ -187,6 +193,53 @@ describe('GET /api/config', () => {
       expect(response.body).toHaveProperty('serverDomain');
     });
 
+    it('should advertise CloudFront cookie refresh only when signed-cookie mode is active', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetCloudFrontConfig.mockReturnValue({
+        domain: 'https://cdn.example.com',
+        imageSigning: 'cookies',
+        cookieDomain: '.example.com',
+        privateKey: 'test-private-key',
+        keyPairId: 'K123ABC',
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.cloudFront).toEqual({
+        cookieRefresh: {
+          endpoint: '/api/auth/cloudfront/refresh',
+          domain: 'https://cdn.example.com',
+        },
+      });
+    });
+
+    it('should omit CloudFront cookie refresh when signed-cookie mode is inactive', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetCloudFrontConfig.mockReturnValue({
+        domain: 'https://cdn.example.com',
+        imageSigning: 'url',
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('cloudFront');
+    });
+
+    it('should omit CloudFront cookie refresh when cookie mode cannot mint cookies', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetCloudFrontConfig.mockReturnValue({
+        domain: 'https://cdn.example.com',
+        imageSigning: 'cookies',
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('cloudFront');
+    });
+
     it('should default allowAccountDeletion to true when env var is unset', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       const app = createApp(null);
@@ -267,6 +320,43 @@ describe('GET /api/config', () => {
       expect(response.body.modelSpecs).toEqual({ list: [{ name: 'test-spec' }] });
       expect(response.body.balance).toEqual({ enabled: true, startBalance: 10000 });
       expect(response.body.webSearch).toEqual({ searchProvider: 'tavily' });
+    });
+
+    it('should strip private prompt fields from model spec presets', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        modelSpecs: {
+          enforce: false,
+          prioritize: true,
+          list: [
+            {
+              name: 'guarded-spec',
+              label: 'Guarded Spec',
+              preset: {
+                endpoint: 'openAI',
+                model: 'gpt-4o',
+                promptPrefix: 'private prompt prefix',
+                instructions: 'private assistant instructions',
+                additional_instructions: 'private additional instructions',
+                system: 'private bedrock system',
+                context: 'private context',
+                examples: [{ input: { content: 'a' }, output: { content: 'b' } }],
+                greeting: 'Hello',
+              },
+            },
+          ],
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.modelSpecs.list[0].preset).toEqual({
+        endpoint: 'openAI',
+        model: 'gpt-4o',
+        greeting: 'Hello',
+      });
     });
 
     it('should include full interface config', async () => {

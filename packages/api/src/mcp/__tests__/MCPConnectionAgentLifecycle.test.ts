@@ -538,11 +538,15 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
     });
   }
 
-  function fire404(conn: MCPConnection, transport: ReturnType<typeof makeTransportStub>) {
+  function fireSSEError(
+    conn: MCPConnection,
+    transport: ReturnType<typeof makeTransportStub>,
+    code = 404,
+  ) {
     (
       conn as unknown as { setupTransportErrorHandlers: (t: unknown) => void }
     ).setupTransportErrorHandlers(transport);
-    const sseError = Object.assign(new Error('Failed to open SSE stream'), { code: 404 });
+    const sseError = Object.assign(new Error('Failed to open SSE stream'), { code });
     transport.onerror?.(sseError);
   }
 
@@ -556,7 +560,7 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
     const transport = makeTransportStub();
     const emitSpy = jest.spyOn(conn, 'emit');
 
-    fire404(conn, transport);
+    fireSSEError(conn, transport);
 
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('no session'));
     expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
@@ -567,7 +571,7 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
     const transport = makeTransportStub('existing-session-id');
     const emitSpy = jest.spyOn(conn, 'emit');
 
-    fire404(conn, transport);
+    fireSSEError(conn, transport);
 
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('session lost'));
     expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
@@ -578,9 +582,31 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
     const transport = makeTransportStub('');
     const emitSpy = jest.spyOn(conn, 'emit');
 
-    fire404(conn, transport);
+    fireSSEError(conn, transport);
 
     expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('treats a 406 before session establishment as an unsupported optional SSE stream', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub();
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    fireSSEError(conn, transport, 406);
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('no session'));
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('falls through on a 406 when a session already exists', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub('existing-session-id');
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    fireSSEError(conn, transport, 406);
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('session lost'));
+    expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
   });
 });
 

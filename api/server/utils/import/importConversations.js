@@ -2,15 +2,16 @@ const fs = require('fs').promises;
 const { resolveImportMaxFileSize } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { getImporter } = require('./importers');
+const { createImportBatchBuilder } = require('./importBatchBuilder');
 
 const maxFileSize = resolveImportMaxFileSize();
 
 /**
  * Job definition for importing a conversation.
- * @param {{ filepath: string, requestUserId: string, userRole?: string }} job
+ * @param {{ filepath: string, requestUserId: string, userRole?: string, interfaceConfig?: object }} job
  */
 const importConversations = async (job) => {
-  const { filepath, requestUserId, userRole } = job;
+  const { filepath, requestUserId, userRole, interfaceConfig } = job;
   try {
     logger.debug(`user: ${requestUserId} | Importing conversation(s) from file...`);
 
@@ -24,7 +25,12 @@ const importConversations = async (job) => {
     const fileData = await fs.readFile(filepath, 'utf8');
     const jsonData = JSON.parse(fileData);
     const importer = getImporter(jsonData);
-    await importer(jsonData, requestUserId, undefined, userRole);
+    await importer(
+      jsonData,
+      requestUserId,
+      (userId) => createImportBatchBuilder(userId, interfaceConfig),
+      userRole,
+    );
     logger.debug(`user: ${requestUserId} | Finished importing conversations`);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Failed to import conversation: `, error);
