@@ -583,6 +583,90 @@ describe('MCPServersRegistry', () => {
       expect(result['langfuse-docs'].iconPath).toBe('https://example.com/icon.svg');
     });
 
+    it('skips lazy-init for YAML server with no admin override', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'yaml',
+        updatedAt: FIXED_TIME,
+      };
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+
+      const yamlRawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+      };
+
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      const result = await registry.ensureConfigServers({
+        'langfuse-docs': yamlRawConfig,
+      });
+
+      expect(inspectSpy).not.toHaveBeenCalled();
+      expect(result['langfuse-docs']).toBeUndefined();
+    });
+
+    it('runs lazy-init for YAML server with admin override', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'yaml',
+        updatedAt: FIXED_TIME,
+      };
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+
+      const overrideRawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        iconPath: 'https://x.com/icon.svg',
+      };
+
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      await registry.ensureConfigServers({
+        'langfuse-docs': overrideRawConfig,
+      });
+
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('getServerConfig falls through to YAML on failure stub', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'yaml',
+        tools: 'yaml_tool_a',
+        updatedAt: FIXED_TIME,
+      };
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+
+      const failureStub: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'config',
+        inspectionFailed: true,
+        updatedAt: FIXED_TIME,
+      };
+
+      const result = await registry.getServerConfig('langfuse-docs', 'user-1', {
+        'langfuse-docs': failureStub,
+      });
+
+      expect(result).toBeDefined();
+      expect(result?.source).toBe('yaml');
+      expect(result?.inspectionFailed).toBeUndefined();
+      expect(result?.tools).toBe('yaml_tool_a');
+    });
+
     it('passes a fully merged config to lazy-init when override only adds new fields', async () => {
       const yamlSeed: t.ParsedServerConfig = {
         type: 'streamable-http',

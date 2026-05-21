@@ -17,6 +17,61 @@ import { withTimeout } from '~/utils';
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
 const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
 
+/**
+ * Fields an admin override can legitimately set. Used to detect whether a
+ * resolved entry differs from its YAML base so unmodified YAML servers can
+ * skip lazy-init (avoids per-request inspect storms and prevents these
+ * servers from being cached in the config tier).
+ */
+const ADMIN_CONFIGURABLE_FIELDS = [
+  'type',
+  'command',
+  'args',
+  'env',
+  'stderr',
+  'url',
+  'headers',
+  'requiresOAuth',
+  'apiKey',
+  'oauth',
+  'oauth_headers',
+  'title',
+  'description',
+  'iconPath',
+  'startup',
+  'chatMenu',
+  'serverInstructions',
+  'customUserVars',
+  'timeout',
+  'sseReadTimeout',
+  'initTimeout',
+] as const;
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== 'object') return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  if (Array.isArray(b)) return false;
+  const aObj = a as Record<string, unknown>;
+  const bObj = b as Record<string, unknown>;
+  const aKeys = Object.keys(aObj);
+  const bKeys = Object.keys(bObj);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (!Object.prototype.hasOwnProperty.call(bObj, key)) return false;
+    if (!deepEqual(aObj[key], bObj[key])) return false;
+  }
+  return true;
+}
+
 const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
   const raw = process.env.MCP_INIT_TIMEOUT_MS;
   if (raw == null) {
@@ -135,14 +190,19 @@ export class MCPServersRegistry {
   /**
    * Returns the config for a single server. When `configServers` is provided, config-source
    * servers are resolved from it directly (no global state, no cross-tenant race).
+   *
+   * Failure stubs in `configServers` (`inspectionFailed: true`) are ignored so the healthy
+   * YAML/DB base entry serves the tool-use path during the retry window. This mirrors the
+   * overlay guard in `getAllServerConfigs`.
    */
   public async getServerConfig(
     serverName: string,
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<t.ParsedServerConfig | undefined> {
-    if (configServers?.[serverName]) {
-      return configServers[serverName];
+    const candidate = configServers?.[serverName];
+    if (candidate && !candidate.inspectionFailed) {
+      return candidate;
     }
 
     const cacheKey = this.getReadThroughCacheKey(serverName, userId);
@@ -415,6 +475,9 @@ export class MCPServersRegistry {
 
     const settled = await Promise.allSettled(
       Object.entries(resolvedMcpConfig).map(async ([serverName, rawConfig]) => {
+        if (await this.isUnmodifiedYamlServer(serverName, rawConfig)) {
+          return;
+        }
         const parsed = await this.ensureSingleConfigServer(serverName, rawConfig);
         if (parsed) {
           result[serverName] = parsed;
@@ -428,6 +491,27 @@ export class MCPServersRegistry {
     }
 
     return result;
+  }
+
+  /**
+   * Returns true when `rawConfig` matches the cached YAML entry on every
+   * admin-configurable field. Used to skip lazy-init when an admin has not
+   * actually overridden anything for a YAML-defined server, so the YAML entry
+   * is not unnecessarily re-inspected or shadowed in the config tier.
+   */
+  private async isUnmodifiedYamlServer(
+    serverName: string,
+    rawConfig: t.MCPOptions,
+  ): Promise<boolean> {
+    const yamlEntry = await this.cacheConfigsRepo.get(serverName);
+    if (!yamlEntry || yamlEntry.source !== 'yaml') {
+      return false;
+    }
+    const yamlRecord = yamlEntry as unknown as Record<string, unknown>;
+    const rawRecord = rawConfig as unknown as Record<string, unknown>;
+    return ADMIN_CONFIGURABLE_FIELDS.every((field) =>
+      deepEqual(yamlRecord[field], rawRecord[field]),
+    );
   }
 
   /**

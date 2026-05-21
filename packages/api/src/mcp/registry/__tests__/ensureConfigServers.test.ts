@@ -88,7 +88,7 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     ).toEqual({});
   });
 
-  it('should process YAML-named servers alongside config-only servers', async () => {
+  it('should skip unchanged YAML-named servers but still process config-only servers', async () => {
     await registry.addServer('yaml_server', yamlConfig, 'CACHE');
     inspectSpy.mockClear();
 
@@ -98,10 +98,18 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     });
 
     expect(result).toHaveProperty('config_server');
-    expect(result).toHaveProperty('yaml_server');
+    expect(result).not.toHaveProperty('yaml_server');
+    expect(inspectSpy).toHaveBeenCalledTimes(1);
+    expect(inspectSpy).toHaveBeenCalledWith(
+      'config_server',
+      sseConfig,
+      undefined,
+      undefined,
+      undefined,
+    );
   });
 
-  it('should lazy-init YAML-named servers that appear in the merged config', async () => {
+  it('should skip lazy-init for YAML-named servers with no admin override', async () => {
     await registry.addServer('yaml_a', yamlConfig, 'CACHE');
     await registry.addServer('yaml_b', yamlConfig, 'CACHE');
     inspectSpy.mockClear();
@@ -111,9 +119,22 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       yaml_b: yamlConfig,
     });
 
+    expect(result).not.toHaveProperty('yaml_a');
+    expect(result).not.toHaveProperty('yaml_b');
+    expect(inspectSpy).not.toHaveBeenCalled();
+  });
+
+  it('should lazy-init YAML-named server when admin override changes a field', async () => {
+    await registry.addServer('yaml_a', yamlConfig, 'CACHE');
+    inspectSpy.mockClear();
+
+    const overrideConfig: t.MCPOptions = { ...yamlConfig, iconPath: 'https://x.com/icon.svg' };
+    const result = await registry.ensureConfigServers({
+      yaml_a: overrideConfig,
+    });
+
     expect(result).toHaveProperty('yaml_a');
-    expect(result).toHaveProperty('yaml_b');
-    expect(inspectSpy).toHaveBeenCalledTimes(2);
+    expect(inspectSpy).toHaveBeenCalledTimes(1);
   });
 
   it('should lazy-initialize a config-source server and tag source as config', async () => {
