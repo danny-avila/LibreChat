@@ -74,7 +74,7 @@ jobs:
         uses: actions/checkout@v6
 
       # Some of these actions require Node 24, so we set it up early
-      - name: Use Node.js 24.x 
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -94,7 +94,7 @@ jobs:
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
-      
+
       # Turn off s3 in CI (since we don't have credentials, and it adds complexity to the tests)
       - name: Create CI config override
         run: |
@@ -111,7 +111,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-${{ github.run_id }}
-          path: /e2e/playwright-report/
+          path: e2e/playwright-report/
           retention-days: 30
 
       - name: Upload test results
@@ -119,5 +119,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ github.run_id }}
-          path: /e2e/specs/.test-results/
+          path: e2e/specs/.test-results/
           retention-days: 30
