@@ -39,7 +39,7 @@
         },
         {
           "name": "MONGO_URI",
-          "value": "mongodb://juristai:juristai@juristai-librechat-docdb.cluster-c340uw66gy3h.us-east-1.docdb.amazonaws.com:27017/?tls=true&tlsCAFile=global-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false"
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:730335261767:secret:juristai/prod/librechat/mongo_uri-73sRPq"
         },
         {
           "name": "DEBUG_OPENAI",
@@ -130,6 +130,6 @@
   "requiresCompatibilities": [
     "FARGATE"
   ],
-  "cpu": "1024",
-  "memory": "2048"
+  "cpu": "512",
+  "memory": "1024"
 }

@@ -2,8 +2,8 @@ version: 1
 task_definition:
   services:
     api:
-      cpu_shares: 256
-      mem_limit: 512m
+      cpu_shares: 512
+      mem_limit: 1024m
       task_role_arn: arn:aws:iam::730335261767:role/ecsTaskExecutionRole
       execution_role: arn:aws:iam::730335261767:role/ecsTaskExecutionRole
       family: librechat-task
@@ -15,8 +15,8 @@ task_definition:
           awslogs-region: us-east-1
           awslogs-stream-prefix: librechat-container
   task_size:
-    mem_limit: 512m
-    cpu_limit: 256
+    mem_limit: 1024m
+    cpu_limit: 512
   requires_compatibilities:
     - FARGATE
 run_params:
