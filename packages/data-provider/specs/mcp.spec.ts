@@ -57,6 +57,18 @@ describe('MCPServerUserInputSchema', () => {
   });
 
   describe('proxy field restrictions', () => {
+    it('should accept admin-configured proxies for SSE', () => {
+      const result = SSEOptionsSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        proxy: 'http://proxy.example.com:8080',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.proxy).toBe('http://proxy.example.com:8080');
+      }
+    });
+
     it('should accept admin-configured proxies for streamable-http', () => {
       const result = StreamableHTTPOptionsSchema.safeParse({
         type: 'streamable-http',
@@ -78,7 +90,16 @@ describe('MCPServerUserInputSchema', () => {
       expect(result.success).toBe(false);
     });
 
-    it('should reject proxy configuration from user input', () => {
+    it('should reject SSE proxy configuration from user input', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        proxy: 'http://proxy.example.com:8080',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject streamable-http proxy configuration from user input', () => {
       const result = MCPServerUserInputSchema.safeParse({
         type: 'streamable-http',
         url: 'https://mcp-server.com/http',
