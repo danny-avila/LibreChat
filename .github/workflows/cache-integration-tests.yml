@@ -2,12 +2,6 @@ name: Cache Integration Tests
 
 on:
   pull_request:
-    branches:
-      - main
-      - dev
-      - dev-staging
-      - release/*
-      - newjersey # NJ: our primary branch
     paths:
       - 'packages/api/src/cache/**'
       - 'packages/api/src/cluster/**'
@@ -18,6 +12,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   cache_integration_tests:

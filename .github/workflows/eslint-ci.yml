@@ -2,15 +2,13 @@ name: ESLint Code Quality Checks
 
 on:
   pull_request:
-    branches:
-      - main
-      - dev
-      - dev-staging
-      - release/*
-      - newjersey # NJ: our primary branch
     paths:
       - 'api/**'
       - 'client/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   eslint_checks:

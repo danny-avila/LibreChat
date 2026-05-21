@@ -1,18 +1,16 @@
 name: Backend Unit Tests
 on:
   pull_request:
-    branches:
-      - main
-      - dev
-      - dev-staging
-      - release/*
-      - newjersey # NJ: our primary branch
     paths:
       - 'api/**'
       - 'packages/**'
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   NODE_ENV: CI

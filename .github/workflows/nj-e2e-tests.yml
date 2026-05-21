@@ -27,6 +27,10 @@ on:
         required: false
         default: 'Manual e2e test run'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 # A bunch of variables we need, some might get flagged as secrets, but they aren't
 # (they're just config values that we need to run the tests, and don't contain any sensitive info)
 env:
