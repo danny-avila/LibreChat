@@ -158,7 +158,7 @@ export async function loadToolDefinitions(
         if (toolDef?.function) {
           mcpToolDefs.push({
             name: actualToolName,
-            description: toolDef.function.description,
+            description: toolDef.function.description || undefined,
             parameters: toolDef.function.parameters
               ? normalizeJsonSchema(resolveJsonSchemaRefs(toolDef.function.parameters))
               : undefined,
@@ -173,7 +173,7 @@ export async function loadToolDefinitions(
     if (toolDef?.function) {
       mcpToolDefs.push({
         name: toolName,
-        description: toolDef.function.description,
+        description: toolDef.function.description || undefined,
         parameters: toolDef.function.parameters
           ? normalizeJsonSchema(resolveJsonSchemaRefs(toolDef.function.parameters))
           : undefined,
