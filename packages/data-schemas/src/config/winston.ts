@@ -4,8 +4,6 @@ import { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat } from '
 import { getTenantId, getUserId, getRequestId, SYSTEM_TENANT_ID } from './tenantContext';
 import { getLogDirectory } from './utils';
 
-const logDir = getLogDirectory();
-
 const { NODE_ENV, DEBUG_LOGGING, CONSOLE_JSON, DEBUG_CONSOLE, LOG_TO_FILE } = process.env;
 
 const useConsoleJson = typeof CONSOLE_JSON === 'string' && CONSOLE_JSON.toLowerCase() === 'true';
@@ -93,6 +91,8 @@ const fileFormat = winston.format.combine(
 const transports: winston.transport[] = [];
 
 if (useFileLogging) {
+  const logDir = getLogDirectory();
+
   transports.push(
     new winston.transports.DailyRotateFile({
       level: 'error',
@@ -104,20 +104,20 @@ if (useFileLogging) {
       format: winston.format.combine(fileFormat, winston.format.json()),
     }),
   );
-}
 
-if (useFileLogging && useDebugLogging) {
-  transports.push(
-    new winston.transports.DailyRotateFile({
-      level: 'debug',
-      filename: `${logDir}/debug-%DATE%.log`,
-      datePattern: 'YYYY-MM-DD',
-      zippedArchive: true,
-      maxSize: '20m',
-      maxFiles: '14d',
-      format: winston.format.combine(fileFormat, debugTraverse),
-    }),
-  );
+  if (useDebugLogging) {
+    transports.push(
+      new winston.transports.DailyRotateFile({
+        level: 'debug',
+        filename: `${logDir}/debug-%DATE%.log`,
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '14d',
+        format: winston.format.combine(fileFormat, debugTraverse),
+      }),
+    );
+  }
 }
 
 const consoleFormat = winston.format.combine(

@@ -2,8 +2,6 @@ import winston from 'winston';
 import 'winston-daily-rotate-file';
 import { getLogDirectory } from './utils';
 
-const logDir = getLogDirectory();
-
 const { NODE_ENV, DEBUG_LOGGING = 'false', LOG_TO_FILE } = process.env;
 
 const useDebugLogging =
@@ -46,6 +44,8 @@ const logLevel = useDebugLogging ? 'debug' : 'error';
 const transports: winston.transport[] = [];
 
 if (useFileLogging) {
+  const logDir = getLogDirectory();
+
   transports.push(
     new winston.transports.DailyRotateFile({
       level: logLevel,

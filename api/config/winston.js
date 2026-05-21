@@ -42,8 +42,6 @@ const getLogDir = () => {
   return path.join(__dirname, '..', 'logs');
 };
 
-const logDir = getLogDir();
-
 const {
   NODE_ENV,
   DEBUG_LOGGING = true,
@@ -142,6 +140,8 @@ const fileFormat = winston.format.combine(
 const transports = [];
 
 if (useFileLogging) {
+  const logDir = getLogDir();
+
   transports.push(
     new winston.transports.DailyRotateFile({
       level: 'error',
@@ -153,20 +153,20 @@ if (useFileLogging) {
       format: fileFormat,
     }),
   );
-}
 
-if (useFileLogging && useDebugLogging) {
-  transports.push(
-    new winston.transports.DailyRotateFile({
-      level: 'debug',
-      filename: `${logDir}/debug-%DATE%.log`,
-      datePattern: 'YYYY-MM-DD',
-      zippedArchive: true,
-      maxSize: '20m',
-      maxFiles: '14d',
-      format: winston.format.combine(fileFormat, debugTraverse),
-    }),
-  );
+  if (useDebugLogging) {
+    transports.push(
+      new winston.transports.DailyRotateFile({
+        level: 'debug',
+        filename: `${logDir}/debug-%DATE%.log`,
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '14d',
+        format: winston.format.combine(fileFormat, debugTraverse),
+      }),
+    );
+  }
 }
 
 const consoleFormat = winston.format.combine(

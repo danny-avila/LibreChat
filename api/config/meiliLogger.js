@@ -29,8 +29,6 @@ const getLogDir = () => {
   return path.join(__dirname, '..', 'logs');
 };
 
-const logDir = getLogDir();
-
 const { NODE_ENV, DEBUG_LOGGING = false, LOG_TO_FILE = true } = process.env;
 
 const useDebugLogging =
@@ -75,6 +73,8 @@ const logLevel = useDebugLogging ? 'debug' : 'error';
 const transports = [];
 
 if (useFileLogging) {
+  const logDir = getLogDir();
+
   transports.push(
     new winston.transports.DailyRotateFile({
       level: logLevel,
