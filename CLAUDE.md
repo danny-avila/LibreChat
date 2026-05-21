@@ -1,5 +1,56 @@
 # LibreChat
 
+> ⚠️ **Active fork context — Graupel.** This repository is being forked into a commercial SaaS named **Graupel** (multi-LLM "AI Workspace" subscription, overseas English market, use.ai-style positioning). Until stage 1 of the fork lands, the upstream LibreChat guidance below remains authoritative for code style and workspace boundaries. See the "Graupel Fork Context" section below for active project context, divergences from upstream, and links to design specs.
+
+---
+
+## Graupel Fork Context
+
+**Source of truth**: design specs at [docs/superpowers/specs/](docs/superpowers/specs/).
+
+| Spec | Scope |
+|---|---|
+| [graupel-mvp-design](docs/superpowers/specs/2026-05-21-graupel-mvp-design.md) | Top-level design, scope, pricing, risks, metrics |
+| [stage-1-fork-rebrand](docs/superpowers/specs/2026-05-21-graupel-stage-1-fork-rebrand.md) | Fork repo, brand replacement, deployment pipeline (Hetzner + Coolify + Cloudflare + R2 + Atlas) |
+| [stage-2-magic-link](docs/superpowers/specs/2026-05-21-graupel-stage-2-magic-link.md) | Email magic-link auth with Resend, anti-enumeration, email-prefetch mitigation |
+| [stage-3-plan-gating](docs/superpowers/specs/2026-05-21-graupel-stage-3-plan-gating.md) | Plan / Quota / Gating with event-driven `applyPlanChange()`, **no payment integration** |
+| [stage-4-marketing](docs/superpowers/specs/2026-05-21-graupel-stage-4-marketing.md) | Landing / pricing / legal / waitlist pages with SSG (vike) |
+| [stage-5-launch](docs/superpowers/specs/2026-05-21-graupel-stage-5-launch.md) | Sentry, PostHog, MongoDB backups, email automation, invite-only beta launch |
+
+**Always read the relevant stage spec before implementing in that area.** Don't infer Graupel decisions from CLAUDE.md alone — the specs cover edge cases, security, and rationale.
+
+### Divergences from upstream LibreChat
+
+Design decisions that override or extend the upstream guidance:
+
+- **Repository will be renamed** to `graupel` (stage 1). Brand strings and visible UI change; internal schema names and DB collection names stay LibreChat-style to avoid migrations.
+- **Endpoints cut from MVP**: Bedrock, Vertex, Ollama, OpenAI Assistants. Their `EModelEndpoint` enum values stay (for old conversation deserialization), but implementations and UI entry points are removed.
+- **Auth providers cut**: Discord, Apple, Facebook, SAML, LDAP, OpenID.
+- **Auth providers kept**: Local password (UI-collapsed fallback), Google, GitHub, plus new email magic link (stage 2).
+- **Agents + MCP**: kept but UI default-hidden; surfaced only on Pro plan as a power-user feature.
+- **No Stripe / payment until post-MVP stage 6.** All plan changes during MVP go through admin API (or CLI fallback). Do not introduce `stripe-node`, webhook handlers, or `stripe_customer_id` fields before stage 6.
+- **Plan changes are event-driven**: any source (admin API, CLI, future Stripe webhook) must call `applyPlanChange()`. Direct `Subscription.create / update` outside that entry point is forbidden — verified by grep at stage 3 acceptance.
+- **Quota check-and-increment must be atomic** (single `findOneAndUpdate` with `$inc` and upper-bound filter). Never read-then-write — race conditions will let users overrun their plan.
+- **Cost auditing via `UsageLog`** (per `user_id × model_id × day`). Internal only; never exposed to users.
+
+### Code locations for Graupel-specific work
+
+New business code goes into existing workspaces — no new top-level packages:
+
+- Magic-link service, billing module (`plans.ts`, `applyPlanChange.ts`, `gating.ts`, `modelPricing.ts`), admin routes, marketing endpoints → [packages/api/src/](packages/api/src/) (TypeScript)
+- New schemas (`LoginToken`, `Subscription`, `Quota`, `UsageLog`, `AuditLog`, `WaitlistEntry`, `ContactSubmission`) → [packages/data-schemas/src/schema/](packages/data-schemas/src/schema/)
+- Shared types (`PlanCode`, `CostTier`, billing types) → [packages/data-provider/src/types/](packages/data-provider/src/types/)
+- Frontend billing UI (`PlanBadge`, `QuotaBar`, `UpgradeModal`, `ModelLockTooltip`), marketing pages, admin UI → [client/src/](client/src/)
+- Thin Express wrappers calling into `packages/api` → [api/server/routes/](api/server/routes/)
+
+### Investment & cadence
+
+- Solo developer, ~10 hours/week. Each stage sized to fit 20-40 hours.
+- Total MVP budget: 105-130 hours (~10.5-13 weeks).
+- After stage 5: invite-only beta for 1-2 months, then evaluate stage 6 (Stripe) based on retention/activation metrics in [design §7.2](docs/superpowers/specs/2026-05-21-graupel-mvp-design.md#72-mvpinvite-only-beta30-天目标).
+
+---
+
 ## Project Overview
 
 LibreChat is a monorepo with the following key workspaces:
