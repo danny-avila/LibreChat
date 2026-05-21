@@ -11,6 +11,18 @@ type GoogleThinkingConfig = {
   thinkingLevel?: GoogleThinkingLevel;
 };
 
+const GEMINI_3_5_FLASH = 'gemini-3.5-flash';
+const GEMINI_3_5_FLASH_DEFAULT_THINKING_LEVEL: GoogleThinkingLevel = 'MEDIUM';
+const gemini35FlashLegacyParams = [
+  'temperature',
+  'topP',
+  'topK',
+  'top_p',
+  'top_k',
+  'thinkingBudget',
+  'thinking_budget',
+] as const;
+
 const googleThinkingLevels = new Set<GoogleThinkingLevel>([
   'THINKING_LEVEL_UNSPECIFIED',
   'MINIMAL',
@@ -116,6 +128,11 @@ function normalizeGoogleThinkingLevel(value: unknown): GoogleThinkingLevel | und
   return normalized;
 }
 
+function isGemini35Flash(model: string) {
+  const normalized = model.toLowerCase();
+  return normalized === GEMINI_3_5_FLASH || normalized.endsWith(`/${GEMINI_3_5_FLASH}`);
+}
+
 function getVertexMultiRegionEndpoint(location: string): string | undefined {
   return vertexMultiRegionEndpoints.get(location);
 }
@@ -126,6 +143,43 @@ function sanitizeModelOptions(modelOptions: Partial<t.GoogleParameters> | undefi
     delete sanitizedOptions[param];
   });
   return sanitizedOptions;
+}
+
+function applyGemini35FlashOverrides({
+  config,
+  provider,
+  thinking,
+}: {
+  config: GoogleClientOptions | VertexAIClientOptions;
+  provider: Providers;
+  thinking: boolean;
+}) {
+  const mutableConfig = config as Record<string, unknown>;
+  const model = mutableConfig.model;
+  if (typeof model !== 'string' || !isGemini35Flash(model)) {
+    return;
+  }
+
+  gemini35FlashLegacyParams.forEach((param) => {
+    delete mutableConfig[param];
+  });
+
+  if (!thinking) {
+    return;
+  }
+
+  const configWithThinking = config as { thinkingConfig?: GoogleThinkingConfig };
+  if (!configWithThinking.thinkingConfig) {
+    configWithThinking.thinkingConfig = { includeThoughts: true };
+  }
+
+  if (!configWithThinking.thinkingConfig.thinkingLevel) {
+    configWithThinking.thinkingConfig.thinkingLevel = GEMINI_3_5_FLASH_DEFAULT_THINKING_LEVEL;
+  }
+
+  if (provider === Providers.VERTEXAI) {
+    (config as VertexAIClientOptions).includeThoughts = true;
+  }
 }
 
 function isAllowedVertexEndpoint(endpoint: string): boolean {
@@ -452,6 +506,12 @@ export function getGoogleConfig(
       }
     });
   }
+
+  applyGemini35FlashOverrides({
+    config: llmConfig,
+    provider,
+    thinking,
+  });
 
   if (provider === Providers.VERTEXAI && shouldSyncVertexEndpoint && !hasCustomVertexEndpoint) {
     applyVertexMultiRegionEndpoint(llmConfig as VertexAIClientOptions & { endpoint?: string });
