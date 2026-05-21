@@ -20,7 +20,7 @@ const TENANT_A = 'tenant-a';
 const TENANT_B = 'tenant-b';
 
 async function withTenant<T>(tenantId: string | undefined, fn: () => Promise<T>): Promise<T> {
-  return tenantStorage.run({ tenantId }, fn);
+  return tenantStorage.run({ tenantId }, async () => fn());
 }
 
 async function seedGroupAndPrompt(opts: { tenantId?: string; promptTenantId?: string } = {}) {
@@ -130,21 +130,23 @@ describe('getPromptGroup', () => {
       const { group } = await seedGroupAndPrompt({ tenantId: TENANT_A });
       const aggregateSpy = jest.spyOn(PromptGroup, 'aggregate');
 
-      await withTenant(TENANT_A, () => methods.getPromptGroup({ _id: group._id }));
+      try {
+        await withTenant(TENANT_A, () => methods.getPromptGroup({ _id: group._id }));
 
-      expect(aggregateSpy).toHaveBeenCalledTimes(1);
-      const pipeline: PipelineStage[] = aggregateSpy.mock.calls[0][0];
+        expect(aggregateSpy).toHaveBeenCalledTimes(1);
+        const pipeline: PipelineStage[] = aggregateSpy.mock.calls[0][0];
 
-      for (const stage of pipeline) {
-        if (!('$lookup' in stage)) continue;
-        const lookup = stage.$lookup;
-        expect(lookup.let).toBeUndefined();
-        expect(lookup.pipeline).toBeUndefined();
-        expect(lookup.localField).toBeDefined();
-        expect(lookup.foreignField).toBeDefined();
+        for (const stage of pipeline) {
+          if (!('$lookup' in stage)) continue;
+          const lookup = stage.$lookup;
+          expect(lookup.let).toBeUndefined();
+          expect(lookup.pipeline).toBeUndefined();
+          expect(lookup.localField).toBeDefined();
+          expect(lookup.foreignField).toBeDefined();
+        }
+      } finally {
+        aggregateSpy.mockRestore();
       }
-
-      aggregateSpy.mockRestore();
     });
   });
 });
