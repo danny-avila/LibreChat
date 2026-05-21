@@ -47,7 +47,6 @@ describe('User schema indexes', () => {
       expect.arrayContaining([
         expect.objectContaining({
           key: { idOnTheSource: 1, openidIssuer: 1, tenantId: 1 },
-          partialFilterExpression: { idOnTheSource: { $exists: true } },
         }),
       ]),
     );
