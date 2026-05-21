@@ -35,3 +35,20 @@ kind: Secret
 3. Apply the Secret to the Cluster
 
 4. Fill out values.yaml and apply the Chart to the Cluster
+
+## Admin Panel SSO
+
+When deploying the admin panel at a separate URL, set `librechat.adminPanelUrl`
+to the external admin panel origin:
+
+```yaml
+librechat:
+  adminPanelUrl: https://admin.example.com
+```
+
+This renders `ADMIN_PANEL_URL` for LibreChat's admin OAuth flow. For OpenID SSO,
+also register this LibreChat callback URL with your identity provider:
+
+```text
+https://<librechat-domain>/api/admin/oauth/openid/callback
+```
