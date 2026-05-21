@@ -100,6 +100,14 @@ export default function useStepHandler({
    */
   const knownSubagentAtomKeys = useRef(new Set<string>());
 
+  const getCurrentMessages = useCallback(
+    (messages: TMessage[]) => {
+      const freshMessages = getMessages();
+      return freshMessages && freshMessages.length >= messages.length ? freshMessages : messages;
+    },
+    [getMessages],
+  );
+
   /** Both content parts and ticker lines are aggregated incrementally
    *  into the atom as each `ON_SUBAGENT_UPDATE` arrives — we never
    *  retain the raw event array, so no rolling window is needed. A
@@ -517,7 +525,7 @@ export default function useStepHandler({
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || messages;
+          const currentMessages = getCurrentMessages(messages);
           const hasResponseMessage = currentMessages.some(
             (msg) => msg.messageId === responseMessageId,
           );
@@ -730,7 +738,7 @@ export default function useStepHandler({
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || messages;
+          const currentMessages = getCurrentMessages(messages);
           const hasResponseMessage = currentMessages.some(
             (msg) => msg.messageId === responseMessageId,
           );
@@ -779,7 +787,7 @@ export default function useStepHandler({
           );
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || messages;
+          const currentMessages = getCurrentMessages(messages);
           const hasResponseMessage = currentMessages.some(
             (msg) => msg.messageId === responseMessageId,
           );
@@ -901,6 +909,7 @@ export default function useStepHandler({
       announcePolite,
       setMessages,
       calculateContentIndex,
+      getCurrentMessages,
       applySubagentUpdate,
     ],
   );

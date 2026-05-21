@@ -291,12 +291,46 @@ describe('useStepHandler', () => {
 
       const responseMsg = currentMessages.find((m) => !m.isCreatedByUser);
       expect(responseMsg?.content).toHaveLength(2);
-      expect(responseMsg?.content?.[0]?.tool_call?.name).toBe(
-        `oauth${Constants.mcp_delimiter}ELI`,
-      );
+      expect(responseMsg?.content?.[0]?.tool_call?.name).toBe(`oauth${Constants.mcp_delimiter}ELI`);
       expect(responseMsg?.content?.[1]?.tool_call?.name).toBe(
         `oauth${Constants.mcp_delimiter}Vespa`,
       );
+    });
+
+    it('should not replace the message list from a shorter refresh during tool call steps', () => {
+      const userMessage = createUserMessage();
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValueOnce([userMessage, responseMessage]).mockReturnValueOnce([]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        runId: responseMessage.messageId,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-eli',
+              name: `oauth${Constants.mcp_delimiter}ELI`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: runStep },
+          createSubmission({ userMessage, initialResponse: responseMessage }),
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      expect(lastCall.map((message: TMessage) => message.messageId)).toEqual([
+        userMessage.messageId,
+        responseMessage.messageId,
+      ]);
     });
 
     it('should replay buffered deltas after registering step', () => {

@@ -53,8 +53,22 @@ async function reinitMCPServer({
       providedConfig ?? (await registry.getServerConfig(serverName, user?.id, configServers));
     if (serverConfig?.inspectionFailed) {
       if (serverConfig.source === 'config') {
+        if (!serverConfig.requiresOAuth) {
+          logger.info(
+            `[MCP Reinitialize] Config-source server ${serverName} has inspectionFailed — retry handled by config cache`,
+          );
+          return {
+            availableTools: null,
+            success: false,
+            message: `MCP server '${serverName}' is still unreachable`,
+            oauthRequired: false,
+            serverName,
+            oauthUrl: null,
+            tools: null,
+          };
+        }
         logger.info(
-          `[MCP Reinitialize] Config-source server ${serverName} has inspectionFailed — attempting direct user reinitialization`,
+          `[MCP Reinitialize] OAuth config-source server ${serverName} has inspectionFailed — attempting direct user reinitialization`,
         );
       } else {
         logger.info(
