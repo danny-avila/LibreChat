@@ -22,6 +22,7 @@ import type {
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
+import { isAddressAllowed } from '~/auth/domain';
 import { runOutsideTracing } from '~/utils/tracing';
 import { sanitizeUrlForLogging } from './utils';
 import { withTimeout } from '~/utils/promise';
@@ -741,7 +742,6 @@ function matchesNoProxyIPPattern(hostname: string, entryHostname: string): boole
 function getProxyEntryPort(entry: string): {
   hostname: string;
   port: number;
-  matchSubdomains: boolean;
 } {
   const trimmed = entry.trim();
   const bracketed = trimmed.match(/^\[([^\]]+)\](?::(\d+))?$/);
@@ -749,18 +749,15 @@ function getProxyEntryPort(entry: string): {
     return {
       hostname: bracketed[1].toLowerCase(),
       port: bracketed[2] ? Number.parseInt(bracketed[2], 10) : 0,
-      matchSubdomains: false,
     };
   }
 
   const separatorCount = (trimmed.match(/:/g) ?? []).length;
   const parsed = separatorCount === 1 ? trimmed.match(/^(.+):(\d+)$/) : null;
   const hostname = (parsed ? parsed[1] : trimmed).replace(/^\[|\]$/g, '').toLowerCase();
-  const matchSubdomains = hostname.startsWith('*.') || hostname.startsWith('.');
   return {
-    hostname: hostname.replace(/^\*\./, '').replace(/^\./, ''),
+    hostname: hostname.replace(/^\*?\./, ''),
     port: parsed ? Number.parseInt(parsed[2], 10) : 0,
-    matchSubdomains,
   };
 }
 
@@ -795,13 +792,7 @@ function shouldBypassEnvProxy(url: URL, noProxy?: string): boolean {
     if (matchesNoProxyIPPattern(hostname, proxyEntry.hostname)) {
       return true;
     }
-    if (proxyEntry.matchSubdomains) {
-      if (hostname.endsWith(`.${proxyEntry.hostname}`)) {
-        return true;
-      }
-      continue;
-    }
-    if (hostname === proxyEntry.hostname) {
+    if (hostname === proxyEntry.hostname || hostname.endsWith(`.${proxyEntry.hostname}`)) {
       return true;
     }
   }
@@ -890,6 +881,10 @@ async function assertProxiedRequestTargetAllowed(
 
   const targetUrl = new URL(urlString);
   const port = getUrlPort(targetUrl);
+  if (isAddressAllowed(targetUrl.hostname, allowedAddresses, port)) {
+    return;
+  }
+
   const isBlockedTarget =
     isSSRFTarget(targetUrl.hostname, allowedAddresses, port) ||
     (await resolveHostnameSSRF(targetUrl.hostname, allowedAddresses, port));

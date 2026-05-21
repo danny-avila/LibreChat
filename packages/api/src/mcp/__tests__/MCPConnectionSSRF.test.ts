@@ -548,6 +548,60 @@ async function createHeaderCaptureServer(): Promise<HeaderCaptureServer> {
   };
 }
 
+async function createTunnelProxyCaptureServer(): Promise<HeaderCaptureServer> {
+  const headers: http.IncomingHttpHeaders[] = [];
+  const requests: CapturedRequest[] = [];
+  const server = http.createServer((_req, res) => {
+    res.writeHead(502);
+    res.end();
+  });
+  server.on('connect', (req, clientSocket, head) => {
+    headers.push({ ...req.headers });
+    requests.push({
+      method: 'CONNECT',
+      headers: { ...req.headers },
+      body: req.url ?? '',
+    });
+
+    let buffer = Buffer.from(head);
+    let responded = false;
+    const respondIfRequestComplete = () => {
+      if (responded || !buffer.includes('\r\n\r\n')) {
+        return;
+      }
+      responded = true;
+      const requestLine = buffer.toString('utf8').split('\r\n')[0] ?? '';
+      requests.push({
+        method: requestLine.split(' ')[0] ?? '',
+        headers: {},
+        body: requestLine,
+      });
+      clientSocket.write(
+        'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}',
+      );
+      clientSocket.end();
+    };
+
+    clientSocket.on('error', () => undefined);
+    clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+    clientSocket.on('data', (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      respondIfRequestComplete();
+    });
+    respondIfRequestComplete();
+  });
+
+  const destroySockets = trackSockets(server);
+  const port = await getFreePort();
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return {
+    url: `http://127.0.0.1:${port}/`,
+    receivedHeaders: headers,
+    receivedRequests: requests,
+    close: destroySockets,
+  };
+}
+
 async function createRawResponseServer(handler: http.RequestListener): Promise<RawResponseServer> {
   const server = http.createServer(handler);
   const destroySockets = trackSockets(server);
@@ -1431,7 +1485,7 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
-  it('should keep bare and wildcard NO_PROXY host semantics distinct', async () => {
+  it('should match NO_PROXY host entries like undici env proxy agents', async () => {
     const originalEnv = snapshotProxyEnv();
     clearProxyEnv();
     process.env.HTTPS_PROXY = 'http://https-proxy.example.com:8080';
@@ -1460,14 +1514,26 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
         'Agent',
       ]);
       await expectDispatcherNamesForUrl('example.com', 'https://api.example.com/mcp', [
-        'ProxyAgent',
-        'ProxyAgent',
+        'Agent',
+        'Agent',
       ]);
       await expectDispatcherNamesForUrl('*.example.com', 'https://api.example.com/mcp', [
         'Agent',
         'Agent',
       ]);
       await expectDispatcherNamesForUrl('*.example.com', 'https://example.com/mcp', [
+        'Agent',
+        'Agent',
+      ]);
+      await expectDispatcherNamesForUrl('.example.com', 'https://example.com/mcp', [
+        'Agent',
+        'Agent',
+      ]);
+      await expectDispatcherNamesForUrl('.example.com', 'https://api.example.com/mcp', [
+        'Agent',
+        'Agent',
+      ]);
+      await expectDispatcherNamesForUrl('example.com', 'https://badexample.com/mcp', [
         'ProxyAgent',
         'ProxyAgent',
       ]);
@@ -1702,6 +1768,41 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       /could not be resolved before proxying/,
     );
     expect(mockedLookup).toHaveBeenCalledWith('proxy-only.internal', { all: true });
+  });
+
+  it('should skip proxied DNS preflight for explicitly allowed target hosts', async () => {
+    const proxy = await createTunnelProxyCaptureServer();
+    mockedResolveHostnameSSRF.mockClear();
+    mockedLookup.mockClear();
+    mockedLookup.mockRejectedValueOnce(
+      Object.assign(new Error('getaddrinfo ENOTFOUND'), {
+        code: 'ENOTFOUND',
+      }),
+    );
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-proxy-ssrf-allowed-dns',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/mcp',
+          proxy: proxy.url,
+        },
+        useSSRFProtection: true,
+        allowedAddresses: ['proxy-only.internal:80'],
+      });
+
+      const customFetch = getCustomFetch(conn);
+      const response = await customFetch('http://proxy-only.internal/mcp');
+
+      expect(response.status).toBe(200);
+      await response.body?.cancel().catch(() => undefined);
+      expect(proxy.receivedRequests[0]?.method).toBe('CONNECT');
+      expect(mockedResolveHostnameSSRF).not.toHaveBeenCalled();
+      expect(mockedLookup).not.toHaveBeenCalled();
+    } finally {
+      await proxy.close();
+    }
   });
 
   it.each<['string' | 'URL' | 'Request']>([['string'], ['URL'], ['Request']])(
