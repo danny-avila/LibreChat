@@ -27,9 +27,9 @@ function Footer({ className }: { className?: string }) {
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : '[LibreChat ' +
+      : '[Graupel ' +
         Constants.VERSION +
-        '](https://librechat.ai) - ' +
+        '](https://graupel.chat) - ' +
         localize('com_ui_latest_footer')
   ).split('|');
 
