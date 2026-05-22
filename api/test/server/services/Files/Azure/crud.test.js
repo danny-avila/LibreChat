@@ -2,7 +2,12 @@ const {
   needsRefreshAzure,
   extractBlobPathFromAzureUrl,
   getNewAzureURL,
+  getSignedAzureURL,
 } = require('../../../../../server/services/Files/Azure/crud');
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+}));
 
 jest.mock('@librechat/api', () => ({
   getAzureContainerClient: jest.fn(),
@@ -10,6 +15,15 @@ jest.mock('@librechat/api', () => ({
 }));
 
 const { getAzureContainerClient } = require('@librechat/api');
+
+// A syntactically-valid connection string accepted by BlobServiceClient.fromConnectionString.
+// AccountKey is the base64-encoding of 32 zero bytes, which is the minimum valid shape
+// for StorageSharedKeyCredential. No real account is contacted by these tests.
+const FAKE_CONNECTION_STRING =
+  'DefaultEndpointsProtocol=https;' +
+  'AccountName=testaccount;' +
+  'AccountKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA;' +
+  'EndpointSuffix=core.windows.net';
 
 describe('Azure crud.js - URL refresh tests', () => {
   const originalEnv = process.env;
@@ -104,6 +118,93 @@ describe('Azure crud.js - URL refresh tests', () => {
       const url = 'https://test.blob.core.windows.net/files/images/user123/test.pdf';
       const result = await getNewAzureURL(url);
       expect(result).toBe(mockBlockBlobClient.url);
+    });
+  });
+
+  describe('getSignedAzureURL - configuration errors', () => {
+    it('throws when neither AZURE_STORAGE_CONNECTION_STRING nor AZURE_STORAGE_ACCOUNT_NAME is set', async () => {
+      delete process.env.AZURE_STORAGE_CONNECTION_STRING;
+      delete process.env.AZURE_STORAGE_ACCOUNT_NAME;
+      await expect(getSignedAzureURL({ blobPath: 'images/u/test.pdf' })).rejects.toThrow(
+        /Azure storage not configured/,
+      );
+    });
+
+    it('throws (not silently returns unsigned URL) when AccountName/AccountKey cannot be parsed', async () => {
+      // In normal operation, BlobServiceClient.fromConnectionString already rejects
+      // any connection string lacking AccountName/AccountKey before our regex runs.
+      // The regex check is defense-in-depth against a future SDK regression. To
+      // exercise that branch directly we stub fromConnectionString so our regex
+      // is the gating check. The invariant under test: this path MUST throw, never
+      // return blockBlobClient.url (the prior behavior was a silent unsigned-URL leak).
+      const storageBlob = require('@azure/storage-blob');
+      const spy = jest.spyOn(storageBlob.BlobServiceClient, 'fromConnectionString').mockReturnValue({
+        getContainerClient: () => ({
+          getBlockBlobClient: () => ({
+            url: 'https://test.blob.core.windows.net/files/images/u/test.pdf',
+          }),
+        }),
+      });
+      try {
+        process.env.AZURE_STORAGE_CONNECTION_STRING =
+          'DefaultEndpointsProtocol=https;BlobEndpoint=https://test.blob.core.windows.net;';
+        delete process.env.AZURE_STORAGE_ACCOUNT_NAME;
+        await expect(getSignedAzureURL({ blobPath: 'images/u/test.pdf' })).rejects.toThrow(
+          /missing AccountName or AccountKey/,
+        );
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
+  describe('getSignedAzureURL - SAS token contents', () => {
+    beforeEach(() => {
+      process.env.AZURE_STORAGE_CONNECTION_STRING = FAKE_CONNECTION_STRING;
+      delete process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    });
+
+    it('produces a SAS URL pinned to https (spr=https)', async () => {
+      const signed = await getSignedAzureURL({
+        blobPath: 'images/u/test.pdf',
+        containerName: 'files',
+      });
+      const url = new URL(signed);
+      // SAS "Protocol" param is `spr`. We require https-only — no `https,http`.
+      expect(url.searchParams.get('spr')).toBe('https');
+    });
+
+    it('produces a read-only SAS (sp=r)', async () => {
+      const signed = await getSignedAzureURL({
+        blobPath: 'images/u/test.pdf',
+        containerName: 'files',
+      });
+      expect(new URL(signed).searchParams.get('sp')).toBe('r');
+    });
+
+    it('uses the 300s default expiry when AZURE_URL_EXPIRY_SECONDS is unset', async () => {
+      // crud.js reads AZURE_URL_EXPIRY_SECONDS at module load. Re-require the module
+      // in an isolated registry with the env var cleared so we exercise the default.
+      delete process.env.AZURE_URL_EXPIRY_SECONDS;
+      let signed;
+      const before = Date.now();
+      await jest.isolateModulesAsync(async () => {
+        const fresh = require('../../../../../server/services/Files/Azure/crud');
+        signed = await fresh.getSignedAzureURL({
+          blobPath: 'images/u/test.pdf',
+          containerName: 'files',
+        });
+      });
+      const after = Date.now();
+      const url = new URL(signed);
+      const expiresAt = new Date(url.searchParams.get('se')).getTime();
+      const startsAt = new Date(url.searchParams.get('st')).getTime();
+      // Allow ±2s slack vs. the 300-second target.
+      expect(expiresAt - startsAt).toBeGreaterThanOrEqual(298_000);
+      expect(expiresAt - startsAt).toBeLessThanOrEqual(302_000);
+      // And `se` should be roughly 300s after "now".
+      expect(expiresAt - before).toBeGreaterThanOrEqual(298_000);
+      expect(expiresAt - after).toBeLessThanOrEqual(302_000);
     });
   });
 });

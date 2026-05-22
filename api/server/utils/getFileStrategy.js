@@ -72,7 +72,7 @@ function getFileURLRefreshCacheTime(fileStrategy) {
     return Math.max(expirySeconds * 500, Time.ONE_MINUTE);
   }
   if (fileStrategy === FileSources.azure_blob) {
-    const expirySeconds = parseInt(process.env.AZURE_URL_EXPIRY_SECONDS, 10) || 120;
+    const expirySeconds = parseInt(process.env.AZURE_URL_EXPIRY_SECONDS, 10) || 300;
     // Check for refresh at half the URL expiry time: (expirySeconds * 1000ms) / 2 => expirySeconds * 500
     return Math.max(expirySeconds * 500, Time.ONE_MINUTE);
   }

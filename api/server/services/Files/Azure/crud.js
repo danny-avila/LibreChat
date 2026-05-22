@@ -8,10 +8,21 @@ const { FileSources } = require('librechat-data-provider');
 const { getAzureContainerClient, deleteRagFile } = require('@librechat/api');
 
 const defaultBasePath = 'images';
-const { AZURE_STORAGE_PUBLIC_ACCESS = 'true', AZURE_CONTAINER_NAME = 'files' } = process.env;
-const { BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential } = require('@azure/storage-blob');
+const { AZURE_CONTAINER_NAME = 'files' } = process.env;
+// Read AZURE_STORAGE_PUBLIC_ACCESS off process.env at call time, not module-load
+// time, so runtime env changes (and tests that toggle the flag via beforeEach)
+// are honored. Default is `false` — never silently open public containers.
+const isPublicAccess = () => process.env.AZURE_STORAGE_PUBLIC_ACCESS?.toLowerCase() === 'true';
+const {
+  BlobServiceClient,
+  BlobSASPermissions,
+  SASProtocol,
+  generateBlobSASQueryParameters,
+  StorageSharedKeyCredential,
+} = require('@azure/storage-blob');
 
-let azureUrlExpirySeconds = 2 * 60;
+const DEFAULT_AZURE_URL_EXPIRY_SECONDS = 5 * 60;
+let azureUrlExpirySeconds = DEFAULT_AZURE_URL_EXPIRY_SECONDS;
 let azureRefreshExpiryMs = null;
 
 let userDelegationKey = null;
@@ -24,20 +35,18 @@ if (process.env.AZURE_URL_EXPIRY_SECONDS !== undefined) {
     azureUrlExpirySeconds = Math.min(parsed, 7 * 24 * 60 * 60);
   } else {
     logger.warn(
-      `[Azure] Invalid AZURE_URL_EXPIRY_SECONDS value: "${process.env.AZURE_URL_EXPIRY_SECONDS}". Using 2-minute expiry.`,
+      `[Azure] Invalid AZURE_URL_EXPIRY_SECONDS value: "${process.env.AZURE_URL_EXPIRY_SECONDS}". Using ${DEFAULT_AZURE_URL_EXPIRY_SECONDS}-second expiry.`,
     );
   }
 }
 
-if (process.env.AZURE_REFRESH_EXPIRY_MS !== null && process.env.AZURE_REFRESH_EXPIRY_MS) {
+if (process.env.AZURE_REFRESH_EXPIRY_MS) {
   const parsed = parseInt(process.env.AZURE_REFRESH_EXPIRY_MS, 10);
   if (!isNaN(parsed) && parsed > 0) {
     azureRefreshExpiryMs = parsed;
     logger.info(`[Azure] Using custom refresh expiry time: ${azureRefreshExpiryMs}ms`);
   }
 }
-
-const isPublicAccess = () => AZURE_STORAGE_PUBLIC_ACCESS?.toLowerCase() === 'true';
 
 /**
  * Obtains and caches a User Delegation Key from Azure Blob Storage for use with
@@ -83,11 +92,6 @@ async function getSignedAzureURL({ blobPath, containerName = AZURE_CONTAINER_NAM
     const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
     const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
 
-    // BlobServiceClient is loaded dynamically to allow optional Azure SDK installation.
-    // BlobSASPermissions, generateBlobSASQueryParameters, and StorageSharedKeyCredential
-    // are imported at the top of the module and reused here.
-    const { BlobServiceClient } = await import('@azure/storage-blob');
-
     const startsOn = new Date();
     const expiresOn = new Date(startsOn.getTime() + azureUrlExpirySeconds * 1000);
 
@@ -100,8 +104,12 @@ async function getSignedAzureURL({ blobPath, containerName = AZURE_CONTAINER_NAM
       const keyMatch = connectionString.match(/AccountKey=([^;]+)/i);
 
       if (!match || !keyMatch) {
-        logger.warn('[getSignedAzureURL] Connection string missing AccountName or AccountKey, returning unsigned URL');
-        return blockBlobClient.url;
+        // Fail loud: a connection string without AccountName/AccountKey cannot
+        // produce a signed URL. Returning the unsigned URL here would be a silent
+        // security regression — callers expect a SAS when private access is on.
+        throw new Error(
+          '[getSignedAzureURL] AZURE_STORAGE_CONNECTION_STRING is missing AccountName or AccountKey; cannot generate a SAS token',
+        );
       }
 
       const sharedKeyCredential = new StorageSharedKeyCredential(match[1], keyMatch[1]);
@@ -111,6 +119,7 @@ async function getSignedAzureURL({ blobPath, containerName = AZURE_CONTAINER_NAM
           containerName,
           blobName: blobPath,
           permissions: BlobSASPermissions.parse('r'),
+          protocol: SASProtocol.Https,
           startsOn,
           expiresOn,
         },
@@ -138,6 +147,7 @@ async function getSignedAzureURL({ blobPath, containerName = AZURE_CONTAINER_NAM
             containerName,
             blobName: blobPath,
             permissions: BlobSASPermissions.parse('r'),
+            protocol: SASProtocol.Https,
             startsOn,
             expiresOn,
           },
