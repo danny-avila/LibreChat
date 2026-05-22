@@ -123,7 +123,10 @@ const getSpecConfig = () => ({
 
 const getAppId = (req) => {
   const params = req.body?.model_parameters ?? {};
-  const additionalFields = req.body?.additionalModelRequestFields ?? req.body?.endpointOption?.additionalModelRequestFields ?? {};
+  const additionalFields =
+    req.body?.additionalModelRequestFields ??
+    req.body?.endpointOption?.additionalModelRequestFields ??
+    {};
   const promptId = req.body?.prompt_id ?? params.prompt_id ?? params.prompt?.id;
   return resolveJuristaiAppId(
     req.body?.appId ?? params.appId ?? additionalFields.appId,
@@ -188,7 +191,8 @@ const extractHttpStatus = (value) => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const isTransientStatus = (status) => status === 408 || status === 429 || (status >= 500 && status < 600);
+const isTransientStatus = (status) =>
+  status === 408 || status === 429 || (status >= 500 && status < 600);
 
 const classifyToolOutcome = (output) => {
   if (typeof output !== 'string') {
@@ -245,9 +249,12 @@ const buildNormalizedErrorPayload = (toolName, outcome, rawMessage) => {
   const messageByOutcome = {
     authorization_error: 'Authorization failed for this JuristAI action.',
     not_found: 'The requested JuristAI resource was not found.',
-    conflict: 'This JuristAI action could not be completed because the current state conflicts with the request.',
-    validation_error: 'JuristAI rejected the tool input. Review the arguments and request any missing required details.',
-    transient_upstream_failure: 'JuristAI is temporarily unavailable or timed out. Retry only if the action is still needed.',
+    conflict:
+      'This JuristAI action could not be completed because the current state conflicts with the request.',
+    validation_error:
+      'JuristAI rejected the tool input. Review the arguments and request any missing required details.',
+    transient_upstream_failure:
+      'JuristAI is temporarily unavailable or timed out. Retry only if the action is still needed.',
   };
   return JSON.stringify({
     ok: false,
@@ -408,7 +415,11 @@ async function getJuristaiToolDefinitions(req, toolNames) {
       description: tool.description,
       parameters: tool.parameters,
     }));
-  logCatalogEvent('Loaded tool definitions', req, definitions.map((tool) => tool.name));
+  logCatalogEvent(
+    'Loaded tool definitions',
+    req,
+    definitions.map((tool) => tool.name),
+  );
   return definitions;
 }
 

@@ -159,7 +159,9 @@ async function processRequiredActions(client, requiredActions) {
     new Set(
       requiredActions
         .map((action) => action.tool)
-        .filter((toolName) => typeof toolName === 'string' && toolName.startsWith(JURISTAI_TOOL_PREFIX)),
+        .filter(
+          (toolName) => typeof toolName === 'string' && toolName.startsWith(JURISTAI_TOOL_PREFIX),
+        ),
     ),
   );
 
