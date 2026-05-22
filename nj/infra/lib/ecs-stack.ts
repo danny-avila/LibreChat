@@ -215,6 +215,7 @@ export class EcsStack extends cdk.Stack {
 
       // Redis configuration
       USE_REDIS: 'true',
+      USE_REDIS_CLUSTER: 'true', // We're using Elasticache Serverless, which is a cluster
       REDIS_URI: redisUri,
       REDIS_USE_ALTERNATIVE_DNS_LOOKUP: 'true',
 
