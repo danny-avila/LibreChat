@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import {
   Permissions,
+  SystemRoles,
   EModelEndpoint,
   PermissionTypes,
   isParamEndpoint,
@@ -23,6 +24,7 @@ import {
   useAgentCapabilities,
   useMCPServerManager,
   useGetAgentsConfig,
+  useAuthContext,
   useHasAccess,
 } from '~/hooks';
 import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
@@ -90,6 +92,9 @@ export default function useSideNavLinks({
   });
   const { availableMCPServers } = useMCPServerManager();
 
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === SystemRoles.ADMIN;
+
   const { agentsConfig } = useGetAgentsConfig({ endpointsConfig });
   const { skillsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
 
@@ -97,6 +102,7 @@ export default function useSideNavLinks({
     const links: NavLink[] = [];
 
     if (
+      isAdmin &&
       endpointsConfig?.[EModelEndpoint.agents] &&
       hasAccessToAgents &&
       hasAccessToCreateAgents &&
@@ -130,7 +136,7 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToSkills && skillsEnabled) {
+    if (isAdmin && hasAccessToSkills && skillsEnabled) {
       links.push({
         title: 'com_ui_skills',
         label: '',
@@ -140,7 +146,7 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToPrompts) {
+    if (isAdmin && hasAccessToPrompts) {
       links.push({
         title: 'com_ui_prompts',
         label: '',
@@ -150,7 +156,7 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToMemories && hasAccessToReadMemories) {
+    if (isAdmin && hasAccessToMemories && hasAccessToReadMemories) {
       links.push({
         title: 'com_ui_memories',
         label: '',
@@ -194,8 +200,9 @@ export default function useSideNavLinks({
     }
 
     if (
-      (hasAccessToUseMCPSettings && availableMCPServers && availableMCPServers.length > 0) ||
-      hasAccessToCreateMCP
+      isAdmin &&
+      ((hasAccessToUseMCPSettings && availableMCPServers && availableMCPServers.length > 0) ||
+        hasAccessToCreateMCP)
     ) {
       links.push({
         title: 'com_nav_setting_mcp',
@@ -218,6 +225,7 @@ export default function useSideNavLinks({
 
     return links;
   }, [
+    isAdmin,
     endpoint,
     endpointsConfig,
     keyProvided,
