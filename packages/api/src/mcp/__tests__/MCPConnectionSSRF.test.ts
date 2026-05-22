@@ -56,6 +56,7 @@ jest.mock('~/auth', () => ({
       callback(null, '127.0.0.1', 4);
     },
   })),
+  isOAuthUrlAllowed: jest.fn(() => false),
   isSSRFTarget: jest.fn(() => false),
   resolveHostnameSSRF: jest.fn(async () => false),
 }));

@@ -836,14 +836,17 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
 
       await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'access', metadata);
 
-      expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
-        method: 'POST',
-        body: 'token=test-token-12345&token_type_hint=access_token',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`,
-        },
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        new URL('https://auth.example.com/oauth/revoke'),
+        expect.objectContaining({
+          method: 'POST',
+          body: 'token=test-token-12345&token_type_hint=access_token',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization: `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`,
+          },
+        }),
+      );
     });
 
     it('should successfully revoke a refresh token with client_secret_basic auth', async () => {
@@ -862,14 +865,17 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
 
       await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata);
 
-      expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
-        method: 'POST',
-        body: 'token=test-token-12345&token_type_hint=refresh_token',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`,
-        },
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        new URL('https://auth.example.com/oauth/revoke'),
+        expect.objectContaining({
+          method: 'POST',
+          body: 'token=test-token-12345&token_type_hint=refresh_token',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization: `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`,
+          },
+        }),
+      );
     });
 
     it('should successfully revoke an access token with client_secret_post auth', async () => {
@@ -888,13 +894,16 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
 
       await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'access', metadata);
 
-      expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
-        method: 'POST',
-        body: 'token=test-token-12345&token_type_hint=access_token&client_secret=test-client-secret&client_id=test-client-id',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        new URL('https://auth.example.com/oauth/revoke'),
+        expect.objectContaining({
+          method: 'POST',
+          body: 'token=test-token-12345&token_type_hint=access_token&client_secret=test-client-secret&client_id=test-client-id',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        }),
+      );
     });
 
     it('should fallback to /revoke endpoint when revocationEndpoint is not provided', async () => {
