@@ -1,5 +1,16 @@
 /// <reference types="jest" />
-import { normalizePath } from './metrics';
+import express from 'express';
+import request from 'supertest';
+import {
+  createMetrics,
+  instrumentMongooseQueryMetrics,
+  normalizePath,
+  recordGenerationJob,
+  recordGenerationStreamResumePendingEvents,
+  recordGenerationStreamSubscription,
+  recordOpenIDUserLookup,
+  setGenerationJobsInFlight,
+} from './metrics';
 
 describe('normalizePath', () => {
   it.each([
@@ -9,8 +20,17 @@ describe('normalizePath', () => {
     ['/api/messages/artifact/507f1f77bcf86cd799439012', '/api/messages/artifact/#id'],
     ['/api/convos/507f1f77bcf86cd799439011', '/api/convos/#id'],
     ['/api/files/507f1f77bcf86cd799439011', '/api/files/#id'],
+    ['/api/files/507f1f77bcf86cd799439011/preview', '/api/files/#id/preview'],
+    ['/api/files/download/user-123/file-456', '/api/files/download/#id/#id'],
+    ['/api/files/download-url/user-123/file-456', '/api/files/download-url/#id/#id'],
+    ['/api/files/code/download/session-123/file-456', '/api/files/code/download/#id/#id'],
     ['/api/agents/507f1f77bcf86cd799439011', '/api/agents/#id'],
+    ['/api/agents/chat/stream/stream-123', '/api/agents/chat/stream/#id'],
+    ['/api/agents/chat/status/convo-123', '/api/agents/chat/status/#id'],
+    ['/api/agents/v1/chat/completions', '/api/agents/v1/chat/completions'],
+    ['/api/agents/v1/responses', '/api/agents/v1/responses'],
     ['/api/assistants/507f1f77bcf86cd799439011', '/api/assistants/#id'],
+    ['/api/skills/507f1f77bcf86cd799439011/files/reference.md', '/api/skills/#id/files'],
     ['/api/share/some-token-value', '/api/share/#token'],
     ['/share/shareId-with_nanoidChars', '/share/#id'],
     ['/share/shareId-with_nanoidChars/edit', '/share/#id/edit'],
@@ -43,5 +63,184 @@ describe('normalizePath', () => {
     ['/api/messages/artifact/507f1f77bcf86cd799439012/user-generated-value', '/api/#path'],
   ])('normalizes %s -> %s', (input: string, normalized: string) => {
     expect(normalizePath(input)).toBe(normalized);
+  });
+});
+
+describe('createMetrics', () => {
+  afterEach(() => {
+    delete process.env.METRICS_SECRET;
+  });
+
+  it('tracks request counts, in-flight gauges, and request body sizes', async () => {
+    const app = express();
+    const { metricsMiddleware, metricsRouter } = createMetrics();
+    app.use(metricsMiddleware);
+    app.use(express.text({ type: '*/*' }));
+    app.post('/api/files/:id', (_req, res) => res.status(201).send('ok'));
+    app.use('/metrics', metricsRouter);
+    process.env.METRICS_SECRET = 'test-secret';
+
+    await request(app)
+      .post('/api/files/507f1f77bcf86cd799439011')
+      .set('Content-Type', 'text/plain')
+      .send('x'.repeat(42))
+      .expect(201);
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /http_requests_total\{method="POST",path="\/api\/files\/#id",status="201"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /http_requests_in_flight\{method="POST",path="\/api\/files\/#id"\} 0/,
+    );
+    expect(response.text).toMatch(
+      /http_request_body_bytes_count\{method="POST",path="\/api\/files\/#id"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /http_request_body_bytes_sum\{method="POST",path="\/api\/files\/#id"\} 42/,
+    );
+  });
+
+  it('tracks SSE stream counts, active gauges, and stream duration', async () => {
+    const app = express();
+    const { metricsMiddleware, metricsRouter } = createMetrics();
+    app.use(metricsMiddleware);
+    app.get('/api/agents/chat/stream/:streamId', (_req, res) => {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.write('event: message\ndata: {}\n\n');
+      res.end();
+    });
+    app.use('/metrics', metricsRouter);
+    process.env.METRICS_SECRET = 'test-secret';
+
+    await request(app).get('/api/agents/chat/stream/stream-123').expect(200);
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /sse_streams_total\{method="GET",path="\/api\/agents\/chat\/stream\/#id",status="200"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /sse_streams_in_flight\{method="GET",path="\/api\/agents\/chat\/stream\/#id"\} 0/,
+    );
+    expect(response.text).toMatch(
+      /sse_stream_duration_seconds_count\{method="GET",path="\/api\/agents\/chat\/stream\/#id",status="200"\} 1/,
+    );
+  });
+
+  it('tracks upload counts, active gauges, duration, and upload bytes', async () => {
+    const app = express();
+    const { metricsMiddleware, metricsRouter } = createMetrics();
+    app.use(metricsMiddleware);
+    app.post('/api/files', (_req, res) => res.status(201).send('ok'));
+    app.use('/metrics', metricsRouter);
+    process.env.METRICS_SECRET = 'test-secret';
+
+    await request(app)
+      .post('/api/files')
+      .attach('file', Buffer.from('uploaded body'), 'test.txt')
+      .expect(201);
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /upload_requests_total\{method="POST",path="\/api\/files",status="201"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /upload_requests_in_flight\{method="POST",path="\/api\/files"\} 0/,
+    );
+    expect(response.text).toMatch(
+      /upload_request_duration_seconds_count\{method="POST",path="\/api\/files",status="201"\} 1/,
+    );
+    expect(response.text).toMatch(/upload_bytes_total\{method="POST",path="\/api\/files"\} \d+/);
+  });
+
+  it('tracks OpenID user lookup outcomes and latency', async () => {
+    const app = express();
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+    process.env.METRICS_SECRET = 'test-secret';
+
+    recordOpenIDUserLookup('found', 0.2);
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(/openid_user_lookup_total\{result="found"\} 1/);
+    expect(response.text).toMatch(/openid_user_lookup_duration_seconds_count\{result="found"\} 1/);
+    expect(response.text).toMatch(/openid_user_lookup_duration_seconds_sum\{result="found"\} 0.2/);
+  });
+
+  it('tracks mongoose query counts and latency by model and operation', async () => {
+    class FakeQuery {
+      model = { modelName: 'User' };
+      op = 'findOne';
+
+      exec() {
+        return Promise.resolve({ _id: 'user-1' });
+      }
+    }
+
+    const app = express();
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+    process.env.METRICS_SECRET = 'test-secret';
+
+    instrumentMongooseQueryMetrics({ Query: FakeQuery } as never);
+    await new FakeQuery().exec();
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /mongoose_queries_total\{model="User",operation="findOne",status="success"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /mongoose_query_duration_seconds_count\{model="User",operation="findOne",status="success"\} 1/,
+    );
+  });
+
+  it('tracks generation job and stream resume metrics', async () => {
+    const app = express();
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+    process.env.METRICS_SECRET = 'test-secret';
+
+    recordGenerationJob('memory', 'created');
+    setGenerationJobsInFlight('memory', 2);
+    recordGenerationStreamSubscription('redis', 'resume', 'not_found');
+    recordGenerationStreamSubscription('redis', 'resume_state', 'missing');
+    recordGenerationStreamResumePendingEvents('memory', 3);
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(/generation_jobs_total\{store="memory",result="created"\} 1/);
+    expect(response.text).toMatch(/generation_jobs_in_flight\{store="memory"\} 2/);
+    expect(response.text).toMatch(
+      /generation_stream_subscriptions_total\{store="redis",type="resume",result="not_found"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /generation_stream_subscriptions_total\{store="redis",type="resume_state",result="missing"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /generation_stream_resume_pending_events_total\{store="memory"\} 3/,
+    );
   });
 });
