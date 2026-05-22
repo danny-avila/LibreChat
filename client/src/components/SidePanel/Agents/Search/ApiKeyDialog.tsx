@@ -9,7 +9,7 @@ import {
 } from 'librechat-data-provider';
 import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
-import InputSection, { type DropdownOption } from './InputSection';
+import InputSection, { type InputConfig, type DropdownOption } from './InputSection';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -92,6 +92,28 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: SearchProviders.FIRECRAWL,
+      label: localize('com_ui_web_search_provider_firecrawl'),
+      inputs: {
+        firecrawlApiUrl: {
+          placeholder: localize('com_ui_web_search_firecrawl_url'),
+          type: 'text' as const,
+        },
+        firecrawlVersion: {
+          placeholder: localize('com_ui_web_search_firecrawl_version'),
+          type: 'text' as const,
+        },
+        firecrawlApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://docs.firecrawl.dev/introduction#api-key',
+            text: localize('com_ui_web_search_provider_firecrawl_key'),
+          },
+        },
+      },
+    },
   ];
 
   const rerankerOptions: DropdownOption[] = [
@@ -140,6 +162,10 @@ export default function ApiKeyDialog({
       inputs: {
         firecrawlApiUrl: {
           placeholder: localize('com_ui_web_search_firecrawl_url'),
+          type: 'text' as const,
+        },
+        firecrawlVersion: {
+          placeholder: localize('com_ui_web_search_firecrawl_version'),
           type: 'text' as const,
         },
         firecrawlApiKey: {
@@ -191,6 +217,35 @@ export default function ApiKeyDialog({
   const providerAuthType = authTypes.find(([cat]) => cat === SearchCategories.PROVIDERS)?.[1];
   const scraperAuthType = authTypes.find(([cat]) => cat === SearchCategories.SCRAPERS)?.[1];
   const rerankerAuthType = authTypes.find(([cat]) => cat === SearchCategories.RERANKERS)?.[1];
+  const selectedProviderOption = providerOptions.find((option) => option.key === selectedProvider);
+  const providerInputNames =
+    providerAuthType !== AuthType.SYSTEM_DEFINED
+      ? Object.keys(selectedProviderOption?.inputs ?? {})
+      : [];
+  const renderedInputNames = new Set(providerInputNames);
+  const dedupedScraperOptions =
+    renderedInputNames.size === 0
+      ? scraperOptions
+      : scraperOptions.map((option) => {
+          if (!option.inputs) {
+            return option;
+          }
+
+          const inputs = Object.entries(option.inputs).reduce<Record<string, InputConfig>>(
+            (result, [name, config]) => {
+              if (!renderedInputNames.has(name)) {
+                result[name] = config;
+              }
+              return result;
+            },
+            {},
+          );
+
+          return {
+            ...option,
+            inputs,
+          };
+        });
 
   const handleProviderChange = (key: string) => {
     setSelectedProvider(key as SearchProviders);
@@ -241,7 +296,7 @@ export default function ApiKeyDialog({
                   title={localize('com_ui_web_search_scraper')}
                   selectedKey={selectedScraper}
                   onSelectionChange={handleScraperChange}
-                  dropdownOptions={scraperOptions}
+                  dropdownOptions={dedupedScraperOptions}
                   showDropdown={!config?.webSearch?.scraperProvider}
                   register={register}
                   dropdownOpen={dropdownOpen.scraper}

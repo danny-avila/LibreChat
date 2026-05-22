@@ -93,6 +93,22 @@ describe('loadWebSearchConfig', () => {
       expect(result?.searchProvider).toBe('serper');
       expect(result?.serperApiKey).toBe('test-key');
     });
+
+    it('should preserve Firecrawl provider settings', () => {
+      const config: TCustomConfig['webSearch'] = {
+        searchProvider: SearchProviders.FIRECRAWL,
+        firecrawlApiKey: 'actual-firecrawl-key',
+        firecrawlApiUrl: 'https://api.firecrawl.dev',
+        firecrawlVersion: 'v2',
+      };
+
+      const result = loadWebSearchConfig(config);
+
+      expect(result?.searchProvider).toBe(SearchProviders.FIRECRAWL);
+      expect(result?.firecrawlApiKey).toBe('actual-firecrawl-key');
+      expect(result?.firecrawlApiUrl).toBe('https://api.firecrawl.dev');
+      expect(result?.firecrawlVersion).toBe('v2');
+    });
   });
 
   describe('safeSearch', () => {
