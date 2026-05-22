@@ -247,8 +247,16 @@ async function saveURLToAzure({
  */
 async function getAzureURL({ fileName, basePath = defaultBasePath, userId, containerName }) {
   try {
-    const containerClient = await getAzureContainerClient(containerName);
     const blobPath = userId ? `${basePath}/${userId}/${fileName}` : `${basePath}/${fileName}`;
+    // Mirror getS3URL: when private access is on, return a SAS URL — never a
+    // plain blob URL that won't work for the caller. The previous behavior was
+    // a silent break: `processFileURL` persists this URL as the file's filepath,
+    // so URL-based uploads (avatars, image generation outputs) ended up with
+    // unsigned filepaths that 401'd until the next refresh cycle.
+    if (!isPublicAccess()) {
+      return await getSignedAzureURL({ blobPath, containerName });
+    }
+    const containerClient = await getAzureContainerClient(containerName);
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
     return blockBlobClient.url;
   } catch (error) {
@@ -269,7 +277,15 @@ async function deleteFileFromAzure(req, file) {
 
   try {
     const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
-    const blobPath = file.filepath.split(`${AZURE_CONTAINER_NAME}/`)[1];
+    // Use the URL-aware extractor instead of `String.split(containerName + '/')`.
+    // The split-based approach breaks once filepaths carry SAS tokens (the
+    // query string ends up concatenated into the blob name) and on path-style
+    // URLs (Azurite). The extractor parses with `new URL()` so the SAS is
+    // discarded and the container is matched as a path segment.
+    const blobPath = extractBlobPathFromAzureUrl(file.filepath, AZURE_CONTAINER_NAME);
+    if (!blobPath) {
+      throw new Error(`[deleteFileFromAzure] Unable to extract blob path from: ${file.filepath}`);
+    }
     if (!blobPath.includes(req.user.id)) {
       throw new Error('User ID not found in blob path');
     }
@@ -460,21 +476,42 @@ function needsRefreshAzure(signedUrl, bufferSeconds) {
 /**
  * Extracts the blob path from an Azure Blob Storage URL.
  *
- * For a URL of the form `https://<account>.blob.core.windows.net/<container>/<blobPath>`,
- * this function returns the `<blobPath>` portion, or `null` if it cannot be determined.
+ * Handles both:
+ * - Virtual-hosted-style: `https://<account>.blob.core.windows.net/<container>/<blobPath>`
+ * - Path-style / emulator: `https://<host>/<account>/<container>/<blobPath>`
+ *   (used by Azurite, where URLs look like `http://127.0.0.1:10000/devstoreaccount1/<container>/<path>`)
+ *
+ * The container name is used as an anchor: everything after the first path segment
+ * matching the configured container is treated as the blob path. This avoids the bug
+ * where stripping the first segment blindly would yield `<container>/<blobPath>` for
+ * emulator URLs (leaking the container name into the blob path).
  *
  * @param {string} fileUrl - The full Azure Blob Storage URL of the file.
+ * @param {string} [containerName] - The container name to anchor on. Defaults to
+ *   the value of `AZURE_CONTAINER_NAME` (read at call time, fallback `'files'`).
  * @returns {string | null} The blob path within the container, or `null` on failure.
  */
-function extractBlobPathFromAzureUrl(fileUrl) {
+function extractBlobPathFromAzureUrl(fileUrl, containerName) {
   try {
     const url = new URL(fileUrl);
-    const pathname = url.pathname;
-    const parts = pathname.split('/').filter(Boolean);
+    const parts = url.pathname.split('/').filter(Boolean);
     if (parts.length < 2) {
       return null;
     }
-    return parts.slice(1).join('/');
+    const container = containerName ?? process.env.AZURE_CONTAINER_NAME ?? 'files';
+    const containerIdx = parts.indexOf(container);
+    if (containerIdx === -1 || containerIdx === parts.length - 1) {
+      // Container segment not found (or it's the last segment with no blob path
+      // after it). Fall back to the legacy "strip first segment" behavior so URLs
+      // generated before this helper existed (or under a container name that has
+      // since changed) still resolve to *something* — but log it loudly so the
+      // misconfiguration is visible.
+      logger.warn(
+        `[extractBlobPathFromAzureUrl] Container "${container}" not found in URL path "${url.pathname}"; falling back to legacy extraction`,
+      );
+      return parts.slice(1).join('/') || null;
+    }
+    return parts.slice(containerIdx + 1).join('/');
   } catch (error) {
     logger.error('[extractBlobPathFromAzureUrl] Error extracting blob path:', error);
     return null;
@@ -496,11 +533,19 @@ async function getNewAzureURL(currentURL) {
     if (!blobPath) {
       return;
     }
-    
+
+    // Mirror the S3 `keyParts.length < 3` guard: our uploaders always write to
+    // `{basePath}/{userId}/{fileName}`, so anything shallower is malformed input
+    // we shouldn't sign or rebuild a URL for.
+    if (blobPath.split('/').length < 3) {
+      logger.warn(`[getNewAzureURL] Unexpected blob path structure: "${blobPath}"`);
+      return;
+    }
+
     if (!isPublicAccess()) {
       return await getSignedAzureURL({ blobPath });
     }
-    
+
     // Return plain URL for public access
     const containerClient = await getAzureContainerClient();
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);

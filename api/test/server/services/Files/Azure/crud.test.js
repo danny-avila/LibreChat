@@ -3,6 +3,7 @@ const {
   extractBlobPathFromAzureUrl,
   getNewAzureURL,
   getSignedAzureURL,
+  getAzureURL,
 } = require('../../../../../server/services/Files/Azure/crud');
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -85,6 +86,78 @@ describe('Azure crud.js - URL refresh tests', () => {
 
     it('should return null for invalid URL', () => {
       expect(extractBlobPathFromAzureUrl('not-a-url')).toBe(null);
+    });
+
+    it('extracts blob path from a path-style URL (Azurite emulator)', () => {
+      // Azurite serves blobs at <host>/<account>/<container>/<path>, so the
+      // legacy "drop the first segment" extraction would have leaked the
+      // container name into the blob path. The container-anchored extraction
+      // skips both <account> and <container> segments.
+      const url = 'http://127.0.0.1:10000/devstoreaccount1/files/images/user123/test.pdf';
+      expect(extractBlobPathFromAzureUrl(url)).toBe('images/user123/test.pdf');
+    });
+
+    it('extracts using an explicit container name override', () => {
+      const url = 'https://test.blob.core.windows.net/my-container/images/u/x.pdf';
+      expect(extractBlobPathFromAzureUrl(url, 'my-container')).toBe('images/u/x.pdf');
+    });
+
+    it('falls back to legacy extraction when the container segment is absent', () => {
+      // For URLs stored under a previous container name (e.g. after renaming
+      // AZURE_CONTAINER_NAME), we still return *something* so legacy records
+      // can be refreshed — but we log a warning at the call site.
+      const url = 'https://test.blob.core.windows.net/old-container/images/u/x.pdf';
+      expect(extractBlobPathFromAzureUrl(url)).toBe('images/u/x.pdf');
+    });
+  });
+
+  describe('getNewAzureURL - path-parts guard', () => {
+    it('returns undefined for blob paths shallower than basePath/userId/fileName', async () => {
+      // Mirrors S3 getNewS3URL's keyParts.length < 3 guard. A blob path of
+      // `images/foo.pdf` is missing the userId segment and shouldn't be re-signed.
+      const url = 'https://test.blob.core.windows.net/files/images/foo.pdf';
+      const result = await getNewAzureURL(url);
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('getAzureURL - signs URL when private (S3 parity)', () => {
+    it('returns a SAS URL when AZURE_STORAGE_PUBLIC_ACCESS is not "true"', async () => {
+      // Regression guard: getAzureURL is exposed as the strategy's `getFileURL`
+      // and its return value is persisted as the file's filepath by processFileURL.
+      // S3's getS3URL always signs; Azure must match — previously it returned an
+      // unsigned blob URL, which 401'd until the next refresh cycle.
+      delete process.env.AZURE_STORAGE_PUBLIC_ACCESS;
+      process.env.AZURE_STORAGE_CONNECTION_STRING = FAKE_CONNECTION_STRING;
+      const url = await getAzureURL({
+        fileName: 'test.pdf',
+        basePath: 'images',
+        userId: 'user123',
+        containerName: 'files',
+      });
+      const parsed = new URL(url);
+      expect(parsed.searchParams.has('sig')).toBe(true);
+      expect(parsed.searchParams.get('sp')).toBe('r');
+      expect(parsed.searchParams.get('spr')).toBe('https');
+    });
+
+    it('returns the plain blob URL when AZURE_STORAGE_PUBLIC_ACCESS=true', async () => {
+      process.env.AZURE_STORAGE_PUBLIC_ACCESS = 'true';
+      const mockBlockBlobClient = {
+        url: 'https://test.blob.core.windows.net/files/images/user123/test.pdf',
+      };
+      const mockContainerClient = {
+        getBlockBlobClient: jest.fn().mockReturnValue(mockBlockBlobClient),
+      };
+      getAzureContainerClient.mockResolvedValue(mockContainerClient);
+
+      const url = await getAzureURL({
+        fileName: 'test.pdf',
+        basePath: 'images',
+        userId: 'user123',
+      });
+      expect(url).toBe(mockBlockBlobClient.url);
+      expect(new URL(url).searchParams.has('sig')).toBe(false);
     });
   });
 
