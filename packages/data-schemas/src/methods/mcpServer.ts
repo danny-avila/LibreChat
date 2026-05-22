@@ -46,8 +46,8 @@ function generateServerNameFromTitle(title: string): string {
 
 export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
   /**
-   * Finds the next available server name by checking for duplicates.
-   * If baseName exists, returns baseName-2, baseName-3, etc.
+   * Finds the next available server name by checking DB and reserved-name collisions.
+   * If baseName is taken or reserved, returns baseName-2, baseName-3, etc.
    */
   async function findNextAvailableServerName(
     baseName: string,

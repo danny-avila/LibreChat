@@ -522,12 +522,7 @@ export class MCPServersRegistry {
   public async invalidateConfigCache(): Promise<string[]> {
     const allCached = await this.configCacheRepo.getAll();
     const evictedNames = [
-      ...new Set(
-        Object.keys(allCached).map((key) => {
-          const lastColon = key.lastIndexOf(':');
-          return lastColon > 0 ? key.slice(0, lastColon) : key;
-        }),
-      ),
+      ...new Set(Object.keys(allCached).map((key) => this.getConfigServerName(key))),
     ];
 
     await Promise.all([
@@ -594,9 +589,13 @@ export class MCPServersRegistry {
   }
 
   private async invalidateServerReadCaches(serverName: string, userId?: string): Promise<void> {
+    const cacheKeys = new Set([
+      this.getReadThroughCacheKey(serverName, userId),
+      this.getReadThroughCacheKey(serverName),
+    ]);
+
     await Promise.all([
-      this.readThroughCache.delete(this.getReadThroughCacheKey(serverName, userId)),
-      this.readThroughCache.delete(this.getReadThroughCacheKey(serverName)),
+      ...Array.from(cacheKeys).map((cacheKey) => this.readThroughCache.delete(cacheKey)),
       this.readThroughCacheAll.clear(),
     ]);
   }
