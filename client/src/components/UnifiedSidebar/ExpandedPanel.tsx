@@ -1,7 +1,9 @@
 import { memo, useCallback, lazy, Suspense } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue } from 'recoil';
-import { SquarePen } from 'lucide-react';
+import { SquarePen, Search, Image, LayoutGrid, Telescope } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { Skeleton, Sidebar, Button, TooltipAnchor } from '@librechat/client';
 import type { NavLink } from '~/common';
@@ -118,6 +120,36 @@ const NavIconButton = memo(function NavIconButton({
   );
 });
 
+const QuickNavButton = memo(function QuickNavButton({
+  icon: Icon,
+  label,
+  href,
+}: {
+  icon: LucideIcon;
+  label: string;
+  href: string;
+}) {
+  const navigate = useNavigate();
+
+  return (
+    <TooltipAnchor
+      description={label}
+      side="right"
+      render={
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label={label}
+          className="h-9 w-9 rounded-lg text-text-secondary"
+          onClick={() => navigate(href)}
+        >
+          <Icon className="h-5 w-5" aria-hidden="true" />
+        </Button>
+      }
+    />
+  );
+});
+
 function ExpandedPanel({
   links,
   expanded = true,
@@ -157,6 +189,10 @@ function ExpandedPanel({
         }
       />
       <NewChatButton setActive={setActive} />
+      <QuickNavButton icon={Search} label="Search" href="/search" />
+      <QuickNavButton icon={Image} label="Images" href="/c/new" />
+      <QuickNavButton icon={LayoutGrid} label="Apps" href="/agents" />
+      <QuickNavButton icon={Telescope} label="Deep Research" href="/c/new" />
       <div className="mx-2 border-b border-border-light" />
       <div className="flex flex-col gap-1 overflow-y-auto">
         {links.map((link) => (
