@@ -4,6 +4,16 @@ import type { JuristaiSpecConfig } from './specLoader';
 import type { JuristaiToolDefinition } from './toolBuilder';
 
 export { mintChatJwt, clearChatJwtCache } from './jwtMinter';
+export {
+  DEFAULT_JURISTAI_APP_ID,
+  JURISTAI_PER_APP_OPERATIONS,
+  JURISTAI_PROMPT_APP_MAP,
+  JURISTAI_APP_CONTEXT_OPERATION_IDS,
+  normalizeJuristaiAppId,
+  mapJuristaiPromptToAppId,
+  resolveJuristaiAppId,
+  isJuristaiAppContextOperation,
+} from './policy';
 export { loadDjangoSpec, filterSpecForApp, clearSpecCache } from './specLoader';
 export { buildJuristaiTools, JURISTAI_TOOL_PREFIX } from './toolBuilder';
 

@@ -155,6 +155,29 @@ async function processRequiredActions(client, requiredActions) {
     return map;
   }, {});
 
+  const juristaiToolNames = Array.from(
+    new Set(
+      requiredActions
+        .map((action) => action.tool)
+        .filter((toolName) => typeof toolName === 'string' && toolName.startsWith(JURISTAI_TOOL_PREFIX)),
+    ),
+  );
+
+  if (juristaiToolNames.length > 0) {
+    try {
+      const juristaiTools = await loadJuristaiToolsForExecution({
+        req: client.req,
+        res: client.res,
+        toolNames: juristaiToolNames,
+      });
+      for (const juristaiTool of juristaiTools) {
+        ToolMap[juristaiTool.name] = juristaiTool;
+      }
+    } catch (error) {
+      logger.error('[processRequiredActions] Failed to load JuristAI tools for execution', error);
+    }
+  }
+
   const promises = [];
 
   /** @type {Action[]} */
