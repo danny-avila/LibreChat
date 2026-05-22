@@ -43,14 +43,42 @@ function duplicateKeyError(): Error & { code: number } {
   return error;
 }
 
-function mockMethod<T extends (...args: any[]) => any>(implementation: T): jest.MockedFunction<T> {
-  return jest.fn<ReturnType<T>, Parameters<T>>(implementation) as unknown as jest.MockedFunction<T>;
+function mockMethod<T extends (...args: never[]) => unknown>(
+  implementation: T,
+): jest.MockedFunction<T> {
+  const typedImplementation = implementation as unknown as (
+    ...args: Parameters<T>
+  ) => ReturnType<T>;
+  return jest.fn<ReturnType<T>, Parameters<T>>(
+    typedImplementation,
+  ) as unknown as jest.MockedFunction<T>;
 }
 
 function mockFindUser(
   implementation: UserMethods['findUser'] = async () => null,
 ): jest.MockedFunction<UserMethods['findUser']> {
   return mockMethod<UserMethods['findUser']>(implementation);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isSubjectLookup(query: unknown): boolean {
+  if (!isRecord(query)) return false;
+  if (query.openidId === 'sub-123' && query.openidIssuer === 'https://issuer.example.com') {
+    return true;
+  }
+
+  const orConditions = query.$or;
+  return (
+    Array.isArray(orConditions) && orConditions.some((condition) => isSubjectLookup(condition))
+  );
+}
+
+function expectSubjectLookup(findUser: UserMethods['findUser']) {
+  const mockFindUser = findUser as jest.MockedFunction<UserMethods['findUser']>;
+  expect(mockFindUser.mock.calls.some(([query]) => isSubjectLookup(query))).toBe(true);
 }
 
 function mockCreateUser(
@@ -195,9 +223,7 @@ describe('resolveOpenIdAccount', () => {
     );
 
     expect(result).toEqual({ status: 'unauthorized', reason: 'missing_email' });
-    expect(deps.findUser).toHaveBeenCalledWith({
-      $or: [{ openidId: 'sub-123', openidIssuer: 'https://issuer.example.com' }],
-    });
+    expectSubjectLookup(deps.findUser);
     expect(deps.createUser).not.toHaveBeenCalled();
   });
 
@@ -366,9 +392,7 @@ describe('resolveOpenIdAccount', () => {
       role: SystemRoles.USER,
     });
     const deps = methods({
-      findUser: mockFindUser()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(existing),
+      findUser: mockFindUser().mockResolvedValueOnce(null).mockResolvedValueOnce(existing),
       updateUser: mockUpdateUser(async () => updated),
     });
 
@@ -511,11 +535,17 @@ describe('resolveOpenIdAccount', () => {
   it('rereads created users under the explicit tenant scope when create returns a partial user', async () => {
     const created = user({ tenantId: 'tenant-a' });
     const deps = methods({
-      findUser: mockFindUser()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(created),
+      findUser: mockFindUser(async (query) => {
+        if (
+          query.openidId === 'sub-123' &&
+          query.openidIssuer === 'https://issuer.example.com' &&
+          query.tenantId === 'tenant-a'
+        ) {
+          return created;
+        }
+
+        return null;
+      }),
       createUser: mockCreateUser(async () => ({ email: 'user@example.com' })),
     });
 
@@ -536,11 +566,20 @@ describe('resolveOpenIdAccount', () => {
   it('rereads created users under the explicit base scope when no tenant is present', async () => {
     const created = user();
     const deps = methods({
-      findUser: mockFindUser()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(created),
+      findUser: mockFindUser(async (query) => {
+        if (
+          query.openidId === 'sub-123' &&
+          query.openidIssuer === 'https://issuer.example.com' &&
+          typeof query.tenantId === 'object' &&
+          query.tenantId != null &&
+          '$exists' in query.tenantId &&
+          query.tenantId.$exists === false
+        ) {
+          return created;
+        }
+
+        return null;
+      }),
       createUser: mockCreateUser(async () => ({ email: 'user@example.com' })),
     });
 
