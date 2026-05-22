@@ -9,6 +9,37 @@ import {
 } from './allowedAddresses';
 import { isPrivateIP } from './ip';
 
+type LookupResult = string | dns.LookupAddress[];
+
+function createSSRFLookupError(hostname: string, address: string): NodeJS.ErrnoException {
+  return Object.assign(
+    new Error(`SSRF protection: ${hostname} resolved to blocked address ${address}`),
+    { code: 'ESSRF' },
+  ) as NodeJS.ErrnoException;
+}
+
+function getBlockedLookupAddress(
+  lookupResult: LookupResult,
+  hostnameAllowed: boolean,
+  exemptSet: Set<string> | null,
+  normalizedPort: string,
+): string | null {
+  if (hostnameAllowed) {
+    return null;
+  }
+
+  const addresses = Array.isArray(lookupResult)
+    ? lookupResult.map(({ address }) => address)
+    : [lookupResult];
+
+  return (
+    addresses.find(
+      (address) =>
+        isPrivateIP(address) && !isAddressInAllowedSet(address, exemptSet, normalizedPort),
+    ) ?? null
+  );
+}
+
 /**
  * Builds a DNS lookup wrapper that blocks resolution to private/reserved IP
  * addresses. When `allowedAddresses` is provided, hostname/IP + port pairs
@@ -34,20 +65,19 @@ function buildSSRFSafeLookup(
         callback(err, '', 0);
         return;
       }
-      if (
-        !hostnameAllowed &&
-        typeof address === 'string' &&
-        isPrivateIP(address) &&
-        !isAddressInAllowedSet(address, exemptSet, normalizedPort)
-      ) {
-        const ssrfError = Object.assign(
-          new Error(`SSRF protection: ${hostname} resolved to blocked address ${address}`),
-          { code: 'ESSRF' },
-        ) as NodeJS.ErrnoException;
-        callback(ssrfError, address, family as number);
+
+      const blockedAddress = getBlockedLookupAddress(
+        address,
+        hostnameAllowed,
+        exemptSet,
+        normalizedPort,
+      );
+      if (blockedAddress) {
+        callback(createSSRFLookupError(hostname, blockedAddress), blockedAddress, family);
         return;
       }
-      callback(null, address as string, family as number);
+
+      callback(null, address, family);
     });
   };
 }
