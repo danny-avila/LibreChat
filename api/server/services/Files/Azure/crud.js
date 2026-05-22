@@ -6,6 +6,7 @@ const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
 const { getAzureContainerClient, deleteRagFile } = require('@librechat/api');
+const { DefaultAzureCredential, ManagedIdentityCredential } = require('@azure/identity');
 
 const defaultBasePath = 'images';
 const { AZURE_CONTAINER_NAME = 'files' } = process.env;
@@ -25,13 +26,25 @@ const DEFAULT_AZURE_URL_EXPIRY_SECONDS = 5 * 60;
 let azureUrlExpirySeconds = DEFAULT_AZURE_URL_EXPIRY_SECONDS;
 let azureRefreshExpiryMs = null;
 
-let userDelegationKey = null;
-let userDelegationKeyExpiry = null;
+// Delegation-key cache. Stored as `{ promise, expiresOn }` rather than the
+// resolved key so concurrent first-callers all await the *same* in-flight
+// fetch — without this, N concurrent first requests each fire an AAD
+// round-trip and the last writer wins (benign but wasteful).
+let _delegationKeyState = null;
 const DELEGATION_KEY_REFRESH_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
+
+// Module-level singletons for the Managed Identity / User Delegation SAS
+// path. Both the BlobServiceClient and the credential carry caches (the
+// credential holds the AAD token cache) that must be reused across requests
+// — recreating per request cold-starts both caches and adds an AAD
+// round-trip in the worst case. Keyed on account name so a runtime
+// reconfiguration to a different storage account picks up cleanly.
+let _miAccountName = null;
+let _miBlobServiceClient = null;
 
 if (process.env.AZURE_URL_EXPIRY_SECONDS !== undefined) {
   const parsed = parseInt(process.env.AZURE_URL_EXPIRY_SECONDS, 10);
-  if (!isNaN(parsed) && parsed > 0) {
+  if (!Number.isNaN(parsed) && parsed > 0) {
     azureUrlExpirySeconds = Math.min(parsed, 7 * 24 * 60 * 60);
   } else {
     logger.warn(
@@ -42,38 +55,85 @@ if (process.env.AZURE_URL_EXPIRY_SECONDS !== undefined) {
 
 if (process.env.AZURE_REFRESH_EXPIRY_MS) {
   const parsed = parseInt(process.env.AZURE_REFRESH_EXPIRY_MS, 10);
-  if (!isNaN(parsed) && parsed > 0) {
+  if (!Number.isNaN(parsed) && parsed > 0) {
     azureRefreshExpiryMs = parsed;
     logger.info(`[Azure] Using custom refresh expiry time: ${azureRefreshExpiryMs}ms`);
   }
 }
 
 /**
+ * Returns the shared {@link BlobServiceClient} for the Managed Identity / User
+ * Delegation SAS path. Lazily constructs the client and credential once per
+ * account name and reuses them across requests so the credential's AAD token
+ * cache survives — recreating these per request adds a token round-trip in
+ * the worst case.
+ *
+ * In production we explicitly use `ManagedIdentityCredential` (AKS pod
+ * identity / workload identity). `DefaultAzureCredential` walks a chain that
+ * includes env vars, Azure CLI, VS Code, etc., which is friendly in dev but
+ * dangerous in prod (it can silently fall through to an unexpected identity).
+ *
+ * @param {string} accountName - The Azure Storage account name.
+ * @returns {Promise<import('@azure/storage-blob').BlobServiceClient>}
+ */
+function getManagedIdentityBlobServiceClient(accountName) {
+  if (_miBlobServiceClient && _miAccountName === accountName) {
+    return _miBlobServiceClient;
+  }
+  const credential =
+    process.env.NODE_ENV === 'production'
+      ? new ManagedIdentityCredential()
+      : new DefaultAzureCredential();
+  _miBlobServiceClient = new BlobServiceClient(
+    `https://${accountName}.blob.core.windows.net`,
+    credential,
+  );
+  _miAccountName = accountName;
+  // Invalidate the delegation-key cache when the storage account changes so we
+  // don't sign blobs in account A with a key minted for account B.
+  _delegationKeyState = null;
+  return _miBlobServiceClient;
+}
+
+/**
  * Obtains and caches a User Delegation Key from Azure Blob Storage for use with
  * Managed Identity (User Delegation SAS) URL signing. The key is cached for its
- * full 7-day lifespan and proactively refreshed within a 5-minute buffer of expiry.
+ * full 7-day lifespan and proactively refreshed within a 5-minute buffer of
+ * expiry.
+ *
+ * Concurrency: caches the in-flight Promise (not the resolved key), so N
+ * concurrent first-callers all await the same fetch instead of each firing
+ * their own AAD round-trip.
  *
  * @param {import('@azure/storage-blob').BlobServiceClient} blobServiceClient
  * @returns {Promise<import('@azure/storage-blob').UserDelegationKey>}
  */
-async function getUserDelegationKey(blobServiceClient) {
-  const now = new Date();
-
-  if (userDelegationKey && userDelegationKeyExpiry) {
-    const timeUntilExpiry = userDelegationKeyExpiry.getTime() - now.getTime();
+function getUserDelegationKey(blobServiceClient) {
+  if (_delegationKeyState) {
+    const timeUntilExpiry = _delegationKeyState.expiresOn.getTime() - Date.now();
     if (timeUntilExpiry > DELEGATION_KEY_REFRESH_BUFFER_MS) {
-      return userDelegationKey;
+      return _delegationKeyState.promise;
     }
+    // Within the refresh buffer — drop the stale entry and re-fetch below.
+    _delegationKeyState = null;
   }
 
-  const startsOn = now;
-  const expiresOn = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  const startsOn = new Date();
+  const expiresOn = new Date(startsOn.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-  userDelegationKey = await blobServiceClient.getUserDelegationKey(startsOn, expiresOn);
-  userDelegationKeyExpiry = expiresOn;
-
-  logger.info('[Azure] User delegation key obtained, expires:', expiresOn.toISOString());
-  return userDelegationKey;
+  const promise = blobServiceClient.getUserDelegationKey(startsOn, expiresOn).then(
+    (key) => {
+      logger.info('[Azure] User delegation key obtained, expires:', expiresOn.toISOString());
+      return key;
+    },
+    (err) => {
+      // Don't cache a rejected promise — drop the slot so the next caller retries.
+      _delegationKeyState = null;
+      throw err;
+    },
+  );
+  _delegationKeyState = { promise, expiresOn };
+  return promise;
 }
 
 /**
@@ -130,39 +190,30 @@ async function getSignedAzureURL({ blobPath, containerName = AZURE_CONTAINER_NAM
     }
 
     if (accountName) {
-      try {
-        const { DefaultAzureCredential } = await import('@azure/identity');
-        const credential = new DefaultAzureCredential();
-        const blobServiceClient = new BlobServiceClient(
-          `https://${accountName}.blob.core.windows.net`,
-          credential,
-        );
+      const blobServiceClient = await getManagedIdentityBlobServiceClient(accountName);
+      const delegationKey = await getUserDelegationKey(blobServiceClient);
+      const containerClient = blobServiceClient.getContainerClient(containerName);
+      const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
 
-        const delegationKey = await getUserDelegationKey(blobServiceClient);
-        const containerClient = blobServiceClient.getContainerClient(containerName);
-        const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
+      const sasToken = generateBlobSASQueryParameters(
+        {
+          containerName,
+          blobName: blobPath,
+          permissions: BlobSASPermissions.parse('r'),
+          protocol: SASProtocol.Https,
+          startsOn,
+          expiresOn,
+        },
+        delegationKey,
+        accountName,
+      ).toString();
 
-        const sasToken = generateBlobSASQueryParameters(
-          {
-            containerName,
-            blobName: blobPath,
-            permissions: BlobSASPermissions.parse('r'),
-            protocol: SASProtocol.Https,
-            startsOn,
-            expiresOn,
-          },
-          delegationKey,
-          accountName,
-        ).toString();
-
-        return `${blockBlobClient.url}?${sasToken}`;
-      } catch (credentialError) {
-        logger.error('[getSignedAzureURL] User Delegation signing failed. Ensure you are running on Azure with Managed Identity or use a connection string:', credentialError.message);
-        throw credentialError;
-      }
+      return `${blockBlobClient.url}?${sasToken}`;
     }
 
-    throw new Error('Azure storage not configured: set AZURE_STORAGE_CONNECTION_STRING for local/AccountKey signing, or AZURE_STORAGE_ACCOUNT_NAME for Managed Identity');
+    throw new Error(
+      'Azure storage not configured: set AZURE_STORAGE_CONNECTION_STRING for local/AccountKey signing, or AZURE_STORAGE_ACCOUNT_NAME for Managed Identity',
+    );
   } catch (error) {
     logger.error('[getSignedAzureURL] Error generating signed URL:', error);
     throw error;
@@ -196,7 +247,7 @@ async function saveBufferToAzure({
     const blobPath = `${basePath}/${userId}/${fileName}`;
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
     await blockBlobClient.uploadData(buffer);
-    
+
     if (!isPublicAccess()) {
       return await getSignedAzureURL({ blobPath, containerName });
     }
@@ -248,11 +299,6 @@ async function saveURLToAzure({
 async function getAzureURL({ fileName, basePath = defaultBasePath, userId, containerName }) {
   try {
     const blobPath = userId ? `${basePath}/${userId}/${fileName}` : `${basePath}/${fileName}`;
-    // Mirror getS3URL: when private access is on, return a SAS URL — never a
-    // plain blob URL that won't work for the caller. The previous behavior was
-    // a silent break: `processFileURL` persists this URL as the file's filepath,
-    // so URL-based uploads (avatars, image generation outputs) ended up with
-    // unsigned filepaths that 401'd until the next refresh cycle.
     if (!isPublicAccess()) {
       return await getSignedAzureURL({ blobPath, containerName });
     }
@@ -277,11 +323,6 @@ async function deleteFileFromAzure(req, file) {
 
   try {
     const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
-    // Use the URL-aware extractor instead of `String.split(containerName + '/')`.
-    // The split-based approach breaks once filepaths carry SAS tokens (the
-    // query string ends up concatenated into the blob name) and on path-style
-    // URLs (Azurite). The extractor parses with `new URL()` so the SAS is
-    // discarded and the container is matched as a path segment.
     const blobPath = extractBlobPathFromAzureUrl(file.filepath, AZURE_CONTAINER_NAME);
     if (!blobPath) {
       throw new Error(`[deleteFileFromAzure] Unable to extract blob path from: ${file.filepath}`);
@@ -334,8 +375,8 @@ async function streamFileToAzure({
     const blobContentType = mime.getType(fileName);
     await blockBlobClient.uploadStream(
       fileStream,
-      undefined,
-      undefined,
+      undefined, // Use default concurrency (5)
+      undefined, // Use default buffer size (8MB)
       {
         blobHTTPHeaders: {
           blobContentType,
@@ -435,13 +476,17 @@ async function getAzureFileStream(_req, fileURL) {
 function needsRefreshAzure(signedUrl, bufferSeconds) {
   try {
     const url = new URL(signedUrl);
-    const hasSasToken = url.searchParams.has('se');
-    
+    // Use `sig` (the cryptographic SAS signature) — not `se` (just the expiry
+    // timestamp) — as the SAS-token presence check. A hand-crafted URL could
+    // include `se` without a signature; only `sig` proves the URL was signed.
+    // Mirrors S3's `X-Amz-Signature` check.
+    const hasSasToken = url.searchParams.has('sig');
+
     // Private access required but URL is plain → needs signing
     if (!isPublicAccess() && !hasSasToken) {
       return true;
     }
-    
+
     // Public access and no SAS token → no refresh needed
     if (!hasSasToken) {
       return false;
@@ -468,7 +513,7 @@ function needsRefreshAzure(signedUrl, bufferSeconds) {
     const bufferTime = new Date(now.getTime() + bufferSeconds * 1000);
     return expiresAtDate <= bufferTime;
   } catch (error) {
-    logger.error('[needsRefreshAzure] Error checking URL expiration:', error);
+    logger.error(`[needsRefreshAzure] Error checking URL expiration for "${signedUrl}":`, error);
     return true;
   }
 }
@@ -524,12 +569,17 @@ function extractBlobPathFromAzureUrl(fileUrl, containerName) {
  * when public access is configured.
  *
  * @param {string} currentURL - The existing Azure Blob file URL that may need to be refreshed or signed.
+ * @param {string} [containerName] - The container name to extract against and resign within. When
+ *   omitted, falls back to `AZURE_CONTAINER_NAME` (read at call time, default `'files'`). Pass
+ *   the original blob's container when supporting multi-container deployments, otherwise refresh
+ *   silently rewrites the URL into the default container's namespace.
  * @returns {Promise<string | undefined>} A promise that resolves to the new URL,
  *   or `undefined` if the blob path cannot be extracted.
  */
-async function getNewAzureURL(currentURL) {
+async function getNewAzureURL(currentURL, containerName) {
   try {
-    const blobPath = extractBlobPathFromAzureUrl(currentURL);
+    const container = containerName ?? process.env.AZURE_CONTAINER_NAME ?? 'files';
+    const blobPath = extractBlobPathFromAzureUrl(currentURL, container);
     if (!blobPath) {
       return;
     }
@@ -543,11 +593,11 @@ async function getNewAzureURL(currentURL) {
     }
 
     if (!isPublicAccess()) {
-      return await getSignedAzureURL({ blobPath });
+      return await getSignedAzureURL({ blobPath, containerName: container });
     }
 
     // Return plain URL for public access
-    const containerClient = await getAzureContainerClient();
+    const containerClient = await getAzureContainerClient(container);
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
     return blockBlobClient.url;
   } catch (error) {
@@ -591,7 +641,10 @@ async function refreshAzureFileUrls(files, batchUpdateFiles, bufferSeconds = 360
       });
       files[i].filepath = newURL;
     } catch (error) {
-      logger.error(`[refreshAzureFileUrls] Error refreshing Azure URL for file ${file.file_id}:`, error);
+      logger.error(
+        `[refreshAzureFileUrls] Error refreshing Azure URL for file ${file.file_id}:`,
+        error,
+      );
     }
   }
 
@@ -631,10 +684,12 @@ async function refreshAzureUrl(fileObj, bufferSeconds = 3600) {
       logger.warn(`[refreshAzureUrl] Unable to refresh Azure URL: ${fileObj.filepath}`);
       return fileObj.filepath;
     }
-    logger.debug(`[refreshAzureUrl] Refreshed Azure URL`);
+    logger.debug(`[refreshAzureUrl] Refreshed URL for ${fileObj.file_id ?? '(unknown file_id)'}`);
     return newUrl;
   } catch (error) {
-    logger.error(`[refreshAzureUrl] Error refreshing Azure URL: ${error.message}`);
+    logger.error(
+      `[refreshAzureUrl] Error refreshing Azure URL for ${fileObj.file_id ?? '(unknown file_id)'}: ${error.message}`,
+    );
     return fileObj.filepath;
   }
 }
@@ -651,5 +706,5 @@ module.exports = {
   refreshAzureFileUrls,
   refreshAzureUrl,
   getNewAzureURL,
-  extractBlobPathFromAzureUrl
+  extractBlobPathFromAzureUrl,
 };

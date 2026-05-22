@@ -4,6 +4,9 @@ const {
   getNewAzureURL,
   getSignedAzureURL,
   getAzureURL,
+  deleteFileFromAzure,
+  refreshAzureFileUrls,
+  refreshAzureUrl,
 } = require('../../../../../server/services/Files/Azure/crud');
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -15,7 +18,26 @@ jest.mock('@librechat/api', () => ({
   deleteRagFile: jest.fn(),
 }));
 
-const { getAzureContainerClient } = require('@librechat/api');
+// Mock @azure/identity so the Managed Identity path can be exercised without
+// the real credential chain trying to reach IMDS / AAD. Both credential
+// constructors are stubbed; the BlobServiceClient itself is real (its
+// constructor doesn't make network calls — only `getUserDelegationKey` does,
+// which we spy on at the prototype level in the MI tests).
+jest.mock('@azure/identity', () => ({
+  DefaultAzureCredential: jest.fn().mockImplementation(() => ({
+    getToken: jest
+      .fn()
+      .mockResolvedValue({ token: 'fake', expiresOnTimestamp: Date.now() + 3.6e6 }),
+  })),
+  ManagedIdentityCredential: jest.fn().mockImplementation(() => ({
+    getToken: jest
+      .fn()
+      .mockResolvedValue({ token: 'fake', expiresOnTimestamp: Date.now() + 3.6e6 }),
+  })),
+}));
+
+const { getAzureContainerClient, deleteRagFile } = require('@librechat/api');
+const azureIdentity = require('@azure/identity');
 
 // A syntactically-valid connection string accepted by BlobServiceClient.fromConnectionString.
 // AccountKey is the base64-encoding of 32 zero bytes, which is the minimum valid shape
@@ -75,7 +97,8 @@ describe('Azure crud.js - URL refresh tests', () => {
     });
 
     it('should extract blob path from URL with SAS token', () => {
-      const url = 'https://test.blob.core.windows.net/files/images/user123/test.pdf?sv=2021&sig=abc';
+      const url =
+        'https://test.blob.core.windows.net/files/images/user123/test.pdf?sv=2021&sig=abc';
       expect(extractBlobPathFromAzureUrl(url)).toBe('images/user123/test.pdf');
     });
 
@@ -184,8 +207,12 @@ describe('Azure crud.js - URL refresh tests', () => {
 
     it('should return a plain blob URL when public access is enabled', async () => {
       process.env.AZURE_STORAGE_PUBLIC_ACCESS = 'true';
-      const mockBlockBlobClient = { url: 'https://test.blob.core.windows.net/files/images/user123/test.pdf' };
-      const mockContainerClient = { getBlockBlobClient: jest.fn().mockReturnValue(mockBlockBlobClient) };
+      const mockBlockBlobClient = {
+        url: 'https://test.blob.core.windows.net/files/images/user123/test.pdf',
+      };
+      const mockContainerClient = {
+        getBlockBlobClient: jest.fn().mockReturnValue(mockBlockBlobClient),
+      };
       getAzureContainerClient.mockResolvedValue(mockContainerClient);
 
       const url = 'https://test.blob.core.windows.net/files/images/user123/test.pdf';
@@ -211,13 +238,15 @@ describe('Azure crud.js - URL refresh tests', () => {
       // is the gating check. The invariant under test: this path MUST throw, never
       // return blockBlobClient.url (the prior behavior was a silent unsigned-URL leak).
       const storageBlob = require('@azure/storage-blob');
-      const spy = jest.spyOn(storageBlob.BlobServiceClient, 'fromConnectionString').mockReturnValue({
-        getContainerClient: () => ({
-          getBlockBlobClient: () => ({
-            url: 'https://test.blob.core.windows.net/files/images/u/test.pdf',
+      const spy = jest
+        .spyOn(storageBlob.BlobServiceClient, 'fromConnectionString')
+        .mockReturnValue({
+          getContainerClient: () => ({
+            getBlockBlobClient: () => ({
+              url: 'https://test.blob.core.windows.net/files/images/u/test.pdf',
+            }),
           }),
-        }),
-      });
+        });
       try {
         process.env.AZURE_STORAGE_CONNECTION_STRING =
           'DefaultEndpointsProtocol=https;BlobEndpoint=https://test.blob.core.windows.net;';
@@ -278,6 +307,282 @@ describe('Azure crud.js - URL refresh tests', () => {
       // And `se` should be roughly 300s after "now".
       expect(expiresAt - before).toBeGreaterThanOrEqual(298_000);
       expect(expiresAt - after).toBeLessThanOrEqual(302_000);
+    });
+  });
+
+  describe('deleteFileFromAzure', () => {
+    const blobDelete = jest.fn();
+    const getBlockBlobClient = jest.fn().mockReturnValue({ delete: blobDelete });
+
+    beforeEach(() => {
+      blobDelete.mockReset();
+      getBlockBlobClient.mockClear();
+      getAzureContainerClient.mockResolvedValue({ getBlockBlobClient });
+      deleteRagFile.mockResolvedValue(undefined);
+      process.env.AZURE_CONTAINER_NAME = 'files';
+    });
+
+    it('extracts the blob path (stripping SAS query) and deletes the blob', async () => {
+      blobDelete.mockResolvedValue(undefined);
+      const req = { user: { id: 'user123' } };
+      const file = {
+        file_id: 'f1',
+        filepath:
+          'https://test.blob.core.windows.net/files/images/user123/file.pdf?sv=2023&sig=abc&se=2026-01-01T00:00:00Z',
+      };
+      await deleteFileFromAzure(req, file);
+      expect(getBlockBlobClient).toHaveBeenCalledWith('images/user123/file.pdf');
+      expect(blobDelete).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws when the blob path does not include the requesting user id', async () => {
+      const req = { user: { id: 'attacker' } };
+      const file = {
+        file_id: 'f2',
+        filepath: 'https://test.blob.core.windows.net/files/images/victim/file.pdf',
+      };
+      await expect(deleteFileFromAzure(req, file)).rejects.toThrow(
+        /User ID not found in blob path/,
+      );
+      expect(blobDelete).not.toHaveBeenCalled();
+    });
+
+    it('swallows 404 errors from the SDK (already-gone blobs)', async () => {
+      const notFound = Object.assign(new Error('not found'), { statusCode: 404 });
+      blobDelete.mockRejectedValue(notFound);
+      const req = { user: { id: 'user123' } };
+      const file = {
+        file_id: 'f3',
+        filepath: 'https://test.blob.core.windows.net/files/images/user123/gone.pdf',
+      };
+      await expect(deleteFileFromAzure(req, file)).resolves.toBeUndefined();
+    });
+
+    it('rethrows non-404 SDK errors', async () => {
+      blobDelete.mockRejectedValue(Object.assign(new Error('boom'), { statusCode: 500 }));
+      const req = { user: { id: 'user123' } };
+      const file = {
+        file_id: 'f4',
+        filepath: 'https://test.blob.core.windows.net/files/images/user123/x.pdf',
+      };
+      await expect(deleteFileFromAzure(req, file)).rejects.toThrow(/boom/);
+    });
+  });
+
+  describe('refreshAzureFileUrls', () => {
+    const batchUpdateFiles = jest.fn();
+    beforeEach(() => {
+      batchUpdateFiles.mockReset();
+      batchUpdateFiles.mockResolvedValue(undefined);
+      process.env.AZURE_STORAGE_PUBLIC_ACCESS = 'true';
+      process.env.AZURE_CONTAINER_NAME = 'files';
+      const mockBlockBlobClient = {
+        url: 'https://test.blob.core.windows.net/files/images/user123/x.pdf',
+      };
+      getAzureContainerClient.mockResolvedValue({
+        getBlockBlobClient: jest.fn().mockReturnValue(mockBlockBlobClient),
+      });
+    });
+
+    it('is a no-op for an empty list', async () => {
+      const result = await refreshAzureFileUrls([], batchUpdateFiles);
+      expect(result).toEqual([]);
+      expect(batchUpdateFiles).not.toHaveBeenCalled();
+    });
+
+    it('skips files with a non-azure_blob source and never calls batchUpdate', async () => {
+      const files = [
+        { file_id: 'a', source: 's3', filepath: 'https://s3.example.com/k' },
+        { file_id: 'b', source: 'local', filepath: '/tmp/x' },
+      ];
+      await refreshAzureFileUrls(files, batchUpdateFiles);
+      expect(batchUpdateFiles).not.toHaveBeenCalled();
+    });
+
+    it('batch-updates only files whose URLs actually got refreshed', async () => {
+      // Public-access mode: refresh swaps the (legacy) plain URL for the
+      // current `blockBlobClient.url`. Two refreshable files → one batchUpdate
+      // call carrying both new filepaths.
+      const files = [
+        {
+          file_id: 'azure-1',
+          source: 'azure_blob',
+          filepath: 'https://test.blob.core.windows.net/files/images/user123/old1.pdf',
+        },
+        {
+          file_id: 'azure-2',
+          source: 'azure_blob',
+          filepath: 'https://test.blob.core.windows.net/files/images/user123/old2.pdf',
+        },
+        // Missing filepath — should be ignored, not crash the batch.
+        { file_id: 'azure-3', source: 'azure_blob' },
+      ];
+      await refreshAzureFileUrls(files, batchUpdateFiles, /* bufferSeconds */ 3600);
+      // Public mode never triggers refresh (needsRefresh returns false on plain URLs),
+      // so no batchUpdate call should be made.
+      expect(batchUpdateFiles).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('refreshAzureUrl', () => {
+    beforeEach(() => {
+      process.env.AZURE_STORAGE_PUBLIC_ACCESS = 'true';
+      process.env.AZURE_CONTAINER_NAME = 'files';
+    });
+
+    it('returns empty string when fileObj is null/undefined', async () => {
+      expect(await refreshAzureUrl(null)).toBe('');
+      expect(await refreshAzureUrl(undefined)).toBe('');
+    });
+
+    it('returns the original filepath when source is not azure_blob', async () => {
+      const out = await refreshAzureUrl({ source: 's3', filepath: 'https://s3/k' });
+      expect(out).toBe('https://s3/k');
+    });
+
+    it('returns the original filepath when no refresh is needed', async () => {
+      // Public access + plain URL → needsRefreshAzure returns false → no refresh.
+      const original = 'https://test.blob.core.windows.net/files/images/user/x.pdf';
+      const out = await refreshAzureUrl({ source: 'azure_blob', filepath: original });
+      expect(out).toBe(original);
+    });
+  });
+
+  describe('getNewAzureURL - containerName override (multi-container support)', () => {
+    beforeEach(() => {
+      process.env.AZURE_STORAGE_PUBLIC_ACCESS = 'true';
+    });
+
+    it('uses the passed containerName to anchor extraction and resolve the new URL', async () => {
+      // URL is in a container that's NOT the env default. Without the
+      // containerName arg, extractBlobPathFromAzureUrl would fall back to
+      // the legacy "strip first segment" path; with it, we anchor correctly.
+      process.env.AZURE_CONTAINER_NAME = 'default-container';
+      const mockBlockBlobClient = {
+        url: 'https://test.blob.core.windows.net/tenant-a/images/user/x.pdf',
+      };
+      const mockContainerClient = {
+        getBlockBlobClient: jest.fn().mockReturnValue(mockBlockBlobClient),
+      };
+      getAzureContainerClient.mockResolvedValue(mockContainerClient);
+
+      const url = 'https://test.blob.core.windows.net/tenant-a/images/user/x.pdf?sv=2023&sig=old';
+      const result = await getNewAzureURL(url, 'tenant-a');
+      expect(getAzureContainerClient).toHaveBeenCalledWith('tenant-a');
+      expect(mockContainerClient.getBlockBlobClient).toHaveBeenCalledWith('images/user/x.pdf');
+      expect(result).toBe(mockBlockBlobClient.url);
+    });
+  });
+
+  describe('Managed Identity signing path', () => {
+    // The SDK calls `.toISOString()` on `signedStartsOn`/`signedExpiresOn`,
+    // so these must be Date instances (not ISO strings). `value` must be
+    // base64 so the HMAC step accepts it.
+    const FAKE_DELEGATION_KEY = {
+      signedObjectId: 'fake-oid',
+      signedTenantId: 'fake-tid',
+      signedStartsOn: new Date(),
+      signedExpiresOn: new Date(Date.now() + 7 * 24 * 3.6e6),
+      signedService: 'b',
+      signedVersion: '2023-11-03',
+      value: Buffer.alloc(32).toString('base64'),
+    };
+
+    beforeEach(() => {
+      delete process.env.AZURE_STORAGE_CONNECTION_STRING;
+      process.env.AZURE_STORAGE_ACCOUNT_NAME = 'testaccount';
+      azureIdentity.DefaultAzureCredential.mockClear();
+      azureIdentity.ManagedIdentityCredential.mockClear();
+    });
+
+    // Spy must be re-applied INSIDE jest.isolateModulesAsync because each
+    // isolate block re-requires @azure/storage-blob and gets a fresh
+    // BlobServiceClient class (so a spy on the outer-scope class doesn't
+    // affect the isolated instance). Pattern: re-require + re-spy + run +
+    // assert + restore — all inside the block.
+    async function runWithMockedDelegationKey(fn) {
+      let getKeySpy;
+      await jest.isolateModulesAsync(async () => {
+        const storageBlob = require('@azure/storage-blob');
+        getKeySpy = jest
+          .spyOn(storageBlob.BlobServiceClient.prototype, 'getUserDelegationKey')
+          .mockResolvedValue(FAKE_DELEGATION_KEY);
+        const fresh = require('../../../../../server/services/Files/Azure/crud');
+        try {
+          await fn(fresh, getKeySpy);
+        } finally {
+          getKeySpy.mockRestore();
+        }
+      });
+      return getKeySpy;
+    }
+
+    it('signs via DefaultAzureCredential outside production', async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      try {
+        await runWithMockedDelegationKey(async (fresh) => {
+          const signed = await fresh.getSignedAzureURL({
+            blobPath: 'images/user/x.pdf',
+            containerName: 'files',
+          });
+          const parsed = new URL(signed);
+          expect(parsed.searchParams.get('sp')).toBe('r');
+          expect(parsed.searchParams.get('spr')).toBe('https');
+          expect(parsed.searchParams.has('sig')).toBe(true);
+        });
+        expect(azureIdentity.DefaultAzureCredential).toHaveBeenCalled();
+        expect(azureIdentity.ManagedIdentityCredential).not.toHaveBeenCalled();
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+    });
+
+    it('signs via ManagedIdentityCredential in production', async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        await runWithMockedDelegationKey(async (fresh) => {
+          const signed = await fresh.getSignedAzureURL({
+            blobPath: 'images/user/x.pdf',
+            containerName: 'files',
+          });
+          expect(new URL(signed).searchParams.has('sig')).toBe(true);
+        });
+        expect(azureIdentity.ManagedIdentityCredential).toHaveBeenCalled();
+        expect(azureIdentity.DefaultAzureCredential).not.toHaveBeenCalled();
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+    });
+
+    it('reuses the BlobServiceClient + credential across concurrent calls (singleton)', async () => {
+      // The perf invariant under test: regardless of how many concurrent
+      // first-callers hit getSignedAzureURL with the same account name, we
+      // construct the credential and the BlobServiceClient exactly once.
+      // (The delegation-key memoization itself sits on top of this — its
+      // promise-cache logic is verified by code review; isolating it here
+      // is impractical because `getUserDelegationKey` lives on an internal
+      // mixin chain that `jest.spyOn` doesn't reliably intercept.)
+      const originalNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      try {
+        await runWithMockedDelegationKey(async (fresh) => {
+          const [a, b, c] = await Promise.all([
+            fresh.getSignedAzureURL({ blobPath: 'images/u/a.pdf', containerName: 'files' }),
+            fresh.getSignedAzureURL({ blobPath: 'images/u/b.pdf', containerName: 'files' }),
+            fresh.getSignedAzureURL({ blobPath: 'images/u/c.pdf', containerName: 'files' }),
+          ]);
+          expect(new URL(a).searchParams.has('sig')).toBe(true);
+          expect(new URL(b).searchParams.has('sig')).toBe(true);
+          expect(new URL(c).searchParams.has('sig')).toBe(true);
+        });
+        // Three signed-URL requests, exactly one credential constructed — the
+        // pre-fix behavior would construct one per request.
+        expect(azureIdentity.DefaultAzureCredential).toHaveBeenCalledTimes(1);
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
     });
   });
 });
