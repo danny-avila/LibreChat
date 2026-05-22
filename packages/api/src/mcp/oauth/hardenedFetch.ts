@@ -2,19 +2,14 @@ import { Agent } from 'undici';
 import type { Dispatcher } from 'undici';
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 import { createSSRFSafeUndiciConnect, isOAuthUrlAllowed } from '~/auth';
+import { getOAuthUrlPort } from './url';
 
 type FetchInitWithDispatcher = RequestInit & {
   dispatcher?: Dispatcher;
 };
 
+const MAX_OAUTH_DISPATCHERS = 64;
 const oauthDispatchers = new Map<string, Agent>();
-
-function getOAuthUrlPort(url: URL): string {
-  if (url.port) return url.port;
-  if (url.protocol === 'http:') return '80';
-  if (url.protocol === 'https:') return '443';
-  return '';
-}
 
 function shouldBypassSSRFDispatcher(url: string | URL, allowedDomains?: string[] | null): boolean {
   if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) {
@@ -25,7 +20,21 @@ function shouldBypassSSRFDispatcher(url: string | URL, allowedDomains?: string[]
 }
 
 function getDispatcherCacheKey(port: string, allowedAddresses?: string[] | null): string {
-  return `${port}\0${Array.isArray(allowedAddresses) ? allowedAddresses.join('\n') : ''}`;
+  const normalizedAddresses = Array.isArray(allowedAddresses)
+    ? [...new Set(allowedAddresses)].sort().join('\n')
+    : '';
+  return `${port}\0${normalizedAddresses}`;
+}
+
+function evictOldestDispatcher(): void {
+  const oldestKey = oauthDispatchers.keys().next().value as string | undefined;
+  if (!oldestKey) {
+    return;
+  }
+
+  const dispatcher = oauthDispatchers.get(oldestKey);
+  oauthDispatchers.delete(oldestKey);
+  dispatcher?.destroy();
 }
 
 function getOAuthDispatcher(
@@ -44,7 +53,13 @@ function getOAuthDispatcher(
   const cacheKey = getDispatcherCacheKey(port, effectiveAddresses);
   const cached = oauthDispatchers.get(cacheKey);
   if (cached) {
+    oauthDispatchers.delete(cacheKey);
+    oauthDispatchers.set(cacheKey, cached);
     return cached;
+  }
+
+  if (oauthDispatchers.size >= MAX_OAUTH_DISPATCHERS) {
+    evictOldestDispatcher();
   }
 
   const dispatcher = new Agent({
@@ -67,4 +82,11 @@ export function createHardenedOAuthFetch({
       dispatcher != null ? { ...init, dispatcher } : { ...init };
     return fetch(url, fetchInit);
   };
+}
+
+export function resetHardenedOAuthFetchDispatchers(): void {
+  for (const dispatcher of oauthDispatchers.values()) {
+    dispatcher.destroy();
+  }
+  oauthDispatchers.clear();
 }

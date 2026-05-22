@@ -10,6 +10,7 @@ import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
 import { probeResourceMetadataHint } from './resourceHint';
 import { createHardenedOAuthFetch } from './hardenedFetch';
+import { getOAuthUrlPort } from './url';
 import { mcpConfig } from '../mcpConfig';
 
 export interface OAuthDetectionResult {
@@ -177,11 +178,4 @@ async function checkAuthErrorFallback(
   } catch {
     return null;
   }
-}
-
-function getOAuthUrlPort(url: URL): string {
-  if (url.port) return url.port;
-  if (url.protocol === 'http:') return '80';
-  if (url.protocol === 'https:') return '443';
-  return '';
 }

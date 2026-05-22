@@ -1,5 +1,5 @@
 import { createSSRFSafeUndiciConnect, isOAuthUrlAllowed } from '~/auth';
-import { createHardenedOAuthFetch } from './hardenedFetch';
+import { createHardenedOAuthFetch, resetHardenedOAuthFetchDispatchers } from './hardenedFetch';
 
 jest.mock('~/auth', () => ({
   createSSRFSafeUndiciConnect: jest.fn(() => ({ lookup: jest.fn() })),
@@ -20,6 +20,10 @@ describe('createHardenedOAuthFetch', () => {
     global.fetch = mockFetch;
     mockFetch.mockResolvedValue({ ok: true } as Response);
     mockIsOAuthUrlAllowed.mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    resetHardenedOAuthFetchDispatchers();
   });
 
   afterAll(() => {
@@ -62,5 +66,17 @@ describe('createHardenedOAuthFetch', () => {
 
     expect(mockCreateSSRFSafeUndiciConnect).not.toHaveBeenCalled();
     expect(mockFetch.mock.calls[0][1]).not.toHaveProperty('dispatcher');
+  });
+
+  it('normalizes allowedAddresses before caching dispatchers', async () => {
+    await createHardenedOAuthFetch({
+      allowedAddresses: ['10.0.0.5:9443', '192.168.1.5:9443'],
+    })('https://auth.example.com:9443/token');
+
+    await createHardenedOAuthFetch({
+      allowedAddresses: ['192.168.1.5:9443', '10.0.0.5:9443'],
+    })('https://auth.example.com:9443/token');
+
+    expect(mockCreateSSRFSafeUndiciConnect).toHaveBeenCalledTimes(1);
   });
 });

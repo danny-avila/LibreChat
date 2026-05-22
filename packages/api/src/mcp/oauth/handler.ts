@@ -33,17 +33,11 @@ import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
 import { probeResourceMetadataHint } from './resourceHint';
 import { MCPTokenStorage } from './tokens';
 import { createHardenedOAuthFetch } from './hardenedFetch';
+import { getOAuthUrlPort } from './url';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
-
-function getOAuthUrlPort(url: URL): string {
-  if (url.port) return url.port;
-  if (url.protocol === 'http:') return '80';
-  if (url.protocol === 'https:') return '443';
-  return '';
-}
 
 export class MCPOAuthHandler {
   private static readonly FLOW_TYPE = 'mcp_oauth';
