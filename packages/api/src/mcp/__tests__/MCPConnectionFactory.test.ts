@@ -1135,11 +1135,15 @@ describe('MCPConnectionFactory', () => {
       expect(mockConnectionInstance.connect).toHaveBeenCalled();
     });
 
-    it('should trigger proactive OAuth when protected resource metadata is present', async () => {
+    it('should not trigger proactive OAuth when OAuth metadata is present without requiresOAuth', async () => {
       const serverConfig = {
         type: 'streamable-http' as const,
         url: 'https://drivemcp.googleapis.com/mcp/v1',
         initTimeout: 5000,
+        oauth: {
+          authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth',
+          token_url: 'https://oauth2.googleapis.com/token',
+        },
         oauthMetadata: {
           authorization_servers: ['https://accounts.google.com/'],
         },
@@ -1148,28 +1152,6 @@ describe('MCPConnectionFactory', () => {
 
       mockProcessMCPEnv.mockReturnValue(serverConfig);
       mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
-
-      const mockTokens: MCPOAuthTokens = {
-        access_token: 'drive-token',
-        token_type: 'Bearer',
-        obtained_at: Date.now(),
-      };
-
-      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow-drive');
-      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
-        authorizationUrl: 'https://accounts.google.com/o/oauth2/auth?state=drive',
-        flowId: 'flow-drive',
-        flowMetadata: {
-          serverName: 'drive',
-          userId: 'user123',
-          serverUrl: 'https://drivemcp.googleapis.com/mcp/v1',
-          state: 'state-drive',
-        },
-      });
-      mockFlowManager.getFlowState.mockResolvedValue(null);
-      mockFlowManager.createFlow.mockResolvedValue(mockTokens);
-
-      wireEventHandlers(mockConnectionInstance);
       mockConnectionInstance.isConnected.mockResolvedValue(true);
 
       const connection = await MCPConnectionFactory.create(
@@ -1178,8 +1160,8 @@ describe('MCPConnectionFactory', () => {
       );
 
       expect(connection).toBe(mockConnectionInstance);
-      expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
-      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(mockTokens);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.connect).toHaveBeenCalled();
     });
 
     it('should NOT trigger proactive OAuth when useOAuth is true but requiresOAuth is absent', async () => {

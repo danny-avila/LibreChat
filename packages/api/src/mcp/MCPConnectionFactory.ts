@@ -263,11 +263,7 @@ export class MCPConnectionFactory {
     if (this.serverConfig.requiresOAuth === false) {
       return false;
     }
-    return (
-      this.serverConfig.requiresOAuth === true ||
-      this.serverConfig.oauth != null ||
-      ('oauthMetadata' in this.serverConfig && this.serverConfig.oauthMetadata != null)
-    );
+    return this.serverConfig.requiresOAuth === true;
   }
 
   private getServerUrl(): string | undefined {
