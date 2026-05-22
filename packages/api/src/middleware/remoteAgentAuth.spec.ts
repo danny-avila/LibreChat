@@ -309,7 +309,9 @@ function makeFindUser(...users: IUser[]): jest.MockedFunction<UserMethods['findU
   }) as jest.MockedFunction<UserMethods['findUser']>;
 }
 
-function mockMethod<T extends (...args: any[]) => any>(implementation: T): jest.MockedFunction<T> {
+function mockMethod<T extends (...args: never[]) => unknown>(
+  implementation: T,
+): jest.MockedFunction<T> {
   return jest.fn<ReturnType<T>, Parameters<T>>(implementation) as unknown as jest.MockedFunction<T>;
 }
 
@@ -969,7 +971,7 @@ describe('createRemoteAgentAuth', () => {
         mockNext,
       );
 
-      expect(mockEnrichOpenIdProfile).toHaveBeenCalled();
+      expect(mockEnrichOpenIdProfile).not.toHaveBeenCalled();
       expect(deps.findUser).toHaveBeenCalled();
       expect(mockNext).toHaveBeenCalledWith();
     });
@@ -1082,9 +1084,7 @@ describe('createRemoteAgentAuth', () => {
       await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
 
       expect(deps.createUser).not.toHaveBeenCalled();
-      expect(mockEnrichOpenIdProfile).toHaveBeenCalledWith(
-        expect.objectContaining({ fetchUserInfo: false }),
-      );
+      expect(mockEnrichOpenIdProfile).not.toHaveBeenCalled();
       expect(mockSyncUserEntraGroupMemberships).not.toHaveBeenCalled();
       expect(deps.updateUser).toHaveBeenCalledWith(
         'uid123',
@@ -1660,9 +1660,7 @@ describe('createRemoteAgentAuth', () => {
         }),
       );
       deps.findUser.mockResolvedValue(null);
-      deps.createUser.mockResolvedValue(
-        makeUser({ id: 'created-user-id', openidId: 'sub123' }),
-      );
+      deps.createUser.mockResolvedValue(makeUser({ id: 'created-user-id', openidId: 'sub123' }));
 
       await createRemoteAgentAuth(deps)(
         makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
