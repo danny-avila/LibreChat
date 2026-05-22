@@ -1434,11 +1434,11 @@ describe('createRemoteAgentAuth', () => {
       );
       expect(logger.info).toHaveBeenCalledWith(
         '[remoteAgentAuth] OpenID userinfo fetch started',
-        expect.objectContaining({ subjectHash: expect.any(String) }),
+        expect.objectContaining({ openidId: 'sub123' }),
       );
       expect(logger.info).toHaveBeenCalledWith(
         '[remoteAgentAuth] OpenID userinfo fetch completed',
-        expect.objectContaining({ subjectHash: expect.any(String) }),
+        expect.objectContaining({ openidId: 'sub123' }),
       );
       expect(deps.createUser).toHaveBeenCalledWith(
         expect.objectContaining({
