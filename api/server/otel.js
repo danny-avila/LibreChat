@@ -1,5 +1,18 @@
 'use strict';
 
+const INGEST_URL = (
+  process.env.OPSAAS_INGEST_URL ||
+  process.env.SUPERLOG_ENDPOINT ||
+  'https://api.20.123.2.194.nip.io'
+).replace(/\/$/, '');
+const INGEST_KEY = process.env.OPSAAS_API_KEY || process.env.SUPERLOG_API_KEY || '';
+
+if (!INGEST_KEY) {
+  console.warn('[otel] OPSAAS_API_KEY not set — telemetry export disabled');
+  module.exports = { sdk: null };
+  return;
+}
+
 const { NodeSDK } = require('@opentelemetry/sdk-node');
 const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
 const { OTLPMetricExporter } = require('@opentelemetry/exporter-metrics-otlp-http');
@@ -15,13 +28,10 @@ const { HttpInstrumentation } = require('@opentelemetry/instrumentation-http');
 const { ExpressInstrumentation } = require('@opentelemetry/instrumentation-express');
 const { MongoDBInstrumentation } = require('@opentelemetry/instrumentation-mongodb');
 
-const SUPERLOG_ENDPOINT = 'https://api.20.123.2.194.nip.io';
-const SUPERLOG_KEY = 'superlog_live_jfE-f-cd3LMgn9wKevNZzmyKCKqMfAyp';
-
-const otlpHeaders = { authorization: `Bearer ${SUPERLOG_KEY}` };
+const otlpHeaders = { authorization: `Bearer ${INGEST_KEY}` };
 
 const resource = resourceFromAttributes({
-  [ATTR_SERVICE_NAME]: 'billechat-api',
+  [ATTR_SERVICE_NAME]: process.env.OPSAAS_SERVICE_NAME || 'billechat-api',
   [ATTR_SERVICE_VERSION]: process.env.npm_package_version || '0.8.5',
   'deployment.environment.name': process.env.NODE_ENV || 'development',
   'vcs.repository.url.full': 'https://github.com/michalszymanski-ai/LibreChat',
@@ -33,17 +43,17 @@ const resource = resourceFromAttributes({
 });
 
 const traceExporter = new OTLPTraceExporter({
-  url: `${SUPERLOG_ENDPOINT}/v1/traces`,
+  url: `${INGEST_URL}/v1/traces`,
   headers: otlpHeaders,
 });
 
 const metricExporter = new OTLPMetricExporter({
-  url: `${SUPERLOG_ENDPOINT}/v1/metrics`,
+  url: `${INGEST_URL}/v1/metrics`,
   headers: otlpHeaders,
 });
 
 const logExporter = new OTLPLogExporter({
-  url: `${SUPERLOG_ENDPOINT}/v1/logs`,
+  url: `${INGEST_URL}/v1/logs`,
   headers: otlpHeaders,
 });
 
@@ -65,6 +75,7 @@ const sdk = new NodeSDK({
 });
 
 sdk.start();
+console.info(`[otel] exporting to ${INGEST_URL} as ${resource.attributes[ATTR_SERVICE_NAME]}`);
 
 // Flush telemetry on shutdown
 const shutdown = async () => {
