@@ -10,12 +10,10 @@ jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({
   ServerConfigsDB: jest.fn().mockImplementation(() => ({
     get: jest.fn().mockResolvedValue(undefined),
     getAll: jest.fn().mockResolvedValue({}),
-    add: jest
-      .fn()
-      .mockImplementation(async (serverName: string, config: t.ParsedServerConfig) => ({
-        serverName,
-        config,
-      })),
+    add: jest.fn().mockImplementation(async (serverName: string, config: t.ParsedServerConfig) => ({
+      serverName,
+      config,
+    })),
     update: jest.fn().mockResolvedValue(undefined),
     remove: jest.fn().mockResolvedValue(undefined),
     reset: jest.fn().mockResolvedValue(undefined),

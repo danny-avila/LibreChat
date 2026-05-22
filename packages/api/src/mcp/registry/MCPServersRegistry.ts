@@ -608,12 +608,7 @@ export class MCPServersRegistry {
   ): Promise<string[]> {
     const yamlConfigs = await this.cacheConfigsRepo.getAll();
 
-    return [
-      ...new Set([
-        ...Object.keys(yamlConfigs),
-        ...reservedServerNames,
-      ]),
-    ];
+    return [...new Set([...Object.keys(yamlConfigs), ...reservedServerNames])];
   }
 
   private getConfigServerName(cacheKey: string): string {
