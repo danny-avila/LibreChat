@@ -1060,7 +1060,7 @@ export function createRemoteAgentAuth({
         const tenantScopedResolution = await resolveRemoteOpenIdAccount({
           payload,
           profile,
-          issuer: oidcConfig.issuer,
+          issuer: tenantOidcConfig.issuer,
           tenantId: authContext.user.tenantId,
           policy: tenantScopedPolicy,
           methods: accountMethods,
