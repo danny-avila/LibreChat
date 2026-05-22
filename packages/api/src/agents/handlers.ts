@@ -1179,11 +1179,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                        * call. Almost always means the seeding chain
                        * (primeCodeFiles → initialSessions →
                        * CodeSessionContext) dropped the file upstream.
-                       * `session_id` is still emitted; agents falls
-                       * through to the `/files/<sid>` legacy fetch
-                       * which is post-cutover broken (returns 400).
-                       * Pair with `[primeCodeFiles]` traces below to
-                       * locate the layer that lost the ref. */
+                       * `session_id` is still emitted for continuity, but
+                       * concrete file refs must arrive through
+                       * `_injected_files`; agents no longer falls back to
+                       * `/files/<sid>`. Pair with `[primeCodeFiles]`
+                       * traces below to locate the layer that lost the ref. */
                       logger.warn(
                         `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
                         {
