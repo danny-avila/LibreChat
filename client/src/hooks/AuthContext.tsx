@@ -31,10 +31,6 @@ import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
-const GUEST_ACCESSIBLE_PATHS = ['/', '/c/new'];
-const isGuestAccessiblePath = (pathname: string) =>
-  GUEST_ACCESSIBLE_PATHS.some((p) => pathname === p || pathname === p + '/');
-
 const AuthContext = (import.meta.hot?.data?.__AuthContext ??
   createContext<TAuthContext | undefined>(undefined)) as React.Context<TAuthContext | undefined>;
 if (import.meta.hot) {
@@ -209,9 +205,6 @@ const AuthContextProvider = ({
         if (authConfig?.test === true) {
           return;
         }
-        if (isGuestAccessiblePath(window.location.pathname)) {
-          return;
-        }
         navigate(buildLoginRedirectUrl());
       },
       onError: (error) => {
@@ -220,9 +213,6 @@ const AuthContextProvider = ({
         }
         console.log('refreshToken mutation error:', error);
         if (authConfig?.test === true) {
-          return;
-        }
-        if (isGuestAccessiblePath(window.location.pathname)) {
           return;
         }
         navigate(buildLoginRedirectUrl());

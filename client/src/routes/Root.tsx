@@ -22,7 +22,6 @@ import { UnifiedSidebar } from '~/components/UnifiedSidebar';
 import { TermsAndConditionsModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
-import GuestHomePage from '~/components/Chat/GuestHomePage';
 
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
@@ -61,7 +60,7 @@ export default function Root() {
   };
 
   if (!isAuthenticated) {
-    return <GuestHomePage />;
+    return null;
   }
 
   return (
