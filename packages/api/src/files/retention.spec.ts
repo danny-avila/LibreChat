@@ -51,6 +51,33 @@ describe('retention helpers', () => {
     expect(dependencies.getConvo).not.toHaveBeenCalled();
   });
 
+  it('returns expiry for all uploads when file retention is configured and file retention is enabled', async () => {
+    const result = await getRetentionExpiry(
+      request({
+        body: { conversationId: undefined, isTemporary: false },
+        config: { interfaceConfig: { fileRetention: 720 } },
+      }),
+      dependencies,
+      { applyFileRetention: true },
+    );
+
+    expect(result).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+  });
+
+  it('does not apply configured file retention when file retention mode is disabled', async () => {
+    const result = await getRetentionExpiry(
+      request({
+        body: { conversationId: undefined, isTemporary: false },
+        config: { interfaceConfig: { fileRetention: 720 } },
+      }),
+      dependencies,
+    );
+
+    expect(result).toEqual({});
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+  });
+
   it('returns a fresh expiry when the conversation has an active expiration', async () => {
     dependencies.getConvo.mockResolvedValue({
       expiredAt: new Date(Date.now() + 60 * 60 * 1000),
@@ -184,6 +211,21 @@ describe('retention helpers', () => {
     expect(first).toEqual({ expiredAt: expirationDate });
     expect(second).toEqual({ expiredAt: expirationDate });
     expect(dependencies.getConvo).toHaveBeenCalledTimes(1);
+  });
+
+  it('recomputes retention when file retention options change for the same request object', async () => {
+    const req = request({
+      body: { conversationId: undefined, isTemporary: false },
+      config: { interfaceConfig: { fileRetention: 720 } },
+    });
+
+    const withoutFileRetention = await getRetentionExpiry(req, dependencies);
+    const withFileRetention = await getRetentionExpiry(req, dependencies, {
+      applyFileRetention: true,
+    });
+
+    expect(withoutFileRetention).toEqual({});
+    expect(withFileRetention).toEqual({ expiredAt: expirationDate });
   });
 
   it('returns no retention fields when req is null or undefined', async () => {

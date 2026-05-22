@@ -65,4 +65,28 @@ describe('loadDefaultInterface', () => {
 
     expect(interfaceConfig).not.toHaveProperty('temporaryChatRetention');
   });
+
+  it('preserves the configured file retention period', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        fileRetention: 720,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.fileRetention).toBe(720);
+  });
+
+  it('omits file retention when it is not explicitly configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig).not.toHaveProperty('fileRetention');
+  });
 });

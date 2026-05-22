@@ -56,6 +56,10 @@ export type SharedLinkRetentionDependencies = {
   logger?: RetentionLogger;
 };
 
+export type RetentionOptions = {
+  applyFileRetention?: boolean;
+};
+
 export const isBooleanOrStringTrue = (value: unknown): boolean =>
   value === true || value === 'true';
 
@@ -73,6 +77,11 @@ export const getConversationExpirationDate = (
 export const isActiveExpirationDate = (expiredAt: Date, now = new Date()): boolean =>
   expiredAt > now;
 
+const hasConfiguredFileRetention = (interfaceConfig?: InterfaceConfig): boolean => {
+  const fileRetention = interfaceConfig?.fileRetention;
+  return typeof fileRetention === 'number' && Number.isFinite(fileRetention) && fileRetention > 0;
+};
+
 const createRetentionExpiry = (
   req: RetentionRequest | null | undefined,
   { createExpirationDate, logger }: RetentionDependencies,
@@ -85,19 +94,27 @@ const createRetentionExpiry = (
   }
 };
 
-const getRetentionCacheKey = (req: RetentionRequest): string =>
+const getRetentionCacheKey = (req: RetentionRequest, options?: RetentionOptions): string =>
   [
     req.config?.interfaceConfig?.retentionMode ?? '',
+    req.config?.interfaceConfig?.fileRetention ?? '',
     req.user?.id ?? '',
     req.body?.conversationId ?? '',
     String(req.body?.isTemporary ?? ''),
+    String(options?.applyFileRetention ?? false),
   ].join('|');
 
 async function computeRetentionExpiry(
   req: RetentionRequest | null | undefined,
   dependencies: RetentionDependencies,
+  options?: RetentionOptions,
 ): Promise<RetentionExpiry> {
-  if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
+  const interfaceConfig = req?.config?.interfaceConfig;
+  if (options?.applyFileRetention === true && hasConfiguredFileRetention(interfaceConfig)) {
+    return createRetentionExpiry(req, dependencies);
+  }
+
+  if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
     return createRetentionExpiry(req, dependencies);
   }
 
@@ -144,18 +161,19 @@ async function computeRetentionExpiry(
 export async function getRetentionExpiry(
   req: RetentionRequest | null | undefined,
   dependencies: RetentionDependencies,
+  options?: RetentionOptions,
 ): Promise<RetentionExpiry> {
   if (!req) {
     return {};
   }
 
-  const key = getRetentionCacheKey(req);
+  const key = getRetentionCacheKey(req, options);
   const cached = retentionExpiryCache.get(req);
   if (cached?.key === key) {
     return cached.promise;
   }
 
-  const promise = computeRetentionExpiry(req, dependencies);
+  const promise = computeRetentionExpiry(req, dependencies, options);
   retentionExpiryCache.set(req, { key, promise });
   return promise;
 }
