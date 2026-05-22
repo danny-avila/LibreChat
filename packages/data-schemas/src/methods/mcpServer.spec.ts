@@ -141,6 +141,16 @@ describe('MCPServer Model Tests', () => {
       expect(server.serverName).toBe('test-server-2');
     });
 
+    test('should append suffix when base name is reserved', async () => {
+      const server = await methods.createMCPServer({
+        config: createSSEConfig('Test Server'),
+        author: authorId,
+        reservedServerNames: ['test-server'],
+      });
+
+      expect(server.serverName).toBe('test-server-2');
+    });
+
     test('should find next available number in sequence', async () => {
       // Create servers with sequential names
       await MCPServer.create({

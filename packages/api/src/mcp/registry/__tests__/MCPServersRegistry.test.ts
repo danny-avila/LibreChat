@@ -10,7 +10,12 @@ jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({
   ServerConfigsDB: jest.fn().mockImplementation(() => ({
     get: jest.fn().mockResolvedValue(undefined),
     getAll: jest.fn().mockResolvedValue({}),
-    add: jest.fn().mockResolvedValue(undefined),
+    add: jest
+      .fn()
+      .mockImplementation(async (serverName: string, config: t.ParsedServerConfig) => ({
+        serverName,
+        config,
+      })),
     update: jest.fn().mockResolvedValue(undefined),
     remove: jest.fn().mockResolvedValue(undefined),
     reset: jest.fn().mockResolvedValue(undefined),
@@ -98,6 +103,41 @@ describe('MCPServersRegistry', () => {
       expect(Object.keys(configs)).toHaveLength(2);
       expect(configs).toHaveProperty('app_server');
       expect(configs).toHaveProperty('user_server');
+    });
+
+    it('should keep YAML servers authoritative when a DB server has the same name', async () => {
+      const yamlConfig = { ...testParsedConfig, source: 'yaml' as const, title: 'YAML Slack' };
+      const dbConfig = { ...testParsedConfig, source: 'user' as const, title: 'User Slack' };
+      await registry['cacheConfigsRepo'].add('slack', yamlConfig);
+      jest.spyOn(registry['dbConfigsRepo'], 'getAll').mockResolvedValue({
+        slack: dbConfig,
+        user_server: dbConfig,
+      });
+
+      const configs = await registry.getAllServerConfigs('user-1');
+
+      expect(configs.slack).toMatchObject({ source: 'yaml', title: 'YAML Slack' });
+      expect(configs.user_server).toMatchObject({ source: 'user', title: 'User Slack' });
+    });
+  });
+
+  describe('addServer', () => {
+    it('should reserve YAML server names when creating DB servers', async () => {
+      await registry.addServer('slack', { ...testParsedConfig, title: 'Slack' }, 'CACHE');
+      const dbAddSpy = jest.spyOn(registry['dbConfigsRepo'], 'add').mockResolvedValue({
+        serverName: 'slack-2',
+        config: { ...testParsedConfig, source: 'user', title: 'Slack' },
+      });
+
+      await registry.addServer(
+        'temp_server_name',
+        { ...testParsedConfig, title: 'Slack' },
+        'DB',
+        'user-1',
+      );
+
+      const reservedServerNames = dbAddSpy.mock.calls[0]?.[3];
+      expect(Array.from(reservedServerNames ?? [])).toContain('slack');
     });
   });
 

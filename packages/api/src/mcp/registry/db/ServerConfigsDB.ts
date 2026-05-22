@@ -115,6 +115,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     serverName: string,
     config: ParsedServerConfig,
     userId?: string,
+    reservedServerNames?: Iterable<string>,
   ): Promise<AddServerResult> {
     logger.debug(
       `[ServerConfigsDB.add] Starting Creating server with temp servername: ${serverName} for the user with the ID ${userId}`,
@@ -139,6 +140,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     const createdServer = await this._dbMethods.createMCPServer({
       config: encryptedConfig,
       author: userId,
+      reservedServerNames,
     });
     await this._aclService.grantPermission({
       principalType: PrincipalType.USER,

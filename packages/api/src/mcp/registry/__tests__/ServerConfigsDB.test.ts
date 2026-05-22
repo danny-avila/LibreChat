@@ -124,6 +124,13 @@ describe('ServerConfigsDB', () => {
       expect(result.config.dbId).toBeDefined();
     });
 
+    it('should reserve operator-managed server names when creating a DB server', async () => {
+      const config = createSSEConfig('My Test Server', 'A test server');
+      const result = await serverConfigsDB.add('temp-name', config, userId, ['my-test-server']);
+
+      expect(result.serverName).toBe('my-test-server-2');
+    });
+
     it('should grant owner ACL to the user', async () => {
       const config = createSSEConfig('ACL Test Server');
       const result = await serverConfigsDB.add('temp-name', config, userId);
