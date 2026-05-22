@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods, IToken } from '@librechat/data-schemas';
@@ -54,6 +55,33 @@ interface GetTokensParams {
   deleteTokens?: TokenMethods['deleteTokens'];
 }
 
+/**
+ * Reads the `exp` claim (RFC 7519 §4.1.4 / RFC 9068) from a JWT-format access
+ * token, returned as epoch milliseconds. Returns null for opaque (non-JWT)
+ * tokens or when no usable `exp` is present. The signature is intentionally
+ * not verified — the protected resource server validates the token; here we
+ * only read its self-declared expiry to avoid a lossy default.
+ */
+function getJwtAccessTokenExpiry(accessToken?: string): number | null {
+  if (!accessToken) {
+    return null;
+  }
+  try {
+    const decoded = jwt.decode(accessToken);
+    if (
+      decoded != null &&
+      typeof decoded !== 'string' &&
+      typeof decoded.exp === 'number' &&
+      Number.isFinite(decoded.exp)
+    ) {
+      return decoded.exp * 1000;
+    }
+  } catch {
+    /* Not a JWT or malformed — fall through to other expiry sources. */
+  }
+  return null;
+}
+
 export class MCPTokenStorage {
   static getLogPrefix(userId: string, serverName: string): string {
     return isSystemUserId(userId)
@@ -105,9 +133,23 @@ export class MCPTokenStorage {
         expiresInSeconds = tokens.expires_in;
         accessTokenExpiry = new Date(Date.now() + tokens.expires_in * 1000);
       } else {
-        logger.debug(`${logPrefix} No expiry provided, using default`);
-        expiresInSeconds = defaultTTL;
-        accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
+        /**
+         * RFC 6749 §5.1 makes `expires_in` only RECOMMENDED, so some providers
+         * (e.g. Salesforce) omit it. When the access token is a JWT (RFC 9068),
+         * its `exp` claim is the authoritative lifetime — prefer it over the
+         * 365-day default so the token is refreshed on time rather than being
+         * treated as valid for a year and never refreshed.
+         */
+        const jwtExpiryMs = getJwtAccessTokenExpiry(tokens.access_token);
+        if (jwtExpiryMs != null && jwtExpiryMs > Date.now()) {
+          logger.debug(`${logPrefix} Using JWT exp claim: ${new Date(jwtExpiryMs).toISOString()}`);
+          accessTokenExpiry = new Date(jwtExpiryMs);
+          expiresInSeconds = Math.floor((jwtExpiryMs - Date.now()) / 1000);
+        } else {
+          logger.debug(`${logPrefix} No expiry provided, using default`);
+          expiresInSeconds = defaultTTL;
+          accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
+        }
       }
 
       logger.debug(`${logPrefix} Calculated expiry date: ${accessTokenExpiry.toISOString()}`);
