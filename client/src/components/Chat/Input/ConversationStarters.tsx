@@ -80,7 +80,9 @@ const ConversationStarters = () => {
   const fillInput = useCallback((prompt: string) => setValue('text', prompt), [setValue]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
   const [thumbStyle, setThumbStyle] = useState({ left: '0%', width: '100%' });
+  const dragRef = useRef<{ startX: number; startScrollLeft: number } | null>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -107,6 +109,41 @@ const ConversationStarters = () => {
     };
   }, []);
 
+  const handleThumbMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    dragRef.current = { startX: e.clientX, startScrollLeft: el.scrollLeft };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragRef.current) {
+        return;
+      }
+      const track = trackRef.current;
+      if (!track) {
+        return;
+      }
+      const { scrollWidth, clientWidth } = el;
+      const trackWidth = track.clientWidth;
+      const thumbWidth = Math.max((clientWidth / scrollWidth) * 100, 10);
+      const scrollableTrack = trackWidth * (1 - thumbWidth / 100);
+      const scrollableContent = scrollWidth - clientWidth;
+      const dx = ev.clientX - dragRef.current.startX;
+      el.scrollLeft = dragRef.current.startScrollLeft + (dx / scrollableTrack) * scrollableContent;
+    };
+
+    const onMouseUp = () => {
+      dragRef.current = null;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, []);
+
   const { submitMessage } = useSubmitMessage();
   const sendConversationStarter = useCallback(
     (text: string) => submitMessage({ text }),
@@ -128,10 +165,11 @@ const ConversationStarters = () => {
             </button>
           ))}
         </div>
-        <div className="relative mt-1.5 h-1.5 rounded-full bg-surface-tertiary">
+        <div ref={trackRef} className="relative mt-1.5 h-1.5 rounded-full bg-surface-tertiary">
           <div
-            className="absolute top-0 h-full rounded-full bg-border-heavy transition-[left,width] duration-100"
-            style={thumbStyle}
+            onMouseDown={handleThumbMouseDown}
+            className="absolute top-0 h-full cursor-grab rounded-full bg-border-heavy active:cursor-grabbing"
+            style={{ ...thumbStyle, transition: dragRef.current ? 'none' : 'left 0.1s, width 0.1s' }}
           />
         </div>
       </div>
