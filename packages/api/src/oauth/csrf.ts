@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
+import { isEnabled } from '~/utils/common';
 
 export const OAUTH_CSRF_COOKIE = 'oauth_csrf';
 export const OAUTH_CSRF_MAX_AGE = 10 * 60 * 1000;
@@ -10,11 +11,17 @@ export const OAUTH_SESSION_COOKIE_PATH = '/api';
 
 /**
  * Determines if secure cookies should be used.
- * Returns `true` in production unless the server is running on localhost (HTTP).
- * This allows cookies to work on `http://localhost` during local development
+ * SESSION_COOKIE_SECURE=true/false explicitly overrides the environment heuristic.
+ * Returns `true` in production unless DOMAIN_SERVER uses a localhost-style hostname.
+ * This allows cookies to work on localhost during local development
  * even when `NODE_ENV=production` (common in Docker Compose setups).
  */
 export function shouldUseSecureCookie(): boolean {
+  const secureOverride = process.env.SESSION_COOKIE_SECURE?.trim().toLowerCase();
+  if (secureOverride === 'true' || secureOverride === 'false') {
+    return isEnabled(secureOverride);
+  }
+
   const isProduction = process.env.NODE_ENV === 'production';
   const domainServer = process.env.DOMAIN_SERVER || '';
 

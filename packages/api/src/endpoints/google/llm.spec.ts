@@ -628,6 +628,150 @@ describe('getGoogleConfig', () => {
       });
     });
 
+    it('should default Gemini 3.5 Flash to medium thinkingLevel', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+        },
+      });
+
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: 'MEDIUM',
+      });
+    });
+
+    it('should preserve explicit Gemini 3.5 Flash thinkingLevel', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+          thinkingLevel: ThinkingLevel.low,
+        },
+      });
+
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: 'LOW',
+      });
+    });
+
+    it('should apply Gemini 3.5 Flash overrides to versioned aliases', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'google/gemini-3.5-flash-latest',
+          temperature: 0.7,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('temperature');
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: 'MEDIUM',
+      });
+    });
+
+    it('should remove legacy sampling params for Gemini 3.5 Flash', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const modelOptions = {
+        model: 'gemini-3.5-flash',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        top_p: 0.9,
+        top_k: 40,
+        thinking_budget: 5000,
+      } as unknown as t.GoogleParameters;
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions,
+        defaultParams: {
+          temperature: 0.5,
+          topP: 0.8,
+          topK: 20,
+        },
+        addParams: {
+          temperature: 0.2,
+          topP: 0.6,
+          topK: 10,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('temperature');
+      expect(result.llmConfig).not.toHaveProperty('topP');
+      expect(result.llmConfig).not.toHaveProperty('topK');
+      expect(result.llmConfig).not.toHaveProperty('top_p');
+      expect(result.llmConfig).not.toHaveProperty('top_k');
+      expect(result.llmConfig).not.toHaveProperty('thinking_budget');
+    });
+
+    it('should respect dropParams for Gemini 3.5 Flash thinkingConfig', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+        },
+        dropParams: ['thinkingConfig'],
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('thinkingConfig');
+    });
+
+    it('should respect dropParams for Gemini 3.5 Flash includeThoughts', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+        },
+        dropParams: ['includeThoughts'],
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('includeThoughts');
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        thinkingLevel: 'MEDIUM',
+      });
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).not.toHaveProperty(
+        'includeThoughts',
+      );
+    });
+
+    it('should remove empty Gemini 3.5 Flash thinkingConfig when all fields are dropped', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+        },
+        dropParams: ['includeThoughts', 'thinkingLevel'],
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('thinkingConfig');
+    });
+
     it('should omit thinkingLevel when unset (empty string) for Gemini 3', () => {
       const credentials = {
         [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',

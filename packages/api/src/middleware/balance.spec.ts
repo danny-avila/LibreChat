@@ -381,6 +381,34 @@ describe('createSetBalanceConfig', () => {
       // lastRefill should have default value from schema
       expect(balanceRecord?.lastRefill).toBeInstanceOf(Date);
     });
+
+    test('should pass user identity when resolving balance config', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const getAppConfig = jest.fn().mockResolvedValue({
+        balance: { enabled: false },
+      });
+
+      const middleware = createSetBalanceConfig({
+        getAppConfig,
+        findBalanceByUser,
+        upsertBalanceFields,
+      });
+
+      const req = createMockRequest(userId);
+      req.user = {
+        ...req.user,
+        role: 'USER',
+        tenantId: 'tenant-a',
+      } as typeof req.user;
+
+      await middleware(req as ServerRequest, createMockResponse() as ServerResponse, mockNext);
+
+      expect(getAppConfig).toHaveBeenCalledWith({
+        role: 'USER',
+        userId: userId.toString(),
+        tenantId: 'tenant-a',
+      });
+    });
   });
 
   describe('Update Scenarios', () => {

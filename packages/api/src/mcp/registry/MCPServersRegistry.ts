@@ -170,11 +170,12 @@ export class MCPServersRegistry {
   public async getAllServerConfigs(
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
+    role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
     if (configServers == null || !Object.keys(configServers).length) {
-      return this.getBaseServerConfigs(userId);
+      return this.getBaseServerConfigs(userId, role);
     }
-    const base = await this.getBaseServerConfigs(userId);
+    const base = await this.getBaseServerConfigs(userId, role);
     return { ...configServers, ...base };
   }
 
@@ -185,6 +186,7 @@ export class MCPServersRegistry {
    */
   private async getBaseServerConfigs(
     userId?: string,
+    role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
     const cacheKey = userId ?? '__no_user__';
 
@@ -197,7 +199,7 @@ export class MCPServersRegistry {
       return pending;
     }
 
-    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId);
+    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId, role);
     this.pendingGetAllPromises.set(cacheKey, fetchPromise);
 
     try {
@@ -210,10 +212,11 @@ export class MCPServersRegistry {
   private async fetchBaseServerConfigs(
     cacheKey: string,
     userId?: string,
+    role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
     const result = {
       ...(await this.cacheConfigsRepo.getAll()),
-      ...(await this.dbConfigsRepo.getAll(userId)),
+      ...(await this.dbConfigsRepo.getAll(userId, role)),
     };
 
     await this.readThroughCacheAll.set(cacheKey, result);

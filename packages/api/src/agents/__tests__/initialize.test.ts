@@ -33,7 +33,7 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, Tools } from 'librechat-data-provider';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
@@ -126,6 +126,13 @@ function createMocks(overrides?: {
   maxOutputTokens?: number;
   endpointTokenConfig?: EndpointTokenConfig;
   useRealTokenLookup?: boolean;
+  providerTools?: unknown[];
+  loadedToolDefinitions?: Array<{
+    name: string;
+    description?: string;
+    parameters?: object;
+  }>;
+  structuredTools?: unknown[];
 }) {
   const {
     provider = Providers.OPENAI,
@@ -136,6 +143,9 @@ function createMocks(overrides?: {
     maxOutputTokens = 4096,
     endpointTokenConfig,
     useRealTokenLookup = false,
+    providerTools,
+    loadedToolDefinitions = [],
+    structuredTools = [],
   } = overrides ?? {};
 
   const resolvedOverrideProvider = overrideProvider ?? provider;
@@ -158,6 +168,7 @@ function createMocks(overrides?: {
   const mockGetOptions = jest.fn().mockResolvedValue({
     llmConfig: { model, maxTokens: maxOutputTokens },
     endpointTokenConfig,
+    ...(providerTools !== undefined ? { tools: providerTools } : {}),
   } satisfies InitializeResultBase);
 
   mockGetProviderConfig.mockReturnValue({
@@ -181,12 +192,12 @@ function createMocks(overrides?: {
   mockOptionalChainWithEmptyCheck.mockImplementation(realUtils.optionalChainWithEmptyCheck);
 
   const loadTools = jest.fn().mockResolvedValue({
-    tools: [],
+    tools: structuredTools,
     toolContextMap: {},
     dynamicToolContextMap: {},
     userMCPAuthMap: undefined,
     toolRegistry: undefined,
-    toolDefinitions: [],
+    toolDefinitions: loadedToolDefinitions,
     hasDeferredTools: false,
   });
 
@@ -200,6 +211,27 @@ function createMocks(overrides?: {
   };
 
   return { agent, req, res, loadTools, db };
+}
+
+function countNamedWebSearchTools(tools: unknown[] | undefined): number {
+  return (
+    tools?.filter((tool) => {
+      if (tool == null || typeof tool !== 'object') {
+        return false;
+      }
+      const { name } = tool as { name?: unknown };
+      return name === Tools.web_search;
+    }).length ?? 0
+  );
+}
+
+function countWebSearchDefinitions(
+  toolDefinitions: Array<{ name: string }> | undefined,
+): number {
+  return (
+    toolDefinitions?.filter((toolDefinition) => toolDefinition.name === Tools.web_search).length ??
+    0
+  );
 }
 
 describe('initializeAgent — custom provider token lookup', () => {
@@ -273,6 +305,123 @@ describe('initializeAgent — custom provider token lookup', () => {
     // optionalChainWithEmptyCheck → Math.max formula. The toHaveBeenCalledWith
     // assertion above catches the actual provider-resolution regression.
     expect(result.maxContextTokens).toBe(Math.round((65536 - 4096) * 0.95));
+  });
+});
+
+describe('initializeAgent — Anthropic web_search precedence', () => {
+  const nativeWebSearchTool = {
+    type: 'web_search_20250305',
+    name: Tools.web_search,
+  };
+  const libreChatWebSearchDefinition = {
+    name: Tools.web_search,
+    description: 'Search the web',
+    parameters: { type: 'object', properties: {} },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('keeps Anthropic native web_search when LibreChat search is not selected', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.ANTHROPIC,
+      providerTools: [nativeWebSearchTool],
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.ANTHROPIC]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeWebSearchTool]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(1);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(0);
+  });
+
+  it('keeps LibreChat web_search definitions when native Anthropic search is not enabled', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.ANTHROPIC,
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.ANTHROPIC]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(0);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+
+  it('prefers LibreChat web_search when Anthropic native search is also enabled', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.ANTHROPIC,
+      providerTools: [nativeWebSearchTool],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.ANTHROPIC]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(0);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+
+  it('leaves non-Anthropic providers unchanged', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.OPENAI,
+      providerTools: [nativeWebSearchTool],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeWebSearchTool]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(1);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
   });
 });
 
@@ -350,6 +499,45 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     );
 
     expect(result.additional_instructions).toBe('Existing dynamic\n\nArtifact guidance');
+  });
+});
+
+describe('initializeAgent — attachment scoping', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('keeps request attachments separate from agent context attachments', async () => {
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const requestFile = { file_id: 'request-file', filename: 'request.txt' };
+    const agentContextFile = { file_id: 'agent-context-file', filename: 'agent-context.txt' };
+    primeResources.mockResolvedValueOnce({
+      attachments: [agentContextFile, requestFile],
+      requestAttachments: [requestFile],
+      agentContextAttachments: [agentContextFile],
+      tool_resources: undefined,
+    });
+
+    const { agent, req, res, loadTools, db } = createMocks();
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.attachments).toEqual([agentContextFile, requestFile]);
+    expect(result.requestAttachments).toEqual([requestFile]);
+    expect(result.agentContextAttachments).toEqual([agentContextFile]);
   });
 });
 

@@ -83,22 +83,19 @@ jest.mock('../Attachment', () => ({
   ),
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => ({
-    OGDialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    OGDialogContent: ({ children }: { children: React.ReactNode }) => (
-      <div data-testid="dialog-content">{children}</div>
-    ),
-    OGDialogTitle: ({ children }: { children: React.ReactNode }) => (
-      <div data-testid="dialog-title">{children}</div>
-    ),
-    OGDialogDescription: ({ children }: { children: React.ReactNode }) => (
-      <div data-testid="dialog-description">{children}</div>
-    ),
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => ({
+  __esModule: true,
+  OGDialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  OGDialogContent: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-content">{children}</div>
+  ),
+  OGDialogTitle: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-title">{children}</div>
+  ),
+  OGDialogDescription: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-description">{children}</div>
+  ),
+}));
 
 jest.mock('lucide-react', () => ({
   // eslint-disable-next-line i18next/no-literal-string
@@ -244,6 +241,13 @@ function renderWithState(args: {
   };
   setProgress(args.progress ?? null);
   return { ...rendered, setProgress };
+}
+
+/** Open the subagent dialog. Required when another test file in the same Jest
+ *  worker has already loaded the real `@librechat/client` module; Radix only
+ *  mounts dialog content while `open` is true. */
+function openSubagentDialog(headerLabel = 'Ran agent') {
+  fireEvent.click(screen.getByRole('button', { name: headerLabel }));
 }
 
 describe('SubagentCall — status resolution', () => {
@@ -519,6 +523,7 @@ describe('SubagentCall — dialog content', () => {
       </RecoilRoot>,
     );
 
+    openSubagentDialog();
     expect(screen.getByTestId('prompt-markdown')).toHaveTextContent('# Review prompt');
     expect(screen.getByText('final answer')).toBeInTheDocument();
 
@@ -594,8 +599,7 @@ describe('SubagentCall — dialog content', () => {
       }),
     });
 
-    /** The mocked `OGDialog` always renders children, so dialog content is
-     *  inspectable without simulating a click. */
+    openSubagentDialog();
     expect(screen.getByTestId('reasoning-part')).toHaveTextContent('Let me compute.');
     expect(screen.getByTestId('tool-call-part')).toHaveAttribute('data-name', 'calculator');
     expect(screen.getByTestId('tool-call-part')).toHaveTextContent('4');
@@ -603,15 +607,9 @@ describe('SubagentCall — dialog content', () => {
   });
 
   it('falls back to the raw tool output when no content parts were recorded', () => {
-    renderWithState({
-      toolCallId: 'call_fallback',
-      initialProgress: 1,
-      isSubmitting: false,
-      progress: null,
-    });
     /** No events → no aggregated parts. The SubagentCall should still
      *  render the raw final `output` that came back in the parent's
-     *  tool_call (we pass it explicitly below). */
+     *  tool_call. */
     const { rerender } = render(
       <RecoilRoot>
         <SubagentCall
@@ -622,6 +620,7 @@ describe('SubagentCall — dialog content', () => {
         />
       </RecoilRoot>,
     );
+    openSubagentDialog();
     expect(screen.getByText('raw final text')).toBeInTheDocument();
     rerender(<RecoilRoot />);
   });
@@ -661,6 +660,7 @@ describe('SubagentCall — dialog content', () => {
       </RecoilRoot>,
     );
 
+    openSubagentDialog();
     expect(screen.getByTestId('reasoning-part')).toHaveTextContent('Prior thinking.');
     expect(screen.getByTestId('tool-call-part')).toHaveAttribute('data-name', 'calculator');
     expect(screen.getByTestId('tool-call-part')).toHaveTextContent('2436');
@@ -694,6 +694,7 @@ describe('SubagentCall — dialog content', () => {
         />
       </RecoilRoot>,
     );
+    openSubagentDialog();
     expect(screen.getByText('Persisted answer.')).toBeInTheDocument();
   });
 

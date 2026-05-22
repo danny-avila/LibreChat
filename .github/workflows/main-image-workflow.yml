@@ -3,6 +3,10 @@ name: Docker Compose Build Latest Main Image Tag (Manual Dispatch)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,11 +23,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Fetch tags and set the latest tag
         run: |
-          git fetch --tags
-          echo "LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)" >> $GITHUB_ENV
+          set -euo pipefail
+          git fetch --tags --force
+          LATEST_TAG=$(git tag --list 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            echo "::error::No stable v<semver> tag found"
+            exit 1
+          fi
+          printf 'LATEST_TAG=%s\n' "$LATEST_TAG" >> "$GITHUB_ENV"
 
       # Set up QEMU
       - name: Set up QEMU
@@ -35,7 +48,7 @@ jobs:
 
       # Log in to GitHub Container Registry
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

@@ -98,6 +98,10 @@ async function resolveAllMcpConfigs(userId, user) {
       error,
     );
   }
+  if (user?.role) {
+    return await registry.getAllServerConfigs(userId, configServers, user.role);
+  }
+
   return await registry.getAllServerConfigs(userId, configServers);
 }
 
@@ -415,7 +419,11 @@ async function createMCPTools({
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
   if (serverConfig?.url) {
-    const appConfig = await getAppConfig({ role: user?.role, tenantId: user?.tenantId });
+    const appConfig = await getAppConfig({
+      role: user?.role,
+      tenantId: user?.tenantId,
+      userId: user?.id,
+    });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
     const isDomainAllowed = await isMCPDomainAllowed(
@@ -503,7 +511,11 @@ async function createMCPTool({
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
   if (serverConfig?.url) {
-    const appConfig = await getAppConfig({ role: user?.role, tenantId: user?.tenantId });
+    const appConfig = await getAppConfig({
+      role: user?.role,
+      tenantId: user?.tenantId,
+      userId: user?.id,
+    });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
     const isDomainAllowed = await isMCPDomainAllowed(
@@ -720,7 +732,9 @@ async function getMCPSetupData(userId, options = {}) {
 
   const appConfig = await getAppConfig({ role, tenantId, userId });
   const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-  const mcpConfig = await registry.getAllServerConfigs(userId, configServers);
+  const mcpConfig = role
+    ? await registry.getAllServerConfigs(userId, configServers, role)
+    : await registry.getAllServerConfigs(userId, configServers);
   const mcpManager = getMCPManager(userId);
   /** @type {Map<string, import('@librechat/api').MCPConnection>} */
   let appConnections = new Map();

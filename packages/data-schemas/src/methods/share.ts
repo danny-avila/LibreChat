@@ -4,6 +4,7 @@ import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import logger from '~/config/winston';
+import { activeExpirationFilter } from '~/utils/retention';
 
 class ShareServiceError extends Error {
   code: string;
@@ -161,7 +162,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
   async function getSharedMessages(shareId: string): Promise<t.SharedMessagesResult | null> {
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
-      const share = (await SharedLink.findOne({ shareId, isPublic: true })
+      const share = (await SharedLink.findOne({
+        shareId,
+        isPublic: true,
+        ...activeExpirationFilter<t.ISharedLink>(),
+      })
         .populate({
           path: 'messages',
           select: '-_id -__v -user',
@@ -215,7 +220,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
       const Conversation = mongoose.models.Conversation as SchemaWithMeiliMethods;
-      const query: FilterQuery<t.ISharedLink> = { user, isPublic };
+      const query: FilterQuery<t.ISharedLink> = {
+        user,
+        isPublic,
+        ...activeExpirationFilter<t.ISharedLink>(),
+      };
 
       if (pageParam) {
         if (sortDirection === 'desc') {
@@ -345,6 +354,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
     user: string,
     conversationId: string,
     targetMessageId?: string,
+    expiredAt?: Date,
   ): Promise<t.CreateShareResult> {
     if (!user || !conversationId) {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
@@ -359,6 +369,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
           conversationId,
           user,
           isPublic: true,
+          ...activeExpirationFilter<t.ISharedLink>(),
           ...(targetMessageId && { targetMessageId }),
         })
           .select('-_id -__v -user')
@@ -408,6 +419,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         title,
         user,
         ...(targetMessageId && { targetMessageId }),
+        ...(expiredAt && { expiredAt }),
       });
 
       return { shareId, conversationId, targetMessageId };
@@ -438,7 +450,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
 
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
-      const share = (await SharedLink.findOne({ conversationId, user, isPublic: true })
+      const share = (await SharedLink.findOne({
+        conversationId,
+        user,
+        isPublic: true,
+        ...activeExpirationFilter<t.ISharedLink>(),
+      })
         .select('shareId targetMessageId -_id')
         .sort({ updatedAt: -1 })
         .lean()) as { shareId?: string; targetMessageId?: string } | null;
@@ -469,6 +486,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
     user: string,
     shareId: string,
     targetMessageId?: string,
+    expiredAt?: Date | null,
   ): Promise<t.UpdateShareResult> {
     if (!user || !shareId) {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
@@ -490,12 +508,17 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         .lean();
 
       const newShareId = nanoid();
+      const hasNewExpiration = expiredAt instanceof Date;
       const resolvedTargetMessageId = targetMessageId ?? share.targetMessageId;
       const update = {
-        messages: updatedMessages,
-        user,
-        shareId: newShareId,
-        ...(resolvedTargetMessageId && { targetMessageId: resolvedTargetMessageId }),
+        $set: {
+          messages: updatedMessages,
+          user,
+          shareId: newShareId,
+          ...(resolvedTargetMessageId && { targetMessageId: resolvedTargetMessageId }),
+          ...(hasNewExpiration && { expiredAt }),
+        },
+        ...(expiredAt === null ? { $unset: { expiredAt: 1 } } : {}),
       };
 
       const updatedShare = (await SharedLink.findOneAndUpdate({ shareId, user }, update, {
