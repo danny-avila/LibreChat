@@ -107,6 +107,14 @@ describe('resolveMcpConfigNames', () => {
     );
   });
 
+  it('returns [] when mcpConfig is absent', async () => {
+    getAppConfig.mockResolvedValue({});
+
+    const result = await resolveMcpConfigNames({ user: { id: 'u1' } });
+
+    expect(result).toEqual([]);
+  });
+
   it('propagates getAppConfig failures for write-path callers', async () => {
     getAppConfig.mockRejectedValue(new Error('db timeout'));
 

@@ -40,7 +40,7 @@ const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
 export class MCPServersRegistry {
   private static instance: MCPServersRegistry;
 
-  private readonly dbConfigsRepo: IServerConfigsRepositoryInterface;
+  private readonly dbConfigsRepo: ServerConfigsDB;
   private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly configCacheRepo: IServerConfigsRepositoryInterface;
   private readonly allowedDomains?: string[] | null;
@@ -164,7 +164,7 @@ export class MCPServersRegistry {
 
   /**
    * Returns all server configs visible to the given user.
-   * Operator-managed servers are kept authoritative if a legacy User DB server has a colliding name.
+   * Operator-managed servers (YAML + Config) override User DB servers on name collisions.
    */
   public async getAllServerConfigs(
     userId?: string,
@@ -175,6 +175,7 @@ export class MCPServersRegistry {
       return this.getBaseServerConfigs(userId, role);
     }
     const base = await this.getBaseServerConfigs(userId, role);
+    this.warnOnOperatorManagedNameCollisions(configServers, base, 'Config');
     return { ...base, ...configServers };
   }
 
@@ -214,10 +215,14 @@ export class MCPServersRegistry {
     userId?: string,
     role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
-    const result = {
-      ...(await this.dbConfigsRepo.getAll(userId, role)),
-      ...(await this.cacheConfigsRepo.getAll()),
-    };
+    const [dbConfigs, yamlConfigs] = await Promise.all([
+      this.dbConfigsRepo.getAll(userId, role),
+      this.cacheConfigsRepo.getAll(),
+    ]);
+
+    this.warnOnOperatorManagedNameCollisions(yamlConfigs, dbConfigs, 'YAML');
+
+    const result = { ...dbConfigs, ...yamlConfigs };
 
     await this.readThroughCacheAll.set(cacheKey, result);
     return result;
@@ -230,17 +235,14 @@ export class MCPServersRegistry {
   public async addServerStub(
     serverName: string,
     config: t.MCPOptions,
-    storageLocation: 'CACHE' | 'DB',
+    storageLocation: 'CACHE',
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source: t.MCPServerSource = storageLocation === 'CACHE' ? 'yaml' : 'user';
-    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true, source };
+    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true, source: 'yaml' };
     const result = await configRepo.add(serverName, stubConfig, userId);
     await this.invalidateServerReadCaches(result.serverName, userId);
-    if (storageLocation === 'CACHE') {
-      this.resetYamlServerNamesMemo();
-    }
+    this.resetYamlServerNamesMemo();
     return result;
   }
 
@@ -272,11 +274,15 @@ export class MCPServersRegistry {
       ...parsedConfig,
       source: (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource,
     };
-    const operatorManagedServerNames =
+    const result =
       storageLocation === 'DB'
-        ? await this.getOperatorManagedServerNames(reservedServerNames)
-        : undefined;
-    const result = await configRepo.add(serverName, tagged, userId, operatorManagedServerNames);
+        ? await this.dbConfigsRepo.add(
+            serverName,
+            tagged,
+            userId,
+            await this.getOperatorManagedServerNames(reservedServerNames),
+          )
+        : await configRepo.add(serverName, tagged, userId);
     await this.invalidateServerReadCaches(result.serverName, userId);
     if (storageLocation === 'CACHE') {
       this.resetYamlServerNamesMemo();
@@ -525,7 +531,7 @@ export class MCPServersRegistry {
   public async invalidateConfigCache(): Promise<string[]> {
     const allCached = await this.configCacheRepo.getAll();
     const evictedNames = [
-      ...new Set(Object.keys(allCached).map((key) => this.getConfigServerName(key))),
+      ...new Set(Object.keys(allCached).map((key) => this.parseServerNameFromConfigCacheKey(key))),
     ];
 
     await Promise.all([
@@ -592,28 +598,47 @@ export class MCPServersRegistry {
   }
 
   private async invalidateServerReadCaches(serverName: string, userId?: string): Promise<void> {
-    const cacheKeys = new Set([
-      this.getReadThroughCacheKey(serverName, userId),
-      this.getReadThroughCacheKey(serverName),
-    ]);
-
-    await Promise.all([
-      ...Array.from(cacheKeys).map((cacheKey) => this.readThroughCache.delete(cacheKey)),
+    const deletes = [
+      this.readThroughCache.delete(this.getReadThroughCacheKey(serverName)),
       this.readThroughCacheAll.clear(),
-    ]);
+    ];
+
+    if (userId) {
+      deletes.push(this.readThroughCache.delete(this.getReadThroughCacheKey(serverName, userId)));
+    }
+
+    await Promise.all(deletes);
   }
 
   private async getOperatorManagedServerNames(
     reservedServerNames: Iterable<string> = [],
   ): Promise<string[]> {
-    const yamlConfigs = await this.cacheConfigsRepo.getAll();
+    const yamlNames = await this.getYamlServerNames();
 
-    return [...new Set([...Object.keys(yamlConfigs), ...reservedServerNames])];
+    return [...new Set([...yamlNames, ...reservedServerNames])];
   }
 
-  private getConfigServerName(cacheKey: string): string {
+  private parseServerNameFromConfigCacheKey(cacheKey: string): string {
     const lastColon = cacheKey.lastIndexOf(':');
     return lastColon > 0 ? cacheKey.slice(0, lastColon) : cacheKey;
+  }
+
+  private warnOnOperatorManagedNameCollisions(
+    operatorConfigs: Record<string, t.ParsedServerConfig>,
+    candidateConfigs: Record<string, t.ParsedServerConfig>,
+    operatorSource: 'Config' | 'YAML',
+  ): void {
+    const shadowedNames = Object.keys(operatorConfigs).filter(
+      (serverName) => candidateConfigs[serverName]?.source === 'user',
+    );
+    if (!shadowedNames.length) {
+      return;
+    }
+
+    logger.warn(
+      `[MCPServersRegistry] ${operatorSource} MCP server(s) shadow DB-backed server(s) with colliding name(s): ` +
+        `${shadowedNames.join(', ')}. DB records remain stored but are hidden while operator-managed servers use these names.`,
+    );
   }
 
   private resetYamlServerNamesMemo(): void {
