@@ -34,11 +34,15 @@ export default function FilesSection({
 
   if (files.length === 0 && !emptyText) return null;
 
+  const headingId = `files-section-${title.toLowerCase()}`;
+
   return (
-    <div className="mb-3 flex flex-col">
+    <section aria-labelledby={headingId} className="mb-3 flex flex-col">
       {/* Header */}
       <div className="mb-3 flex w-full justify-between">
-        <h2>{title}</h2>
+        <h2 id={headingId}>
+          {title} <span className="sr-only">files</span>
+        </h2>
         {shown > 0 && <div className="text-text-secondary">{showingText}</div>}
       </div>
 
@@ -69,6 +73,6 @@ export default function FilesSection({
           You&#39;ve reached the end
         </div>
       )}
-    </div>
+    </section>
   );
 }
