@@ -38,6 +38,20 @@ beforeEach(async () => {
 });
 
 describe('User schema indexes', () => {
+  test('should define an issuer-bound idOnTheSource lookup index', async () => {
+    await User.syncIndexes();
+
+    const indexes = await User.collection.indexes();
+
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: { idOnTheSource: 1, openidIssuer: 1, tenantId: 1 },
+        }),
+      ]),
+    );
+  });
+
   test('should allow the same OpenID subject from different issuers', async () => {
     await User.syncIndexes();
 
