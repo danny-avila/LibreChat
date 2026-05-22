@@ -107,7 +107,7 @@ const ConversationStarters = () => {
           orientation="horizontal"
           className="flex h-1.5 touch-none select-none flex-col bg-surface-tertiary p-px"
         >
-          <ScrollArea.Thumb className="relative flex-1 cursor-grab rounded-full bg-border-heavy before:absolute before:left-1/2 before:top-1/2 before:h-full before:min-h-[44px] before:w-full before:min-w-[44px] before:-translate-x-1/2 before:-translate-y-1/2 active:cursor-grabbing" />
+          <ScrollArea.Thumb className="relative flex-1 rounded-full bg-border-heavy before:absolute before:left-1/2 before:top-1/2 before:h-full before:min-h-[44px] before:w-full before:min-w-[44px] before:-translate-x-1/2 before:-translate-y-1/2" />
         </ScrollArea.Scrollbar>
       </ScrollArea.Root>
     );
