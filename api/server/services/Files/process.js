@@ -38,7 +38,7 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
-const { getRetentionExpiry } = require('./retention');
+const { getFileRetentionExpiry } = require('./retention');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
@@ -397,7 +397,7 @@ const processFileURL = async ({
         source: fileStrategy,
         type,
         context,
-        ...(await getRetentionExpiry(req)),
+        ...(await getFileRetentionExpiry(req)),
         tenantId,
         width: dimensions.width,
         height: dimensions.height,
@@ -448,7 +448,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
       context: FileContext.message_attachment,
       source,
       type: `image/${appConfig.imageOutputType}`,
-      ...(await getRetentionExpiry(req)),
+      ...(await getFileRetentionExpiry(req)),
       width,
       height,
       tenantId: req.user.tenantId,
@@ -509,7 +509,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
       source,
       type,
       width,
-      ...(await getRetentionExpiry(req)),
+      ...(await getFileRetentionExpiry(req)),
       height,
       tenantId: req.user.tenantId,
     },
@@ -612,7 +612,7 @@ const processFileUpload = async ({ req, res, metadata }) => {
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       model: isAssistantUpload ? req.body.model : undefined,
       type: file.mimetype,
-      ...(await getRetentionExpiry(req)),
+      ...(await getFileRetentionExpiry(req)),
       embedded,
       source,
       height,
@@ -727,7 +727,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
           `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
         );
       }
-      const retentionExpiry = await getRetentionExpiry(req);
+      const retentionExpiry = await getFileRetentionExpiry(req);
       const fileInfo = {
         ...removeNullishValues({
           text,
@@ -925,7 +925,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     });
   }
 
-  const retentionExpiry = await getRetentionExpiry(req);
+  const retentionExpiry = await getFileRetentionExpiry(req);
   const fileInfo = {
     ...removeNullishValues({
       user: req.user.id,
@@ -991,7 +991,7 @@ const processOpenAIFile = async ({
     source,
     model: openai.req.body.model,
     filename: originalName ?? file_id,
-    ...(await getRetentionExpiry(openai.req)),
+    ...(await getFileRetentionExpiry(openai.req)),
     tenantId: openai.req?.user?.tenantId,
   };
 
@@ -1036,7 +1036,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     context: FileContext.assistants_output,
     file_id,
     filename,
-    ...(await getRetentionExpiry(req)),
+    ...(await getFileRetentionExpiry(req)),
     tenantId: req.user.tenantId,
   };
   try {
@@ -1201,7 +1201,7 @@ async function saveBase64Image(
       user: req.user.id,
       bytes: image.bytes,
       width: image.width,
-      ...(await getRetentionExpiry(req)),
+      ...(await getFileRetentionExpiry(req)),
       height: image.height,
       tenantId: req.user.tenantId,
     },
