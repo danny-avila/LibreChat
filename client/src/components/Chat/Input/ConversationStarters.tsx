@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
+import { useMemo, useCallback } from 'react';
 import {
   Brain,
   Image,
@@ -12,6 +12,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import * as ScrollArea from '@radix-ui/react-scroll-area';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext, useChatFormContext } from '~/Providers';
 import { useGetAssistantDocsQuery, useGetEndpointsQuery } from '~/data-provider';
@@ -79,71 +80,6 @@ const ConversationStarters = () => {
   const { setValue } = useChatFormContext();
   const fillInput = useCallback((prompt: string) => setValue('text', prompt), [setValue]);
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [thumbStyle, setThumbStyle] = useState({ left: '0%', width: '100%' });
-  const dragRef = useRef<{ startX: number; startScrollLeft: number } | null>(null);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) {
-      return;
-    }
-    const update = () => {
-      const { scrollLeft, scrollWidth, clientWidth } = el;
-      if (scrollWidth <= clientWidth) {
-        setThumbStyle({ left: '0%', width: '100%' });
-        return;
-      }
-      const thumbWidth = Math.max((clientWidth / scrollWidth) * 100, 10);
-      const thumbLeft = (scrollLeft / (scrollWidth - clientWidth)) * (100 - thumbWidth);
-      setThumbStyle({ left: `${thumbLeft}%`, width: `${thumbWidth}%` });
-    };
-    update();
-    el.addEventListener('scroll', update);
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => {
-      el.removeEventListener('scroll', update);
-      ro.disconnect();
-    };
-  }, []);
-
-  const handleThumbMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const el = scrollRef.current;
-    if (!el) {
-      return;
-    }
-    dragRef.current = { startX: e.clientX, startScrollLeft: el.scrollLeft };
-
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!dragRef.current) {
-        return;
-      }
-      const track = trackRef.current;
-      if (!track) {
-        return;
-      }
-      const { scrollWidth, clientWidth } = el;
-      const trackWidth = track.clientWidth;
-      const thumbWidth = Math.max((clientWidth / scrollWidth) * 100, 10);
-      const scrollableTrack = trackWidth * (1 - thumbWidth / 100);
-      const scrollableContent = scrollWidth - clientWidth;
-      const dx = ev.clientX - dragRef.current.startX;
-      el.scrollLeft = dragRef.current.startScrollLeft + (dx / scrollableTrack) * scrollableContent;
-    };
-
-    const onMouseUp = () => {
-      dragRef.current = null;
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  }, []);
-
   const { submitMessage } = useSubmitMessage();
   const sendConversationStarter = useCallback(
     (text: string) => submitMessage({ text }),
@@ -152,27 +88,28 @@ const ConversationStarters = () => {
 
   if (!conversation_starters.length) {
     return (
-      <div className="mt-8 px-4">
-        <div ref={scrollRef} className="no-scrollbar flex flex-nowrap gap-2 overflow-x-auto pb-1">
-          {DEFAULT_STARTERS.map((s) => (
-            <button
-              key={s.labelKey}
-              onClick={() => fillInput(s.prompt)}
-              className="flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border-medium px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-surface-tertiary"
-            >
-              <s.icon className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
-              {localize(s.labelKey)}
-            </button>
-          ))}
-        </div>
-        <div ref={trackRef} className="relative mt-1.5 h-1.5 rounded-full bg-surface-tertiary">
-          <div
-            onMouseDown={handleThumbMouseDown}
-            className="absolute top-0 h-full cursor-grab rounded-full bg-border-heavy active:cursor-grabbing"
-            style={{ ...thumbStyle, transition: dragRef.current ? 'none' : 'left 0.1s, width 0.1s' }}
-          />
-        </div>
-      </div>
+      <ScrollArea.Root className="mt-8 w-full px-4" type="always">
+        <ScrollArea.Viewport className="w-full">
+          <div className="flex flex-nowrap gap-2 pb-3">
+            {DEFAULT_STARTERS.map((s) => (
+              <button
+                key={s.labelKey}
+                onClick={() => fillInput(s.prompt)}
+                className="flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border-medium px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-surface-tertiary"
+              >
+                <s.icon className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+                {localize(s.labelKey)}
+              </button>
+            ))}
+          </div>
+        </ScrollArea.Viewport>
+        <ScrollArea.Scrollbar
+          orientation="horizontal"
+          className="flex h-1.5 touch-none select-none flex-col bg-surface-tertiary p-px"
+        >
+          <ScrollArea.Thumb className="relative flex-1 cursor-grab rounded-full bg-border-heavy before:absolute before:left-1/2 before:top-1/2 before:h-full before:min-h-[44px] before:w-full before:min-w-[44px] before:-translate-x-1/2 before:-translate-y-1/2 active:cursor-grabbing" />
+        </ScrollArea.Scrollbar>
+      </ScrollArea.Root>
     );
   }
 
