@@ -34,7 +34,9 @@ export async function batchDeleteKeys(
   const mode = cacheConfig.USE_REDIS_CLUSTER ? 'cluster' : 'single-node';
   const deletePromises = [];
 
-  if (cacheConfig.USE_REDIS_CLUSTER) {
+  // NJ: Quick fix for now - we want to see if always using the safer delete works
+  // eslint-disable-next-line no-constant-condition
+  if (true || cacheConfig.USE_REDIS_CLUSTER) {
     // Cluster mode: Delete each key individually in parallel chunks to avoid CROSSSLOT errors
     for (let i = 0; i < keys.length; i += size) {
       const chunk = keys.slice(i, i + size);
