@@ -30,7 +30,9 @@ const updateResult = {
   upsertedId: null,
 };
 
-function mockMethod<T extends (...args: any[]) => any>(implementation: T): jest.MockedFunction<T> {
+function mockMethod<T extends (...args: never[]) => unknown>(
+  implementation: T,
+): jest.MockedFunction<T> {
   return jest.fn<ReturnType<T>, Parameters<T>>(implementation) as unknown as jest.MockedFunction<T>;
 }
 
@@ -144,9 +146,9 @@ describe('syncUserEntraGroupMemberships', () => {
   it('exchanges the request token and syncs existing, missing, owned, and stale groups', async () => {
     const existingGroup = { idOnTheSource: 'group-a' } as IGroup;
     const deps = methods({
-      findGroupsByExternalIds: mockMethod<UserGroupMethods['findGroupsByExternalIds']>(
-        async () => [existingGroup],
-      ),
+      findGroupsByExternalIds: mockMethod<UserGroupMethods['findGroupsByExternalIds']>(async () => [
+        existingGroup,
+      ]),
     });
     const fetchMock = fetcher([
       jsonResponse({ token_endpoint: 'https://issuer.example.com/token' }),
@@ -356,7 +358,7 @@ describe('syncUserEntraGroupMemberships', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('skips membership writes when graph returns no groups', async () => {
+  it('removes stale memberships when graph returns no groups', async () => {
     const deps = methods();
     const result = await sync({
       graphConfig: { ...graphConfig, includeOwnersAsMembers: false },
@@ -368,9 +370,17 @@ describe('syncUserEntraGroupMemberships', () => {
       ]),
     });
 
-    expect(result).toEqual({ attempted: true, synced: false, reason: 'failed' });
-    expect(deps.findGroupsByExternalIds).not.toHaveBeenCalled();
-    expect(deps.bulkUpdateGroups).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ attempted: true, synced: true });
+    expect(deps.findGroupsByExternalIds).toHaveBeenCalledWith([], 'entra');
+    expect(deps.upsertGroupByExternalId).not.toHaveBeenCalled();
+    expect(deps.bulkUpdateGroups).toHaveBeenCalledWith(
+      {
+        source: 'entra',
+        memberIds: 'oid-123',
+        idOnTheSource: { $nin: [] },
+      },
+      { $pullAll: { memberIds: ['oid-123'] } },
+    );
   });
 
   it('rejects unsafe discovered token endpoints before OBO exchange', async () => {

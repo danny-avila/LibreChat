@@ -508,13 +508,6 @@ export async function syncUserEntraGroupMemberships(input: {
       ? await getUserOwnedEntraGroups(graphToken, fetcher)
       : [];
     const groupIds = unique([...memberGroupIds, ...ownedGroupIds]);
-    if (groupIds.length === 0) {
-      logger.debug(
-        '[entraGroupSync] Remote Entra group sync found no groups; skipping membership writes',
-        getGroupSyncLogContext({ input, groupCount: 0, reason: 'failed' }),
-      );
-      return { attempted: true, synced: false, reason: 'failed' };
-    }
 
     await syncMemberships({
       user: input.user,

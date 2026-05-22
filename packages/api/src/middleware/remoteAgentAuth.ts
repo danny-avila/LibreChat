@@ -12,6 +12,7 @@ import { normalizeOpenIdIssuer } from '../auth/openid';
 import {
   type EntraGroupSyncResult,
   syncUserEntraGroupMemberships,
+  type EntraGroupSyncDbMethods,
   type EntraGroupSyncOptions,
   type EntraGraphConfig,
 } from '../auth/entraGroupSync';
@@ -85,10 +86,6 @@ type RemoteAuthContext = {
 type RemoteAccountResolution =
   | { ok: true; context: RemoteAuthContext }
   | { ok: false; status: 401 | 500 };
-type GroupSyncMethods = Pick<
-  RemoteAgentAuthDeps,
-  'bulkUpdateGroups' | 'findGroupsByExternalIds' | 'upsertGroupByExternalId'
->;
 type RemoteAuthLogContext = {
   tenantId?: string;
   userId?: string;
@@ -710,7 +707,7 @@ async function syncRemoteGroups({
 }: {
   context: RemoteAuthContext;
   token: string;
-  methods: GroupSyncMethods;
+  methods: EntraGroupSyncDbMethods;
   cacheInput: FederatedAuthCacheKeyInput | null;
 }): Promise<EntraGroupSyncResult> {
   const { user, lifecycle, policy } = context;
@@ -926,16 +923,16 @@ export function createRemoteAgentAuth({
 
       // Use a same-scope federated auth cache hit to skip account reconciliation.
       if (federatedCacheOptions.enabled) {
-        const initialCacheInput: FederatedAuthCacheKeyInput = {
+        const requestScopeCacheKey: FederatedAuthCacheKeyInput = {
           tenantId: requestTenantId,
           issuer: oidcConfig.issuer,
           subject,
         };
-        const cacheReadContext = getCacheLogContext(initialCacheInput);
+        const cacheReadContext = getCacheLogContext(requestScopeCacheKey);
         logger.debug('[remoteAgentAuth] Federated auth cache read started', cacheReadContext);
 
         const cacheReadResult = await readRemoteFederatedAuthCache(
-          initialCacheInput,
+          requestScopeCacheKey,
           federatedCacheOptions,
         );
         const cachedEntry = cacheReadResult.entry;
@@ -1079,7 +1076,7 @@ export function createRemoteAgentAuth({
       }
 
       // Log the resolved identity
-      const resolvedIdentity: FederatedAuthCacheKeyInput = {
+      const resolvedPolicyCacheKey: FederatedAuthCacheKeyInput = {
         tenantId: requestTenantId,
         issuer: authContext.policy.oidcConfig.issuer,
         subject,
@@ -1090,7 +1087,7 @@ export function createRemoteAgentAuth({
           : '[remoteAgentAuth] OpenID remote user resolved',
         getUserLogContext({
           user: authContext.user,
-          input: resolvedIdentity,
+          input: resolvedPolicyCacheKey,
           lifecycle: authContext.lifecycle,
         }),
       );
@@ -1113,7 +1110,7 @@ export function createRemoteAgentAuth({
         groupSyncResult = await syncRemoteGroups({
           context: authContext,
           token,
-          cacheInput: resolvedIdentity,
+          cacheInput: resolvedPolicyCacheKey,
           methods: {
             bulkUpdateGroups,
             findGroupsByExternalIds,
@@ -1133,7 +1130,7 @@ export function createRemoteAgentAuth({
       ) {
         await writeFederatedAuthCache({
           context: authContext,
-          cacheInput: resolvedIdentity,
+          cacheInput: resolvedPolicyCacheKey,
           federatedCacheOptions,
           groupSyncResult,
         });
