@@ -39,6 +39,11 @@ export const webSearchAuth = {
       jinaApiUrl: 0 as const,
     },
     cohere: { cohereApiKey: 1 as const },
+    zeroentropy: {
+      zeroEntropyApiKey: 1 as const,
+      zeroEntropyApiUrl: 0 as const,
+      zeroEntropyModel: 0 as const,
+    },
   },
 };
 
@@ -82,6 +87,9 @@ export function loadWebSearchConfig(
   const tavilyExtractUrl = config?.tavilyExtractUrl ?? '${TAVILY_EXTRACT_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
+  const zeroEntropyApiKey = config?.zeroEntropyApiKey ?? '${ZEROENTROPY_API_KEY}';
+  const zeroEntropyApiUrl = config?.zeroEntropyApiUrl ?? '${ZEROENTROPY_API_URL}';
+  const zeroEntropyModel = config?.zeroEntropyModel ?? 'zerank-2';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
   const rerankerType = config?.rerankerType;
@@ -91,6 +99,9 @@ export function loadWebSearchConfig(
     safeSearch,
     jinaApiKey,
     jinaApiUrl,
+    zeroEntropyApiKey,
+    zeroEntropyApiUrl,
+    zeroEntropyModel,
     cohereApiKey,
     serperApiKey,
     searxngApiKey,
