@@ -1360,5 +1360,15 @@
   "com_ui_zoom_in": "放大",
   "com_ui_zoom_level": "缩放级别",
   "com_ui_zoom_out": "缩小",
-  "com_user_message": "您"
+  "com_user_message": "您",
+  "com_ui_starter_help_write": "帮我写作",
+  "com_ui_starter_learn_about": "了解一下",
+  "com_ui_starter_analyze_image": "分析图像",
+  "com_ui_starter_summarize_text": "总结文本",
+  "com_ui_starter_analyze_data": "分析数据",
+  "com_ui_starter_brainstorm": "头脑风暴",
+  "com_ui_starter_improve_writing": "改进写作",
+  "com_ui_starter_translate": "翻译",
+  "com_ui_starter_generate_images": "生成图像",
+  "com_ui_starter_generate_ideas": "生成想法"
 }

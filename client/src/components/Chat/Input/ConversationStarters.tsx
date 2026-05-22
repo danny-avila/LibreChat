@@ -3,22 +3,25 @@ import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext, useChatFormContext } from '~/Providers';
 import { useGetAssistantDocsQuery, useGetEndpointsQuery } from '~/data-provider';
 import { getIconEndpoint, getEntity } from '~/utils';
-import { useSubmitMessage } from '~/hooks';
+import { useSubmitMessage, useLocalize } from '~/hooks';
 
-const DEFAULT_STARTERS = [
-  { label: 'Help me write', prompt: 'Help me write: ' },
-  { label: 'Learn about', prompt: 'Tell me about: ' },
-  { label: 'Analyze Image', prompt: 'Analyze this image: ' },
-  { label: 'Summarize text', prompt: 'Summarize this text: ' },
-  { label: 'Analyze Data', prompt: 'Analyze this data: ' },
-  { label: 'Brainstorm', prompt: 'Brainstorm ideas for: ' },
-  { label: 'Improve writing', prompt: 'Improve this writing: ' },
-  { label: 'Translate', prompt: 'Translate to English: ' },
-  { label: 'Generate Images', prompt: 'Generate an image of: ' },
-  { label: 'Generate Ideas', prompt: 'Generate creative ideas for: ' },
-] as const;
+type TranslationKey = Parameters<ReturnType<typeof useLocalize>>[0];
+
+const DEFAULT_STARTERS: { labelKey: TranslationKey; prompt: string }[] = [
+  { labelKey: 'com_ui_starter_help_write', prompt: 'Help me write: ' },
+  { labelKey: 'com_ui_starter_learn_about', prompt: 'Tell me about: ' },
+  { labelKey: 'com_ui_starter_analyze_image', prompt: 'Analyze this image: ' },
+  { labelKey: 'com_ui_starter_summarize_text', prompt: 'Summarize this text: ' },
+  { labelKey: 'com_ui_starter_analyze_data', prompt: 'Analyze this data: ' },
+  { labelKey: 'com_ui_starter_brainstorm', prompt: 'Brainstorm ideas for: ' },
+  { labelKey: 'com_ui_starter_improve_writing', prompt: 'Improve this writing: ' },
+  { labelKey: 'com_ui_starter_translate', prompt: 'Translate to English: ' },
+  { labelKey: 'com_ui_starter_generate_images', prompt: 'Generate an image of: ' },
+  { labelKey: 'com_ui_starter_generate_ideas', prompt: 'Generate creative ideas for: ' },
+];
 
 const ConversationStarters = () => {
+  const localize = useLocalize();
   const { conversation } = useChatContext();
   const agentsMap = useAgentsMapContext();
   const assistantMap = useAssistantsMapContext();
@@ -71,14 +74,14 @@ const ConversationStarters = () => {
 
   if (!conversation_starters.length) {
     return (
-      <div className="mt-8 flex flex-nowrap justify-center gap-2 overflow-x-auto px-4 pb-1">
+      <div className="mt-8 flex flex-nowrap gap-2 overflow-x-auto px-4 pb-1">
         {DEFAULT_STARTERS.map((s) => (
           <button
-            key={s.label}
+            key={s.labelKey}
             onClick={() => fillInput(s.prompt)}
             className="whitespace-nowrap rounded-full border border-border-medium px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-surface-tertiary"
           >
-            {s.label}
+            {localize(s.labelKey)}
           </button>
         ))}
       </div>

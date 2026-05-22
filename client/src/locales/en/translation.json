@@ -1726,5 +1726,15 @@
   "com_ui_zoom_in": "Zoom in",
   "com_ui_zoom_level": "Zoom level",
   "com_ui_zoom_out": "Zoom out",
-  "com_user_message": "You"
+  "com_user_message": "You",
+  "com_ui_starter_help_write": "Help me write",
+  "com_ui_starter_learn_about": "Learn about",
+  "com_ui_starter_analyze_image": "Analyze Image",
+  "com_ui_starter_summarize_text": "Summarize text",
+  "com_ui_starter_analyze_data": "Analyze Data",
+  "com_ui_starter_brainstorm": "Brainstorm",
+  "com_ui_starter_improve_writing": "Improve writing",
+  "com_ui_starter_translate": "Translate",
+  "com_ui_starter_generate_images": "Generate Images",
+  "com_ui_starter_generate_ideas": "Generate Ideas"
 }
