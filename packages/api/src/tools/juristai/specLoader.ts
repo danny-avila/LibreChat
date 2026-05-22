@@ -38,7 +38,7 @@ interface CachedSpec {
   fetchedAtMs: number;
 }
 
-let cache: CachedSpec | null = null;
+const cache = new Map<string, CachedSpec>();
 
 const isLlmCallable = (operation: OpenAPIV3.OperationObject): boolean => {
   const flagged = (operation as Record<string, unknown>)[LLM_CALLABLE_EXTENSION];
@@ -51,6 +51,9 @@ const buildSchemaUrl = (config: JuristaiSpecConfig): string => {
   const separator = path.includes('?') ? '&' : '?';
   return `${base}${path}${separator}format=json`;
 };
+
+const getCacheKey = (config: JuristaiSpecConfig): string =>
+  `${buildSchemaUrl(config)}::${config.refreshSeconds ?? DEFAULT_REFRESH_SECONDS}::${config.schemaAuthToken ? 'auth' : 'anon'}`;
 
 const fetchSpec = async (config: JuristaiSpecConfig): Promise<OpenAPIV3.Document> => {
   const headers: Record<string, string> = { Accept: 'application/json' };
@@ -66,11 +69,12 @@ const fetchSpec = async (config: JuristaiSpecConfig): Promise<OpenAPIV3.Document
 };
 
 const isFresh = (config: JuristaiSpecConfig): boolean => {
-  if (!cache) {
+  const cachedSpec = cache.get(getCacheKey(config));
+  if (!cachedSpec) {
     return false;
   }
   const ttlMs = (config.refreshSeconds ?? DEFAULT_REFRESH_SECONDS) * 1000;
-  return Date.now() - cache.fetchedAtMs < ttlMs;
+  return Date.now() - cachedSpec.fetchedAtMs < ttlMs;
 };
 
 /** Fetches (or returns cached) the raw django-hub OpenAPI spec. */
@@ -81,11 +85,12 @@ export async function loadDjangoSpec(
   if (config.staticSpec) {
     return config.staticSpec;
   }
+  const cacheKey = getCacheKey(config);
   if (!forceRefresh && isFresh(config)) {
-    return (cache as CachedSpec).spec;
+    return cache.get(cacheKey)!.spec;
   }
   const spec = await fetchSpec(config);
-  cache = { spec, fetchedAtMs: Date.now() };
+  cache.set(cacheKey, { spec, fetchedAtMs: Date.now() });
   return spec;
 }
 
@@ -137,5 +142,5 @@ export function filterSpecForApp(
 }
 
 export function clearSpecCache(): void {
-  cache = null;
+  cache.clear();
 }

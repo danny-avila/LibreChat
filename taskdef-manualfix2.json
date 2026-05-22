@@ -110,6 +110,10 @@
                                                      {
                                                          "name":  "MONGO_URI",
                                                          "valueFrom":  "arn:aws:secretsmanager:us-east-1:730335261767:secret:juristai/prod/librechat/mongo_uri-73sRPq"
+                                                     },
+                                                     {
+                                                         "name":  "CHAT_SECRET",
+                                                         "valueFrom":  "arn:aws:secretsmanager:us-east-1:730335261767:secret:/juristai/chatbot/dev/CHAT_SECRET-ztMmFU"
                                                      }
                                                  ],
                                      "mountPoints":  [

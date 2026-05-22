@@ -1,6 +1,14 @@
 const { logger } = require('@librechat/data-schemas');
 const { AuthTypeEnum, AuthorizationTypeEnum } = require('librechat-data-provider');
-const { loadJuristaiToolCatalog, mintChatJwt, JURISTAI_TOOL_PREFIX } = require('@librechat/api');
+const {
+  loadJuristaiToolCatalog,
+  mintChatJwt,
+  JURISTAI_TOOL_PREFIX,
+  DEFAULT_JURISTAI_APP_ID,
+  JURISTAI_PER_APP_OPERATIONS,
+  resolveJuristaiAppId,
+  isJuristaiAppContextOperation,
+} = require('@librechat/api');
 const { createActionTool } = require('~/server/services/ActionService');
 
 /**
@@ -11,18 +19,14 @@ const { createActionTool } = require('~/server/services/ActionService');
  * The whole integration is gated behind JURISTAI_DJANGO_TOOLS_ENABLED so it is
  * a no-op (zero behavior change) unless explicitly turned on.
  *
- * Spike scope: a single bundled `search-case` spec, so we don't depend on
- * django-hub's admin-gated /api/schema endpoint yet. Swap `staticSpec` for a
- * live fetch (specLoader supports schemaAuthToken) once schema access is sorted.
+ * The primary path is live django-hub schema loading. A tiny bundled fallback
+ * spec remains available for local/dev environments where schema auth has not
+ * been wired yet.
  */
 
 const DEFAULT_DJANGO_BASE_URL = 'https://api-dev.juristai.org';
-
-/** prompt_id -> appId (FedCrim = 1, LitigAI = 2), used for per-app curation. */
-const PROMPT_APP_MAP = {
-  pmpt_694030e601dc8196b472e5dcf8f2e3bd0aa422f8a026f796: '1',
-  pmpt_694030b0bc6c8194906e2aee647e640b0959472384122916: '2',
-};
+const DEFAULT_DJANGO_SCHEMA_PATH = '/api/schema/';
+const DEFAULT_SCHEMA_REFRESH_SECONDS = 600;
 
 /** Bundled OpenAPI slice for the spike. Mirrors CaseSearchSerializer. */
 const SEARCH_CASE_SPEC = {
@@ -33,7 +37,10 @@ const SEARCH_CASE_SPEC = {
       post: {
         operationId: 'search-case',
         summary:
-          'Search court cases by party name, case number, or query terms via CourtListener.',
+          'Search U.S. court cases and dockets via CourtListener. Provide search terms in `q` ' +
+          '(and/or party/case filters); the assistant only needs to supply what to search for. ' +
+          'Pagination, sort order, search type, and the product context are filled in ' +
+          'automatically, so you normally only set `q` (plus optional filters like party names).',
         'x-llm-callable': true,
         requestBody: {
           required: true,
@@ -42,21 +49,37 @@ const SEARCH_CASE_SPEC = {
               schema: {
                 type: 'object',
                 properties: {
-                  appId: { type: 'string', description: 'Product app id, e.g. "1" or "2".' },
-                  type: { type: 'string', description: 'Search type, e.g. "r" for RECAP.' },
-                  order_by: { type: 'string', description: 'Sort order, e.g. "score desc".' },
-                  name: { type: 'string', description: 'Saved search/display name for the query.' },
-                  q: { type: 'string', description: 'Free-text query terms.' },
-                  caseNumberFull: { type: 'string' },
-                  lastName: { type: 'string' },
-                  firstName: { type: 'string' },
-                  caseTitle: { type: 'string' },
-                  courtId: { type: 'string' },
-                  dateFiledFrom: { type: 'string', format: 'date' },
-                  natureOfSuit: { type: 'string' },
-                  next: { type: 'string' },
+                  q: {
+                    type: 'string',
+                    description: 'Free-text query: party names, case titles, legal topics, etc.',
+                  },
+                  name: {
+                    type: 'string',
+                    description:
+                      'Optional short label for this search. Defaults to the query if omitted.',
+                  },
+                  caseNumberFull: { type: 'string', description: 'Full docket/case number.' },
+                  lastName: { type: 'string', description: 'Party last name.' },
+                  firstName: { type: 'string', description: 'Party first name.' },
+                  caseTitle: { type: 'string', description: 'Case caption/title.' },
+                  courtId: { type: 'string', description: 'CourtListener court id, e.g. "ganb".' },
+                  dateFiledFrom: { type: 'string', format: 'date', description: 'YYYY-MM-DD.' },
+                  natureOfSuit: { type: 'string', description: 'Nature of suit filter.' },
+                  type: {
+                    type: 'string',
+                    description: 'Search type. Leave unset; defaults to "r" (RECAP dockets).',
+                  },
+                  order_by: {
+                    type: 'string',
+                    description: 'Sort order. Leave unset; defaults to "score desc".',
+                  },
+                  appId: {
+                    type: 'string',
+                    description: 'Set automatically from the active product. Do not populate.',
+                  },
+                  next: { type: 'string', description: 'Opaque cursor for the next page.' },
                 },
-                required: ['appId', 'type', 'order_by', 'name'],
+                required: [],
               },
             },
           },
@@ -72,22 +95,297 @@ const isJuristaiToolsEnabled = () =>
 
 const getBaseUrl = () => process.env.DJANGO_BASE_URL || DEFAULT_DJANGO_BASE_URL;
 
+const getSchemaPath = () => process.env.JURISTAI_DJANGO_SCHEMA_PATH || DEFAULT_DJANGO_SCHEMA_PATH;
+
+const getSchemaAuthToken = () =>
+  process.env.JURISTAI_DJANGO_SCHEMA_AUTH_TOKEN || process.env.DJANGO_SCHEMA_AUTH_TOKEN;
+
+const getSchemaRefreshSeconds = () => {
+  const parsed = Number.parseInt(process.env.JURISTAI_DJANGO_SCHEMA_REFRESH_SECONDS ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SCHEMA_REFRESH_SECONDS;
+};
+
+const isStaticFallbackEnabled = () => {
+  const raw = process.env.JURISTAI_DJANGO_TOOLS_STATIC_FALLBACK_ENABLED;
+  if (raw != null) {
+    return /^(1|true|yes|on)$/i.test(raw);
+  }
+  return process.env.NODE_ENV !== 'production';
+};
+
 const getSpecConfig = () => ({
   djangoBaseUrl: getBaseUrl(),
-  staticSpec: SEARCH_CASE_SPEC,
+  schemaPath: getSchemaPath(),
+  refreshSeconds: getSchemaRefreshSeconds(),
+  schemaAuthToken: getSchemaAuthToken(),
+  perAppOperations: JURISTAI_PER_APP_OPERATIONS,
 });
 
 const getAppId = (req) => {
   const params = req.body?.model_parameters ?? {};
+  const additionalFields =
+    req.body?.additionalModelRequestFields ??
+    req.body?.endpointOption?.additionalModelRequestFields ??
+    {};
   const promptId = req.body?.prompt_id ?? params.prompt_id ?? params.prompt?.id;
-  return promptId ? PROMPT_APP_MAP[promptId] : undefined;
+  return resolveJuristaiAppId(
+    req.body?.appId ?? params.appId ?? additionalFields.appId,
+    promptId,
+    JURISTAI_PER_APP_OPERATIONS,
+    DEFAULT_JURISTAI_APP_ID,
+  );
+};
+
+const SEARCH_CASE_TOOL = `${JURISTAI_TOOL_PREFIX}search-case`;
+
+/**
+ * Fills the django-hub-required fields the model can't reasonably know.
+ * `appId` is forced from the request's product context; `type`/`order_by`/`name`
+ * get sensible defaults when the model omits them. Model-supplied values win,
+ * except `appId` which is always server-controlled.
+ */
+const applySharedDefaults = (args, req, toolName) => {
+  const merged = { ...(args ?? {}) };
+  const operationId = toolName.replace(JURISTAI_TOOL_PREFIX, '');
+  if (isJuristaiAppContextOperation(operationId) || Object.hasOwn(merged, 'appId')) {
+    merged.appId = getAppId(req);
+  }
+  return merged;
+};
+
+const applySearchCaseDefaults = (args, req) => {
+  const merged = applySharedDefaults(args, req, SEARCH_CASE_TOOL);
+  if (!merged.type) {
+    merged.type = 'r';
+  }
+  if (!merged.order_by) {
+    merged.order_by = 'score desc';
+  }
+  if (!merged.name) {
+    merged.name = merged.q ? `Assistant search: ${merged.q}` : 'Assistant case search';
+  }
+  return merged;
+};
+
+const TOOL_DEFAULT_APPLIERS = {
+  [SEARCH_CASE_TOOL]: applySearchCaseDefaults,
+};
+
+const applyToolDefaults = (toolName, input, req) => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return input;
+  }
+  const applyDefaults = TOOL_DEFAULT_APPLIERS[toolName] ?? applySharedDefaults;
+  return applyDefaults(input, req, toolName);
+};
+
+const extractHttpStatus = (value) => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const match = value.match(/\bstatus\s+(\d{3})\b/i);
+  if (!match) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const isTransientStatus = (status) =>
+  status === 408 || status === 429 || (status >= 500 && status < 600);
+
+const classifyToolOutcome = (output) => {
+  if (typeof output !== 'string') {
+    return 'success';
+  }
+  const status = extractHttpStatus(output);
+  if (status === 401 || status === 403) {
+    return 'authorization_error';
+  }
+  if (status === 404) {
+    return 'not_found';
+  }
+  if (status === 409) {
+    return 'conflict';
+  }
+  if (status === 400 || status === 422) {
+    return 'validation_error';
+  }
+  if (
+    isTransientStatus(status) ||
+    output.includes('timed out') ||
+    output.includes('No response received')
+  ) {
+    return 'transient_upstream_failure';
+  }
+  return 'success';
+};
+
+const classifyToolFailure = (error) => {
+  const message = error?.message ?? '';
+  if (message.includes('401') || message.includes('403')) {
+    return 'authorization_error';
+  }
+  if (message.includes('404')) {
+    return 'not_found';
+  }
+  if (message.includes('409')) {
+    return 'conflict';
+  }
+  if (message.includes('400') || message.includes('422')) {
+    return 'validation_error';
+  }
+  return 'transient_upstream_failure';
+};
+
+const sanitizeErrorMessage = (value) => {
+  if (typeof value !== 'string') {
+    return 'JuristAI tool execution failed.';
+  }
+  return value.replace(/\s+/g, ' ').trim().slice(0, 600);
+};
+
+const buildNormalizedErrorPayload = (toolName, outcome, rawMessage) => {
+  const messageByOutcome = {
+    authorization_error: 'Authorization failed for this JuristAI action.',
+    not_found: 'The requested JuristAI resource was not found.',
+    conflict:
+      'This JuristAI action could not be completed because the current state conflicts with the request.',
+    validation_error:
+      'JuristAI rejected the tool input. Review the arguments and request any missing required details.',
+    transient_upstream_failure:
+      'JuristAI is temporarily unavailable or timed out. Retry only if the action is still needed.',
+  };
+  return JSON.stringify({
+    ok: false,
+    tool: toolName,
+    errorType: outcome,
+    retryable: outcome === 'transient_upstream_failure',
+    message: messageByOutcome[outcome] ?? 'JuristAI tool execution failed.',
+    details: sanitizeErrorMessage(rawMessage),
+  });
+};
+
+const normalizeToolOutput = (toolName, output) => {
+  const outcome = classifyToolOutcome(output);
+  if (outcome === 'success') {
+    return output;
+  }
+  return buildNormalizedErrorPayload(toolName, outcome, output);
+};
+
+const logCatalogEvent = (event, req, toolNames) => {
+  logger.debug(`[juristaiTools] ${event}`, {
+    appId: getAppId(req),
+    promptId: req.body?.prompt_id ?? req.body?.model_parameters?.prompt_id,
+    toolCount: toolNames.length,
+    toolNames,
+  });
+};
+
+/**
+ * Wraps a tool so server-side defaults are merged into the model's arguments
+ * before execution, without disturbing the underlying StructuredTool. Only
+ * `invoke` is intercepted; every other property/method is delegated with `this`
+ * bound to the original tool.
+ */
+const withServerDefaults = (tool, toolName, req) => {
+  const boundInvoke = typeof tool.invoke === 'function' ? tool.invoke.bind(tool) : null;
+  const boundCall = typeof tool._call === 'function' ? tool._call.bind(tool) : null;
+  return new Proxy(tool, {
+    get(target, prop, receiver) {
+      if (prop === 'invoke') {
+        if (!boundInvoke) {
+          return undefined;
+        }
+        return async (input, config) => {
+          const startedAt = Date.now();
+          try {
+            const rawOutput = await boundInvoke(applyToolDefaults(toolName, input, req), config);
+            const outcome = classifyToolOutcome(rawOutput);
+            const output = normalizeToolOutput(toolName, rawOutput);
+            logger.debug('[juristaiTools] Tool completed', {
+              toolName,
+              appId: getAppId(req),
+              latencyMs: Date.now() - startedAt,
+              outcome,
+            });
+            return output;
+          } catch (error) {
+            logger.error('[juristaiTools] Tool failed', {
+              toolName,
+              appId: getAppId(req),
+              latencyMs: Date.now() - startedAt,
+              outcome: classifyToolFailure(error),
+              error: error?.message ?? String(error),
+            });
+            throw error;
+          }
+        };
+      }
+      if (prop === '_call') {
+        if (!boundCall) {
+          return undefined;
+        }
+        return async (input, config) => {
+          const startedAt = Date.now();
+          try {
+            const rawOutput = await boundCall(applyToolDefaults(toolName, input, req), config);
+            const outcome = classifyToolOutcome(rawOutput);
+            const output = normalizeToolOutput(toolName, rawOutput);
+            logger.debug('[juristaiTools] Tool completed', {
+              toolName,
+              appId: getAppId(req),
+              latencyMs: Date.now() - startedAt,
+              outcome,
+            });
+            return output;
+          } catch (error) {
+            logger.error('[juristaiTools] Tool failed', {
+              toolName,
+              appId: getAppId(req),
+              latencyMs: Date.now() - startedAt,
+              outcome: classifyToolFailure(error),
+              error: error?.message ?? String(error),
+            });
+            throw error;
+          }
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
 };
 
 const getCatalog = async (req) => {
+  const specConfig = getSpecConfig();
   try {
-    return await loadJuristaiToolCatalog(getSpecConfig(), getAppId(req));
+    return await loadJuristaiToolCatalog(specConfig, getAppId(req));
   } catch (error) {
-    logger.error('[juristaiTools] Failed to load django-hub tool catalog', error);
+    logger.error('[juristaiTools] Failed to load live django-hub tool catalog', {
+      baseUrl: specConfig.djangoBaseUrl,
+      schemaPath: specConfig.schemaPath,
+      error: error?.message ?? String(error),
+    });
+    if (isStaticFallbackEnabled()) {
+      try {
+        logger.warn('[juristaiTools] Falling back to bundled JuristAI tool spec', {
+          appId: getAppId(req),
+        });
+        return await loadJuristaiToolCatalog(
+          {
+            ...specConfig,
+            staticSpec: SEARCH_CASE_SPEC,
+          },
+          getAppId(req),
+        );
+      } catch (fallbackError) {
+        logger.error('[juristaiTools] Failed to load fallback JuristAI tool catalog', {
+          error: fallbackError?.message ?? String(fallbackError),
+        });
+      }
+    }
     return [];
   }
 };
@@ -98,7 +396,9 @@ async function getJuristaiToolNames(req) {
     return [];
   }
   const catalog = await getCatalog(req);
-  return catalog.map((tool) => tool.name);
+  const toolNames = catalog.map((tool) => tool.name);
+  logCatalogEvent('Advertised tool catalog', req, toolNames);
+  return toolNames;
 }
 
 /** Serializable tool definitions for the requested juristai tool names. */
@@ -108,13 +408,19 @@ async function getJuristaiToolDefinitions(req, toolNames) {
   }
   const wanted = new Set(toolNames);
   const catalog = await getCatalog(req);
-  return catalog
+  const definitions = catalog
     .filter((tool) => wanted.has(tool.name))
     .map((tool) => ({
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
     }));
+  logCatalogEvent(
+    'Loaded tool definitions',
+    req,
+    definitions.map((tool) => tool.name),
+  );
+  return definitions;
 }
 
 /** Executable tool instances (createActionTool) for the requested names. */
@@ -167,7 +473,7 @@ async function loadJuristaiToolsForExecution({ req, res, streamId, toolNames }) 
     });
 
     if (tool) {
-      loadedTools.push(tool);
+      loadedTools.push(withServerDefaults(tool, def.name, req));
     } else {
       logger.warn(`[juristaiTools] Failed to create django tool: ${def.name}`);
     }
