@@ -218,11 +218,11 @@ function violatesProvisioningTenantScope(input: OpenIdAccountInput, user: IUser)
     return user.tenantId !== input.tenantId;
   }
 
-  return input.options.allowUserCreation && Boolean(user.tenantId);
+  return false;
 }
 
 function shouldDeferExistingTenantUserMutation(input: OpenIdAccountInput, user: IUser): boolean {
-  return !input.tenantId && input.options.allowUserCreation !== true && Boolean(user.tenantId);
+  return !input.tenantId && Boolean(user.tenantId);
 }
 
 async function persistExistingUser(

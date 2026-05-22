@@ -434,7 +434,7 @@ describe('resolveOpenIdAccount', () => {
     );
   });
 
-  it('rejects existing tenant users from no-tenant provisioning mode before update', async () => {
+  it('resolves existing tenant users from no-tenant provisioning mode without mutation', async () => {
     const existing = user({ tenantId: 'tenant-a' });
     const deps = methods({
       findUser: mockFindUser(async () => existing),
@@ -442,7 +442,7 @@ describe('resolveOpenIdAccount', () => {
 
     const result = await resolveOpenIdAccount(input({ methods: deps }));
 
-    expect(result).toEqual({ status: 'unauthorized', reason: 'duplicate_conflict' });
+    expect(result).toEqual({ status: 'resolved', user: existing, created: false });
     expect(deps.updateUser).not.toHaveBeenCalled();
   });
 
@@ -498,12 +498,13 @@ describe('resolveOpenIdAccount', () => {
     expect(deps.updateUser).toHaveBeenCalled();
   });
 
-  it('rejects duplicate retry lookup that resolves a tenant user from base context', async () => {
+  it('accepts duplicate retry lookup that resolves a tenant user from base context without mutation', async () => {
+    const existing = user({ tenantId: 'tenant-a' });
     const deps = methods({
       findUser: mockFindUser()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(user({ tenantId: 'tenant-a' })),
+        .mockResolvedValueOnce(existing),
       createUser: mockCreateUser(async () => {
         throw duplicateKeyError();
       }),
@@ -511,7 +512,7 @@ describe('resolveOpenIdAccount', () => {
 
     const result = await resolveOpenIdAccount(input({ methods: deps }));
 
-    expect(result).toEqual({ status: 'unauthorized', reason: 'duplicate_conflict' });
+    expect(result).toEqual({ status: 'resolved', user: existing, created: false });
     expect(deps.updateUser).not.toHaveBeenCalled();
   });
 

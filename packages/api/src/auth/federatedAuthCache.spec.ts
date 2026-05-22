@@ -58,11 +58,19 @@ function makeEntry(overrides: Partial<FederatedAuthCacheEntry> = {}): FederatedA
 describe('federatedAuthCache', () => {
   it('builds base and tenant scoped OpenID cache keys with normalized issuer', () => {
     const baseKey = getFederatedAuthCacheKey(makeInput({ tenantId: undefined }));
-    const tenantKey = getFederatedAuthCacheKey(makeInput({ issuer: 'https://issuer.example.com/' }));
+    const tenantKey = getFederatedAuthCacheKey(
+      makeInput({ issuer: 'https://issuer.example.com/' }),
+    );
 
-    expect(baseKey).toBe('base:subject-123');
-    expect(tenantKey).toBe('tenant-a:subject-123');
+    expect(baseKey).toBe('base:https://issuer.example.com:subject-123');
+    expect(tenantKey).toBe('tenant-a:https://issuer.example.com:subject-123');
     expect(tenantKey).toBe(getFederatedAuthCacheKey(makeInput()));
+  });
+
+  it('keeps same-tenant subjects isolated by issuer', () => {
+    expect(getFederatedAuthCacheKey(makeInput({ issuer: 'https://issuer.example.com' }))).not.toBe(
+      getFederatedAuthCacheKey(makeInput({ issuer: 'https://other.example.com' })),
+    );
   });
 
   it('reads a valid matching entry', async () => {

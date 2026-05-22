@@ -743,7 +743,7 @@ async function syncRemoteGroups({
   } else if (result.attempted) {
     logger.warn('[remoteAgentAuth] Remote Entra group sync failed', resultContext);
   } else {
-    logger.info('[remoteAgentAuth] Remote Entra group sync completed', resultContext);
+    logger.info('[remoteAgentAuth] Remote Entra group sync skipped', resultContext);
   }
 
   return result;
@@ -985,10 +985,6 @@ export function createRemoteAgentAuth({
         if (userInfoResult.status === 'fetched') {
           logger.info('[remoteAgentAuth] OpenID userinfo fetch completed', initialLogContext);
         } else if (userInfoResult.status === 'failed') {
-          logger.warn('[remoteAgentAuth] OpenID userinfo fetch failed', {
-            ...initialLogContext,
-            reason: userInfoResult.reason,
-          });
           if (userInfoOptions.requireUserInfo) {
             logger.warn('[remoteAgentAuth] Required OpenID userinfo rejected remote auth', {
               ...initialLogContext,
@@ -997,6 +993,11 @@ export function createRemoteAgentAuth({
             res.status(401).json({ error: 'Unauthorized' });
             return;
           }
+
+          logger.warn('[remoteAgentAuth] OpenID userinfo fetch failed', {
+            ...initialLogContext,
+            reason: userInfoResult.reason,
+          });
         }
 
         profile = userInfoResult.profile;

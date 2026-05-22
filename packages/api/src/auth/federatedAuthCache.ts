@@ -49,7 +49,11 @@ function normalizeIssuerSegment(issuer: string | undefined): string {
 }
 
 export function getFederatedAuthCacheKey(input: FederatedAuthCacheKeyInput): string {
-  return [getTenantSegment(input.tenantId), input.subject].join(':');
+  return [
+    getTenantSegment(input.tenantId),
+    normalizeIssuerSegment(input.issuer),
+    input.subject,
+  ].join(':');
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

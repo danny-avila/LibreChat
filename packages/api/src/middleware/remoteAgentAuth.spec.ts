@@ -1198,6 +1198,7 @@ describe('createRemoteAgentAuth', () => {
 
     it('syncs remote Entra groups for an existing user when existing lifecycle sync is enabled', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@example.com' });
+      mockSyncUserEntraGroupMemberships.mockResolvedValueOnce({ attempted: true, synced: true });
       const deps = makeDeps(
         makeConfig({
           provisioning: { enabled: false },
@@ -1331,6 +1332,10 @@ describe('createRemoteAgentAuth', () => {
         expect.objectContaining({ lifecycle: 'existing' }),
       );
       expect(groupSyncTenantId).toBe('tenant-strict');
+      expect(logger.info).toHaveBeenCalledWith(
+        '[remoteAgentAuth] Remote Entra group sync skipped',
+        expect.objectContaining({ lifecycle: 'existing' }),
+      );
       expect(mockNext).toHaveBeenCalledWith();
     });
 
@@ -1489,6 +1494,14 @@ describe('createRemoteAgentAuth', () => {
       expect(deps.findUser).not.toHaveBeenCalled();
       expect(deps.createUser).not.toHaveBeenCalled();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[remoteAgentAuth] Required OpenID userinfo rejected remote auth',
+        expect.objectContaining({ reason: 'service_error' }),
+      );
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        '[remoteAgentAuth] OpenID userinfo fetch failed',
+        expect.any(Object),
+      );
       expect(mockNext).not.toHaveBeenCalled();
     });
 
