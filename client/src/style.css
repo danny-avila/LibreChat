@@ -1496,6 +1496,16 @@ button {
   background-color: transparent;
 }
 
+/* Hide native scrollbar — pairs with custom React scrollbar track */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Show scrollbar only on hover */
 .scrollbar-hover {
   scrollbar-width: thin;

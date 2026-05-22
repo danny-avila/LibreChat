@@ -1,4 +1,17 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
+import {
+  Brain,
+  Image,
+  PenLine,
+  Heading,
+  BookOpen,
+  Languages,
+  AlignLeft,
+  Lightbulb,
+  ScanSearch,
+  TrendingUp,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext, useChatFormContext } from '~/Providers';
 import { useGetAssistantDocsQuery, useGetEndpointsQuery } from '~/data-provider';
@@ -7,17 +20,17 @@ import { useSubmitMessage, useLocalize } from '~/hooks';
 
 type TranslationKey = Parameters<ReturnType<typeof useLocalize>>[0];
 
-const DEFAULT_STARTERS: { labelKey: TranslationKey; prompt: string }[] = [
-  { labelKey: 'com_ui_starter_help_write', prompt: 'Help me write: ' },
-  { labelKey: 'com_ui_starter_learn_about', prompt: 'Tell me about: ' },
-  { labelKey: 'com_ui_starter_analyze_image', prompt: 'Analyze this image: ' },
-  { labelKey: 'com_ui_starter_summarize_text', prompt: 'Summarize this text: ' },
-  { labelKey: 'com_ui_starter_analyze_data', prompt: 'Analyze this data: ' },
-  { labelKey: 'com_ui_starter_brainstorm', prompt: 'Brainstorm ideas for: ' },
-  { labelKey: 'com_ui_starter_improve_writing', prompt: 'Improve this writing: ' },
-  { labelKey: 'com_ui_starter_translate', prompt: 'Translate to English: ' },
-  { labelKey: 'com_ui_starter_generate_images', prompt: 'Generate an image of: ' },
-  { labelKey: 'com_ui_starter_generate_ideas', prompt: 'Generate creative ideas for: ' },
+const DEFAULT_STARTERS: { labelKey: TranslationKey; prompt: string; icon: LucideIcon }[] = [
+  { labelKey: 'com_ui_starter_help_write', prompt: 'Help me write: ', icon: PenLine },
+  { labelKey: 'com_ui_starter_learn_about', prompt: 'Tell me about: ', icon: BookOpen },
+  { labelKey: 'com_ui_starter_analyze_image', prompt: 'Analyze this image: ', icon: ScanSearch },
+  { labelKey: 'com_ui_starter_summarize_text', prompt: 'Summarize this text: ', icon: AlignLeft },
+  { labelKey: 'com_ui_starter_analyze_data', prompt: 'Analyze this data: ', icon: TrendingUp },
+  { labelKey: 'com_ui_starter_brainstorm', prompt: 'Brainstorm ideas for: ', icon: Brain },
+  { labelKey: 'com_ui_starter_improve_writing', prompt: 'Improve this writing: ', icon: Heading },
+  { labelKey: 'com_ui_starter_translate', prompt: 'Translate to English: ', icon: Languages },
+  { labelKey: 'com_ui_starter_generate_images', prompt: 'Generate an image of: ', icon: Image },
+  { labelKey: 'com_ui_starter_generate_ideas', prompt: 'Generate creative ideas for: ', icon: Lightbulb },
 ];
 
 const ConversationStarters = () => {
@@ -66,6 +79,34 @@ const ConversationStarters = () => {
   const { setValue } = useChatFormContext();
   const fillInput = useCallback((prompt: string) => setValue('text', prompt), [setValue]);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [thumbStyle, setThumbStyle] = useState({ left: '0%', width: '100%' });
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    const update = () => {
+      const { scrollLeft, scrollWidth, clientWidth } = el;
+      if (scrollWidth <= clientWidth) {
+        setThumbStyle({ left: '0%', width: '100%' });
+        return;
+      }
+      const thumbWidth = Math.max((clientWidth / scrollWidth) * 100, 10);
+      const thumbLeft = (scrollLeft / (scrollWidth - clientWidth)) * (100 - thumbWidth);
+      setThumbStyle({ left: `${thumbLeft}%`, width: `${thumbWidth}%` });
+    };
+    update();
+    el.addEventListener('scroll', update);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro.disconnect();
+    };
+  }, []);
+
   const { submitMessage } = useSubmitMessage();
   const sendConversationStarter = useCallback(
     (text: string) => submitMessage({ text }),
@@ -74,16 +115,25 @@ const ConversationStarters = () => {
 
   if (!conversation_starters.length) {
     return (
-      <div className="mt-8 flex flex-nowrap gap-2 overflow-x-auto px-4 pb-1">
-        {DEFAULT_STARTERS.map((s) => (
-          <button
-            key={s.labelKey}
-            onClick={() => fillInput(s.prompt)}
-            className="whitespace-nowrap rounded-full border border-border-medium px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-surface-tertiary"
-          >
-            {localize(s.labelKey)}
-          </button>
-        ))}
+      <div className="mt-8 px-4">
+        <div ref={scrollRef} className="no-scrollbar flex flex-nowrap gap-2 overflow-x-auto pb-1">
+          {DEFAULT_STARTERS.map((s) => (
+            <button
+              key={s.labelKey}
+              onClick={() => fillInput(s.prompt)}
+              className="flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border-medium px-3 py-1.5 text-sm text-text-secondary transition-colors hover:bg-surface-tertiary"
+            >
+              <s.icon className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+              {localize(s.labelKey)}
+            </button>
+          ))}
+        </div>
+        <div className="relative mt-1.5 h-1.5 rounded-full bg-surface-tertiary">
+          <div
+            className="absolute top-0 h-full rounded-full bg-border-heavy transition-[left,width] duration-100"
+            style={thumbStyle}
+          />
+        </div>
       </div>
     );
   }
