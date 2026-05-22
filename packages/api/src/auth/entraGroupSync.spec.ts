@@ -33,7 +33,12 @@ const updateResult = {
 function mockMethod<T extends (...args: never[]) => unknown>(
   implementation: T,
 ): jest.MockedFunction<T> {
-  return jest.fn<ReturnType<T>, Parameters<T>>(implementation) as unknown as jest.MockedFunction<T>;
+  const typedImplementation = implementation as unknown as (
+    ...args: Parameters<T>
+  ) => ReturnType<T>;
+  return jest.fn<ReturnType<T>, Parameters<T>>(
+    typedImplementation,
+  ) as unknown as jest.MockedFunction<T>;
 }
 
 function user(overrides: Partial<IUser> = {}): IUser {
