@@ -55,6 +55,8 @@ const UPLOAD_PATHS = new Set([
   '/api/skills/#id/files',
 ]);
 
+const UPLOAD_METHODS = new Set(['POST', 'PUT', 'PATCH']);
+
 const LOW_CARDINALITY_PATHS: RegExp[] = [
   /^\/api\/agents\/chat\/stream\/#id$/,
   /^\/api\/agents\/chat\/status\/#id$/,
@@ -237,7 +239,7 @@ const getRequestContentLength = (req: Request): number | null => {
 };
 
 const isUploadRequest = (req: Request, normalizedPath: string): boolean => {
-  if (req.method === 'GET' || req.method === 'HEAD') return false;
+  if (!UPLOAD_METHODS.has(req.method)) return false;
   if (isMultipartContentType(req.headers['content-type'])) return true;
   return UPLOAD_PATHS.has(normalizedPath);
 };
@@ -513,11 +515,11 @@ export function createMetrics(): PrometheusMetrics {
       uploadRequestsInFlight.inc(labels);
     }
 
-    const complete = () => {
+    const complete = (completedBy: 'finish' | 'close') => {
       if (completed) return;
       completed = true;
 
-      const requestLabels = { ...labels, status: res.statusCode };
+      const requestLabels = { ...labels, status: completedBy === 'close' ? 499 : res.statusCode };
       httpRequests.inc(requestLabels);
       end(requestLabels);
       httpRequestsInFlight.dec(labels);
@@ -547,8 +549,8 @@ export function createMetrics(): PrometheusMetrics {
       }
     };
 
-    res.once('finish', complete);
-    res.once('close', complete);
+    res.once('finish', () => complete('finish'));
+    res.once('close', () => complete('close'));
     next();
   };
 

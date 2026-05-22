@@ -1,5 +1,7 @@
 /// <reference types="jest" />
+import { EventEmitter } from 'events';
 import express from 'express';
+import type { Request, Response } from 'express';
 import {
   createMetrics,
   instrumentMongooseQueryMetrics,
@@ -168,6 +170,69 @@ describe('createMetrics', () => {
       /upload_request_duration_seconds_count\{method="POST",path="\/api\/files",status="201"\} 1/,
     );
     expect(response.text).toMatch(/upload_bytes_total\{method="POST",path="\/api\/files"\} \d+/);
+  });
+
+  it('does not track non-upload methods on upload paths as uploads', async () => {
+    const app = express();
+    const { metricsMiddleware, metricsRouter } = createMetrics();
+    app.use(metricsMiddleware);
+    app.delete('/api/files', (_req, res) => {
+      res.status(204).end();
+    });
+    app.use('/metrics', metricsRouter);
+    process.env.METRICS_SECRET = 'test-secret';
+
+    await request(app).delete('/api/files').expect(204);
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).not.toMatch(/upload_requests_total\{method="DELETE"/);
+    expect(response.text).not.toMatch(/upload_bytes_total\{method="DELETE"/);
+  });
+
+  it('labels requests closed before finish as client-aborted', async () => {
+    const app = express();
+    const { metricsMiddleware, metricsRouter } = createMetrics();
+    const headers = new Map<string, unknown>();
+    const res = Object.assign(new EventEmitter(), {
+      destroyed: false,
+      getHeader: (name: string) => headers.get(name.toLowerCase()),
+      setHeader(name: string, value: unknown) {
+        headers.set(name.toLowerCase(), value);
+        return this;
+      },
+      statusCode: 200,
+      writableEnded: false,
+      writeHead() {
+        return this;
+      },
+    });
+    const next = jest.fn();
+
+    metricsMiddleware(
+      { headers: {}, method: 'GET', path: '/api/slow-response' } as Request,
+      res as unknown as Response,
+      next,
+    );
+    res.emit('close');
+    app.use('/metrics', metricsRouter);
+    process.env.METRICS_SECRET = 'test-secret';
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(response.text).toMatch(
+      /http_requests_total\{method="GET",path="\/api\/#path",status="499"\} 1/,
+    );
+    expect(response.text).not.toMatch(
+      /http_requests_total\{method="GET",path="\/api\/#path",status="200"\}/,
+    );
   });
 
   it('tracks OpenID user lookup outcomes and latency', async () => {
