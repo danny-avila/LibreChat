@@ -22,6 +22,7 @@ const {
   createStreamServices,
   initializeFileStorage,
   preAuthTenantMiddleware,
+  setupGracefulShutdown,
   updateInterfacePermissions,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -34,6 +35,7 @@ const {
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
+const { startExpiredFileSweep } = require('./services/Files/process');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
@@ -52,6 +54,7 @@ const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
 const app = express();
+let serverReady = false;
 
 const startServer = async () => {
   const { metricsMiddleware, metricsRouter } = createMetrics();
@@ -89,6 +92,7 @@ const startServer = async () => {
   });
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
+  startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
@@ -111,6 +115,13 @@ const startServer = async () => {
   }
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
+  app.get('/livez', (_req, res) => res.status(200).send('OK'));
+  app.get('/readyz', (_req, res) => {
+    if (!serverReady) {
+      return res.status(503).send('NOT_READY');
+    }
+    return res.status(200).send('OK');
+  });
 
   /* Middleware */
   app.use(metricsMiddleware);
@@ -238,7 +249,7 @@ const startServer = async () => {
   /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
   app.use(ErrorController);
 
-  app.listen(port, host, async (err) => {
+  const server = app.listen(port, host, async (err) => {
     if (err) {
       logger.error('Failed to start server:', err);
       process.exit(1);
@@ -276,11 +287,16 @@ const startServer = async () => {
       if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
         memoryDiagnostics.start();
       }
+      serverReady = true;
+      logger.info('Server readiness checks passing.');
     } catch (initErr) {
+      serverReady = false;
       logger.error('Post-listen initialization failed:', initErr);
       process.exit(1);
     }
   });
+
+  setupGracefulShutdown(server);
 };
 
 /**

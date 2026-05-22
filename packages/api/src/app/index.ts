@@ -5,3 +5,4 @@ export * from './permissions';
 export * from './cdn';
 export * from './checks';
 export * from './resolve';
+export * from './shutdown';

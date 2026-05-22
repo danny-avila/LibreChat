@@ -10,6 +10,7 @@ export interface ISharedLink {
   shareId?: string;
   targetMessageId?: string;
   isPublic: boolean;
+  expiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -100,17 +100,9 @@ const READ_FILE_DEF: LCTool = Object.freeze({
   responseFormat: ReadFileToolDefinition.responseFormat,
 }) as LCTool;
 
-const CODE_READ_FILE_DESCRIPTION = `Read the contents of a file from the code-execution sandbox or from prior code-execution output. Returns text content with line numbers for easy reference.
+const CODE_READ_FILE_DESCRIPTION = `Read a known text file from the code-execution sandbox. Returns line-numbered text; large files may be truncated around 256KB.
 
-BEHAVIOR:
-- Text files: returned with numbered lines.
-- Large text files are truncated around 256KB with a note to use bash_tool for the full content.
-- Binary files and formats that are not safe to serialize as text may return an error. Use bash_tool to inspect or process them.
-
-CONSTRAINTS:
-- Only files produced by code execution or attached to the code-execution sandbox are accessible.
-- Use paths returned by tool output or paths under /mnt/data/.
-- Do not guess file paths. Use bash_tool to inspect available sandbox files when needed.`;
+Use for text, CSV, JSON, Markdown, logs, and small source files at paths returned by tool output, just written, or under /mnt/data/. Do not run ls/find just to rediscover known paths. Use bash_tool for binary files, large files, transforms, metadata, or true filesystem discovery. /tmp is per-call scratch and unavailable later.`;
 
 const CODE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',

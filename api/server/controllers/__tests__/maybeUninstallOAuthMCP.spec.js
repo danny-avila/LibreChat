@@ -81,7 +81,7 @@ jest.mock('~/server/services/Config/getCachedTools', () => ({
 }));
 
 jest.mock('~/server/services/Files/process', () => ({
-  processDeleteRequest: jest.fn(),
+  processDeleteRequest: jest.fn().mockResolvedValue({ deletedFileIds: [], failedFileIds: [] }),
 }));
 
 jest.mock('~/server/services/Config', () => ({

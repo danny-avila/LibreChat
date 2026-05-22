@@ -1,4 +1,8 @@
-import { SSEOptionsSchema, MCPServerUserInputSchema } from '../src/mcp';
+import {
+  SSEOptionsSchema,
+  StreamableHTTPOptionsSchema,
+  MCPServerUserInputSchema,
+} from '../src/mcp';
 
 describe('MCPServerUserInputSchema', () => {
   describe('env variable exfiltration prevention', () => {
@@ -47,6 +51,59 @@ describe('MCPServerUserInputSchema', () => {
       const result = MCPServerUserInputSchema.safeParse({
         type: 'websocket',
         url: 'ws://attacker.com/?secret=${FAKE_SECRET}',
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('proxy field restrictions', () => {
+    it('should accept admin-configured proxies for SSE', () => {
+      const result = SSEOptionsSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        proxy: 'http://proxy.example.com:8080',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.proxy).toBe('http://proxy.example.com:8080');
+      }
+    });
+
+    it('should accept admin-configured proxies for streamable-http', () => {
+      const result = StreamableHTTPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        proxy: 'http://proxy.example.com:8080',
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.proxy).toBe('http://proxy.example.com:8080');
+      }
+    });
+
+    it('should reject unsupported proxy protocols', () => {
+      const result = StreamableHTTPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        proxy: 'ftp://proxy.example.com',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject SSE proxy configuration from user input', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        proxy: 'http://proxy.example.com:8080',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject streamable-http proxy configuration from user input', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        proxy: 'http://proxy.example.com:8080',
       });
       expect(result.success).toBe(false);
     });

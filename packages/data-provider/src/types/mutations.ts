@@ -446,6 +446,7 @@ export type ToolParams<T extends ToolId> = ToolParamsMap[T] & {
   partIndex?: number;
   blockIndex?: number;
   conversationId: string;
+  isTemporary?: boolean;
 };
 export type ToolCallResponse = { result: unknown; attachments?: types.TAttachment[] };
 export type ToolCallMutationOptions<T extends ToolId> = MutationOptions<

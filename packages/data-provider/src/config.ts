@@ -45,6 +45,7 @@ export const excludedKeys = new Set([
   'createdAt',
   'updatedAt',
   'expiredAt',
+  'isTemporary',
   'messages',
   'isArchived',
   'tags',
@@ -957,6 +958,11 @@ const mcpServersSchema = z
 
 export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 
+export enum RetentionMode {
+  ALL = 'all',
+  TEMPORARY = 'temporary',
+}
+
 export const interfaceSchema = z
   .object({
     privacyPolicy: z
@@ -999,6 +1005,7 @@ export const interfaceSchema = z
     temporaryChat: z.boolean().optional(),
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
     autoSubmitFromUrl: z.boolean().optional(),
+    retentionMode: z.nativeEnum(RetentionMode).default(RetentionMode.TEMPORARY),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     peoplePicker: z
@@ -1650,6 +1657,8 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 3.5 Models
+    'gemini-3.5-flash',
     // Gemini 3.1 Models
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',

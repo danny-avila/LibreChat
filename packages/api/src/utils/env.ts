@@ -271,6 +271,13 @@ function processSingleValue({
   return value;
 }
 
+function processAdminValue(originalValue: string, dbSourced: boolean): string {
+  if (typeof originalValue !== 'string') {
+    return String(originalValue);
+  }
+  return dbSourced ? originalValue : extractEnvVariable(originalValue);
+}
+
 /**
  * Recursively processes an object to replace environment variables in string values
  * @param params - Processing parameters
@@ -381,6 +388,11 @@ export function processMCPEnv(params: {
       customUserVars,
       originalValue: newObj.url,
     });
+  }
+
+  // Process outbound proxy if it exists (for SSE and StreamableHTTP types)
+  if ('proxy' in newObj && newObj.proxy) {
+    newObj.proxy = processAdminValue(newObj.proxy, dbSourced);
   }
 
   // Process OAuth configuration if it exists (for all transport types)
