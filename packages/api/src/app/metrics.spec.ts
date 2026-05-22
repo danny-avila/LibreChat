@@ -1,6 +1,5 @@
 /// <reference types="jest" />
 import express from 'express';
-import request from 'supertest';
 import {
   createMetrics,
   instrumentMongooseQueryMetrics,
@@ -11,6 +10,8 @@ import {
   recordOpenIDUserLookup,
   setGenerationJobsInFlight,
 } from './metrics';
+
+const request = require('supertest') as (app: express.Express) => any;
 
 describe('normalizePath', () => {
   it.each([
@@ -76,7 +77,9 @@ describe('createMetrics', () => {
     const { metricsMiddleware, metricsRouter } = createMetrics();
     app.use(metricsMiddleware);
     app.use(express.text({ type: '*/*' }));
-    app.post('/api/files/:id', (_req, res) => res.status(201).send('ok'));
+    app.post('/api/files/:id', (_req, res) => {
+      res.status(201).send('ok');
+    });
     app.use('/metrics', metricsRouter);
     process.env.METRICS_SECRET = 'test-secret';
 
@@ -139,7 +142,9 @@ describe('createMetrics', () => {
     const app = express();
     const { metricsMiddleware, metricsRouter } = createMetrics();
     app.use(metricsMiddleware);
-    app.post('/api/files', (_req, res) => res.status(201).send('ok'));
+    app.post('/api/files', (_req, res) => {
+      res.status(201).send('ok');
+    });
     app.use('/metrics', metricsRouter);
     process.env.METRICS_SECRET = 'test-secret';
 
@@ -211,6 +216,37 @@ describe('createMetrics', () => {
     );
     expect(response.text).toMatch(
       /mongoose_query_duration_seconds_count\{model="User",operation="findOne",status="success"\} 1/,
+    );
+  });
+
+  it('tracks mongoose query errors thrown before a promise is returned', async () => {
+    class ThrowingQuery {
+      model = { modelName: 'User' };
+      op = 'findOne';
+
+      exec() {
+        throw new Error('sync database error');
+      }
+    }
+
+    const app = express();
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+    process.env.METRICS_SECRET = 'test-secret';
+
+    instrumentMongooseQueryMetrics({ Query: ThrowingQuery } as never);
+    expect(() => new ThrowingQuery().exec()).toThrow('sync database error');
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /mongoose_queries_total\{model="User",operation="findOne",status="error"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /mongoose_query_duration_seconds_count\{model="User",operation="findOne",status="error"\} 1/,
     );
   });
 

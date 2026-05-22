@@ -276,7 +276,15 @@ export function instrumentMongooseQueryMetrics(mongoose: Mongoose): void {
     const model = normalizeMongooseLabel(this.model?.modelName);
     const operation = normalizeMongooseLabel(this.op);
 
-    return originalExec.apply(this, args).then(
+    let result: ReturnType<typeof originalExec>;
+    try {
+      result = originalExec.apply(this, args);
+    } catch (error) {
+      recordMongooseQuery(model, operation, 'error', getElapsedSeconds(startedAt));
+      throw error;
+    }
+
+    return Promise.resolve(result).then(
       (result) => {
         recordMongooseQuery(model, operation, 'success', getElapsedSeconds(startedAt));
         return result;
@@ -464,8 +472,10 @@ export function createMetrics(): PrometheusMetrics {
     const uploadStartedAt = uploadTracked ? process.hrtime.bigint() : null;
     let sseTracked = false;
     let sseStartedAt: bigint | null = null;
+    let completed = false;
 
     const markSSEStream = () => {
+      if (completed || res.writableEnded || res.destroyed) return;
       if (sseTracked) return;
       sseTracked = true;
       sseStartedAt = process.hrtime.bigint();
@@ -503,7 +513,6 @@ export function createMetrics(): PrometheusMetrics {
       uploadRequestsInFlight.inc(labels);
     }
 
-    let completed = false;
     const complete = () => {
       if (completed) return;
       completed = true;
