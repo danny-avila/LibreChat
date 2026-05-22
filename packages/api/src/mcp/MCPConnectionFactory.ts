@@ -541,6 +541,10 @@ export class MCPConnectionFactory {
       if (message.includes('invalid_token')) {
         return true;
       }
+      // Check for invalid_grant (OAuth servers return this for expired/revoked grants)
+      if (message.includes('invalid_grant')) {
+        return true;
+      }
       // Check for authentication required
       if (message.includes('authentication required') || message.includes('unauthorized')) {
         return true;

@@ -849,6 +849,39 @@ describe('MCPConnectionFactory', () => {
         expect.stringContaining('OAuth required, stopping connection attempts'),
       );
     });
+
+    it('should identify invalid_grant errors as OAuth errors', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const invalidGrantError = new Error(
+        'Streamable HTTP error: Error POSTing to endpoint: {"error":"invalid_grant"}',
+      );
+
+      mockConnectionInstance.connect.mockRejectedValue(invalidGrantError);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      await expect(MCPConnectionFactory.create(basicOptions, oauthOptions)).rejects.toThrow(
+        'invalid_grant',
+      );
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('OAuth required, stopping connection attempts'),
+      );
+    });
   });
 
   describe('discoverTools static method', () => {
