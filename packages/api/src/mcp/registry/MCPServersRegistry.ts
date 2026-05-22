@@ -249,6 +249,7 @@ export class MCPServersRegistry {
     config: t.MCPOptions,
     storageLocation: 'CACHE' | 'DB',
     userId?: string,
+    reservedServerNames?: Iterable<string>,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
     let parsedConfig: t.ParsedServerConfig;
@@ -271,9 +272,11 @@ export class MCPServersRegistry {
       ...parsedConfig,
       source: (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource,
     };
-    const reservedServerNames =
-      storageLocation === 'DB' ? await this.getOperatorManagedServerNames() : undefined;
-    const result = await configRepo.add(serverName, tagged, userId, reservedServerNames);
+    const operatorManagedServerNames =
+      storageLocation === 'DB'
+        ? await this.getOperatorManagedServerNames(reservedServerNames)
+        : undefined;
+    const result = await configRepo.add(serverName, tagged, userId, operatorManagedServerNames);
     await this.invalidateServerReadCaches(result.serverName, userId);
     if (storageLocation === 'CACHE') {
       this.resetYamlServerNamesMemo();
@@ -600,16 +603,15 @@ export class MCPServersRegistry {
     ]);
   }
 
-  private async getOperatorManagedServerNames(): Promise<string[]> {
-    const [yamlConfigs, configCache] = await Promise.all([
-      this.cacheConfigsRepo.getAll(),
-      this.configCacheRepo.getAll(),
-    ]);
+  private async getOperatorManagedServerNames(
+    reservedServerNames: Iterable<string> = [],
+  ): Promise<string[]> {
+    const yamlConfigs = await this.cacheConfigsRepo.getAll();
 
     return [
       ...new Set([
         ...Object.keys(yamlConfigs),
-        ...Object.keys(configCache).map((cacheKey) => this.getConfigServerName(cacheKey)),
+        ...reservedServerNames,
       ]),
     ];
   }

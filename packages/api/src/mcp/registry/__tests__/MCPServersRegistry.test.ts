@@ -122,8 +122,13 @@ describe('MCPServersRegistry', () => {
   });
 
   describe('addServer', () => {
-    it('should reserve YAML server names when creating DB servers', async () => {
+    it('should reserve YAML and current config server names when creating DB servers', async () => {
       await registry.addServer('slack', { ...testParsedConfig, title: 'Slack' }, 'CACHE');
+      await registry['configCacheRepo'].upsert('other_tenant:hash', {
+        ...testParsedConfig,
+        source: 'config',
+        title: 'Other Tenant Server',
+      });
       const dbAddSpy = jest.spyOn(registry['dbConfigsRepo'], 'add').mockResolvedValue({
         serverName: 'slack-2',
         config: { ...testParsedConfig, source: 'user', title: 'Slack' },
@@ -134,10 +139,12 @@ describe('MCPServersRegistry', () => {
         { ...testParsedConfig, title: 'Slack' },
         'DB',
         'user-1',
+        ['config_slack'],
       );
 
-      const reservedServerNames = dbAddSpy.mock.calls[0]?.[3];
-      expect(Array.from(reservedServerNames ?? [])).toContain('slack');
+      const reservedServerNames = Array.from(dbAddSpy.mock.calls[0]?.[3] ?? []);
+      expect(reservedServerNames).toEqual(expect.arrayContaining(['slack', 'config_slack']));
+      expect(reservedServerNames).not.toContain('other_tenant');
     });
   });
 

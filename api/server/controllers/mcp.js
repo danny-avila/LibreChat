@@ -14,7 +14,11 @@ const {
   isMCPInspectionFailedError,
 } = require('@librechat/api');
 const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
-const { resolveConfigServers, resolveAllMcpConfigs } = require('~/server/services/MCP');
+const {
+  resolveConfigServers,
+  resolveMcpConfigNames,
+  resolveAllMcpConfigs,
+} = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 
@@ -213,11 +217,13 @@ const createMCPServerController = async (req, res) => {
         errors: validation.error.errors,
       });
     }
+    const reservedServerNames = await resolveMcpConfigNames(req);
     const result = await getMCPServersRegistry().addServer(
       'temp_server_name',
       validation.data,
       'DB',
       userId,
+      reservedServerNames,
     );
     res.status(201).json({
       serverName: result.serverName,

@@ -80,6 +80,21 @@ async function resolveConfigServers(req) {
 }
 
 /**
+ * Resolves operator-managed MCP server names from admin Config overrides for the current request.
+ * @param {import('express').Request} req - Express request with user context
+ * @returns {Promise<string[]>}
+ */
+async function resolveMcpConfigNames(req) {
+  const user = req?.user;
+  const appConfig = await getAppConfig({
+    role: user?.role,
+    tenantId: getTenantId(),
+    userId: user?.id,
+  });
+  return Object.keys(appConfig?.mcpConfig || {});
+}
+
+/**
  * Resolves config-source servers and merges all server configs (YAML + config + user DB)
  * for the given user context. Shared helper for controllers needing the full merged config.
  * @param {string} userId
@@ -874,6 +889,7 @@ module.exports = {
   createMCPTools,
   getMCPSetupData,
   resolveConfigServers,
+  resolveMcpConfigNames,
   resolveAllMcpConfigs,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
