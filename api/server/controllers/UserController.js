@@ -64,7 +64,14 @@ const getUserController = async (req, res) => {
     }
     const originalAvatar = userData.avatar;
     try {
-      userData.avatar = await getNewAvatarUrl(userData.avatar);
+      const refreshed = await getNewAvatarUrl(userData.avatar);
+      if (!refreshed) {
+        // Not a refreshable URL for this provider (OAuth provider avatar,
+        // legacy /uploads/ path, S3 URL after migrating to Azure, etc.).
+        // Keep the existing avatar — never persist `undefined`.
+        return res.status(200).send(userData);
+      }
+      userData.avatar = refreshed;
       await db.updateUser(userData.id, { avatar: userData.avatar });
     } catch (error) {
       userData.avatar = originalAvatar;

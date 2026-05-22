@@ -7,6 +7,7 @@ const {
   deleteFileFromAzure,
   refreshAzureFileUrls,
   refreshAzureUrl,
+  isAzureBlobUrl,
 } = require('../../../../../server/services/Files/Azure/crud');
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -181,6 +182,83 @@ describe('Azure crud.js - URL refresh tests', () => {
       });
       expect(url).toBe(mockBlockBlobClient.url);
       expect(new URL(url).searchParams.has('sig')).toBe(false);
+    });
+  });
+
+  describe('needsRefreshAzure - leaves non-Azure URLs alone (PR-46 review fix)', () => {
+    // User avatars are plain strings with no `source` field. Before the fix,
+    // `needsRefreshAzure` returned `true` for any non-SAS URL in private mode
+    // (the public→private transition branch), which caused `getNewAzureURL`
+    // to be called on Google OAuth avatars and legacy `/uploads/` paths,
+    // returning `undefined` — which UserController then persisted to Mongo,
+    // wiping the user's avatar. The invariant: only refresh URLs we own.
+    beforeEach(() => {
+      process.env.AZURE_STORAGE_PUBLIC_ACCESS = 'false';
+    });
+
+    it('returns false for OAuth provider avatar URLs (Google)', () => {
+      expect(needsRefreshAzure('https://lh3.googleusercontent.com/a/abc123=s96-c', 3600)).toBe(
+        false,
+      );
+    });
+
+    it('returns false for OAuth provider avatar URLs (Microsoft)', () => {
+      expect(needsRefreshAzure('https://graph.microsoft.com/v1.0/me/photo/$value', 3600)).toBe(
+        false,
+      );
+    });
+
+    it('returns false for legacy /uploads/ paths persisted as absolute URLs', () => {
+      expect(needsRefreshAzure('https://karl.example.com/uploads/userId/avatar.png', 3600)).toBe(
+        false,
+      );
+    });
+
+    it('returns false for S3 URLs (post-migration straggler)', () => {
+      expect(
+        needsRefreshAzure(
+          'https://my-bucket.s3.amazonaws.com/images/u/x.png?X-Amz-Signature=abc',
+          3600,
+        ),
+      ).toBe(false);
+    });
+
+    it('still returns true for Azure URLs in private mode (the original public→private case)', () => {
+      // The original behavior we want to preserve: a plain Azure Blob URL in
+      // private mode means "this legacy URL needs signing", refresh it.
+      expect(
+        needsRefreshAzure('https://test.blob.core.windows.net/files/images/user123/test.pdf', 3600),
+      ).toBe(true);
+    });
+
+    it('still returns true for Azurite-shaped URLs in private mode', () => {
+      // Azurite (path-style) URLs are also "ours" — make sure the host-check
+      // accepts the loopback + port-10000 emulator endpoint.
+      expect(
+        needsRefreshAzure('http://127.0.0.1:10000/devstoreaccount1/files/images/user/x.pdf', 3600),
+      ).toBe(true);
+    });
+  });
+
+  describe('isAzureBlobUrl', () => {
+    it('accepts standard Azure Blob hostnames', () => {
+      expect(isAzureBlobUrl(new URL('https://acc.blob.core.windows.net/files/x'))).toBe(true);
+      expect(isAzureBlobUrl(new URL('https://acc.blob.core.usgovcloudapi.net/files/x'))).toBe(true);
+      expect(isAzureBlobUrl(new URL('https://acc.blob.core.chinacloudapi.cn/files/x'))).toBe(true);
+      expect(isAzureBlobUrl(new URL('https://acc.blob.storage.azure.net/files/x'))).toBe(true);
+    });
+
+    it('accepts Azurite emulator endpoints', () => {
+      expect(isAzureBlobUrl(new URL('http://127.0.0.1:10000/devstoreaccount1/files/x'))).toBe(true);
+      expect(isAzureBlobUrl(new URL('http://localhost:10000/devstoreaccount1/files/x'))).toBe(true);
+    });
+
+    it('rejects non-Azure hostnames', () => {
+      expect(isAzureBlobUrl(new URL('https://lh3.googleusercontent.com/a/abc'))).toBe(false);
+      expect(isAzureBlobUrl(new URL('https://my-bucket.s3.amazonaws.com/k'))).toBe(false);
+      expect(isAzureBlobUrl(new URL('https://example.com/uploads/x'))).toBe(false);
+      // Loopback without the Azurite port doesn't count.
+      expect(isAzureBlobUrl(new URL('http://127.0.0.1:3000/files/x'))).toBe(false);
     });
   });
 
