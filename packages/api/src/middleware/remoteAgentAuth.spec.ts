@@ -312,7 +312,12 @@ function makeFindUser(...users: IUser[]): jest.MockedFunction<UserMethods['findU
 function mockMethod<T extends (...args: never[]) => unknown>(
   implementation: T,
 ): jest.MockedFunction<T> {
-  return jest.fn<ReturnType<T>, Parameters<T>>(implementation) as unknown as jest.MockedFunction<T>;
+  const typedImplementation = implementation as unknown as (
+    ...args: Parameters<T>
+  ) => ReturnType<T>;
+  return jest.fn<ReturnType<T>, Parameters<T>>(
+    typedImplementation,
+  ) as unknown as jest.MockedFunction<T>;
 }
 
 function makeDeps(appConfig: AppConfig = makeConfig()) {
