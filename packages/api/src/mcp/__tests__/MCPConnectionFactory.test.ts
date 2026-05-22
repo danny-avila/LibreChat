@@ -1077,8 +1077,11 @@ describe('MCPConnectionFactory', () => {
 
       instance.emit.mockImplementation((event: string | symbol, ...args: unknown[]) => {
         const list = handlers[key(event)];
-        if (list) {
-          for (const fn of [...list]) fn(...args);
+        if (!list || list.length === 0) {
+          return false;
+        }
+        for (const fn of [...list]) {
+          fn(...args);
         }
         return true;
       });
@@ -1309,6 +1312,24 @@ describe('MCPConnectionFactory', () => {
       await expect(
         MCPConnectionFactory.create({ serverName: 'no-url', serverConfig }, oauthOptions),
       ).rejects.toThrow('server URL is missing');
+    });
+
+    it('should reject when proactive OAuth has no registered handler', async () => {
+      const serverConfig = makeOAuthServerConfig();
+      const oauthOptions = makeOAuthOptions();
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
+      mockConnectionInstance.on.mockReturnValue(mockConnectionInstance);
+      mockConnectionInstance.once.mockReturnValue(mockConnectionInstance);
+      mockConnectionInstance.off.mockReturnValue(mockConnectionInstance);
+      mockConnectionInstance.emit.mockReturnValue(false);
+
+      await expect(
+        MCPConnectionFactory.create({ serverName: 'bigquery', serverConfig }, oauthOptions),
+      ).rejects.toThrow('OAuth required but no handler is registered');
+
+      expect(mockConnectionInstance.connect).not.toHaveBeenCalled();
     });
 
     it('should clean up cross-listeners when oauthHandled fires', async () => {
