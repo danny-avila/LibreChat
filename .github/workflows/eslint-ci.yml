@@ -61,3 +61,30 @@ jobs:
             --config eslint.config.mjs \
             --max-warnings=0 \
             $CHANGED_FILES
+
+      # Run Prettier --check on the same set of changed files to catch
+      # formatting drift in PRs that bypassed the local pre-commit hook
+      # (e.g. GitHub UI edit-and-merge, `git commit --no-verify`).
+      - name: Run Prettier --check on changed files
+        run: |
+          BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD | grep -E '^(api|client|packages)/.*\.(js|jsx|ts|tsx)$' || true)
+
+          if [[ -z "$CHANGED_FILES" ]]; then
+            echo "No matching files changed. Skipping Prettier."
+            exit 0
+          fi
+
+          echo "Files to check:"
+          echo "$CHANGED_FILES"
+
+          # `prettier --check` exits non-zero if any file would be reformatted.
+          # Suggest the local fix in the failure message so contributors aren't
+          # left guessing how to resolve.
+          if ! npx prettier --check --no-error-on-unmatched-pattern $CHANGED_FILES; then
+            echo ""
+            echo "::error::Prettier formatting drift detected. Fix locally with:"
+            echo "::error::  npx prettier --write <files>"
+            echo "::error::Or rely on the lint-staged pre-commit hook (do not bypass with --no-verify)."
+            exit 1
+          fi
