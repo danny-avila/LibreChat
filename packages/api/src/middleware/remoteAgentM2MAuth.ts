@@ -32,6 +32,14 @@ type M2MRequest = Request & {
   authInfo?: RemoteAgentM2MAuthInfo;
 };
 type ScopeClaim = string | string[] | undefined;
+type M2MTokenValidation = {
+  payload: JwtPayload;
+  clientMapping: { clientId: string; mapping: M2MClientConfig };
+};
+type M2MPolicy = {
+  m2mConfig: EnabledM2MConfig;
+  validation: M2MTokenValidation;
+};
 
 const DEFAULT_ACTION_SCOPES: Record<RemoteAgentM2MAction, string> = {
   read: 'librechat.agents:read',
@@ -44,6 +52,21 @@ function getConfigOptions(): GetAppConfigOptions {
   const tenantId = getTenantId();
   if (tenantId) return { tenantId };
   return { baseOnly: true };
+}
+
+function getUserConfigOptions(user: IUser): GetAppConfigOptions {
+  if (user.tenantId) return { role: user.role, userId: user.id, tenantId: user.tenantId };
+  return { baseOnly: true };
+}
+
+function isResolvedUserConfigScope(initialOptions: GetAppConfigOptions, user: IUser): boolean {
+  const userOptions = getUserConfigOptions(user);
+  return (
+    initialOptions.tenantId === userOptions.tenantId &&
+    initialOptions.userId === userOptions.userId &&
+    initialOptions.role === userOptions.role &&
+    initialOptions.baseOnly === userOptions.baseOnly
+  );
 }
 
 function getRemoteAuthConfig(config: AppConfig): AgentAuthConfig | undefined {
@@ -135,6 +158,80 @@ async function resolveMappedUser(
   return user;
 }
 
+async function validateTokenAgainstConfig(
+  token: string,
+  config: EnabledM2MConfig,
+  action: RemoteAgentM2MAction,
+  verifyBearer: NonNullable<RemoteAgentM2MAuthDeps['verifyBearer']>,
+): Promise<M2MTokenValidation> {
+  const payload = await verifyBearer(token, getIssuerConfig(config));
+
+  if (!hasExpectedTokenUse(config, payload)) {
+    logger.warn('[remoteAgentM2MAuth] Token rejected: invalid token use');
+    throw new Error('invalid_token_use');
+  }
+
+  const requiredScope = getRequiredScope(config, action);
+  if (!hasRequiredScopes(requiredScope, payload)) {
+    logger.warn(`[remoteAgentM2MAuth] Token missing required scope: ${requiredScope}`);
+    throw new Error('missing_scope');
+  }
+
+  const clientMapping = getClientMapping(config, payload);
+  if (!clientMapping) {
+    logger.warn('[remoteAgentM2MAuth] Token rejected: unmapped client');
+    throw new Error('unmapped_client');
+  }
+
+  return { payload, clientMapping };
+}
+
+function mappingTargetsUser(mapping: M2MClientConfig, user: IUser): boolean {
+  return mapping.userId === user.id;
+}
+
+async function enforceResolvedTenantPolicy({
+  token,
+  user,
+  action,
+  initialOptions,
+  initialPolicy,
+  getAppConfig,
+  verifyBearer,
+}: {
+  token: string;
+  user: IUser;
+  action: RemoteAgentM2MAction;
+  initialOptions: GetAppConfigOptions;
+  initialPolicy: M2MPolicy;
+  getAppConfig: RemoteAgentM2MAuthDeps['getAppConfig'];
+  verifyBearer: NonNullable<RemoteAgentM2MAuthDeps['verifyBearer']>;
+}): Promise<M2MPolicy | null> {
+  if (isResolvedUserConfigScope(initialOptions, user)) return initialPolicy;
+
+  const config = await getAppConfig(getUserConfigOptions(user));
+  const m2mConfig = getEnabledM2MConfig(getRemoteAuthConfig(config));
+  if (!m2mConfig) {
+    logger.warn('[remoteAgentM2MAuth] Token rejected by resolved tenant auth policy');
+    return null;
+  }
+
+  try {
+    const validation = await validateTokenAgainstConfig(token, m2mConfig, action, verifyBearer);
+    if (
+      mappingTargetsUser(validation.clientMapping.mapping, user) &&
+      tenantMatches(user, validation.clientMapping.mapping)
+    ) {
+      return { m2mConfig, validation };
+    }
+    logger.warn('[remoteAgentM2MAuth] Token rejected by resolved tenant client mapping');
+  } catch (err) {
+    logger.warn('[remoteAgentM2MAuth] Token rejected by resolved tenant auth policy:', err);
+  }
+
+  return null;
+}
+
 export function createRemoteAgentM2MAuth({
   findUser,
   getAppConfig,
@@ -143,7 +240,8 @@ export function createRemoteAgentM2MAuth({
   return ({ action }) => {
     const handler = async (req: M2MRequest, res: Response, next: NextFunction) => {
       try {
-        const config = await getAppConfig(getConfigOptions());
+        const initialOptions = getConfigOptions();
+        const config = await getAppConfig(initialOptions);
         const m2mConfig = getEnabledM2MConfig(getRemoteAuthConfig(config));
 
         if (!m2mConfig) {
@@ -157,38 +255,32 @@ export function createRemoteAgentM2MAuth({
           return;
         }
 
-        let payload: JwtPayload;
+        let validation: M2MTokenValidation;
         try {
-          payload = await verifyBearer(token, getIssuerConfig(m2mConfig));
+          validation = await validateTokenAgainstConfig(token, m2mConfig, action, verifyBearer);
         } catch (err) {
           logger.warn('[remoteAgentM2MAuth] Token verification failed:', err);
           res.status(401).json({ error: 'Unauthorized' });
           return;
         }
 
-        if (!hasExpectedTokenUse(m2mConfig, payload)) {
-          logger.warn('[remoteAgentM2MAuth] Token rejected: invalid token use');
-          res.status(401).json({ error: 'Unauthorized' });
-          return;
-        }
-
-        const requiredScope = getRequiredScope(m2mConfig, action);
-        if (!hasRequiredScopes(requiredScope, payload)) {
-          logger.warn(`[remoteAgentM2MAuth] Token missing required scope: ${requiredScope}`);
-          res.status(401).json({ error: 'Unauthorized' });
-          return;
-        }
-
-        const clientMapping = getClientMapping(m2mConfig, payload);
-        if (!clientMapping) {
-          logger.warn('[remoteAgentM2MAuth] Token rejected: unmapped client');
-          res.status(401).json({ error: 'Unauthorized' });
-          return;
-        }
-
-        const user = await resolveMappedUser(clientMapping.mapping, findUser);
-        if (!user || !user.role || !tenantMatches(user, clientMapping.mapping)) {
+        const user = await resolveMappedUser(validation.clientMapping.mapping, findUser);
+        if (!user || !user.role || !tenantMatches(user, validation.clientMapping.mapping)) {
           logger.warn('[remoteAgentM2MAuth] Token rejected: mapped user unavailable');
+          res.status(401).json({ error: 'Unauthorized' });
+          return;
+        }
+
+        const policy = await enforceResolvedTenantPolicy({
+          token,
+          user,
+          action,
+          initialOptions,
+          initialPolicy: { m2mConfig, validation },
+          getAppConfig,
+          verifyBearer,
+        });
+        if (!policy) {
           res.status(401).json({ error: 'Unauthorized' });
           return;
         }
@@ -196,10 +288,10 @@ export function createRemoteAgentM2MAuth({
         req.user = user;
         req.authInfo = {
           type: 'm2m',
-          issuer: m2mConfig.issuer,
-          clientId: clientMapping.clientId,
+          issuer: policy.m2mConfig.issuer,
+          clientId: policy.validation.clientMapping.clientId,
           action,
-          scopes: getTokenScopes(payload),
+          scopes: getTokenScopes(policy.validation.payload),
         };
 
         return next();
