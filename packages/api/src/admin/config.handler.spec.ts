@@ -769,5 +769,40 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body!.config).toEqual({ interface: { modelSelect: true } });
     });
+
+    it('forwards baseOnly=true to getAppConfig when query param is the literal string "true"', async () => {
+      const getAppConfig = jest.fn().mockResolvedValue({ interface: { modelSelect: true } });
+      const { handlers } = createHandlers({ getAppConfig });
+      const req = mockReq({ query: { baseOnly: 'true' } });
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ baseOnly: true }));
+    });
+
+    it('forwards baseOnly=false when the query param is missing, non-"true", or an array', async () => {
+      const cases: Array<Record<string, unknown>> = [
+        {},
+        { baseOnly: 'false' },
+        { baseOnly: '1' },
+        { baseOnly: ['true'] },
+        { baseOnly: ['true', 'true'] },
+        { baseOnly: { nested: 'true' } },
+      ];
+
+      for (const query of cases) {
+        const getAppConfig = jest.fn().mockResolvedValue({ interface: { modelSelect: true } });
+        const { handlers } = createHandlers({ getAppConfig });
+        const req = mockReq({ query });
+        const res = mockRes();
+
+        await handlers.getBaseConfig(req, res);
+
+        expect(res.statusCode).toBe(200);
+        expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ baseOnly: false }));
+      }
+    });
   });
 });
