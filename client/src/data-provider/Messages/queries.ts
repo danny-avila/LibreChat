@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions, QueryObserverResult, QueryClient } from '@tanstack/react-query';
@@ -77,8 +77,12 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
 ): QueryObserverResult<TData> => {
   const location = useLocation();
   const queryClient = useQueryClient();
-  const isStreamingRef = useRef(options?.isStreaming === true);
-  isStreamingRef.current = options?.isStreaming === true;
+  const isStreaming = options?.isStreaming === true;
+  const isStreamingRef = useRef(isStreaming);
+
+  useLayoutEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
 
   return useQuery<t.TMessage[], unknown, TData>(
     [QueryKeys.messages, id],
