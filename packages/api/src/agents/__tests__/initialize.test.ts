@@ -418,6 +418,7 @@ describe('initializeAgent — provider web_search precedence', () => {
   it('keeps Google native search when LibreChat web_search is not selected', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
       providerTools: [nativeGoogleSearchTool],
       loadedToolDefinitions: [mcpToolDefinition],
     });
@@ -439,6 +440,31 @@ describe('initializeAgent — provider web_search precedence', () => {
     expect(result.tools).toEqual([nativeGoogleSearchTool]);
     expect(countGoogleSearchTools(result.tools)).toBe(1);
     expect(result.toolDefinitions).toContain(mcpToolDefinition);
+  });
+
+  it('rejects Google native search with external tools for unsupported Gemini models', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-2.5-flash',
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [mcpToolDefinition],
+    });
+    agent.tools = ['mcp_lookup'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).rejects.toThrow(/google_tool_conflict/);
   });
 
   it('prefers LibreChat web_search when Google native search is also enabled', async () => {
@@ -1529,6 +1555,7 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.GOOGLE,
       overrideProvider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
     });
     agent.tools = ['execute_code'];
 
@@ -1537,7 +1564,7 @@ describe('initializeAgent — execute_code capability expansion', () => {
        Google/Vertex exposes via provider options. */
     mockGetProviderConfig.mockReturnValue({
       getOptions: jest.fn().mockResolvedValue({
-        llmConfig: { model: 'test-model', maxTokens: 4096 },
+        llmConfig: { model: 'gemini-3.5-flash', maxTokens: 4096 },
         tools: [{ googleSearch: {} }],
       } satisfies InitializeResultBase),
       overrideProvider: Providers.GOOGLE,
@@ -1578,6 +1605,7 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.GOOGLE,
       overrideProvider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
       providerTools: [providerTool],
       structuredTools: [structuredTool],
     });

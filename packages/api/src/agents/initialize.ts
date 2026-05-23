@@ -84,6 +84,14 @@ function hasGoogleSearchTool(tool: unknown): boolean {
   return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
 }
 
+function supportsGoogleToolCombination(model: unknown): boolean {
+  if (typeof model !== 'string') {
+    return false;
+  }
+  const normalized = model.toLowerCase().split('/').pop() ?? model.toLowerCase();
+  return normalized.startsWith('gemini-3');
+}
+
 function resolveProviderToolConflicts({
   provider,
   tools,
@@ -915,6 +923,9 @@ export async function initializeAgent(
     hasProviderTools &&
     hasAgentTools
   ) {
+    if (!supportsGoogleToolCombination(llmConfig.model)) {
+      throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+    }
     if (structuredTools?.length) {
       tools = structuredTools.concat(providerTools as GenericTool[]);
     }
