@@ -13,6 +13,7 @@ type TestMessage = {
 
 const mockUseGetMessagesByConvoId = jest.fn();
 const mockUseMessagesConversation = jest.fn();
+const mockUseMessagesSubmission = jest.fn();
 
 jest.mock('~/data-provider', () => ({
   useGetMessagesByConvoId: (...args: unknown[]) => mockUseGetMessagesByConvoId(...args),
@@ -20,6 +21,7 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('~/Providers', () => ({
   useMessagesConversation: (...args: unknown[]) => mockUseMessagesConversation(...args),
+  useMessagesSubmission: (...args: unknown[]) => mockUseMessagesSubmission(...args),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -158,6 +160,7 @@ beforeEach(() => {
   ).IntersectionObserver = MockIntersectionObserver;
   jest.useFakeTimers();
   mockUseMessagesConversation.mockReturnValue({ conversationId: 'test-convo' });
+  mockUseMessagesSubmission.mockReturnValue({ isSubmitting: false });
   mockUseGetMessagesByConvoId.mockReturnValue({ data: [] });
 });
 
