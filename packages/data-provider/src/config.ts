@@ -1058,6 +1058,22 @@ export const turnstileSchema = z.object({
 
 export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
+export type TRumConfig = {
+  provider: 'hyperdx';
+  enabled: boolean;
+  url: string;
+  serviceName: string;
+  authMode: 'publicToken' | 'userJwt';
+  authHeaderScheme?: 'Bearer' | 'Basic';
+  publicToken?: string;
+  tracePropagationTargets?: string[];
+  consoleCapture?: boolean;
+  disableReplay?: boolean;
+  advancedNetworkCapture?: boolean;
+  sampleRate?: number;
+  environment?: string;
+};
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
@@ -1098,6 +1114,7 @@ export type TStartupConfig = {
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
+  rum?: TRumConfig;
   bundlerURL?: string;
   staticBundlerURL?: string;
   sharePointFilePickerEnabled?: boolean;
