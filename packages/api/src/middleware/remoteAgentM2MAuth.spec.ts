@@ -109,6 +109,61 @@ describe('createRemoteAgentM2MAuth', () => {
     expect(next).toHaveBeenCalledWith();
   });
 
+  it('revalidates M2M policy after resolving the mapped user tenant', async () => {
+    const deps = makeDeps(makeConfig(), {
+      token_use: 'access',
+      client_id: 'dwh-dwaine-updater',
+      scope: 'librechat.agents:update tenant.agents:update',
+    });
+    deps.findUser.mockResolvedValue(makeUser({ tenantId: 'tenant-a' }));
+    deps.getAppConfig.mockResolvedValueOnce(makeConfig()).mockResolvedValueOnce(
+      makeConfig({
+        scopes: { update: 'tenant.agents:update' },
+        clients: [{ clientId: 'dwh-dwaine-updater', userId: 'user-123', tenantId: 'tenant-a' }],
+      }),
+    );
+    const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+    await createRemoteAgentM2MAuth(deps)({ action: 'update' })(req as Request, makeRes().res, next);
+
+    expect(deps.getAppConfig).toHaveBeenNthCalledWith(1, { baseOnly: true });
+    expect(deps.getAppConfig).toHaveBeenNthCalledWith(2, {
+      tenantId: 'tenant-a',
+      userId: 'user-123',
+      role: 'user',
+    });
+    expect(deps.verifyBearer).toHaveBeenCalledTimes(2);
+    expect(req.user).toMatchObject({ id: 'user-123', tenantId: 'tenant-a' });
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  it('rejects mapped users when resolved tenant M2M policy tightens scopes', async () => {
+    const deps = makeDeps(makeConfig(), {
+      token_use: 'access',
+      client_id: 'dwh-dwaine-updater',
+      scope: 'librechat.agents:update',
+    });
+    deps.findUser.mockResolvedValue(makeUser({ tenantId: 'tenant-a' }));
+    deps.getAppConfig.mockResolvedValueOnce(makeConfig()).mockResolvedValueOnce(
+      makeConfig({
+        scopes: { update: 'tenant.agents:update' },
+        clients: [{ clientId: 'dwh-dwaine-updater', userId: 'user-123', tenantId: 'tenant-a' }],
+      }),
+    );
+    const { res, status, json } = makeRes();
+
+    await createRemoteAgentM2MAuth(deps)({ action: 'update' })(
+      makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+      res,
+      next,
+    );
+
+    expect(status).toHaveBeenCalledWith(401);
+    expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+    expect(deps.verifyBearer).toHaveBeenCalledTimes(2);
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('rejects requests when M2M auth is disabled', async () => {
     const deps = makeDeps(makeConfig({ enabled: false }));
     const { res, status, json } = makeRes();
