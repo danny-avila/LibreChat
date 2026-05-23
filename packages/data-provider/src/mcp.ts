@@ -2,6 +2,55 @@ import { z } from 'zod';
 import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
+const OAuthOptionsSchema = z
+  .object({
+    /** OAuth authorization endpoint (optional - can be auto-discovered) */
+    authorization_url: z.string().url().optional(),
+    /** OAuth token endpoint (optional - can be auto-discovered) */
+    token_url: z.string().url().optional(),
+    /** OAuth client ID (optional - can use dynamic registration) */
+    client_id: z.string().optional(),
+    /** OAuth client secret (requires explicit authorization and token endpoints) */
+    client_secret: z.string().optional(),
+    /** OAuth scopes to request */
+    scope: z.string().optional(),
+    /** OAuth redirect URI (defaults to /api/mcp/{serverName}/oauth/callback) */
+    redirect_uri: z.string().url().optional(),
+    /** Token exchange method */
+    token_exchange_method: z.nativeEnum(TokenExchangeMethodEnum).optional(),
+    /** Supported grant types (defaults to ['authorization_code', 'refresh_token']) */
+    grant_types_supported: z.array(z.string()).optional(),
+    /** Supported token endpoint authentication methods (defaults to ['client_secret_basic', 'client_secret_post']) */
+    token_endpoint_auth_methods_supported: z.array(z.string()).optional(),
+    /** Supported response types (defaults to ['code']) */
+    response_types_supported: z.array(z.string()).optional(),
+    /** Supported code challenge methods (defaults to ['S256', 'plain']) */
+    code_challenge_methods_supported: z.array(z.string()).optional(),
+    /** Skip code challenge validation and force S256 (useful for providers like AWS Cognito that support S256 but don't advertise it) */
+    skip_code_challenge_check: z.boolean().optional(),
+    /** OAuth revocation endpoint (optional - can be auto-discovered) */
+    revocation_endpoint: z.string().url().optional(),
+    /** OAuth revocation endpoint authentication methods supported (optional - can be auto-discovered) */
+    revocation_endpoint_auth_methods_supported: z.array(z.string()).optional(),
+  })
+  .superRefine((oauth, ctx) => {
+    if (oauth.client_secret && !oauth.client_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['client_secret'],
+        message: 'OAuth client_secret requires client_id',
+      });
+    }
+
+    if (oauth.client_id && oauth.client_secret && (!oauth.authorization_url || !oauth.token_url)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['client_secret'],
+        message: 'OAuth client_secret with client_id requires both authorization_url and token_url',
+      });
+    }
+  });
+
 const BaseOptionsSchema = z.object({
   /** Display name for the MCP server - only letters, numbers, and spaces allowed */
   title: z
@@ -39,40 +88,9 @@ const BaseOptionsSchema = z.object({
   /**
    * OAuth configuration for SSE and Streamable HTTP transports
    * - Optional: OAuth can be auto-discovered on 401 responses
-   * - Pre-configured values will skip discovery steps
+   * - Pre-configured confidential clients must pin both OAuth endpoints
    */
-  oauth: z
-    .object({
-      /** OAuth authorization endpoint (optional - can be auto-discovered) */
-      authorization_url: z.string().url().optional(),
-      /** OAuth token endpoint (optional - can be auto-discovered) */
-      token_url: z.string().url().optional(),
-      /** OAuth client ID (optional - can use dynamic registration) */
-      client_id: z.string().optional(),
-      /** OAuth client secret (optional - can use dynamic registration) */
-      client_secret: z.string().optional(),
-      /** OAuth scopes to request */
-      scope: z.string().optional(),
-      /** OAuth redirect URI (defaults to /api/mcp/{serverName}/oauth/callback) */
-      redirect_uri: z.string().url().optional(),
-      /** Token exchange method */
-      token_exchange_method: z.nativeEnum(TokenExchangeMethodEnum).optional(),
-      /** Supported grant types (defaults to ['authorization_code', 'refresh_token']) */
-      grant_types_supported: z.array(z.string()).optional(),
-      /** Supported token endpoint authentication methods (defaults to ['client_secret_basic', 'client_secret_post']) */
-      token_endpoint_auth_methods_supported: z.array(z.string()).optional(),
-      /** Supported response types (defaults to ['code']) */
-      response_types_supported: z.array(z.string()).optional(),
-      /** Supported code challenge methods (defaults to ['S256', 'plain']) */
-      code_challenge_methods_supported: z.array(z.string()).optional(),
-      /** Skip code challenge validation and force S256 (useful for providers like AWS Cognito that support S256 but don't advertise it) */
-      skip_code_challenge_check: z.boolean().optional(),
-      /** OAuth revocation endpoint (optional - can be auto-discovered) */
-      revocation_endpoint: z.string().url().optional(),
-      /** OAuth revocation endpoint authentication methods supported (optional - can be auto-discovered) */
-      revocation_endpoint_auth_methods_supported: z.array(z.string()).optional(),
-    })
-    .optional(),
+  oauth: OAuthOptionsSchema.optional(),
   /** Custom headers to send with OAuth requests (registration, discovery, token exchange, etc.) */
   oauth_headers: z.record(z.string(), z.string()).optional(),
   /**

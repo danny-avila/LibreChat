@@ -270,6 +270,113 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
     });
   });
 
+  describe('Auto-discovered predefined clients', () => {
+    it('should reject configured client_secret without client_id', async () => {
+      await expect(
+        MCPOAuthHandler.initiateOAuthFlow(
+          mockServerName,
+          mockServerUrl,
+          mockUserId,
+          {},
+          {
+            client_secret: 'configured-client-secret',
+          },
+        ),
+      ).rejects.toThrow(/client_secret requires oauth\.client_id/);
+
+      expect(mockProbeResourceMetadataHint).not.toHaveBeenCalled();
+      expect(mockDiscoverOAuthProtectedResourceMetadata).not.toHaveBeenCalled();
+      expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+      expect(mockRegisterClient).not.toHaveBeenCalled();
+      expect(mockStartAuthorization).not.toHaveBeenCalled();
+    });
+
+    it('should reject configured client_secret when OAuth endpoints are not pinned', async () => {
+      await expect(
+        MCPOAuthHandler.initiateOAuthFlow(
+          mockServerName,
+          mockServerUrl,
+          mockUserId,
+          {},
+          {
+            client_id: 'configured-client-id',
+            client_secret: 'configured-client-secret',
+          },
+        ),
+      ).rejects.toThrow(
+        /client_secret requires both oauth\.authorization_url and oauth\.token_url/,
+      );
+
+      expect(mockProbeResourceMetadataHint).not.toHaveBeenCalled();
+      expect(mockDiscoverOAuthProtectedResourceMetadata).not.toHaveBeenCalled();
+      expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+      expect(mockRegisterClient).not.toHaveBeenCalled();
+      expect(mockStartAuthorization).not.toHaveBeenCalled();
+    });
+
+    it('should use configured client_id without client_secret as a public auto-discovered client', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://example.com',
+        authorization_endpoint: 'https://example.com/authorize',
+        token_endpoint: 'https://example.com/token',
+        registration_endpoint: 'https://example.com/register',
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        {
+          client_id: 'public-client-id',
+          scope: 'read write',
+        },
+      );
+
+      expect(mockRegisterClient).not.toHaveBeenCalled();
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        mockServerUrl,
+        expect.objectContaining({
+          clientInformation: expect.objectContaining({
+            client_id: 'public-client-id',
+            scope: 'read write',
+            token_endpoint_auth_method: 'none',
+          }),
+        }),
+      );
+
+      const startOptions = mockStartAuthorization.mock.calls[0]?.[1];
+      expect(startOptions?.clientInformation).not.toHaveProperty('client_secret');
+    });
+
+    it('should reject stored configured client_secret when refresh would auto-discover token endpoint', async () => {
+      await expect(
+        MCPOAuthHandler.refreshOAuthTokens(
+          'refresh-token-12345',
+          {
+            serverName: 'test-server',
+            serverUrl: 'https://example.com/mcp',
+            clientInfo: {
+              client_id: 'configured-client-id',
+              client_secret: 'configured-client-secret',
+            },
+          },
+          {},
+          {
+            client_id: 'configured-client-id',
+            client_secret: 'configured-client-secret',
+          },
+        ),
+      ).rejects.toThrow(/cannot be used with auto-discovered token endpoints/);
+
+      expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+    });
+  });
+
   describe('refreshOAuthTokens', () => {
     const mockRefreshToken = 'refresh-token-12345';
     const originalFetch = global.fetch;
