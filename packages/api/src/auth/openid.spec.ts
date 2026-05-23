@@ -5,6 +5,7 @@ import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
 import type { CommandStartedEvent } from 'mongodb';
 import type { FilterQuery } from 'mongoose';
+import { recordOpenIDUserLookup } from '~/app/metrics';
 import { findOpenIDUser, getOpenIdEmail, getOpenIdIssuer, normalizeOpenIdIssuer } from './openid';
 
 function newId() {
@@ -17,6 +18,11 @@ jest.mock('@librechat/data-schemas', () => ({
     warn: jest.fn(),
     info: jest.fn(),
   },
+}));
+
+jest.mock('~/app/metrics', () => ({
+  isMetricsConfigured: jest.fn(() => true),
+  recordOpenIDUserLookup: jest.fn(),
 }));
 
 describe('normalizeOpenIdIssuer', () => {
@@ -111,6 +117,7 @@ describe('findOpenIDUser', () => {
         error: null,
         migration: false,
       });
+      expect(recordOpenIDUserLookup).toHaveBeenCalledWith('found', expect.any(Number));
     });
 
     it('should find user by idOnTheSource', async () => {
@@ -734,6 +741,7 @@ describe('findOpenIDUser', () => {
           findUser: mockFindUser,
         }),
       ).rejects.toThrow('Database error');
+      expect(recordOpenIDUserLookup).toHaveBeenCalledWith('error', expect.any(Number));
     });
 
     it('should reject email fallback when openidId is empty and user has a stored openidId', async () => {
