@@ -787,6 +787,7 @@ describe('createAdminConfigHandlers', () => {
         {},
         { baseOnly: 'false' },
         { baseOnly: '1' },
+        { baseOnly: ['true'] },
         { baseOnly: ['true', 'true'] },
         { baseOnly: { nested: 'true' } },
       ];

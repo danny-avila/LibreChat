@@ -31,6 +31,7 @@ const ADMIN_CONFIGURABLE_FIELDS = [
   'stderr',
   'url',
   'headers',
+  'proxy',
   'requiresOAuth',
   'apiKey',
   'oauth',
@@ -218,8 +219,14 @@ export class MCPServersRegistry {
     }
 
     const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
-    await this.readThroughCache.set(cacheKey, configFromDB);
-    return configFromDB;
+    if (configFromDB) {
+      await this.readThroughCache.set(cacheKey, configFromDB);
+      return configFromDB;
+    }
+
+    /** Config-only servers (admin-defined, not in YAML or user DB) have no fallback; surface the failure stub so callers can detect inspectionFailed. Memoize the result (candidate or undefined) so repeated lookups don't re-hit the DB. */
+    await this.readThroughCache.set(cacheKey, candidate);
+    return candidate;
   }
 
   /**
@@ -509,9 +516,12 @@ export class MCPServersRegistry {
     }
     const yamlRecord = yamlEntry as unknown as Record<string, unknown>;
     const rawRecord = rawConfig as unknown as Record<string, unknown>;
-    return ADMIN_CONFIGURABLE_FIELDS.every((field) =>
-      deepEqual(yamlRecord[field], rawRecord[field]),
-    );
+    /** rawConfig is the pre-inspection MCPOptions; absent fields mean the admin didn't override and shouldn't count as a diff against inspector-derived values on the cached YAML entry. */
+    return ADMIN_CONFIGURABLE_FIELDS.every((field) => {
+      const rawVal = rawRecord[field];
+      if (rawVal === undefined) return true;
+      return deepEqual(yamlRecord[field], rawVal);
+    });
   }
 
   /**

@@ -212,7 +212,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(501).json({ error: 'Base config endpoint not configured' });
       }
 
-      const baseOnly = String((req.query as Record<string, unknown>).baseOnly) === 'true';
+      const baseOnly = (req.query as Record<string, unknown>).baseOnly === 'true';
       const appConfig = await getAppConfig({
         tenantId: user.tenantId,
         baseOnly,

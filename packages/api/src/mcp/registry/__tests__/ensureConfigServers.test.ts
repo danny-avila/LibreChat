@@ -137,6 +137,38 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     expect(inspectSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('should lazy-init YAML server when admin overrides only the proxy field', async () => {
+    await registry.addServer('yaml_remote', sseConfig, 'CACHE');
+    inspectSpy.mockClear();
+
+    const overrideConfig: t.MCPOptions = {
+      ...sseConfig,
+      proxy: 'http://proxy.example.com:8080',
+    } as t.MCPOptions;
+    const result = await registry.ensureConfigServers({
+      yaml_remote: overrideConfig,
+    });
+
+    expect(result).toHaveProperty('yaml_remote');
+    expect(inspectSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('should not re-init YAML server when only the difference is an inspector-derived field absent from rawConfig', async () => {
+    const yamlWithInferred: t.MCPOptions = {
+      ...sseConfig,
+      requiresOAuth: false,
+    } as t.MCPOptions;
+    await registry.addServer('yaml_remote', yamlWithInferred, 'CACHE');
+    inspectSpy.mockClear();
+
+    const result = await registry.ensureConfigServers({
+      yaml_remote: sseConfig,
+    });
+
+    expect(result).not.toHaveProperty('yaml_remote');
+    expect(inspectSpy).not.toHaveBeenCalled();
+  });
+
   it('should lazy-initialize a config-source server and tag source as config', async () => {
     const result = await registry.ensureConfigServers({ my_server: sseConfig });
 
@@ -323,6 +355,30 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       const config = await registry.getServerConfig('config_srv', undefined, configServers2);
       expect(config).toBeDefined();
       expect(config?.source).toBe('config');
+    });
+
+    it('should surface inspectionFailed stub for config-only server when no YAML/DB fallback exists', async () => {
+      inspectSpy.mockRejectedValueOnce(new Error('connection refused'));
+      const configServers = await registry.ensureConfigServers({ bad_config_only: sseConfig });
+      expect(configServers.bad_config_only.inspectionFailed).toBe(true);
+
+      const config = await registry.getServerConfig('bad_config_only', undefined, configServers);
+      expect(config).toBeDefined();
+      expect(config?.inspectionFailed).toBe(true);
+      expect(config?.source).toBe('config');
+    });
+
+    it('should prefer healthy YAML entry over inspectionFailed config-tier stub on the same name', async () => {
+      await registry.addServer('shared_name', yamlConfig, 'CACHE');
+
+      inspectSpy.mockRejectedValueOnce(new Error('connection refused'));
+      const configServers = await registry.ensureConfigServers({ shared_name: sseConfig });
+      expect(configServers.shared_name.inspectionFailed).toBe(true);
+
+      const config = await registry.getServerConfig('shared_name', undefined, configServers);
+      expect(config).toBeDefined();
+      expect(config?.inspectionFailed).toBeUndefined();
+      expect(config?.source).toBe('yaml');
     });
 
     it('should not cross-contaminate between tenant configServers maps', async () => {
