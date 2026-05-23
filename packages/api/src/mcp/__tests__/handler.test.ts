@@ -271,6 +271,26 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
   });
 
   describe('Auto-discovered predefined clients', () => {
+    it('should reject configured client_secret without client_id', async () => {
+      await expect(
+        MCPOAuthHandler.initiateOAuthFlow(
+          mockServerName,
+          mockServerUrl,
+          mockUserId,
+          {},
+          {
+            client_secret: 'configured-client-secret',
+          },
+        ),
+      ).rejects.toThrow(/client_secret requires oauth\.client_id/);
+
+      expect(mockProbeResourceMetadataHint).not.toHaveBeenCalled();
+      expect(mockDiscoverOAuthProtectedResourceMetadata).not.toHaveBeenCalled();
+      expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+      expect(mockRegisterClient).not.toHaveBeenCalled();
+      expect(mockStartAuthorization).not.toHaveBeenCalled();
+    });
+
     it('should reject configured client_secret when OAuth endpoints are not pinned', async () => {
       await expect(
         MCPOAuthHandler.initiateOAuthFlow(

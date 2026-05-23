@@ -5,7 +5,7 @@ import {
   MCPServerUserInputSchema,
 } from '../src/mcp';
 
-describe('MCPServerUserInputSchema', () => {
+describe('MCP schemas', () => {
   describe('env variable exfiltration prevention', () => {
     it('should confirm admin schema resolves env vars (attack vector baseline)', () => {
       process.env.FAKE_SECRET = 'leaked-secret-value';
@@ -204,6 +204,20 @@ describe('MCPServerUserInputSchema', () => {
   });
 
   describe('OAuth confidential client endpoint pinning', () => {
+    it('should reject client_secret without client_id', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          authorization_url: 'https://auth.example.com/authorize',
+          token_url: 'https://auth.example.com/token',
+          client_secret: 'client-secret',
+        },
+      });
+
+      expect(result.success).toBe(false);
+    });
+
     it('should reject client_secret with client_id when authorization_url is missing', () => {
       const result = MCPOptionsSchema.safeParse({
         type: 'streamable-http',

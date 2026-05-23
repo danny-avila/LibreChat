@@ -34,6 +34,14 @@ const OAuthOptionsSchema = z
     revocation_endpoint_auth_methods_supported: z.array(z.string()).optional(),
   })
   .superRefine((oauth, ctx) => {
+    if (oauth.client_secret && !oauth.client_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['client_secret'],
+        message: 'OAuth client_secret requires client_id',
+      });
+    }
+
     if (oauth.client_id && oauth.client_secret && (!oauth.authorization_url || !oauth.token_url)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

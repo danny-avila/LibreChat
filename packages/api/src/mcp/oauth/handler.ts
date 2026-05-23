@@ -359,6 +359,10 @@ export class MCPOAuthHandler {
   }
 
   private static assertNoUnpinnedClientSecret(config?: MCPOptions['oauth']): void {
+    if (config?.client_secret && !config.client_id) {
+      throw new Error('[MCPOAuth] OAuth client_secret requires oauth.client_id.');
+    }
+
     if (!this.hasUnpinnedClientSecret(config)) {
       return;
     }
