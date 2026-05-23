@@ -1,82 +1,116 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { jest } from '@jest/globals';
-import VirtualizedAgentGrid from '../VirtualizedAgentGrid';
 import type t from 'librechat-data-provider';
+import VirtualizedAgentGrid from '../VirtualizedAgentGrid';
+
+type RowRendererProps = {
+  index: number;
+  key: string;
+  style: React.CSSProperties;
+  parent: { props: { width: number } };
+};
+
+type VirtualListMockProps = {
+  rowRenderer: (props: RowRendererProps) => React.ReactNode;
+  rowCount: number;
+  width?: number;
+  style?: React.CSSProperties;
+  'aria-rowcount'?: number;
+  'data-testid'?: string;
+  'data-total-rows'?: number;
+};
+
+type WindowScrollerChildProps = {
+  height: number;
+  isScrolling: boolean;
+  registerChild: (ref: HTMLElement | null) => void;
+  onChildScroll: () => void;
+  scrollTop: number;
+};
+
+type MarketplaceAgentsMock = {
+  useMarketplaceAgentsInfiniteQuery: jest.Mock;
+};
+
+type LocalizeParams = {
+  count?: number;
+  category?: string;
+};
 
 // Mock react-virtualized
-jest.mock('react-virtualized', () => ({
-  AutoSizer: ({
-    children,
-    disableHeight,
-  }: {
-    children: (props: { width: number; height?: number }) => React.ReactNode;
-    disableHeight?: boolean;
-  }) => {
-    if (disableHeight) {
-      return children({ width: 800 });
-    }
-    return children({ width: 800, height: 600 });
-  },
-  List: ({
-    rowRenderer,
-    rowCount,
-    width,
-    style,
-    'aria-rowcount': ariaRowCount,
-    'data-testid': dataTestId,
-    'data-total-rows': dataTotalRows,
-  }: {
-    rowRenderer: any;
-    rowCount: number;
-    autoHeight?: boolean;
-    height?: number;
-    width?: number;
-    rowHeight?: number;
-    overscanRowCount?: number;
-    scrollTop?: number;
-    isScrolling?: boolean;
-    onScroll?: any;
-    style?: any;
-    'aria-rowcount'?: number;
-    'data-testid'?: string;
-    'data-total-rows'?: number;
-  }) => (
-    <div
-      data-testid={dataTestId || 'virtual-list'}
-      aria-rowcount={ariaRowCount}
-      data-total-rows={dataTotalRows}
-      style={style}
-    >
-      {Array.from({ length: Math.min(rowCount, 5) }, (_, index) =>
-        rowRenderer({
-          index,
-          key: `row-${index}`,
-          style: {},
-          parent: { props: { width: width || 800 } },
-        }),
-      )}
-    </div>
-  ),
-  WindowScroller: ({
-    children,
-  }: {
-    children: (props: any) => React.ReactNode;
-    scrollElement?: HTMLElement | null;
-  }) => {
-    return children({
-      height: 600,
-      isScrolling: false,
-      registerChild: (_ref: any) => {},
-      onChildScroll: () => {},
-      scrollTop: 0,
-    });
-  },
-}));
+jest.mock('react-virtualized', () => {
+  const ReactActual = jest.requireActual<typeof import('react')>('react');
+
+  return {
+    AutoSizer: ({
+      children,
+      disableHeight,
+    }: {
+      children: (props: { width: number; height?: number }) => React.ReactNode;
+      disableHeight?: boolean;
+    }) => {
+      if (disableHeight) {
+        return children({ width: 800 });
+      }
+      return children({ width: 800, height: 600 });
+    },
+    List: ReactActual.forwardRef(
+      (
+        {
+          rowRenderer,
+          rowCount,
+          width,
+          style,
+          'aria-rowcount': ariaRowCount,
+          'data-testid': dataTestId,
+          'data-total-rows': dataTotalRows,
+        }: VirtualListMockProps,
+        ref: React.ForwardedRef<{ forceUpdateGrid: () => void }>,
+      ) => {
+        ReactActual.useImperativeHandle(ref, () => ({
+          forceUpdateGrid: () => {},
+        }));
+
+        return (
+          <div
+            data-testid={dataTestId || 'virtual-list'}
+            aria-rowcount={ariaRowCount}
+            data-total-rows={dataTotalRows}
+            style={style}
+          >
+            {Array.from({ length: Math.min(rowCount, 5) }, (_, index) =>
+              rowRenderer({
+                index,
+                key: `row-${index}`,
+                style: {},
+                parent: { props: { width: width || 800 } },
+              }),
+            )}
+          </div>
+        );
+      },
+    ),
+    WindowScroller: ({
+      children,
+    }: {
+      children: (props: WindowScrollerChildProps) => React.ReactNode;
+      scrollElement?: HTMLElement | null;
+    }) => {
+      return children({
+        height: 600,
+        isScrolling: false,
+        registerChild: (_ref: HTMLElement | null) => {},
+        onChildScroll: () => {},
+        scrollTop: 0,
+      });
+    },
+  };
+});
 
 // Mock the data provider
-const mockInfiniteQuery = {
+const createMockInfiniteQuery = (overrides = {}) => ({
   data: {
     pages: [
       {
@@ -104,10 +138,11 @@ const mockInfiniteQuery = {
   hasNextPage: true,
   refetch: jest.fn(),
   isFetchingNextPage: false,
-};
+  ...overrides,
+});
 
 jest.mock('~/data-provider/Agents', () => ({
-  useMarketplaceAgentsInfiniteQuery: jest.fn(() => mockInfiniteQuery),
+  useMarketplaceAgentsInfiniteQuery: jest.fn(),
 }));
 
 // Mock other hooks
@@ -118,7 +153,7 @@ jest.mock('~/hooks', () => ({
       { value: 'development', label: 'Development' },
     ],
   }),
-  useLocalize: () => (key: string, params?: any) => {
+  useLocalize: () => (key: string, params?: LocalizeParams) => {
     if (key === 'com_agents_grid_announcement') {
       return `Found ${params?.count || 0} agents in ${params?.category || 'category'}`;
     }
@@ -151,9 +186,16 @@ describe('VirtualizedAgentGrid', () => {
         mutations: { retry: false },
       },
     });
+
+    const useMarketplaceAgentsInfiniteQuery = (
+      jest.requireMock('~/data-provider/Agents') as MarketplaceAgentsMock
+    ).useMarketplaceAgentsInfiniteQuery;
+    useMarketplaceAgentsInfiniteQuery.mockImplementation(() => createMockInfiniteQuery());
   });
 
-  const renderComponent = (props = {}) => {
+  const renderComponent = (
+    props: Partial<React.ComponentProps<typeof VirtualizedAgentGrid>> = {},
+  ) => {
     const defaultProps = {
       category: 'all',
       searchQuery: '',
@@ -167,33 +209,27 @@ describe('VirtualizedAgentGrid', () => {
     );
   };
 
-  it('renders virtual list container', async () => {
+  it('renders virtual list container', () => {
     renderComponent();
 
-    await waitFor(() => {
-      expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
-    });
+    expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
   });
 
-  it('displays agent cards in virtual rows', async () => {
+  it('displays agent cards in virtual rows', () => {
     renderComponent();
 
-    await waitFor(() => {
-      expect(screen.getByTestId('agent-card-1')).toBeInTheDocument();
-      expect(screen.getByTestId('agent-card-2')).toBeInTheDocument();
-    });
+    expect(screen.getByTestId('agent-card-1')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-card-2')).toBeInTheDocument();
 
     expect(screen.getByText('Test Agent 1')).toBeInTheDocument();
     expect(screen.getByText('Test Agent 2')).toBeInTheDocument();
   });
 
-  it('calls onSelectAgent when agent card is clicked', async () => {
+  it('calls onSelectAgent when agent card is clicked', () => {
     const onSelectAgent = jest.fn();
     renderComponent({ onSelectAgent });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('agent-card-1')).toBeInTheDocument();
-    });
+    expect(screen.getByTestId('agent-card-1')).toBeInTheDocument();
 
     screen.getByTestId('agent-card-1').click();
 
@@ -205,15 +241,16 @@ describe('VirtualizedAgentGrid', () => {
     });
   });
 
-  it('shows loading spinner when loading', async () => {
+  it('shows loading spinner when loading', () => {
     const mockQuery = jest.fn(() => ({
-      ...mockInfiniteQuery,
+      ...createMockInfiniteQuery(),
       isLoading: true,
       data: undefined,
     }));
 
-    const useMarketplaceAgentsInfiniteQuery =
-      jest.requireMock('~/data-provider/Agents').useMarketplaceAgentsInfiniteQuery;
+    const useMarketplaceAgentsInfiniteQuery = (
+      jest.requireMock('~/data-provider/Agents') as MarketplaceAgentsMock
+    ).useMarketplaceAgentsInfiniteQuery;
     useMarketplaceAgentsInfiniteQuery.mockImplementation(mockQuery);
 
     renderComponent();
@@ -224,17 +261,10 @@ describe('VirtualizedAgentGrid', () => {
     expect(spinner).toHaveClass('h-8 w-8 text-primary');
   });
 
-  it('has proper accessibility attributes', async () => {
-    // Reset the mock to ensure we have data
-    const useMarketplaceAgentsInfiniteQuery =
-      jest.requireMock('~/data-provider/Agents').useMarketplaceAgentsInfiniteQuery;
-    useMarketplaceAgentsInfiniteQuery.mockImplementation(() => mockInfiniteQuery);
-
+  it('has proper accessibility attributes', () => {
     renderComponent({ category: 'productivity' });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
-    });
+    expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
 
     const gridContainer = screen.getByRole('grid');
     expect(gridContainer).toHaveAttribute('aria-label');

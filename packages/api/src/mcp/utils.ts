@@ -3,6 +3,16 @@ import type { ParsedServerConfig } from '~/mcp/types';
 
 export const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
+/** Whether a server should use MCP OAuth handling. */
+export function isOAuthServer(
+  config: Pick<ParsedServerConfig, 'requiresOAuth' | 'oauth'>,
+): boolean {
+  if (config.requiresOAuth === false) {
+    return false;
+  }
+  return config.requiresOAuth === true || config.oauth != null;
+}
+
 /** Checks that `customUserVars` is present AND non-empty (guards against truthy `{}`) */
 export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVars'>): boolean {
   return !!config.customUserVars && Object.keys(config.customUserVars).length > 0;

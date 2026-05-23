@@ -221,7 +221,7 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
   });
 
   describe('merge order', () => {
-    it('should merge YAML → config → user with correct precedence in getAllServerConfigs', async () => {
+    it('should keep operator-managed servers authoritative in getAllServerConfigs', async () => {
       await registry.addServer('yaml_srv', yamlConfig, 'CACHE');
 
       const configServers = await registry.ensureConfigServers({ config_srv: sseConfig });

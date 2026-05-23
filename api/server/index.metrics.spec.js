@@ -72,16 +72,18 @@ describe('Server metrics route', () => {
     mongoServer = await MongoMemoryServer.create();
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.PORT = '0';
+    process.env.METRICS_SECRET = 'test-secret';
     app = require('~/server');
 
     await healthCheckPoll(app);
   });
 
   afterEach(() => {
-    delete process.env.METRICS_SECRET;
+    process.env.METRICS_SECRET = 'test-secret';
   });
 
   afterAll(async () => {
+    delete process.env.METRICS_SECRET;
     await mongoServer.stop();
     await mongoose.disconnect();
   });

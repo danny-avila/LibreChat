@@ -1,4 +1,5 @@
 import type * as t from '~/mcp/types';
+import { logger } from '@librechat/data-schemas';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 
@@ -10,7 +11,10 @@ jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({
   ServerConfigsDB: jest.fn().mockImplementation(() => ({
     get: jest.fn().mockResolvedValue(undefined),
     getAll: jest.fn().mockResolvedValue({}),
-    add: jest.fn().mockResolvedValue(undefined),
+    add: jest.fn().mockImplementation(async (serverName: string, config: t.ParsedServerConfig) => ({
+      serverName,
+      config,
+    })),
     update: jest.fn().mockResolvedValue(undefined),
     remove: jest.fn().mockResolvedValue(undefined),
     reset: jest.fn().mockResolvedValue(undefined),
@@ -98,6 +102,90 @@ describe('MCPServersRegistry', () => {
       expect(Object.keys(configs)).toHaveLength(2);
       expect(configs).toHaveProperty('app_server');
       expect(configs).toHaveProperty('user_server');
+    });
+
+    it('should keep YAML servers authoritative when a DB server has the same name', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      const yamlConfig = { ...testParsedConfig, source: 'yaml' as const, title: 'YAML Slack' };
+      const dbConfig = { ...testParsedConfig, source: 'user' as const, title: 'User Slack' };
+      await registry['cacheConfigsRepo'].add('slack', yamlConfig);
+      jest.spyOn(registry['dbConfigsRepo'], 'getAll').mockResolvedValue({
+        slack: dbConfig,
+        user_server: dbConfig,
+      });
+
+      try {
+        const configs = await registry.getAllServerConfigs('user-1');
+
+        expect(configs.slack).toMatchObject({ source: 'yaml', title: 'YAML Slack' });
+        expect(configs.user_server).toMatchObject({ source: 'user', title: 'User Slack' });
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('should warn when operator-managed servers shadow DB servers', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      const yamlConfig = { ...testParsedConfig, source: 'yaml' as const, title: 'YAML Slack' };
+      const dbConfig = { ...testParsedConfig, source: 'user' as const, title: 'User Slack' };
+      await registry['cacheConfigsRepo'].add('slack', yamlConfig);
+      jest.spyOn(registry['dbConfigsRepo'], 'getAll').mockResolvedValue({ slack: dbConfig });
+
+      try {
+        await registry.getAllServerConfigs('user-1');
+
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('slack'));
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('shadow DB-backed server'));
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('should warn when config servers shadow DB servers', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      const configServer = {
+        ...testParsedConfig,
+        source: 'config' as const,
+        title: 'Config Slack',
+      };
+      const dbConfig = { ...testParsedConfig, source: 'user' as const, title: 'User Slack' };
+      jest.spyOn(registry['dbConfigsRepo'], 'getAll').mockResolvedValue({ slack: dbConfig });
+
+      try {
+        await registry.getAllServerConfigs('user-1', { slack: configServer });
+
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Config MCP server'));
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('slack'));
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
+
+  describe('addServer', () => {
+    it('should reserve YAML and current config server names when creating DB servers', async () => {
+      await registry.addServer('slack', { ...testParsedConfig, title: 'Slack' }, 'CACHE');
+      await registry['configCacheRepo'].upsert('other_tenant:hash', {
+        ...testParsedConfig,
+        source: 'config',
+        title: 'Other Tenant Server',
+      });
+      const dbAddSpy = jest.spyOn(registry['dbConfigsRepo'], 'add').mockResolvedValue({
+        serverName: 'slack-2',
+        config: { ...testParsedConfig, source: 'user', title: 'Slack' },
+      });
+
+      await registry.addServer(
+        'temp_server_name',
+        { ...testParsedConfig, title: 'Slack' },
+        'DB',
+        'user-1',
+        ['config_slack'],
+      );
+
+      const reservedServerNames = Array.from(dbAddSpy.mock.calls[0]?.[3] ?? []);
+      expect(reservedServerNames).toEqual(expect.arrayContaining(['slack', 'config_slack']));
+      expect(reservedServerNames).not.toContain('other_tenant');
     });
   });
 
