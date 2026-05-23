@@ -512,9 +512,8 @@ describe('telemetry SDK lifecycle', () => {
     expect(taskFn).toBeDefined();
     await taskFn?.();
 
-    expect(emitWarningSpy).toHaveBeenCalledWith(
-      'OpenTelemetry shutdown failed: flush failed',
-      { code: 'LIBRECHAT_OTEL' },
-    );
+    expect(emitWarningSpy).toHaveBeenCalledWith('OpenTelemetry shutdown failed: flush failed', {
+      code: 'LIBRECHAT_OTEL',
+    });
   });
 });

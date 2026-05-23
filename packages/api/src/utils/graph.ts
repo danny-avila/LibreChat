@@ -11,10 +11,7 @@ import {
  * Pre-computed regex for matching the Graph token placeholder.
  * Escapes curly braces in the placeholder string for safe regex use.
  */
-const GRAPH_TOKEN_REGEX = new RegExp(
-  GRAPH_TOKEN_PLACEHOLDER.replace(/[{}]/g, '\\$&'),
-  'g',
-);
+const GRAPH_TOKEN_REGEX = new RegExp(GRAPH_TOKEN_PLACEHOLDER.replace(/[{}]/g, '\\$&'), 'g');
 
 /**
  * Response from a Graph API token exchange.
@@ -143,7 +140,9 @@ export async function resolveGraphTokenPlaceholder(
       return value.replace(GRAPH_TOKEN_REGEX, graphTokenResponse.access_token);
     }
 
-    logger.warn('[resolveGraphTokenPlaceholder] Graph token exchange did not return an access token');
+    logger.warn(
+      '[resolveGraphTokenPlaceholder] Graph token exchange did not return an access token',
+    );
     return value;
   } catch (error) {
     logger.error('[resolveGraphTokenPlaceholder] Failed to exchange token for Graph API:', error);
@@ -185,14 +184,13 @@ export async function resolveGraphTokensInRecord(
  * @param graphOptions - Options for Graph token resolution
  * @returns The options with Graph token placeholders resolved
  */
-export async function preProcessGraphTokens<T extends {
-  headers?: Record<string, string>;
-  env?: Record<string, string>;
-  url?: string;
-}>(
-  options: T,
-  graphOptions: GraphTokenOptions,
-): Promise<T> {
+export async function preProcessGraphTokens<
+  T extends {
+    headers?: Record<string, string>;
+    env?: Record<string, string>;
+    url?: string;
+  },
+>(options: T, graphOptions: GraphTokenOptions): Promise<T> {
   if (!mcpOptionsContainGraphTokenPlaceholder(options)) {
     return options;
   }

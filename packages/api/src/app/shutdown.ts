@@ -22,10 +22,7 @@ let httpServer: Server | null = null;
  * listeners in registration order and any one of them can call
  * `process.exit` before the HTTP server has finished closing.
  */
-export function registerShutdownTask(
-  name: string,
-  fn: () => void | Promise<void>,
-): void {
+export function registerShutdownTask(name: string, fn: () => void | Promise<void>): void {
   tasks.push({ name, fn });
 }
 

@@ -71,12 +71,14 @@ describe('setupGracefulShutdown', () => {
   });
 
   it('closes the server and exits 0 on SIGTERM', async () => {
-    const closeSpy = jest.spyOn(server, 'close').mockImplementation((cb?: (err?: Error) => void) => {
-      if (cb) {
-        setImmediate(() => cb());
-      }
-      return server;
-    });
+    const closeSpy = jest
+      .spyOn(server, 'close')
+      .mockImplementation((cb?: (err?: Error) => void) => {
+        if (cb) {
+          setImmediate(() => cb());
+        }
+        return server;
+      });
     setupGracefulShutdown(server);
     triggerSignal('SIGTERM');
     await flush();
@@ -86,12 +88,14 @@ describe('setupGracefulShutdown', () => {
   });
 
   it('closes the server and exits 0 on SIGINT', async () => {
-    const closeSpy = jest.spyOn(server, 'close').mockImplementation((cb?: (err?: Error) => void) => {
-      if (cb) {
-        setImmediate(() => cb());
-      }
-      return server;
-    });
+    const closeSpy = jest
+      .spyOn(server, 'close')
+      .mockImplementation((cb?: (err?: Error) => void) => {
+        if (cb) {
+          setImmediate(() => cb());
+        }
+        return server;
+      });
     setupGracefulShutdown(server);
     triggerSignal('SIGINT');
     await flush();
