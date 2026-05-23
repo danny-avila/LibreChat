@@ -72,13 +72,24 @@ export async function initializeBedrock({
   } = process.env;
 
   const { key: expiresAt } = req.body;
+  const userProvidesAccessKeyId = BEDROCK_AWS_ACCESS_KEY_ID === AuthType.USER_PROVIDED;
+  const userProvidesSecretAccessKey = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
+  const userProvidesSessionToken = BEDROCK_AWS_SESSION_TOKEN === AuthType.USER_PROVIDED;
+  const userProvidesBearerToken = BEDROCK_AWS_BEARER_TOKEN === AuthType.USER_PROVIDED;
   const isUserProvided =
-    BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED ||
-    BEDROCK_AWS_BEARER_TOKEN === AuthType.USER_PROVIDED;
+    userProvidesAccessKeyId ||
+    userProvidesSecretAccessKey ||
+    userProvidesSessionToken ||
+    userProvidesBearerToken;
+  const staticAccessKeyId = userProvidesAccessKeyId ? undefined : BEDROCK_AWS_ACCESS_KEY_ID;
+  const staticSecretAccessKey = userProvidesSecretAccessKey
+    ? undefined
+    : BEDROCK_AWS_SECRET_ACCESS_KEY;
+  const staticSessionToken = userProvidesSessionToken ? undefined : BEDROCK_AWS_SESSION_TOKEN;
+  const staticBearerToken = userProvidesBearerToken ? undefined : BEDROCK_AWS_BEARER_TOKEN;
 
-  const hasAccessKey = BEDROCK_AWS_ACCESS_KEY_ID != null && BEDROCK_AWS_ACCESS_KEY_ID !== '';
-  const hasSecretKey =
-    BEDROCK_AWS_SECRET_ACCESS_KEY != null && BEDROCK_AWS_SECRET_ACCESS_KEY !== '';
+  const hasAccessKey = staticAccessKeyId != null && staticAccessKeyId !== '';
+  const hasSecretKey = staticSecretAccessKey != null && staticSecretAccessKey !== '';
 
   let credentials: BedrockCredentials | undefined;
   let bearerToken: string | undefined;
@@ -104,26 +115,44 @@ export async function initializeBedrock({
       throw new Error('Bedrock credentials not provided. Please provide them again.');
     }
 
-    if (userCredentials.bearerToken) {
+    if (userProvidesBearerToken && userCredentials.bearerToken) {
       bearerToken = userCredentials.bearerToken;
     } else {
-      credentials = userCredentials;
+      const canUseAccessKeys =
+        userProvidesAccessKeyId || userProvidesSecretAccessKey || userProvidesSessionToken;
+      const accessKeyId = userProvidesAccessKeyId ? userCredentials.accessKeyId : staticAccessKeyId;
+      const secretAccessKey = userProvidesSecretAccessKey
+        ? userCredentials.secretAccessKey
+        : staticSecretAccessKey;
+      const sessionToken = userProvidesSessionToken
+        ? userCredentials.sessionToken
+        : staticSessionToken;
+
+      if (!canUseAccessKeys || !accessKeyId || !secretAccessKey) {
+        throw new Error('Bedrock credentials not provided. Please provide them again.');
+      }
+
+      credentials = {
+        accessKeyId,
+        secretAccessKey,
+        ...(sessionToken && { sessionToken }),
+      };
     }
 
     if (expiresAt) {
       checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
     }
-  } else if (BEDROCK_AWS_BEARER_TOKEN) {
-    bearerToken = BEDROCK_AWS_BEARER_TOKEN;
+  } else if (staticBearerToken) {
+    bearerToken = staticBearerToken;
   } else if (hasAccessKey !== hasSecretKey) {
     throw new Error(
       'Both BEDROCK_AWS_ACCESS_KEY_ID and BEDROCK_AWS_SECRET_ACCESS_KEY must be provided together.',
     );
   } else if (hasAccessKey && hasSecretKey) {
     credentials = {
-      accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
-      secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
-      ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
+      accessKeyId: staticAccessKeyId,
+      secretAccessKey: staticSecretAccessKey,
+      ...(staticSessionToken && { sessionToken: staticSessionToken }),
     };
   }
 

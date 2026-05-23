@@ -255,14 +255,14 @@ const SetKeyDialog = ({
           const bearerToken = data.bedrockBearerToken?.trim();
           const accessKeyId = data.bedrockAccessKeyId?.trim();
           const secretAccessKey = data.bedrockSecretAccessKey?.trim();
+          const accessKeyIdLabel = localize('com_endpoint_config_bedrock_access_key_id');
+          const secretAccessKeyLabel = localize('com_endpoint_config_bedrock_secret_access_key');
           const shouldUseAccessKeys =
             !bearerToken && (userProvideAccessKeyId || userProvideSecretAccessKey);
           const missingFields = [
-            shouldUseAccessKeys && userProvideAccessKeyId && !accessKeyId
-              ? 'AWS Access Key ID'
-              : '',
+            shouldUseAccessKeys && userProvideAccessKeyId && !accessKeyId ? accessKeyIdLabel : '',
             shouldUseAccessKeys && userProvideSecretAccessKey && !secretAccessKey
-              ? 'AWS Secret Access Key'
+              ? secretAccessKeyLabel
               : '',
           ].filter(Boolean);
 
