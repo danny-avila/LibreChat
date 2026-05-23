@@ -169,6 +169,24 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     expect(inspectSpy).not.toHaveBeenCalled();
   });
 
+  it('should issue a single batched YAML cache read regardless of how many servers are checked', async () => {
+    await registry.addServer('yaml_a', yamlConfig, 'CACHE');
+    await registry.addServer('yaml_b', yamlConfig, 'CACHE');
+    await registry.addServer('yaml_c', yamlConfig, 'CACHE');
+    const cacheGetSpy = jest.spyOn(registry['cacheConfigsRepo'], 'get');
+    const cacheGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
+
+    await registry.ensureConfigServers({
+      yaml_a: yamlConfig,
+      yaml_b: yamlConfig,
+      yaml_c: yamlConfig,
+      config_only: sseConfig,
+    });
+
+    expect(cacheGetSpy).not.toHaveBeenCalled();
+    expect(cacheGetAllSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('should lazy-initialize a config-source server and tag source as config', async () => {
     const result = await registry.ensureConfigServers({ my_server: sseConfig });
 

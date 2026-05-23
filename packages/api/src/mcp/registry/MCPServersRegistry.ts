@@ -480,9 +480,12 @@ export class MCPServersRegistry {
 
     const result: Record<string, t.ParsedServerConfig> = {};
 
+    /** Single snapshot of the YAML cache for the whole pass: in the Redis aggregate-key backend, every per-name get() reads and deserializes the full map, so N concurrent per-server lookups would issue N full-map reads. The snapshot also keeps the unchanged-YAML comparison consistent against one view of YAML across all entries. */
+    const yamlSnapshot = await this.cacheConfigsRepo.getAll();
+
     const settled = await Promise.allSettled(
       Object.entries(resolvedMcpConfig).map(async ([serverName, rawConfig]) => {
-        if (await this.isUnmodifiedYamlServer(serverName, rawConfig)) {
+        if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
           return;
         }
         const parsed = await this.ensureSingleConfigServer(serverName, rawConfig);
@@ -501,16 +504,17 @@ export class MCPServersRegistry {
   }
 
   /**
-   * Returns true when `rawConfig` matches the cached YAML entry on every
-   * admin-configurable field. Used to skip lazy-init when an admin has not
-   * actually overridden anything for a YAML-defined server, so the YAML entry
-   * is not unnecessarily re-inspected or shadowed in the config tier.
+   * Returns true when `rawConfig` matches the YAML cache entry for this server
+   * on every admin-configurable field, so an unmodified YAML-defined server
+   * can skip lazy-init and avoid being re-inspected or shadowed in the
+   * config tier.
    */
-  private async isUnmodifiedYamlServer(
+  private isUnmodifiedYamlServer(
+    yamlSnapshot: Record<string, t.ParsedServerConfig>,
     serverName: string,
     rawConfig: t.MCPOptions,
-  ): Promise<boolean> {
-    const yamlEntry = await this.cacheConfigsRepo.get(serverName);
+  ): boolean {
+    const yamlEntry = yamlSnapshot[serverName];
     if (!yamlEntry || yamlEntry.source !== 'yaml') {
       return false;
     }
