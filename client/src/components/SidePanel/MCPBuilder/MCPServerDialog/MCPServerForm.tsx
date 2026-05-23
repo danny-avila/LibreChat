@@ -31,7 +31,7 @@ export default function MCPServerForm({ formHook }: MCPServerFormProps) {
 
         <AuthSection isEditMode={isEditMode} serverName={server?.serverName} />
 
-        <CustomUserVarsDefinitionSection />
+        <CustomUserVarsDefinitionSection isEditMode={isEditMode} />
 
         <div className="space-y-2">
           <p className="text-sm font-medium">{localize('com_ui_mcp_advanced')}</p>

@@ -108,11 +108,12 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
   if (isUiManaged && rawHeaders) {
     const maskedHeaders: Record<string, string> = {};
     if (isLegacyDbHeaders) {
-      // Legacy DB configs with headers but no secretHeaderKeys are treated as non-secret
-      // headers to avoid data loss on edit/save round-trips. Pass headers through unchanged
-      // and intentionally do NOT emit secretHeaderKeys so the client doesn't treat them as secrets.
-      for (const [k, v] of Object.entries(rawHeaders)) {
-        maskedHeaders[k] = v;
+      // Legacy DB configs with headers but no secretHeaderKeys: we cannot determine which
+      // headers are sensitive, so mask ALL values to prevent leaking potential secrets.
+      // Keys are preserved so the UI can display them (user can re-enter values on save,
+      // which triggers migration to the modern secretHeaderKeys format).
+      for (const k of Object.keys(rawHeaders)) {
+        maskedHeaders[k] = '';
       }
       (safe as ParsedServerConfig & { headers?: Record<string, string> }).headers = maskedHeaders;
     } else {

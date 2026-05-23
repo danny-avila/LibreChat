@@ -1231,6 +1231,7 @@
   "com_ui_mcp_variable_key_placeholder": "MY_VARIABLE",
   "com_ui_mcp_variable_key_invalid": "Variable key must start with a letter and contain only letters, numbers, and underscores",
   "com_ui_mcp_reserved_key": "MCP_API_KEY is reserved and cannot be used as a custom variable key",
+  "com_ui_mcp_duplicate_key": "This variable key is already used in another row",
   "com_ui_mcp_variable_title": "Display title",
   "com_ui_mcp_variable_title_placeholder": "My Variable",
   "com_ui_mcp_variable_description_placeholder": "Describe what value the user should enter",

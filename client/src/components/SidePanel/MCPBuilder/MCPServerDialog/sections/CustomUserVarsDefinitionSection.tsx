@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { Input, Label, Button, Textarea } from '@librechat/client';
@@ -7,15 +8,28 @@ import { cn } from '~/utils';
 
 const VARIABLE_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
 
-export default function CustomUserVarsDefinitionSection() {
+interface CustomUserVarsDefinitionSectionProps {
+  isEditMode: boolean;
+}
+
+export default function CustomUserVarsDefinitionSection({
+  isEditMode,
+}: CustomUserVarsDefinitionSectionProps) {
   const localize = useLocalize();
   const {
     register,
     control,
+    getValues,
     formState: { errors },
   } = useFormContext<MCPServerFormData>();
 
   const { fields, append, remove } = useFieldArray({ control, name: 'customUserVars' });
+
+  // Track initial keys that existed when the form was loaded (edit mode).
+  // Preexisting system-managed keys (e.g. MCP_API_KEY) are exempt from the reserved-key check.
+  const initialKeysRef = useRef<Set<string>>(
+    new Set(fields.map((f) => (f as unknown as { key: string }).key)),
+  );
 
   return (
     <div className="space-y-2">
@@ -81,8 +95,24 @@ export default function CustomUserVarsDefinitionSection() {
                         value: VARIABLE_KEY_PATTERN,
                         message: localize('com_ui_mcp_variable_key_invalid'),
                       },
-                      validate: (value) =>
-                        value !== 'MCP_API_KEY' || localize('com_ui_mcp_reserved_key'),
+                      validate: (value) => {
+                        if (value === 'MCP_API_KEY') {
+                          if (isEditMode && initialKeysRef.current.has('MCP_API_KEY')) {
+                            return true;
+                          }
+                          return localize('com_ui_mcp_reserved_key');
+                        }
+                        // Reject duplicate keys across rows
+                        const allVars = getValues('customUserVars');
+                        const trimmed = value.trim();
+                        if (
+                          trimmed &&
+                          allVars.some((v, i) => i !== index && v.key.trim() === trimmed)
+                        ) {
+                          return localize('com_ui_mcp_duplicate_key');
+                        }
+                        return true;
+                      },
                     })}
                     className={cn(
                       'font-mono text-xs',

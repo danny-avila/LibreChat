@@ -117,7 +117,7 @@ function Wrapper({ defaultValues = {} }: WrapperProps) {
   });
   return (
     <FormProvider {...methods}>
-      <CustomUserVarsDefinitionSection />
+      <CustomUserVarsDefinitionSection isEditMode={false} />
     </FormProvider>
   );
 }

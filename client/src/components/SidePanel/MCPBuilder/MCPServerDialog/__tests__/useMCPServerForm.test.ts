@@ -33,7 +33,7 @@ function buildConfig(formData: MCPServerFormData): Record<string, unknown> {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function makeServer(overrides: Partial<MCPOptions> = {}): MCPServerDefinition {
+function makeServer(overrides: Record<string, unknown> = {}): MCPServerDefinition {
   const base: MCPOptions = {
     type: 'sse',
     url: 'https://mcp.example.com/sse',
@@ -330,8 +330,8 @@ describe('deriveDefaultValues – headers', () => {
 
   it('maps each header entry to { key, value, isSecret: false } by default', () => {
     const server = makeServer({
-      headers: { 'X-Custom': 'my-value', 'X-Other': 'other' } as unknown as MCPOptions['headers'],
-      secretHeaderKeys: [] as unknown as MCPOptions['secretHeaderKeys'],
+      headers: { 'X-Custom': 'my-value', 'X-Other': 'other' },
+      secretHeaderKeys: [],
     });
     const defaults = deriveDefaultValues(server);
     expect(defaults.headers).toEqual(
@@ -345,8 +345,8 @@ describe('deriveDefaultValues – headers', () => {
 
   it('marks a header as isSecret: true when its key is in secretHeaderKeys', () => {
     const server = makeServer({
-      headers: { Authorization: '', 'X-Public': 'pub' } as unknown as MCPOptions['headers'],
-      secretHeaderKeys: ['Authorization'] as unknown as MCPOptions['secretHeaderKeys'],
+      headers: { Authorization: '', 'X-Public': 'pub' },
+      secretHeaderKeys: ['Authorization'],
     });
     const defaults = deriveDefaultValues(server);
     const authHeader = defaults.headers.find((h) => h.key === 'Authorization');
@@ -357,8 +357,8 @@ describe('deriveDefaultValues – headers', () => {
 
   it('marks multiple headers as secret when all are in secretHeaderKeys', () => {
     const server = makeServer({
-      headers: { 'X-Secret-A': '', 'X-Secret-B': '' } as unknown as MCPOptions['headers'],
-      secretHeaderKeys: ['X-Secret-A', 'X-Secret-B'] as unknown as MCPOptions['secretHeaderKeys'],
+      headers: { 'X-Secret-A': '', 'X-Secret-B': '' },
+      secretHeaderKeys: ['X-Secret-A', 'X-Secret-B'],
     });
     const defaults = deriveDefaultValues(server);
     expect(defaults.headers.every((h) => h.isSecret)).toBe(true);
@@ -366,7 +366,7 @@ describe('deriveDefaultValues – headers', () => {
 
   it('treats secretHeaderKeys as empty set when field is absent (YAML server)', () => {
     const server = makeServer({
-      headers: { 'X-Custom': 'value' } as unknown as MCPOptions['headers'],
+      headers: { 'X-Custom': 'value' },
       // secretHeaderKeys deliberately omitted
     });
     const defaults = deriveDefaultValues(server);

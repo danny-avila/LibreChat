@@ -258,7 +258,7 @@ export function buildHeaders(
     return {};
   }
   const headersMap: Record<string, string> = {};
-  const secretHeaderKeysList: string[] = [];
+  const secretFlagMap: Map<string, boolean> = new Map();
   for (const { key, value, isSecret } of headers) {
     const trimmedKey = key.trim();
     const trimmedValue = value.trim();
@@ -271,20 +271,21 @@ export function buildHeaders(
     if (!trimmedValue) {
       if (isSecret && _isEditMode) {
         headersMap[trimmedKey] = '';
-        secretHeaderKeysList.push(trimmedKey);
+        secretFlagMap.set(trimmedKey, true);
       }
       continue;
     }
     headersMap[trimmedKey] = trimmedValue;
-    if (isSecret) {
-      secretHeaderKeysList.push(trimmedKey);
-    }
+    // Last-write-wins for the secret flag, consistent with the value map
+    secretFlagMap.set(trimmedKey, isSecret);
   }
   if (Object.keys(headersMap).length === 0) {
     return {};
   }
-  // Deduplicate to avoid inconsistent payloads if form has duplicate keys
-  return { headers: headersMap, secretHeaderKeys: Array.from(new Set(secretHeaderKeysList)) };
+  const secretHeaderKeys = [...secretFlagMap.entries()]
+    .filter(([, isSecret]) => isSecret)
+    .map(([k]) => k);
+  return { headers: headersMap, secretHeaderKeys };
 }
 
 /**
