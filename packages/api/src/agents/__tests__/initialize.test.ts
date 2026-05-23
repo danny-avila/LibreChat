@@ -1464,12 +1464,12 @@ describe('initializeAgent — execute_code capability expansion', () => {
     agent.tools = ['execute_code'];
 
     /* Surface an options.tools array from the provider config — this is
-       the `google_search` / `url_context` built-in LLM tooling that
+       the `googleSearch` / `urlContext` built-in LLM tooling that
        Google/Vertex exposes via provider options. */
     mockGetProviderConfig.mockReturnValue({
       getOptions: jest.fn().mockResolvedValue({
         llmConfig: { model: 'test-model', maxTokens: 4096 },
-        tools: [{ google_search: {} }],
+        tools: [{ googleSearch: {} }],
       } satisfies InitializeResultBase),
       overrideProvider: Providers.GOOGLE,
     });
@@ -1490,7 +1490,7 @@ describe('initializeAgent — execute_code capability expansion', () => {
       ),
     ).resolves.toEqual(
       expect.objectContaining({
-        tools: [{ google_search: {} }],
+        tools: [{ googleSearch: {} }],
         toolDefinitions: expect.arrayContaining([
           expect.objectContaining({ name: 'bash_tool' }),
           expect.objectContaining({ name: 'read_file' }),
