@@ -75,6 +75,11 @@ describe('initializeBedrock', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env = { ...originalEnv };
+    delete process.env.BEDROCK_AWS_BEARER_TOKEN;
+    delete process.env.BEDROCK_AWS_PROFILE;
+    delete process.env.BEDROCK_AWS_SESSION_TOKEN;
+    delete process.env.BEDROCK_REVERSE_PROXY;
+    delete process.env.PROXY;
     process.env.BEDROCK_AWS_ACCESS_KEY_ID = 'test-access-key';
     process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = 'test-secret-key';
     process.env.BEDROCK_AWS_DEFAULT_REGION = 'us-east-1';
@@ -129,6 +134,21 @@ describe('initializeBedrock', () => {
         secretAccessKey: 'test-secret-key',
         sessionToken: 'test-session-token',
       });
+    });
+
+    it('should pass BEDROCK_AWS_BEARER_TOKEN as a BedrockRuntimeClient token', async () => {
+      process.env.BEDROCK_AWS_BEARER_TOKEN = 'test-bedrock-api-key';
+      const params = createMockParams();
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(result.llmConfig).toHaveProperty('client');
+      expect(result.llmConfig.client).toHaveProperty('_isBedrockClient', true);
+      expect(result.llmConfig.client).toHaveProperty('token', {
+        token: 'test-bedrock-api-key',
+      });
+      expect(result.llmConfig.client).toHaveProperty('authSchemePreference', ['httpBearerAuth']);
+      expect(result.llmConfig).not.toHaveProperty('credentials');
+      expect(result.llmConfig).not.toHaveProperty('profile');
     });
 
     it('should pass AWS profile to ChatBedrockConverse when static credentials are unset', async () => {
@@ -408,6 +428,7 @@ describe('initializeBedrock', () => {
 
   describe('User-Provided Credentials', () => {
     it('should fetch credentials from database when user-provided', async () => {
+      process.env.BEDROCK_AWS_ACCESS_KEY_ID = AuthType.USER_PROVIDED;
       process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = AuthType.USER_PROVIDED;
       const params = createMockParams({
         body: { key: '2024-12-31T23:59:59Z' },
@@ -435,6 +456,62 @@ describe('initializeBedrock', () => {
       await initializeBedrock(params);
 
       expect(mockedCheckUserKeyExpiry).toHaveBeenCalledWith(expiresAt, EModelEndpoint.bedrock);
+    });
+
+    it('should fetch a user-provided Bedrock API key from database', async () => {
+      process.env.BEDROCK_AWS_BEARER_TOKEN = AuthType.USER_PROVIDED;
+      const params = createMockParams();
+      (params.db.getUserKey as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          apiKey: JSON.stringify({
+            bearerToken: 'user-bedrock-api-key',
+          }),
+        }),
+      );
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(params.db.getUserKey).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        name: EModelEndpoint.bedrock,
+      });
+      expect(result.llmConfig).toHaveProperty('client');
+      expect(result.llmConfig.client).toHaveProperty('token', {
+        token: 'user-bedrock-api-key',
+      });
+      expect(result.llmConfig.client).toHaveProperty('authSchemePreference', ['httpBearerAuth']);
+      expect(result.llmConfig).not.toHaveProperty('credentials');
+    });
+
+    it('should not use stored access keys when only bearer token mode is configured', async () => {
+      process.env.BEDROCK_AWS_BEARER_TOKEN = AuthType.USER_PROVIDED;
+      const params = createMockParams();
+
+      await expect(initializeBedrock(params)).rejects.toThrow(
+        'Bedrock credentials not provided. Please provide them again.',
+      );
+    });
+
+    it('should merge user-provided access key ID with static secret access key', async () => {
+      process.env.BEDROCK_AWS_ACCESS_KEY_ID = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = 'static-secret-key';
+      const params = createMockParams();
+      (params.db.getUserKey as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          apiKey: JSON.stringify({
+            accessKeyId: 'user-access-key',
+            bearerToken: 'ignored-bedrock-api-key',
+          }),
+        }),
+      );
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(result.llmConfig.credentials).toEqual({
+        accessKeyId: 'user-access-key',
+        secretAccessKey: 'static-secret-key',
+      });
+      expect(result.llmConfig).not.toHaveProperty('client');
     });
   });
 
