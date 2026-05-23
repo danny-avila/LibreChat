@@ -192,6 +192,7 @@ const SetKeyDialog = ({
   const localize = useLocalize();
 
   const expirationOptions = Object.values(EXPIRY);
+  const configuredEndpoint = endpointType ?? endpoint;
 
   const handleExpirationChange = (label: string) => {
     setExpiresAtLabel(label);
@@ -227,10 +228,12 @@ const SetKeyDialog = ({
     if (formSet.has(endpoint) || formSet.has(endpointType ?? '')) {
       // TODO: handle other user provided options besides baseURL and apiKey
       methods.handleSubmit((data) => {
-        const isAzure = endpoint === EModelEndpoint.azureOpenAI;
-        const isBedrock = endpoint === EModelEndpoint.bedrock;
+        const isAzure = configuredEndpoint === EModelEndpoint.azureOpenAI;
+        const isBedrock = configuredEndpoint === EModelEndpoint.bedrock;
         const isOpenAIBase =
-          isAzure || endpoint === EModelEndpoint.openAI || isAssistantsEndpoint(endpoint);
+          isAzure ||
+          configuredEndpoint === EModelEndpoint.openAI ||
+          isAssistantsEndpoint(configuredEndpoint);
         if (isAzure) {
           data.apiKey = 'n/a';
         }
@@ -252,21 +255,33 @@ const SetKeyDialog = ({
         });
 
         if (isBedrock) {
-          const bearerToken = data.bedrockBearerToken?.trim();
-          const accessKeyId = data.bedrockAccessKeyId?.trim();
-          const secretAccessKey = data.bedrockSecretAccessKey?.trim();
+          const bearerToken = userProvideBearerToken ? data.bedrockBearerToken?.trim() : '';
+          const accessKeyId = userProvideAccessKeyId ? data.bedrockAccessKeyId?.trim() : '';
+          const secretAccessKey = userProvideSecretAccessKey
+            ? data.bedrockSecretAccessKey?.trim()
+            : '';
+          const sessionToken = userProvideSessionToken ? data.bedrockSessionToken?.trim() : '';
           const accessKeyIdLabel = localize('com_endpoint_config_bedrock_access_key_id');
           const secretAccessKeyLabel = localize('com_endpoint_config_bedrock_secret_access_key');
-          const shouldUseAccessKeys =
-            !bearerToken && (userProvideAccessKeyId || userProvideSecretAccessKey);
+          const sessionTokenLabel = localize('com_endpoint_config_bedrock_session_token');
+          const bearerTokenLabel = localize('com_endpoint_config_bedrock_bearer_token');
+          const canSubmitBearerToken = !!bearerToken;
+          const hasUserProvidedAccessKeyAuth =
+            !!userProvideAccessKeyId || !!userProvideSecretAccessKey || !!userProvideSessionToken;
           const missingFields = [
-            shouldUseAccessKeys && userProvideAccessKeyId && !accessKeyId ? accessKeyIdLabel : '',
-            shouldUseAccessKeys && userProvideSecretAccessKey && !secretAccessKey
+            !canSubmitBearerToken && !hasUserProvidedAccessKeyAuth && userProvideBearerToken
+              ? bearerTokenLabel
+              : '',
+            !canSubmitBearerToken && userProvideAccessKeyId && !accessKeyId ? accessKeyIdLabel : '',
+            !canSubmitBearerToken && userProvideSecretAccessKey && !secretAccessKey
               ? secretAccessKeyLabel
+              : '',
+            !canSubmitBearerToken && userProvideSessionToken && !sessionToken
+              ? sessionTokenLabel
               : '',
           ].filter(Boolean);
 
-          if (!bearerToken && missingFields.length > 0) {
+          if (!canSubmitBearerToken && missingFields.length > 0) {
             showToast({
               message: `${localize('com_endpoint_config_required_fields')} ${missingFields.join(', ')}`,
               status: NotificationSeverity.ERROR,
@@ -275,15 +290,7 @@ const SetKeyDialog = ({
             return;
           }
 
-          if (
-            !bearerToken &&
-            !(
-              userProvideAccessKeyId &&
-              userProvideSecretAccessKey &&
-              accessKeyId &&
-              secretAccessKey
-            )
-          ) {
+          if (!canSubmitBearerToken && !hasUserProvidedAccessKeyAuth) {
             showToast({
               message: localize('com_endpoint_config_bedrock_credentials_required'),
               status: NotificationSeverity.ERROR,
@@ -318,10 +325,10 @@ const SetKeyDialog = ({
             azureOpenAIApiVersion: azureOptions.azureOpenAIApiVersion,
           });
         } else if (isBedrock) {
-          const bearerToken = bedrockBearerToken.trim();
-          const accessKeyId = bedrockAccessKeyId.trim();
-          const secretAccessKey = bedrockSecretAccessKey.trim();
-          const sessionToken = bedrockSessionToken.trim();
+          const bearerToken = userProvideBearerToken ? bedrockBearerToken.trim() : '';
+          const accessKeyId = userProvideAccessKeyId ? bedrockAccessKeyId.trim() : '';
+          const secretAccessKey = userProvideSecretAccessKey ? bedrockSecretAccessKey.trim() : '';
+          const sessionToken = userProvideSessionToken ? bedrockSessionToken.trim() : '';
 
           if (bearerToken) {
             userProvidedData.apiKey = JSON.stringify({
@@ -329,8 +336,8 @@ const SetKeyDialog = ({
             });
           } else {
             userProvidedData.apiKey = JSON.stringify({
-              accessKeyId,
-              secretAccessKey,
+              ...(accessKeyId && { accessKeyId }),
+              ...(secretAccessKey && { secretAccessKey }),
               ...(sessionToken && { sessionToken }),
             });
           }
@@ -354,8 +361,7 @@ const SetKeyDialog = ({
     setUserKey('');
   };
 
-  const EndpointComponent =
-    endpointComponents[endpointType ?? endpoint] ?? endpointComponents['default'];
+  const EndpointComponent = endpointComponents[configuredEndpoint] ?? endpointComponents['default'];
   const expiryTime = getExpiry();
 
   return (

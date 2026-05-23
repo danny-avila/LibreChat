@@ -106,4 +106,14 @@ describe('EndpointService', () => {
 
     expect(config[EModelEndpoint.bedrock]).toEqual({ userProvide: false });
   });
+
+  it('skips blank optional Bedrock env vars before falling back to region', () => {
+    const config = loadConfig({
+      BEDROCK_AWS_BEARER_TOKEN: '',
+      BEDROCK_AWS_PROFILE: '',
+      BEDROCK_AWS_DEFAULT_REGION: 'us-east-1',
+    });
+
+    expect(config[EModelEndpoint.bedrock]).toEqual({ userProvide: false });
+  });
 });
