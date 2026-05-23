@@ -284,6 +284,23 @@ describe('createMetrics', () => {
     );
   });
 
+  it('does not instrument mongoose queries when metrics are not configured', async () => {
+    class FakeQuery {
+      model = { modelName: 'User' };
+      op = 'findOne';
+
+      exec() {
+        return Promise.resolve({ _id: 'user-1' });
+      }
+    }
+
+    const originalExec = FakeQuery.prototype.exec;
+
+    instrumentMongooseQueryMetrics({ Query: FakeQuery } as never);
+
+    expect(FakeQuery.prototype.exec).toBe(originalExec);
+  });
+
   it('tracks mongoose query errors thrown before a promise is returned', async () => {
     class ThrowingQuery {
       model = { modelName: 'User' };

@@ -205,6 +205,8 @@ export function recordGenerationStreamResumePendingEvents(
 const getElapsedSeconds = (startedAt: bigint): number =>
   Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
 
+export const isMetricsConfigured = (): boolean => Boolean(process.env.METRICS_SECRET);
+
 const normalizeMongooseLabel = (value: unknown): string => {
   if (typeof value !== 'string' || !value) return 'unknown';
   return value.replace(/[^a-zA-Z0-9_:-]/g, '_').slice(0, 64) || 'unknown';
@@ -259,6 +261,8 @@ export function recordMongooseQuery(
 }
 
 export function instrumentMongooseQueryMetrics(mongoose: Mongoose): void {
+  if (!isMetricsConfigured()) return;
+
   const instrumented = Symbol.for('librechat.mongooseQueryMetrics.instrumented');
   const queryPrototype = mongoose.Query?.prototype as
     | (typeof mongoose.Query.prototype & { [instrumented]?: boolean })
