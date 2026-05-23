@@ -381,6 +381,25 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       expect(config?.source).toBe('yaml');
     });
 
+    it('should not leak a tenant-scoped failure stub into subsequent no-configServers calls', async () => {
+      inspectSpy.mockRejectedValueOnce(new Error('connection refused'));
+      const tenantA = await registry.ensureConfigServers({ tenant_a_only: sseConfig });
+      expect(tenantA.tenant_a_only.inspectionFailed).toBe(true);
+
+      const firstLookup = await registry.getServerConfig('tenant_a_only', undefined, tenantA);
+      expect(firstLookup?.inspectionFailed).toBe(true);
+      expect(firstLookup?.source).toBe('config');
+
+      const leakedLookup = await registry.getServerConfig('tenant_a_only');
+      expect(leakedLookup).toBeUndefined();
+
+      const tenantB = await registry.ensureConfigServers({ tenant_a_only: altSseConfig });
+      const tenantBLookup = await registry.getServerConfig('tenant_a_only', undefined, tenantB);
+      expect((tenantBLookup as unknown as { url: string }).url).toBe(
+        'https://mcp.other-tenant.com/sse',
+      );
+    });
+
     it('should not cross-contaminate between tenant configServers maps', async () => {
       const tenantA = await registry.ensureConfigServers({ srv: sseConfig });
       const tenantB = await registry.ensureConfigServers({ srv: altSseConfig });

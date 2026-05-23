@@ -208,24 +208,25 @@ export class MCPServersRegistry {
 
     const cacheKey = this.getReadThroughCacheKey(serverName, userId);
 
+    /** readThroughCache memoizes global YAML/DB lookups only. The per-call configServers candidate is tenant-scoped and must not enter the cache, or a failed stub from one tenant would leak to no-userId calls from another. */
+    let resolved: t.ParsedServerConfig | undefined;
     if (await this.readThroughCache.has(cacheKey)) {
-      return await this.readThroughCache.get(cacheKey);
+      resolved = await this.readThroughCache.get(cacheKey);
+    } else {
+      const configFromYaml = await this.cacheConfigsRepo.get(serverName);
+      if (configFromYaml) {
+        resolved = configFromYaml;
+      } else {
+        resolved = await this.dbConfigsRepo.get(serverName, userId);
+      }
+      await this.readThroughCache.set(cacheKey, resolved);
     }
 
-    const configFromYaml = await this.cacheConfigsRepo.get(serverName);
-    if (configFromYaml) {
-      await this.readThroughCache.set(cacheKey, configFromYaml);
-      return configFromYaml;
+    if (resolved) {
+      return resolved;
     }
 
-    const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
-    if (configFromDB) {
-      await this.readThroughCache.set(cacheKey, configFromDB);
-      return configFromDB;
-    }
-
-    /** Config-only servers (admin-defined, not in YAML or user DB) have no fallback; surface the failure stub so callers can detect inspectionFailed. Memoize the result (candidate or undefined) so repeated lookups don't re-hit the DB. */
-    await this.readThroughCache.set(cacheKey, candidate);
+    /** Config-only servers (admin-defined, not in YAML or user DB) have no global fallback; surface the per-call failure stub so callers can detect inspectionFailed. */
     return candidate;
   }
 
