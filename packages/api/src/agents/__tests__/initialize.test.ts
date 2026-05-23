@@ -225,6 +225,17 @@ function countNamedWebSearchTools(tools: unknown[] | undefined): number {
   );
 }
 
+function countGoogleSearchTools(tools: unknown[] | undefined): number {
+  return (
+    tools?.filter((tool) => {
+      if (tool == null || typeof tool !== 'object') {
+        return false;
+      }
+      return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
+    }).length ?? 0
+  );
+}
+
 function countWebSearchDefinitions(
   toolDefinitions: Array<{ name: string }> | undefined,
 ): number {
@@ -308,14 +319,20 @@ describe('initializeAgent — custom provider token lookup', () => {
   });
 });
 
-describe('initializeAgent — Anthropic web_search precedence', () => {
+describe('initializeAgent — provider web_search precedence', () => {
   const nativeWebSearchTool = {
     type: 'web_search_20250305',
     name: Tools.web_search,
   };
+  const nativeGoogleSearchTool = { googleSearch: {} };
   const libreChatWebSearchDefinition = {
     name: Tools.web_search,
     description: 'Search the web',
+    parameters: { type: 'object', properties: {} },
+  };
+  const mcpToolDefinition = {
+    name: 'mcp_lookup',
+    description: 'Lookup context',
     parameters: { type: 'object', properties: {} },
   };
 
@@ -398,7 +415,59 @@ describe('initializeAgent — Anthropic web_search precedence', () => {
     expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
   });
 
-  it('leaves non-Anthropic providers unchanged', async () => {
+  it('keeps Google native search when LibreChat web_search is not selected', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [mcpToolDefinition],
+    });
+    agent.tools = ['mcp_lookup'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(countGoogleSearchTools(result.tools)).toBe(1);
+    expect(result.toolDefinitions).toContain(mcpToolDefinition);
+  });
+
+  it('prefers LibreChat web_search when Google native search is also enabled', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([]);
+    expect(countGoogleSearchTools(result.tools)).toBe(0);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+
+  it('leaves providers without a native web search conflict unchanged', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.OPENAI,
       providerTools: [nativeWebSearchTool],

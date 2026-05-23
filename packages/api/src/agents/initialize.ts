@@ -77,7 +77,14 @@ function hasToolDefinition(toolDefinitions: LCTool[] | undefined, name: string):
   return toolDefinitions?.some((toolDefinition) => toolDefinition.name === name) === true;
 }
 
-function resolveAnthropicToolConflicts({
+function hasGoogleSearchTool(tool: unknown): boolean {
+  if (tool == null || typeof tool !== 'object') {
+    return false;
+  }
+  return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
+}
+
+function resolveProviderToolConflicts({
   provider,
   tools,
   toolDefinitions,
@@ -86,7 +93,7 @@ function resolveAnthropicToolConflicts({
   tools?: unknown[];
   toolDefinitions?: LCTool[];
 }): unknown[] | undefined {
-  if (provider !== Providers.ANTHROPIC || !tools?.length) {
+  if (!tools?.length) {
     return tools;
   }
 
@@ -94,9 +101,19 @@ function resolveAnthropicToolConflicts({
     return tools;
   }
 
+  const shouldRemoveTool = (tool: unknown): boolean => {
+    if (provider === Providers.ANTHROPIC) {
+      return getToolName(tool) === Tools.web_search;
+    }
+    if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
+      return hasGoogleSearchTool(tool);
+    }
+    return false;
+  };
+
   let removed = 0;
   const resolvedTools = tools.filter((tool) => {
-    const shouldRemove = getToolName(tool) === Tools.web_search;
+    const shouldRemove = shouldRemoveTool(tool);
     if (shouldRemove) {
       removed += 1;
     }
@@ -105,7 +122,7 @@ function resolveAnthropicToolConflicts({
 
   if (removed > 0) {
     logger.debug(
-      `[initializeAgent] Removed ${removed} Anthropic native web_search tool(s); LibreChat web_search is enabled.`,
+      `[initializeAgent] Removed ${removed} ${provider} native web search tool(s); LibreChat web_search is enabled.`,
     );
   }
 
@@ -882,7 +899,7 @@ export async function initializeAgent(
 
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
   const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
-  const providerTools = resolveAnthropicToolConflicts({
+  const providerTools = resolveProviderToolConflicts({
     provider: agent.provider,
     tools: options.tools,
     toolDefinitions,
