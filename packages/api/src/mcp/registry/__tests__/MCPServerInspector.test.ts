@@ -1,9 +1,9 @@
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
-import { detectOAuthRequirement } from '~/mcp/oauth';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { createMockConnection } from './mcpConnectionsMock.helper';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { detectOAuthRequirement } from '~/mcp/oauth';
 
 // Mock external dependencies
 jest.mock('../../oauth/detectOAuth');
@@ -100,6 +100,54 @@ describe('MCPServerInspector', () => {
       });
     });
 
+    it('should skip capabilities fetch when customUserVars is defined', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@test/mcp-stdio-server'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      expect(result).toEqual({
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@test/mcp-stdio-server'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+        requiresOAuth: false,
+        initDuration: expect.any(Number),
+      });
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(mockConnection.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('should NOT create a temp connection when customUserVars is defined and no connection is provided', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@test/mcp-stdio-server'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.capabilities).toBeUndefined();
+      expect(result.toolFunctions).toBeUndefined();
+    });
+
     it('should keep custom serverInstructions string and not fetch from server', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',
@@ -175,6 +223,55 @@ describe('MCPServerInspector', () => {
       });
     });
 
+    it('should set requiresOAuth to false when apiKey.source is admin', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'sse',
+        url: 'https://api.example.com/sse',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'my-api-key',
+        },
+      };
+
+      // OAuth detection should be skipped
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: true, // This would be returned if called, but it shouldn't be
+        method: 'protected-resource-metadata',
+      });
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      // Should NOT call OAuth detection
+      expect(mockDetectOAuthRequirement).not.toHaveBeenCalled();
+
+      // requiresOAuth should be false due to admin-provided API key
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.apiKey?.source).toBe('admin');
+    });
+
+    it('should still detect OAuth when apiKey.source is user', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'sse',
+        url: 'https://api.example.com/sse',
+        apiKey: {
+          source: 'user',
+          authorization_type: 'bearer',
+        },
+      };
+
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: true,
+        method: 'protected-resource-metadata',
+      });
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      // Should call OAuth detection for user-provided API key
+      expect(mockDetectOAuthRequirement).toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(true);
+    });
+
     it('should fetch capabilities when server has no tools', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',
@@ -224,10 +321,12 @@ describe('MCPServerInspector', () => {
       const result = await MCPServerInspector.inspect('test_server', rawConfig);
 
       // Verify factory was called to create connection
-      expect(MCPConnectionFactory.create).toHaveBeenCalledWith({
-        serverName: 'test_server',
-        serverConfig: expect.objectContaining({ type: 'stdio', command: 'node' }),
-      });
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test_server',
+          serverConfig: expect.objectContaining({ type: 'stdio', command: 'node' }),
+        }),
+      );
 
       // Verify temporary connection was disconnected
       expect(tempMockConnection.disconnect).toHaveBeenCalled();

@@ -2,9 +2,9 @@ import React, { createContext, useContext, ReactNode, useMemo } from 'react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
-import CategoryIcon from '~/components/Prompts/Groups/CategoryIcon';
 import { usePromptGroupsNav, useHasAccess } from '~/hooks';
 import { useGetAllPromptGroups } from '~/data-provider';
+import { CategoryIcon } from '~/components/Prompts';
 import { mapPromptGroups } from '~/utils';
 
 type AllPromptGroupsData =
@@ -77,9 +77,5 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
 };
 
 export const usePromptGroupsContext = () => {
-  const context = useContext(PromptGroupsContext);
-  if (!context) {
-    throw new Error('usePromptGroupsContext must be used within a PromptGroupsProvider');
-  }
-  return context;
+  return useContext(PromptGroupsContext);
 };

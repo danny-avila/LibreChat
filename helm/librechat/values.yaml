@@ -33,9 +33,13 @@ global:
     #        key: client_id
 
 librechat:
+  # External admin panel base URL used for admin OAuth/SSO redirects.
+  # Required when deploying the admin panel on a separate URL.
+  # May include a path. Do not include a trailing slash.
+  # Example: https://admin.example.com/admin
+  adminPanelUrl: ""
+
   configEnv:
-    PLUGIN_MODELS: gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
-    DEBUG_PLUGINS: "true"
     # IMPORTANT -- GENERATE your own: openssl rand -hex 32 and openssl rand -hex 16 for CREDS_IV. Best Practise: Put into Secret. See global.librechat.existingSecretName
     CREDS_KEY: 9e95d9894da7e68dd69c0046caf5343c8b1e80c89609b5a1e40e6568b5b23ce6
     CREDS_IV: ac028c86ba23f4cd48165e0ca9f2c683
@@ -99,7 +103,6 @@ librechat:
   #         titleModel: "gpt-3.5-turbo"
   #         summarize: false
   #         summaryModel: "gpt-3.5-turbo"
-  #         forcePrompt: false
   #         modelDisplayLabel: "OpenRouter"
 
   # name of existing Yaml configmap, key must be librechat.yaml
@@ -121,7 +124,7 @@ librechat-rag-api:
 
 image:
   repository: danny-avila/librechat
-  registry: ghcr.io
+  registry: registry.librechat.ai
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
@@ -155,6 +158,11 @@ podAnnotations: {}
 podLabels: {}
 deploymentAnnotations: {}
 deploymentLabels: {}
+
+# Enable or disable injection of service environment variables into pods.
+# When running in namespaces with many services, the injected variables can cause
+# "argument list too long" errors. Set to false to disable.
+enableServiceLinks: true
 
 podSecurityContext:
   fsGroup: 2000
@@ -219,6 +227,13 @@ readinessProbe:
     path: /health
     port: 3080
 
+# Additional init containers on the output Deployment definition.
+initContainers: {}
+#   foo: # the name of the init container
+#     image: busybox
+#     command: ['sh', '-c', 'echo The app is starting! && sleep 5']
+#   # ... add more init containers as needed
+
 # Additional volumes on the output Deployment definition.
 volumes: []
 # - name: foo
@@ -269,9 +284,23 @@ dnsConfig: {}
 updateStrategy:
   type: RollingUpdate
 
+# Extra ConfigMaps to be created alongside the main ones
+additionalConfigMaps: {}
+#   custom: # suffix of the ConfigMap name
+#     labels: {}
+#     annotations: {}
+#     data: {}
+#     binaryData: {}
+#     immutable: false
+#   # ... add more ConfigMaps as needed
+
 # MongoDB Parameters
 mongodb:
   enabled: true
+  # Bitnami moved versioned image tags to docker.io/bitnamilegacy on 2025-08-28.
+  # See https://github.com/bitnami/charts/issues/35164
+  image:
+    repository: bitnamilegacy/mongodb
   auth:
     enabled: false
   databases:
@@ -285,8 +314,15 @@ meilisearch:
   persistence:
     enabled: true
     storageClass: ""
-  image: 
+  image:
     tag: "v1.7.3"
   auth:
     # Use an existing Kubernetes secret for the MEILI_MASTER_KEY
     existingMasterKeySecret: "librechat-credentials-env"
+
+# Redis Parameters
+redis:
+  enabled: false
+  architecture: standalone
+  auth:
+    enabled: false

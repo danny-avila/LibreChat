@@ -5,6 +5,7 @@ import * as s from './schemas';
 export default function createPayload(submission: t.TSubmission) {
   const {
     isEdited,
+    addedConvo,
     userMessage,
     isContinued,
     isTemporary,
@@ -13,6 +14,7 @@ export default function createPayload(submission: t.TSubmission) {
     editedContent,
     ephemeralAgent,
     endpointOption,
+    manualSkills,
   } = submission;
   const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
   const { endpoint: _e, endpointType } = endpointOption as {
@@ -32,12 +34,14 @@ export default function createPayload(submission: t.TSubmission) {
     ...userMessage,
     ...endpointOption,
     endpoint,
+    addedConvo,
     isTemporary,
     isRegenerate,
     editedContent,
     conversationId,
     isContinued: !!(isEdited && isContinued),
     ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
+    manualSkills: s.isAssistantsEndpoint(endpoint) ? undefined : manualSkills,
   };
 
   return { server, payload };

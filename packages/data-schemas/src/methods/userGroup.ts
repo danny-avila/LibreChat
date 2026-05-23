@@ -1,8 +1,9 @@
 import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
 import type { TUser, TPrincipalSearchResult } from 'librechat-data-provider';
-import type { Model, ClientSession } from 'mongoose';
+import type { Model, ClientSession, FilterQuery } from 'mongoose';
 import type { IGroup, IRole, IUser } from '~/types';
+import { escapeRegExp } from '~/utils/string';
 
 export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -14,7 +15,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    */
   async function findGroupById(
     groupId: string | Types.ObjectId,
-    projection: Record<string, unknown> = {},
+    projection: Record<string, 0 | 1> = {},
     session?: ClientSession,
   ): Promise<IGroup | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
@@ -22,7 +23,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       query.session(session);
     }
-    return await query.lean();
+    return await query.lean<IGroup>();
   }
 
   /**
@@ -36,7 +37,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   async function findGroupByExternalId(
     idOnTheSource: string,
     source: 'entra' | 'local' = 'entra',
-    projection: Record<string, unknown> = {},
+    projection: Record<string, 0 | 1> = {},
     session?: ClientSession,
   ): Promise<IGroup | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
@@ -44,7 +45,30 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       query.session(session);
     }
-    return await query.lean();
+    return await query.lean<IGroup>();
+  }
+
+  /**
+   * Find multiple groups by their external IDs (e.g., Entra IDs) in a single query
+   * @param idsOnTheSource - Array of external IDs
+   * @param source - The source ('entra' or 'local')
+   * @param session - Optional MongoDB session for transactions
+   * @returns Array of group documents
+   */
+  async function findGroupsByExternalIds(
+    idsOnTheSource: string[],
+    source: 'entra' | 'local' = 'entra',
+    session?: ClientSession,
+  ): Promise<IGroup[]> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = Group.find(
+      { idOnTheSource: { $in: idsOnTheSource }, source },
+      { idOnTheSource: 1, _id: 0 },
+    );
+    if (session) {
+      query.session(session);
+    }
+    return await query.lean<IGroup[]>();
   }
 
   /**
@@ -62,7 +86,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     session?: ClientSession,
   ): Promise<IGroup[]> {
     const Group = mongoose.models.Group as Model<IGroup>;
-    const regex = new RegExp(namePattern, 'i');
+    const regex = new RegExp(escapeRegExp(namePattern), 'i');
     const query: Record<string, unknown> = {
       $or: [{ name: regex }, { email: regex }, { description: regex }],
     };
@@ -75,7 +99,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       dbQuery.session(session);
     }
-    return await dbQuery.lean();
+    return await dbQuery.lean<IGroup[]>();
   }
 
   /**
@@ -95,7 +119,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       userQuery.session(session);
     }
-    const user = (await userQuery.lean()) as { idOnTheSource?: string } | null;
+    const user = await userQuery.lean<{ idOnTheSource?: string }>();
 
     if (!user) {
       return [];
@@ -107,7 +131,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       query.session(session);
     }
-    return await query.lean();
+    return await query.lean<IGroup[]>();
   }
 
   /**
@@ -166,10 +190,10 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
 
     const options = { new: true, ...(session ? { session } : {}) };
 
-    const user = (await User.findById(userId, 'idOnTheSource', options).lean()) as {
+    const user = await User.findById(userId, 'idOnTheSource', options).lean<{
       idOnTheSource?: string;
       _id: Types.ObjectId;
-    } | null;
+    }>();
     if (!user) {
       throw new Error(`User not found: ${userId}`);
     }
@@ -179,7 +203,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       groupId,
       { $addToSet: { memberIds: userIdOnTheSource } },
       options,
-    ).lean();
+    ).lean<IGroup>();
 
     return { user: user as IUser, group: updatedGroup };
   }
@@ -204,10 +228,10 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
 
     const options = { new: true, ...(session ? { session } : {}) };
 
-    const user = (await User.findById(userId, 'idOnTheSource', options).lean()) as {
+    const user = await User.findById(userId, 'idOnTheSource', options).lean<{
       idOnTheSource?: string;
       _id: Types.ObjectId;
-    } | null;
+    }>();
     if (!user) {
       throw new Error(`User not found: ${userId}`);
     }
@@ -215,9 +239,9 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     const userIdOnTheSource = user.idOnTheSource || userId.toString();
     const updatedGroup = await Group.findByIdAndUpdate(
       groupId,
-      { $pull: { memberIds: userIdOnTheSource } },
+      { $pullAll: { memberIds: [userIdOnTheSource] } },
       options,
-    ).lean();
+    ).lean<IGroup>();
 
     return { user: user as IUser, group: updatedGroup };
   }
@@ -236,8 +260,22 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
-   * Get a list of all principal identifiers for a user (user ID + group IDs + public)
-   * For use in permission checks
+   * Get a list of all principal identifiers for a user (user ID + group IDs + public).
+   * For use in permission checks.
+   *
+   * Tenant filtering for group memberships is handled automatically by the
+   * `applyTenantIsolation` Mongoose plugin on the Group schema. The
+   * `tenantContextMiddleware` (chained by `requireJwtAuth` after passport auth)
+   * sets the ALS context, so `getUserGroups()` → `findGroupsByMemberId()` queries
+   * are scoped to the requesting tenant. No explicit tenantId parameter is needed.
+   *
+   * IMPORTANT: This relies on the ALS tenant context being active. If this
+   * function is called outside a request context (e.g. startup, background jobs),
+   * group queries will be unscoped. In strict mode, the Mongoose plugin will
+   * reject such queries.
+   *
+   * Ref: #12091 (resolved by tenant context middleware in requireJwtAuth)
+   *
    * @param params - Parameters object
    * @param params.userId - The user ID
    * @param params.role - Optional user role (if not provided, will query from DB)
@@ -250,13 +288,14 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       role?: string | null;
     },
     session?: ClientSession,
-  ): Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>> {
+  ): Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>> {
     const { userId, role } = params;
     /** `userId` must be an `ObjectId` for USER principal since ACL entries store `ObjectId`s */
     const userObjectId = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
-    const principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }> = [
-      { principalType: PrincipalType.USER, principalId: userObjectId },
-    ];
+    const principals: Array<{
+      principalType: PrincipalType;
+      principalId?: string | Types.ObjectId;
+    }> = [{ principalType: PrincipalType.USER, principalId: userObjectId }];
 
     // If role is not provided, query user to get it
     let userRole = role;
@@ -266,7 +305,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       if (session) {
         query.session(session);
       }
-      const user = await query.lean();
+      const user = await query.lean<IUser>();
       userRole = user?.role;
     }
 
@@ -310,7 +349,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       query.session(session);
     }
-    const user = (await query.lean()) as { idOnTheSource?: string; _id: Types.ObjectId } | null;
+    const user = await query.lean<{ idOnTheSource?: string; _id: Types.ObjectId }>();
 
     if (!user) {
       throw new Error(`User not found: ${userId}`);
@@ -357,10 +396,12 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       groupsQuery.session(session);
     }
-    const existingGroups = (await groupsQuery.lean()) as Array<{
-      _id: Types.ObjectId;
-      idOnTheSource?: string;
-    }>;
+    const existingGroups = await groupsQuery.lean<
+      Array<{
+        _id: Types.ObjectId;
+        idOnTheSource?: string;
+      }>
+    >();
 
     for (const group of existingGroups) {
       if (group.idOnTheSource && !entraIdMap.has(group.idOnTheSource)) {
@@ -375,7 +416,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       userQuery.session(session);
     }
-    const updatedUser = await userQuery.lean();
+    const updatedUser = await userQuery.lean<IUser>();
 
     if (!updatedUser) {
       throw new Error(`User not found after update: ${userId}`);
@@ -395,8 +436,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * @returns Relevance score (0-100)
    */
   function calculateRelevanceScore(item: TPrincipalSearchResult, searchPattern: string): number {
-    const exactRegex = new RegExp(`^${searchPattern}$`, 'i');
-    const startsWithPattern = searchPattern.toLowerCase();
+    const normalizedPattern = searchPattern.toLowerCase();
 
     /** Get searchable text based on type */
     const searchableFields =
@@ -412,16 +452,16 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       let score = 0;
 
       /** Exact match gets highest score */
-      if (exactRegex.test(field)) {
+      if (fieldLower === normalizedPattern) {
         score = 100;
-      } else if (fieldLower.startsWith(startsWithPattern)) {
+      } else if (fieldLower.startsWith(normalizedPattern)) {
         /** Starts with query gets high score */
         score = 80;
-      } else if (fieldLower.includes(startsWithPattern)) {
+      } else if (fieldLower.includes(normalizedPattern)) {
         /** Contains query gets medium score */
         score = 50;
       } else {
-        /** Default score for regex match */
+        /** Default score for database match */
         score = 10;
       }
 
@@ -510,6 +550,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     }
 
     const trimmedPattern = searchPattern.trim();
+    const escapedPattern = escapeRegExp(trimmedPattern);
     const promises: Promise<TPrincipalSearchResult[]>[] = [];
 
     if (!typeFilter || typeFilter.includes(PrincipalType.USER)) {
@@ -517,7 +558,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       const userFields = 'name email username avatar provider idOnTheSource';
       /** For now, we'll use a direct query instead of searchUsers */
       const User = mongoose.models.User as Model<IUser>;
-      const regex = new RegExp(trimmedPattern, 'i');
+      const regex = new RegExp(escapedPattern, 'i');
       const userQuery = User.find({
         $or: [{ name: regex }, { email: regex }, { username: regex }],
       })
@@ -529,7 +570,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       }
 
       promises.push(
-        userQuery.lean().then((users) =>
+        userQuery.lean<IUser[]>().then((users) =>
           users.map((user) => {
             const userWithId = user as IUser & { idOnTheSource?: string };
             return transformUserToTPrincipalSearchResult({
@@ -560,7 +601,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (!typeFilter || typeFilter.includes(PrincipalType.ROLE)) {
       const Role = mongoose.models.Role as Model<IRole>;
       if (Role) {
-        const regex = new RegExp(trimmedPattern, 'i');
+        const regex = new RegExp(escapedPattern, 'i');
         const roleQuery = Role.find({ name: regex }).select('name').limit(limitPerType);
 
         if (session) {
@@ -568,7 +609,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
         }
 
         promises.push(
-          roleQuery.lean().then((roles) =>
+          roleQuery.lean<Array<{ name: string }>>().then((roles) =>
             roles.map((role) => ({
               /** Role name as ID */
               id: role.name,
@@ -589,21 +630,176 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     return combined;
   }
 
+  /**
+   * Removes a user from all groups they belong to.
+   * @param userId - The user ID (or ObjectId) of the member to remove
+   */
+  async function removeUserFromAllGroups(userId: string | Types.ObjectId): Promise<void> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    await Group.updateMany({ memberIds: userId }, { $pullAll: { memberIds: [userId] } });
+  }
+
+  /**
+   * Finds a single group matching the given filter.
+   * @param filter - MongoDB filter query
+   */
+  async function findGroupByQuery(
+    filter: Record<string, unknown>,
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = Group.findOne(filter);
+    if (session) {
+      query.session(session);
+    }
+    return query.lean<IGroup>();
+  }
+
+  /**
+   * Updates a group by its ID.
+   * @param groupId - The group's ObjectId
+   * @param data - Fields to set via $set
+   */
+  async function updateGroupById(
+    groupId: string | Types.ObjectId,
+    data: Record<string, unknown>,
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const options = { new: true, ...(session ? { session } : {}) };
+    return Group.findByIdAndUpdate(groupId, { $set: data }, options).lean<IGroup>();
+  }
+
+  /**
+   * Bulk-updates groups matching a filter.
+   * @param filter - MongoDB filter query
+   * @param update - Update operations
+   * @param options - Optional query options (e.g., { session })
+   */
+  async function bulkUpdateGroups(
+    filter: Record<string, unknown>,
+    update: Record<string, unknown>,
+    options?: { session?: ClientSession },
+  ) {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    return Group.updateMany(filter, update, options || {});
+  }
+
+  function buildGroupQuery(filter: {
+    source?: 'local' | 'entra';
+    search?: string;
+  }): FilterQuery<IGroup> {
+    const query: FilterQuery<IGroup> = {};
+    if (filter.source) {
+      query.source = filter.source;
+    }
+    if (filter.search) {
+      const regex = new RegExp(escapeRegExp(filter.search), 'i');
+      query.$or = [{ name: regex }, { email: regex }, { description: regex }];
+    }
+    return query;
+  }
+
+  /**
+   * List groups with optional source, search, and pagination filters.
+   * Results are sorted by name.
+   * @param filter - Optional filter with source, search, limit, and offset fields
+   * @param session - Optional MongoDB session for transactions
+   */
+  async function listGroups(
+    filter: {
+      source?: 'local' | 'entra';
+      search?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+    session?: ClientSession,
+  ): Promise<IGroup[]> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = buildGroupQuery(filter);
+    const limit = filter.limit ?? 50;
+    const offset = filter.offset ?? 0;
+    return await Group.find(query)
+      .sort({ name: 1 })
+      .skip(offset)
+      .limit(limit)
+      .session(session ?? null)
+      .lean<IGroup[]>();
+  }
+
+  /**
+   * Count groups matching optional source and search filters.
+   * @param filter - Optional filter with source and search fields
+   * @param session - Optional MongoDB session for transactions
+   */
+  async function countGroups(
+    filter: { source?: 'local' | 'entra'; search?: string } = {},
+    session?: ClientSession,
+  ): Promise<number> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = buildGroupQuery(filter);
+    return await Group.countDocuments(query).session(session ?? null);
+  }
+
+  /**
+   * Delete a group by its ID.
+   * @param groupId - The group's ObjectId
+   * @param session - Optional MongoDB session for transactions
+   */
+  async function deleteGroup(
+    groupId: string | Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const options = session ? { session } : {};
+    return await Group.findByIdAndDelete(groupId, options).lean<IGroup>();
+  }
+
+  /**
+   * Remove a member from a group by raw memberId string ($pull from memberIds).
+   * Unlike removeUserFromGroup, this does not look up the user first.
+   * @param groupId - The group's ObjectId
+   * @param memberId - The raw memberId string to remove (ObjectId or idOnTheSource)
+   * @param session - Optional MongoDB session for transactions
+   */
+  async function removeMemberById(
+    groupId: string | Types.ObjectId,
+    memberId: string,
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const options = { new: true, ...(session ? { session } : {}) };
+    return await Group.findByIdAndUpdate(
+      groupId,
+      { $pull: { memberIds: memberId } },
+      options,
+    ).lean<IGroup>();
+  }
+
   return {
     findGroupById,
     findGroupByExternalId,
+    findGroupsByExternalIds,
     findGroupsByNamePattern,
     findGroupsByMemberId,
     createGroup,
     upsertGroupByExternalId,
     addUserToGroup,
     removeUserFromGroup,
+    removeUserFromAllGroups,
+    findGroupByQuery,
+    updateGroupById,
+    bulkUpdateGroups,
     getUserGroups,
     getUserPrincipals,
     syncUserEntraGroups,
     searchPrincipals,
     calculateRelevanceScore,
     sortPrincipalsByRelevance,
+    listGroups,
+    countGroups,
+    deleteGroup,
+    removeMemberById,
   };
 }
 

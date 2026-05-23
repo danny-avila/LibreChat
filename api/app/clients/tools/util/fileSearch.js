@@ -1,11 +1,22 @@
-const { z } = require('zod');
 const axios = require('axios');
-const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
+const { tool } = require('@librechat/agents/langchain/tools');
 const { generateShortLivedToken } = require('@librechat/api');
 const { Tools, EToolResources } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { getFiles } = require('~/models/File');
+const { getFiles } = require('~/models');
+
+const fileSearchJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description:
+        "A natural language query to search for relevant information in the files. Be specific and use keywords related to the information you're looking for. The query will be used for semantic similarity matching against the file contents.",
+    },
+  },
+  required: ['query'],
+};
 
 /**
  *
@@ -78,15 +89,14 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
   return tool(
     async ({ query }) => {
       if (files.length === 0) {
-        return 'No files to search. Instruct the user to add files for the search.';
+        return ['No files to search. Instruct the user to add files for the search.', undefined];
       }
       const jwtToken = generateShortLivedToken(userId);
       if (!jwtToken) {
-        return 'There was an error authenticating the file search request.';
+        return ['There was an error authenticating the file search request.', undefined];
       }
 
       /**
-       *
        * @param {import('librechat-data-provider').TFile} file
        * @returns {{ file_id: string, query: string, k: number, entity_id?: string }}
        */
@@ -122,7 +132,7 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
       const validResults = results.filter((result) => result !== null);
 
       if (validResults.length === 0) {
-        return 'No results found or errors occurred while searching the files.';
+        return ['No results found or errors occurred while searching the files.', undefined];
       }
 
       const formattedResults = validResults
@@ -135,10 +145,15 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
             page: docInfo.metadata.page || null,
           })),
         )
-        // TODO: results should be sorted by relevance, not distance
         .sort((a, b) => a.distance - b.distance)
-        // TODO: make this configurable
         .slice(0, 10);
+
+      if (formattedResults.length === 0) {
+        return [
+          'No content found in the files. The files may not have been processed correctly or you may need to refine your query.',
+          undefined,
+        ];
+      }
 
       const formattedString = formattedResults
         .map(
@@ -169,23 +184,18 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
           ? `
 
 **CITE FILE SEARCH RESULTS:**
-Use anchor markers immediately after statements derived from file content. Reference the filename in your text:
+Use the EXACT anchor markers shown below (copy them verbatim) immediately after statements derived from file content. Reference the filename in your text:
 - File citation: "The document.pdf states that... \\ue202turn0file0"  
 - Page reference: "According to report.docx... \\ue202turn0file1"
 - Multi-file: "Multiple sources confirm... \\ue200\\ue202turn0file0\\ue202turn0file1\\ue201"
 
+**CRITICAL:** Output these escape sequences EXACTLY as shown (e.g., \\ue202turn0file0). Do NOT substitute with other characters like † or similar symbols.
 **ALWAYS mention the filename in your text before the citation marker. NEVER use markdown links or footnotes.**`
           : ''
       }`,
-      schema: z.object({
-        query: z
-          .string()
-          .describe(
-            "A natural language query to search for relevant information in the files. Be specific and use keywords related to the information you're looking for. The query will be used for semantic similarity matching against the file contents.",
-          ),
-      }),
+      schema: fileSearchJsonSchema,
     },
   );
 };
 
-module.exports = { createFileSearchTool, primeFiles };
+module.exports = { createFileSearchTool, primeFiles, fileSearchJsonSchema };

@@ -23,7 +23,7 @@ const { TextStream } = require('~/app/clients');
  * Sorts, processes, and flattens messages to a single string.
  *
  * @param {Object} params - Params for creating the onTextProgress function.
- * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {OpenAI} params.openai - The OpenAI SDK client instance.
  * @param {string} params.conversationId - The current conversation ID.
  * @param {string} params.userMessageId - The user message ID; response's `parentMessageId`.
  * @param {string} params.messageId - The response message ID.
@@ -74,7 +74,7 @@ async function createOnTextProgress({
  * Retrieves the response from an OpenAI run.
  *
  * @param {Object} params - The parameters for getting the response.
- * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {OpenAI} params.openai - The OpenAI SDK client instance.
  * @param {string} params.run_id - The ID of the run to get the response for.
  * @param {string} params.thread_id - The ID of the thread associated with the run.
  * @return {Promise<OpenAIAssistantFinish | OpenAIAssistantAction[] | ThreadMessage[] | RequiredActionFunctionToolCall[]>}
@@ -162,7 +162,7 @@ function hasToolCallChanged(previousCall, currentCall) {
  * Creates a handler function for steps in progress, specifically for
  * processing messages and managing seen completed messages.
  *
- * @param {OpenAIClient} openai - The OpenAI client instance.
+ * @param {OpenAI} openai - The OpenAI SDK client instance.
  * @param {string} thread_id - The ID of the thread the run is in.
  * @param {ThreadMessage[]} messages - The accumulated messages for the run.
  * @return {InProgressFunction} a function to handle steps in progress.
@@ -334,7 +334,7 @@ function createInProgressHandler(openai, thread_id, messages) {
  * Initializes a RunManager with handlers, then invokes waitForRun to monitor and manage an OpenAI run.
  *
  * @param {Object} params - The parameters for managing and monitoring the run.
- * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {OpenAI} params.openai - The OpenAI SDK client instance.
  * @param {string} params.run_id - The ID of the run to manage and monitor.
  * @param {string} params.thread_id - The ID of the thread associated with the run.
  * @param {RunStep[]} params.accumulatedSteps - The accumulated steps for the run.

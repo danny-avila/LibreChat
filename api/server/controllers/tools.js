@@ -1,5 +1,4 @@
 const { nanoid } = require('nanoid');
-const { EnvVar } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const { checkAccess, loadWebSearchAuth } = require('@librechat/api');
 const {
@@ -9,17 +8,19 @@ const {
   ToolCallTypes,
   PermissionTypes,
 } = require('librechat-data-provider');
+const { getRoleByName, createToolCall, getToolCallsByConvo, getMessage } = require('~/models');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
-const { processCodeOutput } = require('~/server/services/Files/Code/process');
-const { createToolCall, getToolCallsByConvo } = require('~/models/ToolCall');
+const { getRetentionExpiry } = require('~/server/services/Files/retention');
+const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { loadTools } = require('~/app/clients/tools/util');
-const { getRoleByName } = require('~/models/Role');
-const { getMessage } = require('~/models/Message');
 
-const fieldsMap = {
-  [Tools.execute_code]: [EnvVar.CODE_API_KEY],
-};
+/**
+ * Tools that are callable directly via `POST /tools/:toolId/call`.
+ * `execute_code` is the only entry today; the tool runs server-side via
+ * the agents library / sandbox service without any per-user credential.
+ */
+const directCallableTools = new Set([Tools.execute_code]);
 
 const toolAccessPermType = {
   [Tools.execute_code]: PermissionTypes.RUN_CODE,
@@ -67,37 +68,23 @@ const verifyToolAuth = async (req, res) => {
     if (toolId === Tools.web_search) {
       return await verifyWebSearchAuth(req, res);
     }
-    const authFields = fieldsMap[toolId];
-    if (!authFields) {
+    if (!directCallableTools.has(toolId)) {
       res.status(404).json({ message: 'Tool not found' });
       return;
     }
-    let result;
-    try {
-      result = await loadAuthValues({
-        userId: req.user.id,
-        authFields,
-        throwError: false,
-      });
-    } catch (error) {
-      logger.error('Error loading auth values', error);
-      res.status(200).json({ authenticated: false, message: AuthType.USER_PROVIDED });
-      return;
-    }
-    let isUserProvided = false;
-    for (const field of authFields) {
-      if (!result[field]) {
-        res.status(200).json({ authenticated: false, message: AuthType.USER_PROVIDED });
-        return;
-      }
-      if (!isUserProvided && process.env[field] !== result[field]) {
-        isUserProvided = true;
-      }
-    }
-    res.status(200).json({
-      authenticated: true,
-      message: isUserProvided ? AuthType.USER_PROVIDED : AuthType.SYSTEM_DEFINED,
-    });
+    /**
+     * `execute_code` no longer requires a per-user credential — sandbox
+     * auth is handled server-side by the agents library. Always report
+     * system-authenticated so the client proceeds straight to the call
+     * without a key-entry dialog.
+     *
+     * Deployment contract: reachability of the sandbox service is the
+     * admin's responsibility. This endpoint does not probe the service
+     * (a per-auth-check network hop would be too expensive for what is
+     * a UI-gate query). If the sandbox is unreachable, the call path
+     * surfaces the error at execution time instead of here.
+     */
+    res.status(200).json({ authenticated: true, message: AuthType.SYSTEM_DEFINED });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -113,7 +100,7 @@ const callTool = async (req, res) => {
   try {
     const appConfig = req.config;
     const { toolId = '' } = req.params;
-    if (!fieldsMap[toolId]) {
+    if (!directCallableTools.has(toolId)) {
       logger.warn(`[${toolId}/call] User ${req.user.id} attempted call to invalid tool`);
       res.status(404).json({ message: 'Tool not found' });
       return;
@@ -181,6 +168,7 @@ const callTool = async (req, res) => {
       conversationId,
       result: content,
       user: req.user.id,
+      ...(await getRetentionExpiry(req)),
     };
 
     if (!artifact || !artifact.files || toolId !== Tools.execute_code) {
@@ -194,24 +182,43 @@ const callTool = async (req, res) => {
 
     const artifactPromises = [];
     for (const file of artifact.files) {
+      /* Files flagged `inherited` by codeapi are unchanged passthroughs of
+       * inputs the caller already owns (skill files, prior downloaded inputs,
+       * inherited .dirkeep markers). Re-downloading them is wasted work and
+       * 403s when the file is scoped to a different entity (e.g. skill
+       * entity_id) than the user's session key. They remain available for
+       * subsequent tool calls via primeInvokedSkills / session inheritance. */
+      if (file.inherited) {
+        continue;
+      }
       const { id, name } = file;
       artifactPromises.push(
         (async () => {
-          const fileMetadata = await processCodeOutput({
+          const result = await processCodeOutput({
             req,
             id,
             name,
-            apiKey: tool.apiKey,
             messageId,
             toolCallId,
             conversationId,
             session_id: artifact.session_id,
           });
-
+          const fileMetadata = result?.file ?? null;
+          const finalize = result?.finalize;
           if (!fileMetadata) {
             return null;
           }
-
+          /* This endpoint is non-streaming and its contract is "give
+           * me the artifacts" — return the persisted record immediately
+           * (with `status: 'pending'` for office buckets) and run the
+           * preview render in the background. The client polls
+           * `/api/files/:file_id/preview` for the resolved record.
+           * No `onResolved` — there's no live stream to write to here. */
+          runPreviewFinalize({
+            finalize,
+            fileId: fileMetadata.file_id,
+            previewRevision: result?.previewRevision,
+          });
           return fileMetadata;
         })().catch((error) => {
           logger.error('Error processing code output:', error);

@@ -1,14 +1,15 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue } from 'recoil';
 import { Lightbulb, MessageSquare } from 'lucide-react';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
 import type { Agents } from 'librechat-data-provider';
 import type { TEditProps } from '~/common';
-import { useMessagesOperations, useMessagesConversation, useAddedChatContext } from '~/Providers';
+import { useMessagesOperations, useMessagesConversation } from '~/Providers';
 import Container from '~/components/Chat/Messages/Content/Container';
+import { useGetAddedConvo } from '~/hooks/Chat';
 import { cn, removeFocusRings } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -25,12 +26,8 @@ const EditTextPart = ({
   part: Agents.MessageContentText | Agents.ReasoningDeltaUpdate;
 }) => {
   const localize = useLocalize();
-  const { addedIndex } = useAddedChatContext();
   const { conversation } = useMessagesConversation();
   const { ask, getMessages, setMessages } = useMessagesOperations();
-  const [latestMultiMessage, setLatestMultiMessage] = useRecoilState(
-    store.latestMessageFamily(addedIndex),
-  );
 
   const { conversationId = '' } = conversation ?? {};
   const message = useMemo(
@@ -39,6 +36,8 @@ const EditTextPart = ({
   );
 
   const chatDirection = useRecoilValue(store.chatDirection);
+
+  const getAddedConvo = useGetAddedConvo();
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const updateMessageContentMutation = useUpdateMessageContentMutation(conversationId ?? '');
@@ -87,6 +86,7 @@ const EditTextPart = ({
         editedMessageId: messageId,
         isRegenerate: true,
         isEdited: true,
+        addedConvo: getAddedConvo() || undefined,
       },
     );
 
@@ -104,10 +104,6 @@ const EditTextPart = ({
       text: data.text,
       messageId,
     });
-
-    if (messageId === latestMultiMessage?.messageId) {
-      setLatestMultiMessage({ ...latestMultiMessage, text: data.text });
-    }
 
     const isInMessages = messages.some((msg) => msg.messageId === messageId);
     if (!isInMessages) {
@@ -157,7 +153,7 @@ const EditTextPart = ({
       {part.type === ContentTypes.THINK && (
         <div className="mt-2 flex items-center gap-1.5 text-xs text-text-secondary">
           <span className="flex gap-2 rounded-lg bg-surface-tertiary px-1.5 py-1 font-medium">
-            <Lightbulb className="size-3.5" />
+            <Lightbulb className="size-3.5" aria-hidden="true" />
             {localize('com_ui_thoughts')}
           </span>
         </div>
@@ -165,7 +161,7 @@ const EditTextPart = ({
       {part.type !== ContentTypes.THINK && (
         <div className="mt-2 flex items-center gap-1.5 text-xs text-text-secondary">
           <span className="flex gap-2 rounded-lg bg-surface-tertiary px-1.5 py-1 font-medium">
-            <MessageSquare className="size-3.5" />
+            <MessageSquare className="size-3.5" aria-hidden="true" />
             {localize('com_ui_response')}
           </span>
         </div>

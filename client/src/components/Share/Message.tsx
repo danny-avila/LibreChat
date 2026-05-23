@@ -4,7 +4,6 @@ import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons'
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import SearchContent from '~/components/Chat/Messages/Content/SearchContent';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
-import { Plugin } from '~/components/Messages/Content';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { fontSizeAtom } from '~/store/fontSize';
 import { MessageContext } from '~/Providers';
@@ -70,7 +69,7 @@ export default function Message(props: TMessageProps) {
             >
               <div className={cn('select-none font-semibold', fontSize)}>{messageLabel}</div>
               <div className="flex-col gap-1 md:gap-3">
-                <div className="flex max-w-full flex-grow flex-col gap-0">
+                <div className="flex min-h-[20px] max-w-full flex-grow flex-col gap-0">
                   <MessageContext.Provider
                     value={{
                       messageId,
@@ -80,8 +79,6 @@ export default function Message(props: TMessageProps) {
                       isLatestMessage: false, // No concept of latest message in share view
                     }}
                   >
-                    {/* Legacy Plugins */}
-                    {message.plugin && <Plugin plugin={message.plugin} />}
                     {message.content ? (
                       <SearchContent
                         message={message}

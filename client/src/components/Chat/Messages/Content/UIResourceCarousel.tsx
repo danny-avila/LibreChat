@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import type { UIResource } from 'librechat-data-provider';
+import { useOptionalMessagesOperations } from '~/Providers';
+import { handleUIAction } from '~/utils';
 
 interface UIResourceCarouselProps {
   uiResources: UIResource[];
@@ -11,6 +13,7 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [isContainerHovered, setIsContainerHovered] = useState(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const { ask } = useOptionalMessagesOperations();
 
   const handleScroll = React.useCallback(() => {
     if (!scrollContainerRef.current) return;
@@ -106,14 +109,8 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
             >
               <div className="flex h-full flex-col">
                 <UIResourceRenderer
-                  resource={{
-                    uri: uiResource.uri,
-                    mimeType: uiResource.mimeType,
-                    text: uiResource.text,
-                  }}
-                  onUIAction={async (result) => {
-                    console.log('Action:', result);
-                  }}
+                  resource={uiResource}
+                  onUIAction={async (result) => handleUIAction(result, ask)}
                   htmlProps={{
                     autoResizeIframe: { width: true, height: true },
                   }}

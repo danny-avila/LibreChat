@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
-import { MessageSquare, Command, DollarSign } from 'lucide-react';
+import { MessageSquare, Command, DollarSign, Info } from 'lucide-react';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import {
   GearIcon,
@@ -21,6 +21,7 @@ import {
   Data,
   Balance,
   Account,
+  About,
 } from './SettingsTabs';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useLocalize, TranslationKeys } from '~/hooks';
@@ -34,6 +35,13 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
   const tabRefs = useRef({});
   const { hasAnyPersonalizationFeature, hasMemoryOptOut } = usePersonalizationAccess();
+  const aboutEnabled = startupConfig?.interface?.buildInfo !== false;
+
+  useEffect(() => {
+    if (!aboutEnabled && activeTab === SettingsTabValues.ABOUT) {
+      setActiveTab(SettingsTabValues.GENERAL);
+    }
+  }, [aboutEnabled, activeTab]);
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const tabs: SettingsTabValues[] = [
@@ -45,6 +53,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       SettingsTabValues.DATA,
       ...(startupConfig?.balance?.enabled ? [SettingsTabValues.BALANCE] : []),
       SettingsTabValues.ACCOUNT,
+      ...(aboutEnabled ? [SettingsTabValues.ABOUT] : []),
     ];
     const currentIndex = tabs.indexOf(activeTab);
 
@@ -80,17 +89,17 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     },
     {
       value: SettingsTabValues.CHAT,
-      icon: <MessageSquare className="icon-sm" />,
+      icon: <MessageSquare className="icon-sm" aria-hidden="true" />,
       label: 'com_nav_setting_chat',
     },
     {
       value: SettingsTabValues.COMMANDS,
-      icon: <Command className="icon-sm" />,
+      icon: <Command className="icon-sm" aria-hidden="true" />,
       label: 'com_nav_commands',
     },
     {
       value: SettingsTabValues.SPEECH,
-      icon: <SpeechIcon className="icon-sm" />,
+      icon: <SpeechIcon className="icon-sm" aria-hidden="true" />,
       label: 'com_nav_setting_speech',
     },
     ...(hasAnyPersonalizationFeature
@@ -121,6 +130,15 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       icon: <UserIcon />,
       label: 'com_nav_setting_account',
     },
+    ...(aboutEnabled
+      ? [
+          {
+            value: SettingsTabValues.ABOUT,
+            icon: <Info className="icon-sm" aria-hidden="true" />,
+            label: 'com_nav_setting_about' as TranslationKeys,
+          },
+        ]
+      : ([] as { value: SettingsTabValues; icon: React.JSX.Element; label: TranslationKeys }[])),
   ];
 
   const handleTabChange = (value: string) => {
@@ -152,7 +170,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
           <div className={cn('fixed inset-0 flex w-screen items-center justify-center p-4')}>
             <DialogPanel
               className={cn(
-                'min-h-[600px] overflow-hidden rounded-xl rounded-b-lg bg-background pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-2xl md:min-h-[373px] md:w-[680px]',
+                'max-h-[90vh] overflow-hidden rounded-xl rounded-b-lg bg-background pb-6 shadow-2xl backdrop-blur-2xl animate-in sm:rounded-2xl md:w-[680px]',
               )}
             >
               <DialogTitle
@@ -185,7 +203,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   <span className="sr-only">{localize('com_ui_close_settings')}</span>
                 </button>
               </DialogTitle>
-              <div className="max-h-[550px] overflow-auto px-6 md:max-h-[400px] md:min-h-[400px] md:w-[680px]">
+              <div className="max-h-[calc(90vh-120px)] overflow-auto px-6 md:w-[680px]">
                 <Tabs.Root
                   value={activeTab}
                   onValueChange={handleTabChange}
@@ -251,6 +269,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Content value={SettingsTabValues.ACCOUNT} tabIndex={-1}>
                       <Account />
                     </Tabs.Content>
+                    {aboutEnabled && (
+                      <Tabs.Content value={SettingsTabValues.ABOUT} tabIndex={-1}>
+                        <About />
+                      </Tabs.Content>
+                    )}
                   </div>
                 </Tabs.Root>
               </div>

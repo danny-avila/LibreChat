@@ -1,11 +1,21 @@
-import { EModelEndpoint, removeNullishValues } from 'librechat-data-provider';
-import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
+import {
+  EModelEndpoint,
+  removeNullishValues,
+  supportsAdaptiveThinking,
+} from 'librechat-data-provider';
+import type { BindToolsInput } from '@librechat/agents/langchain/language_models/chat_models';
+import type { AzureOpenAIInput } from '@librechat/agents/langchain/openai';
 import type { SettingDefinition } from 'librechat-data-provider';
-import type { AzureOpenAIInput } from '@langchain/openai';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
 import { sanitizeModelName, constructAzureURL } from '~/utils/azure';
 import { isEnabled } from '~/utils/common';
+
+type OpenAILLMConfig = Omit<Partial<t.OAIClientOptions>, 'verbosity'> &
+  Omit<Partial<t.OpenAIParameters>, 'verbosity'> &
+  Omit<Partial<AzureOpenAIInput>, 'verbosity'> & {
+    verbosity?: string | null;
+  };
 
 export const knownOpenAIParams = new Set([
   // Constructor/Instance Parameters
@@ -76,6 +86,166 @@ function hasReasoningParams({
   );
 }
 
+const openRouterAnthropicVerbosityByEffort: Record<
+  string,
+  NonNullable<OpenAILLMConfig['verbosity']>
+> = {
+  minimal: 'low',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+};
+
+function isStringVerbosity(value: unknown): value is string {
+  return typeof value === 'string' && value !== '';
+}
+
+function applyVerbosityParam({
+  value,
+  override,
+  llmConfig,
+  modelKwargs,
+  useOpenRouter,
+}: {
+  value: unknown;
+  override: boolean;
+  llmConfig: OpenAILLMConfig;
+  modelKwargs: Record<string, unknown>;
+  useOpenRouter?: boolean;
+}): boolean {
+  if (!isStringVerbosity(value)) {
+    return false;
+  }
+
+  if (useOpenRouter && (override || llmConfig.verbosity === undefined)) {
+    llmConfig.verbosity = value;
+    return false;
+  }
+
+  if (useOpenRouter) {
+    return false;
+  }
+
+  if (!override && modelKwargs.verbosity !== undefined) {
+    return true;
+  }
+
+  modelKwargs.verbosity = value;
+  return true;
+}
+
+function isOpenRouterAnthropicAdaptiveModel(model?: string | null): boolean {
+  if (typeof model !== 'string') {
+    return false;
+  }
+  const normalizedModel = normalizeOpenRouterModel(model);
+  return normalizedModel.startsWith('anthropic/') && supportsAdaptiveThinking(model);
+}
+
+function normalizeOpenRouterModel(model: string): string {
+  return model.toLowerCase().replace(/^~/, '');
+}
+
+function isOpenRouterClaude46Model(model: string): boolean {
+  const normalizedModel = normalizeOpenRouterModel(model);
+  return (
+    /claude[-.](?:opus|sonnet)[-.]4[-.]6/.test(normalizedModel) ||
+    /claude[-.]4[-.]6[-.](?:opus|sonnet)/.test(normalizedModel)
+  );
+}
+
+function getOpenRouterAnthropicVerbosity(
+  reasoningEffort?: string | null,
+  model?: string | null,
+): OpenAILLMConfig['verbosity'] | undefined {
+  if (!reasoningEffort) {
+    return undefined;
+  }
+  const verbosity = openRouterAnthropicVerbosityByEffort[reasoningEffort];
+  if (verbosity !== 'xhigh' || typeof model !== 'string') {
+    return verbosity;
+  }
+  return isOpenRouterClaude46Model(model) ? 'max' : 'xhigh';
+}
+
+function applyOpenRouterReasoningConfig({
+  model,
+  llmConfig,
+  modelKwargs,
+  reasoningEffort,
+}: {
+  model?: string | null;
+  llmConfig: OpenAILLMConfig;
+  modelKwargs: Record<string, unknown>;
+  reasoningEffort?: string | null;
+}): boolean {
+  if (!hasReasoningParams({ reasoning_effort: reasoningEffort })) {
+    llmConfig.include_reasoning = true;
+    return false;
+  }
+
+  if (!isOpenRouterAnthropicAdaptiveModel(model)) {
+    modelKwargs.reasoning = { effort: reasoningEffort };
+    return true;
+  }
+
+  const adaptiveVerbosity = getOpenRouterAnthropicVerbosity(reasoningEffort, model);
+  if (adaptiveVerbosity != null && llmConfig.verbosity == null) {
+    llmConfig.verbosity = adaptiveVerbosity;
+  }
+
+  if (reasoningEffort === 'none') {
+    llmConfig.include_reasoning = false;
+    return false;
+  }
+
+  modelKwargs.reasoning = { enabled: true };
+  return true;
+}
+
+function getModelKwargsText(modelKwargs: Record<string, unknown>): Record<string, unknown> {
+  const { text } = modelKwargs;
+  if (text == null || typeof text !== 'object' || Array.isArray(text)) {
+    return {};
+  }
+  return text as Record<string, unknown>;
+}
+
+function applyResponsesVerbosity({
+  llmConfig,
+  modelKwargs,
+  useOpenRouter,
+}: {
+  llmConfig: OpenAILLMConfig;
+  modelKwargs: Record<string, unknown>;
+  useOpenRouter?: boolean;
+}): boolean {
+  if (llmConfig.useResponsesApi !== true) {
+    return false;
+  }
+
+  if (useOpenRouter && llmConfig.verbosity) {
+    modelKwargs.text = {
+      ...getModelKwargsText(modelKwargs),
+      verbosity: llmConfig.verbosity,
+    };
+    delete llmConfig.verbosity;
+    return true;
+  }
+
+  if (!useOpenRouter && modelKwargs.verbosity) {
+    modelKwargs.text = {
+      ...getModelKwargsText(modelKwargs),
+      verbosity: modelKwargs.verbosity,
+    };
+    delete modelKwargs.verbosity;
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Extracts default parameters from customParams.paramDefinitions
  * @param paramDefinitions - Array of parameter definitions with key and default values
@@ -139,15 +309,22 @@ export function getOpenAILLMConfig({
 }): Pick<t.LLMConfigResult, 'llmConfig' | 'tools'> & {
   azure?: t.AzureOptions;
 } {
+  /** Clean empty strings from model options (e.g., temperature: "" should be removed) */
+  const cleanedModelOptions = removeNullishValues(
+    _modelOptions,
+    true,
+  ) as Partial<t.OpenAIParameters>;
+
   const {
     reasoning_effort,
     reasoning_summary,
     verbosity,
     web_search,
+    promptCache,
     frequency_penalty,
     presence_penalty,
     ...modelOptions
-  } = _modelOptions;
+  } = cleanedModelOptions as Partial<t.OpenAIParameters & { promptCache?: boolean }>;
 
   const llmConfig = Object.assign(
     {
@@ -155,7 +332,7 @@ export function getOpenAILLMConfig({
       model: modelOptions.model ?? '',
     },
     modelOptions,
-  ) as Partial<t.OAIClientOptions> & Partial<t.OpenAIParameters> & Partial<AzureOpenAIInput>;
+  ) as OpenAILLMConfig;
 
   if (frequency_penalty != null) {
     llmConfig.frequencyPenalty = frequency_penalty;
@@ -167,21 +344,40 @@ export function getOpenAILLMConfig({
   const modelKwargs: Record<string, unknown> = {};
   let hasModelKwargs = false;
 
-  if (verbosity != null && verbosity !== '') {
+  if (verbosity != null && verbosity !== '' && useOpenRouter) {
+    llmConfig.verbosity = verbosity;
+  } else if (verbosity != null && verbosity !== '') {
     modelKwargs.verbosity = verbosity;
     hasModelKwargs = true;
   }
 
   let enableWebSearch = web_search;
+  let enablePromptCache = promptCache;
 
   /** Apply defaultParams first - only if fields are undefined */
   if (defaultParams && typeof defaultParams === 'object') {
     for (const [key, value] of Object.entries(defaultParams)) {
-      /** Handle web_search separately - don't add to config */
       if (key === 'web_search') {
         if (enableWebSearch === undefined && typeof value === 'boolean') {
           enableWebSearch = value;
         }
+        continue;
+      }
+      if (key === 'promptCache') {
+        if (enablePromptCache === undefined && typeof value === 'boolean') {
+          enablePromptCache = value;
+        }
+        continue;
+      }
+      if (key === 'verbosity') {
+        hasModelKwargs =
+          applyVerbosityParam({
+            value,
+            override: false,
+            llmConfig,
+            modelKwargs,
+            useOpenRouter,
+          }) || hasModelKwargs;
         continue;
       }
 
@@ -200,11 +396,27 @@ export function getOpenAILLMConfig({
   /** Apply addParams - can override defaultParams */
   if (addParams && typeof addParams === 'object') {
     for (const [key, value] of Object.entries(addParams)) {
-      /** Handle web_search directly here instead of adding to modelKwargs or llmConfig */
       if (key === 'web_search') {
         if (typeof value === 'boolean') {
           enableWebSearch = value;
         }
+        continue;
+      }
+      if (key === 'promptCache') {
+        if (typeof value === 'boolean') {
+          enablePromptCache = value;
+        }
+        continue;
+      }
+      if (key === 'verbosity') {
+        hasModelKwargs =
+          applyVerbosityParam({
+            value,
+            override: true,
+            llmConfig,
+            modelKwargs,
+            useOpenRouter,
+          }) || hasModelKwargs;
         continue;
       }
       if (knownOpenAIParams.has(key)) {
@@ -217,10 +429,20 @@ export function getOpenAILLMConfig({
   }
 
   if (useOpenRouter) {
-    llmConfig.include_reasoning = true;
-  }
-
-  if (
+    /**
+     * OpenRouter uses a `reasoning` object — `summary` is not supported.
+     * ChatOpenRouter treats `reasoning` and `include_reasoning` as mutually exclusive:
+     * `include_reasoning` is legacy compat that maps to `{ enabled: true }` only when
+     * no `reasoning` object is present, so we intentionally omit it here.
+     */
+    hasModelKwargs =
+      applyOpenRouterReasoningConfig({
+        reasoningEffort: reasoning_effort,
+        model: modelOptions.model,
+        modelKwargs,
+        llmConfig,
+      }) || hasModelKwargs;
+  } else if (
     hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
     (llmConfig.useResponsesApi === true ||
       (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI))
@@ -247,6 +469,9 @@ export function getOpenAILLMConfig({
   if (dropParams && dropParams.includes('web_search')) {
     enableWebSearch = false;
   }
+  if (dropParams && dropParams.includes('promptCache')) {
+    enablePromptCache = false;
+  }
 
   if (useOpenRouter && enableWebSearch) {
     /** OpenRouter expects web search as a plugins parameter */
@@ -257,11 +482,40 @@ export function getOpenAILLMConfig({
     llmConfig.useResponsesApi = true;
     tools.push({ type: 'web_search' });
   }
+  if (useOpenRouter && enablePromptCache === true) {
+    llmConfig.promptCache = true;
+  }
 
   /**
-   * Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
+   * Note: OpenAI reasoning models (o1/o3/gpt-5) do not support temperature and other sampling parameters
+   * Exception: gpt-5-chat and versioned models like gpt-5.1 DO support these parameters
    */
-  if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model as string)) {
+  if (
+    modelOptions.model &&
+    /\b(o[13]|gpt-5)(?!\.|-chat)(?:-|$)/.test(modelOptions.model as string)
+  ) {
+    const reasoningExcludeParams = [
+      'frequencyPenalty',
+      'presencePenalty',
+      'temperature',
+      'topP',
+      'logitBias',
+      'n',
+      'logprobs',
+    ];
+
+    const updatedDropParams = dropParams || [];
+    const combinedDropParams = [...new Set([...updatedDropParams, ...reasoningExcludeParams])];
+
+    combinedDropParams.forEach((param) => {
+      if (param in llmConfig) {
+        delete llmConfig[param as keyof t.OAIClientOptions];
+      }
+    });
+  } else if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model as string)) {
+    /**
+     * Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
+     */
     const searchExcludeParams = [
       'frequency_penalty',
       'presence_penalty',
@@ -295,12 +549,18 @@ export function getOpenAILLMConfig({
     });
   }
 
-  if (modelKwargs.verbosity && llmConfig.useResponsesApi === true) {
-    modelKwargs.text = { verbosity: modelKwargs.verbosity };
-    delete modelKwargs.verbosity;
-  }
+  hasModelKwargs =
+    applyResponsesVerbosity({
+      llmConfig,
+      modelKwargs,
+      useOpenRouter,
+    }) || hasModelKwargs;
 
-  if (llmConfig.model && /\bgpt-[5-9]\b/i.test(llmConfig.model) && llmConfig.maxTokens != null) {
+  if (
+    llmConfig.model &&
+    /\bgpt-[5-9](?:\.\d+)?\b/i.test(llmConfig.model) &&
+    llmConfig.maxTokens != null
+  ) {
     const paramName =
       llmConfig.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
     modelKwargs[paramName] = llmConfig.maxTokens;

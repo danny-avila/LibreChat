@@ -85,7 +85,10 @@ export function SearchPicker<TOption extends { key: string; value: string }>({
           {isLoading ? (
             <Spinner className="absolute left-3 h-4 w-4" />
           ) : (
-            <Search className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary" />
+            <Search
+              className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary"
+              aria-hidden="true"
+            />
           )}
           <Ariakit.Combobox
             ref={inputRef}

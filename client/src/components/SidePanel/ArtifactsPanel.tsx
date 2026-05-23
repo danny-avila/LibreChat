@@ -1,37 +1,24 @@
-import { useRef, useEffect, memo } from 'react';
+import { useEffect, memo } from 'react';
+import { usePanelRef } from 'react-resizable-panels';
 import { ResizableHandleAlt, ResizablePanel } from '@librechat/client';
-import type { ImperativePanelHandle } from 'react-resizable-panels';
-
-const ANIMATION_DURATION = 500;
 
 interface ArtifactsPanelProps {
   artifacts: React.ReactNode | null;
-  currentLayout: number[];
-  minSizeMain: number;
+  minSizeMain: string;
   shouldRender: boolean;
   onRenderChange: (shouldRender: boolean) => void;
 }
 
-/**
- * ArtifactsPanel component - memoized to prevent unnecessary re-renders
- * Only re-renders when artifacts visibility or layout changes
- */
 const ArtifactsPanel = memo(function ArtifactsPanel({
   artifacts,
-  currentLayout,
   minSizeMain,
   shouldRender,
   onRenderChange,
 }: ArtifactsPanelProps) {
-  const artifactsPanelRef = useRef<ImperativePanelHandle>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const artifactsPanelRef = usePanelRef();
 
   useEffect(() => {
     if (artifacts != null) {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
       onRenderChange(true);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -39,18 +26,9 @@ const ArtifactsPanel = memo(function ArtifactsPanel({
         });
       });
     } else if (shouldRender) {
-      artifactsPanelRef.current?.collapse();
-      timeoutRef.current = setTimeout(() => {
-        onRenderChange(false);
-      }, ANIMATION_DURATION);
+      onRenderChange(false);
     }
-
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, [artifacts, shouldRender, onRenderChange]);
+  }, [artifacts, shouldRender, onRenderChange, artifactsPanelRef]);
 
   if (!shouldRender) {
     return null;
@@ -62,13 +40,12 @@ const ArtifactsPanel = memo(function ArtifactsPanel({
         <ResizableHandleAlt withHandle className="bg-border-medium text-text-primary" />
       )}
       <ResizablePanel
-        ref={artifactsPanelRef}
-        defaultSize={artifacts != null ? currentLayout[1] : 0}
-        minSize={minSizeMain}
-        maxSize={70}
+        defaultSize="50"
+        maxSize="70"
+        collapsedSize="0"
         collapsible={true}
-        collapsedSize={0}
-        order={2}
+        minSize={minSizeMain}
+        panelRef={artifactsPanelRef}
         id="artifacts-panel"
       >
         <div className="h-full min-w-[400px] overflow-hidden">{artifacts}</div>

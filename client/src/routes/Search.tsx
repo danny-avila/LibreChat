@@ -64,6 +64,17 @@ export default function Search() {
     }
   }, [isError, searchQuery, showToast]);
 
+  const resultsCount = messages?.length ?? 0;
+  const resultsAnnouncement = useMemo(() => {
+    if (resultsCount === 0) {
+      return localize('com_ui_nothing_found');
+    }
+    if (resultsCount === 1) {
+      return localize('com_ui_result_found', { count: resultsCount });
+    }
+    return localize('com_ui_results_found', { count: resultsCount });
+  }, [resultsCount, localize]);
+
   const isSearchLoading = search.isTyping || isLoading || isFetchingNextPage;
 
   if (isSearchLoading) {
@@ -80,6 +91,9 @@ export default function Search() {
 
   return (
     <MinimalMessagesWrapper ref={containerRef} className="relative flex h-full pt-4">
+      <div className="sr-only" role="alert" aria-atomic="true">
+        {resultsAnnouncement}
+      </div>
       {(messages && messages.length === 0) || messages == null ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="rounded-lg bg-white p-6 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">

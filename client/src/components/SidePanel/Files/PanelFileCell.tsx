@@ -11,7 +11,7 @@ export default function PanelFileCell({ row }: { row: Row<TFile | undefined> }) 
       {file?.type?.startsWith('image') === true ? (
         <ImagePreview
           url={file.filepath}
-          className="h-10 w-10 flex-shrink-0"
+          className="h-8 w-8 flex-shrink-0"
           source={file.source}
           alt={file.filename}
         />

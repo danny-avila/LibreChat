@@ -4,24 +4,22 @@
 
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { ResourceType, PrincipalType } = require('librechat-data-provider');
+const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
+const { enrichRemoteAgentPrincipals, backfillRemoteAgentPermissions } = require('@librechat/api');
 const {
   bulkUpdateResourcePermissions,
   ensureGroupPrincipalExists,
+  getResourcePermissionsMap,
+  findAccessibleResources,
   getEffectivePermissions,
   ensurePrincipalExists,
   getAvailableRoles,
 } = require('~/server/services/PermissionService');
-const { AclEntry } = require('~/db/models');
-const {
-  searchPrincipals: searchLocalPrincipals,
-  sortPrincipalsByRelevance,
-  calculateRelevanceScore,
-} = require('~/models');
 const {
   entraIdPrincipalFeatureEnabled,
   searchEntraIdPrincipals,
 } = require('~/server/services/GraphApiService');
+const db = require('~/models');
 
 /**
  * Generic controller for resource permission endpoints
@@ -152,6 +150,18 @@ const updateResourcePermissions = async (req, res) => {
       grantedBy: userId,
     });
 
+    const isAgentResource =
+      resourceType === ResourceType.AGENT || resourceType === ResourceType.REMOTE_AGENT;
+    const revokedUserIds = results.revoked
+      .filter((p) => p.type === PrincipalType.USER && p.id)
+      .map((p) => p.id);
+
+    if (isAgentResource && revokedUserIds.length > 0) {
+      db.removeAgentFromUserFavorites(resourceId, revokedUserIds).catch((err) => {
+        logger.error('[removeRevokedAgentFromFavorites] Error cleaning up favorites', err);
+      });
+    }
+
     /** @type {TUpdateResourcePermissionsResponse} */
     const response = {
       message: 'Permissions updated successfully',
@@ -182,8 +192,7 @@ const getResourcePermissions = async (req, res) => {
     const { resourceType, resourceId } = req.params;
     validateResourceType(resourceType);
 
-    // Use aggregation pipeline for efficient single-query data retrieval
-    const results = await AclEntry.aggregate([
+    const results = await db.aggregateAclEntries([
       // Match ACL entries for this resource
       {
         $match: {
@@ -232,7 +241,7 @@ const getResourcePermissions = async (req, res) => {
       },
     ]);
 
-    const principals = [];
+    let principals = [];
     let publicPermission = null;
 
     // Process aggregation results
@@ -276,6 +285,18 @@ const getResourcePermissions = async (req, res) => {
           accessRoleId: result.accessRoleId,
         });
       }
+    }
+
+    if (resourceType === ResourceType.REMOTE_AGENT) {
+      const enricherDeps = {
+        aggregateAclEntries: db.aggregateAclEntries,
+        bulkWriteAclEntries: db.bulkWriteAclEntries,
+        findRoleByIdentifier: db.findRoleByIdentifier,
+        logger,
+      };
+      const enrichResult = await enrichRemoteAgentPrincipals(enricherDeps, resourceId, principals);
+      principals = enrichResult.principals;
+      backfillRemoteAgentPermissions(enricherDeps, resourceId, enrichResult.entriesToBackfill);
     }
 
     // Return response in format expected by frontend
@@ -364,15 +385,17 @@ const getUserEffectivePermissions = async (req, res) => {
  */
 const searchPrincipals = async (req, res) => {
   try {
-    const { q: query, limit = 20, types } = req.query;
+    const { q: rawQuery, limit = 20, types } = req.query;
 
-    if (!query || query.trim().length === 0) {
+    if (typeof rawQuery !== 'string' || rawQuery.trim().length === 0) {
       return res.status(400).json({
         error: 'Query parameter "q" is required and must not be empty',
       });
     }
 
-    if (query.trim().length < 2) {
+    const query = rawQuery.trim();
+
+    if (query.length < 2) {
       return res.status(400).json({
         error: 'Query must be at least 2 characters long',
       });
@@ -389,7 +412,7 @@ const searchPrincipals = async (req, res) => {
       typeFilters = validTypes.length > 0 ? validTypes : null;
     }
 
-    const localResults = await searchLocalPrincipals(query.trim(), searchLimit, typeFilters);
+    const localResults = await db.searchPrincipals(query, searchLimit, typeFilters);
     let allPrincipals = [...localResults];
 
     const useEntraId = entraIdPrincipalFeatureEnabled(req.user);
@@ -416,7 +439,7 @@ const searchPrincipals = async (req, res) => {
           const graphResults = await searchEntraIdPrincipals(
             accessToken,
             req.user.openidId,
-            query.trim(),
+            query,
             graphType,
             searchLimit - localResults.length,
           );
@@ -445,10 +468,11 @@ const searchPrincipals = async (req, res) => {
     }
     const scoredResults = allPrincipals.map((item) => ({
       ...item,
-      _searchScore: calculateRelevanceScore(item, query.trim()),
+      _searchScore: db.calculateRelevanceScore(item, query),
     }));
 
-    const finalResults = sortPrincipalsByRelevance(scoredResults)
+    const finalResults = db
+      .sortPrincipalsByRelevance(scoredResults)
       .slice(0, searchLimit)
       .map((result) => {
         const { _searchScore, ...resultWithoutScore } = result;
@@ -456,7 +480,7 @@ const searchPrincipals = async (req, res) => {
       });
 
     res.status(200).json({
-      query: query.trim(),
+      query,
       limit: searchLimit,
       types: typeFilters,
       results: finalResults,
@@ -470,6 +494,52 @@ const searchPrincipals = async (req, res) => {
     logger.error('Error searching principals:', error);
     res.status(500).json({
       error: 'Failed to search principals',
+    });
+  }
+};
+
+/**
+ * Get user's effective permissions for all accessible resources of a type
+ * @route GET /api/permissions/{resourceType}/effective/all
+ */
+const getAllEffectivePermissions = async (req, res) => {
+  try {
+    const { resourceType } = req.params;
+    validateResourceType(resourceType);
+
+    const { id: userId } = req.user;
+
+    // Find all resources the user has at least VIEW access to
+    const accessibleResourceIds = await findAccessibleResources({
+      userId,
+      role: req.user.role,
+      resourceType,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+
+    if (accessibleResourceIds.length === 0) {
+      return res.status(200).json({});
+    }
+
+    // Get effective permissions for all accessible resources
+    const permissionsMap = await getResourcePermissionsMap({
+      userId,
+      role: req.user.role,
+      resourceType,
+      resourceIds: accessibleResourceIds,
+    });
+
+    // Convert Map to plain object for JSON response
+    const result = {};
+    for (const [resourceId, permBits] of permissionsMap) {
+      result[resourceId] = permBits;
+    }
+
+    res.status(200).json(result);
+  } catch (error) {
+    logger.error('Error getting all effective permissions:', error);
+    res.status(500).json({
+      error: 'Failed to get all effective permissions',
       details: error.message,
     });
   }
@@ -480,5 +550,6 @@ module.exports = {
   getResourcePermissions,
   getResourceRoles,
   getUserEffectivePermissions,
+  getAllEffectivePermissions,
   searchPrincipals,
 };

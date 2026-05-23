@@ -2,12 +2,15 @@ const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { isAgentsEndpoint } = require('librechat-data-provider');
+const { verifyAgentUploadPermission, resolveUploadErrorMessage } = require('@librechat/api');
+const { isAssistantsEndpoint } = require('librechat-data-provider');
 const {
-  filterFile,
-  processImageFile,
   processAgentFileUpload,
+  processImageFile,
+  filterFile,
 } = require('~/server/services/Files/process');
+const { checkPermission } = require('~/server/services/PermissionService');
+const db = require('~/models');
 
 const router = express.Router();
 
@@ -21,7 +24,17 @@ router.post('/', async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
-    if (isAgentsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
+    if (!isAssistantsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
+      const denied = await verifyAgentUploadPermission({
+        req,
+        res,
+        metadata,
+        getAgent: db.getAgent,
+        checkPermission,
+      });
+      if (denied) {
+        return;
+      }
       return await processAgentFileUpload({ req, res, metadata });
     }
 
@@ -30,15 +43,7 @@ router.post('/', async (req, res) => {
     // TODO: delete remote file if it exists
     logger.error('[/files/images] Error processing file:', error);
 
-    let message = 'Error processing file';
-
-    if (
-      error.message?.includes('Invalid file format') ||
-      error.message?.includes('No OCR result') ||
-      error.message?.includes('exceeds token limit')
-    ) {
-      message = error.message;
-    }
+    const message = resolveUploadErrorMessage(error);
 
     try {
       const filepath = path.join(

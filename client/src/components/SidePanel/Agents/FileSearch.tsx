@@ -1,26 +1,20 @@
-import { useState, useRef } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { useFormContext } from 'react-hook-form';
 import { SharePointIcon, AttachmentIcon, DropdownPopup } from '@librechat/client';
-import {
-  EModelEndpoint,
-  EToolResources,
-  mergeFileConfig,
-  AgentCapabilities,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
+import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
 import type { ExtendedFile, AgentForm } from '~/common';
-import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
-import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
-import { useFileHandling, useLocalize, useLazyEffect } from '~/hooks';
+import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
+import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
+import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { useGetStartupConfig } from '~/data-provider';
 import FileSearchCheckbox from './FileSearchCheckbox';
-import { useChatContext } from '~/Providers';
 import { isEphemeralAgent } from '~/common';
 
-export default function FileSearch({
+function FileSearch({
   agent_id,
   files: _files,
 }: {
@@ -28,29 +22,38 @@ export default function FileSearch({
   files?: [string, ExtendedFile][];
 }) {
   const localize = useLocalize();
-  const { setFilesLoading } = useChatContext();
   const { watch } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
+  const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
 
   // Get startup configuration for SharePoint feature flag
   const { data: startupConfig } = useGetStartupConfig();
+  const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
+  const endpointOverride = providerValue || EModelEndpoint.agents;
 
-  const { data: fileConfig = null } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
+  const { handleFileChange } = useFileHandlingNoChatContext(
+    {
+      additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
+      endpointOverride,
+      endpointTypeOverride: endpointType,
+      fileSetter: setFiles,
+    },
+    fileHandlingState,
+  );
 
-  const { handleFileChange } = useFileHandling({
-    additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-    fileSetter: setFiles,
-  });
-
-  const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-    fileSetter: setFiles,
-  });
+  const { handleSharePointFiles, isProcessing, downloadProgress } =
+    useSharePointFileHandlingNoChatContext(
+      {
+        additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
+        endpointOverride,
+        endpointTypeOverride: endpointType,
+        fileSetter: setFiles,
+      },
+      fileHandlingState,
+    );
 
   useLazyEffect(
     () => {
@@ -63,12 +66,6 @@ export default function FileSearch({
   );
 
   const fileSearchChecked = watch(AgentCapabilities.file_search);
-
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig,
-    endpoint: EModelEndpoint.agents,
-    endpointType: EModelEndpoint.agents,
-  });
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
 
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
@@ -117,7 +114,7 @@ export default function FileSearch({
   const menuTrigger = (
     <Ariakit.MenuButton
       disabled={disabledUploadButton}
-      className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+      className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
     >
       <div className="flex w-full items-center justify-center gap-1">
         <AttachmentIcon className="text-token-text-primary h-4 w-4" />
@@ -130,7 +127,7 @@ export default function FileSearch({
     <div className="w-full">
       <div className="mb-1.5 flex items-center gap-2">
         <span>
-          <label className="text-token-text-primary block font-medium">
+          <label className="text-token-text-primary block text-sm font-medium">
             {localize('com_assistants_file_search')}
           </label>
         </span>
@@ -141,7 +138,6 @@ export default function FileSearch({
         <FileRow
           files={files}
           setFiles={setFiles}
-          setFilesLoading={setFilesLoading}
           agent_id={agent_id}
           tool_resource={EToolResources.file_search}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
@@ -162,7 +158,7 @@ export default function FileSearch({
             <button
               type="button"
               disabled={disabledUploadButton}
-              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
               onClick={handleButtonClick}
             >
               <div className="flex w-full items-center justify-center gap-1">
@@ -201,3 +197,8 @@ export default function FileSearch({
     </div>
   );
 }
+
+const MemoizedFileSearch = memo(FileSearch);
+MemoizedFileSearch.displayName = 'FileSearch';
+
+export default MemoizedFileSearch;

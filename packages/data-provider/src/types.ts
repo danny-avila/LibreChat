@@ -1,14 +1,14 @@
 import type { InfiniteData } from '@tanstack/react-query';
 import type {
-  TBanner,
-  TMessage,
-  TResPlugin,
-  TSharedLink,
-  TConversation,
-  EModelEndpoint,
   TConversationTag,
+  EModelEndpoint,
+  TConversation,
+  TSharedLink,
   TAttachment,
+  TMessage,
+  TBanner,
 } from './schemas';
+import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
@@ -53,6 +53,9 @@ export type TEndpointOption = Pick<
   | 'promptCache'
   | 'thinking'
   | 'thinkingBudget'
+  | 'thinkingLevel'
+  | 'effort'
+  | 'thinkingDisplay'
   // Assistant/Agent fields
   | 'assistant_id'
   | 'agent_id'
@@ -99,6 +102,8 @@ export type TEphemeralAgent = {
   web_search?: boolean;
   file_search?: boolean;
   execute_code?: boolean;
+  artifacts?: string;
+  skills?: boolean;
 };
 
 export type TPayload = Partial<TMessage> &
@@ -110,6 +115,15 @@ export type TPayload = Partial<TMessage> &
     isTemporary: boolean;
     ephemeralAgent?: TEphemeralAgent | null;
     editedContent?: TEditedContent | null;
+    /** Added conversation for multi-convo feature */
+    addedConvo?: TConversation;
+    /**
+     * Skills the user selected via the `$` popover for this turn. Names, not IDs
+     * — the backend resolves them against the user's ACL-accessible skill set,
+     * loads each SKILL.md body, and prepends one meta user message per skill
+     * before the LLM turn runs.
+     */
+    manualSkills?: string[];
   };
 
 export type TEditedContent =
@@ -125,8 +139,6 @@ export type TEditedContent =
     };
 
 export type TSubmission = {
-  plugin?: TResPlugin;
-  plugins?: TResPlugin[];
   userMessage: TMessage;
   isEdited?: boolean;
   isContinued?: boolean;
@@ -139,6 +151,10 @@ export type TSubmission = {
   clientTimestamp?: string;
   ephemeralAgent?: TEphemeralAgent | null;
   editedContent?: TEditedContent | null;
+  /** Added conversation for multi-convo feature */
+  addedConvo?: TConversation;
+  /** Skills the user invoked via the `$` popover for this submission. */
+  manualSkills?: string[];
 };
 
 export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };
@@ -234,6 +250,33 @@ export type TUpdateUserKeyRequest = {
   expiresAt: string;
 };
 
+export type TAgentApiKeyCreateRequest = {
+  name: string;
+  expiresAt?: string | null;
+};
+
+export type TAgentApiKeyCreateResponse = {
+  id: string;
+  name: string;
+  key: string;
+  keyPrefix: string;
+  createdAt: string;
+  expiresAt?: string;
+};
+
+export type TAgentApiKeyListItem = {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  lastUsedAt?: string;
+  expiresAt?: string;
+  createdAt: string;
+};
+
+export type TAgentApiKeyListResponse = {
+  keys: TAgentApiKeyListItem[];
+};
+
 export type TUpdateConversationRequest = {
   conversationId: string;
   title: string;
@@ -270,12 +313,14 @@ export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
 
 export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
 
-export type TUpdateShareLinkRequest = Pick<TSharedLink, 'shareId'>;
+export type TUpdateShareLinkRequest = Pick<TSharedLink, 'shareId' | 'targetMessageId'>;
 
 export type TSharedLinkResponse = Pick<TSharedLink, 'shareId'> &
+  Pick<TSharedLink, 'targetMessageId'> &
   Pick<TConversation, 'conversationId'>;
 
-export type TSharedLinkGetResponse = TSharedLinkResponse & {
+export type TSharedLinkGetResponse = Omit<TSharedLinkResponse, 'shareId'> & {
+  shareId: string | null;
   success: boolean;
 };
 
@@ -335,6 +380,7 @@ export type TConfig = {
   azure?: boolean;
   availableTools?: [];
   availableRegions?: string[];
+  allowedProviders?: (string | EModelEndpoint)[];
   plugins?: Record<string, string>;
   name?: string;
   iconURL?: string;
@@ -394,28 +440,29 @@ export type TLoginResponse = {
   tempToken?: string;
 };
 
+/** Shared payload for any operation that requires OTP or backup-code verification. */
+export type TOTPVerificationPayload = {
+  token?: string;
+  backupCode?: string;
+};
+
+export type TEnable2FARequest = TOTPVerificationPayload;
+
 export type TEnable2FAResponse = {
   otpauthUrl: string;
   backupCodes: string[];
   message?: string;
 };
 
-export type TVerify2FARequest = {
-  token?: string;
-  backupCode?: string;
-};
+export type TVerify2FARequest = TOTPVerificationPayload;
 
 export type TVerify2FAResponse = {
   message: string;
 };
 
-/**
- * For verifying 2FA during login with a temporary token.
- */
-export type TVerify2FATempRequest = {
+/** For verifying 2FA during login with a temporary token. */
+export type TVerify2FATempRequest = TOTPVerificationPayload & {
   tempToken: string;
-  token?: string;
-  backupCode?: string;
 };
 
 export type TVerify2FATempResponse = {
@@ -424,29 +471,21 @@ export type TVerify2FATempResponse = {
   message?: string;
 };
 
-/**
- * Request for disabling 2FA.
- */
-export type TDisable2FARequest = {
-  token?: string;
-  backupCode?: string;
-};
+export type TDisable2FARequest = TOTPVerificationPayload;
 
-/**
- * Response from disabling 2FA.
- */
 export type TDisable2FAResponse = {
   message: string;
 };
 
-/**
- * Response from regenerating backup codes.
- */
+export type TRegenerateBackupCodesRequest = TOTPVerificationPayload;
+
 export type TRegenerateBackupCodesResponse = {
-  message: string;
+  message?: string;
   backupCodes: string[];
-  backupCodesHash: string[];
+  backupCodesHash: TBackupCode[];
 };
+
+export type TDeleteUserRequest = TOTPVerificationPayload;
 
 export type TRequestPasswordReset = {
   email: string;
@@ -510,11 +549,11 @@ export type TPromptGroup = {
   command?: string;
   oneliner?: string;
   category?: string;
-  projectIds?: string[];
   productionId?: string | null;
   productionPrompt?: Pick<TPrompt, 'prompt'> | null;
   author: string;
   authorName: string;
+  isPublic?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
   _id?: string;
@@ -563,9 +602,7 @@ export type TCreatePromptResponse = {
   group?: TPromptGroup;
 };
 
-export type TUpdatePromptGroupPayload = Partial<TPromptGroup> & {
-  removeProjectIds?: string[];
-};
+export type TUpdatePromptGroupPayload = Partial<TPromptGroup>;
 
 export type TUpdatePromptGroupVariables = {
   id: string;
@@ -649,7 +686,59 @@ export type TBalanceResponse = {
   // Automatic refill settings
   autoRefillEnabled: boolean;
   refillIntervalValue?: number;
-  refillIntervalUnit?: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
-  lastRefill?: Date;
+  refillIntervalUnit?: RefillIntervalUnit;
+  lastRefill?: Date | string;
   refillAmount?: number;
+};
+
+/* -------------------------------------------------------------------------- */
+/* Skill UI extensions (not yet persisted — phase 2 backend will fill these)  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @deprecated Superseded by the persisted `userInvocable` /
+ * `disableModelInvocation` pair derived from frontmatter. Retained for the
+ * transition window so older UI forms and tests still type-check; the
+ * backend no longer reads or writes it.
+ */
+export enum InvocationMode {
+  auto = 'auto',
+  manual = 'manual',
+  both = 'both',
+}
+
+/**
+ * Node in the filesystem-style skill tree view. Phase 1 derives these from
+ * the flat `TSkillFile[]` list; phase 2 will have the backend serve them
+ * directly from a persisted folder hierarchy. Kept in the shared types so
+ * tree UI helpers can be imported from both client and server.
+ */
+export type TSkillNode = {
+  _id: string;
+  skillId: string;
+  parentId: string | null;
+  type: 'file' | 'folder';
+  name: string;
+  fileId?: string;
+  order: number;
+  author: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TSkillTreeResponse = {
+  nodes: TSkillNode[];
+};
+
+export type TCreateSkillNodeRequest = {
+  type: 'file' | 'folder';
+  name: string;
+  parentId?: string | null;
+  order?: number;
+};
+
+export type TUpdateSkillNodeRequest = {
+  name?: string;
+  parentId?: string | null;
+  order?: number;
 };

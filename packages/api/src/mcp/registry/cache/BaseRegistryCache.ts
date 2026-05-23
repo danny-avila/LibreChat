@@ -9,6 +9,11 @@ import { isLeader } from '~/cluster';
 export abstract class BaseRegistryCache {
   protected readonly PREFIX = 'MCP::ServersRegistry';
   protected abstract readonly cache: Keyv;
+  protected readonly leaderOnly: boolean;
+
+  constructor(leaderOnly?: boolean) {
+    this.leaderOnly = leaderOnly ?? false;
+  }
 
   protected async leaderCheck(action: string): Promise<void> {
     if (!(await isLeader())) throw new Error(`Only leader can ${action}.`);
@@ -20,7 +25,9 @@ export abstract class BaseRegistryCache {
   }
 
   public async reset(): Promise<void> {
-    await this.leaderCheck(`reset ${this.cache.namespace} cache`);
+    if (this.leaderOnly) {
+      await this.leaderCheck(`reset ${this.cache.namespace} cache`);
+    }
     await this.cache.clear();
   }
 }

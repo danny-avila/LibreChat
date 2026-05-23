@@ -10,18 +10,33 @@ const {
   PrincipalType,
   PermissionBits,
 } = require('librechat-data-provider');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 
 // Mock modules before importing
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
 }));
 
-jest.mock('~/models/Role', () => ({
-  getRoleByName: jest.fn(),
-}));
+jest.mock('~/models', () => {
+  const mongoose = require('mongoose');
+  const { createMethods } = require('@librechat/data-schemas');
+  const methods = createMethods(mongoose, {
+    removeAllPermissions: async ({ resourceType, resourceId }) => {
+      const AclEntry = mongoose.models.AclEntry;
+      if (AclEntry) {
+        await AclEntry.deleteMany({ resourceType, resourceId });
+      }
+    },
+  });
+  return {
+    ...methods,
+    getRoleByName: jest.fn(),
+  };
+});
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),
+  promptUsageLimiter: (req, res, next) => next(),
   canAccessPromptViaGroup: jest.requireActual('~/server/middleware').canAccessPromptViaGroup,
   canAccessPromptGroupResource:
     jest.requireActual('~/server/middleware').canAccessPromptGroupResource,
@@ -30,7 +45,7 @@ jest.mock('~/server/middleware', () => ({
 let app;
 let mongoServer;
 let promptRoutes;
-let Prompt, PromptGroup, AclEntry, AccessRole, User;
+let Prompt, PromptGroup, AclEntry, AccessRole, User, SystemGrant;
 let testUsers, testRoles;
 let grantPermission;
 let currentTestUser; // Track current user for middleware
@@ -52,6 +67,7 @@ beforeAll(async () => {
   AclEntry = dbModels.AclEntry;
   AccessRole = dbModels.AccessRole;
   User = dbModels.User;
+  SystemGrant = dbModels.SystemGrant;
 
   // Import permission service
   const permissionService = require('~/server/services/PermissionService');
@@ -152,14 +168,30 @@ async function setupTestData() {
     }),
   };
 
+  // Seed capabilities for the ADMIN role
+  await SystemGrant.create([
+    {
+      principalType: PrincipalType.ROLE,
+      principalId: SystemRoles.ADMIN,
+      capability: SystemCapabilities.MANAGE_PROMPTS,
+      grantedAt: new Date(),
+    },
+    {
+      principalType: PrincipalType.ROLE,
+      principalId: SystemRoles.ADMIN,
+      capability: SystemCapabilities.READ_PROMPTS,
+      grantedAt: new Date(),
+    },
+  ]);
+
   // Mock getRoleByName
-  const { getRoleByName } = require('~/models/Role');
+  const { getRoleByName } = require('~/models');
   getRoleByName.mockImplementation((roleName) => {
     switch (roleName) {
       case SystemRoles.USER:
         return { permissions: { PROMPTS: { USE: true, CREATE: true } } };
       case SystemRoles.ADMIN:
-        return { permissions: { PROMPTS: { USE: true, CREATE: true, SHARED_GLOBAL: true } } };
+        return { permissions: { PROMPTS: { USE: true, CREATE: true, SHARE: true } } };
       default:
         return null;
     }
@@ -541,6 +573,169 @@ describe('Prompt Routes - ACL Permissions', () => {
       const response = await request(app).get(`/api/prompts/${publicPrompt._id}`).expect(200);
 
       expect(response.body._id).toBe(publicPrompt._id.toString());
+    });
+  });
+
+  describe('PATCH /api/prompts/groups/:groupId - Update Prompt Group Security', () => {
+    let testGroup;
+
+    beforeEach(async () => {
+      // Create a prompt group
+      testGroup = await PromptGroup.create({
+        name: 'Security Test Group',
+        category: 'security-test',
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+        productionId: new ObjectId(),
+      });
+
+      // Grant owner permissions
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: testUsers.owner._id,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: testGroup._id,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+        grantedBy: testUsers.owner._id,
+      });
+    });
+
+    afterEach(async () => {
+      await PromptGroup.deleteMany({});
+      await AclEntry.deleteMany({});
+    });
+
+    it('should allow updating allowed fields (name, category, oneliner)', async () => {
+      const updateData = {
+        name: 'Updated Group Name',
+        category: 'updated-category',
+        oneliner: 'Updated description',
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(updateData)
+        .expect(200);
+
+      expect(response.body.name).toBe(updateData.name);
+      expect(response.body.category).toBe(updateData.category);
+      expect(response.body.oneliner).toBe(updateData.oneliner);
+    });
+
+    it('should reject request with author field (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        author: testUsers.noAccess._id.toString(), // Try to change ownership
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+      expect(response.body.details).toBeDefined();
+    });
+
+    it('should reject request with authorName field (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        authorName: 'Malicious Author Name',
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with _id field (400 Bad Request)', async () => {
+      const newId = new ObjectId();
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        _id: newId.toString(),
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with productionId field (400 Bad Request)', async () => {
+      const newProductionId = new ObjectId();
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        productionId: newProductionId.toString(),
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with createdAt field (400 Bad Request)', async () => {
+      const maliciousDate = new Date('2020-01-01');
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        createdAt: maliciousDate.toISOString(),
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with __v field (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        __v: 999,
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected
+      expect(response.body.error).toBe('Invalid request body');
+    });
+
+    it('should reject request with multiple sensitive fields (400 Bad Request)', async () => {
+      const maliciousUpdate = {
+        name: 'Legit Update',
+        author: testUsers.noAccess._id.toString(),
+        authorName: 'Hacker',
+        _id: new ObjectId().toString(),
+        productionId: new ObjectId().toString(),
+        createdAt: new Date('2020-01-01').toISOString(),
+        __v: 999,
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/groups/${testGroup._id}`)
+        .send(maliciousUpdate)
+        .expect(400);
+
+      // Verify the request was rejected with validation errors
+      expect(response.body.error).toBe('Invalid request body');
+      expect(response.body.details).toBeDefined();
+      expect(Array.isArray(response.body.details)).toBe(true);
     });
   });
 

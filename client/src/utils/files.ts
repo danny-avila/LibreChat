@@ -9,9 +9,9 @@ import {
 import {
   megabyte,
   QueryKeys,
+  inferMimeType,
   excelMimeTypes,
   EToolResources,
-  codeTypeMapping,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import type { TFile, EndpointFileConfig, FileConfig } from 'librechat-data-provider';
@@ -251,20 +251,13 @@ export const validateFiles = ({
   const currentTotalSize = existingFiles.reduce((total, file) => total + file.size, 0);
 
   if (fileLimit && fileList.length + files.size > fileLimit) {
-    setError(`You can only upload up to ${fileLimit} files at a time.`);
+    setError(`File limit reached: ${fileLimit} files`);
     return false;
   }
 
   for (let i = 0; i < fileList.length; i++) {
     let originalFile = fileList[i];
-    let fileType = originalFile.type;
-    const extension = originalFile.name.split('.').pop() ?? '';
-    const knownCodeType = codeTypeMapping[extension];
-
-    // Infer MIME type for Known Code files when the type is empty or a mismatch
-    if (knownCodeType && (!fileType || fileType !== knownCodeType)) {
-      fileType = knownCodeType;
-    }
+    const fileType = inferMimeType(originalFile.name, originalFile.type);
 
     // Check if the file type is still empty after the extension check
     if (!fileType) {
@@ -289,19 +282,18 @@ export const validateFiles = ({
     }
 
     if (!checkType(originalFile.type, mimeTypesToCheck)) {
-      console.log(originalFile);
-      setError('Currently, unsupported file type: ' + originalFile.type);
+      setError(`Unsupported file type: ${originalFile.type}`);
       return false;
     }
 
     if (fileSizeLimit && originalFile.size >= fileSizeLimit) {
-      setError(`File size exceeds ${fileSizeLimit / megabyte} MB.`);
+      setError(`File size limit exceeded: ${fileSizeLimit / megabyte} MB`);
       return false;
     }
   }
 
   if (totalSizeLimit && currentTotalSize + incomingTotalSize > totalSizeLimit) {
-    setError(`The total size of the files cannot exceed ${totalSizeLimit / megabyte} MB.`);
+    setError(`Total file size limit exceeded: ${totalSizeLimit / megabyte} MB`);
     return false;
   }
 
@@ -325,3 +317,13 @@ export const validateFiles = ({
 
   return true;
 };
+
+export function sortPagesByRelevance(
+  pages: number[],
+  pageRelevance: Record<number, number>,
+): number[] {
+  if (!pageRelevance || Object.keys(pageRelevance).length === 0) {
+    return pages;
+  }
+  return [...pages].sort((a, b) => (pageRelevance[b] || 0) - (pageRelevance[a] || 0));
+}

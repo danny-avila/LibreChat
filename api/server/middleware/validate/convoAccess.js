@@ -1,10 +1,19 @@
 const { isEnabled } = require('@librechat/api');
 const { Constants, ViolationTypes, Time } = require('librechat-data-provider');
-const { searchConversation } = require('~/models/Conversation');
 const denyRequest = require('~/server/middleware/denyRequest');
 const { logViolation, getLogStores } = require('~/cache');
+const { searchConversation } = require('~/models');
 
 const { USE_REDIS, CONVO_ACCESS_VIOLATION_SCORE: score = 0 } = process.env ?? {};
+
+/**
+ * Helper function to get conversationId from different request body structures.
+ * @param {Object} body - The request body.
+ * @returns {string|undefined} The conversationId.
+ */
+const getConversationId = (body) => {
+  return body.conversationId ?? body.arg?.conversationId;
+};
 
 /**
  * Middleware to validate user's authorization for a conversation.
@@ -24,7 +33,7 @@ const validateConvoAccess = async (req, res, next) => {
   const namespace = ViolationTypes.CONVO_ACCESS;
   const cache = getLogStores(namespace);
 
-  const conversationId = req.body.conversationId;
+  const conversationId = getConversationId(req.body);
 
   if (!conversationId || conversationId === Constants.NEW_CONVO) {
     return next();

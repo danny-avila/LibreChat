@@ -9,26 +9,32 @@ import type {
   TEndpointsConfig,
 } from 'librechat-data-provider';
 import type { MentionOption, ConvoGenerator } from '~/common';
-import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools, logger } from '~/utils';
+import {
+  clearModelForNonEphemeralAgent,
+  removeUnavailableTools,
+  getModelSpecIconURL,
+  getConvoSwitchLogic,
+  logger,
+} from '~/utils';
 import { useDefaultConvo } from '~/hooks';
 import store from '~/store';
 
 export default function useSelectMention({
   presets,
   modelSpecs,
-  conversation,
   assistantsMap,
   returnHandlers,
   endpointsConfig,
+  getConversation,
   newConversation,
 }: {
-  conversation: TConversation | null;
   presets?: TPreset[];
   modelSpecs: TModelSpec[];
+  returnHandlers?: boolean;
   assistantsMap?: TAssistantsMap;
   newConversation: ConvoGenerator;
   endpointsConfig: TEndpointsConfig;
-  returnHandlers?: boolean;
+  getConversation: () => TConversation | null;
 }) {
   const getDefaultConversation = useDefaultConvo();
   const modularChat = useRecoilValue(store.modularChat);
@@ -39,6 +45,8 @@ export default function useSelectMention({
       if (!spec) {
         return;
       }
+
+      const conversation = getConversation();
       const { preset } = spec;
       preset.iconURL = getModelSpecIconURL(spec);
       preset.spec = spec.name;
@@ -104,7 +112,7 @@ export default function useSelectMention({
       });
     },
     [
-      conversation,
+      getConversation,
       getDefaultConversation,
       modularChat,
       newConversation,
@@ -126,6 +134,8 @@ export default function useSelectMention({
       if (!newEndpoint) {
         return;
       }
+
+      const conversation = getConversation();
 
       const {
         shouldSwitch,
@@ -154,6 +164,7 @@ export default function useSelectMention({
       if (agent_id) {
         template.agent_id = agent_id;
       }
+      clearModelForNonEphemeralAgent(template);
 
       template.spec = null;
       template.iconURL = null;
@@ -195,7 +206,7 @@ export default function useSelectMention({
         keepAddedConvos: isNewModular,
       });
     },
-    [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
+    [getConversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
   );
 
   const onSelectPreset = useCallback(
@@ -203,6 +214,8 @@ export default function useSelectMention({
       if (!_newPreset) {
         return;
       }
+
+      const conversation = getConversation();
 
       const newPreset = removeUnavailableTools(_newPreset, availableTools);
       const newEndpoint = newPreset.endpoint ?? '';
@@ -259,7 +272,7 @@ export default function useSelectMention({
     },
     [
       modularChat,
-      conversation,
+      getConversation,
       availableTools,
       newConversation,
       endpointsConfig,

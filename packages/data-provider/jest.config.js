@@ -14,5 +14,6 @@ module.exports = {
   //     lines: 57,
   //   },
   // },
+  maxWorkers: '50%',
   restoreMocks: true,
 };

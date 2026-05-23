@@ -1,24 +1,19 @@
 import { useEffect } from 'react';
+import { useRecoilState } from 'recoil';
 import TagManager from 'react-gtm-module';
-import { useRecoilState, useSetRecoilState } from 'recoil';
-import { LocalStorageKeys } from 'librechat-data-provider';
-import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
-import type { TStartupConfig, TPlugin, TUser } from 'librechat-data-provider';
-import { mapPlugins, selectPlugins, processPlugins } from '~/utils';
+import { installCloudFrontImageRetry } from '@librechat/client';
+import {
+  getTokenHeader,
+  LocalStorageKeys,
+  PermissionTypes,
+  Permissions,
+} from 'librechat-data-provider';
+import type { TStartupConfig, TUser } from 'librechat-data-provider';
+import { useMCPToolsQuery, useMCPServersQuery } from '~/data-provider';
 import { cleanupTimestampedStorage } from '~/utils/timestamps';
 import useSpeechSettingsInit from './useSpeechSettingsInit';
-import { useMCPToolsQuery } from '~/data-provider';
+import { useHasAccess } from '~/hooks';
 import store from '~/store';
-
-const pluginStore: TPlugin = {
-  name: 'Plugin store',
-  pluginKey: 'pluginStore',
-  isButton: true,
-  description: '',
-  icon: '',
-  authConfig: [],
-  authenticated: false,
-};
 
 export default function useAppStartup({
   startupConfig,
@@ -27,17 +22,24 @@ export default function useAppStartup({
   startupConfig?: TStartupConfig;
   user?: TUser;
 }) {
-  const setAvailableTools = useSetRecoilState(store.availableTools);
   const [defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
-  const { data: allPlugins } = useAvailablePluginsQuery({
-    enabled: !!user?.plugins,
-    select: selectPlugins,
+  const canUseMcp = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
   });
 
   useSpeechSettingsInit(!!user);
+  const { data: loadedServers, isLoading: serversLoading } = useMCPServersQuery({
+    enabled: canUseMcp,
+  });
 
   useMCPToolsQuery({
-    enabled: !!startupConfig?.mcpServers && !!user,
+    enabled:
+      canUseMcp &&
+      !serversLoading &&
+      !!loadedServers &&
+      Object.keys(loadedServers).length > 0 &&
+      !!user,
   });
 
   /** Clean up old localStorage entries on startup */
@@ -80,42 +82,9 @@ export default function useAppStartup({
     });
   }, [defaultPreset, setDefaultPreset, startupConfig?.modelSpecs?.list]);
 
-  /** Set the available Plugins */
   useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    if (!allPlugins) {
-      return;
-    }
-
-    const userPlugins = user.plugins ?? [];
-
-    if (userPlugins.length === 0) {
-      setAvailableTools({ pluginStore });
-      return;
-    }
-
-    const tools = [...userPlugins]
-      .map((el) => allPlugins.map[el])
-      .filter((el: TPlugin | undefined): el is TPlugin => el !== undefined);
-
-    /* Filter Last Selected Tools */
-    const localStorageItem = localStorage.getItem(LocalStorageKeys.LAST_TOOLS) ?? '';
-    if (!localStorageItem) {
-      return setAvailableTools({ pluginStore, ...mapPlugins(tools) });
-    }
-    const lastSelectedTools = processPlugins(JSON.parse(localStorageItem) ?? [], allPlugins.map);
-    const filteredTools = lastSelectedTools
-      .filter((tool: TPlugin) =>
-        tools.some((existingTool) => existingTool.pluginKey === tool.pluginKey),
-      )
-      .filter((tool: TPlugin | undefined) => !!tool);
-    localStorage.setItem(LocalStorageKeys.LAST_TOOLS, JSON.stringify(filteredTools));
-
-    setAvailableTools({ pluginStore, ...mapPlugins(tools) });
-  }, [allPlugins, user, setAvailableTools]);
+    return installCloudFrontImageRetry(startupConfig, { getAuthorizationHeader: getTokenHeader });
+  }, [startupConfig]);
 
   useEffect(() => {
     if (startupConfig?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {

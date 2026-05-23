@@ -7,6 +7,7 @@ export default function ThumbUpIcon({ className = '', size = '1em', bold = false
       fill="none"
       viewBox="0 0 24 24"
       className={className}
+      aria-hidden="true"
     >
       <path
         d="M12.592 2.50386C12.8047 2.13014 13.2317 1.935 13.652 2.01942C15.5627 2.40314 16.7246 4.36079 16.1516 6.23085L15.303 9L17.0142 9C19.6409 9 21.5485 11.5079 20.8574 14.0525L19.4994 19.0525C19.0267 20.7927 17.4526 22 15.6562 22H9.96721C8.869 21.9979 7.97939 21.1033 7.97939 20V9H8.31734C8.67472 9 9.0047 8.80771 9.18201 8.49613L12.592 2.50386Z"
@@ -25,6 +26,7 @@ export default function ThumbUpIcon({ className = '', size = '1em', bold = false
       fill="none"
       viewBox="0 0 24 24"
       className={className}
+      aria-hidden="true"
     >
       <path
         fillRule="evenodd"

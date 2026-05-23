@@ -1,11 +1,54 @@
 const path = require('path');
+const fs = require('fs');
 const winston = require('winston');
 require('winston-daily-rotate-file');
-const { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat } = require('./parsers');
+const {
+  getTenantId,
+  getUserId,
+  getRequestId,
+  SYSTEM_TENANT_ID,
+} = require('@librechat/data-schemas');
+const {
+  redactFormat,
+  redactMessage,
+  debugTraverse,
+  jsonTruncateFormat,
+  formatConsoleMeta,
+} = require('./parsers');
 
-const logDir = path.join(__dirname, '..', 'logs');
+/**
+ * Determine the log directory.
+ * Priority:
+ * 1. LIBRECHAT_LOG_DIR environment variable (allows user override)
+ * 2. /app/logs if running in Docker (bind-mounted with correct permissions)
+ * 3. api/logs relative to this file (local development)
+ */
+const getLogDir = () => {
+  if (process.env.LIBRECHAT_LOG_DIR) {
+    return process.env.LIBRECHAT_LOG_DIR;
+  }
 
-const { NODE_ENV, DEBUG_LOGGING = true, CONSOLE_JSON = false, DEBUG_CONSOLE = false } = process.env;
+  // Check if running in Docker container (cwd is /app)
+  if (process.cwd() === '/app') {
+    const dockerLogDir = '/app/logs';
+    // Ensure the directory exists
+    if (!fs.existsSync(dockerLogDir)) {
+      fs.mkdirSync(dockerLogDir, { recursive: true });
+    }
+    return dockerLogDir;
+  }
+
+  // Local development: use api/logs relative to this file
+  return path.join(__dirname, '..', 'logs');
+};
+
+const {
+  NODE_ENV,
+  DEBUG_LOGGING = true,
+  CONSOLE_JSON = false,
+  DEBUG_CONSOLE = false,
+  LOG_TO_FILE = true,
+} = process.env;
 
 const useConsoleJson =
   (typeof CONSOLE_JSON === 'string' && CONSOLE_JSON?.toLowerCase() === 'true') ||
@@ -19,6 +62,10 @@ const useDebugLogging =
   (typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING?.toLowerCase() === 'true') ||
   DEBUG_LOGGING === true;
 
+const useFileLogging =
+  (typeof LOG_TO_FILE === 'string' && LOG_TO_FILE?.toLowerCase() !== 'false') ||
+  LOG_TO_FILE === true;
+
 const levels = {
   error: 0,
   warn: 1,
@@ -28,6 +75,44 @@ const levels = {
   debug: 5,
   activity: 6,
   silly: 7,
+};
+
+const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'];
+
+const getLogTenantId = () => {
+  const tenantId = getTenantId();
+  return tenantId === SYSTEM_TENANT_ID ? undefined : tenantId;
+};
+
+const requestContextFormat = winston.format((info) => {
+  if (info.tenantId === SYSTEM_TENANT_ID) {
+    delete info.tenantId;
+  }
+  const context = {
+    tenantId: getLogTenantId(),
+    userId: getUserId(),
+    requestId: getRequestId(),
+  };
+  LOG_CONTEXT_KEYS.forEach((key) => {
+    if (context[key] && info[key] == null) {
+      info[key] = context[key];
+    }
+  });
+  return info;
+});
+
+const formatRequestContext = (info) => {
+  const context = {};
+  LOG_CONTEXT_KEYS.forEach((key) => {
+    const value = info[key];
+    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
+      return;
+    }
+    if (typeof value === 'string' && value) {
+      context[key] = value;
+    }
+  });
+  return Object.keys(context).length > 0 ? JSON.stringify(context) : '';
 };
 
 winston.addColors({
@@ -48,47 +133,54 @@ const fileFormat = winston.format.combine(
   winston.format.timestamp({ format: () => new Date().toISOString() }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
+  requestContextFormat(),
   // redactErrors(),
 );
 
-const transports = [
-  new winston.transports.DailyRotateFile({
-    level: 'error',
-    filename: `${logDir}/error-%DATE%.log`,
-    datePattern: 'YYYY-MM-DD',
-    zippedArchive: true,
-    maxSize: '20m',
-    maxFiles: '14d',
-    format: fileFormat,
-  }),
-];
+const transports = [];
 
-if (useDebugLogging) {
+if (useFileLogging) {
+  const logDir = getLogDir();
+
   transports.push(
     new winston.transports.DailyRotateFile({
-      level: 'debug',
-      filename: `${logDir}/debug-%DATE%.log`,
+      level: 'error',
+      filename: `${logDir}/error-%DATE%.log`,
       datePattern: 'YYYY-MM-DD',
       zippedArchive: true,
       maxSize: '20m',
       maxFiles: '14d',
-      format: winston.format.combine(fileFormat, debugTraverse),
+      format: fileFormat,
     }),
   );
+
+  if (useDebugLogging) {
+    transports.push(
+      new winston.transports.DailyRotateFile({
+        level: 'debug',
+        filename: `${logDir}/debug-%DATE%.log`,
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '14d',
+        format: winston.format.combine(fileFormat, debugTraverse),
+      }),
+    );
+  }
 }
 
 const consoleFormat = winston.format.combine(
   redactFormat(),
+  requestContextFormat(),
   winston.format.colorize({ all: true }),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   // redactErrors(),
   winston.format.printf((info) => {
-    const message = `${info.timestamp} ${info.level}: ${info.message}`;
-    if (info.level.includes('error')) {
-      return redactMessage(message);
-    }
-
-    return message;
+    const base = `${info.timestamp} ${info.level}: ${info.message}`;
+    const isErrorOrWarn = info.level.includes('error') || info.level.includes('warn');
+    const metaTrailer = isErrorOrWarn ? formatConsoleMeta(info) : formatRequestContext(info);
+    const line = metaTrailer ? `${base} ${metaTrailer}` : base;
+    return isErrorOrWarn ? redactMessage(line) : line;
   }),
 );
 

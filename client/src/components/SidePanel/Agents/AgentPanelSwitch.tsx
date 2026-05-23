@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import { AgentPanelProvider, useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { Panel, isEphemeralAgent } from '~/common';
 import VersionPanel from './Version/VersionPanel';
-import { useChatContext } from '~/Providers';
 import ActionsPanel from './ActionsPanel';
 import AgentPanel from './AgentPanel';
-import MCPPanel from './MCPPanel';
+import store from '~/store';
 
 export default function AgentPanelSwitch() {
   return (
@@ -16,24 +16,21 @@ export default function AgentPanelSwitch() {
 }
 
 function AgentPanelSwitchWithContext() {
-  const { conversation } = useChatContext();
   const { activePanel, setCurrentAgentId } = useAgentPanelContext();
+  const agentId = useRecoilValue(store.conversationAgentIdByIndex(0));
 
   useEffect(() => {
-    const agent_id = conversation?.agent_id ?? '';
+    const agent_id = agentId ?? '';
     if (!isEphemeralAgent(agent_id)) {
       setCurrentAgentId(agent_id);
     }
-  }, [setCurrentAgentId, conversation?.agent_id]);
+  }, [setCurrentAgentId, agentId]);
 
   if (activePanel === Panel.actions) {
     return <ActionsPanel />;
   }
   if (activePanel === Panel.version) {
     return <VersionPanel />;
-  }
-  if (activePanel === Panel.mcp) {
-    return <MCPPanel />;
   }
   return <AgentPanel />;
 }

@@ -114,9 +114,15 @@ export default function InputSection({
                 >
                   <div className="relative h-4 w-4">
                     {passwordVisibility[name] ? (
-                      <EyeOff className="absolute inset-0 h-4 w-4 duration-200 animate-in fade-in" />
+                      <EyeOff
+                        className="absolute inset-0 h-4 w-4 duration-200 animate-in fade-in"
+                        aria-hidden="true"
+                      />
                     ) : (
-                      <Eye className="absolute inset-0 h-4 w-4 duration-200 animate-in fade-in" />
+                      <Eye
+                        className="absolute inset-0 h-4 w-4 duration-200 animate-in fade-in"
+                        aria-hidden="true"
+                      />
                     )}
                   </div>
                 </button>

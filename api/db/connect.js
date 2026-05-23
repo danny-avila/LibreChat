@@ -1,9 +1,11 @@
 require('dotenv').config();
-const { isEnabled } = require('@librechat/api');
+const { isEnabled, instrumentMongooseQueryMetrics } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 
 const mongoose = require('mongoose');
 const MONGO_URI = process.env.MONGO_URI;
+
+instrumentMongooseQueryMetrics(mongoose);
 
 if (!MONGO_URI) {
   throw new Error('Please define the MONGO_URI environment variable');
@@ -39,6 +41,10 @@ let cached = global.mongoose;
 if (!cached) {
   cached = global.mongoose = { conn: null, promise: null };
 }
+
+mongoose.connection.on('error', (err) => {
+  logger.error('[connectDb] MongoDB connection error:', err);
+});
 
 async function connectDb() {
   if (cached.conn && cached.conn?._readyState === 1) {

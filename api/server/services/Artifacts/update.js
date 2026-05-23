@@ -73,15 +73,25 @@ const replaceArtifactContent = (originalText, artifact, original, updated) => {
     return null;
   }
 
-  // Check if there are code blocks
-  const codeBlockStart = artifactContent.indexOf('```\n', contentStart);
+  // Check if there are code blocks - handle both ```\n and ```lang\n formats
+  let codeBlockStart = artifactContent.indexOf('```', contentStart);
   const codeBlockEnd = artifactContent.lastIndexOf('\n```', contentEnd);
+
+  // If we found opening backticks, find the actual newline (skipping any language identifier)
+  if (codeBlockStart !== -1) {
+    const newlineAfterBackticks = artifactContent.indexOf('\n', codeBlockStart);
+    if (newlineAfterBackticks !== -1 && newlineAfterBackticks < contentEnd) {
+      codeBlockStart = newlineAfterBackticks;
+    } else {
+      codeBlockStart = -1;
+    }
+  }
 
   // Determine where to look for the original content
   let searchStart, searchEnd;
   if (codeBlockStart !== -1) {
-    // Code block starts
-    searchStart = codeBlockStart + 4; // after ```\n
+    // Code block starts - searchStart is right after the newline following ```[lang]
+    searchStart = codeBlockStart + 1; // after the newline
 
     if (codeBlockEnd !== -1 && codeBlockEnd > codeBlockStart) {
       // Code block has proper ending

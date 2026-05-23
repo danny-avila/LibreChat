@@ -27,7 +27,11 @@ export default function MinimalHoverButtons({ message, searchResults }: THoverBu
           isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
         }
       >
-        {isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
+        {isCopied ? (
+          <CheckMark className="h-[19px] w-[19px]" />
+        ) : (
+          <Clipboard className="h-[19px] w-[19px]" />
+        )}
       </button>
     </div>
   );

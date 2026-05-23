@@ -1,6 +1,8 @@
-import { resolveHeaders, processMCPEnv } from './env';
+import { Types } from 'mongoose';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
-import type { TUser, MCPOptions } from 'librechat-data-provider';
+import type { MCPOptions } from 'librechat-data-provider';
+import type { IUser } from '@librechat/data-schemas';
+import { resolveHeaders, resolveNestedObject, processMCPEnv, encodeHeaderValue } from './env';
 
 function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {
   return !options.type || options.type === 'stdio';
@@ -13,30 +15,108 @@ function isStreamableHTTPOptions(
 }
 
 /** Helper function to create test user objects */
-function createTestUser(overrides: Partial<TUser> = {}): TUser {
+function createTestUser(overrides: Partial<IUser> = {}): IUser {
   return {
-    id: 'test-user-id',
+    _id: new Types.ObjectId(),
+    id: new Types.ObjectId().toString(),
     username: 'testuser',
     email: 'test@example.com',
     name: 'Test User',
     avatar: 'https://example.com/avatar.png',
     provider: 'email',
     role: 'user',
-    createdAt: new Date('2021-01-01').toISOString(),
-    updatedAt: new Date('2021-01-01').toISOString(),
+    createdAt: new Date('2021-01-01'),
+    updatedAt: new Date('2021-01-01'),
+    emailVerified: true,
     ...overrides,
-  };
+  } as IUser;
 }
+
+describe('encodeHeaderValue', () => {
+  it('should return empty string for empty input', () => {
+    expect(encodeHeaderValue('')).toBe('');
+  });
+
+  it('should return empty string for null/undefined coerced to empty string', () => {
+    expect(encodeHeaderValue(null as unknown as string)).toBe('');
+    expect(encodeHeaderValue(undefined as unknown as string)).toBe('');
+  });
+
+  it('should return empty string for non-string values', () => {
+    expect(encodeHeaderValue(123 as unknown as string)).toBe('');
+    expect(encodeHeaderValue(false as unknown as string)).toBe('');
+    expect(encodeHeaderValue({} as unknown as string)).toBe('');
+  });
+
+  it('should pass through ASCII characters (0-127) unchanged', () => {
+    expect(encodeHeaderValue('Hello')).toBe('Hello');
+    expect(encodeHeaderValue('test@example.com')).toBe('test@example.com');
+    expect(encodeHeaderValue('ABC123')).toBe('ABC123');
+  });
+
+  it('should pass through Latin-1 characters (128-255) unchanged', () => {
+    // Characters with Unicode values 128-255 are safe
+    expect(encodeHeaderValue('José')).toBe('José'); // é = U+00E9 (233)
+    expect(encodeHeaderValue('Müller')).toBe('Müller'); // ü = U+00FC (252)
+    expect(encodeHeaderValue('Zoë')).toBe('Zoë'); // ë = U+00EB (235)
+    expect(encodeHeaderValue('Björk')).toBe('Björk'); // ö = U+00F6 (246)
+  });
+
+  it('should Base64 encode Slavic characters (>255)', () => {
+    // Slavic characters that cause ByteString errors
+    expect(encodeHeaderValue('Marić')).toBe('b64:TWFyacSH'); // ć = U+0107 (263)
+    expect(encodeHeaderValue('Đorđe')).toBe('b64:xJBvcsSRZQ=='); // Đ = U+0110 (272), đ = U+0111 (273)
+  });
+
+  it('should Base64 encode Polish characters (>255)', () => {
+    expect(encodeHeaderValue('Łukasz')).toBe('b64:xYF1a2Fzeg=='); // Ł = U+0141 (321)
+  });
+
+  it('should Base64 encode various extended Unicode characters (>255)', () => {
+    expect(encodeHeaderValue('Žarko')).toBe('b64:xb1hcmtv'); // Ž = U+017D (381)
+    expect(encodeHeaderValue('Šime')).toBe('b64:xaBpbWU='); // Š = U+0160 (352)
+  });
+
+  it('should have correct b64: prefix format', () => {
+    const result = encodeHeaderValue('Ćiro'); // Ć = U+0106 (262)
+    expect(result.startsWith('b64:')).toBe(true);
+    // Verify the encoded part after prefix is valid Base64
+    const base64Part = result.slice(4);
+    expect(Buffer.from(base64Part, 'base64').toString('utf8')).toBe('Ćiro');
+  });
+
+  it('should handle mixed safe and unsafe characters', () => {
+    const result = encodeHeaderValue('Hello Đorđe!');
+    expect(result).toBe('b64:SGVsbG8gxJBvcsSRZSE=');
+  });
+
+  it('should be reversible with Base64 decode', () => {
+    const original = 'Marko Marić';
+    const encoded = encodeHeaderValue(original);
+    expect(encoded.startsWith('b64:')).toBe(true);
+
+    // Verify decoding works
+    const decoded = Buffer.from(encoded.slice(4), 'base64').toString('utf8');
+    expect(decoded).toBe(original);
+  });
+
+  it('should handle emoji and other high Unicode characters', () => {
+    const result = encodeHeaderValue('Hello 👋');
+    expect(result.startsWith('b64:')).toBe(true);
+    const decoded = Buffer.from(result.slice(4), 'base64').toString('utf8');
+    expect(decoded).toBe('Hello 👋');
+  });
+});
 
 describe('resolveHeaders', () => {
   beforeEach(() => {
     process.env.TEST_API_KEY = 'test-api-key-value';
-    process.env.ANOTHER_SECRET = 'another-secret-value';
+    process.env.ANOTHER_VALUE = 'another-test-value';
   });
 
   afterEach(() => {
     delete process.env.TEST_API_KEY;
-    delete process.env.ANOTHER_SECRET;
+    delete process.env.ANOTHER_VALUE;
   });
 
   it('should return empty object when headers is undefined', () => {
@@ -59,7 +139,7 @@ describe('resolveHeaders', () => {
   it('should process environment variables in headers', () => {
     const headers = {
       Authorization: '${TEST_API_KEY}',
-      'X-Secret': '${ANOTHER_SECRET}',
+      'X-Secret': '${ANOTHER_VALUE}',
       'Content-Type': 'application/json',
     };
 
@@ -67,7 +147,7 @@ describe('resolveHeaders', () => {
 
     expect(result).toEqual({
       Authorization: 'test-api-key-value',
-      'X-Secret': 'another-secret-value',
+      'X-Secret': 'another-test-value',
       'Content-Type': 'application/json',
     });
   });
@@ -445,23 +525,481 @@ describe('resolveHeaders', () => {
     const result = resolveHeaders({ headers, body });
     expect(result['X-Conversation']).toBe('conv-123');
   });
+
+  it('should not resolve env vars introduced via LIBRECHAT_BODY placeholders', () => {
+    const body = {
+      conversationId: '${TEST_API_KEY}',
+      parentMessageId: '${TEST_API_KEY}',
+      messageId: '${TEST_API_KEY}',
+    };
+    const headers = {
+      'X-Conv': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      'X-Parent': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+      'X-Msg': '{{LIBRECHAT_BODY_MESSAGEID}}',
+    };
+    const result = resolveHeaders({ headers, body });
+
+    expect(result['X-Conv']).toBe('${TEST_API_KEY}');
+    expect(result['X-Parent']).toBe('${TEST_API_KEY}');
+    expect(result['X-Msg']).toBe('${TEST_API_KEY}');
+  });
+
+  it('should not resolve env vars introduced via LIBRECHAT_USER placeholders', () => {
+    const user = createTestUser({ name: '${TEST_API_KEY}' });
+    const headers = { 'X-Name': '{{LIBRECHAT_USER_NAME}}' };
+    const result = resolveHeaders({ headers, user });
+
+    expect(result['X-Name']).toBe('${TEST_API_KEY}');
+  });
+
+  it('should not resolve env vars introduced via customUserVars', () => {
+    const customUserVars = { MY_TOKEN: '${TEST_API_KEY}' };
+    const headers = { Authorization: 'Bearer {{MY_TOKEN}}' };
+    const result = resolveHeaders({ headers, customUserVars });
+
+    expect(result.Authorization).toBe('Bearer ${TEST_API_KEY}');
+  });
+
+  describe('non-string header values (type guard tests)', () => {
+    it('should handle numeric header values without crashing', () => {
+      const headers = {
+        'X-Number': 12345 as unknown as string,
+        'X-String': 'normal-string',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Number']).toBe('12345');
+      expect(result['X-String']).toBe('normal-string');
+    });
+
+    it('should handle boolean header values without crashing', () => {
+      const headers = {
+        'X-Boolean-True': true as unknown as string,
+        'X-Boolean-False': false as unknown as string,
+        'X-String': 'normal-string',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Boolean-True']).toBe('true');
+      expect(result['X-Boolean-False']).toBe('false');
+      expect(result['X-String']).toBe('normal-string');
+    });
+
+    it('should handle null and undefined header values', () => {
+      const headers = {
+        'X-Null': null as unknown as string,
+        'X-Undefined': undefined as unknown as string,
+        'X-String': 'normal-string',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Null']).toBe('null');
+      expect(result['X-Undefined']).toBe('undefined');
+      expect(result['X-String']).toBe('normal-string');
+    });
+
+    it('should handle numeric values with placeholders', () => {
+      const user = { id: 'user-123' };
+      const headers = {
+        'X-Number': 42 as unknown as string,
+        'X-String-With-Placeholder': '{{LIBRECHAT_USER_ID}}',
+      };
+      const result = resolveHeaders({ headers, user });
+      expect(result['X-Number']).toBe('42');
+      expect(result['X-String-With-Placeholder']).toBe('user-123');
+    });
+
+    it('should handle objects in header values', () => {
+      const headers = {
+        'X-Object': { nested: 'value' } as unknown as string,
+        'X-String': 'normal-string',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Object']).toBe('[object Object]');
+      expect(result['X-String']).toBe('normal-string');
+    });
+
+    it('should handle arrays in header values', () => {
+      const headers = {
+        'X-Array': ['value1', 'value2'] as unknown as string,
+        'X-String': 'normal-string',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Array']).toBe('value1,value2');
+      expect(result['X-String']).toBe('normal-string');
+    });
+
+    it('should handle numeric values with env variables', () => {
+      process.env.TEST_API_KEY = 'test-api-key-value';
+      const headers = {
+        'X-Number': 12345 as unknown as string,
+        'X-Env': '${TEST_API_KEY}',
+      };
+      const result = resolveHeaders({ headers });
+      expect(result['X-Number']).toBe('12345');
+      expect(result['X-Env']).toBe('test-api-key-value');
+      delete process.env.TEST_API_KEY;
+    });
+
+    it('should handle numeric values with body placeholders', () => {
+      const body = {
+        conversationId: 'conv-123',
+        parentMessageId: 'parent-456',
+        messageId: 'msg-789',
+      };
+      const headers = {
+        'X-Number': 999 as unknown as string,
+        'X-Conv': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      };
+      const result = resolveHeaders({ headers, body });
+      expect(result['X-Number']).toBe('999');
+      expect(result['X-Conv']).toBe('conv-123');
+    });
+
+    it('should handle mixed type headers with user and custom vars', () => {
+      const user = { id: 'user-123', email: 'test@example.com' };
+      const customUserVars = { CUSTOM_TOKEN: 'secret-token' };
+      const headers = {
+        'X-Number': 42 as unknown as string,
+        'X-Boolean': true as unknown as string,
+        'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+        'X-Custom': '{{CUSTOM_TOKEN}}',
+        'X-String': 'normal',
+      };
+      const result = resolveHeaders({ headers, user, customUserVars });
+      expect(result['X-Number']).toBe('42');
+      expect(result['X-Boolean']).toBe('true');
+      expect(result['X-User-Id']).toBe('user-123');
+      expect(result['X-Custom']).toBe('secret-token');
+      expect(result['X-String']).toBe('normal');
+    });
+
+    it('should not crash when calling includes on non-string body field values', () => {
+      const body = {
+        conversationId: 12345 as unknown as string,
+        parentMessageId: 'parent-456',
+        messageId: 'msg-789',
+      };
+      const headers = {
+        'X-Conv-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        'X-Number': 999 as unknown as string,
+      };
+      expect(() => resolveHeaders({ headers, body })).not.toThrow();
+      const result = resolveHeaders({ headers, body });
+      expect(result['X-Number']).toBe('999');
+    });
+  });
+});
+
+describe('resolveNestedObject', () => {
+  beforeEach(() => {
+    process.env.TEST_API_KEY = 'test-api-key-value';
+    process.env.ANOTHER_VALUE = 'another-test-value';
+  });
+
+  afterEach(() => {
+    delete process.env.TEST_API_KEY;
+    delete process.env.ANOTHER_VALUE;
+  });
+
+  it('should preserve nested object structure', () => {
+    const obj = {
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+      max_tokens: 4096,
+      temperature: 0.7,
+    };
+
+    const result = resolveNestedObject({ obj });
+
+    expect(result).toEqual({
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+      max_tokens: 4096,
+      temperature: 0.7,
+    });
+  });
+
+  it('should process placeholders in string values while preserving structure', () => {
+    const user = { id: 'user-123', email: 'test@example.com' };
+    const obj = {
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+        user_context: '{{LIBRECHAT_USER_ID}}',
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+      api_key: '${TEST_API_KEY}',
+      max_tokens: 4096,
+    };
+
+    const result = resolveNestedObject({ obj, user });
+
+    expect(result).toEqual({
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+        user_context: 'user-123',
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+      api_key: 'test-api-key-value',
+      max_tokens: 4096,
+    });
+  });
+
+  it('should process strings in arrays', () => {
+    const user = { id: 'user-123' };
+    const obj = {
+      headers: ['Authorization: Bearer ${TEST_API_KEY}', 'X-User-Id: {{LIBRECHAT_USER_ID}}'],
+      values: [1, 2, 3],
+      mixed: ['string', 42, true, '{{LIBRECHAT_USER_ID}}'],
+    };
+
+    const result = resolveNestedObject({ obj, user });
+
+    expect(result).toEqual({
+      headers: ['Authorization: Bearer test-api-key-value', 'X-User-Id: user-123'],
+      values: [1, 2, 3],
+      mixed: ['string', 42, true, 'user-123'],
+    });
+  });
+
+  it('should handle deeply nested structures', () => {
+    const user = { id: 'user-123' };
+    const obj = {
+      level1: {
+        level2: {
+          level3: {
+            user_id: '{{LIBRECHAT_USER_ID}}',
+            settings: {
+              api_key: '${TEST_API_KEY}',
+              enabled: true,
+            },
+          },
+        },
+      },
+    };
+
+    const result = resolveNestedObject({ obj, user });
+
+    expect(result).toEqual({
+      level1: {
+        level2: {
+          level3: {
+            user_id: 'user-123',
+            settings: {
+              api_key: 'test-api-key-value',
+              enabled: true,
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('should preserve all primitive types', () => {
+    const obj = {
+      string: 'text',
+      number: 42,
+      float: 3.14,
+      boolean_true: true,
+      boolean_false: false,
+      null_value: null,
+      undefined_value: undefined,
+    };
+
+    const result = resolveNestedObject({ obj });
+
+    expect(result).toEqual(obj);
+  });
+
+  it('should handle empty objects and arrays', () => {
+    const obj = {
+      empty_object: {},
+      empty_array: [],
+      nested: {
+        also_empty: {},
+      },
+    };
+
+    const result = resolveNestedObject({ obj });
+
+    expect(result).toEqual(obj);
+  });
+
+  it('should handle body placeholders in nested objects', () => {
+    const body = {
+      conversationId: 'conv-123',
+      parentMessageId: 'parent-456',
+      messageId: 'msg-789',
+    };
+    const obj = {
+      metadata: {
+        conversation: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        parent: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+        count: 5,
+      },
+    };
+
+    const result = resolveNestedObject({ obj, body });
+
+    expect(result).toEqual({
+      metadata: {
+        conversation: 'conv-123',
+        parent: 'parent-456',
+        count: 5,
+      },
+    });
+  });
+
+  it('should handle custom user variables in nested objects', () => {
+    const customUserVars = {
+      CUSTOM_TOKEN: 'secret-token',
+      REGION: 'us-west-1',
+    };
+    const obj = {
+      auth: {
+        token: '{{CUSTOM_TOKEN}}',
+        region: '{{REGION}}',
+        timeout: 3000,
+      },
+    };
+
+    const result = resolveNestedObject({ obj, customUserVars });
+
+    expect(result).toEqual({
+      auth: {
+        token: 'secret-token',
+        region: 'us-west-1',
+        timeout: 3000,
+      },
+    });
+  });
+
+  it('should handle mixed placeholders in nested objects', () => {
+    const user = { id: 'user-123', email: 'test@example.com' };
+    const customUserVars = { CUSTOM_VAR: 'custom-value' };
+    const body = { conversationId: 'conv-456' };
+
+    const obj = {
+      config: {
+        user_id: '{{LIBRECHAT_USER_ID}}',
+        custom: '{{CUSTOM_VAR}}',
+        api_key: '${TEST_API_KEY}',
+        conversation: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        nested: {
+          email: '{{LIBRECHAT_USER_EMAIL}}',
+          port: 8080,
+        },
+      },
+    };
+
+    const result = resolveNestedObject({ obj, user, customUserVars, body });
+
+    expect(result).toEqual({
+      config: {
+        user_id: 'user-123',
+        custom: 'custom-value',
+        api_key: 'test-api-key-value',
+        conversation: 'conv-456',
+        nested: {
+          email: 'test@example.com',
+          port: 8080,
+        },
+      },
+    });
+  });
+
+  it('should handle Bedrock additionalModelRequestFields example', () => {
+    const obj = {
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+    };
+
+    const result = resolveNestedObject({ obj });
+
+    expect(result).toEqual({
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+      },
+      anthropic_beta: ['output-128k-2025-02-19'],
+    });
+
+    expect(typeof result.thinking).toBe('object');
+    expect(Array.isArray(result.anthropic_beta)).toBe(true);
+    expect(result.thinking).not.toBe('[object Object]');
+  });
+
+  it('should return undefined when obj is undefined', () => {
+    const result = resolveNestedObject({ obj: undefined });
+    expect(result).toBeUndefined();
+  });
+
+  it('should return null when obj is null', () => {
+    const result = resolveNestedObject({ obj: null });
+    expect(result).toBeNull();
+  });
+
+  it('should handle arrays of objects', () => {
+    const user = { id: 'user-123' };
+    const obj = {
+      items: [
+        { name: 'item1', user: '{{LIBRECHAT_USER_ID}}', count: 1 },
+        { name: 'item2', user: '{{LIBRECHAT_USER_ID}}', count: 2 },
+      ],
+    };
+
+    const result = resolveNestedObject({ obj, user });
+
+    expect(result).toEqual({
+      items: [
+        { name: 'item1', user: 'user-123', count: 1 },
+        { name: 'item2', user: 'user-123', count: 2 },
+      ],
+    });
+  });
+
+  it('should not modify the original object', () => {
+    const user = { id: 'user-123' };
+    const originalObj = {
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2000,
+        user_id: '{{LIBRECHAT_USER_ID}}',
+      },
+    };
+
+    const result = resolveNestedObject({ obj: originalObj, user });
+
+    expect(result.thinking.user_id).toBe('user-123');
+    expect(originalObj.thinking.user_id).toBe('{{LIBRECHAT_USER_ID}}');
+  });
 });
 
 describe('processMCPEnv', () => {
   beforeEach(() => {
     process.env.TEST_API_KEY = 'test-api-key-value';
-    process.env.ANOTHER_SECRET = 'another-secret-value';
+    process.env.ANOTHER_VALUE = 'another-test-value';
     process.env.OAUTH_CLIENT_ID = 'oauth-client-id-value';
     process.env.OAUTH_CLIENT_SECRET = 'oauth-client-secret-value';
     process.env.MCP_SERVER_URL = 'https://mcp.example.com';
+    process.env.MCP_PROXY_URL = 'http://proxy.example.com:8080';
   });
 
   afterEach(() => {
     delete process.env.TEST_API_KEY;
-    delete process.env.ANOTHER_SECRET;
+    delete process.env.ANOTHER_VALUE;
     delete process.env.OAUTH_CLIENT_ID;
     delete process.env.OAUTH_CLIENT_SECRET;
     delete process.env.MCP_SERVER_URL;
+    delete process.env.MCP_PROXY_URL;
   });
 
   it('should return null/undefined as-is', () => {
@@ -475,7 +1013,7 @@ describe('processMCPEnv', () => {
       command: 'mcp-server',
       env: {
         API_KEY: '${TEST_API_KEY}',
-        SECRET: '${ANOTHER_SECRET}',
+        SECRET: '${ANOTHER_VALUE}',
         PLAIN_VALUE: 'plain-text',
       },
       args: ['--key', '${TEST_API_KEY}', '--url', '${MCP_SERVER_URL}'],
@@ -488,7 +1026,7 @@ describe('processMCPEnv', () => {
       command: 'mcp-server',
       env: {
         API_KEY: 'test-api-key-value',
-        SECRET: 'another-secret-value',
+        SECRET: 'another-test-value',
         PLAIN_VALUE: 'plain-text',
       },
       args: ['--key', 'test-api-key-value', '--url', 'https://mcp.example.com'],
@@ -506,6 +1044,47 @@ describe('processMCPEnv', () => {
     expect(result).toEqual({
       type: 'websocket',
       url: 'https://mcp.example.com/ws',
+    });
+  });
+
+  it('should process outbound proxy for remote MCP options', () => {
+    const options: MCPOptions = {
+      type: 'sse',
+      url: '${MCP_SERVER_URL}/sse',
+      proxy: '${MCP_PROXY_URL}',
+    };
+
+    const result = processMCPEnv({ options });
+
+    expect(result).toEqual({
+      type: 'sse',
+      url: 'https://mcp.example.com/sse',
+      proxy: 'http://proxy.example.com:8080',
+    });
+  });
+
+  it('should not process user-controlled placeholders in outbound proxy', () => {
+    const user = createTestUser({ id: 'user-proxy-target' });
+    const body = { conversationId: 'conv-1', parentMessageId: 'parent-1', messageId: 'msg-1' };
+    const options: MCPOptions = {
+      type: 'sse',
+      url: '${MCP_SERVER_URL}/sse',
+      proxy:
+        'http://proxy.example.com/{{CUSTOM_PROXY_PATH}}/{{LIBRECHAT_USER_ID}}/{{LIBRECHAT_BODY_MESSAGEID}}',
+    };
+
+    const result = processMCPEnv({
+      options,
+      user,
+      body,
+      customUserVars: { CUSTOM_PROXY_PATH: 'tenant-proxy' },
+    });
+
+    expect(result).toEqual({
+      type: 'sse',
+      url: 'https://mcp.example.com/sse',
+      proxy:
+        'http://proxy.example.com/{{CUSTOM_PROXY_PATH}}/{{LIBRECHAT_USER_ID}}/{{LIBRECHAT_BODY_MESSAGEID}}',
     });
   });
 
@@ -633,6 +1212,49 @@ describe('processMCPEnv', () => {
         'X-Message-Id': 'msg-789',
       },
     });
+  });
+
+  it('should not resolve env vars introduced via body placeholders in MCP headers', () => {
+    const body = {
+      conversationId: '${TEST_API_KEY}',
+      parentMessageId: '${TEST_API_KEY}',
+      messageId: '${TEST_API_KEY}',
+    };
+
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        'X-Conv': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        'X-Parent': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, body });
+
+    if (!isStreamableHTTPOptions(result)) {
+      throw new Error('Expected streamable-http options');
+    }
+    expect(result.headers?.['X-Conv']).toBe('${TEST_API_KEY}');
+    expect(result.headers?.['X-Parent']).toBe('${TEST_API_KEY}');
+  });
+
+  it('should not resolve env vars introduced via customUserVars in MCP headers', () => {
+    const customUserVars = { MY_TOKEN: '${TEST_API_KEY}' };
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        Authorization: 'Bearer {{MY_TOKEN}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, customUserVars });
+
+    if (!isStreamableHTTPOptions(result)) {
+      throw new Error('Expected streamable-http options');
+    }
+    expect(result.headers?.Authorization).toBe('Bearer ${TEST_API_KEY}');
   });
 
   it('should handle mixed placeholders in OAuth configuration', () => {
@@ -773,5 +1395,696 @@ describe('processMCPEnv', () => {
     } else {
       throw new Error('Expected stdio options');
     }
+  });
+
+  describe('non-string values (type guard tests)', () => {
+    it('should handle numeric values in env without crashing', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          PORT: 8080 as unknown as string,
+          TIMEOUT: 30000 as unknown as string,
+          API_KEY: '${TEST_API_KEY}',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.PORT).toBe('8080');
+        expect(result.env?.TIMEOUT).toBe('30000');
+        expect(result.env?.API_KEY).toBe('test-api-key-value');
+      }
+    });
+
+    it('should handle boolean values in env without crashing', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          DEBUG: true as unknown as string,
+          PRODUCTION: false as unknown as string,
+          API_KEY: '${TEST_API_KEY}',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.DEBUG).toBe('true');
+        expect(result.env?.PRODUCTION).toBe('false');
+        expect(result.env?.API_KEY).toBe('test-api-key-value');
+      }
+    });
+
+    it('should handle numeric values in args without crashing', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: ['--port', 8080 as unknown as string, '--timeout', 30000 as unknown as string],
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStdioOptions(result)) {
+        expect(result.args).toEqual(['--port', '8080', '--timeout', '30000']);
+      }
+    });
+
+    it('should handle null and undefined values in env', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          NULL_VALUE: null as unknown as string,
+          UNDEFINED_VALUE: undefined as unknown as string,
+          NORMAL_VALUE: 'normal',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.NULL_VALUE).toBe('null');
+        expect(result.env?.UNDEFINED_VALUE).toBe('undefined');
+        expect(result.env?.NORMAL_VALUE).toBe('normal');
+      }
+    });
+
+    it('should handle numeric values in headers without crashing', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-Timeout': 5000 as unknown as string,
+          'X-Retry-Count': 3 as unknown as string,
+          'Content-Type': 'application/json',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Timeout']).toBe('5000');
+        expect(result.headers?.['X-Retry-Count']).toBe('3');
+        expect(result.headers?.['Content-Type']).toBe('application/json');
+      }
+    });
+
+    it('should handle numeric URL values', () => {
+      const options: MCPOptions = {
+        type: 'websocket',
+        url: 12345 as unknown as string,
+      };
+
+      const result = processMCPEnv({ options });
+
+      expect((result as unknown as { url?: string }).url).toBe('12345');
+    });
+
+    it('should handle mixed numeric and placeholder values', () => {
+      const user = createTestUser({ id: 'user-123' });
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          PORT: 8080 as unknown as string,
+          USER_ID: '{{LIBRECHAT_USER_ID}}',
+          API_KEY: '${TEST_API_KEY}',
+        },
+      };
+
+      const result = processMCPEnv({ options, user });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.PORT).toBe('8080');
+        expect(result.env?.USER_ID).toBe('user-123');
+        expect(result.env?.API_KEY).toBe('test-api-key-value');
+      }
+    });
+
+    it('should handle objects and arrays in env values', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          OBJECT_VALUE: { nested: 'value' } as unknown as string,
+          ARRAY_VALUE: ['item1', 'item2'] as unknown as string,
+          STRING_VALUE: 'normal',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.OBJECT_VALUE).toBe('[object Object]');
+        expect(result.env?.ARRAY_VALUE).toBe('item1,item2');
+        expect(result.env?.STRING_VALUE).toBe('normal');
+      }
+    });
+
+    it('should not crash with numeric body field values', () => {
+      const body = {
+        conversationId: 12345 as unknown as string,
+        parentMessageId: 'parent-456',
+        messageId: 'msg-789',
+      };
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: [],
+        env: {
+          CONV_ID: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+          PORT: 8080 as unknown as string,
+        },
+      };
+
+      expect(() => processMCPEnv({ options, body })).not.toThrow();
+      const result = processMCPEnv({ options, body });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.PORT).toBe('8080');
+      }
+    });
+  });
+
+  describe('admin-provided API key header injection', () => {
+    it('should apply admin-provided bearer API key to Authorization header', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'my-secret-api-key',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer my-secret-api-key');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should apply admin-provided basic API key to Authorization header', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'basic',
+          key: 'base64encodedcreds',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Basic base64encodedcreds');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should apply admin-provided custom API key to custom header', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'custom',
+          custom_header: 'X-Api-Key',
+          key: 'my-custom-api-key',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Api-Key']).toBe('my-custom-api-key');
+        expect(result.headers?.Authorization).toBeUndefined();
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should use default X-Api-Key header when custom_header is not provided', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'custom',
+          key: 'my-api-key',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Api-Key']).toBe('my-api-key');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should not apply user-provided API key (handled via placeholders)', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'user',
+          authorization_type: 'bearer',
+        },
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        // User-provided key should NOT be injected - placeholder remains
+        expect(result.headers?.Authorization).toBe('Bearer {{MCP_API_KEY}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should merge admin API key header with existing headers', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Custom-Header': 'custom-value',
+        },
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'my-api-key',
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['Content-Type']).toBe('application/json');
+        expect(result.headers?.['X-Custom-Header']).toBe('custom-value');
+        expect(result.headers?.Authorization).toBe('Bearer my-api-key');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should not inject header when apiKey.key is missing', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          // key is missing
+        },
+      };
+
+      const result = processMCPEnv({ options });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBeUndefined();
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+  });
+
+  describe('dbSourced flag', () => {
+    beforeEach(() => {
+      process.env.TEST_API_KEY = 'test-api-key-value';
+      process.env.DATABASE_URL = 'mongodb://secret-host:27017/db';
+    });
+
+    afterEach(() => {
+      delete process.env.TEST_API_KEY;
+      delete process.env.DATABASE_URL;
+    });
+
+    it('should resolve customUserVars when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+        },
+      };
+
+      const result = processMCPEnv({
+        options,
+        dbSourced: true,
+        customUserVars: { MCP_API_KEY: 'user-secret-key' },
+      });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer user-secret-key');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should NOT resolve ${ENV_VAR} when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-Leaked': '${DATABASE_URL}',
+          'X-Key': '${TEST_API_KEY}',
+        },
+      };
+
+      const result = processMCPEnv({ options, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Leaked']).toBe('${DATABASE_URL}');
+        expect(result.headers?.['X-Key']).toBe('${TEST_API_KEY}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should NOT resolve {{LIBRECHAT_USER_*}} when dbSourced is true', () => {
+      const user = createTestUser({ id: 'user-123', email: 'test@example.com' });
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+          'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      };
+
+      const result = processMCPEnv({ options, user, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-User-Id']).toBe('{{LIBRECHAT_USER_ID}}');
+        expect(result.headers?.['X-User-Email']).toBe('{{LIBRECHAT_USER_EMAIL}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should NOT resolve {{LIBRECHAT_OPENID_*}} when dbSourced is true', () => {
+      const user = {
+        ...createTestUser({ id: 'user-123', provider: 'openid' }),
+        federatedTokens: {
+          access_token: 'oidc-access-token',
+          id_token: 'oidc-id-token',
+          refresh_token: 'oidc-refresh-token',
+          token_type: 'Bearer',
+          expires_at: Date.now() + 3600000,
+        },
+      };
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        },
+      };
+
+      const result = processMCPEnv({ options, user, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should NOT resolve {{LIBRECHAT_BODY_*}} when dbSourced is true', () => {
+      const body = {
+        conversationId: 'conv-123',
+        parentMessageId: 'parent-456',
+        messageId: 'msg-789',
+      };
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        },
+      };
+
+      const result = processMCPEnv({ options, body, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Conversation']).toBe('{{LIBRECHAT_BODY_CONVERSATIONID}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should resolve customUserVars but block all other placeholders when dbSourced is true', () => {
+      const user = createTestUser({ id: 'user-123' });
+      const body = { conversationId: 'conv-123', parentMessageId: 'p-1', messageId: 'm-1' };
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: '${DATABASE_URL}',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+          'X-Env-Leak': '${TEST_API_KEY}',
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+          'X-Body': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        },
+      };
+
+      const result = processMCPEnv({
+        options,
+        user,
+        body,
+        dbSourced: true,
+        customUserVars: { MCP_API_KEY: 'user-key-value' },
+      });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer user-key-value');
+        expect(result.headers?.['X-Env-Leak']).toBe('${TEST_API_KEY}');
+        expect(result.headers?.['X-User-Id']).toBe('{{LIBRECHAT_USER_ID}}');
+        expect(result.headers?.['X-Body']).toBe('{{LIBRECHAT_BODY_CONVERSATIONID}}');
+        expect(result.url).toBe('${DATABASE_URL}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should resolve all placeholders when dbSourced is false (default)', () => {
+      const user = createTestUser({ id: 'user-123' });
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+          'X-Env': '${TEST_API_KEY}',
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+        },
+      };
+
+      const result = processMCPEnv({
+        options,
+        user,
+        dbSourced: false,
+        customUserVars: { MCP_API_KEY: 'user-key-value' },
+      });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer user-key-value');
+        expect(result.headers?.['X-Env']).toBe('test-api-key-value');
+        expect(result.headers?.['X-User-Id']).toBe('user-123');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should apply dbSourced to env, args, and URL — not just headers', () => {
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'mcp-server',
+        args: ['--key', '${TEST_API_KEY}', '--custom', '{{MY_VAR}}'],
+        env: {
+          SECRET: '${DATABASE_URL}',
+          CUSTOM: '{{MY_VAR}}',
+        },
+      };
+
+      const result = processMCPEnv({
+        options,
+        dbSourced: true,
+        customUserVars: { MY_VAR: 'resolved-value' },
+      });
+
+      if (isStdioOptions(result)) {
+        expect(result.env?.SECRET).toBe('${DATABASE_URL}');
+        expect(result.env?.CUSTOM).toBe('resolved-value');
+        expect(result.args?.[1]).toBe('${TEST_API_KEY}');
+        expect(result.args?.[3]).toBe('resolved-value');
+      } else {
+        throw new Error('Expected stdio options');
+      }
+    });
+
+    it('should still apply admin API key header injection when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'admin-managed-key',
+        },
+      };
+
+      const result = processMCPEnv({ options, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer admin-managed-key');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should block env vars in OAuth config when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        oauth: {
+          client_id: '${TEST_API_KEY}',
+          client_secret: '${DATABASE_URL}',
+          token_url: 'https://auth.example.com/token',
+          token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        },
+      };
+
+      const result = processMCPEnv({ options, dbSourced: true });
+
+      const oauth = (result as { oauth?: Record<string, unknown> }).oauth;
+      expect(oauth?.client_id).toBe('${TEST_API_KEY}');
+      expect(oauth?.client_secret).toBe('${DATABASE_URL}');
+    });
+
+    it('should resolve customUserVars in OAuth config when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        oauth: {
+          client_id: '{{MY_CLIENT_ID}}',
+          client_secret: '{{MY_CLIENT_SECRET}}',
+          token_url: 'https://auth.example.com/token',
+          token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        },
+      };
+
+      const result = processMCPEnv({
+        options,
+        dbSourced: true,
+        customUserVars: { MY_CLIENT_ID: 'resolved-client', MY_CLIENT_SECRET: 'resolved-secret' },
+      });
+
+      const oauth = (result as { oauth?: Record<string, unknown> }).oauth;
+      expect(oauth?.client_id).toBe('resolved-client');
+      expect(oauth?.client_secret).toBe('resolved-secret');
+    });
+
+    it('should leave unresolved customUserVars as literal placeholders', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+        },
+      };
+
+      // No customUserVars provided — placeholder should remain
+      const result = processMCPEnv({ options, dbSourced: true });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.Authorization).toBe('Bearer {{MCP_API_KEY}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('should not modify the original options when dbSourced is true', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: '${DATABASE_URL}',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+          'X-Env': '${TEST_API_KEY}',
+        },
+      };
+
+      const originalUrl = options.url;
+      const originalAuth = (options as { headers: Record<string, string> }).headers.Authorization;
+
+      processMCPEnv({
+        options,
+        dbSourced: true,
+        customUserVars: { MCP_API_KEY: 'resolved' },
+      });
+
+      expect(options.url).toBe(originalUrl);
+      expect((options as { headers: Record<string, string> }).headers.Authorization).toBe(
+        originalAuth,
+      );
+    });
+
+    it('should handle empty customUserVars object without errors', () => {
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-Key': '${TEST_API_KEY}',
+          'X-Custom': '{{MCP_API_KEY}}',
+        },
+      };
+
+      const result = processMCPEnv({ options, dbSourced: true, customUserVars: {} });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Key']).toBe('${TEST_API_KEY}');
+        expect(result.headers?.['X-Custom']).toBe('{{MCP_API_KEY}}');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
+
+    it('dbSourced undefined should behave like false (resolve everything)', () => {
+      const user = createTestUser({ id: 'user-abc' });
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com',
+        headers: {
+          'X-Env': '${TEST_API_KEY}',
+          'X-User': '{{LIBRECHAT_USER_ID}}',
+        },
+      };
+
+      const result = processMCPEnv({ options, user });
+
+      if (isStreamableHTTPOptions(result)) {
+        expect(result.headers?.['X-Env']).toBe('test-api-key-value');
+        expect(result.headers?.['X-User']).toBe('user-abc');
+      } else {
+        throw new Error('Expected streamable-http options');
+      }
+    });
   });
 });

@@ -1,5 +1,4 @@
 // --- Mocks ---
-jest.mock('tiktoken');
 jest.mock('fs');
 jest.mock('path');
 jest.mock('node-fetch');
@@ -31,6 +30,20 @@ jest.mock('@librechat/api', () => ({
     tokenCredits: 1000,
     startBalance: 1000,
   })),
+  getAvatarFileStrategy: jest.fn((config, fallbackStrategy) => {
+    const { FileSources } = jest.requireActual('librechat-data-provider');
+    if (config?.fileStrategies) {
+      return config.fileStrategies.avatar ?? config.fileStrategies.default ?? config.fileStrategy;
+    }
+    return config?.fileStrategy ?? fallbackStrategy ?? FileSources.local;
+  }),
+  getAvatarSaveParams: jest.fn((strategy, params) => {
+    const { FileSources } = jest.requireActual('librechat-data-provider');
+    return strategy === FileSources.s3 || strategy === FileSources.cloudfront
+      ? { ...params, basePath: 'avatars' }
+      : params;
+  }),
+  resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
 }));
 jest.mock('~/server/services/Config/EndpointService', () => ({
   config: {},
@@ -48,6 +61,10 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
+const { FileSources } = require('librechat-data-provider');
+const { findUser } = require('~/models');
+const { resolveAppConfigForUser } = require('@librechat/api');
+const { getAppConfig } = require('~/server/services/Config');
 const { setupSaml, getCertificateContent } = require('./samlStrategy');
 
 // Configure fs mock
@@ -55,10 +72,14 @@ jest.mocked(fs).existsSync = jest.fn();
 jest.mocked(fs).statSync = jest.fn();
 jest.mocked(fs).readFileSync = jest.fn();
 
-// To capture the verify callback from the strategy, we grab it from the mock constructor
+// To capture the verify callback from the strategy, we grab it from the mock constructor.
+// setupSaml() registers both 'saml' (regular) and 'samlAdmin' strategies, so we capture
+// only the first callback per setupSaml() call (the regular one).
 let verifyCallback;
 SamlStrategy.mockImplementation((options, verify) => {
-  verifyCallback = verify;
+  if (!verifyCallback) {
+    verifyCallback = verify;
+  }
   return { name: 'saml', options, verify };
 });
 
@@ -216,6 +237,8 @@ describe('setupSaml', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Reset so the mock captures the regular (non-admin) callback on next setupSaml() call
+    verifyCallback = null;
 
     // Configure mocks
     const { findUser, createUser, updateUser } = require('~/models');
@@ -425,11 +448,46 @@ u7wlOSk+oFzDIO/UILIA
   });
 
   it('should attempt to download and save the avatar if picture is provided', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
     const profile = { ...baseProfile };
 
     const { user } = await validate(profile);
+    const strategyResult =
+      getStrategyFunctions.mock.results[getStrategyFunctions.mock.results.length - 1];
+    const { saveBuffer } = strategyResult.value;
+    const [saveParams] = saveBuffer.mock.calls[0];
 
     expect(fetch).toHaveBeenCalled();
+    expect(saveParams).toEqual(
+      expect.objectContaining({
+        fileName: 'hashed-token.png',
+        userId: 'mock-user-id',
+        buffer: expect.any(Buffer),
+      }),
+    );
+    expect(saveParams).not.toHaveProperty('basePath');
+    expect(user.avatar).toBe('/fake/path/to/avatar.png');
+  });
+
+  it('should save CloudFront SAML avatars under the shared avatar prefix', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+    getAppConfig.mockResolvedValueOnce({ fileStrategies: { avatar: FileSources.cloudfront } });
+    const profile = { ...baseProfile };
+
+    const { user } = await validate(profile);
+    const strategyResult =
+      getStrategyFunctions.mock.results[getStrategyFunctions.mock.results.length - 1];
+    const { saveBuffer } = strategyResult.value;
+    const [saveParams] = saveBuffer.mock.calls[0];
+
+    expect(getStrategyFunctions).toHaveBeenLastCalledWith(FileSources.cloudfront);
+    expect(saveParams).toEqual(
+      expect.objectContaining({
+        basePath: 'avatars',
+        fileName: 'hashed-token.png',
+        userId: 'mock-user-id',
+      }),
+    );
     expect(user.avatar).toBe('/fake/path/to/avatar.png');
   });
 
@@ -440,5 +498,51 @@ u7wlOSk+oFzDIO/UILIA
     await validate(profile);
 
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('should pass the found user to resolveAppConfigForUser', async () => {
+    const existingUser = {
+      _id: 'tenant-user-id',
+      provider: 'saml',
+      samlId: 'saml-1234',
+      email: 'test@example.com',
+      tenantId: 'tenant-c',
+      role: 'USER',
+    };
+    findUser.mockResolvedValue(existingUser);
+
+    const profile = { ...baseProfile };
+    await validate(profile);
+
+    expect(resolveAppConfigForUser).toHaveBeenCalledWith(getAppConfig, existingUser);
+  });
+
+  it('should use baseConfig for new SAML user without calling resolveAppConfigForUser', async () => {
+    const profile = { ...baseProfile };
+    await validate(profile);
+
+    expect(resolveAppConfigForUser).not.toHaveBeenCalled();
+    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+  });
+
+  it('should block login when tenant config restricts the domain', async () => {
+    const { isEmailDomainAllowed } = require('@librechat/api');
+    const existingUser = {
+      _id: 'tenant-blocked',
+      provider: 'saml',
+      samlId: 'saml-1234',
+      email: 'test@example.com',
+      tenantId: 'tenant-restrict',
+      role: 'USER',
+    };
+    findUser.mockResolvedValue(existingUser);
+    resolveAppConfigForUser.mockResolvedValue({
+      registration: { allowedDomains: ['other.com'] },
+    });
+    isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+    const profile = { ...baseProfile };
+    const { user } = await validate(profile);
+    expect(user).toBe(false);
   });
 });

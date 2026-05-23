@@ -18,6 +18,14 @@ jest.mock('../utils', () => ({
   },
 }));
 
+const mockIsSSRFTarget = jest.fn().mockReturnValue(false);
+const mockResolveHostnameSSRF = jest.fn().mockResolvedValue(false);
+
+jest.mock('../auth', () => ({
+  isSSRFTarget: (...args: unknown[]) => mockIsSSRFTarget(...args),
+  resolveHostnameSSRF: (...args: unknown[]) => mockResolveHostnameSSRF(...args),
+}));
+
 describe('web.ts', () => {
   describe('extractWebSearchEnvVars', () => {
     it('should return empty array if config is undefined', () => {
@@ -121,6 +129,7 @@ describe('web.ts', () => {
       expect(result.authResult).toHaveProperty('searchProvider', 'serper');
       expect(result.authResult).toHaveProperty('scraperProvider', 'firecrawl');
       expect(['jina', 'cohere']).toContain(result.authResult.rerankerType as string);
+      expect(result.authResult.safeSearch).toBe(SafeSearchTypes.MODERATE);
     });
 
     it('should return authenticated=false when a required category is not authenticated', async () => {
@@ -242,6 +251,118 @@ describe('web.ts', () => {
       expect(result.authResult).toHaveProperty('firecrawlApiKey', 'test-api-key');
       // Optional URL should not be in the result
       expect(result.authResult.firecrawlApiUrl).toBeUndefined();
+    });
+
+    it('should ignore user-provided Tavily custom URLs unless explicitly enabled', async () => {
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          TAVILY_API_KEY: 'system-tavily-api-key',
+          TAVILY_SEARCH_URL: 'https://api.tavily.com/search',
+          TAVILY_EXTRACT_URL: 'https://api.tavily.com/extract',
+        };
+
+        const tavilyConfig = {
+          tavilyApiKey: '${TAVILY_API_KEY}',
+          tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+          tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
+          searchProvider: 'tavily' as SearchProviders,
+          scraperProvider: 'tavily' as ScraperProviders,
+          rerankerType: 'none' as RerankerTypes,
+        } as TWebSearchConfig;
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'TAVILY_API_KEY') {
+              result[field] = 'system-tavily-api-key';
+            } else if (field === 'TAVILY_SEARCH_URL') {
+              result[field] = 'https://attacker.example/search';
+            } else if (field === 'TAVILY_EXTRACT_URL') {
+              result[field] = 'https://attacker.example/extract';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: tavilyConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authenticated).toBe(true);
+        expect(result.authResult.searchProvider).toBe('tavily');
+        expect(result.authResult.scraperProvider).toBe('tavily');
+        expect(result.authResult.tavilyApiKey).toBe('system-tavily-api-key');
+        expect(result.authResult.tavilySearchUrl).toBeUndefined();
+        expect(result.authResult.tavilyExtractUrl).toBeUndefined();
+        expect(result.authTypes).toEqual([
+          ['providers', AuthType.SYSTEM_DEFINED],
+          ['scrapers', AuthType.SYSTEM_DEFINED],
+          ['rerankers', AuthType.SYSTEM_DEFINED],
+        ]);
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
+    it('should allow user-provided Tavily custom URLs when explicitly enabled', async () => {
+      mockIsSSRFTarget.mockReturnValue(false);
+      mockResolveHostnameSSRF.mockResolvedValue(false);
+
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          TAVILY_API_KEY: 'system-tavily-api-key',
+          TAVILY_SEARCH_URL: AuthType.USER_PROVIDED,
+          TAVILY_EXTRACT_URL: AuthType.USER_PROVIDED,
+        };
+
+        const tavilyConfig = {
+          tavilyApiKey: '${TAVILY_API_KEY}',
+          tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+          tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
+          searchProvider: 'tavily' as SearchProviders,
+          scraperProvider: 'tavily' as ScraperProviders,
+          rerankerType: 'none' as RerankerTypes,
+        } as TWebSearchConfig;
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'TAVILY_API_KEY') {
+              result[field] = 'system-tavily-api-key';
+            } else if (field === 'TAVILY_SEARCH_URL') {
+              result[field] = 'https://tenant-search.example/search';
+            } else if (field === 'TAVILY_EXTRACT_URL') {
+              result[field] = 'https://tenant-extract.example/extract';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: tavilyConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authenticated).toBe(true);
+        expect(result.authResult.tavilySearchUrl).toBe('https://tenant-search.example/search');
+        expect(result.authResult.tavilyExtractUrl).toBe('https://tenant-extract.example/extract');
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('tenant-search.example');
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('tenant-extract.example');
+        expect(result.authTypes).toEqual([
+          ['providers', AuthType.USER_PROVIDED],
+          ['scrapers', AuthType.USER_PROVIDED],
+          ['rerankers', AuthType.SYSTEM_DEFINED],
+        ]);
+      } finally {
+        process.env = originalEnv;
+      }
     });
 
     it('should preserve safeSearch setting from webSearchConfig', async () => {
@@ -568,8 +689,7 @@ describe('web.ts', () => {
       const originalEnv = process.env;
       process.env = {
         ...originalEnv,
-        SERPER_API_KEY: 'test-key',
-        // Missing other keys to force authentication failure
+        JINA_API_KEY: 'test-key',
       };
 
       // Initialize webSearchConfig with environment variable references
@@ -589,10 +709,9 @@ describe('web.ts', () => {
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
         authFields.forEach((field: string) => {
-          if (field === 'SERPER_API_KEY') {
+          if (field === 'JINA_API_KEY') {
             result[field] = 'test-key';
           }
-          // Other fields are intentionally missing
         });
         return Promise.resolve(result);
       });
@@ -722,6 +841,141 @@ describe('web.ts', () => {
       expect(providerCalls.length).toBe(1);
     });
 
+    it('should authenticate Tavily as a search provider and pass options through', async () => {
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          TAVILY_SEARCH_URL: 'https://api.tavily.com/search',
+        };
+
+        const webSearchConfig: TCustomConfig['webSearch'] = {
+          tavilyApiKey: '${TAVILY_API_KEY}',
+          tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+          safeSearch: SafeSearchTypes.MODERATE,
+          searchProvider: 'tavily' as SearchProviders,
+          scraperProvider: 'firecrawl' as ScraperProviders,
+          rerankerType: 'none' as RerankerTypes,
+          tavilySearchOptions: {
+            searchDepth: 'advanced',
+            maxResults: 5,
+            includeRawContent: 'markdown',
+          },
+        };
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'TAVILY_API_KEY') {
+              result[field] = 'tavily-api-key';
+            } else if (field === 'TAVILY_SEARCH_URL') {
+              result[field] = 'https://api.tavily.com/search';
+            } else if (field === 'FIRECRAWL_API_URL') {
+              result[field] = 'https://api.firecrawl.dev';
+            } else {
+              result[field] = 'test-api-key';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authenticated).toBe(true);
+        expect(result.authResult.searchProvider).toBe('tavily');
+        expect(result.authResult.tavilyApiKey).toBe('tavily-api-key');
+        expect(result.authResult.tavilySearchUrl).toBe('https://api.tavily.com/search');
+        expect(result.authResult.tavilySearchOptions).toEqual(webSearchConfig.tavilySearchOptions);
+        expect(result.authResult.safeSearch).toBeUndefined();
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
+    it('should fail authentication when Tavily search API key is missing', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        tavilyApiKey: '${TAVILY_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'tavily' as SearchProviders,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+        rerankerType: 'none' as RerankerTypes,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field !== 'TAVILY_API_KEY') {
+            result[field] =
+              field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(false);
+      const providersAuthType = result.authTypes.find(
+        ([category]) => category === 'providers',
+      )?.[1];
+      expect(providersAuthType).toBe(AuthType.USER_PROVIDED);
+    });
+
+    it('should authenticate Tavily as both search provider and scraper with a shared key', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        tavilyApiKey: '${TAVILY_API_KEY}',
+        tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+        tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'tavily' as SearchProviders,
+        scraperProvider: 'tavily' as ScraperProviders,
+        rerankerType: 'none' as RerankerTypes,
+        tavilyScraperOptions: {
+          extractDepth: 'advanced',
+          timeout: 20000,
+        },
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'TAVILY_API_KEY') {
+            result[field] = 'tavily-api-key';
+          } else if (field === 'TAVILY_SEARCH_URL') {
+            result[field] = 'https://api.tavily.com/search';
+          } else if (field === 'TAVILY_EXTRACT_URL') {
+            result[field] = 'https://api.tavily.com/extract';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searchProvider).toBe('tavily');
+      expect(result.authResult.scraperProvider).toBe('tavily');
+      expect(result.authResult.tavilyApiKey).toBe('tavily-api-key');
+      expect(result.authResult.tavilyScraperOptions).toEqual(webSearchConfig.tavilyScraperOptions);
+      expect(result.authResult.scraperTimeout).toBe(20000);
+    });
+
     it('should only check the specified scraperProvider', async () => {
       // Initialize a webSearchConfig with a specific scraperProvider
       const webSearchConfig: TCustomConfig['webSearch'] = {
@@ -808,6 +1062,87 @@ describe('web.ts', () => {
         call[0].authFields.includes('COHERE_API_KEY'),
       );
       expect(cohereCalls.length).toBe(0);
+    });
+
+    it('should handle a rerankerType of `none`', async () => {
+      // Initialize a webSearchConfig with a specific rerankerType
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        rerankerType: 'none' as RerankerTypes,
+      };
+
+      // Mock successful authentication
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.rerankerType).toBe('none');
+
+      // Verify that we didn't request any reranker keys
+      const cohereCalls = mockLoadAuthValues.mock.calls.filter(
+        (call) =>
+          call[0].authFields.includes('COHERE_API_KEY') ||
+          call[0].authFields.includes('JINA_API_KEY'),
+      );
+      expect(cohereCalls.length).toBe(0);
+    });
+
+    it('should fallback to no reranker when rerankerType is omitted and no reranker is authenticated', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
+        cohereApiKey: '${COHERE_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'searxng' as SearchProviders,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'SEARXNG_INSTANCE_URL') {
+            result[field] = 'https://search.example';
+          } else if (field === 'SEARXNG_API_KEY') {
+            result[field] = 'searxng-api-key';
+          } else if (field === 'FIRECRAWL_API_KEY') {
+            result[field] = 'firecrawl-api-key';
+          } else if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'https://api.firecrawl.dev';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.rerankerType).toBe('none');
+      expect(result.authTypes).toContainEqual(['rerankers', AuthType.SYSTEM_DEFINED]);
     });
 
     it('should handle invalid specified service gracefully', async () => {
@@ -1117,6 +1452,76 @@ describe('web.ts', () => {
       });
     });
 
+    it('should not use tavilyScraperOptions.timeout for firecrawl scraper', async () => {
+      const webSearchConfig = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        tavilyApiKey: '${TAVILY_API_KEY}',
+        jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+        tavilyScraperOptions: {
+          timeout: 22000,
+        },
+      } as TCustomConfig['webSearch'];
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.scraperTimeout).toBe(7500);
+    });
+
+    it('should use tavilyScraperOptions.timeout for tavily scraper', async () => {
+      const webSearchConfig = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        tavilyApiKey: '${TAVILY_API_KEY}',
+        jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'tavily' as ScraperProviders,
+        firecrawlOptions: {
+          timeout: 12000,
+        },
+        tavilyScraperOptions: {
+          timeout: 22000,
+        },
+      } as TCustomConfig['webSearch'];
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.scraperTimeout).toBe(22000);
+    });
+
     it('should handle firecrawlOptions.formats when only formats is provided', async () => {
       // Initialize a webSearchConfig with only firecrawlOptions.formats
       const webSearchConfig = {
@@ -1225,6 +1630,528 @@ describe('web.ts', () => {
       expect(result.authenticated).toBe(true);
       expect(result.authResult.scraperTimeout).toBe(7500); // Should use default timeout
       expect(result.authResult.firecrawlOptions).toBeUndefined(); // Should be undefined
+    });
+  });
+
+  describe('SSRF protection for user-provided URLs', () => {
+    const userId = 'test-user-id';
+    let mockLoadAuthValues: jest.Mock;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockLoadAuthValues = jest.fn();
+      mockIsSSRFTarget.mockReturnValue(false);
+      mockResolveHostnameSSRF.mockResolvedValue(false);
+    });
+
+    it('should block user-provided jinaApiUrl targeting localhost', async () => {
+      mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === 'localhost');
+
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        rerankerType: 'jina' as RerankerTypes,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'JINA_API_URL') {
+            result[field] = 'http://localhost:8080/rerank';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.jinaApiUrl).toBeUndefined();
+      expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost');
+    });
+
+    it('should block user-provided firecrawlApiUrl resolving to private IP', async () => {
+      mockResolveHostnameSSRF.mockImplementation((hostname: string) =>
+        Promise.resolve(hostname === 'evil.internal-service.com'),
+      );
+
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'https://evil.internal-service.com/scrape';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.firecrawlApiUrl).toBeUndefined();
+      expect(result.authenticated).toBe(true);
+      const scrapersAuth = result.authTypes.find(([c]) => c === 'scrapers')?.[1];
+      expect(scrapersAuth).toBe(AuthType.USER_PROVIDED);
+    });
+
+    it('should ignore user-provided tavilySearchUrl without admin opt-in', async () => {
+      mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === 'localhost');
+
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        tavilyApiKey: '${TAVILY_API_KEY}',
+        tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'tavily' as SearchProviders,
+        rerankerType: 'none' as RerankerTypes,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'TAVILY_SEARCH_URL') {
+            result[field] = 'http://localhost:8080/search';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.tavilySearchUrl).toBeUndefined();
+      expect(result.authResult.searchProvider).toBe('tavily');
+      expect(result.authenticated).toBe(true);
+      expect(mockIsSSRFTarget).not.toHaveBeenCalled();
+    });
+
+    it('should ignore user-provided tavilyExtractUrl without admin opt-in', async () => {
+      mockResolveHostnameSSRF.mockImplementation((hostname: string) =>
+        Promise.resolve(hostname === 'extract.internal-service.com'),
+      );
+
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        tavilyApiKey: '${TAVILY_API_KEY}',
+        tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'tavily' as ScraperProviders,
+        rerankerType: 'none' as RerankerTypes,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'TAVILY_EXTRACT_URL') {
+            result[field] = 'https://extract.internal-service.com/extract';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.tavilyExtractUrl).toBeUndefined();
+      expect(result.authResult.scraperProvider).toBe('tavily');
+      expect(result.authenticated).toBe(true);
+      const scrapersAuth = result.authTypes.find(([c]) => c === 'scrapers')?.[1];
+      expect(scrapersAuth).toBe(AuthType.USER_PROVIDED);
+      expect(mockResolveHostnameSSRF).not.toHaveBeenCalled();
+    });
+
+    it('should block opted-in tavilySearchUrl targeting localhost', async () => {
+      mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === 'localhost');
+
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          TAVILY_SEARCH_URL: AuthType.USER_PROVIDED,
+        };
+
+        const webSearchConfig: TCustomConfig['webSearch'] = {
+          tavilyApiKey: '${TAVILY_API_KEY}',
+          tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          safeSearch: SafeSearchTypes.MODERATE,
+          searchProvider: 'tavily' as SearchProviders,
+          rerankerType: 'none' as RerankerTypes,
+        };
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'TAVILY_SEARCH_URL') {
+              result[field] = 'http://localhost:8080/search';
+            } else {
+              result[field] = 'test-api-key';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authResult.tavilySearchUrl).toBeUndefined();
+        expect(result.authResult.searchProvider).toBe('tavily');
+        expect(result.authenticated).toBe(true);
+        expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost');
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
+    it('should block opted-in tavilyExtractUrl resolving to a private host', async () => {
+      mockResolveHostnameSSRF.mockImplementation((hostname: string) =>
+        Promise.resolve(hostname === 'extract.internal-service.com'),
+      );
+
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          TAVILY_EXTRACT_URL: AuthType.USER_PROVIDED,
+        };
+
+        const webSearchConfig: TCustomConfig['webSearch'] = {
+          serperApiKey: '${SERPER_API_KEY}',
+          tavilyApiKey: '${TAVILY_API_KEY}',
+          tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
+          safeSearch: SafeSearchTypes.MODERATE,
+          scraperProvider: 'tavily' as ScraperProviders,
+          rerankerType: 'none' as RerankerTypes,
+        };
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'TAVILY_EXTRACT_URL') {
+              result[field] = 'https://extract.internal-service.com/extract';
+            } else {
+              result[field] = 'test-api-key';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authResult.tavilyExtractUrl).toBeUndefined();
+        expect(result.authResult.scraperProvider).toBe('tavily');
+        expect(result.authenticated).toBe(true);
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('extract.internal-service.com');
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
+    it('should block user-provided searxngInstanceUrl targeting metadata endpoint', async () => {
+      mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === '169.254.169.254');
+
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'searxng' as SearchProviders,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'SEARXNG_INSTANCE_URL') {
+            result[field] = 'http://169.254.169.254/latest/meta-data';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.searxngInstanceUrl).toBeUndefined();
+      expect(result.authenticated).toBe(false);
+    });
+
+    it('should allow system-defined URLs even if they match SSRF patterns', async () => {
+      mockIsSSRFTarget.mockReturnValue(true);
+
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          JINA_API_KEY: 'system-jina-key',
+          JINA_API_URL: 'http://jina-internal:8080/rerank',
+        };
+
+        const webSearchConfig: TCustomConfig['webSearch'] = {
+          serperApiKey: '${SERPER_API_KEY}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          jinaApiKey: '${JINA_API_KEY}',
+          jinaApiUrl: '${JINA_API_URL}',
+          safeSearch: SafeSearchTypes.MODERATE,
+          rerankerType: 'jina' as RerankerTypes,
+        };
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'JINA_API_KEY') {
+              result[field] = 'system-jina-key';
+            } else if (field === 'JINA_API_URL') {
+              result[field] = 'http://jina-internal:8080/rerank';
+            } else {
+              result[field] = 'test-api-key';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authResult.jinaApiUrl).toBe('http://jina-internal:8080/rerank');
+        expect(result.authenticated).toBe(true);
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
+    it('should reject URLs with invalid format', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'not-a-valid-url';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.firecrawlApiUrl).toBeUndefined();
+      expect(result.authenticated).toBe(true);
+      const scrapersAuth = result.authTypes.find(([c]) => c === 'scrapers')?.[1];
+      expect(scrapersAuth).toBe(AuthType.USER_PROVIDED);
+    });
+
+    it('should reject non-HTTP schemes like file://', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'file:///etc/passwd';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.firecrawlApiUrl).toBeUndefined();
+      expect(result.authenticated).toBe(true);
+    });
+
+    it('should allow legitimate external URLs', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        jinaApiUrl: '${JINA_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+        rerankerType: 'jina' as RerankerTypes,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'https://api.firecrawl.dev';
+          } else if (field === 'JINA_API_URL') {
+            result[field] = 'https://api.jina.ai/v1/rerank';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.firecrawlApiUrl).toBe('https://api.firecrawl.dev');
+      expect(result.authResult.jinaApiUrl).toBe('https://api.jina.ai/v1/rerank');
+      expect(result.authenticated).toBe(true);
+    });
+
+    it('should fail required URL field and mark category unauthenticated', async () => {
+      mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === '127.0.0.1');
+
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        searxngApiKey: '${SEARXNG_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'searxng' as SearchProviders,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'SEARXNG_INSTANCE_URL') {
+            result[field] = 'http://127.0.0.1:8888/search';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(false);
+      const providersAuthType = result.authTypes.find(
+        ([category]) => category === 'providers',
+      )?.[1];
+      expect(providersAuthType).toBe(AuthType.USER_PROVIDED);
+    });
+
+    it('should report SYSTEM_DEFINED when only user-provided field is a stripped SSRF URL', async () => {
+      mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === 'localhost');
+
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          JINA_API_KEY: 'system-jina-key',
+        };
+
+        const webSearchConfig: TCustomConfig['webSearch'] = {
+          serperApiKey: '${SERPER_API_KEY}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          jinaApiKey: '${JINA_API_KEY}',
+          jinaApiUrl: '${JINA_API_URL}',
+          safeSearch: SafeSearchTypes.MODERATE,
+          rerankerType: 'jina' as RerankerTypes,
+        };
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'JINA_API_KEY') {
+              result[field] = 'system-jina-key';
+            } else if (field === 'JINA_API_URL') {
+              result[field] = 'http://localhost:9999/rerank';
+            } else {
+              result[field] = 'test-api-key';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authResult.jinaApiUrl).toBeUndefined();
+        expect(result.authenticated).toBe(true);
+        const rerankersAuth = result.authTypes.find(([c]) => c === 'rerankers')?.[1];
+        expect(rerankersAuth).toBe(AuthType.SYSTEM_DEFINED);
+      } finally {
+        process.env = originalEnv;
+      }
     });
   });
 });

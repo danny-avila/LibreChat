@@ -19,6 +19,7 @@ import type {
 } from 'librechat-data-provider';
 import useBuildMessageTree from '~/hooks/Messages/useBuildMessageTree';
 import { useScreenshot } from '~/hooks/ScreenshotContext';
+import { useLocalize } from '~/hooks';
 import { cleanupPreset } from '~/utils';
 
 type ExportValues = {
@@ -45,6 +46,7 @@ export default function useExportConversation({
   const queryClient = useQueryClient();
   const { captureScreenshot } = useScreenshot();
   const buildMessageTree = useBuildMessageTree();
+  const localize = useLocalize();
 
   const { conversationId: paramId } = useParams();
 
@@ -73,7 +75,9 @@ export default function useExportConversation({
     }
 
     return message.content
+      .filter((content) => content != null)
       .map((content) => getMessageContent(message.sender || '', content))
+      .filter((text) => text.length > 0)
       .map((text) => {
         return formatText(text[0], text[1]);
       })
@@ -103,7 +107,10 @@ export default function useExportConversation({
     if (content.type === ContentTypes.TEXT) {
       // TEXT
       const textPart = content[ContentTypes.TEXT];
-      const text = typeof textPart === 'string' ? textPart : textPart.value;
+      const text = typeof textPart === 'string' ? textPart : (textPart?.value ?? '');
+      if (text.trim().length === 0) {
+        return [];
+      }
       return [sender, text];
     }
 
@@ -114,7 +121,7 @@ export default function useExportConversation({
         // CODE_INTERPRETER
         const toolCall = content[ContentTypes.TOOL_CALL];
         const code_interpreter = toolCall[ToolCallTypes.CODE_INTERPRETER];
-        return ['Code Interpreter', JSON.stringify(code_interpreter)];
+        return [localize('com_ui_run_code'), JSON.stringify(code_interpreter)];
       }
 
       if (type === ToolCallTypes.RETRIEVAL) {
@@ -365,12 +372,10 @@ export default function useExportConversation({
       data['messages'] = messages;
     }
 
-    exportFromJSON({
-      data: data,
-      fileName: filename,
-      extension: 'json',
-      exportType: exportFromJSON.types.json,
-    });
+    /** Use JSON.stringify without indentation to minimize file size for deeply nested recursive exports */
+    const jsonString = JSON.stringify(data);
+    const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+    download(blob, `${filename}.json`, 'application/json');
   };
 
   const exportConversation = () => {

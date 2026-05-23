@@ -1,15 +1,15 @@
 const { logger } = require('@librechat/data-schemas');
-const {
-  EnvVar,
-  Calculator,
-  createSearchTool,
-  createCodeExecutionTool,
-} = require('@librechat/agents');
+const { Calculator, createSearchTool, createCodeExecutionTool } = require('@librechat/agents');
 const {
   checkAccess,
+  toolkitParent,
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
+  getCodeApiAuthHeaders,
+  buildImageToolContext,
+  buildWebSearchContext,
+  buildWebSearchDynamicContext,
 } = require('@librechat/api');
 const {
   Tools,
@@ -17,7 +17,6 @@ const {
   Permissions,
   EToolResources,
   PermissionTypes,
-  replaceSpecialVars,
 } = require('librechat-data-provider');
 const {
   availableTools,
@@ -32,17 +31,18 @@ const {
   StructuredACS,
   TraversaalSearch,
   StructuredWolfram,
-  createYouTubeTools,
   TavilySearchResults,
+  createGeminiImageTool,
   createOpenAIImageTools,
 } = require('../');
-const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
+const { createMCPTool, createMCPTools, resolveConfigServers } = require('~/server/services/MCP');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
-const { createMCPTool, createMCPTools } = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
-const { getRoleByName } = require('~/models/Role');
+const { getMCPServersRegistry } = require('~/config');
+const { getRoleByName } = require('~/models');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -107,8 +107,8 @@ const validateTools = async (user, tools = []) => {
   }
 };
 
-/** @typedef {typeof import('@langchain/core/tools').Tool} ToolConstructor */
-/** @typedef {import('@langchain/core/tools').Tool} Tool */
+/** @typedef {typeof import('@librechat/agents/langchain/tools').Tool} ToolConstructor */
+/** @typedef {import('@librechat/agents/langchain/tools').Tool} Tool */
 
 /**
  * Initializes a tool with authentication values for the given user, supporting alternate authentication fields.
@@ -152,7 +152,7 @@ const getAuthFields = (toolKey) => {
  * @param {AppConfig['webSearch']} [params.webSearch]
  * @param {AppConfig['fileStrategy']} [params.fileStrategy]
  * @param {AppConfig['imageOutputType']} [params.imageOutputType]
- * @returns {Promise<{ loadedTools: Tool[], toolContextMap: Object<string, any> } | Record<string,Tool>>}
+ * @returns {Promise<{ loadedTools: Tool[], toolContextMap: Object<string, any>, dynamicToolContextMap?: Object<string, any> } | Record<string,Tool>>}
  */
 const loadTools = async ({
   user,
@@ -182,32 +182,17 @@ const loadTools = async ({
   };
 
   const customConstructors = {
-    youtube: async (_toolContextMap) => {
-      const authFields = getAuthFields('youtube');
-      const authValues = await loadAuthValues({ userId: user, authFields });
-      return createYouTubeTools(authValues);
-    },
-    image_gen_oai: async (toolContextMap) => {
+    image_gen_oai: async (_toolContextMap, dynamicToolContextMap) => {
       const authFields = getAuthFields('image_gen_oai');
       const authValues = await loadAuthValues({ userId: user, authFields });
       const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
-      let toolContext = '';
-      for (let i = 0; i < imageFiles.length; i++) {
-        const file = imageFiles[i];
-        if (!file) {
-          continue;
-        }
-        if (i === 0) {
-          toolContext =
-            'Image files provided in this request (their image IDs listed in order of appearance) available for image editing:';
-        }
-        toolContext += `\n\t- ${file.file_id}`;
-        if (i === imageFiles.length - 1) {
-          toolContext += `\n\nInclude any you need in the \`image_ids\` array when calling \`${EToolResources.image_edit}_oai\`. You may also include previously referenced or generated image IDs.`;
-        }
-      }
+      const toolContext = buildImageToolContext({
+        imageFiles,
+        toolName: `${EToolResources.image_edit}_oai`,
+        contextDescription: 'image editing',
+      });
       if (toolContext) {
-        toolContextMap.image_edit_oai = toolContext;
+        dynamicToolContextMap.image_edit_oai = toolContext;
       }
       return createOpenAIImageTools({
         ...authValues,
@@ -216,6 +201,27 @@ const loadTools = async ({
         imageOutputType,
         fileStrategy,
         imageFiles,
+      });
+    },
+    gemini_image_gen: async (_toolContextMap, dynamicToolContextMap) => {
+      const authFields = getAuthFields('gemini_image_gen');
+      const authValues = await loadAuthValues({ userId: user, authFields, throwError: false });
+      const imageFiles = options.tool_resources?.[EToolResources.image_edit]?.files ?? [];
+      const toolContext = buildImageToolContext({
+        imageFiles,
+        toolName: 'gemini_image_gen',
+        contextDescription: 'image context',
+      });
+      if (toolContext) {
+        dynamicToolContextMap.gemini_image_gen = toolContext;
+      }
+      return createGeminiImageTool({
+        ...authValues,
+        isAgent: !!agent,
+        req: options.req,
+        imageFiles,
+        userId: user,
+        fileStrategy,
       });
     },
   };
@@ -240,37 +246,48 @@ const loadTools = async ({
     flux: imageGenOptions,
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
+    gemini_image_gen: imageGenOptions,
   };
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
+  /** @type {Record<string, string>} */
+  const dynamicToolContextMap = {};
+  /**
+   * @type {import('@librechat/agents').CodeEnvFile[] | undefined}
+   * Captured by the `execute_code` factory when files are primed. Surfaced
+   * out of `loadTools` so client.js can seed `Graph.sessions[EXECUTE_CODE]`
+   * before run start — without that seed, the first `execute_code` /
+   * `bash_tool` call lands with empty `_injected_files` and the sandbox
+   * can't see the prior turn's generated artifacts.
+   */
+  let primedCodeFiles;
   const requestedMCPTools = {};
+
+  /** Resolve config-source servers for the current user/tenant context */
+  let configServers;
+  if (tools.some((tool) => tool && mcpToolPattern.test(tool))) {
+    configServers = await resolveConfigServers(options.req);
+  }
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
       requestedTools[tool] = async () => {
-        const authValues = await loadAuthValues({
-          userId: user,
-          authFields: [EnvVar.CODE_API_KEY],
+        const { files, toolContext } = await primeCodeFiles({
+          ...options,
+          agentId: agent?.id,
         });
-        const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-        const { files, toolContext } = await primeCodeFiles(
-          {
-            ...options,
-            agentId: agent?.id,
-          },
-          codeApiKey,
-        );
         if (toolContext) {
-          toolContextMap[tool] = toolContext;
+          dynamicToolContextMap[tool] = toolContext;
         }
-        const CodeExecutionTool = createCodeExecutionTool({
+        if (files?.length) {
+          primedCodeFiles = files;
+        }
+        return createCodeExecutionTool({
           user_id: user,
           files,
-          ...authValues,
+          authHeaders: () => getCodeApiAuthHeaders(options.req),
         });
-        CodeExecutionTool.apiKey = codeApiKey;
-        return CodeExecutionTool;
       };
       continue;
     } else if (tool === Tools.file_search) {
@@ -280,7 +297,7 @@ const loadTools = async ({
           agentId: agent?.id,
         });
         if (toolContext) {
-          toolContextMap[tool] = toolContext;
+          dynamicToolContextMap[tool] = toolContext;
         }
 
         /** @type {boolean | undefined} Check if user has FILE_CITATIONS permission */
@@ -315,16 +332,10 @@ const loadTools = async ({
       });
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
       requestedTools[tool] = async () => {
-        toolContextMap[tool] = `# \`${tool}\`:
-Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
-1. **Execute immediately without preface** when using \`${tool}\`.
-2. **After the search, begin with a brief summary** that directly addresses the query without headers or explaining your process.
-3. **Structure your response clearly** using Markdown formatting (Level 2 headers for sections, lists for multiple points, tables for comparisons).
-4. **Cite sources properly** according to the citation anchor format, utilizing group anchors when appropriate.
-5. **Tailor your approach to the query type** (academic, news, coding, etc.) while maintaining an expert, journalistic, unbiased tone.
-6. **Provide comprehensive information** with specific details, examples, and as much relevant context as possible from search results.
-7. **Avoid moralizing language.**
-`.trim();
+        toolContextMap[tool] = buildWebSearchContext();
+        dynamicToolContextMap[tool] = buildWebSearchDynamicContext(
+          options.req?.conversationCreatedAt,
+        );
         return createSearchTool({
           ...result.authResult,
           onSearchResults,
@@ -339,7 +350,10 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         /** Placeholder used for UI purposes */
         continue;
       }
-      if (serverName && options.req?.config?.mcpConfig?.[serverName] == null) {
+      const serverConfig = serverName
+        ? await getMCPServersRegistry().getServerConfig(serverName, user, configServers)
+        : null;
+      if (!serverConfig) {
         logger.warn(
           `MCP server "${serverName}" for "${toolName}" tool is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,
         );
@@ -350,6 +364,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
           {
             type: 'all',
             serverName,
+            config: serverConfig,
           },
         ];
         continue;
@@ -360,12 +375,21 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
         type: 'single',
         toolKey: tool,
         serverName,
+        config: serverConfig,
       });
       continue;
     }
 
-    if (customConstructors[tool]) {
-      requestedTools[tool] = async () => customConstructors[tool](toolContextMap);
+    const toolKey = customConstructors[tool] ? tool : toolkitParent[tool];
+    if (toolKey && customConstructors[toolKey]) {
+      if (!requestedTools[toolKey]) {
+        let cached;
+        requestedTools[toolKey] = async () => {
+          cached ??= customConstructors[toolKey](toolContextMap, dynamicToolContextMap);
+          return cached;
+        };
+      }
+      requestedTools[tool] = requestedTools[toolKey];
       continue;
     }
 
@@ -405,6 +429,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
   let index = -1;
   const failedMCPServers = new Set();
   const safeUser = createSafeUser(options.req?.user);
+
   for (const [serverName, toolConfigs] of Object.entries(requestedMCPTools)) {
     index++;
     /** @type {LCAvailableTools} */
@@ -419,10 +444,13 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
           signal,
           user: safeUser,
           userMCPAuthMap,
+          configServers,
           res: options.res,
+          streamId: options.req?._resumableStreamId || null,
           model: agent?.model ?? model,
           serverName: config.serverName,
           provider: agent?.provider ?? endpoint,
+          config: config.config,
         };
 
         if (config.type === 'all' && toolConfigs.length === 1) {
@@ -469,7 +497,7 @@ Current Date & Time: ${replaceSpecialVars({ text: '{{iso_datetime}}' })}
     }
   }
   loadedTools.push(...(await Promise.all(mcpToolPromises)).flatMap((plugin) => plugin || []));
-  return { loadedTools, toolContextMap };
+  return { loadedTools, toolContextMap, dynamicToolContextMap, primedCodeFiles };
 };
 
 module.exports = {

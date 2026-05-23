@@ -19,12 +19,12 @@ const ChatDirection = () => {
       </div>
       <Button
         variant="outline"
-        aria-label={`${localize('com_nav_chat_direction')}: ${localize('com_ui_x_selected', {
-          0:
+        aria-label={localize('com_nav_chat_direction_selected', {
+          direction:
             direction === 'LTR'
               ? localize('chat_direction_left_to_right')
               : localize('chat_direction_right_to_left'),
-        })}`}
+        })}
         onClick={toggleChatDirection}
         data-testid="chatDirection"
       >

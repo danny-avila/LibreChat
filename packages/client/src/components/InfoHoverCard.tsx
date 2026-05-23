@@ -24,7 +24,7 @@ const InfoHoverCard = ({ side, text }: InfoHoverCardProps) => {
       </HoverCardTrigger>
       <HoverCardPortal>
         <HoverCardContent side={side} className="z-[999] w-80">
-          <div className="space-y-2">
+          <div className="max-h-[80vh] space-y-2 overflow-y-auto">
             <span className="text-sm text-text-secondary">{text}</span>
           </div>
         </HoverCardContent>

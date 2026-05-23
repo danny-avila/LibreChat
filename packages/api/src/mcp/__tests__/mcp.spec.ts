@@ -4,12 +4,23 @@ import {
   StreamableHTTPOptionsSchema,
 } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
+import type { IUser } from '@librechat/data-schemas';
+import type { GraphTokenResolver } from '~/utils/graph';
+import { preProcessGraphTokens } from '~/utils/graph';
 import { processMCPEnv } from '~/utils/env';
+import * as oidcUtils from '~/utils/oidc';
+
+// Mock oidc utilities for graph token tests
+jest.mock('~/utils/oidc', () => ({
+  ...jest.requireActual('~/utils/oidc'),
+  extractOpenIDTokenInfo: jest.fn(),
+  isOpenIDTokenValid: jest.fn(),
+}));
 
 // Helper function to create test user objects
 function createTestUser(
   overrides: Partial<TUser> & Record<string, unknown> = {},
-): TUser & Record<string, unknown> {
+): Omit<TUser, 'createdAt' | 'updatedAt'> | undefined {
   return {
     id: 'test-user-id',
     username: 'testuser',
@@ -18,8 +29,6 @@ function createTestUser(
     avatar: 'https://example.com/avatar.png',
     provider: 'email',
     role: 'user',
-    createdAt: new Date('2021-01-01').toISOString(),
-    updatedAt: new Date('2021-01-01').toISOString(),
     ...overrides,
   };
 }
@@ -141,6 +150,18 @@ describe('Environment Variable Extraction (MCP)', () => {
       expect(result.headers).toEqual(options.headers);
     });
 
+    it('should validate proxy URLs for remote HTTP transports', () => {
+      const options = {
+        type: 'streamable-http',
+        url: 'https://example.com/api',
+        proxy: 'http://proxy.example.com:8080',
+      };
+
+      const result = StreamableHTTPOptionsSchema.parse(options);
+
+      expect(result.proxy).toBe('http://proxy.example.com:8080');
+    });
+
     it('should accept "http" as an alias for "streamable-http"', () => {
       const options = {
         type: 'http',
@@ -170,6 +191,7 @@ describe('Environment Variable Extraction (MCP)', () => {
   describe('processMCPEnv', () => {
     it('should create a deep clone of the input object', () => {
       const originalObj: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -193,6 +215,7 @@ describe('Environment Variable Extraction (MCP)', () => {
 
     it('should process environment variables in env field', () => {
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -243,6 +266,7 @@ describe('Environment Variable Extraction (MCP)', () => {
 
     it('should not modify objects without env or headers', () => {
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         timeout: 5000,
@@ -310,6 +334,20 @@ describe('Environment Variable Extraction (MCP)', () => {
         'User-Id': 'test-user-123',
         'Content-Type': 'application/json',
       });
+    });
+
+    it('should process proxy in streamable-http options', () => {
+      process.env.MCP_PROXY_URL = 'http://proxy.example.com:8080';
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://example.com',
+        proxy: '${MCP_PROXY_URL}',
+      };
+
+      const result = processMCPEnv({ options });
+
+      expect('proxy' in result && result.proxy).toBe('http://proxy.example.com:8080');
+      delete process.env.MCP_PROXY_URL;
     });
 
     it('should maintain streamable-http type in processed options', () => {
@@ -424,6 +462,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         ldapId: 'ldap-user-123',
       });
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -590,6 +629,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         CUSTOM_VAR_2: 'custom-value-2',
       };
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -665,6 +705,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         PROFILE_NAME: 'production-profile',
       };
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'npx',
         args: [
           '-y',
@@ -725,6 +766,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         UNUSED_VAR: 'unused-value',
       };
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -857,6 +899,272 @@ describe('Environment Variable Extraction (MCP)', () => {
         Authorization: '{{PAT_TOKEN}}', // Should remain unchanged since no customUserVars provided
         'Content-Type': 'application/json',
       });
+    });
+
+    it('should leave {{LIBRECHAT_GRAPH_ACCESS_TOKEN}} unchanged (resolved by preProcessGraphTokens)', () => {
+      const user = createTestUser({ id: 'user-123' });
+      const options: MCPOptions = {
+        type: 'sse',
+        url: 'https://example.com',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+        },
+      };
+
+      const result = processMCPEnv({ options, user });
+
+      expect('headers' in result && result.headers).toEqual({
+        // Graph token placeholder remains - it should be resolved by preProcessGraphTokens before processMCPEnv
+        Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        // User ID is resolved by processMCPEnv
+        'X-User-Id': 'user-123',
+      });
+    });
+  });
+
+  describe('preProcessGraphTokens and processMCPEnv working in tandem', () => {
+    const mockExtractOpenIDTokenInfo = oidcUtils.extractOpenIDTokenInfo as jest.Mock;
+    const mockIsOpenIDTokenValid = oidcUtils.isOpenIDTokenValid as jest.Mock;
+
+    const mockGraphTokenResolver: GraphTokenResolver = jest.fn().mockResolvedValue({
+      access_token: 'resolved-graph-api-token',
+      token_type: 'Bearer',
+      expires_in: 3600,
+      scope: 'https://graph.microsoft.com/.default',
+    });
+
+    beforeEach(() => {
+      // Set up mocks to simulate valid OpenID token
+      mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'test-access-token' });
+      mockIsOpenIDTokenValid.mockReturnValue(true);
+      (mockGraphTokenResolver as jest.Mock).mockClear();
+    });
+
+    afterEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should resolve both graph tokens and user placeholders in sequence', async () => {
+      const user = createTestUser({
+        id: 'user-123',
+        email: 'test@example.com',
+        provider: 'openid',
+        openidId: 'oidc-sub-456',
+      }) as unknown as IUser;
+
+      const options: MCPOptions = {
+        type: 'sse',
+        url: 'https://graph.microsoft.com/v1.0/me',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+          'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+          'Content-Type': 'application/json',
+        },
+      };
+
+      // Step 1: preProcessGraphTokens resolves graph token placeholders (async)
+      const graphProcessedConfig = await preProcessGraphTokens(options, {
+        user,
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      // Step 2: processMCPEnv resolves user and env placeholders (sync)
+      const finalConfig = processMCPEnv({
+        options: graphProcessedConfig,
+        user,
+      });
+
+      expect('headers' in finalConfig && finalConfig.headers).toEqual({
+        Authorization: 'Bearer resolved-graph-api-token',
+        'X-User-Id': 'user-123',
+        'X-User-Email': 'test@example.com',
+        'Content-Type': 'application/json',
+      });
+    });
+
+    it('should resolve graph tokens in env and user placeholders in headers', async () => {
+      const user = createTestUser({
+        id: 'user-456',
+        username: 'johndoe',
+        provider: 'openid',
+      }) as unknown as IUser;
+
+      const options: MCPOptions = {
+        type: 'stdio',
+        command: 'node',
+        args: ['mcp-server.js', '--user', '{{LIBRECHAT_USER_USERNAME}}'],
+        env: {
+          GRAPH_ACCESS_TOKEN: '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+          USER_ID: '{{LIBRECHAT_USER_ID}}',
+          API_KEY: '${TEST_API_KEY}',
+        },
+      };
+
+      // Step 1: preProcessGraphTokens
+      const graphProcessedConfig = await preProcessGraphTokens(options, {
+        user,
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      // Step 2: processMCPEnv
+      const finalConfig = processMCPEnv({
+        options: graphProcessedConfig,
+        user,
+      });
+
+      expect('env' in finalConfig && finalConfig.env).toEqual({
+        GRAPH_ACCESS_TOKEN: 'resolved-graph-api-token',
+        USER_ID: 'user-456',
+        API_KEY: 'test-api-key-value',
+      });
+
+      expect('args' in finalConfig && finalConfig.args).toEqual([
+        'mcp-server.js',
+        '--user',
+        'johndoe',
+      ]);
+    });
+
+    it('should resolve graph tokens in URL alongside other placeholders', async () => {
+      const user = createTestUser({
+        id: 'user-789',
+        provider: 'openid',
+      }) as unknown as IUser;
+
+      const customUserVars = {
+        TENANT_ID: 'my-tenant-123',
+      };
+
+      const options: MCPOptions = {
+        type: 'sse',
+        url: 'https://{{TENANT_ID}}.example.com/api?token={{LIBRECHAT_GRAPH_ACCESS_TOKEN}}&user={{LIBRECHAT_USER_ID}}',
+      };
+
+      // Step 1: preProcessGraphTokens
+      const graphProcessedConfig = await preProcessGraphTokens(options, {
+        user,
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      // Step 2: processMCPEnv with customUserVars
+      const finalConfig = processMCPEnv({
+        options: graphProcessedConfig,
+        user,
+        customUserVars,
+      });
+
+      expect('url' in finalConfig && finalConfig.url).toBe(
+        'https://my-tenant-123.example.com/api?token=resolved-graph-api-token&user=user-789',
+      );
+    });
+
+    it('should handle config with no graph token placeholders (only user placeholders)', async () => {
+      const user = createTestUser({
+        id: 'user-abc',
+        email: 'user@company.com',
+      }) as unknown as IUser;
+
+      const options: MCPOptions = {
+        type: 'sse',
+        url: 'https://api.example.com',
+        headers: {
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+          'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      };
+
+      // Step 1: preProcessGraphTokens (no-op since no graph placeholders)
+      const graphProcessedConfig = await preProcessGraphTokens(options, {
+        user,
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      // Step 2: processMCPEnv
+      const finalConfig = processMCPEnv({
+        options: graphProcessedConfig,
+        user,
+      });
+
+      expect('headers' in finalConfig && finalConfig.headers).toEqual({
+        'X-User-Id': 'user-abc',
+        'X-User-Email': 'user@company.com',
+      });
+
+      // graphTokenResolver should not have been called
+      expect(mockGraphTokenResolver).not.toHaveBeenCalled();
+    });
+
+    it('should handle config with only graph token placeholders (no user placeholders)', async () => {
+      const user = createTestUser({
+        id: 'user-xyz',
+        provider: 'openid',
+      }) as unknown as IUser;
+
+      const options: MCPOptions = {
+        type: 'sse',
+        url: 'https://graph.microsoft.com/v1.0/me',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+          'Content-Type': 'application/json',
+        },
+      };
+
+      // Reset mock call count
+      (mockGraphTokenResolver as jest.Mock).mockClear();
+
+      // Step 1: preProcessGraphTokens
+      const graphProcessedConfig = await preProcessGraphTokens(options, {
+        user,
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      // Step 2: processMCPEnv
+      const finalConfig = processMCPEnv({
+        options: graphProcessedConfig,
+        user,
+      });
+
+      expect('headers' in finalConfig && finalConfig.headers).toEqual({
+        Authorization: 'Bearer resolved-graph-api-token',
+        'Content-Type': 'application/json',
+      });
+    });
+
+    it('should not mutate original options through the tandem processing', async () => {
+      const user = createTestUser({
+        id: 'user-immutable',
+        provider: 'openid',
+      }) as unknown as IUser;
+
+      const originalOptions: MCPOptions = {
+        type: 'sse',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+          'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+        },
+      };
+
+      // Store original values
+      const originalAuth = originalOptions.headers?.Authorization;
+      const originalUserId = originalOptions.headers?.['X-User-Id'];
+
+      // Step 1 & 2: Process through both functions
+      const graphProcessedConfig = await preProcessGraphTokens(originalOptions, {
+        user,
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      processMCPEnv({
+        options: graphProcessedConfig,
+        user,
+      });
+
+      // Original should be unchanged
+      expect(originalOptions.headers?.Authorization).toBe(originalAuth);
+      expect(originalOptions.headers?.['X-User-Id']).toBe(originalUserId);
     });
   });
 });

@@ -1,6 +1,10 @@
-const { ToolMessage } = require('@langchain/core/messages');
 const { ContentTypes } = require('librechat-data-provider');
-const { HumanMessage, AIMessage, SystemMessage } = require('@langchain/core/messages');
+const {
+  AIMessage,
+  ToolMessage,
+  HumanMessage,
+  SystemMessage,
+} = require('@librechat/agents/langchain/messages');
 const { formatAgentMessages } = require('./formatMessages');
 
 describe('formatAgentMessages', () => {
@@ -130,7 +134,7 @@ describe('formatAgentMessages', () => {
         content: [
           {
             type: ContentTypes.TEXT,
-            [ContentTypes.TEXT]: 'I\'ll search for that information.',
+            [ContentTypes.TEXT]: "I'll search for that information.",
             tool_call_ids: ['search_1'],
           },
           {
@@ -144,7 +148,7 @@ describe('formatAgentMessages', () => {
           },
           {
             type: ContentTypes.TEXT,
-            [ContentTypes.TEXT]: 'Now, I\'ll convert the temperature.',
+            [ContentTypes.TEXT]: "Now, I'll convert the temperature.",
             tool_call_ids: ['convert_1'],
           },
           {
@@ -156,7 +160,7 @@ describe('formatAgentMessages', () => {
               output: '23.89°C',
             },
           },
-          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Here\'s your answer.' },
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: "Here's your answer." },
         ],
       },
     ];
@@ -171,7 +175,7 @@ describe('formatAgentMessages', () => {
     expect(result[4]).toBeInstanceOf(AIMessage);
 
     // Check first AIMessage
-    expect(result[0].content).toBe('I\'ll search for that information.');
+    expect(result[0].content).toBe("I'll search for that information.");
     expect(result[0].tool_calls).toHaveLength(1);
     expect(result[0].tool_calls[0]).toEqual({
       id: 'search_1',
@@ -187,7 +191,7 @@ describe('formatAgentMessages', () => {
     );
 
     // Check second AIMessage
-    expect(result[2].content).toBe('Now, I\'ll convert the temperature.');
+    expect(result[2].content).toBe("Now, I'll convert the temperature.");
     expect(result[2].tool_calls).toHaveLength(1);
     expect(result[2].tool_calls[0]).toEqual({
       id: 'convert_1',
@@ -202,7 +206,7 @@ describe('formatAgentMessages', () => {
 
     // Check final AIMessage
     expect(result[4].content).toStrictEqual([
-      { [ContentTypes.TEXT]: 'Here\'s your answer.', type: ContentTypes.TEXT },
+      { [ContentTypes.TEXT]: "Here's your answer.", type: ContentTypes.TEXT },
     ]);
   });
 
@@ -217,7 +221,7 @@ describe('formatAgentMessages', () => {
         role: 'assistant',
         content: [{ type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'How can I help you?' }],
       },
-      { role: 'user', content: 'What\'s the weather?' },
+      { role: 'user', content: "What's the weather?" },
       {
         role: 'assistant',
         content: [
@@ -240,7 +244,7 @@ describe('formatAgentMessages', () => {
       {
         role: 'assistant',
         content: [
-          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Here\'s the weather information.' },
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: "Here's the weather information." },
         ],
       },
     ];
@@ -265,12 +269,12 @@ describe('formatAgentMessages', () => {
       { [ContentTypes.TEXT]: 'How can I help you?', type: ContentTypes.TEXT },
     ]);
     expect(result[2].content).toStrictEqual([
-      { [ContentTypes.TEXT]: 'What\'s the weather?', type: ContentTypes.TEXT },
+      { [ContentTypes.TEXT]: "What's the weather?", type: ContentTypes.TEXT },
     ]);
     expect(result[3].content).toBe('Let me check that for you.');
     expect(result[4].content).toBe('Sunny, 75°F');
     expect(result[5].content).toStrictEqual([
-      { [ContentTypes.TEXT]: 'Here\'s the weather information.', type: ContentTypes.TEXT },
+      { [ContentTypes.TEXT]: "Here's the weather information.", type: ContentTypes.TEXT },
     ]);
 
     // Check that there are no consecutive AIMessages
@@ -357,5 +361,154 @@ describe('formatAgentMessages', () => {
         item.type === ContentTypes.ERROR || JSON.stringify(item).includes('An error occurred'),
     );
     expect(hasErrorContent).toBe(false);
+  });
+
+  describe('Vertex Gemini thoughtSignatures persistence (issue #13006 follow-up)', () => {
+    const SIG_A = 'AY89a1/sigA==';
+    const SIG_B = 'AY89a1/sigB==';
+
+    it('restores additional_kwargs.signatures onto the AIMessage that owns the tool_call', () => {
+      const payload = [
+        { role: 'user', content: 'list files' },
+        {
+          role: 'assistant',
+          metadata: { thoughtSignatures: { t1: SIG_A } },
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: '', tool_call_ids: ['t1'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't1', name: 'bash', args: '{}', output: 'ok' },
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+
+      const assistant = result.find((m) => m instanceof AIMessage);
+      expect(assistant.tool_calls).toHaveLength(1);
+      expect(assistant.additional_kwargs?.signatures).toEqual([SIG_A]);
+    });
+
+    it('attaches signatures per-step in multi-step tool turns (codex review fix)', () => {
+      // Reproduces the Codex P1 concern: an assistant turn where the agent
+      // loop made two LLM cycles, each emitting its own tool_call. Each step
+      // must carry its OWN signature on resume — Vertex validates per-step,
+      // not per-turn.
+      const payload = [
+        { role: 'user', content: 'do two things' },
+        {
+          role: 'assistant',
+          metadata: { thoughtSignatures: { t1: SIG_A, t2: SIG_B } },
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'first', tool_call_ids: ['t1'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't1', name: 'a', args: '{}', output: 'okA' },
+            },
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'second', tool_call_ids: ['t2'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't2', name: 'b', args: '{}', output: 'okB' },
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      const aiMessages = result.filter((m) => m instanceof AIMessage);
+      expect(aiMessages).toHaveLength(2);
+      expect(aiMessages[0].tool_calls).toHaveLength(1);
+      expect(aiMessages[0].additional_kwargs?.signatures).toEqual([SIG_A]);
+      expect(aiMessages[1].tool_calls).toHaveLength(1);
+      expect(aiMessages[1].additional_kwargs?.signatures).toEqual([SIG_B]);
+    });
+
+    it('preserves tool_call ordering when signatures are partial', () => {
+      // Mixed case: only some tool_calls have stored signatures. Position-
+      // aligned array (with empty placeholders) lets the agents-side
+      // dispatcher attach the correct signature to the correct functionCall.
+      const payload = [
+        { role: 'user', content: 'two parallel tools' },
+        {
+          role: 'assistant',
+          metadata: { thoughtSignatures: { t2: SIG_B } },
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: '', tool_call_ids: ['t1', 't2'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't1', name: 'a', args: '{}', output: 'okA' },
+            },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't2', name: 'b', args: '{}', output: 'okB' },
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      const assistant = result.find((m) => m instanceof AIMessage);
+      expect(assistant.additional_kwargs?.signatures).toEqual(['', SIG_B]);
+    });
+
+    it('no-op when metadata.thoughtSignatures is absent', () => {
+      const payload = [
+        { role: 'user', content: 'hi' },
+        {
+          role: 'assistant',
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: '', tool_call_ids: ['t1'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't1', name: 'bash', args: '{}', output: 'ok' },
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      const assistant = result.find((m) => m instanceof AIMessage);
+      expect(assistant.additional_kwargs?.signatures).toBeUndefined();
+    });
+
+    it('no-op when assistant message has no tool_calls', () => {
+      const payload = [
+        { role: 'user', content: 'hi' },
+        {
+          role: 'assistant',
+          metadata: { thoughtSignatures: { t1: SIG_A } },
+          content: 'plain text reply',
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      const assistant = result.find((m) => m instanceof AIMessage);
+      expect(assistant.additional_kwargs?.signatures).toBeUndefined();
+    });
+
+    it('no-op when no tool_call has a corresponding stored signature', () => {
+      // The persisted map exists but addresses different tool_call_ids
+      // (e.g., the previous turn's signatures, somehow leaked). Don't
+      // fabricate empty arrays onto the AIMessage.
+      const payload = [
+        { role: 'user', content: 'hi' },
+        {
+          role: 'assistant',
+          metadata: { thoughtSignatures: { unrelated_id: SIG_A } },
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: '', tool_call_ids: ['t1'] },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't1', name: 'bash', args: '{}', output: 'ok' },
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      const assistant = result.find((m) => m instanceof AIMessage);
+      expect(assistant.additional_kwargs?.signatures).toBeUndefined();
+    });
   });
 });

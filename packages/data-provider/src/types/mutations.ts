@@ -13,6 +13,19 @@ import {
   AgentUpdateParams,
 } from './assistants';
 import { Action, ActionMetadata } from './agents';
+import type { InfiniteData, QueryKey } from '@tanstack/react-query';
+import type {
+  TSkill,
+  TSkillFile,
+  TCreateSkill,
+  TUpdateSkillVariables,
+  TUpdateSkillResponse,
+  TDeleteSkillResponse,
+  TUploadSkillFileVariables,
+  TDeleteSkillFileVariables,
+  TDeleteSkillFileResponse,
+  TSkillListResponse,
+} from './skills';
 
 export type MutationOptions<
   Response,
@@ -274,8 +287,46 @@ export type UpdatePromptPermVars = UpdatePermVars<p.TPromptPermissions>;
 export type UpdateMemoryPermVars = UpdatePermVars<p.TMemoryPermissions>;
 export type UpdateAgentPermVars = UpdatePermVars<p.TAgentPermissions>;
 export type UpdatePeoplePickerPermVars = UpdatePermVars<p.TPeoplePickerPermissions>;
+export type UpdateMCPServersPermVars = UpdatePermVars<p.TMcpServersPermissions>;
+export type UpdateSkillPermVars = UpdatePermVars<p.TSkillPermissions>;
 
 export type UpdatePermResponse = r.TRole;
+
+/* Skill mutations */
+
+/**
+ * Cache entries that can appear under the `[QueryKeys.skills, ...]` key prefix.
+ * Flat responses come from `useListSkillsQuery`; infinite responses come from
+ * `useSkillsInfiniteQuery`. The context carries both shapes for rollback.
+ */
+export type TSkillCacheEntry = TSkillListResponse | InfiniteData<TSkillListResponse> | undefined;
+
+export type TUpdateSkillContext =
+  | {
+      previousSkill?: TSkill;
+      previousListSnapshots?: Array<[QueryKey, TSkillCacheEntry]>;
+      userContext?: unknown;
+    }
+  | undefined;
+
+export type ImportSkillOptions = MutationOptions<TSkill, FormData>;
+
+export type CreateSkillOptions = MutationOptions<TSkill, TCreateSkill>;
+
+export type UpdateSkillOptions = MutationOptions<
+  TUpdateSkillResponse,
+  TUpdateSkillVariables,
+  TUpdateSkillContext
+>;
+
+export type DeleteSkillOptions = MutationOptions<TDeleteSkillResponse, { id: string }>;
+
+export type UploadSkillFileOptions = MutationOptions<TSkillFile, TUploadSkillFileVariables>;
+
+export type DeleteSkillFileOptions = MutationOptions<
+  TDeleteSkillFileResponse,
+  TDeleteSkillFileVariables
+>;
 
 export type UpdatePromptPermOptions = MutationOptions<
   UpdatePermResponse,
@@ -305,6 +356,29 @@ export type UpdatePeoplePickerPermOptions = MutationOptions<
   types.TError | null | undefined
 >;
 
+export type UpdateMCPServersPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateMCPServersPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
+export type UpdateSkillPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateSkillPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
+export type UpdateRemoteAgentsPermVars = UpdatePermVars<p.TRemoteAgentsPermissions>;
+
+export type UpdateRemoteAgentsPermOptions = MutationOptions<
+  UpdatePermResponse,
+  UpdateRemoteAgentsPermVars,
+  unknown,
+  types.TError | null | undefined
+>;
+
 export type UpdateMarketplacePermVars = UpdatePermVars<p.TMarketplacePermissions>;
 
 export type UpdateMarketplacePermOptions = MutationOptions<
@@ -312,6 +386,34 @@ export type UpdateMarketplacePermOptions = MutationOptions<
   UpdateMarketplacePermVars,
   unknown,
   types.TError | null | undefined
+>;
+
+/* Skill tree / node mutations (phase 2 — stubbed in data-service) */
+
+export type CreateSkillNodeBody = {
+  skillId: string;
+  data: FormData | types.TCreateSkillNodeRequest;
+};
+export type CreateSkillNodeOptions = MutationOptions<types.TSkillNode, CreateSkillNodeBody>;
+
+export type UpdateSkillNodeVariables = {
+  skillId: string;
+  nodeId: string;
+  data: types.TUpdateSkillNodeRequest;
+};
+export type UpdateSkillNodeOptions = MutationOptions<types.TSkillNode, UpdateSkillNodeVariables>;
+
+export type DeleteSkillNodeBody = { skillId: string; nodeId: string };
+export type DeleteSkillNodeOptions = MutationOptions<void, DeleteSkillNodeBody>;
+
+export type UpdateSkillNodeContentVariables = {
+  skillId: string;
+  nodeId: string;
+  content: string;
+};
+export type UpdateSkillNodeContentOptions = MutationOptions<
+  types.TSkillNode,
+  UpdateSkillNodeContentVariables
 >;
 
 export type UpdateConversationTagOptions = MutationOptions<
@@ -344,6 +446,7 @@ export type ToolParams<T extends ToolId> = ToolParamsMap[T] & {
   partIndex?: number;
   blockIndex?: number;
   conversationId: string;
+  isTemporary?: boolean;
 };
 export type ToolCallResponse = { result: unknown; attachments?: types.TAttachment[] };
 export type ToolCallMutationOptions<T extends ToolId> = MutationOptions<
@@ -369,6 +472,20 @@ export type TEditArtifactResponse = Pick<types.TMessage, 'content' | 'text' | 'c
 export type EditArtifactOptions = MutationOptions<
   TEditArtifactResponse,
   TEditArtifactRequest,
+  unknown,
+  Error
+>;
+
+export type TBranchMessageRequest = {
+  messageId: string;
+  agentId: string;
+};
+
+export type TBranchMessageResponse = types.TMessage;
+
+export type BranchMessageOptions = MutationOptions<
+  TBranchMessageResponse,
+  TBranchMessageRequest,
   unknown,
   Error
 >;

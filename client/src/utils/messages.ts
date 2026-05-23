@@ -1,6 +1,19 @@
-import { ContentTypes, QueryKeys, Constants } from 'librechat-data-provider';
-import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  Constants,
+  ContentTypes,
+  isEphemeralAgentId,
+  appendAgentIdSuffix,
+  encodeEphemeralAgentId,
+} from 'librechat-data-provider';
+import type {
+  TMessage,
+  TConversation,
+  TEndpointsConfig,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
+import type { LocalizeFunction } from '~/common';
 
 export const TEXT_KEY_DIVIDER = '|||';
 
@@ -44,7 +57,7 @@ export const getAllContentText = (message?: TMessage | null): string => {
 
   if (message.content && message.content.length > 0) {
     return message.content
-      .filter((part) => part.type === ContentTypes.TEXT)
+      .filter((part) => part != null && part.type === ContentTypes.TEXT)
       .map((part) => {
         if (!('text' in part)) return '';
         const text = part.text;
@@ -169,4 +182,130 @@ export const clearMessagesCache = (
   if (convoId !== Constants.NEW_CONVO) {
     queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
   }
+};
+
+/** Returns a 1-based message number, or null if depth is absent or invalid. */
+const getMessageNumber = (message: TMessage): number | null => {
+  if (message.depth == null || message.depth < 0) {
+    return null;
+  }
+  return message.depth + 1;
+};
+
+export const getMessageAriaLabel = (message: TMessage, localize: LocalizeFunction): string => {
+  const number = getMessageNumber(message);
+  return number != null
+    ? localize('com_endpoint_message_new', { 0: number })
+    : localize('com_endpoint_message');
+};
+
+/**
+ * Provides a screen-reader-only heading prefix distinguishing prompts from responses,
+ * with an optional 1-based turn number derived from message depth.
+ */
+export const getHeaderPrefixForScreenReader = (
+  message: TMessage,
+  localize: LocalizeFunction,
+): string => {
+  const number = getMessageNumber(message);
+  const suffix = number != null ? ` ${number}` : '';
+  return message.isCreatedByUser
+    ? `${localize('com_ui_prompt')}${suffix}: `
+    : `${localize('com_ui_response')}${suffix}: `;
+};
+
+/**
+ * Creates initial content parts for dual message display with agent-based grouping.
+ * Sets up primary and added agent content parts with agentId for column rendering.
+ *
+ * @param primaryConvo - The primary conversation configuration
+ * @param addedConvo - The added conversation configuration
+ * @param endpointsConfig - Endpoints configuration for getting model display labels
+ * @param modelSpecs - Model specs list for getting spec labels
+ * @returns Array of content parts with agentId for side-by-side rendering
+ */
+export const createDualMessageContent = (
+  primaryConvo: TConversation,
+  addedConvo: TConversation,
+  endpointsConfig?: TEndpointsConfig,
+  modelSpecs?: { name: string; label?: string }[],
+): TMessageContentParts[] => {
+  // For real agents (agent_id starts with "agent_"), use agent_id directly
+  // Otherwise create ephemeral ID from endpoint/model
+  let primaryAgentId: string;
+  if (primaryConvo.agent_id && !isEphemeralAgentId(primaryConvo.agent_id)) {
+    primaryAgentId = primaryConvo.agent_id;
+  } else {
+    const primaryEndpoint = primaryConvo.endpoint;
+    const primaryModel = primaryConvo.model ?? '';
+    // Look up model spec for label fallback
+    const primarySpec =
+      primaryConvo.spec != null && primaryConvo.spec !== ''
+        ? modelSpecs?.find((s) => s.name === primaryConvo.spec)
+        : undefined;
+    // For ephemeral agents, use modelLabel if provided, then model spec's label,
+    // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
+    const primarySender =
+      primaryConvo.modelLabel ??
+      primarySpec?.label ??
+      (primaryEndpoint ? endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel : undefined) ??
+      '';
+    primaryAgentId = encodeEphemeralAgentId({
+      endpoint: primaryEndpoint ?? '',
+      model: primaryModel,
+      sender: primarySender,
+    });
+  }
+
+  // Both agents run in parallel, so they share the same groupId
+  const parallelGroupId = 1;
+
+  // Use empty type - these are just placeholders to establish agentId/groupId
+  // The actual type will be set when real content arrives from the server
+  const primaryContent = {
+    type: '' as const,
+    agentId: primaryAgentId,
+    groupId: parallelGroupId,
+  };
+
+  // For added agent, use agent_id if it's a real agent (starts with "agent_")
+  // Otherwise create ephemeral ID with index suffix
+  // Always append index suffix for added agent to distinguish from primary (even if same agent_id)
+  let addedAgentId: string;
+  if (addedConvo.agent_id && !isEphemeralAgentId(addedConvo.agent_id)) {
+    // Append suffix to distinguish from primary agent (matches ephemeral format)
+    addedAgentId = appendAgentIdSuffix(addedConvo.agent_id, 1);
+  } else {
+    const addedEndpoint = addedConvo.endpoint;
+    const addedModel = addedConvo.model ?? '';
+    // Look up model spec for label fallback
+    const addedSpec =
+      addedConvo.spec != null && addedConvo.spec !== ''
+        ? modelSpecs?.find((s) => s.name === addedConvo.spec)
+        : undefined;
+    // For ephemeral agents, use modelLabel if provided, then model spec's label,
+    // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
+    const addedSender =
+      addedConvo.modelLabel ??
+      addedSpec?.label ??
+      (addedEndpoint ? endpointsConfig?.[addedEndpoint]?.modelDisplayLabel : undefined) ??
+      '';
+    addedAgentId = encodeEphemeralAgentId({
+      endpoint: addedEndpoint ?? '',
+      model: addedModel,
+      sender: addedSender,
+      index: 1,
+    });
+  }
+
+  // Use empty type - placeholder to establish agentId/groupId
+  const addedContent = {
+    type: '' as const,
+    agentId: addedAgentId,
+    groupId: parallelGroupId,
+  };
+
+  // Cast through unknown since these are placeholder objects with empty type
+  // that will be replaced by real content with proper types from the server
+  return [primaryContent, addedContent] as unknown as TMessageContentParts[];
 };

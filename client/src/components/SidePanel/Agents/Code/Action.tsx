@@ -1,6 +1,5 @@
-import { KeyRoundIcon } from 'lucide-react';
-import { AuthType, AgentCapabilities } from 'librechat-data-provider';
-import { useFormContext, Controller, useWatch } from 'react-hook-form';
+import { AgentCapabilities } from 'librechat-data-provider';
+import { useFormContext, Controller } from 'react-hook-form';
 import {
   Checkbox,
   HoverCard,
@@ -10,111 +9,60 @@ import {
   HoverCardTrigger,
 } from '@librechat/client';
 import type { AgentForm } from '~/common';
-import { useLocalize, useCodeApiKeyForm } from '~/hooks';
-import ApiKeyDialog from './ApiKeyDialog';
+import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
-export default function Action({ authType = '', isToolAuthenticated = false }) {
+export default function Action() {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
-  const { control, setValue, getValues } = methods;
-  const {
-    onSubmit,
-    isDialogOpen,
-    setIsDialogOpen,
-    handleRevokeApiKey,
-    methods: keyFormMethods,
-  } = useCodeApiKeyForm({
-    onSubmit: () => {
-      setValue(AgentCapabilities.execute_code, true, { shouldDirty: true });
-    },
-    onRevoke: () => {
-      setValue(AgentCapabilities.execute_code, false, { shouldDirty: true });
-    },
-  });
-
-  const runCodeIsEnabled = useWatch({ control, name: AgentCapabilities.execute_code });
-  const isUserProvided = authType === AuthType.USER_PROVIDED;
-
-  const handleCheckboxChange = (checked: boolean) => {
-    if (isToolAuthenticated) {
-      setValue(AgentCapabilities.execute_code, checked, { shouldDirty: true });
-    } else if (runCodeIsEnabled) {
-      setValue(AgentCapabilities.execute_code, false, { shouldDirty: true });
-    } else {
-      setIsDialogOpen(true);
-    }
-  };
+  const { control, setValue } = methods;
 
   return (
-    <>
-      <HoverCard openDelay={50}>
-        <div className="flex items-center">
-          <Controller
-            name={AgentCapabilities.execute_code}
-            control={control}
-            render={({ field }) => (
-              <Checkbox
-                {...field}
-                checked={runCodeIsEnabled ? runCodeIsEnabled : isToolAuthenticated && field.value}
-                onCheckedChange={handleCheckboxChange}
-                className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
-                value={field.value.toString()}
-                disabled={runCodeIsEnabled ? false : !isToolAuthenticated}
-                aria-label={localize('com_ui_run_code')}
-              />
-            )}
-          />
-          <button
-            type="button"
-            className="flex items-center space-x-2"
-            onClick={() => {
-              const value = !getValues(AgentCapabilities.execute_code);
-              handleCheckboxChange(value);
-            }}
-          >
-            <label
-              className="form-check-label text-token-text-primary w-full cursor-pointer"
-              htmlFor={AgentCapabilities.execute_code}
+    <HoverCard openDelay={50}>
+      <div className="flex items-center">
+        <Controller
+          name={AgentCapabilities.execute_code}
+          control={control}
+          render={({ field }) => (
+            <Checkbox
+              {...field}
+              id="execute-code-checkbox"
+              checked={!!field.value}
+              onCheckedChange={(checked) =>
+                setValue(AgentCapabilities.execute_code, checked === true, { shouldDirty: true })
+              }
+              className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
+              value={field.value.toString()}
+              aria-labelledby="execute-code-label"
+            />
+          )}
+        />
+        <label
+          id="execute-code-label"
+          htmlFor="execute-code-checkbox"
+          className="form-check-label text-token-text-primary cursor-pointer text-sm"
+        >
+          {localize('com_ui_run_code')}
+        </label>
+        <div className="ml-2 flex gap-2">
+          <HoverCardTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center"
+              aria-label={localize('com_ui_run_code')}
             >
-              {localize('com_ui_run_code')}
-            </label>
-          </button>
-          <div className="ml-2 flex gap-2">
-            {isUserProvided && (isToolAuthenticated || runCodeIsEnabled) && (
-              <button
-                type="button"
-                onClick={() => setIsDialogOpen(true)}
-                aria-label={localize('com_ui_add_api_key')}
-              >
-                <KeyRoundIcon className="h-5 w-5 text-text-primary" />
-              </button>
-            )}
-            <HoverCardTrigger>
               <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
-            </HoverCardTrigger>
-          </div>
-          <HoverCardPortal>
-            <HoverCardContent side={ESide.Top} className="w-80">
-              <div className="space-y-2">
-                <p className="text-sm text-text-secondary">
-                  {localize('com_agents_code_interpreter')}
-                </p>
-              </div>
-            </HoverCardContent>
-          </HoverCardPortal>
+            </button>
+          </HoverCardTrigger>
         </div>
-      </HoverCard>
-      <ApiKeyDialog
-        isOpen={isDialogOpen}
-        onSubmit={onSubmit}
-        onRevoke={handleRevokeApiKey}
-        onOpenChange={setIsDialogOpen}
-        register={keyFormMethods.register}
-        isToolAuthenticated={isToolAuthenticated}
-        handleSubmit={keyFormMethods.handleSubmit}
-        isUserProvided={authType === AuthType.USER_PROVIDED}
-      />
-    </>
+        <HoverCardPortal>
+          <HoverCardContent side={ESide.Top} className="w-80">
+            <div className="space-y-2">
+              <p className="text-sm text-text-secondary">{localize('com_agents_run_code_info')}</p>
+            </div>
+          </HoverCardContent>
+        </HoverCardPortal>
+      </div>
+    </HoverCard>
   );
 }

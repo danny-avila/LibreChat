@@ -1,6 +1,7 @@
+const mongoose = require('mongoose');
 const express = require('express');
-const { isEnabled } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { isEnabled, isActiveExpirationDate, getSharedLinkExpiration } = require('@librechat/api');
+const { logger, createTempChatExpirationDate } = require('@librechat/data-schemas');
 const {
   getSharedMessages,
   createSharedLink,
@@ -12,6 +13,22 @@ const {
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const router = express.Router();
 
+const resolveSharedLinkExpiration = (req, conversationId) =>
+  getSharedLinkExpiration(
+    { req, conversationId },
+    {
+      getConvo: async (userId, sourceConversationId) => {
+        const Conversation = mongoose.models.Conversation;
+        return Conversation.findOne(
+          { conversationId: sourceConversationId, user: userId },
+          'isTemporary expiredAt',
+        ).lean();
+      },
+      createExpirationDate: createTempChatExpirationDate,
+      logger,
+    },
+  );
+
 /**
  * Shared messages
  */
@@ -19,9 +36,7 @@ const allowSharedLinks =
   process.env.ALLOW_SHARED_LINKS === undefined || isEnabled(process.env.ALLOW_SHARED_LINKS);
 
 if (allowSharedLinks) {
-  const allowSharedLinksPublic =
-    process.env.ALLOW_SHARED_LINKS_PUBLIC === undefined ||
-    isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC);
+  const allowSharedLinksPublic = isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC);
   router.get(
     '/:shareId',
     allowSharedLinksPublic ? (req, res, next) => next() : requireJwtAuth,
@@ -89,6 +104,7 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
     return res.status(200).json({
       success: share.success,
       shareId: share.shareId,
+      targetMessageId: share.targetMessageId,
       conversationId: req.params.conversationId,
     });
   } catch (error) {
@@ -100,7 +116,17 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
 router.post('/:conversationId', requireJwtAuth, async (req, res) => {
   try {
     const { targetMessageId } = req.body;
-    const created = await createSharedLink(req.user.id, req.params.conversationId, targetMessageId);
+    const expiredAt = await resolveSharedLinkExpiration(req, req.params.conversationId);
+    if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
+      return res.status(404).end();
+    }
+
+    const created = await createSharedLink(
+      req.user.id,
+      req.params.conversationId,
+      targetMessageId,
+      expiredAt,
+    );
     if (created) {
       res.status(200).json(created);
     } else {
@@ -114,7 +140,30 @@ router.post('/:conversationId', requireJwtAuth, async (req, res) => {
 
 router.patch('/:shareId', requireJwtAuth, async (req, res) => {
   try {
-    const updatedShare = await updateSharedLink(req.user.id, req.params.shareId);
+    const { targetMessageId } = req.body ?? {};
+    if (targetMessageId !== undefined && typeof targetMessageId !== 'string') {
+      return res.status(400).json({ message: 'targetMessageId must be a string' });
+    }
+
+    let expiredAt;
+    const SharedLink = mongoose.models.SharedLink;
+    const existing = await SharedLink.findOne(
+      { shareId: req.params.shareId, user: req.user.id },
+      'conversationId',
+    ).lean();
+    if (existing?.conversationId) {
+      expiredAt = await resolveSharedLinkExpiration(req, existing.conversationId);
+    }
+    if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
+      return res.status(404).end();
+    }
+
+    const updatedShare = await updateSharedLink(
+      req.user.id,
+      req.params.shareId,
+      targetMessageId,
+      expiredAt,
+    );
     if (updatedShare) {
       res.status(200).json(updatedShare);
     } else {

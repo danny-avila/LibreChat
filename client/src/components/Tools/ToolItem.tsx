@@ -58,7 +58,7 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
             >
               <div className="flex w-full items-center justify-center gap-2">
                 {localize('com_ui_add')}
-                <PlusCircleIcon className="flex h-4 w-4 items-center stroke-2" />
+                <PlusCircleIcon className="flex h-4 w-4 items-center stroke-2" aria-hidden="true" />
               </div>
             </button>
           ) : (
@@ -69,7 +69,7 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
             >
               <div className="flex w-full items-center justify-center gap-2">
                 {localize('com_nav_tool_remove')}
-                <XCircle className="flex h-4 w-4 items-center stroke-2" />
+                <XCircle className="flex h-4 w-4 items-center stroke-2" aria-hidden="true" />
               </div>
             </button>
           )}

@@ -21,6 +21,7 @@ jest.mock('~/utils', () => ({
   logger: {
     log: jest.fn(),
   },
+  getCachedPreview: jest.fn(() => undefined),
 }));
 
 jest.mock('../Image', () => {
@@ -95,7 +96,7 @@ describe('FileRow', () => {
   };
 
   describe('Image URL Selection Logic', () => {
-    it('should use filepath instead of preview when progress is 1 (upload complete)', () => {
+    it('should prefer cached preview over filepath when upload is complete', () => {
       const file = createMockFile({
         file_id: 'uploaded-file',
         preview: 'blob:http://localhost:3080/temp-preview',
@@ -109,8 +110,7 @@ describe('FileRow', () => {
       renderFileRow(filesMap);
 
       const imageUrl = screen.getByTestId('image-url').textContent;
-      expect(imageUrl).toBe('/images/user123/uploaded-file__image.png');
-      expect(imageUrl).not.toContain('blob:');
+      expect(imageUrl).toBe('blob:http://localhost:3080/temp-preview');
     });
 
     it('should use preview when progress is less than 1 (uploading)', () => {
@@ -147,7 +147,7 @@ describe('FileRow', () => {
       expect(imageUrl).toBe('/images/user123/file-without-preview__image.png');
     });
 
-    it('should use filepath when both preview and filepath exist and progress is exactly 1', () => {
+    it('should prefer preview over filepath when both exist and progress is 1', () => {
       const file = createMockFile({
         file_id: 'complete-file',
         preview: 'blob:http://localhost:3080/old-blob',
@@ -161,7 +161,7 @@ describe('FileRow', () => {
       renderFileRow(filesMap);
 
       const imageUrl = screen.getByTestId('image-url').textContent;
-      expect(imageUrl).toBe('/images/user123/complete-file__image.png');
+      expect(imageUrl).toBe('blob:http://localhost:3080/old-blob');
     });
   });
 
@@ -284,7 +284,7 @@ describe('FileRow', () => {
 
       const urls = screen.getAllByTestId('image-url').map((el) => el.textContent);
       expect(urls).toContain('blob:http://localhost:3080/preview-1');
-      expect(urls).toContain('/images/user123/file-2__image.png');
+      expect(urls).toContain('blob:http://localhost:3080/preview-2');
     });
 
     it('should deduplicate files with the same file_id', () => {
@@ -321,10 +321,10 @@ describe('FileRow', () => {
     });
   });
 
-  describe('Regression: Blob URL Bug Fix', () => {
-    it('should NOT use revoked blob URL after upload completes', () => {
+  describe('Preview Cache Integration', () => {
+    it('should prefer preview blob URL over filepath for zero-flicker rendering', () => {
       const file = createMockFile({
-        file_id: 'regression-test',
+        file_id: 'cache-test',
         preview: 'blob:http://localhost:3080/d25f730c-152d-41f7-8d79-c9fa448f606b',
         filepath:
           '/images/68c98b26901ebe2d87c193a2/c0fe1b93-ba3d-456c-80be-9a492bfd9ed0__image.png',
@@ -337,8 +337,24 @@ describe('FileRow', () => {
       renderFileRow(filesMap);
 
       const imageUrl = screen.getByTestId('image-url').textContent;
+      expect(imageUrl).toBe('blob:http://localhost:3080/d25f730c-152d-41f7-8d79-c9fa448f606b');
+    });
 
-      expect(imageUrl).not.toContain('blob:');
+    it('should fall back to filepath when no preview exists', () => {
+      const file = createMockFile({
+        file_id: 'no-preview',
+        preview: undefined,
+        filepath:
+          '/images/68c98b26901ebe2d87c193a2/c0fe1b93-ba3d-456c-80be-9a492bfd9ed0__image.png',
+        progress: 1,
+      });
+
+      const filesMap = new Map<string, ExtendedFile>();
+      filesMap.set(file.file_id, file);
+
+      renderFileRow(filesMap);
+
+      const imageUrl = screen.getByTestId('image-url').textContent;
       expect(imageUrl).toBe(
         '/images/68c98b26901ebe2d87c193a2/c0fe1b93-ba3d-456c-80be-9a492bfd9ed0__image.png',
       );

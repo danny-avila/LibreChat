@@ -20,23 +20,37 @@ interface ViolationData {
   };
 }
 
+/** Waits for both Redis clients (ioredis + keyv/node-redis) to be ready */
+async function waitForRedisClients() {
+  const redisClients = await import('../../redisClients');
+  const { ioredisClient, keyvRedisClientReady } = redisClients;
+
+  if (ioredisClient && ioredisClient.status !== 'ready') {
+    await new Promise<void>((resolve) => {
+      ioredisClient.once('ready', resolve);
+    });
+  }
+
+  if (keyvRedisClientReady) {
+    await keyvRedisClientReady;
+  }
+
+  return redisClients;
+}
+
 describe('violationCache', () => {
   let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(() => {
     originalEnv = { ...process.env };
 
-    // Clear cache-related env vars
-    delete process.env.USE_REDIS;
-    delete process.env.REDIS_URI;
-    delete process.env.USE_REDIS_CLUSTER;
-    delete process.env.REDIS_PING_INTERVAL;
-    delete process.env.REDIS_KEY_PREFIX;
-
-    // Set test configuration
+    // Set test configuration with fallback defaults for local testing
     process.env.REDIS_PING_INTERVAL = '0';
     process.env.REDIS_KEY_PREFIX = 'Cache-Integration-Test';
     process.env.REDIS_RETRY_MAX_ATTEMPTS = '5';
+    process.env.USE_REDIS = process.env.USE_REDIS || 'true';
+    process.env.USE_REDIS_CLUSTER = process.env.USE_REDIS_CLUSTER || 'false';
+    process.env.REDIS_URI = process.env.REDIS_URI || 'redis://127.0.0.1:6379';
 
     // Clear require cache to reload modules
     jest.resetModules();
@@ -48,21 +62,9 @@ describe('violationCache', () => {
   });
 
   test('should create violation cache with Redis when USE_REDIS is true', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
-    const redisClients = await import('../../redisClients');
-    const { ioredisClient } = redisClients;
+    await waitForRedisClients();
     const cache = cacheFactory.violationCache('test-violations', 60000); // 60 second TTL
-
-    // Wait for Redis connection to be ready
-    if (ioredisClient && ioredisClient.status !== 'ready') {
-      await new Promise<void>((resolve) => {
-        ioredisClient.once('ready', resolve);
-      });
-    }
 
     // Verify it returns a Keyv instance
     expect(cache).toBeDefined();
@@ -119,22 +121,10 @@ describe('violationCache', () => {
   });
 
   test('should respect namespace prefixing', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
-    const redisClients = await import('../../redisClients');
-    const { ioredisClient } = redisClients;
+    await waitForRedisClients();
     const cache1 = cacheFactory.violationCache('namespace1');
     const cache2 = cacheFactory.violationCache('namespace2');
-
-    // Wait for Redis connection to be ready
-    if (ioredisClient && ioredisClient.status !== 'ready') {
-      await new Promise<void>((resolve) => {
-        ioredisClient.once('ready', resolve);
-      });
-    }
 
     const testKey = 'shared-key';
     const value1: ViolationData = { namespace: 1 };
@@ -157,22 +147,10 @@ describe('violationCache', () => {
   });
 
   test('should respect TTL settings', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
-    const redisClients = await import('../../redisClients');
-    const { ioredisClient } = redisClients;
+    await waitForRedisClients();
     const ttl = 1000; // 1 second TTL
     const cache = cacheFactory.violationCache('ttl-test', ttl);
-
-    // Wait for Redis connection to be ready
-    if (ioredisClient && ioredisClient.status !== 'ready') {
-      await new Promise<void>((resolve) => {
-        ioredisClient.once('ready', resolve);
-      });
-    }
 
     const testKey = 'ttl-key';
     const testValue: ViolationData = { data: 'expires soon' };
@@ -193,21 +171,9 @@ describe('violationCache', () => {
   });
 
   test('should handle complex violation data structures', async () => {
-    process.env.USE_REDIS = 'true';
-    process.env.USE_REDIS_CLUSTER = 'false';
-    process.env.REDIS_URI = 'redis://127.0.0.1:6379';
-
     const cacheFactory = await import('../../cacheFactory');
-    const redisClients = await import('../../redisClients');
-    const { ioredisClient } = redisClients;
+    await waitForRedisClients();
     const cache = cacheFactory.violationCache('complex-violations');
-
-    // Wait for Redis connection to be ready
-    if (ioredisClient && ioredisClient.status !== 'ready') {
-      await new Promise<void>((resolve) => {
-        ioredisClient.once('ready', resolve);
-      });
-    }
 
     const complexData: ViolationData = {
       userId: 'user123',

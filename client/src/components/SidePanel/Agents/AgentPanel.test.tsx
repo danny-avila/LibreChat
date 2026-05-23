@@ -2,8 +2,8 @@
  * @jest-environment jsdom
  */
 import * as React from 'react';
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { render, waitFor, fireEvent } from '@testing-library/react';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Agent } from 'librechat-data-provider';
 
@@ -50,8 +50,6 @@ jest.mock('librechat-data-provider', () => {
     },
     EModelEndpoint: actualModule.EModelEndpoint || {
       agents: 'agents',
-      chatGPTBrowser: 'chatGPTBrowser',
-      gptPlugins: 'gptPlugins',
     },
     ResourceType: actualModule.ResourceType || {
       AGENT: 'agent',
@@ -257,7 +255,6 @@ const mockAgentQuery = (
     data: {
       id: 'agent-123',
       author: 'user-123',
-      isCollaborative: false,
       ...agent,
     } as Agent,
     isInitialLoading: false,
@@ -335,7 +332,8 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'com_assistants_update_success Test Agent',
+          message: 'com_assistants_update_success_name',
+          status: undefined,
         });
       });
     });
@@ -355,7 +353,8 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'com_assistants_update_success com_ui_agent',
+          message: 'com_assistants_update_success_name',
+          status: undefined,
         });
       });
     });
@@ -375,7 +374,8 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'com_assistants_update_success Test Agent',
+          message: 'com_assistants_update_success_name',
+          status: undefined,
         });
       });
     });

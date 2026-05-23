@@ -66,6 +66,8 @@ export const messages = (params: q.MessagesListParams) => {
 
 export const messagesArtifacts = (messageId: string) => `${messagesRoot}/artifact/${messageId}`;
 
+export const messagesBranch = () => `${messagesRoot}/branch`;
+
 const shareRoot = `${BASE_URL}/api/share`;
 export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
 export const getSharedLink = (conversationId: string) => `${shareRoot}/link/${conversationId}`;
@@ -93,6 +95,12 @@ export const revokeUserKey = (name: string) => `${keysEndpoint}/${name}`;
 
 export const revokeAllUserKeys = () => `${keysEndpoint}?all=true`;
 
+const apiKeysEndpoint = `${BASE_URL}/api/api-keys`;
+
+export const apiKeys = () => apiKeysEndpoint;
+
+export const apiKeyById = (id: string) => `${apiKeysEndpoint}/${id}`;
+
 export const conversationsRoot = `${BASE_URL}/api/convos`;
 
 export const conversations = (params: q.ConversationListParams) => {
@@ -101,9 +109,12 @@ export const conversations = (params: q.ConversationListParams) => {
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
-export const genTitle = () => `${conversationsRoot}/gen_title`;
+export const genTitle = (conversationId: string) =>
+  `${conversationsRoot}/gen_title/${encodeURIComponent(conversationId)}`;
 
 export const updateConversation = () => `${conversationsRoot}/update`;
+
+export const archiveConversation = () => `${conversationsRoot}/archive`;
 
 export const deleteConversation = () => `${conversationsRoot}`;
 
@@ -149,6 +160,36 @@ export const resetPassword = () => `${BASE_URL}/api/auth/resetPassword`;
 
 export const verifyEmail = () => `${BASE_URL}/api/user/verify`;
 
+// Auth page URLs (for client-side navigation and redirects)
+export const loginPage = () => `${BASE_URL}/login`;
+export const registerPage = () => `${BASE_URL}/register`;
+
+const REDIRECT_PARAM = 'redirect_to';
+const LOGIN_PATH_RE = /(?:^|\/)login(?:\/|$)/;
+
+/**
+ * Builds a `/login?redirect_to=...` URL from the given or current location.
+ * Returns plain `/login` (no param) when already on a login route to prevent recursive nesting.
+ */
+export function buildLoginRedirectUrl(pathname?: string, search?: string, hash?: string): string {
+  const p = pathname ?? window.location.pathname;
+  if (LOGIN_PATH_RE.test(p)) {
+    return '/login';
+  }
+  const s = search ?? window.location.search;
+  const h = hash ?? window.location.hash;
+
+  const stripped =
+    BASE_URL && (p === BASE_URL || p.startsWith(BASE_URL + '/'))
+      ? p.slice(BASE_URL.length) || '/'
+      : p;
+  const currentPath = `${stripped}${s}${h}`;
+  if (!currentPath || currentPath === '/') {
+    return '/login';
+  }
+  return `/login?${REDIRECT_PARAM}=${encodeURIComponent(currentPath)}`;
+}
+
 export const resendVerificationEmail = () => `${BASE_URL}/api/user/verify/resend`;
 
 export const plugins = () => `${BASE_URL}/api/plugins`;
@@ -165,6 +206,11 @@ export const mcpAuthValues = (serverName: string) => {
 export const cancelMCPOAuth = (serverName: string) => {
   return `${BASE_URL}/api/mcp/oauth/cancel/${serverName}`;
 };
+
+export const mcpOAuthBind = (serverName: string) => `${BASE_URL}/api/mcp/${serverName}/oauth/bind`;
+
+export const actionOAuthBind = (actionId: string) =>
+  `${BASE_URL}/api/actions/${actionId}/oauth/bind`;
 
 export const config = () => `${BASE_URL}/api/config`;
 
@@ -222,9 +268,14 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
   return url;
 };
 
+export const activeJobs = () => `${BASE_URL}/api/agents/chat/active`;
+
 export const mcp = {
   tools: `${BASE_URL}/api/mcp/tools`,
+  servers: `${BASE_URL}/api/mcp/servers`,
 };
+
+export const mcpServer = (serverName: string) => `${BASE_URL}/api/mcp/servers/${serverName}`;
 
 export const revertAgentVersion = (agent_id: string) => `${agents({ path: `${agent_id}/revert` })}`;
 
@@ -233,6 +284,11 @@ export const fileUpload = () => `${BASE_URL}/api/files`;
 export const fileDelete = () => `${BASE_URL}/api/files`;
 export const fileDownload = (userId: string, fileId: string) =>
   `${BASE_URL}/api/files/download/${userId}/${fileId}`;
+/* Deferred-preview lifecycle endpoint. Returns
+ * `{ status, text?, textFormat?, previewError? }` so the frontend can
+ * poll while background HTML extraction is in flight. See PR #12957. */
+export const filePreview = (fileId: string) =>
+  `${BASE_URL}/api/files/${encodeURIComponent(fileId)}/preview`;
 export const fileConfig = () => `${BASE_URL}/api/files/config`;
 export const agentFiles = (agentId: string) => `${BASE_URL}/api/files/agent/${agentId}`;
 
@@ -292,6 +348,8 @@ export const postPrompt = prompts;
 
 export const updatePromptGroup = getPromptGroup;
 
+export const recordPromptGroupUsage = (groupId: string) => `${prompts()}/groups/${groupId}/use`;
+
 export const updatePromptLabels = (_id: string) => `${getPrompt(_id)}/labels`;
 
 export const updatePromptTag = (_id: string) => `${getPrompt(_id)}/tags/production`;
@@ -306,17 +364,66 @@ export const getCategories = () => `${BASE_URL}/api/categories`;
 
 export const getAllPromptGroups = () => `${prompts()}/all`;
 
+/* Skills */
+export const skills = () => `${BASE_URL}/api/skills`;
+export const importSkill = () => `${skills()}/import`;
+
+export const getSkill = (id: string) => `${skills()}/${encodeURIComponent(id)}`;
+
+export const listSkillsWithFilters = (
+  filter: Record<string, string | number | undefined | null>,
+) => {
+  const cleaned = Object.entries(filter).reduce(
+    (acc, [key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        acc[key] = String(value);
+      }
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+  const query =
+    Object.keys(cleaned).length > 0 ? `?${new URLSearchParams(cleaned).toString()}` : '';
+  return `${skills()}${query}`;
+};
+
+export const skillFiles = (id: string) => `${getSkill(id)}/files`;
+
+export const skillFile = (id: string, relativePath: string) =>
+  `${skillFiles(id)}/${encodeURIComponent(relativePath)}`;
+
+/**
+ * Skill filesystem tree (phase 2). URL shape mirrors the original UI PR so
+ * the tree hooks keep their call surface. `path` is pre-encoded by the
+ * caller (e.g. `${nodeId}/content`).
+ */
+export const skillTree = ({ skillId, path = '' }: { skillId: string; path?: string }) => {
+  let url = `${BASE_URL}/api/skills/${encodeURIComponent(skillId)}/tree`;
+  if (path) {
+    url += `/${path}`;
+  }
+  return url;
+};
+
+/* Skill active states (per-user overrides) */
+export const skillStates = () => `${BASE_URL}/api/user/settings/skills/active`;
+
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
-export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase()}`;
+export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
+export const getRole = (roleName: string) => `${roles()}/${encodeURIComponent(roleName)}`;
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
 export const updatePeoplePickerPermissions = (roleName: string) =>
   `${getRole(roleName)}/people-picker`;
+export const updateMCPServersPermissions = (roleName: string) => `${getRole(roleName)}/mcp-servers`;
+export const updateRemoteAgentsPermissions = (roleName: string) =>
+  `${getRole(roleName)}/remote-agents`;
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;
+export const updateSkillPermissions = (roleName: string) => `${getRole(roleName)}/skills`;
 
 /* Conversation Tags */
 export const conversationTags = (tag?: string) =>
@@ -377,6 +484,9 @@ export const updateResourcePermissions = (resourceType: ResourceType, resourceId
 
 export const getEffectivePermissions = (resourceType: ResourceType, resourceId: string) =>
   `${BASE_URL}/api/permissions/${resourceType}/${resourceId}/effective`;
+
+export const getAllEffectivePermissions = (resourceType: ResourceType) =>
+  `${BASE_URL}/api/permissions/${resourceType}/effective/all`;
 
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>

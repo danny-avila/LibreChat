@@ -1,8 +1,14 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { useToastContext } from '@librechat/client';
+import { X } from 'lucide-react';
+import { Switch, useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
-import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
-import type { AgentForm, AgentPanelProps, IconComponentTypes } from '~/common';
+import {
+  EModelEndpoint,
+  PermissionTypes,
+  Permissions,
+  getEndpointField,
+} from 'librechat-data-provider';
+import type { AgentForm, IconComponentTypes } from '~/common';
 import {
   removeFocusOutlines,
   processAgentOption,
@@ -12,13 +18,14 @@ import {
   cn,
 } from '~/utils';
 import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
+import { SkillSelectDialog } from '~/components/Skills/dialogs';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize, useVisibleTools } from '~/hooks';
+import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
-import { useGetAgentFiles } from '~/data-provider';
+import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
@@ -30,26 +37,27 @@ import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
 
-const labelClass = 'mb-2 text-token-text-primary block font-medium';
+const labelClass = 'mb-2 text-token-text-primary block text-sm font-medium';
 const inputClass = cn(
   defaultTextProps,
   'flex w-full px-3 py-2 border-border-light bg-surface-secondary focus-visible:ring-2 focus-visible:ring-ring-primary',
   removeFocusOutlines,
 );
 
-export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'createMutation'>) {
+export default function AgentConfig() {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
   const [showMCPToolDialog, setShowMCPToolDialog] = useState(false);
+  const [showSkillDialog, setShowSkillDialog] = useState(false);
   const {
     actions,
     setAction,
     regularTools,
     agentsConfig,
-    startupConfig,
+    availableMCPServers,
     mcpServersMap,
     setActivePanel,
     endpointsConfig,
@@ -63,7 +71,45 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
   const model = useWatch({ control, name: 'model' });
   const agent = useWatch({ control, name: 'agent' });
   const tools = useWatch({ control, name: 'tools' });
+  const skills = useWatch({ control, name: 'skills' });
+  const skillsActive = useWatch({ control, name: 'skills_enabled' });
   const agent_id = useWatch({ control, name: 'id' });
+
+  let skillsHintKey:
+    | 'com_ui_skills_disabled_hint'
+    | 'com_ui_skills_enabled_allowlist_hint'
+    | 'com_ui_skills_enabled_all_hint' = 'com_ui_skills_disabled_hint';
+  if (skillsActive === true) {
+    skillsHintKey =
+      (skills ?? []).length > 0
+        ? 'com_ui_skills_enabled_allowlist_hint'
+        : 'com_ui_skills_enabled_all_hint';
+  }
+
+  const {
+    codeEnabled,
+    toolsEnabled,
+    contextEnabled,
+    actionsEnabled,
+    skillsEnabled,
+    artifactsEnabled,
+    webSearchEnabled,
+    fileSearchEnabled,
+  } = useAgentCapabilities(agentsConfig?.capabilities);
+
+  const hasSkillsAccess = useHasAccess({
+    permissionType: PermissionTypes.SKILLS,
+    permission: Permissions.USE,
+  });
+  const showSkills = hasSkillsAccess && skillsEnabled;
+  const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
+  const skillsMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const skill of skillsData?.skills ?? []) {
+      map.set(skill._id, skill.name);
+    }
+    return map;
+  }, [skillsData?.skills]);
 
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
 
@@ -76,16 +122,6 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
     });
     return newFileMap;
   }, [fileMap, agentFiles]);
-
-  const {
-    codeEnabled,
-    toolsEnabled,
-    contextEnabled,
-    actionsEnabled,
-    artifactsEnabled,
-    webSearchEnabled,
-    fileSearchEnabled,
-  } = useAgentCapabilities(agentsConfig?.capabilities);
 
   const context_files = useMemo(() => {
     if (typeof agent === 'string') {
@@ -180,14 +216,10 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
 
   return (
     <>
-      <div className="h-auto bg-white px-4 pt-3 dark:bg-transparent">
+      <div className="h-auto pt-1">
         {/* Avatar & Name */}
         <div className="mb-4">
-          <AgentAvatar
-            agent_id={agent_id}
-            createMutation={createMutation}
-            avatar={agent?.['avatar'] ?? null}
-          />
+          <AgentAvatar avatar={agent?.['avatar'] ?? null} />
           <label className={labelClass} htmlFor="name">
             {localize('com_ui_name')}
             <span className="text-red-500">*</span>
@@ -206,16 +238,19 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                   id="name"
                   type="text"
                   placeholder={localize('com_agents_name_placeholder')}
-                  aria-label="Agent name"
+                  aria-label={localize('com_ui_agent_name')}
+                  aria-invalid={!!errors.name}
+                  aria-describedby={errors.name ? 'agent-name-error' : undefined}
                 />
-                <div
-                  className={cn(
-                    'mt-1 w-56 text-sm text-red-500',
-                    errors.name ? 'visible h-auto' : 'invisible h-0',
-                  )}
-                >
-                  {errors.name ? errors.name.message : ' '}
-                </div>
+                {errors.name && (
+                  <div
+                    id="agent-name-error"
+                    className="mt-1 w-56 text-sm text-red-500"
+                    role="alert"
+                  >
+                    {errors.name.message}
+                  </div>
+                )}
               </>
             )}
           />
@@ -246,7 +281,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                 id="description"
                 type="text"
                 placeholder={localize('com_agents_description_placeholder')}
-                aria-label="Agent description"
+                aria-label={localize('com_ui_agent_description')}
               />
             )}
           />
@@ -268,9 +303,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           <button
             type="button"
             onClick={() => setActivePanel(Panel.model)}
-            className="btn btn-neutral border-token-border-light relative h-10 w-full rounded-lg font-medium"
-            aria-haspopup="true"
-            aria-expanded="false"
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
           >
             <div className="flex w-full items-center gap-2">
               {Icon && (
@@ -293,7 +326,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           contextEnabled ||
           webSearchEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
-            <label className="text-token-text-primary block font-medium">
+            <label className="text-token-text-primary block text-sm font-medium">
               {localize('com_assistants_capabilities')}
             </label>
             {/* Code Execution */}
@@ -309,19 +342,106 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           </div>
         )}
         {/* MCP Section */}
-        {startupConfig?.mcpServers != null && (
+        {availableMCPServers != null && availableMCPServers.length > 0 && (
           <MCPTools
             agentId={agent_id}
             mcpServerNames={mcpServerNames}
             setShowMCPToolDialog={setShowMCPToolDialog}
           />
         )}
+
+        {showSkills && (
+          <div className="mb-4">
+            <div className="mb-2 flex items-center justify-between">
+              <label
+                htmlFor="skills_enabled"
+                className="text-token-text-primary block text-sm font-medium"
+              >
+                {localize('com_ui_skills')}
+              </label>
+              <Controller
+                name="skills_enabled"
+                control={control}
+                render={({ field }) => (
+                  <Switch
+                    id="skills_enabled"
+                    checked={field.value === true}
+                    onCheckedChange={(value: boolean) => field.onChange(Boolean(value))}
+                    data-testid="skills_enabled"
+                    aria-label={localize('com_ui_skills_enable_toggle')}
+                  />
+                )}
+              />
+            </div>
+            <p className="mb-2 text-xs text-text-secondary">{localize(skillsHintKey)}</p>
+            <div
+              className={skillsActive === true ? undefined : 'pointer-events-none opacity-50'}
+              aria-disabled={skillsActive !== true}
+            >
+              <div className="mb-1">
+                {(skills ?? []).map((skillId) => {
+                  const skillName = skillsMap.get(skillId);
+                  if (!skillName) {
+                    return null;
+                  }
+                  return (
+                    <div
+                      key={skillId}
+                      className="mb-1 flex items-center justify-between rounded-md border border-border-light px-3 py-2 text-sm"
+                    >
+                      <span className="truncate text-text-primary">{skillName}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const current: string[] = methods.getValues('skills') ?? [];
+                          methods.setValue(
+                            'skills',
+                            current.filter((id) => id !== skillId),
+                            { shouldDirty: true },
+                          );
+                        }}
+                        className="ml-2 flex-shrink-0 text-text-secondary transition-colors hover:text-text-primary"
+                        aria-label={localize('com_ui_remove_skill_var', { 0: skillName })}
+                        disabled={skillsActive !== true}
+                      >
+                        <X className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSkillDialog(true)}
+                  className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
+                  aria-haspopup="dialog"
+                  disabled={skillsActive !== true}
+                >
+                  <div className="flex w-full items-center justify-center gap-2">
+                    {localize('com_ui_add_skills')}
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Agent Tools & Actions */}
         <div className="mb-4">
           <label className={labelClass}>
-            {`${toolsEnabled === true ? localize('com_ui_tools') : ''}
-              ${toolsEnabled === true && actionsEnabled === true ? ' + ' : ''}
-              ${actionsEnabled === true ? localize('com_assistants_actions') : ''}`}
+            {(() => {
+              if (toolsEnabled === true && actionsEnabled === true) {
+                return localize('com_ui_tools_and_actions');
+              }
+              if (toolsEnabled === true) {
+                return localize('com_ui_tools');
+              }
+              if (actionsEnabled === true) {
+                return localize('com_assistants_actions');
+              }
+              return '';
+            })()}
           </label>
           <div>
             <div className="mb-1">
@@ -386,7 +506,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         <div className="mb-4">
           <div className="mb-1.5 flex items-center gap-2">
             <span>
-              <label className="text-token-text-primary block font-medium">
+              <label className="text-token-text-primary block text-sm font-medium">
                 {localize('com_ui_support_contact')}
               </label>
             </span>
@@ -418,7 +538,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                       id="support-contact-name"
                       type="text"
                       placeholder={localize('com_ui_support_contact_name_placeholder')}
-                      aria-label="Support contact name"
+                      aria-label={localize('com_ui_support_contact_name')}
                       aria-invalid={error ? 'true' : 'false'}
                       aria-describedby={error ? 'support-contact-name-error' : undefined}
                     />
@@ -460,7 +580,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
                       id="support-contact-email"
                       type="email"
                       placeholder={localize('com_ui_support_contact_email_placeholder')}
-                      aria-label="Support contact email"
+                      aria-label={localize('com_ui_support_contact_email')}
                       aria-invalid={error ? 'true' : 'false'}
                       aria-describedby={error ? 'support-contact-email-error' : undefined}
                     />
@@ -486,7 +606,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
         setIsOpen={setShowToolDialog}
         endpoint={EModelEndpoint.agents}
       />
-      {startupConfig?.mcpServers != null && (
+      {availableMCPServers != null && availableMCPServers.length > 0 && (
         <MCPToolSelectDialog
           agentId={agent_id}
           isOpen={showMCPToolDialog}
@@ -495,6 +615,7 @@ export default function AgentConfig({ createMutation }: Pick<AgentPanelProps, 'c
           endpoint={EModelEndpoint.agents}
         />
       )}
+      {showSkills && <SkillSelectDialog isOpen={showSkillDialog} setIsOpen={setShowSkillDialog} />}
     </>
   );
 }
