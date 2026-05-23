@@ -905,6 +905,28 @@ describe('MCPManager', () => {
       );
     });
 
+    it('should treat configured oauth as OAuth when requiresOAuth is unset', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'sse',
+        url: 'https://api.example.com',
+        oauth: {
+          authorization_url: 'https://auth.example.com/oauth/authorize',
+          token_url: 'https://auth.example.com/oauth/token',
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName });
+
+      expect(result.tools).toBeNull();
+      expect(result.oauthRequired).toBe(true);
+      expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
+    });
+
     it('should return OAuth info when server requires OAuth but no user provided', async () => {
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
@@ -965,6 +987,98 @@ describe('MCPManager', () => {
         expect.objectContaining({ serverName }),
         expect.objectContaining({ user: mockUser, useOAuth: true }),
       );
+    });
+  });
+
+  describe('getUserConnection - useOAuth derivation', () => {
+    const mockUser = { id: userId, email: 'test@example.com' } as unknown as IUser;
+    const mockFlowManager = {
+      createFlow: jest.fn(),
+      getFlowState: jest.fn(),
+      deleteFlow: jest.fn(),
+    };
+    const mockConnection = {
+      isConnected: jest.fn().mockResolvedValue(true),
+      isStale: jest.fn().mockReturnValue(false),
+      disconnect: jest.fn(),
+    } as unknown as MCPConnection;
+
+    it('should pass useOAuth for servers with configured oauth and no requiresOAuth value', async () => {
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'sse',
+        url: 'https://oauth-mcp.example.com',
+        oauth: {
+          authorization_url: 'https://auth.example.com/oauth/authorize',
+          token_url: 'https://auth.example.com/oauth/token',
+        },
+      });
+
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        flowManager: mockFlowManager as unknown as t.UserMCPConnectionOptions['flowManager'],
+      });
+
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName }),
+        expect.objectContaining({ useOAuth: true }),
+      );
+    });
+
+    it('should not pass useOAuth for servers with requiresOAuth: false', async () => {
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'http://private-mcp.svc:5446/mcp',
+        requiresOAuth: false,
+        oauth: {
+          authorization_url: 'https://auth.example.com/oauth/authorize',
+          token_url: 'https://auth.example.com/oauth/token',
+        },
+      });
+
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+      });
+
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName }),
+        expect.not.objectContaining({ useOAuth: true }),
+      );
+    });
+
+    it('should throw when OAuth server lacks flowManager', async () => {
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'sse',
+        url: 'https://oauth-mcp.example.com',
+        requiresOAuth: true,
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await expect(
+        manager.getUserConnection({
+          serverName,
+          user: mockUser,
+        }),
+      ).rejects.toThrow('requires a flowManager');
     });
   });
 });

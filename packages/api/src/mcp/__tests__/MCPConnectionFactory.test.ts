@@ -95,6 +95,34 @@ describe('MCPConnectionFactory', () => {
       expect(mockConnectionInstance.connect).toHaveBeenCalled();
     });
 
+    it('should register fallback oauthRequired handler for non-OAuth connections', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      await MCPConnectionFactory.create(basicOptions);
+
+      expect(mockConnectionInstance.on).toHaveBeenCalledWith('oauthRequired', expect.any(Function));
+
+      const onCall = (mockConnectionInstance.on as jest.Mock).mock.calls.find(
+        ([event]: [string]) => event === 'oauthRequired',
+      );
+      const handler = onCall![1] as () => void;
+      handler();
+
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({ message: 'Server does not use OAuth' }),
+      );
+      expect(mockConnectionInstance.removeListener).toHaveBeenCalledWith(
+        'oauthRequired',
+        expect.any(Function),
+      );
+    });
+
     it('should create a connection with OAuth', async () => {
       const basicOptions = {
         serverName: 'test-server',
@@ -1135,7 +1163,7 @@ describe('MCPConnectionFactory', () => {
       expect(mockConnectionInstance.connect).toHaveBeenCalled();
     });
 
-    it('should not trigger proactive OAuth when OAuth metadata is present without requiresOAuth', async () => {
+    it('should trigger proactive OAuth when oauth is configured without requiresOAuth', async () => {
       const serverConfig = {
         type: 'streamable-http' as const,
         url: 'https://drivemcp.googleapis.com/mcp/v1',
@@ -1144,8 +1172,53 @@ describe('MCPConnectionFactory', () => {
           authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth',
           token_url: 'https://oauth2.googleapis.com/token',
         },
+      } as t.ParsedServerConfig;
+      const oauthOptions = makeOAuthOptions();
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
+
+      const mockTokens: MCPOAuthTokens = {
+        access_token: 'drive-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow-drive');
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
+        authorizationUrl: 'https://accounts.google.com/o/oauth2/auth?state=drive',
+        flowId: 'flow-drive',
+        flowMetadata: {
+          serverName: 'drive',
+          userId: 'user123',
+          serverUrl: 'https://drivemcp.googleapis.com/mcp/v1',
+          state: 'state-drive',
+        },
+      });
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockFlowManager.createFlow.mockResolvedValue(mockTokens);
+
+      wireEventHandlers(mockConnectionInstance);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      const connection = await MCPConnectionFactory.create(
+        { serverName: 'drive', serverConfig },
+        oauthOptions,
+      );
+
+      expect(connection).toBe(mockConnectionInstance);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(mockTokens);
+      expect(mockConnectionInstance.connect).toHaveBeenCalled();
+    });
+
+    it('should not trigger proactive OAuth when only OAuth metadata is present', async () => {
+      const serverConfig = {
+        type: 'streamable-http' as const,
+        url: 'https://metadata-only.example.com/mcp',
+        initTimeout: 5000,
         oauthMetadata: {
-          authorization_servers: ['https://accounts.google.com/'],
+          authorization_servers: ['https://auth.example.com/'],
         },
       } as t.ParsedServerConfig;
       const oauthOptions = makeOAuthOptions();
@@ -1155,7 +1228,7 @@ describe('MCPConnectionFactory', () => {
       mockConnectionInstance.isConnected.mockResolvedValue(true);
 
       const connection = await MCPConnectionFactory.create(
-        { serverName: 'drive', serverConfig },
+        { serverName: 'metadata-only', serverConfig },
         oauthOptions,
       );
 

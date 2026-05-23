@@ -7,7 +7,7 @@ import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
 import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
-import { sanitizeUrlForLogging, isClientRejectionMessage } from './utils';
+import { sanitizeUrlForLogging, isClientRejectionMessage, isOAuthServer } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
@@ -46,7 +46,7 @@ export class MCPConnectionFactory {
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
     basic: t.BasicConnectionOptions,
-    oauth?: t.OAuthConnectionOptions,
+    oauth?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<MCPConnection> {
     const factory = new this(basic, oauth);
     return factory.createConnection();
@@ -237,6 +237,17 @@ export class MCPConnectionFactory {
     let cleanupOAuthHandlers: (() => void) | null = null;
     if (this.useOAuth) {
       cleanupOAuthHandlers = this.handleOAuthEvents(connection);
+    } else {
+      const nonOAuthHandler = () => {
+        logger.info(
+          `${this.logPrefix} Server does not use OAuth; treating 401/403 as auth failure`,
+        );
+        connection.emit('oauthFailed', new Error('Server does not use OAuth'));
+      };
+      connection.on('oauthRequired', nonOAuthHandler);
+      cleanupOAuthHandlers = () => {
+        connection.removeListener('oauthRequired', nonOAuthHandler);
+      };
     }
 
     try {
@@ -260,10 +271,7 @@ export class MCPConnectionFactory {
     if (!this.useOAuth || oauthTokens) {
       return false;
     }
-    if (this.serverConfig.requiresOAuth === false) {
-      return false;
-    }
-    return this.serverConfig.requiresOAuth === true;
+    return isOAuthServer(this.serverConfig);
   }
 
   private getServerUrl(): string | undefined {
