@@ -483,6 +483,26 @@ describe('initializeBedrock', () => {
       expect(result.llmConfig).not.toHaveProperty('credentials');
     });
 
+    it('should reject a non-string user-provided Bedrock API key', async () => {
+      process.env.BEDROCK_AWS_BEARER_TOKEN = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_ACCESS_KEY_ID = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = AuthType.USER_PROVIDED;
+      const params = createMockParams();
+      (params.db.getUserKey as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          apiKey: JSON.stringify({
+            bearerToken: {},
+            accessKeyId: 'user-access-key',
+            secretAccessKey: 'user-secret-key',
+          }),
+        }),
+      );
+
+      await expect(initializeBedrock(params)).rejects.toThrow(
+        'Bedrock credentials not provided. Please provide them again.',
+      );
+    });
+
     it('should not use stored access keys when only bearer token mode is configured', async () => {
       process.env.BEDROCK_AWS_BEARER_TOKEN = AuthType.USER_PROVIDED;
       const params = createMockParams();
@@ -512,6 +532,24 @@ describe('initializeBedrock', () => {
         secretAccessKey: 'static-secret-key',
       });
       expect(result.llmConfig).not.toHaveProperty('client');
+    });
+
+    it('should reject non-string user-provided access key values', async () => {
+      process.env.BEDROCK_AWS_ACCESS_KEY_ID = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = AuthType.USER_PROVIDED;
+      const params = createMockParams();
+      (params.db.getUserKey as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          apiKey: JSON.stringify({
+            accessKeyId: {},
+            secretAccessKey: 'user-secret-key',
+          }),
+        }),
+      );
+
+      await expect(initializeBedrock(params)).rejects.toThrow(
+        'Bedrock credentials not provided. Please provide them again.',
+      );
     });
   });
 
