@@ -19,6 +19,29 @@ export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVa
 }
 
 /**
+ * Returns the names of `customUserVars` declared on the server config for which
+ * the user has not supplied a non-blank value (unset, empty, or whitespace-only
+ * values count as missing, since they still fail auth). An empty array means
+ * every declared variable is satisfied (or the server declares none).
+ *
+ * Used to gate tool exposure: a server that requires user-provided credentials
+ * should not surface its tools to the model until those values are set,
+ * otherwise every tool call fails authentication. See issue #10969.
+ */
+export function getMissingCustomUserVars(
+  config: Pick<ParsedServerConfig, 'customUserVars'>,
+  providedVars?: Record<string, string> | null,
+): string[] {
+  if (!hasCustomUserVars(config)) {
+    return [];
+  }
+  return Object.keys(config.customUserVars ?? {}).filter((key) => {
+    const value = providedVars?.[key];
+    return value == null || (typeof value === 'string' && value.trim() === '');
+  });
+}
+
+/**
  * Determines whether a server config is user-sourced (sandboxed placeholder resolution).
  * When `source` is set, it is authoritative. When absent (pre-upgrade cached configs),
  * falls back to the legacy `dbId` heuristic for backward compatibility.
