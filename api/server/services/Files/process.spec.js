@@ -1,23 +1,41 @@
 jest.mock('uuid', () => ({ v4: jest.fn(() => 'mock-uuid') }));
 
 jest.mock('@librechat/data-schemas', () => ({
-  logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+  logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn(), info: jest.fn() },
+  runAsSystem: jest.fn((fn) => fn()),
+  createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
 }));
 
 jest.mock('@librechat/agents', () => ({
-  EnvVar: { CODE_API_KEY: 'CODE_API_KEY' },
+  Providers: {
+    XAI: 'xai',
+    DEEPSEEK: 'deepseek',
+    MOONSHOT: 'moonshot',
+    OPENROUTER: 'openrouter',
+    VERTEXAI: 'vertexai',
+  },
 }));
 
-jest.mock('@librechat/api', () => ({
-  sanitizeFilename: jest.fn((n) => n),
-  parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
-  processAudioFile: jest.fn(),
-}));
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    Providers: actual.Providers,
+    mergeFileConfig: jest.fn(),
+  };
+});
 
-jest.mock('librechat-data-provider', () => ({
-  ...jest.requireActual('librechat-data-provider'),
-  mergeFileConfig: jest.fn(),
-}));
+jest.mock('@librechat/api', () => {
+  return {
+    sanitizeFilename: jest.fn((n) => n),
+    parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
+    processAudioFile: jest.fn(),
+    getStorageMetadata: jest.fn(() => ({})),
+    getRetentionExpiry: jest.fn(() => ({})),
+    sweepExpiredFiles: jest.fn().mockResolvedValue({ scanned: 0, deleted: 0, failed: 0 }),
+    startExpiredFileSweep: jest.fn().mockReturnValue('sweep-interval'),
+  };
+});
 
 jest.mock('~/server/services/Files/images', () => ({
   convertImage: jest.fn(),
@@ -42,8 +60,12 @@ jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({ file_id: 'created-file-id' }),
   updateFileUsage: jest.fn(),
   deleteFiles: jest.fn(),
+  findFileById: jest.fn(),
+  getConvo: jest.fn(),
+  getExpiredFiles: jest.fn(),
   addAgentResourceFile: jest.fn().mockResolvedValue({}),
   removeAgentResourceFiles: jest.fn(),
+  removeAgentResourceFilesFromAllAgents: jest.fn(),
 }));
 
 jest.mock('~/server/utils/getFileStrategy', () => ({
@@ -70,11 +92,29 @@ jest.mock('~/server/services/Files/Audio/STTService', () => ({
   STTService: { getInstance: jest.fn() },
 }));
 
-const { EToolResources, FileSources, AgentCapabilities } = require('librechat-data-provider');
+const {
+  getRetentionExpiry,
+  sweepExpiredFiles: sweepExpiredFilesWithDeps,
+  startExpiredFileSweep: startExpiredFileSweepWithDeps,
+} = require('@librechat/api');
+const {
+  EToolResources,
+  FileSources,
+  FileContext,
+  RetentionMode,
+  AgentCapabilities,
+} = require('librechat-data-provider');
 const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { processAgentFileUpload } = require('./process');
+const db = require('~/models');
+const {
+  processAgentFileUpload,
+  processDeleteRequest,
+  processFileURL,
+  sweepExpiredFiles,
+  startExpiredFileSweep,
+} = require('./process');
 
 const PDF_MIME = 'application/pdf';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -86,7 +126,7 @@ const ODP_MIME = 'application/vnd.oasis.opendocument.presentation';
 const ODG_MIME = 'application/vnd.oasis.opendocument.graphics';
 
 const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null } = {}) => ({
-  user: { id: 'user-123' },
+  user: { id: 'user-123', tenantId: 'tenant-a' },
   file: {
     path: '/tmp/upload.bin',
     originalname: 'upload.bin',
@@ -340,5 +380,503 @@ describe('processAgentFileUpload', () => {
         processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
       ).resolves.not.toThrow();
     });
+  });
+
+  /* Phase C / option α regression: the upload must persist its sandbox
+   * pointer under `metadata.codeEnvRef` (the post-cutover schema). The
+   * legacy `metadata.fileIdentifier` key is silently stripped by mongoose
+   * strict mode and downstream readers (`primeFiles`, `getCodeFilesByIds`,
+   * `categorizeFileForToolResources`, controller filtering) only check
+   * `codeEnvRef`. Storing under the legacy key would orphan the file —
+   * priming would skip it on subsequent code-execution turns and the
+   * sandbox copy would never re-mount. */
+  describe('execute_code uploads persist codeEnvRef metadata', () => {
+    const fs = require('fs');
+    const { Readable } = require('stream');
+    let createReadStreamSpy;
+
+    beforeEach(() => {
+      /* `processAgentFileUpload` opens the multer-staged temp file via
+       * `fs.createReadStream`. The test fixture path doesn't exist, so
+       * stub it to a tiny in-memory stream. */
+      createReadStreamSpy = jest
+        .spyOn(fs, 'createReadStream')
+        .mockImplementation(() => Readable.from(Buffer.from('')));
+    });
+
+    afterEach(() => {
+      createReadStreamSpy.mockRestore();
+    });
+
+    const setupCodeEnvUpload = (uploaded) => {
+      /* `processAgentFileUpload` calls `getStrategyFunctions` twice:
+       * once with `execute_code` for the codeapi upload, then again with
+       * the on-disk strategy (`local`) for the standard storage step that
+       * runs in the same flow. Both must return a working
+       * `handleFileUpload`. */
+      const codeEnvUpload = jest.fn().mockResolvedValue(uploaded);
+      const localUpload = jest.fn().mockResolvedValue({
+        bytes: 0,
+        filename: 'upload.bin',
+        filepath: '/uploads/upload.bin',
+      });
+      getStrategyFunctions.mockImplementation((src) =>
+        src === FileSources.execute_code
+          ? { handleFileUpload: codeEnvUpload }
+          : { handleFileUpload: localUpload, saveBuffer: jest.fn() },
+      );
+      return codeEnvUpload;
+    };
+
+    it('persists kind:user codeEnvRef for chat attachments (messageAttachment=true)', async () => {
+      setupCodeEnvUpload({ storage_session_id: 'sess-1', file_id: 'fid-1' });
+      const req = makeReq();
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+          message_file: true,
+        },
+      });
+
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: {
+            codeEnvRef: {
+              kind: 'user',
+              id: 'user-123',
+              storage_session_id: 'sess-1',
+              file_id: 'fid-1',
+            },
+          },
+        }),
+        true,
+      );
+    });
+
+    it('persists kind:agent codeEnvRef for agent setup files (messageAttachment=false)', async () => {
+      setupCodeEnvUpload({ storage_session_id: 'sess-2', file_id: 'fid-2' });
+      const req = makeReq();
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+        },
+      });
+
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: {
+            codeEnvRef: {
+              kind: 'agent',
+              id: 'agent-abc',
+              storage_session_id: 'sess-2',
+              file_id: 'fid-2',
+            },
+          },
+        }),
+        true,
+      );
+    });
+
+    it('does not persist legacy fileIdentifier key (mongoose strict drops it)', async () => {
+      setupCodeEnvUpload({ storage_session_id: 'sess-3', file_id: 'fid-3' });
+      const req = makeReq();
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+          message_file: true,
+        },
+      });
+
+      const persisted = db.createFile.mock.calls[0][0];
+      expect(persisted.metadata).not.toHaveProperty('fileIdentifier');
+    });
+  });
+});
+
+describe('processFileURL', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('throws and skips DB persistence when saveURL returns null', async () => {
+    const saveURL = jest.fn().mockResolvedValue(null);
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await expect(
+      processFileURL({
+        fileStrategy: FileSources.local,
+        userId: 'user-123',
+        URL: 'https://example.com/image.png',
+        fileName: 'image.png',
+        basePath: 'images',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+      }),
+    ).rejects.toThrow('Strategy "local" did not save "image.png"');
+
+    expect(getFileURL).not.toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('persists tenantId and strategy-returned filepath metadata', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+      dimensions: { width: 32, height: 64 },
+    });
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+    });
+
+    expect(getFileURL).not.toHaveBeenCalled();
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: 'user-123',
+        filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+        bytes: 512,
+        filename: 'image.png',
+        source: FileSources.cloudfront,
+        type: 'image/png',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+        width: 32,
+        height: 64,
+      }),
+      true,
+    );
+  });
+
+  it('applies retention metadata for generated images when retention mode is all', async () => {
+    getRetentionExpiry.mockResolvedValueOnce({
+      expiredAt: new Date('2030-01-01T00:00:00.000Z'),
+    });
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+    });
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+      req: {
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+        body: {},
+        config: { interfaceConfig: { retentionMode: 'all' } },
+      },
+    });
+
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expiredAt: new Date('2030-01-01T00:00:00.000Z'),
+      }),
+      true,
+    );
+  });
+
+  it('applies retention metadata for retained non-temporary conversations', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+    });
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+    getRetentionExpiry.mockResolvedValueOnce({
+      expiredAt: new Date('2030-01-01T00:00:00.000Z'),
+    });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+      req: {
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-123' },
+        config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY } },
+      },
+    });
+
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expiredAt: new Date('2030-01-01T00:00:00.000Z'),
+      }),
+      true,
+    );
+  });
+
+  it('keeps expired retained conversation files on the parent expiration', async () => {
+    const parentExpiredAt = new Date('2020-01-01T00:00:00.000Z');
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+    });
+    const getFileURL = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+    getRetentionExpiry.mockResolvedValueOnce({ expiredAt: parentExpiredAt });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+      req: {
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-123' },
+        config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY } },
+      },
+    });
+
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expiredAt: parentExpiredAt,
+      }),
+      true,
+    );
+  });
+
+  it('falls back to getFileURL with user and tenant context when metadata lacks filepath', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      bytes: 256,
+      type: 'image/png',
+    });
+    const getFileURL = jest
+      .fn()
+      .mockResolvedValue('https://cdn.example.com/t/tenant-a/images/user-123/image.png');
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await processFileURL({
+      fileStrategy: FileSources.cloudfront,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+    });
+
+    expect(getFileURL).toHaveBeenCalledWith({
+      userId: 'user-123',
+      fileName: 'image.png',
+      basePath: 'images',
+      tenantId: 'tenant-a',
+    });
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filepath: 'https://cdn.example.com/t/tenant-a/images/user-123/image.png',
+        tenantId: 'tenant-a',
+      }),
+      true,
+    );
+  });
+
+  it('preserves the user path segment for local fallback URLs', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      bytes: 256,
+      type: 'image/png',
+    });
+    const getFileURL = jest.fn().mockResolvedValue('/images/user-123/image.png');
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL });
+
+    await processFileURL({
+      fileStrategy: FileSources.local,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+    });
+
+    expect(getFileURL).toHaveBeenCalledWith({
+      userId: 'user-123',
+      fileName: 'user-123/image.png',
+      basePath: 'images',
+      tenantId: 'tenant-a',
+    });
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filepath: '/images/user-123/image.png',
+        tenantId: 'tenant-a',
+      }),
+      true,
+    );
+  });
+});
+
+describe('processDeleteRequest', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('removes metadata when backing storage is already missing', async () => {
+    const missingError = Object.assign(new Error('no such file'), { code: 'ENOENT' });
+    const deleteFile = jest.fn().mockRejectedValue(missingError);
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+
+    const result = await processDeleteRequest({
+      req: {
+        body: {},
+        config: {},
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+      },
+      files: [
+        {
+          file_id: 'expired-file',
+          filepath: '/images/user-123/expired.png',
+          source: FileSources.local,
+        },
+      ],
+    });
+
+    expect(db.deleteFiles).toHaveBeenCalledWith(['expired-file']);
+    expect(result).toEqual({ deletedFileIds: ['expired-file'], failedFileIds: [] });
+  });
+
+  it('does not treat unrelated not found messages as missing storage', async () => {
+    const deleteFile = jest.fn().mockRejectedValue(new Error('Configuration not found'));
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+
+    const result = await processDeleteRequest({
+      req: {
+        body: {},
+        config: {},
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+      },
+      files: [
+        {
+          file_id: 'expired-file',
+          filepath: '/images/user-123/expired.png',
+          source: FileSources.local,
+        },
+      ],
+    });
+
+    expect(db.deleteFiles).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['expired-file'] });
+  });
+
+  it('throws metadata delete failures after storage deletion succeeds', async () => {
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    const metadataError = new Error('mongo unavailable');
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    db.deleteFiles.mockRejectedValue(metadataError);
+
+    await expect(
+      processDeleteRequest({
+        req: {
+          body: {},
+          config: {},
+          user: { id: 'user-123', tenantId: 'tenant-a' },
+        },
+        files: [
+          {
+            file_id: 'expired-file',
+            filepath: '/images/user-123/expired.png',
+            source: FileSources.local,
+          },
+        ],
+      }),
+    ).rejects.toThrow('mongo unavailable');
+
+    expect(db.deleteFiles).toHaveBeenCalledWith(['expired-file']);
+    expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
+  });
+});
+
+describe('sweepExpiredFiles', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('delegates expired file sweeping to the shared package with backend dependencies', async () => {
+    const options = {
+      appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
+      limit: 1,
+    };
+    sweepExpiredFilesWithDeps.mockResolvedValue({ scanned: 1, deleted: 1, failed: 0 });
+
+    const result = await sweepExpiredFiles(options);
+
+    expect(sweepExpiredFilesWithDeps).toHaveBeenCalledWith(
+      options,
+      expect.objectContaining({
+        getExpiredFiles: db.getExpiredFiles,
+        processDeleteRequest: expect.any(Function),
+        logger: expect.objectContaining({
+          error: expect.any(Function),
+          info: expect.any(Function),
+          warn: expect.any(Function),
+        }),
+      }),
+    );
+    expect(result).toEqual({ scanned: 1, deleted: 1, failed: 0 });
+  });
+});
+
+describe('startExpiredFileSweep', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('delegates background sweep startup to the shared package with system context', () => {
+    const options = {
+      appConfig: { paths: { publicPath: '/tmp/public', uploads: '/tmp/uploads' } },
+    };
+
+    const interval = startExpiredFileSweep(options);
+
+    expect(startExpiredFileSweepWithDeps).toHaveBeenCalledWith(
+      options,
+      expect.objectContaining({
+        sweepExpiredFiles: expect.any(Function),
+        runAsSystem: expect.any(Function),
+        logger: expect.objectContaining({
+          error: expect.any(Function),
+          info: expect.any(Function),
+          warn: expect.any(Function),
+        }),
+      }),
+    );
+    expect(interval).toBe('sweep-interval');
   });
 });

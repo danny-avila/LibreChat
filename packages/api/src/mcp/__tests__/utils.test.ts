@@ -1,4 +1,14 @@
-import { normalizeServerName, redactServerSecrets, redactAllServerSecrets } from '~/mcp/utils';
+import {
+  buildOAuthToolCallName,
+  normalizeServerName,
+  redactAllServerSecrets,
+  redactServerSecrets,
+  isInvalidClientMessage,
+  isClientRejectionMessage,
+  getMissingCustomUserVars,
+  hasCustomUserVars,
+  isUserSourced,
+} from '~/mcp/utils';
 import type { ParsedServerConfig } from '~/mcp/types';
 
 describe('normalizeServerName', () => {
@@ -25,6 +35,49 @@ describe('normalizeServerName', () => {
     const result = normalizeServerName('!server-name!');
     expect(result).toBe('server-name');
     expect(result).toMatch(/^[a-zA-Z0-9_.-]+$/);
+  });
+});
+
+describe('buildOAuthToolCallName', () => {
+  it('should prefix a simple server name with oauth_mcp_', () => {
+    expect(buildOAuthToolCallName('my-server')).toBe('oauth_mcp_my-server');
+  });
+
+  it('should not double-wrap a name that already starts with oauth_mcp_', () => {
+    expect(buildOAuthToolCallName('oauth_mcp_my-server')).toBe('oauth_mcp_my-server');
+  });
+
+  it('should correctly handle server names containing _mcp_ substring', () => {
+    const result = buildOAuthToolCallName('my_mcp_server');
+    expect(result).toBe('oauth_mcp_my_mcp_server');
+  });
+
+  it('should normalize non-ASCII server names before prefixing', () => {
+    const result = buildOAuthToolCallName('我的服务');
+    expect(result).toMatch(/^oauth_mcp_server_\d+$/);
+  });
+
+  it('should normalize special characters before prefixing', () => {
+    expect(buildOAuthToolCallName('server@name!')).toBe('oauth_mcp_server_name');
+  });
+
+  it('should handle empty string server name gracefully', () => {
+    const result = buildOAuthToolCallName('');
+    expect(result).toMatch(/^oauth_mcp_server_\d+$/);
+  });
+
+  it('should treat a name already starting with oauth_mcp_ as pre-wrapped', () => {
+    // At the function level, a name starting with the oauth prefix is
+    // indistinguishable from a pre-wrapped name — guard prevents double-wrapping.
+    // Server names with this prefix should be blocked at registration time.
+    expect(buildOAuthToolCallName('oauth_mcp_github')).toBe('oauth_mcp_github');
+  });
+
+  it('should not treat special chars that normalize to oauth_mcp_* as pre-wrapped', () => {
+    // oauth@mcp@server does NOT start with 'oauth_mcp_' before normalization,
+    // so the guard correctly does not fire and the prefix is added.
+    const result = buildOAuthToolCallName('oauth@mcp@server');
+    expect(result).toBe('oauth_mcp_oauth_mcp_server');
   });
 });
 
@@ -358,5 +411,121 @@ describe('redactAllServerSecrets', () => {
     expect(redacted['server-b'].oauth?.client_secret).toBeUndefined();
     expect(redacted['server-b'].oauth?.client_id).toBe('cid-b');
     expect((redacted['server-c'] as Record<string, unknown>).command).toBeUndefined();
+  });
+});
+
+describe('isInvalidClientMessage', () => {
+  it.each(['invalid_client', 'client_id mismatch', 'client not found', 'unknown client'])(
+    'should detect "%s"',
+    (pattern) => {
+      expect(isInvalidClientMessage(`OAuth error: ${pattern}`)).toBe(true);
+    },
+  );
+
+  it('should be case-insensitive', () => {
+    expect(isInvalidClientMessage('INVALID_CLIENT')).toBe(true);
+    expect(isInvalidClientMessage('Client Not Found')).toBe(true);
+  });
+
+  it('should not match unauthorized_client', () => {
+    expect(isInvalidClientMessage('unauthorized_client')).toBe(false);
+  });
+
+  it('should return false for unrelated messages', () => {
+    expect(isInvalidClientMessage('connection timeout')).toBe(false);
+    expect(isInvalidClientMessage('')).toBe(false);
+  });
+});
+
+describe('isClientRejectionMessage', () => {
+  it('should match all isInvalidClientMessage patterns', () => {
+    expect(isClientRejectionMessage('invalid_client')).toBe(true);
+    expect(isClientRejectionMessage('client not found')).toBe(true);
+  });
+
+  it('should also match unauthorized_client', () => {
+    expect(isClientRejectionMessage('unauthorized_client')).toBe(true);
+  });
+
+  it('should return false for unrelated messages', () => {
+    expect(isClientRejectionMessage('server error')).toBe(false);
+  });
+});
+
+describe('isUserSourced', () => {
+  it('returns false when source is yaml', () => {
+    expect(isUserSourced({ source: 'yaml' })).toBe(false);
+  });
+
+  it('returns false when source is config', () => {
+    expect(isUserSourced({ source: 'config' })).toBe(false);
+  });
+
+  it('returns true when source is user', () => {
+    expect(isUserSourced({ source: 'user' })).toBe(true);
+  });
+
+  it('falls back to dbId when source is undefined — dbId present means user-sourced', () => {
+    expect(isUserSourced({ source: undefined, dbId: 'abc123' })).toBe(true);
+  });
+
+  it('falls back to dbId when source is undefined — no dbId means trusted', () => {
+    expect(isUserSourced({ source: undefined, dbId: undefined })).toBe(false);
+  });
+
+  it('returns false when both source and dbId are absent (pre-upgrade YAML server)', () => {
+    expect(isUserSourced({})).toBe(false);
+  });
+});
+
+describe('getMissingCustomUserVars', () => {
+  const configWithVars = (keys: string[]): Pick<ParsedServerConfig, 'customUserVars'> => ({
+    customUserVars: Object.fromEntries(
+      keys.map((key) => [key, { title: key, description: `${key} description` }]),
+    ),
+  });
+
+  it('returns an empty array when the server declares no customUserVars', () => {
+    expect(getMissingCustomUserVars({}, {})).toEqual([]);
+    expect(getMissingCustomUserVars({ customUserVars: undefined }, undefined)).toEqual([]);
+  });
+
+  it('returns an empty array when customUserVars is an empty object', () => {
+    const config: Pick<ParsedServerConfig, 'customUserVars'> = { customUserVars: {} };
+    expect(hasCustomUserVars(config)).toBe(false);
+    expect(getMissingCustomUserVars(config, undefined)).toEqual([]);
+  });
+
+  it('reports every declared variable when no values are provided', () => {
+    const config = configWithVars(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, undefined)).toEqual(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, null)).toEqual(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, {})).toEqual(['THINGY_TOKEN', 'THINGY_REGION']);
+  });
+
+  it('reports only the variables the user has not set', () => {
+    const config = configWithVars(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123' })).toEqual(['THINGY_REGION']);
+  });
+
+  it('treats empty-string and whitespace-only values as missing', () => {
+    const config = configWithVars(['THINGY_TOKEN']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '' })).toEqual(['THINGY_TOKEN']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '   ' })).toEqual(['THINGY_TOKEN']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '\t\n ' })).toEqual(['THINGY_TOKEN']);
+  });
+
+  it('returns an empty array when every declared variable has a value', () => {
+    const config = configWithVars(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(
+      getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123', THINGY_REGION: 'eu-west-1' }),
+    ).toEqual([]);
+  });
+
+  it('ignores provided values for variables the server does not declare', () => {
+    const config = configWithVars(['THINGY_TOKEN']);
+    expect(
+      getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123', UNRELATED: 'value' }),
+    ).toEqual([]);
   });
 });

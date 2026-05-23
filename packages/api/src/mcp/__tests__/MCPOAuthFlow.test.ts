@@ -7,6 +7,7 @@
 
 import { createHash } from 'crypto';
 import { Keyv } from 'keyv';
+import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
 import { FlowStateManager } from '~/flow/manager';
 import { createOAuthMCPServer, MockKeyv, InMemoryTokenStore } from './helpers/oauthTestServer';
@@ -20,6 +21,8 @@ jest.mock('@librechat/data-schemas', () => ({
     error: jest.fn(),
     debug: jest.fn(),
   },
+  getTenantId: jest.fn(),
+  SYSTEM_TENANT_ID: '__SYSTEM__',
   encryptV2: jest.fn(async (val: string) => `enc:${val}`),
   decryptV2: jest.fn(async (val: string) => val.replace(/^enc:/, '')),
 }));
@@ -27,6 +30,7 @@ jest.mock('@librechat/data-schemas', () => ({
 /** Bypass SSRF validation — these tests use real local HTTP servers. */
 jest.mock('~/auth', () => ({
   ...jest.requireActual('~/auth'),
+  createSSRFSafeUndiciConnect: jest.fn(() => undefined),
   isSSRFTarget: jest.fn(() => false),
   resolveHostnameSSRF: jest.fn(async () => false),
 }));
@@ -92,7 +96,7 @@ describe('MCP OAuth Flow — Real HTTP Server', () => {
           token_url: `${server.url}token`,
           client_id: clientInfo.client_id,
           client_secret: clientInfo.client_secret,
-          token_exchange_method: 'DefaultPost',
+          token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
         },
       );
 
@@ -131,7 +135,7 @@ describe('MCP OAuth Flow — Real HTTP Server', () => {
           {
             token_url: `${rotatingServer.url}token`,
             client_id: 'anon',
-            token_exchange_method: 'DefaultPost',
+            token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
           },
         );
 
@@ -155,7 +159,7 @@ describe('MCP OAuth Flow — Real HTTP Server', () => {
           {
             token_url: `${server.url}token`,
             client_id: 'anon',
-            token_exchange_method: 'DefaultPost',
+            token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
           },
         ),
       ).rejects.toThrow();
@@ -412,7 +416,7 @@ describe('MCP OAuth Flow — Real HTTP Server', () => {
 
       const state = await flowManager.getFlowState(flowId, 'mcp_oauth');
       expect(state?.status).toBe('COMPLETED');
-      expect(state?.result?.access_token).toBe(tokens.access_token);
+      expect((state?.result as MCPOAuthTokens | undefined)?.access_token).toBe(tokens.access_token);
     });
 
     it('should fail flow when authorization code is invalid', async () => {

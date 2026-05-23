@@ -1,9 +1,8 @@
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
 import { createTokenMethods, type TokenMethods } from './token';
-import { createRoleMethods, type RoleMethods, type RoleDeps } from './role';
+import { createRoleMethods, RoleConflictError } from './role';
+import type { RoleMethods, RoleDeps } from './role';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
-
-export { DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };
 import { createKeyMethods, type KeyMethods } from './key';
 import { createFileMethods, type FileMethods } from './file';
 /* Memories */
@@ -19,7 +18,7 @@ import { createPluginAuthMethods, type PluginAuthMethods } from './pluginAuth';
 /* Permissions */
 import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
 import { createUserGroupMethods, type UserGroupMethods } from './userGroup';
-import { createAclEntryMethods, type AclEntryMethods } from './aclEntry';
+import { createAclEntryMethods, permissionBitSupersets, type AclEntryMethods } from './aclEntry';
 import { createSystemGrantMethods, type SystemGrantMethods } from './systemGrant';
 import { createShareMethods, type ShareMethods } from './share';
 /* Tier 1 — Simple CRUD */
@@ -46,10 +45,27 @@ import {
 import { createTransactionMethods, type TransactionMethods } from './transaction';
 import { createSpendTokensMethods, type SpendTokensMethods } from './spendTokens';
 import { createPromptMethods, type PromptMethods, type PromptDeps } from './prompt';
+import {
+  createSkillMethods,
+  type SkillMethods,
+  type SkillDeps,
+  type CreateSkillInput,
+  type CreateSkillResult,
+  type UpdateSkillInput,
+  type UpsertSkillFileInput,
+  type ListSkillsByAccessParams,
+  type ListSkillsByAccessResult,
+  type UpdateSkillResult,
+  type ValidationIssue,
+} from './skill';
 /* Tier 5 — Agent */
 import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
+/* Config */
+import { createConfigMethods, type ConfigMethods } from './config';
 
+export { RoleConflictError, DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate };
+export { permissionBitSupersets };
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -80,7 +96,9 @@ export type AllMethods = UserMethods &
   TransactionMethods &
   SpendTokensMethods &
   PromptMethods &
-  AgentMethods;
+  SkillMethods &
+  AgentMethods &
+  ConfigMethods;
 
 /** Dependencies injected from the api layer into createMethods */
 export interface CreateMethodsDeps {
@@ -151,6 +169,12 @@ export function createMethods(
   };
   const promptMethods = createPromptMethods(mongoose, promptDeps);
 
+  const skillDeps: SkillDeps = {
+    removeAllPermissions,
+    getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
+  };
+  const skillMethods = createSkillMethods(mongoose, skillDeps);
+
   // Role methods with optional cache injection
   const roleDeps: RoleDeps = { getCache: deps.getCache };
   const roleMethods = createRoleMethods(mongoose, roleDeps);
@@ -199,8 +223,11 @@ export function createMethods(
     ...transactionMethods,
     ...spendTokensMethods,
     ...promptMethods,
+    ...skillMethods,
     /* Tier 5 */
     ...agentMethods,
+    /* Config */
+    ...createConfigMethods(mongoose),
   };
 }
 
@@ -234,5 +261,16 @@ export type {
   TransactionMethods,
   SpendTokensMethods,
   PromptMethods,
+  SkillMethods,
+  SkillDeps,
+  CreateSkillInput,
+  CreateSkillResult,
+  UpdateSkillInput,
+  UpsertSkillFileInput,
+  ListSkillsByAccessParams,
+  ListSkillsByAccessResult,
+  UpdateSkillResult,
+  ValidationIssue,
   AgentMethods,
+  ConfigMethods,
 };

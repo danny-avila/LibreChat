@@ -128,8 +128,13 @@ const cacheConfig = {
   REDIS_SCAN_COUNT: math(process.env.REDIS_SCAN_COUNT, 1000),
 
   /**
-   * TTL in milliseconds for MCP registry read-through cache.
-   * This cache reduces redundant lookups within a single request flow.
+   * TTL in milliseconds for MCP registry caches. Used by both:
+   * - `MCPServersRegistry` read-through caches (`readThroughCache`/`readThroughCacheAll`)
+   * - `ServerConfigsCacheRedisAggregateKey` local snapshot (avoids redundant Redis GETs)
+   *
+   * Both layers use this value, so the effective max cross-instance staleness is up
+   * to 2× this value in multi-instance deployments. Set to 0 to disable the local
+   * snapshot entirely (every `getAll()` hits Redis directly).
    * @default 5000 (5 seconds)
    */
   MCP_REGISTRY_CACHE_TTL: math(process.env.MCP_REGISTRY_CACHE_TTL, 5000),

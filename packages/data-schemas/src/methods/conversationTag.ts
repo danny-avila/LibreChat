@@ -1,4 +1,5 @@
 import type { Model } from 'mongoose';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
 interface IConversationTag {
@@ -233,7 +234,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       }
 
       if (bulkOps.length > 0) {
-        await ConversationTag.bulkWrite(bulkOps);
+        await tenantSafeBulkWrite(ConversationTag, bulkOps);
       }
 
       const updatedConversation = (
@@ -273,7 +274,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
         },
       }));
 
-      const result = await ConversationTag.bulkWrite(bulkOps);
+      const result = await tenantSafeBulkWrite(ConversationTag, bulkOps);
       if (result && result.modifiedCount > 0) {
         logger.debug(
           `user: ${user} | Incremented tag counts - modified ${result.modifiedCount} tags`,

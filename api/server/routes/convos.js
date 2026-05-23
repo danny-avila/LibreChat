@@ -1,7 +1,11 @@
 const multer = require('multer');
 const express = require('express');
 const { sleep } = require('@librechat/agents');
-const { isEnabled, resolveImportMaxFileSize } = require('@librechat/api');
+const {
+  isEnabled,
+  resolveImportMaxFileSize,
+  restoreTenantContextFromReq,
+} = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
 const {
@@ -264,10 +268,16 @@ router.post(
   importUserLimiter,
   configMiddleware,
   handleUpload,
+  restoreTenantContextFromReq,
   async (req, res) => {
     try {
       /* TODO: optimize to return imported conversations and add manually */
-      await importConversations({ filepath: req.file.path, requestUserId: req.user.id });
+      await importConversations({
+        filepath: req.file.path,
+        requestUserId: req.user.id,
+        userRole: req.user.role,
+        interfaceConfig: req.config?.interfaceConfig,
+      });
       res.status(201).json({ message: 'Conversation(s) imported successfully' });
     } catch (error) {
       logger.error('Error processing file', error);

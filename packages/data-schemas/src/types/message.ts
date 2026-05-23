@@ -18,6 +18,7 @@ export interface IMessage extends Document {
   text?: string;
   summary?: string;
   isCreatedByUser: boolean;
+  isTemporary?: boolean;
   unfinished?: boolean;
   error?: boolean;
   finish_reason?: string;
@@ -44,6 +45,15 @@ export interface IMessage extends Document {
     encoding?: string;
   };
   attachments?: unknown[];
+  /** Skills the user invoked manually via the `$` popover on this turn. UI-only metadata for `SkillPills`. */
+  manualSkills?: string[];
+  /**
+   * Skills auto-primed on this turn via `always-apply` frontmatter. Persisted
+   * at turn time so pinned badges survive later flips of the skill's
+   * `alwaysApply` flag — the audit trail follows what actually ran, not what
+   * the current catalog says.
+   */
+  alwaysAppliedSkills?: string[];
   expiredAt?: Date | null;
   createdAt?: Date;
   updatedAt?: Date;

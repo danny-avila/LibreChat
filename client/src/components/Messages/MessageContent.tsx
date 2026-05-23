@@ -1,5 +1,5 @@
 import React from 'react';
-import { useMessageProcess } from '~/hooks';
+import { useMessageProcess, useMemoizedChatContext } from '~/hooks';
 import type { TMessageProps } from '~/common';
 
 import MultiMessage from '~/components/Chat/Messages/MultiMessage';
@@ -28,6 +28,7 @@ export default function MessageContent(props: TMessageProps) {
     message: props.message,
   });
   const { message, currentEditId, setCurrentEditId } = props;
+  const { chatContext, effectiveIsSubmitting } = useMemoizedChatContext(message, isSubmitting);
 
   if (!message || typeof message !== 'object') {
     return null;
@@ -39,11 +40,14 @@ export default function MessageContent(props: TMessageProps) {
     <>
       <MessageContainer handleScroll={handleScroll}>
         <div className="m-auto justify-center p-4 py-2 md:gap-6">
-          <ContentRender {...props} isSubmitting={isSubmitting} />
+          <ContentRender
+            {...props}
+            isSubmitting={effectiveIsSubmitting}
+            chatContext={chatContext}
+          />
         </div>
       </MessageContainer>
       <MultiMessage
-        key={messageId}
         messageId={messageId}
         conversation={conversation}
         messagesTree={children ?? []}

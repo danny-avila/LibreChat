@@ -2,9 +2,13 @@ const path = require('path');
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
 const { ProxyAgent, fetch } = require('undici');
-const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const { getImageBasename, extractBaseURL } = require('@librechat/api');
+const { Tool } = require('@librechat/agents/langchain/tools');
+const {
+  getImageBasename,
+  extractBaseURL,
+  createMinimalRetentionRequest,
+} = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
 const dalle3JsonSchema = {
@@ -48,6 +52,8 @@ class DALLE3 extends Tool {
     this.returnMetadata = fields.returnMetadata ?? false;
 
     this.userId = fields.userId;
+    this.tenantId = fields.req?.user?.tenantId;
+    this.retentionRequest = createMinimalRetentionRequest(fields.req);
     this.fileStrategy = fields.fileStrategy;
     /** @type {boolean} */
     this.isAgent = fields.isAgent;
@@ -228,6 +234,8 @@ Error Message: ${error.message}`);
         fileName: imageName,
         fileStrategy: this.fileStrategy,
         context: FileContext.image_generation,
+        tenantId: this.tenantId,
+        req: this.retentionRequest,
       });
 
       if (this.returnMetadata) {

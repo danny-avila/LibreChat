@@ -13,8 +13,13 @@ const {
   logHeaders,
   safeStringify,
   findOpenIDUser,
+  getOpenIdEmail,
+  getOpenIdIssuer,
   getBalanceConfig,
   isEmailDomainAllowed,
+  getAvatarFileStrategy,
+  getAvatarSaveParams,
+  resolveAppConfigForUser,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
@@ -268,34 +273,6 @@ function getFullName(userinfo) {
 }
 
 /**
- * Resolves the user identifier from OpenID claims.
- * Configurable via OPENID_EMAIL_CLAIM; defaults to: email -> preferred_username -> upn.
- *
- * @param {Object} userinfo - The user information object from OpenID Connect
- * @returns {string|undefined} The resolved identifier string
- */
-function getOpenIdEmail(userinfo) {
-  const claimKey = process.env.OPENID_EMAIL_CLAIM?.trim();
-  if (claimKey) {
-    const value = userinfo[claimKey];
-    if (typeof value === 'string' && value) {
-      return value;
-    }
-    if (value !== undefined && value !== null) {
-      logger.warn(
-        `[openidStrategy] OPENID_EMAIL_CLAIM="${claimKey}" resolved to a non-string value (type: ${typeof value}). Falling back to: email -> preferred_username -> upn.`,
-      );
-    } else {
-      logger.warn(
-        `[openidStrategy] OPENID_EMAIL_CLAIM="${claimKey}" not present in userinfo. Falling back to: email -> preferred_username -> upn.`,
-      );
-    }
-  }
-  const fallback = userinfo.email || userinfo.preferred_username || userinfo.upn;
-  return typeof fallback === 'string' ? fallback : undefined;
-}
-
-/**
  * Converts an input into a string suitable for a username.
  * If the input is a string, it will be returned as is.
  * If the input is an array, elements will be joined with underscores.
@@ -468,9 +445,11 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     Object.assign(userinfo, providerUserinfo);
   }
 
-  const appConfig = await getAppConfig();
   const email = getOpenIdEmail(userinfo);
-  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+  const openidIssuer = getOpenIdIssuer(claims, openidConfig);
+
+  const baseConfig = await getAppConfig({ baseOnly: true });
+  if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
     logger.error(
       `[OpenID Strategy] Authentication blocked - email domain not allowed [Identifier: ${email}]`,
     );
@@ -481,6 +460,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     findUser,
     email: email,
     openidId: claims.sub || userinfo.sub,
+    openidIssuer,
     idOnTheSource: claims.oid || userinfo.oid,
     strategyName: 'openidStrategy',
   });
@@ -489,6 +469,15 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
   if (error) {
     throw new Error(ErrorTypes.AUTH_FAILED);
+  }
+
+  const appConfig = user?.tenantId ? await resolveAppConfigForUser(getAppConfig, user) : baseConfig;
+
+  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+    logger.error(
+      `[OpenID Strategy] Authentication blocked - email domain not allowed [Identifier: ${email}]`,
+    );
+    throw new Error('Email domain not allowed');
   }
 
   const fullName = getFullName(userinfo);
@@ -577,6 +566,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       emailVerified: userinfo.email_verified || false,
       name: fullName,
       idOnTheSource: userinfo.oid,
+      openidIssuer,
     };
 
     const balanceConfig = getBalanceConfig(appConfig);
@@ -584,6 +574,9 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   } else {
     user.provider = 'openid';
     user.openidId = userinfo.sub;
+    if (openidIssuer) {
+      user.openidIssuer = openidIssuer;
+    }
     user.username = username;
     user.name = fullName;
     user.idOnTheSource = userinfo.oid;
@@ -671,14 +664,16 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       userinfo.sub,
     );
     if (imageBuffer) {
-      const { saveBuffer } = getStrategyFunctions(
-        appConfig?.fileStrategy ?? process.env.CDN_PROVIDER,
+      const fileStrategy = getAvatarFileStrategy(appConfig, process.env.CDN_PROVIDER);
+      const { saveBuffer } = getStrategyFunctions(fileStrategy);
+      const imagePath = await saveBuffer(
+        getAvatarSaveParams(fileStrategy, {
+          fileName,
+          userId: user._id.toString(),
+          buffer: imageBuffer,
+          tenantId: user.tenantId,
+        }),
       );
-      const imagePath = await saveBuffer({
-        fileName,
-        userId: user._id.toString(),
-        buffer: imageBuffer,
-      });
       user.avatar = imagePath ?? '';
     }
   }
@@ -772,18 +767,25 @@ const setupOpenIdAdmin = (openidConfig) => {
  */
 async function setupOpenId() {
   try {
+    const usePKCE = isEnabled(process.env.OPENID_USE_PKCE);
     const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
 
     /** @type {ClientMetadata} */
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
-      client_secret: process.env.OPENID_CLIENT_SECRET,
+      response_types: ['code'],
+      grant_types: ['authorization_code'],
     };
 
-    if (shouldGenerateNonce) {
-      clientMetadata.response_types = ['code'];
-      clientMetadata.grant_types = ['authorization_code'];
-      clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+    const clientSecret = process.env.OPENID_CLIENT_SECRET?.trim();
+
+    if (clientSecret) {
+      clientMetadata.client_secret = clientSecret;
+      if (shouldGenerateNonce) {
+        clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+      }
+    } else if (usePKCE) {
+      clientMetadata.token_endpoint_auth_method = 'none';
     }
 
     /** @type {Configuration} */
@@ -798,10 +800,10 @@ async function setupOpenId() {
     );
 
     logger.info(`[openidStrategy] OpenID authentication configuration`, {
+      usePKCE,
+      hasClientSecret: !!clientSecret,
+      tokenEndpointAuthMethod: clientMetadata.token_endpoint_auth_method ?? '(library default)',
       generateNonce: shouldGenerateNonce,
-      reason: shouldGenerateNonce
-        ? 'OPENID_GENERATE_NONCE=true - Will generate nonce and use explicit metadata for federated providers'
-        : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata',
     });
 
     const openidLogin = new CustomOpenIDStrategy(
@@ -810,7 +812,7 @@ async function setupOpenId() {
         scope: process.env.OPENID_SCOPE,
         callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
-        usePKCE: isEnabled(process.env.OPENID_USE_PKCE),
+        usePKCE,
       },
       createOpenIDCallback(),
     );

@@ -144,6 +144,14 @@ export type ImageFormatter = (item: ImageContent) => FormattedContent;
 
 export type FormattedToolResponse = FormattedContentResult;
 
+/**
+ * Origin of an MCP server definition.
+ * - `'yaml'`   — operator-defined in librechat.yaml, full trust, boot-time init
+ * - `'config'` — admin-defined via Config override, full trust, lazy init
+ * - `'user'`   — user-provided via UI, sandboxed (restricted placeholder resolution)
+ */
+export type MCPServerSource = 'yaml' | 'config' | 'user';
+
 export type ParsedServerConfig = MCPOptions & {
   url?: string;
   requiresOAuth?: boolean;
@@ -154,6 +162,8 @@ export type ParsedServerConfig = MCPOptions & {
   initDuration?: number;
   updatedAt?: number;
   dbId?: string;
+  /** Origin of this server definition — determines trust level and placeholder resolution */
+  source?: MCPServerSource;
   /** True if access is only via agent (not directly shared with user) */
   consumeOnly?: boolean;
   /** True when inspection failed at startup; the server is known but not fully initialized */
@@ -176,6 +186,8 @@ export interface BasicConnectionOptions {
   serverConfig: MCPOptions;
   useSSRFProtection?: boolean;
   allowedDomains?: string[] | null;
+  /** Admin exemption list of host:port pairs that bypass the SSRF private-IP block */
+  allowedAddresses?: string[] | null;
   /** When true, only resolve customUserVars in processMCPEnv (for DB-stored servers) */
   dbSourced?: boolean;
 }
@@ -198,6 +210,19 @@ export interface OAuthConnectionOptions extends UserConnectionContext {
   returnOnOAuth?: boolean;
 }
 
+/** Options accepted by UserConnectionManager.getUserConnection. OAuth fields are optional. */
+export interface UserMCPConnectionOptions extends UserConnectionContext {
+  serverName: string;
+  forceNew?: boolean;
+  serverConfig?: ParsedServerConfig;
+  flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
+  tokenMethods?: TokenMethods;
+  signal?: AbortSignal;
+  oauthStart?: (authURL: string) => Promise<void>;
+  oauthEnd?: () => Promise<void>;
+  returnOnOAuth?: boolean;
+}
+
 export interface ToolDiscoveryOptions {
   serverName: string;
   user?: IUser;
@@ -208,6 +233,8 @@ export interface ToolDiscoveryOptions {
   customUserVars?: Record<string, string>;
   requestBody?: RequestBody;
   connectionTimeout?: number;
+  /** Pre-resolved config-source servers for tenant-scoped lookup */
+  configServers?: Record<string, ParsedServerConfig>;
 }
 
 export interface ToolDiscoveryResult {

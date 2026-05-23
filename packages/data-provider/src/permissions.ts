@@ -60,7 +60,61 @@ export enum PermissionTypes {
    * Type for Remote Agent (API) Permissions
    */
   REMOTE_AGENTS = 'REMOTE_AGENTS',
+  /**
+   * Type for Skill Permissions
+   */
+  SKILLS = 'SKILLS',
 }
+
+/**
+ * Maps PermissionTypes to their corresponding `interface` config field names.
+ * Used to identify which interface fields seed role permissions at startup
+ * and must NOT be overridden via DB config (use the role permissions editor instead).
+ */
+export const PERMISSION_TYPE_INTERFACE_FIELDS: Record<PermissionTypes, string> = {
+  [PermissionTypes.PROMPTS]: 'prompts',
+  [PermissionTypes.AGENTS]: 'agents',
+  [PermissionTypes.BOOKMARKS]: 'bookmarks',
+  [PermissionTypes.MEMORIES]: 'memories',
+  [PermissionTypes.MULTI_CONVO]: 'multiConvo',
+  [PermissionTypes.TEMPORARY_CHAT]: 'temporaryChat',
+  [PermissionTypes.RUN_CODE]: 'runCode',
+  [PermissionTypes.WEB_SEARCH]: 'webSearch',
+  [PermissionTypes.FILE_SEARCH]: 'fileSearch',
+  [PermissionTypes.FILE_CITATIONS]: 'fileCitations',
+  [PermissionTypes.PEOPLE_PICKER]: 'peoplePicker',
+  [PermissionTypes.MARKETPLACE]: 'marketplace',
+  [PermissionTypes.MCP_SERVERS]: 'mcpServers',
+  [PermissionTypes.REMOTE_AGENTS]: 'remoteAgents',
+  [PermissionTypes.SKILLS]: 'skills',
+};
+
+/** Set of interface config field names that correspond to role permissions. */
+export const INTERFACE_PERMISSION_FIELDS = new Set(Object.values(PERMISSION_TYPE_INTERFACE_FIELDS));
+
+/**
+ * YAML sub-keys within composite interface permission fields that map to permission bits.
+ * When an interface permission field is an object, only these sub-keys are stripped from
+ * DB overrides — other sub-keys (like `placeholder`, `trustCheckbox`) are UI-only and pass through.
+ *
+ * Mapping to Permissions enum:
+ *   'use'    → Permissions.USE       (agents, prompts, mcpServers, remoteAgents, marketplace)
+ *   'create' → Permissions.CREATE    (agents, prompts, mcpServers, remoteAgents)
+ *   'share'  → Permissions.SHARE     (agents, prompts, mcpServers, remoteAgents)
+ *   'public' → Permissions.SHARE_PUBLIC (agents, prompts, mcpServers, remoteAgents)
+ *   'users'  → Permissions.VIEW_USERS   (peoplePicker only)
+ *   'groups' → Permissions.VIEW_GROUPS  (peoplePicker only)
+ *   'roles'  → Permissions.VIEW_ROLES   (peoplePicker only)
+ */
+export const PERMISSION_SUB_KEYS = new Set([
+  'use',
+  'create',
+  'share',
+  'public',
+  'users',
+  'groups',
+  'roles',
+]);
 
 /**
  * Enum for Role-Based Access Control Constants
@@ -169,6 +223,14 @@ export const remoteAgentsPermissionsSchema = z.object({
 });
 export type TRemoteAgentsPermissions = z.infer<typeof remoteAgentsPermissionsSchema>;
 
+export const skillPermissionsSchema = z.object({
+  [Permissions.USE]: z.boolean().default(true),
+  [Permissions.CREATE]: z.boolean().default(true),
+  [Permissions.SHARE]: z.boolean().default(false),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
+});
+export type TSkillPermissions = z.infer<typeof skillPermissionsSchema>;
+
 // Define a single permissions schema that holds all permission types.
 export const permissionsSchema = z.object({
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
@@ -185,4 +247,5 @@ export const permissionsSchema = z.object({
   [PermissionTypes.FILE_CITATIONS]: fileCitationsPermissionsSchema,
   [PermissionTypes.MCP_SERVERS]: mcpServersPermissionsSchema,
   [PermissionTypes.REMOTE_AGENTS]: remoteAgentsPermissionsSchema,
+  [PermissionTypes.SKILLS]: skillPermissionsSchema,
 });

@@ -2,6 +2,7 @@ import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
+import { registerShutdownTask } from '../app/shutdown';
 
 export const PENDING_STALE_MS = 2 * 60 * 1000;
 
@@ -40,19 +41,22 @@ export class FlowStateManager<T = unknown> {
   }
 
   private setupCleanupHandlers() {
-    const cleanup = () => {
+    // Register cleanup with the centralized graceful-shutdown coordinator
+    // (see ../app/shutdown.ts) rather than attaching direct signal
+    // handlers — multiple competing handlers race the HTTP drain.
+    registerShutdownTask('flow manager cleanup', () => {
       logger.info('Cleaning up FlowStateManager intervals...');
       this.intervals.forEach((interval) => clearInterval(interval));
       this.intervals.clear();
-      process.exit(0);
-    };
-
-    process.on('SIGTERM', cleanup);
-    process.on('SIGINT', cleanup);
-    process.on('SIGQUIT', cleanup);
-    process.on('SIGHUP', cleanup);
+    });
   }
 
+  /**
+   * Flow keys are intentionally NOT tenant-scoped. OAuth callbacks arrive
+   * without tenant ALS context (the provider redirect doesn't carry
+   * X-Tenant-Id). Flow IDs are random UUIDs with no collision risk, and
+   * flow data is ephemeral (TTL-bounded, no sensitive user content).
+   */
   private getFlowKey(flowId: string, type: string): string {
     return `${type}:${flowId}`;
   }
@@ -253,7 +257,9 @@ export class FlowStateManager<T = unknown> {
 
     if (!flowState) {
       logger.warn(
-        '[FlowStateManager] Flow state not found during completion — cannot recover metadata, skipping',
+        `[FlowStateManager] completeFlow: flow not found — key=${flowKey}. ` +
+          'Possible causes: flow TTL expired before callback arrived, flow was never created, or ' +
+          'the callback is routing to a different instance without shared Keyv storage.',
         { flowId, type },
       );
       return false;

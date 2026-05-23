@@ -1,6 +1,6 @@
 const { z } = require('zod');
 const { ProxyAgent, fetch } = require('undici');
-const { tool } = require('@langchain/core/tools');
+const { tool } = require('@librechat/agents/langchain/tools');
 const { getApiKey } = require('./credentials');
 
 function createTavilySearchTool(fields = {}) {

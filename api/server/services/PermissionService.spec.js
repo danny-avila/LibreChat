@@ -30,6 +30,7 @@ jest.mock('~/server/services/GraphApiService', () => ({
   entraIdPrincipalFeatureEnabled: jest.fn().mockReturnValue(false),
   getUserOwnedEntraGroups: jest.fn().mockResolvedValue([]),
   getUserEntraGroups: jest.fn().mockResolvedValue([]),
+  getEntraGroupDetailsBatch: jest.fn().mockResolvedValue([]),
   getGroupMembers: jest.fn().mockResolvedValue([]),
   getGroupOwners: jest.fn().mockResolvedValue([]),
 }));
@@ -2067,5 +2068,47 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
 
     const group = await Group.findOne({ idOnTheSource: 'entra-safe' }).lean();
     expect(group.memberIds).toContain(userEntraId);
+  });
+
+  it('should handle mix of existing and missing groups correctly (regression test)', async () => {
+    // This is the critical bug fix: previously syncUserEntraGroups would remove user from existing groups
+    // when called with only missing groups. Now using upserts + bulkUpdate to avoid this issue.
+
+    const { getEntraGroupDetailsBatch } = require('~/server/services/GraphApiService');
+
+    // Create existing groups A and B
+    await Group.create([
+      { name: 'Group A', source: 'entra', idOnTheSource: 'entra-group-a', memberIds: [] },
+      { name: 'Group B', source: 'entra', idOnTheSource: 'entra-group-b', memberIds: [] },
+    ]);
+
+    // User is member of A, B, and C (but C doesn't exist yet)
+    getUserEntraGroups.mockResolvedValue(['entra-group-a', 'entra-group-b', 'entra-group-c']);
+
+    // Mock batch fetch to return details for missing group C
+    getEntraGroupDetailsBatch.mockResolvedValue([
+      {
+        id: 'entra-group-c',
+        name: 'Group C',
+        email: 'groupc@example.com',
+        description: 'Group C Description',
+      },
+    ]);
+
+    await syncUserEntraGroupMemberships(user, 'fake-token');
+
+    // Verify ALL three groups now have the user as member
+    const groupA = await Group.findOne({ idOnTheSource: 'entra-group-a' }).lean();
+    const groupB = await Group.findOne({ idOnTheSource: 'entra-group-b' }).lean();
+    const groupC = await Group.findOne({ idOnTheSource: 'entra-group-c' }).lean();
+
+    expect(groupA.memberIds).toContain(userEntraId);
+    expect(groupB.memberIds).toContain(userEntraId);
+    expect(groupC).toBeTruthy();
+    expect(groupC.memberIds).toContain(userEntraId);
+    expect(groupC.name).toBe('Group C');
+
+    // Reset mock
+    getEntraGroupDetailsBatch.mockResolvedValue([]);
   });
 });

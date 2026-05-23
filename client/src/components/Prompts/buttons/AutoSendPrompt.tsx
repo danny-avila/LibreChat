@@ -25,13 +25,13 @@ export default function AutoSendPrompt({
       onClick={() => handleCheckedChange(!autoSendPrompts)}
       aria-label={localize('com_nav_auto_send_prompts')}
       aria-pressed={autoSendPrompts}
-      className={autoSendPrompts ? 'bg-surface-hover hover:bg-surface-hover' : ''}
+      className={`relative h-9 w-full gap-2 rounded-lg border-border-light font-medium ${autoSendPrompts ? 'bg-surface-hover hover:bg-surface-hover' : ''}`}
     >
       <Checkbox
         checked={autoSendPrompts}
         tabIndex={-1}
         aria-hidden="true"
-        className="pointer-events-none mr-2"
+        className="pointer-events-none"
       />
       {localize('com_nav_auto_send_prompts')}
     </Button>

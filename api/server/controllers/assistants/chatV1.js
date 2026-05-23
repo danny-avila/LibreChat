@@ -40,6 +40,7 @@ const { sendResponse } = require('~/server/middleware/error');
 const {
   createAutoRefillTransaction,
   findBalanceByUser,
+  upsertBalanceFields,
   getTransactions,
   getMultiplier,
   getConvo,
@@ -296,7 +297,14 @@ const chatV1 = async (req, res) => {
             amount: promptTokens,
           },
         },
-        { findBalanceByUser, getMultiplier, createAutoRefillTransaction, logViolation },
+        {
+          findBalanceByUser,
+          getMultiplier,
+          createAutoRefillTransaction,
+          logViolation,
+          balanceConfig,
+          upsertBalanceFields,
+        },
       );
     };
 

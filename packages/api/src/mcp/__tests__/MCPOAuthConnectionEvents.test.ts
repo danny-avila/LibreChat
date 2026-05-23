@@ -6,8 +6,10 @@
  */
 
 import { MCPConnection } from '~/mcp/connection';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { createOAuthMCPServer } from './helpers/oauthTestServer';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
+import type { StreamableHTTPOptions } from '~/mcp/types';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -23,6 +25,8 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/auth', () => ({
   createSSRFSafeUndiciConnect: jest.fn(() => undefined),
+  isOAuthUrlAllowed: jest.fn(() => false),
+  isSSRFTarget: jest.fn(() => false),
   resolveHostnameSSRF: jest.fn(async () => false),
 }));
 
@@ -263,6 +267,33 @@ describe('MCPConnection OAuth Events — Real Server', () => {
 
       await connection.connect();
       expect(await connection.isConnected()).toBe(true);
+    });
+  });
+
+  describe('MCPConnectionFactory.discoverTools — non-OAuth 401 fast-fail', () => {
+    beforeEach(async () => {
+      server = await createOAuthMCPServer({ tokenTTLMs: 60000 });
+    });
+
+    it('should fast-fail when a non-OAuth discovery hits 401', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: {
+          type: 'streamable-http',
+          url: server.url,
+          initTimeout: 15000,
+        } as StreamableHTTPOptions,
+      };
+
+      const start = Date.now();
+      const result = await MCPConnectionFactory.discoverTools(basicOptions);
+      const elapsed = Date.now() - start;
+
+      expect(elapsed).toBeLessThan(5000);
+      expect(result.tools).toBeNull();
+      expect(result.oauthRequired).toBe(true);
+      expect(result.oauthUrl).toBeNull();
+      expect(result.connection).toBeNull();
     });
   });
 });

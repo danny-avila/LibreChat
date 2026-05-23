@@ -9,6 +9,7 @@ import {
   getEndpointFileConfig,
 } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
+import type { ExtendedFile, FileSetter } from '~/common';
 import { useGetFileConfig, useGetEndpointsQuery, useGetAgentByIdQuery } from '~/data-provider';
 import { useAgentsMapContext } from '~/Providers';
 import AttachFileMenu from './AttachFileMenu';
@@ -17,9 +18,15 @@ import AttachFile from './AttachFile';
 function AttachFileChat({
   disableInputs,
   conversation,
+  files,
+  setFiles,
+  setFilesLoading,
 }: {
   disableInputs: boolean;
   conversation: TConversation | null;
+  files: Map<string, ExtendedFile>;
+  setFiles: FileSetter;
+  setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const conversationId = conversation?.conversationId ?? Constants.NEW_CONVO;
   const { endpoint } = conversation ?? { endpoint: null };
@@ -41,11 +48,13 @@ function AttachFileChat({
   });
 
   const useResponsesApi = useMemo(() => {
-    if (!isAgents || !conversation?.agent_id || conversation?.useResponsesApi) {
+    if (!isAgents || !conversation?.agent_id || conversation?.useResponsesApi !== undefined) {
       return conversation?.useResponsesApi;
     }
-    const agent = agentData || agentsMap?.[conversation.agent_id];
-    return agent?.model_parameters?.useResponsesApi;
+    return (
+      agentData?.model_parameters?.useResponsesApi ??
+      agentsMap?.[conversation.agent_id]?.model_parameters?.useResponsesApi
+    );
   }, [isAgents, conversation?.agent_id, conversation?.useResponsesApi, agentData, agentsMap]);
 
   const { data: fileConfig = null } = useGetFileConfig({
@@ -58,8 +67,7 @@ function AttachFileChat({
     if (!isAgents || !conversation?.agent_id) {
       return undefined;
     }
-    const agent = agentData || agentsMap?.[conversation.agent_id];
-    return agent?.provider;
+    return agentData?.provider ?? agentsMap?.[conversation.agent_id]?.provider;
   }, [isAgents, conversation?.agent_id, agentData, agentsMap]);
 
   const endpointType = useMemo(
@@ -90,7 +98,15 @@ function AttachFileChat({
   );
 
   if (isAssistants && endpointSupportsFiles && !isUploadDisabled) {
-    return <AttachFile disabled={disableInputs} />;
+    return (
+      <AttachFile
+        disabled={disableInputs}
+        files={files}
+        setFiles={setFiles}
+        setFilesLoading={setFilesLoading}
+        conversation={conversation}
+      />
+    );
   } else if ((isAgents || endpointSupportsFiles) && !isUploadDisabled) {
     return (
       <AttachFileMenu
@@ -101,6 +117,10 @@ function AttachFileChat({
         agentId={conversation?.agent_id}
         endpointFileConfig={endpointFileConfig}
         useResponsesApi={useResponsesApi}
+        files={files}
+        setFiles={setFiles}
+        setFilesLoading={setFilesLoading}
+        conversation={conversation}
       />
     );
   }

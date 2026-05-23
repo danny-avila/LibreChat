@@ -255,6 +255,205 @@ describe('getGoogleConfig', () => {
       expect(result.llmConfig).toHaveProperty('location', 'europe-west1');
     });
 
+    it('should use Vertex AI multi-region endpoints for eu and us locations', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const locations = [
+        { location: 'eu', endpoint: 'aiplatform.eu.rep.googleapis.com' },
+        { location: 'us', endpoint: 'aiplatform.us.rep.googleapis.com' },
+        { location: 'global', endpoint: 'aiplatform.googleapis.com' },
+      ];
+
+      locations.forEach(({ location, endpoint }) => {
+        process.env.GOOGLE_LOC = location;
+
+        const result = getGoogleConfig(credentials, {
+          modelOptions: {
+            model: 'gemini-3.1-flash-lite-preview',
+          },
+        });
+
+        expect(result.llmConfig).toMatchObject({
+          location,
+          endpoint,
+        });
+      });
+    });
+
+    it('should derive Vertex AI endpoint from the final location value', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          location: 'eu',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'eu',
+        endpoint: 'aiplatform.eu.rep.googleapis.com',
+      });
+    });
+
+    it('should preserve explicit Google Vertex AI endpoint overrides', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          location: 'eu',
+          endpoint: 'us-central1-aiplatform.googleapis.com',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'eu',
+        endpoint: 'us-central1-aiplatform.googleapis.com',
+      });
+    });
+
+    it('should preserve explicit Google Vertex AI Private Service Connect endpoints', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          endpoint: 'aiplatform-genai1.p.googleapis.com',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'us',
+        endpoint: 'aiplatform-genai1.p.googleapis.com',
+      });
+    });
+
+    it('should preserve explicit Google Vertex AI restricted Private Service Connect endpoints', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          endpoint: 'us-central1-aiplatform-restricted.p.googleapis.com',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'us',
+        endpoint: 'us-central1-aiplatform-restricted.p.googleapis.com',
+      });
+    });
+
+    it('should ignore model option Vertex AI endpoint overrides', () => {
+      process.env.GOOGLE_LOC = 'eu';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+          endpoint: 'attacker.example.test',
+        } as t.GoogleParameters,
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'eu',
+        endpoint: 'aiplatform.eu.rep.googleapis.com',
+      });
+    });
+
+    it('should ignore model option transport-level overrides', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+          client_email: 'test@test-project.iam.gserviceaccount.com',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+          apiKey: 'attacker-api-key',
+          authOptions: { projectId: 'attacker-project' },
+          baseUrl: 'https://attacker.example.test',
+          customHeaders: { Authorization: 'Bearer attacker' },
+        } as t.GoogleParameters,
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('apiKey', 'attacker-api-key');
+      expect(result.llmConfig).not.toHaveProperty('baseUrl');
+      expect(result.llmConfig).not.toHaveProperty('customHeaders');
+      expect((result.llmConfig as Record<string, unknown>).authOptions).toMatchObject({
+        projectId: 'test-project',
+      });
+    });
+
+    it('should ignore non-Google Vertex AI endpoint overrides from additional params', () => {
+      process.env.GOOGLE_LOC = 'us';
+
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        addParams: {
+          location: 'eu',
+          endpoint: 'attacker.example.test',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'eu',
+        endpoint: 'aiplatform.eu.rep.googleapis.com',
+      });
+    });
+
     it('should handle service key as JSON string', () => {
       const credentials = {
         [AuthKeys.GOOGLE_SERVICE_KEY]: JSON.stringify({
@@ -384,7 +583,7 @@ describe('getGoogleConfig', () => {
       expect(result.llmConfig).toHaveProperty('thinkingConfig');
       expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
         includeThoughts: true,
-        thinkingLevel: ThinkingLevel.high,
+        thinkingLevel: 'HIGH',
       });
       expect((result.llmConfig as Record<string, unknown>).thinkingConfig).not.toHaveProperty(
         'thinkingBudget',
@@ -406,8 +605,171 @@ describe('getGoogleConfig', () => {
 
       expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
         includeThoughts: true,
-        thinkingLevel: ThinkingLevel.medium,
+        thinkingLevel: 'MEDIUM',
       });
+    });
+
+    it('should preserve minimal thinkingLevel for Gemini 3 Flash models', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3-flash-preview',
+          thinking: true,
+          thinkingLevel: ThinkingLevel.minimal,
+        },
+      });
+
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: 'MINIMAL',
+      });
+    });
+
+    it('should default Gemini 3.5 Flash to medium thinkingLevel', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+        },
+      });
+
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: 'MEDIUM',
+      });
+    });
+
+    it('should preserve explicit Gemini 3.5 Flash thinkingLevel', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+          thinkingLevel: ThinkingLevel.low,
+        },
+      });
+
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: 'LOW',
+      });
+    });
+
+    it('should apply Gemini 3.5 Flash overrides to versioned aliases', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'google/gemini-3.5-flash-latest',
+          temperature: 0.7,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('temperature');
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: 'MEDIUM',
+      });
+    });
+
+    it('should remove legacy sampling params for Gemini 3.5 Flash', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const modelOptions = {
+        model: 'gemini-3.5-flash',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        top_p: 0.9,
+        top_k: 40,
+        thinking_budget: 5000,
+      } as unknown as t.GoogleParameters;
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions,
+        defaultParams: {
+          temperature: 0.5,
+          topP: 0.8,
+          topK: 20,
+        },
+        addParams: {
+          temperature: 0.2,
+          topP: 0.6,
+          topK: 10,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('temperature');
+      expect(result.llmConfig).not.toHaveProperty('topP');
+      expect(result.llmConfig).not.toHaveProperty('topK');
+      expect(result.llmConfig).not.toHaveProperty('top_p');
+      expect(result.llmConfig).not.toHaveProperty('top_k');
+      expect(result.llmConfig).not.toHaveProperty('thinking_budget');
+    });
+
+    it('should respect dropParams for Gemini 3.5 Flash thinkingConfig', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+        },
+        dropParams: ['thinkingConfig'],
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('thinkingConfig');
+    });
+
+    it('should respect dropParams for Gemini 3.5 Flash includeThoughts', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+        },
+        dropParams: ['includeThoughts'],
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('includeThoughts');
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        thinkingLevel: 'MEDIUM',
+      });
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).not.toHaveProperty(
+        'includeThoughts',
+      );
+    });
+
+    it('should remove empty Gemini 3.5 Flash thinkingConfig when all fields are dropped', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash',
+        },
+        dropParams: ['includeThoughts', 'thinkingLevel'],
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('thinkingConfig');
     });
 
     it('should omit thinkingLevel when unset (empty string) for Gemini 3', () => {
@@ -466,7 +828,7 @@ describe('getGoogleConfig', () => {
       expect(result.provider).toBe(Providers.VERTEXAI);
       expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
         includeThoughts: true,
-        thinkingLevel: ThinkingLevel.low,
+        thinkingLevel: 'LOW',
       });
       expect(result.llmConfig).toHaveProperty('includeThoughts', true);
     });
@@ -953,6 +1315,7 @@ describe('knownGoogleParams', () => {
     expect(knownGoogleParams.has('topP')).toBe(true);
     expect(knownGoogleParams.has('topK')).toBe(true);
     expect(knownGoogleParams.has('apiKey')).toBe(true);
+    expect(knownGoogleParams.has('endpoint')).toBe(true);
     expect(knownGoogleParams.has('safetySettings')).toBe(true);
   });
 

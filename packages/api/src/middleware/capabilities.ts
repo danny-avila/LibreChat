@@ -6,19 +6,17 @@ import {
   SystemCapabilities,
   readConfigCapability,
 } from '@librechat/data-schemas';
-import type { PrincipalType } from 'librechat-data-provider';
 import type { SystemCapability, ConfigSection } from '@librechat/data-schemas';
 import type { NextFunction, Response } from 'express';
-import type { Types } from 'mongoose';
+import type { Types, ClientSession } from 'mongoose';
+import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
 
-interface ResolvedPrincipal {
-  principalType: PrincipalType;
-  principalId?: string | Types.ObjectId;
-}
-
 interface CapabilityDeps {
-  getUserPrincipals: (params: { userId: string; role: string }) => Promise<ResolvedPrincipal[]>;
+  getUserPrincipals: (
+    params: { userId: string | Types.ObjectId; role?: string | null },
+    session?: ClientSession,
+  ) => Promise<ResolvedPrincipal[]>;
   hasCapabilityForPrincipals: (params: {
     principals: ResolvedPrincipal[];
     capability: SystemCapability;
@@ -26,7 +24,7 @@ interface CapabilityDeps {
   }) => Promise<boolean>;
 }
 
-interface CapabilityUser {
+export interface CapabilityUser {
   id: string;
   role: string;
   tenantId?: string;
@@ -48,7 +46,7 @@ export type RequireCapabilityFn = (
 
 export type HasConfigCapabilityFn = (
   user: CapabilityUser,
-  section: ConfigSection,
+  section: ConfigSection | null,
   verb?: 'manage' | 'read',
 ) => Promise<boolean>;
 
@@ -75,6 +73,20 @@ export function capabilityContextMiddleware(
     );
   }
   capabilityStore.run({ principals: new Map(), results: new Map() }, next);
+}
+
+/**
+ * Reads principals from the per-request ALS cache without side effects.
+ * Returns `undefined` when called outside a request context or before
+ * `requireCapability` has populated the cache for this user.
+ */
+export function getCachedPrincipals(user: CapabilityUser): ResolvedPrincipal[] | undefined {
+  const store = capabilityStore.getStore();
+  if (!store) {
+    return undefined;
+  }
+  const key = `${user.id}:${user.role}:${user.tenantId ?? ''}`;
+  return store.principals.get(key);
 }
 
 /**
@@ -138,11 +150,14 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
    */
   async function hasConfigCapability(
     user: CapabilityUser,
-    section: ConfigSection,
+    section: ConfigSection | null,
     verb: 'manage' | 'read' = 'manage',
   ): Promise<boolean> {
     const broadCap =
       verb === 'manage' ? SystemCapabilities.MANAGE_CONFIGS : SystemCapabilities.READ_CONFIGS;
+    if (section == null) {
+      return hasCapability(user, broadCap);
+    }
     if (await hasCapability(user, broadCap)) {
       return true;
     }
@@ -176,6 +191,7 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
           return;
         }
 
+        logger.warn(`[requireCapability] Forbidden: user ${id} missing capability '${capability}'`);
         res.status(403).json({ message: 'Forbidden' });
       } catch (err) {
         logger.error(`[requireCapability] Error checking capability: ${capability}`, err);

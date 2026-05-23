@@ -33,6 +33,12 @@ global:
     #        key: client_id
 
 librechat:
+  # External admin panel base URL used for admin OAuth/SSO redirects.
+  # Required when deploying the admin panel on a separate URL.
+  # May include a path. Do not include a trailing slash.
+  # Example: https://admin.example.com/admin
+  adminPanelUrl: ""
+
   configEnv:
     # IMPORTANT -- GENERATE your own: openssl rand -hex 32 and openssl rand -hex 16 for CREDS_IV. Best Practise: Put into Secret. See global.librechat.existingSecretName
     CREDS_KEY: 9e95d9894da7e68dd69c0046caf5343c8b1e80c89609b5a1e40e6568b5b23ce6
@@ -291,6 +297,10 @@ additionalConfigMaps: {}
 # MongoDB Parameters
 mongodb:
   enabled: true
+  # Bitnami moved versioned image tags to docker.io/bitnamilegacy on 2025-08-28.
+  # See https://github.com/bitnami/charts/issues/35164
+  image:
+    repository: bitnamilegacy/mongodb
   auth:
     enabled: false
   databases:

@@ -60,7 +60,6 @@ const presetSchema: Schema<IPreset> = new Schema(
   {
     presetId: {
       type: String,
-      unique: true,
       required: true,
       index: true,
     },
@@ -87,5 +86,7 @@ const presetSchema: Schema<IPreset> = new Schema(
   },
   { timestamps: true },
 );
+
+presetSchema.index({ presetId: 1, tenantId: 1 }, { unique: true });
 
 export default presetSchema;

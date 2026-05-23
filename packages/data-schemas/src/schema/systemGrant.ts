@@ -1,12 +1,7 @@
 import { Schema } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
-import { SystemCapabilities } from '~/systemCapabilities';
-import type { SystemCapability } from '~/systemCapabilities';
+import { isValidCapability } from '~/admin/capabilities';
 import type { ISystemGrant } from '~/types';
-
-const baseCapabilities = new Set<SystemCapability>(Object.values(SystemCapabilities));
-const sectionCapPattern = /^(?:manage|read):configs:\w+$/;
-const assignCapPattern = /^assign:configs:(?:user|group|role)$/;
 
 const systemGrantSchema = new Schema<ISystemGrant>(
   {
@@ -23,8 +18,7 @@ const systemGrantSchema = new Schema<ISystemGrant>(
       type: String,
       required: true,
       validate: {
-        validator: (v: SystemCapability) =>
-          baseCapabilities.has(v) || sectionCapPattern.test(v) || assignCapPattern.test(v),
+        validator: isValidCapability,
         message: 'Invalid capability string: "{VALUE}"',
       },
     },
@@ -72,5 +66,6 @@ systemGrantSchema.index(
 );
 
 systemGrantSchema.index({ capability: 1, tenantId: 1 });
+systemGrantSchema.index({ principalType: 1, capability: 1, tenantId: 1 });
 
 export default systemGrantSchema;

@@ -2,7 +2,11 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
 import { MCPUIResource } from '../MCPUIResource';
-import { useMessageContext, useMessagesConversation, useMessagesOperations } from '~/Providers';
+import {
+  useMessageContext,
+  useOptionalMessagesConversation,
+  useOptionalMessagesOperations,
+} from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { handleUIAction } from '~/utils';
 
@@ -22,11 +26,11 @@ jest.mock('@mcp-ui/client', () => ({
 }));
 
 const mockUseMessageContext = useMessageContext as jest.MockedFunction<typeof useMessageContext>;
-const mockUseMessagesConversation = useMessagesConversation as jest.MockedFunction<
-  typeof useMessagesConversation
+const mockUseMessagesConversation = useOptionalMessagesConversation as jest.MockedFunction<
+  typeof useOptionalMessagesConversation
 >;
-const mockUseMessagesOperations = useMessagesOperations as jest.MockedFunction<
-  typeof useMessagesOperations
+const mockUseMessagesOperations = useOptionalMessagesOperations as jest.MockedFunction<
+  typeof useOptionalMessagesOperations
 >;
 const mockUseLocalize = useLocalize as jest.MockedFunction<typeof useLocalize>;
 const mockHandleUIAction = handleUIAction as jest.MockedFunction<typeof handleUIAction>;

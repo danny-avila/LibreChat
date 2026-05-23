@@ -1,8 +1,9 @@
 import { ResourceType, SystemCategories } from 'librechat-data-provider';
 import type { Model, Types } from 'mongoose';
 import type { IAclEntry, IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
-import { escapeRegExp } from '~/utils/string';
+import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
 export interface PromptDeps {
@@ -508,6 +509,9 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       if (typeof matchFilter._id === 'string') {
         matchFilter._id = new ObjectId(matchFilter._id);
       }
+      const tenantId = getTenantId();
+      const useTenantFilter = tenantId && tenantId !== SYSTEM_TENANT_ID;
+
       const result = await PromptGroup.aggregate([
         { $match: matchFilter },
         {
@@ -521,6 +525,13 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
         { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
       ]);
       const group = result[0] || null;
+      if (
+        group?.productionPrompt &&
+        useTenantFilter &&
+        group.productionPrompt.tenantId !== tenantId
+      ) {
+        group.productionPrompt = null;
+      }
       if (group?.author) {
         group.author = group.author.toString();
       }

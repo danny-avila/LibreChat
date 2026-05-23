@@ -115,7 +115,7 @@ export default function FileRow({
               if (abortUpload && file.progress < 1) {
                 abortUpload();
               }
-              if (file.progress >= 1) {
+              if (file.progress >= 1 && !file.attached) {
                 showToast({
                   message: localize('com_ui_deleting_file'),
                   status: 'info',

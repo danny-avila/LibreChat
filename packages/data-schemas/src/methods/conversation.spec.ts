@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
 import type { IConversation } from '../types';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ConversationMethods, createConversationMethods } from './conversation';
+import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -57,6 +58,8 @@ const saveConvo = (...args: Parameters<ConversationMethods['saveConvo']>) =>
   methods.saveConvo(...args) as Promise<IConversation | null>;
 const getConvo = (...args: Parameters<ConversationMethods['getConvo']>) =>
   methods.getConvo(...args);
+const getConvoRetention = (...args: Parameters<ConversationMethods['getConvoRetention']>) =>
+  methods.getConvoRetention(...args);
 const getConvoTitle = (...args: Parameters<ConversationMethods['getConvoTitle']>) =>
   methods.getConvoTitle(...args);
 const getConvoFiles = (...args: Parameters<ConversationMethods['getConvoFiles']>) =>
@@ -77,7 +80,7 @@ describe('Conversation Operations', () => {
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;
-    interfaceConfig?: { temporaryChatRetention?: number };
+    interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
   };
   let mockConversationData: {
     conversationId: string;
@@ -135,7 +138,7 @@ describe('Conversation Operations', () => {
 
       // Verify that getMessages was called with correct parameters
       expect(getMessages).toHaveBeenCalledWith(
-        { conversationId: mockConversationData.conversationId },
+        { conversationId: mockConversationData.conversationId, user: mockCtx.userId },
         '_id',
       );
     });
@@ -203,6 +206,24 @@ describe('Conversation Operations', () => {
       });
       expect(savedConvo?.someField).toBeUndefined();
     });
+
+    it('should set createdAt from metadata only on insert', async () => {
+      const firstAnchor = new Date('2024-02-03T04:05:06.000Z');
+      const secondAnchor = new Date('2025-02-03T04:05:06.000Z');
+
+      const firstSave = await saveConvo(mockCtx, mockConversationData, {
+        createdAtOnInsert: firstAnchor,
+      });
+      const secondSave = await saveConvo(
+        mockCtx,
+        { ...mockConversationData, title: 'Updated title' },
+        { createdAtOnInsert: secondAnchor },
+      );
+
+      expect(new Date(firstSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
+      expect(new Date(secondSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
+      expect(secondSave?.title).toBe('Updated title');
+    });
   });
 
   describe('isTemporary conversation handling', () => {
@@ -244,7 +265,7 @@ describe('Conversation Operations', () => {
       const result = await saveConvo(mockCtx, mockConversationData);
 
       expect(result?.conversationId).toBe(mockConversationData.conversationId);
-      expect(result?.expiredAt).toBeNull();
+      expect(result?.expiredAt).toBeUndefined();
     });
 
     it('should use custom retention period from config', async () => {
@@ -382,6 +403,21 @@ describe('Conversation Operations', () => {
       );
     });
 
+    it('should preserve temporary retention when saving without isTemporary', async () => {
+      mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
+      mockCtx.isTemporary = true;
+      const firstSave = await saveConvo(mockCtx, mockConversationData);
+      const originalExpiredAt = firstSave?.expiredAt;
+
+      mockCtx.isTemporary = undefined;
+      const updatedData = { ...mockConversationData, title: 'Updated Title' };
+      const secondSave = await saveConvo(mockCtx, updatedData);
+
+      expect(secondSave?.title).toBe('Updated Title');
+      expect(secondSave?.isTemporary).toBe(true);
+      expect(secondSave?.expiredAt).toEqual(originalExpiredAt);
+    });
+
     it('should not set expiredAt when updating non-temporary conversation', async () => {
       // First save a non-temporary conversation
       mockCtx.isTemporary = false;
@@ -397,23 +433,124 @@ describe('Conversation Operations', () => {
       expect(secondSave?.expiredAt).toBeNull();
     });
 
-    it('should filter out expired conversations in getConvosByCursor', async () => {
+    it('should set expiredAt for non-temporary conversation when retentionMode is ALL', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.ALL,
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.isTemporary).toBe(false);
+    });
+
+    it('should mark retained conversation non-temporary when retentionMode is ALL and isTemporary is omitted', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.ALL,
+      };
+
+      const result = await saveConvo(mockCtx, mockConversationData);
+
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.isTemporary).toBe(false);
+    });
+
+    it('should preserve existing temporary flag when retentionMode is ALL and isTemporary is omitted', async () => {
+      mockCtx.isTemporary = true;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.ALL,
+      };
+
+      const firstSave = await saveConvo(mockCtx, mockConversationData);
+
+      mockCtx.isTemporary = undefined;
+      const secondSave = await saveConvo(mockCtx, {
+        ...mockConversationData,
+        title: 'Updated Title',
+      });
+
+      expect(firstSave?.isTemporary).toBe(true);
+      expect(secondSave?.title).toBe('Updated Title');
+      expect(secondSave?.isTemporary).toBe(true);
+      expect(secondSave?.expiredAt).toBeDefined();
+    });
+
+    it('should not set expiredAt when retentionMode is temporary and not isTemporary', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.TEMPORARY,
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.expiredAt).toBeNull();
+      expect(result?.isTemporary).toBe(false);
+    });
+
+    it('should filter out temporary conversations in getConvosByCursor', async () => {
       // Create some test conversations
-      const nonExpiredConvo = await Conversation.create({
+      const newNonTemporaryConvo = await Conversation.create({
         conversationId: uuidv4(),
         user: 'user123',
-        title: 'Non-expired',
+        title: 'New Non-temporary Conversation',
         endpoint: EModelEndpoint.openAI,
+        isTemporary: false,
+        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        updatedAt: new Date(),
+      });
+
+      const oldNonTemporaryConvo = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Old Non-Temporary Conversation',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: undefined,
         expiredAt: null,
+        updatedAt: new Date(),
+      });
+
+      const legacyNullNonTemporaryConvoId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId: legacyNullNonTemporaryConvoId,
+        user: 'user123',
+        title: 'Legacy Null Non-Temporary Conversation',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: null,
+        expiredAt: null,
+        updatedAt: new Date(),
+        createdAt: new Date(),
+      });
+
+      const legacyTemporaryConvoId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId: legacyTemporaryConvoId,
+        user: 'user123',
+        title: 'Legacy Temporary Conversation',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        updatedAt: new Date(),
+        createdAt: new Date(),
+      });
+
+      const expiredRetainedConvo = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Expired Retained Conversation',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: false,
+        expiredAt: new Date(Date.now() - 60 * 60 * 1000),
         updatedAt: new Date(),
       });
 
       await Conversation.create({
         conversationId: uuidv4(),
         user: 'user123',
-        title: 'Future expired',
+        title: 'Temporary conversation',
         endpoint: EModelEndpoint.openAI,
-        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
+        isTemporary: true,
+        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         updatedAt: new Date(),
       });
 
@@ -422,41 +559,104 @@ describe('Conversation Operations', () => {
 
       const result = await getConvosByCursor('user123');
 
-      // Should only return conversations with null or non-existent expiredAt
-      expect(result?.conversations).toHaveLength(1);
-      expect(result?.conversations[0]?.conversationId).toBe(nonExpiredConvo.conversationId);
+      // Should return both non-temporary conversations, not the temporary one
+      expect(result?.conversations).toHaveLength(3);
+      const convoIds = result?.conversations.map((c) => c.conversationId);
+      expect(convoIds).toContain(newNonTemporaryConvo.conversationId);
+      expect(convoIds).toContain(oldNonTemporaryConvo.conversationId);
+      expect(convoIds).toContain(legacyNullNonTemporaryConvoId);
+      expect(convoIds).not.toContain(legacyTemporaryConvoId);
+      expect(convoIds).not.toContain(expiredRetainedConvo.conversationId);
     });
 
-    it('should filter out expired conversations in getConvosQueried', async () => {
-      // Create test conversations
-      const nonExpiredConvo = await Conversation.create({
+    it('should filter out temporary conversations in getConvosQueried', async () => {
+      const newNonTemporaryConvo = await Conversation.create({
         conversationId: uuidv4(),
         user: 'user123',
-        title: 'Non-expired',
+        title: 'New Non-temporary Conversation',
         endpoint: EModelEndpoint.openAI,
-        expiredAt: null,
+        isTemporary: false,
+        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        updatedAt: new Date(),
       });
 
-      const expiredConvo = await Conversation.create({
+      const oldNonTemporaryConvo = await Conversation.create({
         conversationId: uuidv4(),
         user: 'user123',
-        title: 'Expired',
+        title: 'Old Non-Temporary Conversation',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: undefined,
+        expiredAt: null,
+        updatedAt: new Date(),
+      });
+
+      const legacyNullNonTemporaryConvoId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId: legacyNullNonTemporaryConvoId,
+        user: 'user123',
+        title: 'Legacy Null Non-Temporary Conversation',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: null,
+        expiredAt: null,
+        updatedAt: new Date(),
+        createdAt: new Date(),
+      });
+
+      const legacyTemporaryConvoId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId: legacyTemporaryConvoId,
+        user: 'user123',
+        title: 'Legacy Temporary Conversation',
         endpoint: EModelEndpoint.openAI,
         expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        updatedAt: new Date(),
+        createdAt: new Date(),
+      });
+
+      const expiredRetainedConvo = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Expired Retained Conversation',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: false,
+        expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+        updatedAt: new Date(),
+      });
+
+      const tempConvo = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Temporary conversation',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: true,
+        expiredAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        updatedAt: new Date(),
       });
 
       const convoIds = [
-        { conversationId: nonExpiredConvo.conversationId },
-        { conversationId: expiredConvo.conversationId },
+        { conversationId: newNonTemporaryConvo.conversationId },
+        { conversationId: oldNonTemporaryConvo.conversationId },
+        { conversationId: legacyNullNonTemporaryConvoId },
+        { conversationId: legacyTemporaryConvoId },
+        { conversationId: expiredRetainedConvo.conversationId },
+        { conversationId: tempConvo.conversationId },
       ];
 
       const result = await getConvosQueried('user123', convoIds);
 
-      // Should only return the non-expired conversation
-      expect(result?.conversations).toHaveLength(1);
-      expect(result?.conversations[0].conversationId).toBe(nonExpiredConvo.conversationId);
-      expect(result?.convoMap[nonExpiredConvo.conversationId]).toBeDefined();
-      expect(result?.convoMap[expiredConvo.conversationId]).toBeUndefined();
+      // Should only return the non-temporary conversations
+      expect(result?.conversations).toHaveLength(3);
+
+      const resultIds = result?.conversations.map((c) => c.conversationId);
+      expect(resultIds).toContain(newNonTemporaryConvo.conversationId);
+      expect(resultIds).toContain(oldNonTemporaryConvo.conversationId);
+      expect(resultIds).toContain(legacyNullNonTemporaryConvoId);
+      expect(result?.convoMap[newNonTemporaryConvo.conversationId]).toBeDefined();
+      expect(result?.convoMap[oldNonTemporaryConvo.conversationId]).toBeDefined();
+      expect(result?.convoMap[legacyNullNonTemporaryConvoId]).toBeDefined();
+      expect(result?.convoMap[legacyTemporaryConvoId]).toBeUndefined();
+      expect(result?.convoMap[expiredRetainedConvo.conversationId]).toBeUndefined();
+      expect(result?.convoMap[tempConvo.conversationId]).toBeUndefined();
     });
   });
 
@@ -502,6 +702,24 @@ describe('Conversation Operations', () => {
     it('should return null if conversation not found', async () => {
       const result = await getConvo('user123', 'non-existent-id');
       expect(result).toBeNull();
+    });
+  });
+
+  describe('getConvoRetention', () => {
+    it('should retrieve only retention fields for a user conversation', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        title: 'Test Conversation',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: new Date('2030-01-01T00:00:00.000Z'),
+      });
+
+      const result = await getConvoRetention('user123', mockConversationData.conversationId);
+
+      expect(result?.expiredAt).toEqual(new Date('2030-01-01T00:00:00.000Z'));
+      expect(result).not.toHaveProperty('title');
+      expect(result).not.toHaveProperty('messages');
     });
   });
 
@@ -661,7 +879,7 @@ describe('Conversation Operations', () => {
         createdAt,
         updatedAt,
       });
-      return Conversation.findOne({ conversationId }).lean();
+      return Conversation.findOne({ conversationId }).lean<IConversation>();
     };
 
     it('should not skip conversations at page boundaries', async () => {
@@ -905,6 +1123,52 @@ describe('Conversation Operations', () => {
 
       expect(result?.conversations).toHaveLength(25);
       expect(result?.nextCursor).toBeNull(); // No next page
+    });
+  });
+
+  describe('tenantId stripping', () => {
+    it('saveConvo should not write caller-supplied tenantId to the document', async () => {
+      const conversationId = uuidv4();
+      const result = await saveConvo(
+        { userId: 'user123' },
+        { conversationId, tenantId: 'malicious-tenant', title: 'Tenant Test' },
+      );
+
+      expect(result).not.toBeNull();
+      const doc = await Conversation.findOne({ conversationId }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc?.title).toBe('Tenant Test');
+      expect(doc?.tenantId).toBeUndefined();
+    });
+
+    it('bulkSaveConvos should not overwrite tenantId via update payload', async () => {
+      const conversationId = uuidv4();
+
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await Conversation.create({
+          conversationId,
+          user: 'user123',
+          title: 'Original',
+          endpoint: EModelEndpoint.openAI,
+        });
+      });
+
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await methods.bulkSaveConvos([
+          {
+            conversationId,
+            user: 'user123',
+            title: 'Updated',
+            tenantId: 'malicious-tenant',
+            endpoint: EModelEndpoint.openAI,
+          },
+        ]);
+      });
+
+      const doc = await runAsSystem(async () => Conversation.findOne({ conversationId }).lean());
+      expect(doc).not.toBeNull();
+      expect(doc?.title).toBe('Updated');
+      expect(doc?.tenantId).toBe('real-tenant');
     });
   });
 });

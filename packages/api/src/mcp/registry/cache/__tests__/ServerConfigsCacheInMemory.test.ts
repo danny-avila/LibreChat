@@ -12,6 +12,7 @@ describe('ServerConfigsCacheInMemory Integration Tests', () => {
 
   // Test data
   const mockConfig1: ParsedServerConfig = {
+    type: 'stdio',
     command: 'node',
     args: ['server1.js'],
     env: { TEST: 'value1' },
@@ -19,6 +20,7 @@ describe('ServerConfigsCacheInMemory Integration Tests', () => {
   };
 
   const mockConfig2: ParsedServerConfig = {
+    type: 'stdio',
     command: 'python',
     args: ['server2.py'],
     env: { TEST: 'value2' },
@@ -26,6 +28,7 @@ describe('ServerConfigsCacheInMemory Integration Tests', () => {
   };
 
   const mockConfig3: ParsedServerConfig = {
+    type: 'stdio',
     command: 'node',
     args: ['server3.js'],
     url: 'http://localhost:3000',

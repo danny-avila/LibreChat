@@ -1,16 +1,30 @@
 import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { TConversation } from 'librechat-data-provider';
-import { useChatContext } from '~/Providers';
-import { useFileHandling } from '~/hooks';
+import type { ExtendedFile, FileSetter } from '~/common';
+import { useFileHandlingNoChatContext } from '~/hooks';
 import FileRow from './FileRow';
 import store from '~/store';
 
-function FileFormChat({ conversation }: { conversation: TConversation | null }) {
-  const { files, setFiles, setFilesLoading } = useChatContext();
+function FileFormChat({
+  conversation,
+  files,
+  setFiles,
+  setFilesLoading,
+}: {
+  conversation: TConversation | null;
+  files: Map<string, ExtendedFile>;
+  setFiles: FileSetter;
+  setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
+}) {
   const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
   const { endpoint: _endpoint } = conversation ?? { endpoint: null };
-  const { abortUpload } = useFileHandling();
+  const { abortUpload } = useFileHandlingNoChatContext(undefined, {
+    files,
+    setFiles,
+    setFilesLoading,
+    conversation,
+  });
 
   const isRTL = chatDirection === 'rtl';
 

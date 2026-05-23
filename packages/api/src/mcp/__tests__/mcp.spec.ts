@@ -150,6 +150,18 @@ describe('Environment Variable Extraction (MCP)', () => {
       expect(result.headers).toEqual(options.headers);
     });
 
+    it('should validate proxy URLs for remote HTTP transports', () => {
+      const options = {
+        type: 'streamable-http',
+        url: 'https://example.com/api',
+        proxy: 'http://proxy.example.com:8080',
+      };
+
+      const result = StreamableHTTPOptionsSchema.parse(options);
+
+      expect(result.proxy).toBe('http://proxy.example.com:8080');
+    });
+
     it('should accept "http" as an alias for "streamable-http"', () => {
       const options = {
         type: 'http',
@@ -179,6 +191,7 @@ describe('Environment Variable Extraction (MCP)', () => {
   describe('processMCPEnv', () => {
     it('should create a deep clone of the input object', () => {
       const originalObj: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -202,6 +215,7 @@ describe('Environment Variable Extraction (MCP)', () => {
 
     it('should process environment variables in env field', () => {
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -252,6 +266,7 @@ describe('Environment Variable Extraction (MCP)', () => {
 
     it('should not modify objects without env or headers', () => {
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         timeout: 5000,
@@ -319,6 +334,20 @@ describe('Environment Variable Extraction (MCP)', () => {
         'User-Id': 'test-user-123',
         'Content-Type': 'application/json',
       });
+    });
+
+    it('should process proxy in streamable-http options', () => {
+      process.env.MCP_PROXY_URL = 'http://proxy.example.com:8080';
+      const options: MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://example.com',
+        proxy: '${MCP_PROXY_URL}',
+      };
+
+      const result = processMCPEnv({ options });
+
+      expect('proxy' in result && result.proxy).toBe('http://proxy.example.com:8080');
+      delete process.env.MCP_PROXY_URL;
     });
 
     it('should maintain streamable-http type in processed options', () => {
@@ -433,6 +462,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         ldapId: 'ldap-user-123',
       });
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -599,6 +629,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         CUSTOM_VAR_2: 'custom-value-2',
       };
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -674,6 +705,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         PROFILE_NAME: 'production-profile',
       };
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'npx',
         args: [
           '-y',
@@ -734,6 +766,7 @@ describe('Environment Variable Extraction (MCP)', () => {
         UNUSED_VAR: 'unused-value',
       };
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['server.js'],
         env: {
@@ -959,6 +992,7 @@ describe('Environment Variable Extraction (MCP)', () => {
       }) as unknown as IUser;
 
       const options: MCPOptions = {
+        type: 'stdio',
         command: 'node',
         args: ['mcp-server.js', '--user', '{{LIBRECHAT_USER_USERNAME}}'],
         env: {

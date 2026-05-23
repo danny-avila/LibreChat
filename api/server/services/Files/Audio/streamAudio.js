@@ -1,3 +1,4 @@
+const { scopedCacheKey } = require('@librechat/data-schemas');
 const {
   Time,
   CacheKeys,
@@ -67,6 +68,8 @@ function createChunkProcessor(user, messageId) {
   }
 
   const messageCache = getLogStores(CacheKeys.MESSAGES);
+  // Captured at creation time — must be called within an active request ALS scope
+  const cacheKey = scopedCacheKey(messageId);
 
   /**
    * @returns {Promise<{ text: string, isFinished: boolean }[] | string>}
@@ -81,7 +84,7 @@ function createChunkProcessor(user, messageId) {
     }
 
     /** @type { string | { text: string; complete: boolean } } */
-    let message = await messageCache.get(messageId);
+    let message = await messageCache.get(cacheKey);
     if (!message) {
       message = await getMessage({ user, messageId });
     }
@@ -92,7 +95,7 @@ function createChunkProcessor(user, messageId) {
     } else {
       const text = message.content?.length > 0 ? parseTextParts(message.content) : message.text;
       messageCache.set(
-        messageId,
+        cacheKey,
         {
           text,
           complete: true,

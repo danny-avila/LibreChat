@@ -5,8 +5,6 @@ const agentSchema = new Schema<IAgent>(
   {
     id: {
       type: String,
-      index: true,
-      unique: true,
       required: true,
     },
     name: {
@@ -44,6 +42,14 @@ const agentSchema = new Schema<IAgent>(
     },
     tools: {
       type: [String],
+      default: undefined,
+    },
+    skills: {
+      type: [String],
+      default: undefined,
+    },
+    skills_enabled: {
+      type: Boolean,
       default: undefined,
     },
     tool_kwargs: {
@@ -114,6 +120,11 @@ const agentSchema = new Schema<IAgent>(
       type: Schema.Types.Mixed,
       default: undefined,
     },
+    /** Subagent spawning configuration — isolated-context child agents. */
+    subagents: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,
@@ -124,6 +135,7 @@ const agentSchema = new Schema<IAgent>(
   },
 );
 
+agentSchema.index({ id: 1, tenantId: 1 }, { unique: true });
 agentSchema.index({ updatedAt: -1, _id: 1 });
 agentSchema.index({ 'edges.to': 1 });
 

@@ -15,25 +15,31 @@ interface MCPSubMenuProps {
 const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
   ({ placeholder, ...props }, ref) => {
     const localize = useLocalize();
-    const { storageContextKey, mcpServerManager } = useBadgeRowContext();
-    const {
-      isPinned,
-      mcpValues,
-      setIsPinned,
-      placeholderText,
-      selectableServers,
-      connectionStatus,
-      isInitializing,
-      getConfigDialogProps,
-      toggleServerSelection,
-      getServerStatusIconProps,
-    } = mcpServerManager;
+    const context = useBadgeRowContext();
+    const { storageContextKey, mcpServerManager } = context ?? {};
 
     const menuStore = Ariakit.useMenuStore({
       focusLoop: true,
       showTimeout: 100,
       placement: 'right',
     });
+
+    if (!mcpServerManager) {
+      return null;
+    }
+
+    const {
+      isPinned,
+      mcpValues,
+      setIsPinned,
+      isInitializing,
+      placeholderText,
+      connectionStatus,
+      selectableServers,
+      getConfigDialogProps,
+      toggleServerSelection,
+      getServerStatusIconProps,
+    } = mcpServerManager;
 
     if (!selectableServers || selectableServers.length === 0) {
       return null;

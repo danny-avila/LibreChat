@@ -1,5 +1,6 @@
 const express = require('express');
 const { isEnabled, GenerationJobManager } = require('@librechat/api');
+const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
 const {
   uaParser,
@@ -16,6 +17,11 @@ const { v1 } = require('./v1');
 const chat = require('./chat');
 
 const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
+
+/** Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check passes. */
+function hasTenantMismatch(job, user) {
+  return job.metadata?.tenantId != null && job.metadata.tenantId !== user.tenantId;
+}
 
 const router = express.Router();
 
@@ -67,35 +73,47 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
+  if (hasTenantMismatch(job, req.user)) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const streamTelemetry = createSseStreamTelemetry({ req, res, streamId, isResume });
+
   res.setHeader('Content-Encoding', 'identity');
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+  streamTelemetry.recordHeadersFlushed();
 
   logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
 
-  const writeEvent = (event) => {
+  const writeEvent = (event, options = {}) => {
     if (!res.writableEnded) {
-      res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
+      const eventName = options.eventName ?? 'message';
+      const payload = `event: ${eventName}\ndata: ${JSON.stringify(event)}\n\n`;
+      res.write(payload);
+      streamTelemetry.recordWrite(payload, { final: options.final });
       if (typeof res.flush === 'function') {
         res.flush();
       }
+      return true;
     }
+
+    return false;
   };
 
   const onDone = (event) => {
-    writeEvent(event);
+    streamTelemetry.recordFinalEventEmitted();
+    writeEvent(event, { final: true });
     res.end();
   };
 
   const onError = (error) => {
     if (!res.writableEnded) {
-      res.write(`event: error\ndata: ${JSON.stringify({ error })}\n\n`);
-      if (typeof res.flush === 'function') {
-        res.flush();
-      }
+      streamTelemetry.recordErrorEventEmitted();
+      writeEvent({ error }, { eventName: 'error' });
       res.end();
     }
   };
@@ -108,12 +126,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
     if (!res.writableEnded) {
       if (resumeState) {
-        res.write(
-          `event: message\ndata: ${JSON.stringify({ sync: true, resumeState, pendingEvents })}\n\n`,
-        );
-        if (typeof res.flush === 'function') {
-          res.flush();
-        }
+        writeEvent({ sync: true, resumeState, pendingEvents });
         GenerationJobManager.markSyncSent(streamId);
         logger.debug(
           `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps, ${pendingEvents.length} pending events`,
@@ -134,7 +147,9 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   }
 
   if (!result) {
-    return res.status(404).json({ error: 'Failed to subscribe to stream' });
+    streamTelemetry.recordSubscribeFailed();
+    onError('Failed to subscribe to stream');
+    return;
   }
 
   req.on('close', () => {
@@ -150,7 +165,10 @@ router.get('/chat/stream/:streamId', async (req, res) => {
  * @returns { activeJobIds: string[] }
  */
 router.get('/chat/active', async (req, res) => {
-  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(req.user.id);
+  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
+    req.user.id,
+    req.user.tenantId,
+  );
   res.json({ activeJobIds });
 });
 
@@ -171,6 +189,10 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   }
 
   if (job.metadata.userId !== req.user.id) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  if (hasTenantMismatch(job, req.user)) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
@@ -213,7 +235,10 @@ router.post('/chat/abort', async (req, res) => {
   // This handles the case where frontend sends "new" but job was created with a UUID
   if (!job && userId) {
     logger.debug(`[AgentStream] Job not found by ID, checking active jobs for user: ${userId}`);
-    const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(userId);
+    const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
+      userId,
+      req.user.tenantId,
+    );
     if (activeJobIds.length > 0) {
       // Abort the most recent active job for this user
       jobStreamId = activeJobIds[0];
@@ -227,6 +252,10 @@ router.post('/chat/abort', async (req, res) => {
   if (job && jobStreamId) {
     if (job.metadata?.userId && job.metadata.userId !== userId) {
       logger.warn(`[AgentStream] Unauthorized abort attempt for ${jobStreamId} by user ${userId}`);
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    if (hasTenantMismatch(job, req.user)) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
