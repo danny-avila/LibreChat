@@ -31,11 +31,14 @@ export async function batchDeleteKeys(
   }
 
   const size = chunkSize ?? cacheConfig.REDIS_DELETE_CHUNK_SIZE;
-  const mode = cacheConfig.USE_REDIS_CLUSTER ? 'cluster' : 'single-node';
+  const clusterSafe = cacheConfig.USE_REDIS_CLUSTER || cacheConfig.REDIS_CLUSTER_SAFE_DELETE;
+  const mode = cacheConfig.USE_REDIS_CLUSTER ? 'cluster' : clusterSafe ? 'cluster-safe' : 'single-node';
   const deletePromises = [];
 
-  if (cacheConfig.USE_REDIS_CLUSTER) {
-    // Cluster mode: Delete each key individually in parallel chunks to avoid CROSSSLOT errors
+  if (clusterSafe) {
+    // Cluster / cluster-safe mode: Delete each key individually in parallel chunks to avoid CROSSSLOT errors.
+    // Also used when REDIS_CLUSTER_SAFE_DELETE=true for managed services like ElastiCache Serverless that
+    // shard keys internally while presenting a single-node connection endpoint.
     for (let i = 0; i < keys.length; i += size) {
       const chunk = keys.slice(i, i + size);
       deletePromises.push(Promise.all(chunk.map((key) => client.del(key))));
