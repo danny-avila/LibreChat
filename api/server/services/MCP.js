@@ -54,6 +54,15 @@ function evictStale(map, ttl) {
 const unavailableMsg =
   "This tool's MCP server is temporarily unavailable. Please try again shortly.";
 
+async function getAppConfigForRequest(req) {
+  const user = req?.user;
+  return await getAppConfigForUser(user?.id, user);
+}
+
+async function getAppConfigForUser(userId, user) {
+  return await getAppConfig({ role: user?.role, tenantId: getTenantId(), userId });
+}
+
 /**
  * Resolves config-source MCP servers from admin Config overrides for the current
  * request context. Returns the parsed configs keyed by server name.
@@ -63,12 +72,7 @@ const unavailableMsg =
 async function resolveConfigServers(req) {
   try {
     const registry = getMCPServersRegistry();
-    const user = req?.user;
-    const appConfig = await getAppConfig({
-      role: user?.role,
-      tenantId: getTenantId(),
-      userId: user?.id,
-    });
+    const appConfig = await getAppConfigForRequest(req);
     return await registry.ensureConfigServers(appConfig?.mcpConfig || {});
   } catch (error) {
     logger.warn(
@@ -80,6 +84,18 @@ async function resolveConfigServers(req) {
 }
 
 /**
+ * Resolves operator-managed MCP server names from admin Config overrides for the current request.
+ * Returns a request-time snapshot for DB server creation, not a cross-process lock.
+ * @throws Propagates app config lookup errors to keep DB server creation fail-closed.
+ * @param {import('express').Request} req - Express request with user context
+ * @returns {Promise<string[]>}
+ */
+async function resolveMcpConfigNames(req) {
+  const appConfig = await getAppConfigForRequest(req);
+  return Object.keys(appConfig?.mcpConfig || {});
+}
+
+/**
  * Resolves config-source servers and merges all server configs (YAML + config + user DB)
  * for the given user context. Shared helper for controllers needing the full merged config.
  * @param {string} userId
@@ -88,7 +104,7 @@ async function resolveConfigServers(req) {
  */
 async function resolveAllMcpConfigs(userId, user) {
   const registry = getMCPServersRegistry();
-  const appConfig = await getAppConfig({ role: user?.role, tenantId: getTenantId(), userId });
+  const appConfig = await getAppConfigForUser(userId, user);
   let configServers = {};
   try {
     configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
@@ -874,6 +890,7 @@ module.exports = {
   createMCPTools,
   getMCPSetupData,
   resolveConfigServers,
+  resolveMcpConfigNames,
   resolveAllMcpConfigs,
   checkOAuthFlowStatus,
   getServerConnectionStatus,

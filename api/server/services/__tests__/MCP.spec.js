@@ -48,7 +48,7 @@ jest.mock('~/server/services/Tools/mcp', () => ({
 }));
 
 const { getAppConfig } = require('~/server/services/Config');
-const { resolveConfigServers, resolveAllMcpConfigs } = require('../MCP');
+const { resolveConfigServers, resolveMcpConfigNames, resolveAllMcpConfigs } = require('../MCP');
 
 describe('resolveConfigServers', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -90,6 +90,35 @@ describe('resolveConfigServers', () => {
     await resolveConfigServers({ user: { id: 'u1' } });
 
     expect(mockRegistry.ensureConfigServers).toHaveBeenCalledWith({});
+  });
+});
+
+describe('resolveMcpConfigNames', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('resolves current request config server names', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { cfg_srv: {}, yaml_srv: {} } });
+
+    const result = await resolveMcpConfigNames({ user: { id: 'u1', role: 'admin' } });
+
+    expect(result).toEqual(['cfg_srv', 'yaml_srv']);
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'admin', userId: 'u1' }),
+    );
+  });
+
+  it('returns [] when mcpConfig is absent', async () => {
+    getAppConfig.mockResolvedValue({});
+
+    const result = await resolveMcpConfigNames({ user: { id: 'u1' } });
+
+    expect(result).toEqual([]);
+  });
+
+  it('propagates getAppConfig failures for write-path callers', async () => {
+    getAppConfig.mockRejectedValue(new Error('db timeout'));
+
+    await expect(resolveMcpConfigNames({ user: { id: 'u1' } })).rejects.toThrow('db timeout');
   });
 });
 
