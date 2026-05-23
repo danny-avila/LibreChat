@@ -70,5 +70,6 @@ export function assistantsConfigSetup(
     titleModel: parsedConfig.titleModel,
     titleEndpoint: parsedConfig.titleEndpoint,
     titlePromptTemplate: parsedConfig.titlePromptTemplate,
+    groupLabel: parsedConfig.groupLabel,
   };
 }

@@ -3,6 +3,7 @@ import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Permissions,
   alternateName,
+  alternateNameKeys,
   EModelEndpoint,
   PermissionTypes,
   getEndpointField,
@@ -18,7 +19,7 @@ import type {
 import type { Endpoint } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { mapEndpoints, getIconKey } from '~/utils';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useLocalize } from '~/hooks';
 import { icons } from './Icons';
 
 const defaultInterface = getConfigDefaults().interface;
@@ -34,6 +35,7 @@ export const useEndpoints = ({
   endpointsConfig: TEndpointsConfig;
   startupConfig: TStartupConfig | undefined;
 }) => {
+  const localize = useLocalize();
   const modelsQuery = useGetModelsQuery();
   const { data: endpoints = [] } = useGetEndpointsQuery({ select: mapEndpoints });
   const interfaceConfig = startupConfig?.interface ?? defaultInterface;
@@ -95,10 +97,18 @@ export const useEndpoints = ({
           ep !== EModelEndpoint.agents &&
           (modelsQuery.data?.[ep]?.length ?? 0) > 0);
 
+      // Label priority: yaml `groupLabel` → i18n → alternateName → key.
+      const configGroupLabel = getEndpointField(endpointsConfig, ep, 'groupLabel');
+      const translationKey = alternateNameKeys[ep];
+      const translatedLabel = translationKey
+        ? localize(translationKey as Parameters<typeof localize>[0])
+        : undefined;
+      const label = configGroupLabel || translatedLabel || alternateName[ep] || ep;
+
       // Base result object with formatted default icon
       const result: Endpoint = {
         value: ep,
-        label: alternateName[ep] || ep,
+        label,
         hasModels,
         icon: Icon
           ? React.createElement(Icon, {
@@ -181,7 +191,7 @@ export const useEndpoints = ({
 
       return result;
     });
-  }, [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants, azureAssistants]);
+  }, [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants, azureAssistants, localize]);
 
   return {
     mappedEndpoints,
@@ -190,3 +200,4 @@ export const useEndpoints = ({
 };
 
 export default useEndpoints;
+
