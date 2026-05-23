@@ -179,6 +179,21 @@ let generationJobMetrics: GenerationJobMetrics = {
   recordResumePendingEvents: () => undefined,
 };
 
+const resetMetricRecorders = (): void => {
+  openIDUserLookupMetrics = {
+    recordLookup: () => undefined,
+  };
+  mongooseQueryMetrics = {
+    recordQuery: () => undefined,
+  };
+  generationJobMetrics = {
+    recordJob: () => undefined,
+    setJobsInFlight: () => undefined,
+    recordSubscription: () => undefined,
+    recordResumePendingEvents: () => undefined,
+  };
+};
+
 export function recordGenerationJob(store: GenerationJobStore, result: GenerationJobResult): void {
   generationJobMetrics.recordJob(store, result);
 }
@@ -206,6 +221,14 @@ const getElapsedSeconds = (startedAt: bigint): number =>
   Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
 
 export const isMetricsConfigured = (): boolean => Boolean(process.env.METRICS_SECRET);
+
+const createUnauthorizedMetricsRouter = (): Router => {
+  const metricsRouter = Router();
+  metricsRouter.get('/', (_req, res) => {
+    res.status(401).end();
+  });
+  return metricsRouter;
+};
 
 const normalizeMongooseLabel = (value: unknown): string => {
   if (typeof value !== 'string' || !value) return 'unknown';
@@ -305,6 +328,14 @@ export function instrumentMongooseQueryMetrics(mongoose: Mongoose): void {
 }
 
 export function createMetrics(): PrometheusMetrics {
+  if (!isMetricsConfigured()) {
+    resetMetricRecorders();
+    return {
+      metricsMiddleware: (_req: Request, _res: Response, next: NextFunction) => next(),
+      metricsRouter: createUnauthorizedMetricsRouter(),
+    };
+  }
+
   const registry = new Registry();
   collectDefaultMetrics({ register: registry });
 

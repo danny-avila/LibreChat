@@ -2,7 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
 import type { FilterQuery } from 'mongoose';
-import { recordOpenIDUserLookup } from '~/app/metrics';
+import { isMetricsConfigured, recordOpenIDUserLookup } from '~/app/metrics';
 import type { OpenIDUserLookupResult } from '~/app/metrics';
 
 export type OpenIdEmailClaims = {
@@ -221,12 +221,14 @@ export async function findOpenIDUser({
   idOnTheSource?: string;
   strategyName?: string;
 }): Promise<OpenIdUserResolution> {
-  const lookupStartedAt = process.hrtime.bigint();
+  const lookupStartedAt = isMetricsConfigured() ? process.hrtime.bigint() : null;
   const finish = (resolution: OpenIdUserResolution): OpenIdUserResolution => {
-    recordOpenIDUserLookup(
-      getOpenIDUserLookupResult(resolution),
-      getElapsedSeconds(lookupStartedAt),
-    );
+    if (lookupStartedAt != null) {
+      recordOpenIDUserLookup(
+        getOpenIDUserLookupResult(resolution),
+        getElapsedSeconds(lookupStartedAt),
+      );
+    }
     return resolution;
   };
 
@@ -289,7 +291,9 @@ export async function findOpenIDUser({
 
     return finish({ user, error: null, migration: false });
   } catch (error) {
-    recordOpenIDUserLookup('error', getElapsedSeconds(lookupStartedAt));
+    if (lookupStartedAt != null) {
+      recordOpenIDUserLookup('error', getElapsedSeconds(lookupStartedAt));
+    }
     throw error;
   }
 }

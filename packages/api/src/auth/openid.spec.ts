@@ -21,6 +21,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('~/app/metrics', () => ({
+  isMetricsConfigured: jest.fn(() => true),
   recordOpenIDUserLookup: jest.fn(),
 }));
 

@@ -74,8 +74,28 @@ describe('createMetrics', () => {
     delete process.env.METRICS_SECRET;
   });
 
+  it('uses a no-op middleware and unauthorized router when metrics are not configured', async () => {
+    const app = express();
+    const { metricsMiddleware, metricsRouter } = createMetrics();
+    const res = new EventEmitter();
+    const next = jest.fn();
+
+    metricsMiddleware(
+      { headers: {}, method: 'GET', path: '/api/slow-response' } as Request,
+      res as unknown as Response,
+      next,
+    );
+    app.use('/metrics', metricsRouter);
+
+    await request(app).get('/metrics').expect(401);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.listenerCount('finish')).toBe(0);
+    expect(res.listenerCount('close')).toBe(0);
+  });
+
   it('tracks request counts, in-flight gauges, and request body sizes', async () => {
     const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
     const { metricsMiddleware, metricsRouter } = createMetrics();
     app.use(metricsMiddleware);
     app.use(express.text({ type: '*/*' }));
@@ -83,7 +103,6 @@ describe('createMetrics', () => {
       res.status(201).send('ok');
     });
     app.use('/metrics', metricsRouter);
-    process.env.METRICS_SECRET = 'test-secret';
 
     await request(app)
       .post('/api/files/507f1f77bcf86cd799439011')
@@ -112,6 +131,7 @@ describe('createMetrics', () => {
 
   it('tracks SSE stream counts, active gauges, and stream duration', async () => {
     const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
     const { metricsMiddleware, metricsRouter } = createMetrics();
     app.use(metricsMiddleware);
     app.get('/api/agents/chat/stream/:streamId', (_req, res) => {
@@ -120,7 +140,6 @@ describe('createMetrics', () => {
       res.end();
     });
     app.use('/metrics', metricsRouter);
-    process.env.METRICS_SECRET = 'test-secret';
 
     await request(app).get('/api/agents/chat/stream/stream-123').expect(200);
 
@@ -142,13 +161,13 @@ describe('createMetrics', () => {
 
   it('tracks upload counts, active gauges, duration, and upload bytes', async () => {
     const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
     const { metricsMiddleware, metricsRouter } = createMetrics();
     app.use(metricsMiddleware);
     app.post('/api/files', (_req, res) => {
       res.status(201).send('ok');
     });
     app.use('/metrics', metricsRouter);
-    process.env.METRICS_SECRET = 'test-secret';
 
     await request(app)
       .post('/api/files')
@@ -174,13 +193,13 @@ describe('createMetrics', () => {
 
   it('does not track non-upload methods on upload paths as uploads', async () => {
     const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
     const { metricsMiddleware, metricsRouter } = createMetrics();
     app.use(metricsMiddleware);
     app.delete('/api/files', (_req, res) => {
       res.status(204).end();
     });
     app.use('/metrics', metricsRouter);
-    process.env.METRICS_SECRET = 'test-secret';
 
     await request(app).delete('/api/files').expect(204);
 
@@ -195,6 +214,7 @@ describe('createMetrics', () => {
 
   it('labels requests closed before finish as client-aborted', async () => {
     const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
     const { metricsMiddleware, metricsRouter } = createMetrics();
     const headers = new Map<string, unknown>();
     const res = Object.assign(new EventEmitter(), {
@@ -219,7 +239,6 @@ describe('createMetrics', () => {
     );
     res.emit('close');
     app.use('/metrics', metricsRouter);
-    process.env.METRICS_SECRET = 'test-secret';
 
     const response = await request(app)
       .get('/metrics')
@@ -237,9 +256,9 @@ describe('createMetrics', () => {
 
   it('tracks OpenID user lookup outcomes and latency', async () => {
     const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
     const { metricsRouter } = createMetrics();
     app.use('/metrics', metricsRouter);
-    process.env.METRICS_SECRET = 'test-secret';
 
     recordOpenIDUserLookup('found', 0.2);
 
@@ -264,9 +283,9 @@ describe('createMetrics', () => {
     }
 
     const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
     const { metricsRouter } = createMetrics();
     app.use('/metrics', metricsRouter);
-    process.env.METRICS_SECRET = 'test-secret';
 
     instrumentMongooseQueryMetrics({ Query: FakeQuery } as never);
     await new FakeQuery().exec();
@@ -312,9 +331,9 @@ describe('createMetrics', () => {
     }
 
     const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
     const { metricsRouter } = createMetrics();
     app.use('/metrics', metricsRouter);
-    process.env.METRICS_SECRET = 'test-secret';
 
     instrumentMongooseQueryMetrics({ Query: ThrowingQuery } as never);
     expect(() => new ThrowingQuery().exec()).toThrow('sync database error');
@@ -334,9 +353,9 @@ describe('createMetrics', () => {
 
   it('tracks generation job and stream resume metrics', async () => {
     const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
     const { metricsRouter } = createMetrics();
     app.use('/metrics', metricsRouter);
-    process.env.METRICS_SECRET = 'test-secret';
 
     recordGenerationJob('memory', 'created');
     setGenerationJobsInFlight('memory', 2);
