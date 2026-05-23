@@ -1,4 +1,4 @@
-import { resolveBuildInfo, __resetBuildInfoCacheForTests } from './buildInfo';
+import { resolveBuildInfo, __resetBuildInfoCacheForTests } from './build';
 
 describe('resolveBuildInfo', () => {
   const originalEnv = { ...process.env };

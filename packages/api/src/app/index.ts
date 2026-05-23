@@ -6,5 +6,5 @@ export * from './cdn';
 export * from './checks';
 export * from './resolve';
 export * from './shutdown';
-export { resolveBuildInfo } from './buildInfo';
-export type { BuildInfo } from './buildInfo';
+export { resolveBuildInfo } from './build';
+export type { BuildInfo } from './build';
