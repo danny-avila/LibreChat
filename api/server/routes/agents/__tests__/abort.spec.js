@@ -55,6 +55,7 @@ jest.mock('~/server/middleware', () => ({
 
 // Mock the chat module - needs to be a router
 jest.mock('~/server/routes/agents/chat', () => require('express').Router());
+jest.mock('~/server/routes/agents/remoteCrud', () => require('express').Router());
 
 // Mock the v1 module - v1 is directly used as middleware
 jest.mock('~/server/routes/agents/v1', () => ({
