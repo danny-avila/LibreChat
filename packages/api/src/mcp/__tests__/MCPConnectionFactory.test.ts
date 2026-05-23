@@ -95,6 +95,34 @@ describe('MCPConnectionFactory', () => {
       expect(mockConnectionInstance.connect).toHaveBeenCalled();
     });
 
+    it('should register fallback oauthRequired handler for non-OAuth connections', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      await MCPConnectionFactory.create(basicOptions);
+
+      expect(mockConnectionInstance.on).toHaveBeenCalledWith('oauthRequired', expect.any(Function));
+
+      const onCall = (mockConnectionInstance.on as jest.Mock).mock.calls.find(
+        ([event]: [string]) => event === 'oauthRequired',
+      );
+      const handler = onCall![1] as () => void;
+      handler();
+
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({ message: 'Server does not use OAuth' }),
+      );
+      expect(mockConnectionInstance.removeListener).toHaveBeenCalledWith(
+        'oauthRequired',
+        expect.any(Function),
+      );
+    });
+
     it('should create a connection with OAuth', async () => {
       const basicOptions = {
         serverName: 'test-server',
@@ -1000,6 +1028,428 @@ describe('MCPConnectionFactory', () => {
 
       expect(result.tools).toBeNull();
       expect(mockLogger.debug).toHaveBeenCalled();
+    });
+  });
+
+  describe('proactive OAuth flow', () => {
+    const makeOAuthServerConfig = (): t.MCPOptions =>
+      ({
+        type: 'streamable-http' as const,
+        url: 'https://bigquery.googleapis.com/mcp',
+        initTimeout: 5000,
+        requiresOAuth: true,
+      }) as unknown as t.MCPOptions;
+
+    const makeOAuthOptions = () => ({
+      useOAuth: true as const,
+      user: mockUser,
+      flowManager: mockFlowManager,
+      tokenMethods: {
+        findToken: jest.fn(),
+        createToken: jest.fn(),
+        updateToken: jest.fn(),
+        deleteTokens: jest.fn(),
+      },
+    });
+
+    function wireEventHandlers(instance: jest.Mocked<MCPConnection>) {
+      type Listener = (...args: unknown[]) => void;
+
+      const handlers: Record<string, Listener[]> = {};
+      const onceWrappers = new Map<Listener, Listener>();
+      const key = (event: string | symbol): string =>
+        typeof event === 'symbol' ? event.toString() : event;
+      const addHandler = (event: string | symbol, handler: Listener) => {
+        (handlers[key(event)] ??= []).push(handler);
+      };
+      const removeHandler = (event: string | symbol, handler: Listener) => {
+        const list = handlers[key(event)];
+        if (!list) {
+          return;
+        }
+        const wrapped = onceWrappers.get(handler);
+        const handlerToRemove = wrapped ?? handler;
+        const index = list.indexOf(handlerToRemove);
+        if (index !== -1) {
+          list.splice(index, 1);
+        }
+        if (wrapped) {
+          onceWrappers.delete(handler);
+        }
+      };
+
+      instance.on.mockImplementation((event: string | symbol, handler: Listener) => {
+        addHandler(event, handler);
+        return instance;
+      });
+
+      instance.once.mockImplementation((event: string | symbol, handler: Listener) => {
+        const wrapped: Listener = (...args) => {
+          removeHandler(event, handler);
+          handler(...args);
+        };
+        onceWrappers.set(handler, wrapped);
+        addHandler(event, wrapped);
+        return instance;
+      });
+
+      instance.off.mockImplementation((event: string | symbol, handler: Listener) => {
+        removeHandler(event, handler);
+        return instance;
+      });
+
+      instance.removeListener.mockImplementation((event: string | symbol, handler: Listener) => {
+        removeHandler(event, handler);
+        return instance;
+      });
+
+      instance.emit.mockImplementation((event: string | symbol, ...args: unknown[]) => {
+        const list = handlers[key(event)];
+        if (!list || list.length === 0) {
+          return false;
+        }
+        for (const fn of [...list]) {
+          fn(...args);
+        }
+        return true;
+      });
+
+      return handlers;
+    }
+
+    it('should trigger proactive OAuth when requiresOAuth and no tokens', async () => {
+      const serverConfig = makeOAuthServerConfig();
+      const oauthOptions = makeOAuthOptions();
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('no tokens'));
+
+      const mockTokens: MCPOAuthTokens = {
+        access_token: 'bq-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      const mockFlowData = {
+        authorizationUrl: 'https://accounts.google.com/o/oauth2/auth?state=xyz',
+        flowId: 'flow-bq',
+        flowMetadata: {
+          serverName: 'bigquery',
+          userId: 'user123',
+          serverUrl: 'https://bigquery.googleapis.com/mcp',
+          state: 'state-xyz',
+          clientInfo: { client_id: 'bq-client' },
+        },
+      };
+
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow-bq');
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockFlowManager.createFlow.mockResolvedValue(mockTokens);
+
+      wireEventHandlers(mockConnectionInstance);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      const connection = await MCPConnectionFactory.create(
+        { serverName: 'bigquery', serverConfig },
+        oauthOptions,
+      );
+
+      expect(connection).toBe(mockConnectionInstance);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('proactively triggering OAuth flow'),
+      );
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(mockTokens);
+      expect(mockConnectionInstance.connect).toHaveBeenCalled();
+    });
+
+    it('should trigger proactive OAuth when oauth is configured without requiresOAuth', async () => {
+      const serverConfig = {
+        type: 'streamable-http' as const,
+        url: 'https://drivemcp.googleapis.com/mcp/v1',
+        initTimeout: 5000,
+        oauth: {
+          authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth',
+          token_url: 'https://oauth2.googleapis.com/token',
+        },
+      } as t.ParsedServerConfig;
+      const oauthOptions = makeOAuthOptions();
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
+
+      const mockTokens: MCPOAuthTokens = {
+        access_token: 'drive-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow-drive');
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
+        authorizationUrl: 'https://accounts.google.com/o/oauth2/auth?state=drive',
+        flowId: 'flow-drive',
+        flowMetadata: {
+          serverName: 'drive',
+          userId: 'user123',
+          serverUrl: 'https://drivemcp.googleapis.com/mcp/v1',
+          state: 'state-drive',
+        },
+      });
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockFlowManager.createFlow.mockResolvedValue(mockTokens);
+
+      wireEventHandlers(mockConnectionInstance);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      const connection = await MCPConnectionFactory.create(
+        { serverName: 'drive', serverConfig },
+        oauthOptions,
+      );
+
+      expect(connection).toBe(mockConnectionInstance);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(mockTokens);
+      expect(mockConnectionInstance.connect).toHaveBeenCalled();
+    });
+
+    it('should not trigger proactive OAuth when only OAuth metadata is present', async () => {
+      const serverConfig = {
+        type: 'streamable-http' as const,
+        url: 'https://metadata-only.example.com/mcp',
+        initTimeout: 5000,
+        oauthMetadata: {
+          authorization_servers: ['https://auth.example.com/'],
+        },
+      } as t.ParsedServerConfig;
+      const oauthOptions = makeOAuthOptions();
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      const connection = await MCPConnectionFactory.create(
+        { serverName: 'metadata-only', serverConfig },
+        oauthOptions,
+      );
+
+      expect(connection).toBe(mockConnectionInstance);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.connect).toHaveBeenCalled();
+    });
+
+    it('should NOT trigger proactive OAuth when useOAuth is true but requiresOAuth is absent', async () => {
+      const serverConfig = {
+        command: 'node',
+        args: ['server.js'],
+        initTimeout: 5000,
+      } as t.MCPOptions;
+
+      const oauthOptions = makeOAuthOptions();
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('no tokens'));
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      const connection = await MCPConnectionFactory.create(
+        { serverName: 'test-server', serverConfig },
+        oauthOptions,
+      );
+
+      expect(connection).toBe(mockConnectionInstance);
+      expect(mockLogger.info).not.toHaveBeenCalledWith(
+        expect.stringContaining('proactively triggering OAuth flow'),
+      );
+    });
+
+    it('should not trigger proactive OAuth when requiresOAuth is explicitly false', async () => {
+      const serverConfig = {
+        type: 'streamable-http' as const,
+        url: 'https://api.example.com/mcp',
+        initTimeout: 5000,
+        requiresOAuth: false,
+        oauth: {
+          authorization_url: 'https://auth.example.com/oauth/authorize',
+          token_url: 'https://auth.example.com/oauth/token',
+        },
+      } as t.MCPOptions;
+      const oauthOptions = makeOAuthOptions();
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      const connection = await MCPConnectionFactory.create(
+        { serverName: 'test-server', serverConfig },
+        oauthOptions,
+      );
+
+      expect(connection).toBe(mockConnectionInstance);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(mockLogger.info).not.toHaveBeenCalledWith(
+        expect.stringContaining('proactively triggering OAuth flow'),
+      );
+    });
+
+    it('should skip proactive OAuth when tokens already exist', async () => {
+      const serverConfig = makeOAuthServerConfig();
+      const oauthOptions = makeOAuthOptions();
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      const existingTokens: MCPOAuthTokens = {
+        access_token: 'existing-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(existingTokens);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      const connection = await MCPConnectionFactory.create(
+        { serverName: 'bigquery', serverConfig },
+        oauthOptions,
+      );
+
+      expect(connection).toBe(mockConnectionInstance);
+      expect(mockLogger.info).not.toHaveBeenCalledWith(
+        expect.stringContaining('proactively triggering OAuth flow'),
+      );
+    });
+
+    it('should reject when proactive OAuth flow fails', async () => {
+      const serverConfig = makeOAuthServerConfig();
+      const oauthOptions = {
+        ...makeOAuthOptions(),
+        returnOnOAuth: true,
+        oauthStart: jest.fn(),
+      };
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('no tokens'));
+
+      const mockFlowData = {
+        authorizationUrl: 'https://accounts.google.com/o/oauth2/auth',
+        flowId: 'flow-bq',
+        flowMetadata: {
+          serverName: 'bigquery',
+          userId: 'user123',
+          serverUrl: 'https://bigquery.googleapis.com/mcp',
+          state: 'state-xyz',
+        },
+      };
+
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow-bq');
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockFlowManager.createFlow.mockReturnValue(new Promise(() => {}));
+
+      wireEventHandlers(mockConnectionInstance);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      await expect(
+        MCPConnectionFactory.create({ serverName: 'bigquery', serverConfig }, oauthOptions),
+      ).rejects.toThrow('OAuth flow initiated - return early');
+    });
+
+    it('should throw when requiresOAuth is true but url is missing', async () => {
+      const serverConfig = {
+        type: 'streamable-http' as const,
+        initTimeout: 5000,
+        requiresOAuth: true,
+      } as unknown as t.MCPOptions;
+
+      const oauthOptions = makeOAuthOptions();
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('no tokens'));
+
+      wireEventHandlers(mockConnectionInstance);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      await expect(
+        MCPConnectionFactory.create({ serverName: 'no-url', serverConfig }, oauthOptions),
+      ).rejects.toThrow('server URL is missing');
+    });
+
+    it('should reject when proactive OAuth has no registered handler', async () => {
+      const serverConfig = makeOAuthServerConfig();
+      const oauthOptions = makeOAuthOptions();
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
+      mockConnectionInstance.on.mockReturnValue(mockConnectionInstance);
+      mockConnectionInstance.once.mockReturnValue(mockConnectionInstance);
+      mockConnectionInstance.off.mockReturnValue(mockConnectionInstance);
+      mockConnectionInstance.emit.mockReturnValue(false);
+
+      await expect(
+        MCPConnectionFactory.create({ serverName: 'bigquery', serverConfig }, oauthOptions),
+      ).rejects.toThrow('OAuth required but no handler is registered');
+
+      expect(mockConnectionInstance.connect).not.toHaveBeenCalled();
+    });
+
+    it('should clean up cross-listeners when oauthHandled fires', async () => {
+      const serverConfig = makeOAuthServerConfig();
+      const oauthOptions = makeOAuthOptions();
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('no tokens'));
+
+      const mockTokens: MCPOAuthTokens = {
+        access_token: 'cleanup-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow-cleanup');
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow-cleanup',
+        flowMetadata: {
+          serverName: 'bigquery',
+          userId: 'user123',
+          serverUrl: 'https://bigquery.googleapis.com/mcp',
+          state: 'state-cleanup',
+          clientInfo: { client_id: 'client-cleanup' },
+        },
+      });
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockFlowManager.createFlow.mockResolvedValue(mockTokens);
+
+      const handlers = wireEventHandlers(mockConnectionInstance);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      await MCPConnectionFactory.create({ serverName: 'bigquery', serverConfig }, oauthOptions);
+
+      // After oauthHandled resolved, the oauthFailed listener should have been removed
+      const failedListeners = handlers['oauthFailed'] ?? [];
+      expect(failedListeners.length).toBe(0);
+    });
+
+    it('should not trigger proactive OAuth during tool discovery', async () => {
+      const serverConfig = makeOAuthServerConfig();
+      const oauthOptions = {
+        ...makeOAuthOptions(),
+        oauthStart: jest.fn(),
+      };
+      const mockTools = [
+        { name: 'tool1', description: 'First tool', inputSchema: { type: 'object' } },
+      ];
+
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+      mockConnectionInstance.fetchTools = jest.fn().mockResolvedValue(mockTools);
+
+      const result = await MCPConnectionFactory.discoverTools(
+        { serverName: 'bigquery', serverConfig },
+        oauthOptions,
+      );
+
+      expect(result.tools).toEqual(mockTools);
+      expect(result.oauthRequired).toBe(false);
+      expect(oauthOptions.oauthStart).not.toHaveBeenCalled();
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
     });
   });
 });
