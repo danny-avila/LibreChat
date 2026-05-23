@@ -15,11 +15,60 @@ import type {
   BaseInitializeParams,
   InitializeResultBase,
   BedrockCredentials,
-  BedrockUserCredentials,
   GuardrailConfiguration,
   InferenceProfileConfig,
 } from '~/types';
 import { checkUserKeyExpiry } from '~/utils';
+
+const BEDROCK_CREDENTIALS_ERROR = 'Bedrock credentials not provided. Please provide them again.';
+
+type UserCredentialKey = 'accessKeyId' | 'secretAccessKey' | 'sessionToken' | 'bearerToken';
+type UserCredentialValue = string | number | boolean | object | null;
+type ParsedBedrockUserCredentials = Partial<Record<UserCredentialKey, UserCredentialValue>> & {
+  apiKey?: string;
+};
+
+function isParsedBedrockUserCredentials(value: unknown): value is ParsedBedrockUserCredentials {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseBedrockUserCredentials(userKey: string): ParsedBedrockUserCredentials {
+  const storedCredentials = JSON.parse(userKey) as unknown;
+  if (!isParsedBedrockUserCredentials(storedCredentials)) {
+    throw new Error(BEDROCK_CREDENTIALS_ERROR);
+  }
+
+  if (typeof storedCredentials.apiKey !== 'string') {
+    return storedCredentials;
+  }
+
+  const nestedCredentials = JSON.parse(storedCredentials.apiKey) as unknown;
+  if (!isParsedBedrockUserCredentials(nestedCredentials)) {
+    throw new Error(BEDROCK_CREDENTIALS_ERROR);
+  }
+
+  return nestedCredentials;
+}
+
+function getUserCredentialValue(
+  credentials: ParsedBedrockUserCredentials,
+  key: UserCredentialKey,
+): string | undefined {
+  if (!Object.prototype.hasOwnProperty.call(credentials, key)) {
+    return undefined;
+  }
+
+  const value = credentials[key];
+  if (value === '') {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error(BEDROCK_CREDENTIALS_ERROR);
+  }
+
+  return value;
+}
 
 /**
  * Initializes Bedrock endpoint configuration.
@@ -101,35 +150,37 @@ export async function initializeBedrock({
     });
 
     if (!userKey) {
-      throw new Error('Bedrock credentials not provided. Please provide them again.');
+      throw new Error(BEDROCK_CREDENTIALS_ERROR);
     }
 
-    let userCredentials: BedrockUserCredentials;
+    let userCredentials: ParsedBedrockUserCredentials;
     try {
-      const storedCredentials = JSON.parse(userKey) as BedrockUserCredentials & { apiKey?: string };
-      userCredentials =
-        typeof storedCredentials.apiKey === 'string'
-          ? (JSON.parse(storedCredentials.apiKey) as BedrockUserCredentials)
-          : storedCredentials;
+      userCredentials = parseBedrockUserCredentials(userKey);
     } catch {
-      throw new Error('Bedrock credentials not provided. Please provide them again.');
+      throw new Error(BEDROCK_CREDENTIALS_ERROR);
     }
 
-    if (userProvidesBearerToken && userCredentials.bearerToken) {
-      bearerToken = userCredentials.bearerToken;
+    const userBearerToken = userProvidesBearerToken
+      ? getUserCredentialValue(userCredentials, 'bearerToken')
+      : undefined;
+
+    if (userBearerToken) {
+      bearerToken = userBearerToken;
     } else {
       const canUseAccessKeys =
         userProvidesAccessKeyId || userProvidesSecretAccessKey || userProvidesSessionToken;
-      const accessKeyId = userProvidesAccessKeyId ? userCredentials.accessKeyId : staticAccessKeyId;
+      const accessKeyId = userProvidesAccessKeyId
+        ? getUserCredentialValue(userCredentials, 'accessKeyId')
+        : staticAccessKeyId;
       const secretAccessKey = userProvidesSecretAccessKey
-        ? userCredentials.secretAccessKey
+        ? getUserCredentialValue(userCredentials, 'secretAccessKey')
         : staticSecretAccessKey;
       const sessionToken = userProvidesSessionToken
-        ? userCredentials.sessionToken
+        ? getUserCredentialValue(userCredentials, 'sessionToken')
         : staticSessionToken;
 
       if (!canUseAccessKeys || !accessKeyId || !secretAccessKey) {
-        throw new Error('Bedrock credentials not provided. Please provide them again.');
+        throw new Error(BEDROCK_CREDENTIALS_ERROR);
       }
 
       credentials = {
