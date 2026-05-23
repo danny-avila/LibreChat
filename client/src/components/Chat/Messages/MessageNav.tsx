@@ -4,7 +4,7 @@ import { ContentTypes } from 'librechat-data-provider';
 import { HoverCard, HoverCardTrigger, HoverCardPortal, HoverCardContent } from '@librechat/client';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import { useGetMessagesByConvoId } from '~/data-provider';
-import { useMessagesConversation } from '~/Providers';
+import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -145,9 +145,14 @@ const chevronButtonClasses = cn(
 function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivElement> }) {
   const localize = useLocalize();
   const { conversationId } = useMessagesConversation();
-  const { data: messages } = useGetMessagesByConvoId(conversationId ?? '', {
-    enabled: !!conversationId,
-  });
+  const { isSubmitting } = useMessagesSubmission();
+  const { data: messages } = useGetMessagesByConvoId(
+    conversationId ?? '',
+    {
+      enabled: !!conversationId,
+    },
+    { isStreaming: isSubmitting },
+  );
   const messagesById = useMemo(() => {
     const map = new Map<string, TMessage>();
     if (messages) {
