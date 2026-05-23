@@ -10,6 +10,8 @@ on:
     paths:
       - 'api/**'
       - 'client/**'
+      - 'packages/**'
+      - '.github/workflows/eslint-ci.yml'
 
 jobs:
   eslint_checks:
@@ -34,15 +36,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Run ESLint on changed files within the api/ and client/ directories.
+      # Run ESLint on changed files within the api/, client/, and packages/ directories.
       - name: Run ESLint on changed files
         run: |
           # Extract the base commit SHA from the pull_request event payload.
           BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
           echo "Base commit SHA: $BASE_SHA"
 
-          # Get changed files (only JS/TS files in api/ or client/)
-          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD | grep -E '^(api|client)/.*\.(js|jsx|ts|tsx)$' || true)
+          # Get changed files (only JS/TS files in api/, client/, or packages/)
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD | grep -E '^(api|client|packages)/.*\.(js|jsx|ts|tsx)$' || true)
 
           # Debug output
           echo "Changed files:"
@@ -57,4 +59,5 @@ jobs:
           # Run ESLint
           npx eslint --no-error-on-unmatched-pattern \
             --config eslint.config.mjs \
+            --max-warnings=0 \
             $CHANGED_FILES
