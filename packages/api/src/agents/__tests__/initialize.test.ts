@@ -1456,14 +1456,7 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(neitherAgent.codeEnvAvailable).toBe(false);
   });
 
-  it('trips GOOGLE_TOOL_CONFLICT on Google/Vertex when execute_code expands alongside provider tools', async () => {
-    /* Pre-Phase 8, an `execute_code`-only agent on Google/Vertex with
-       `options.tools` populated would throw GOOGLE_TOOL_CONFLICT because
-       `CodeExecutionToolDefinition` populated `toolDefinitions` and
-       `hasAgentTools` was true. After dropping that registry entry, the
-       check is now gated on the runtime-expanded `bash_tool` + `read_file`
-       pair — so the expansion MUST happen before `hasAgentTools` is
-       computed or the guard silently goes away for this scenario. */
+  it('allows Google provider tools alongside execute_code definitions', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.GOOGLE,
       overrideProvider: Providers.GOOGLE,
@@ -1495,7 +1488,51 @@ describe('initializeAgent — execute_code capability expansion', () => {
         },
         db,
       ),
-    ).rejects.toThrow(/google_tool_conflict/);
+    ).resolves.toEqual(
+      expect.objectContaining({
+        tools: [{ google_search: {} }],
+        toolDefinitions: expect.arrayContaining([
+          expect.objectContaining({ name: 'bash_tool' }),
+          expect.objectContaining({ name: 'read_file' }),
+        ]),
+      }),
+    );
+  });
+
+  it('combines Google provider tools with structured external tools', async () => {
+    const structuredTool = {
+      name: 'weather',
+      description: 'Get weather',
+      schema: { type: 'object', properties: {} },
+    };
+    const providerTool = { googleSearch: {} };
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      overrideProvider: Providers.GOOGLE,
+      providerTools: [providerTool],
+      structuredTools: [structuredTool],
+    });
+    agent.tools = ['weather'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+          codeEnvAvailable: false,
+        },
+        db,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        tools: [structuredTool, providerTool],
+      }),
+    );
   });
 });
 

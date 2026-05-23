@@ -847,9 +847,9 @@ export async function initializeAgent(
    * never accidentally registers `bash_tool` or primes sandbox files
    * just because the admin globally enabled code execution.
    *
-   * Done BEFORE the `hasAgentTools` / GOOGLE_TOOL_CONFLICT gate so
-   * execute-code-only agents on Google/Vertex still trip the conflict
-   * guard when provider-specific tools are also configured. Also before
+   * Done before provider-tool merging so execute-code-only agents on
+   * Google/Vertex still surface as external function definitions when
+   * provider-specific tools are also configured. Also before
    * `injectSkillCatalog` so the skill path's own
    * `registerCodeExecutionTools` call upgrades `read_file` from the
    * code-only description to the skill-aware description without adding a
@@ -898,7 +898,9 @@ export async function initializeAgent(
     hasProviderTools &&
     hasAgentTools
   ) {
-    throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+    if (structuredTools?.length) {
+      tools = structuredTools.concat(providerTools as GenericTool[]);
+    }
   } else if (
     (agent.provider === Providers.OPENAI ||
       agent.provider === Providers.AZURE ||
