@@ -250,7 +250,6 @@ export class MCPServersRegistry {
       return this.getBaseServerConfigs(userId, role);
     }
     const base = await this.getBaseServerConfigs(userId, role);
-    this.warnOnOperatorManagedNameCollisions(configServers, base, 'Config');
     const result: Record<string, t.ParsedServerConfig> = { ...base };
     for (const [name, override] of Object.entries(configServers)) {
       if (result[name]?.source === 'user') {

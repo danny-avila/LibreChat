@@ -141,7 +141,7 @@ describe('MCPServersRegistry', () => {
       }
     });
 
-    it('should warn when config servers shadow DB servers', async () => {
+    it('should preserve the user-tier entry over a config-tier override on the same name without emitting a misleading shadow warning', async () => {
       const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
       const configServer = {
         ...testParsedConfig,
@@ -152,10 +152,11 @@ describe('MCPServersRegistry', () => {
       jest.spyOn(registry['dbConfigsRepo'], 'getAll').mockResolvedValue({ slack: dbConfig });
 
       try {
-        await registry.getAllServerConfigs('user-1', { slack: configServer });
+        const result = await registry.getAllServerConfigs('user-1', { slack: configServer });
 
-        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Config MCP server'));
-        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('slack'));
+        expect(result.slack.source).toBe('user');
+        expect(result.slack.title).toBe('User Slack');
+        expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('Config MCP server'));
       } finally {
         warnSpy.mockRestore();
       }
