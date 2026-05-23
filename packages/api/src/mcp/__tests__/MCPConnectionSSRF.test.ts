@@ -13,7 +13,6 @@
 
 import * as net from 'net';
 import * as http from 'http';
-import { lookup } from 'node:dns/promises';
 import { randomUUID } from 'crypto';
 import { Request as UndiciRequest } from 'undici';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -28,7 +27,12 @@ import { MCPConnection } from '~/mcp/connection';
 import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
 
 type CustomFetch = (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse>;
-type LookupCallback = (err: NodeJS.ErrnoException | null, address: string, family: number) => void;
+type LookupAddress = string | Array<{ address: string; family: number }>;
+type LookupCallback = (
+  err: NodeJS.ErrnoException | null,
+  address: LookupAddress,
+  family?: number,
+) => void;
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -37,10 +41,6 @@ jest.mock('@librechat/data-schemas', () => ({
     error: jest.fn(),
     debug: jest.fn(),
   },
-}));
-
-jest.mock('node:dns/promises', () => ({
-  lookup: jest.fn(),
 }));
 
 jest.mock('~/auth', () => ({
@@ -52,6 +52,15 @@ jest.mock('~/auth', () => ({
           : maybeCallback;
       if (!callback) {
         throw new Error('lookup callback missing');
+      }
+      if (
+        typeof optionsOrCallback === 'object' &&
+        optionsOrCallback != null &&
+        'all' in optionsOrCallback &&
+        optionsOrCallback.all === true
+      ) {
+        callback(null, [{ address: '127.0.0.1', family: 4 }]);
+        return;
       }
       callback(null, '127.0.0.1', 4);
     },
@@ -68,17 +77,9 @@ jest.mock('~/mcp/mcpConfig', () => ({
 const mockedResolveHostnameSSRF = resolveHostnameSSRF as jest.MockedFunction<
   typeof resolveHostnameSSRF
 >;
-const mockedLookup = lookup as unknown as jest.MockedFunction<
-  (hostname: string, options: { all: true }) => Promise<Array<{ address: string; family: number }>>
->;
 const mockedCreateSSRFSafeUndiciConnect = createSSRFSafeUndiciConnect as jest.MockedFunction<
   typeof createSSRFSafeUndiciConnect
 >;
-
-beforeEach(() => {
-  mockedLookup.mockReset();
-  mockedLookup.mockResolvedValue([{ address: '203.0.113.10', family: 4 }]);
-});
 
 function getLookupCallback(
   optionsOrCallback: unknown,
@@ -1724,7 +1725,7 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
-  it('should preflight proxied targets before dispatching network requests', async () => {
+  it('should preflight proxied IP literal targets before dispatching network requests', async () => {
     mockedResolveHostnameSSRF.mockResolvedValueOnce(true);
 
     conn = new MCPConnection({
@@ -1739,22 +1740,17 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
 
     const customFetch = getCustomFetch(conn);
 
-    await expect(customFetch('http://blocked.example.com/mcp')).rejects.toThrow(
+    await expect(customFetch('http://203.0.113.10/mcp')).rejects.toThrow(
       /proxied MCP request target/,
     );
-    expect(mockedResolveHostnameSSRF).toHaveBeenCalledWith('blocked.example.com', null, '80');
+    expect(mockedResolveHostnameSSRF).toHaveBeenCalledWith('203.0.113.10', null, '80');
   });
 
-  it('should fail closed when proxied target DNS cannot be resolved before dispatch', async () => {
-    mockedResolveHostnameSSRF.mockResolvedValueOnce(false);
-    mockedLookup.mockRejectedValueOnce(
-      Object.assign(new Error('getaddrinfo ENOTFOUND'), {
-        code: 'ENOTFOUND',
-      }),
-    );
+  it('should reject proxied hostname targets unless explicitly allowed when SSRF protection is enabled', async () => {
+    mockedResolveHostnameSSRF.mockClear();
 
     conn = new MCPConnection({
-      serverName: 'customfetch-proxy-ssrf-dns-fail-closed',
+      serverName: 'customfetch-proxy-ssrf-hostname-denied',
       serverConfig: {
         type: 'streamable-http',
         url: 'https://mcp.example.com/mcp',
@@ -1765,21 +1761,15 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
 
     const customFetch = getCustomFetch(conn);
 
-    await expect(customFetch('http://proxy-only.internal/mcp')).rejects.toThrow(
-      /could not be resolved before proxying/,
+    await expect(customFetch('http://hostname-only.example/mcp')).rejects.toThrow(
+      /must be an IP literal or an explicitly allowed host/,
     );
-    expect(mockedLookup).toHaveBeenCalledWith('proxy-only.internal', { all: true });
+    expect(mockedResolveHostnameSSRF).not.toHaveBeenCalled();
   });
 
-  it('should skip proxied DNS preflight for explicitly allowed target hosts', async () => {
+  it('should skip proxied SSRF checks for explicitly allowed target hosts', async () => {
     const proxy = await createTunnelProxyCaptureServer();
     mockedResolveHostnameSSRF.mockClear();
-    mockedLookup.mockClear();
-    mockedLookup.mockRejectedValueOnce(
-      Object.assign(new Error('getaddrinfo ENOTFOUND'), {
-        code: 'ENOTFOUND',
-      }),
-    );
 
     try {
       conn = new MCPConnection({
@@ -1800,9 +1790,40 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       await response.body?.cancel().catch(() => undefined);
       expect(proxy.receivedRequests[0]?.method).toBe('CONNECT');
       expect(mockedResolveHostnameSSRF).not.toHaveBeenCalled();
-      expect(mockedLookup).not.toHaveBeenCalled();
     } finally {
       await proxy.close();
+    }
+  });
+
+  it('should allow NO_PROXY hostname targets to use direct SSRF-safe dispatchers', async () => {
+    const originalEnv = snapshotProxyEnv();
+    const capture = await createHeaderCaptureServer();
+    clearProxyEnv();
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.NO_PROXY = 'direct.example.com';
+    mockedResolveHostnameSSRF.mockClear();
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-no-proxy-hostname-direct',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'http://mcp.example.com/mcp',
+        },
+        useSSRFProtection: true,
+      });
+
+      const customFetch = createBaseUrlFetch(conn, 'http://mcp.example.com/mcp');
+      const directUrl = capture.url.replace('127.0.0.1', 'direct.example.com');
+      const response = await customFetch(directUrl);
+
+      expect(response.status).toBe(200);
+      await response.body?.cancel().catch(() => undefined);
+      expect(capture.receivedRequests).toHaveLength(1);
+      expect(mockedResolveHostnameSSRF).not.toHaveBeenCalled();
+    } finally {
+      restoreProxyEnv(originalEnv);
+      await capture.close();
     }
   });
 
