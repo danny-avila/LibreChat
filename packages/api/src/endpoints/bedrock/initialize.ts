@@ -1,5 +1,6 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
+import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
 import {
   AuthType,
@@ -61,6 +62,7 @@ export async function initializeBedrock({
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
     BEDROCK_AWS_SESSION_TOKEN,
+    BEDROCK_AWS_PROFILE,
     BEDROCK_REVERSE_PROXY,
     BEDROCK_AWS_DEFAULT_REGION,
     PROXY,
@@ -69,30 +71,37 @@ export async function initializeBedrock({
   const { key: expiresAt } = req.body;
   const isUserProvided = BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED;
 
-  let credentials: BedrockCredentials | undefined = isUserProvided
-    ? await db
-        .getUserKey({ userId: req.user?.id ?? '', name: EModelEndpoint.bedrock })
-        .then((key) => JSON.parse(key) as BedrockCredentials)
-    : {
-        accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
-        secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
-        ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
-      };
+  const hasAccessKey = BEDROCK_AWS_ACCESS_KEY_ID != null && BEDROCK_AWS_ACCESS_KEY_ID !== '';
+  const hasSecretKey =
+    BEDROCK_AWS_SECRET_ACCESS_KEY != null && BEDROCK_AWS_SECRET_ACCESS_KEY !== '';
 
-  if (!credentials) {
-    throw new Error('Bedrock credentials not provided. Please provide them again.');
-  }
+  let credentials: BedrockCredentials | undefined;
 
-  if (
-    !isUserProvided &&
-    (credentials.accessKeyId === undefined || credentials.accessKeyId === '') &&
-    (credentials.secretAccessKey === undefined || credentials.secretAccessKey === '')
-  ) {
-    credentials = undefined;
-  }
+  if (isUserProvided) {
+    const userKey = await db.getUserKey({
+      userId: req.user?.id ?? '',
+      name: EModelEndpoint.bedrock,
+    });
 
-  if (expiresAt && isUserProvided) {
-    checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
+    if (!userKey) {
+      throw new Error('Bedrock credentials not provided. Please provide them again.');
+    }
+
+    credentials = JSON.parse(userKey) as BedrockCredentials;
+
+    if (expiresAt) {
+      checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
+    }
+  } else if (hasAccessKey !== hasSecretKey) {
+    throw new Error(
+      'Both BEDROCK_AWS_ACCESS_KEY_ID and BEDROCK_AWS_SECRET_ACCESS_KEY must be provided together.',
+    );
+  } else if (hasAccessKey && hasSecretKey) {
+    credentials = {
+      accessKeyId: BEDROCK_AWS_ACCESS_KEY_ID,
+      secretAccessKey: BEDROCK_AWS_SECRET_ACCESS_KEY,
+      ...(BEDROCK_AWS_SESSION_TOKEN && { sessionToken: BEDROCK_AWS_SESSION_TOKEN }),
+    };
   }
 
   const requestOptions: Record<string, unknown> = {
@@ -115,6 +124,7 @@ export async function initializeBedrock({
     client?: BedrockRuntimeClient;
     credentials?: BedrockCredentials;
     endpointHost?: string;
+    profile?: string;
     guardrailConfig?: GuardrailConfiguration;
     applicationInferenceProfile?: string;
   };
@@ -143,6 +153,10 @@ export async function initializeBedrock({
 
   if (PROXY) {
     const proxyAgent = new HttpsProxyAgent(PROXY);
+    const credentialProvider =
+      !hasCompleteCredentials && BEDROCK_AWS_PROFILE
+        ? fromNodeProviderChain({ profile: BEDROCK_AWS_PROFILE })
+        : undefined;
 
     // Create a custom BedrockRuntimeClient with proxy-enabled request handler.
     // ChatBedrockConverse will use this pre-configured client directly instead of
@@ -154,6 +168,7 @@ export async function initializeBedrock({
       ...(hasCompleteCredentials && {
         credentials: credentials as { accessKeyId: string; secretAccessKey: string },
       }),
+      ...(!hasCompleteCredentials && credentialProvider && { credentials: credentialProvider }),
       requestHandler: new NodeHttpHandler({
         httpAgent: proxyAgent,
         httpsAgent: proxyAgent,
@@ -169,6 +184,10 @@ export async function initializeBedrock({
     // by providing credentials and endpoint separately
     if (credentials) {
       llmConfig.credentials = credentials;
+    }
+
+    if (!credentials && BEDROCK_AWS_PROFILE) {
+      llmConfig.profile = BEDROCK_AWS_PROFILE;
     }
 
     if (BEDROCK_REVERSE_PROXY) {

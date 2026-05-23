@@ -41,6 +41,8 @@ export interface BedrockConfigOptions {
   client?: BedrockRuntimeClient;
   /** AWS credentials */
   credentials?: BedrockCredentials;
+  /** AWS shared config profile for the SDK credential provider chain */
+  profile?: string;
   /** Custom endpoint host for reverse proxy */
   endpointHost?: string;
   /** Guardrail configuration for content filtering */
@@ -57,6 +59,7 @@ export interface BedrockLLMConfigResult {
     region?: string;
     client?: BedrockRuntimeClient;
     credentials?: BedrockCredentials;
+    profile?: string;
     endpointHost?: string;
     guardrailConfig?: GuardrailConfiguration;
     applicationInferenceProfile?: string;
