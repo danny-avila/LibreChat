@@ -189,12 +189,19 @@ export class MCPServersRegistry {
   }
 
   /**
-   * Returns the config for a single server. When `configServers` is provided, config-source
-   * servers are resolved from it directly (no global state, no cross-tenant race).
+   * Returns the config for a single server, mirroring the precedence used by
+   * getAllServerConfigs so list views and single-server lookups agree on
+   * the same name:
+   *   1. user-tier base entry wins absolutely over a config-tier candidate
+   *   2. healthy YAML/DB base wins over a failed (inspectionFailed) candidate
+   *   3. healthy candidate overlays its fields onto the base, preserving the
+   *      base entry's source tag so downstream recovery routes correctly
+   *   4. with no base, the candidate is returned as-is (config-only server)
    *
-   * Failure stubs in `configServers` (`inspectionFailed: true`) are ignored so the healthy
-   * YAML/DB base entry serves the tool-use path during the retry window. This mirrors the
-   * overlay guard in `getAllServerConfigs`.
+   * readThroughCache memoizes only the global YAML/DB lookup; the per-call
+   * configServers candidate is tenant-scoped and is never cached, so a
+   * failed stub from one tenant can never satisfy a no-userId lookup from
+   * another.
    */
   public async getServerConfig(
     serverName: string,
@@ -202,32 +209,25 @@ export class MCPServersRegistry {
     configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<t.ParsedServerConfig | undefined> {
     const candidate = configServers?.[serverName];
-    if (candidate && !candidate.inspectionFailed) {
-      return candidate;
-    }
 
     const cacheKey = this.getReadThroughCacheKey(serverName, userId);
-
-    /** readThroughCache memoizes global YAML/DB lookups only. The per-call configServers candidate is tenant-scoped and must not enter the cache, or a failed stub from one tenant would leak to no-userId calls from another. */
-    let resolved: t.ParsedServerConfig | undefined;
+    let base: t.ParsedServerConfig | undefined;
     if (await this.readThroughCache.has(cacheKey)) {
-      resolved = await this.readThroughCache.get(cacheKey);
+      base = await this.readThroughCache.get(cacheKey);
     } else {
       const configFromYaml = await this.cacheConfigsRepo.get(serverName);
       if (configFromYaml) {
-        resolved = configFromYaml;
+        base = configFromYaml;
       } else {
-        resolved = await this.dbConfigsRepo.get(serverName, userId);
+        base = await this.dbConfigsRepo.get(serverName, userId);
       }
-      await this.readThroughCache.set(cacheKey, resolved);
+      await this.readThroughCache.set(cacheKey, base);
     }
 
-    if (resolved) {
-      return resolved;
-    }
-
-    /** Config-only servers (admin-defined, not in YAML or user DB) have no global fallback; surface the per-call failure stub so callers can detect inspectionFailed. */
-    return candidate;
+    if (!candidate) return base;
+    if (base?.source === 'user') return base;
+    if (candidate.inspectionFailed) return base ?? candidate;
+    return base ? { ...candidate, source: base.source } : candidate;
   }
 
   /**

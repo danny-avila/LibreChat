@@ -381,6 +381,46 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       expect(config?.source).toBe('yaml');
     });
 
+    it('should prefer the user-tier DB entry over a config-tier candidate on the same name', async () => {
+      const dbConfig = makeParsedConfig({
+        source: 'user',
+        title: 'User Slack',
+      } as Partial<t.ParsedServerConfig>);
+      jest.spyOn(registry['dbConfigsRepo'], 'get').mockResolvedValue(dbConfig);
+
+      const configCandidate = makeParsedConfig({
+        source: 'config',
+        title: 'Config Slack',
+      } as Partial<t.ParsedServerConfig>);
+
+      const result = await registry.getServerConfig('slack', 'user-1', {
+        slack: configCandidate,
+      });
+      expect(result?.source).toBe('user');
+      expect((result as unknown as { title: string }).title).toBe('User Slack');
+    });
+
+    it('should overlay healthy admin override fields onto a YAML base while preserving yaml source', async () => {
+      const yamlEntry = makeParsedConfig({
+        ...sseConfig,
+        source: 'yaml',
+        title: 'YAML Title',
+      } as unknown as Partial<t.ParsedServerConfig>);
+      await registry['cacheConfigsRepo'].add('shared', yamlEntry);
+
+      const adminOverride = makeParsedConfig({
+        ...sseConfig,
+        source: 'config',
+        title: 'Admin Title',
+      } as unknown as Partial<t.ParsedServerConfig>);
+
+      const result = await registry.getServerConfig('shared', undefined, {
+        shared: adminOverride,
+      });
+      expect(result?.source).toBe('yaml');
+      expect((result as unknown as { title: string }).title).toBe('Admin Title');
+    });
+
     it('should not leak a tenant-scoped failure stub into subsequent no-configServers calls', async () => {
       inspectSpy.mockRejectedValueOnce(new Error('connection refused'));
       const tenantA = await registry.ensureConfigServers({ tenant_a_only: sseConfig });
