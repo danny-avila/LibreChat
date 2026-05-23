@@ -183,19 +183,6 @@ actions:
 endpoints:
   
   custom:
-    - name: "LiteLLM"
-      apiKey: "sk-ajrasakha-master-key"
-      baseURL: "http://100.100.108.101:4999/v1"
-      models:
-        default: ['ajrasakha_agent']
-        fetch: true
-      titleConvo: true
-      titleModel: "current_model"
-      titleMessageRole: "user"
-      summarize: false
-      summaryModel: "current_model"
-      forcePrompt: false
-      modelDisplayLabel: "AjraSakha LangGraph"  # optional display label in UI
   
     - name: "vLLM-Qwen"
       apiKey: "not_required"
@@ -259,9 +246,10 @@ endpoints:
       titleEndpoint: "vLLM-Gemma"
       titleModel: "google/gemma-4-26B-A4B-it"
       titleMessageRole: "user"
-      summarize: false
-      summaryModel: "google/gemma-4-26B-A4B-it"
-      forcePrompt: false
+
+      # summarize: false
+      # summaryModel: "google/gemma-4-26B-A4B-it"
+      # forcePrompt: false
       modelDisplayLabel: "AjraSakha Agent"
 
 fileConfig:
@@ -757,7 +745,7 @@ modelSpecs:
          - ajrasakha-govt-schemes
          - ajrasakha-soilhealth
 
-      default: true
+      default: false
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
       preset:
@@ -779,7 +767,7 @@ modelSpecs:
          - ajrasakha-govt-schemes
          - ajrasakha-soilhealth  
 
-      default: true
+      default: false
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
       preset:
@@ -800,7 +788,7 @@ modelSpecs:
          - ajrasakha-location
          - ajrasakha-govt-schemes
          - ajrasakha-soilhealth
-      default: true
+      default: false
       description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
       preset:
@@ -834,21 +822,12 @@ modelSpecs:
         promptPrefix: *ffv_prompt
 
 
-    - name: "ajrasakha-litellm"
-      label: "AjraSakha LangGraph-LiteLLM"
-      default: false
 
-      description: "Next-gen argi-centric model from annam.ai"
-      iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
-      preset:
-        endpoint: "LiteLLM"
-        model: "ajrasakha_agent"
-        modelLabel: "AjraSakha LangGraph"
-
-    - name: "ajrasakha-langgraph-agent"
-      label: "AjraSakha LangGraph Agent"
+    - name: "ajrasakha-agent"
+      label: "AjraSakha Agent"
       default: true
-      description: "Full AjraSakha agent (LangGraph) — live GPS via system prompt, Mongo fallback, multi-turn via conversation id"
+      maxContextTokens: 512000
+      description: "Next-gen argi-centric model from annam.ai"
       iconURL: "https://storage.googleapis.com/annam-temp-images/logo-icon.png"
       preset:
         endpoint: "AjraSakha-Agent"
