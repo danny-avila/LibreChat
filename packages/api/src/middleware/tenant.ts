@@ -260,11 +260,7 @@ export function restoreTenantContextFromReq(
     logger.warn('[restoreTenantContextFromReq] Rejected system tenant for request route', {
       path: req.path,
     });
-    return rejectRequestWithUploadCleanup(
-      req,
-      res,
-      SYSTEM_TENANT_REJECTION_MESSAGE,
-    );
+    return rejectRequestWithUploadCleanup(req, res, SYSTEM_TENANT_REJECTION_MESSAGE);
   }
 
   const currentContext = tenantStorage.getStore();

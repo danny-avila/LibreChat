@@ -236,9 +236,7 @@ function countGoogleSearchTools(tools: unknown[] | undefined): number {
   );
 }
 
-function countWebSearchDefinitions(
-  toolDefinitions: Array<{ name: string }> | undefined,
-): number {
+function countWebSearchDefinitions(toolDefinitions: Array<{ name: string }> | undefined): number {
   return (
     toolDefinitions?.filter((toolDefinition) => toolDefinition.name === Tools.web_search).length ??
     0

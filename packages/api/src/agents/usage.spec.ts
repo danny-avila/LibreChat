@@ -478,10 +478,10 @@ describe('recordCollectedUsage', () => {
         collectedUsage,
       });
 
-      expect(mockSpendTokens).toHaveBeenCalledWith(
-        expect.anything(),
-        { promptTokens: 100, completionTokens: 50 },
-      );
+      expect(mockSpendTokens).toHaveBeenCalledWith(expect.anything(), {
+        promptTokens: 100,
+        completionTokens: 50,
+      });
       expect(result?.output_tokens).toBe(50);
     });
   });
