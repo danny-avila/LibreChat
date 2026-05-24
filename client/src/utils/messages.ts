@@ -1,6 +1,7 @@
 import {
   QueryKeys,
   Constants,
+  buildTree,
   ContentTypes,
   isEphemeralAgentId,
   appendAgentIdSuffix,
@@ -16,6 +17,54 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { LocalizeFunction } from '~/common';
 
 export const TEXT_KEY_DIVIDER = '|||';
+
+type SiblingIndexLookup = (parentMessageId: string | null | undefined) => number;
+
+export const selectActiveBranchTail = (
+  messages: TMessage[] | null | undefined,
+  rootMessageId: string | null | undefined,
+  getSiblingIndex: SiblingIndexLookup = () => 0,
+): TMessage | null => {
+  const messagesTree = buildTree({ messages: messages ?? null });
+  if (!messagesTree?.length) {
+    return null;
+  }
+
+  let siblings = messagesTree;
+  let parentMessageId = rootMessageId;
+  let tail: TMessage | null = null;
+
+  while (siblings.length > 0) {
+    const siblingIdx = getSiblingIndex(parentMessageId);
+    const activeSiblingIndex = Math.max(0, siblings.length - siblingIdx - 1);
+    const message = siblings[activeSiblingIndex] ?? siblings[siblings.length - 1];
+    if (!message) {
+      return tail;
+    }
+
+    tail = message;
+    parentMessageId = message.messageId;
+    siblings = message.children ?? [];
+  }
+
+  return tail;
+};
+
+export const getMessageBranchSiblingParentIds = (
+  messages: TMessage[] | null | undefined,
+  rootMessageId: string | null | undefined,
+): (string | null)[] => {
+  const parentIds = new Set<string | null>();
+  parentIds.add(rootMessageId ?? null);
+
+  for (const message of messages ?? []) {
+    if (message?.messageId) {
+      parentIds.add(message.messageId);
+    }
+  }
+
+  return Array.from(parentIds);
+};
 
 export const getLatestText = (message?: TMessage | null, includeIndex?: boolean): string => {
   if (!message) {

@@ -162,7 +162,6 @@ export default function Conversation({
 
     navigateToConvo(conversation, {
       currentConvoId,
-      resetLatestMessage: !(conversationId ?? '') || conversationId === Constants.NEW_CONVO,
     });
   };
 

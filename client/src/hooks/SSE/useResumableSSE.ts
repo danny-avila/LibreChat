@@ -30,12 +30,7 @@ import store from '~/store';
 
 type ChatHelpers = Pick<
   EventHandlerParams,
-  | 'setMessages'
-  | 'getMessages'
-  | 'setConversation'
-  | 'setIsSubmitting'
-  | 'newConversation'
-  | 'setLatestMessage'
+  'setMessages' | 'getMessages' | 'setConversation' | 'setIsSubmitting' | 'newConversation'
 >;
 
 const MAX_RETRIES = 5;
@@ -96,14 +91,8 @@ export default function useResumableSSE(
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const submissionRef = useRef<TSubmission | null>(null);
 
-  const {
-    setMessages,
-    getMessages,
-    setConversation,
-    setIsSubmitting,
-    newConversation,
-    setLatestMessage,
-  } = chatHelpers;
+  const { setMessages, getMessages, setConversation, setIsSubmitting, newConversation } =
+    chatHelpers;
 
   const {
     stepHandler,
@@ -125,7 +114,6 @@ export default function useResumableSSE(
     setIsSubmitting,
     newConversation,
     setShowStopButton,
-    setLatestMessage,
   });
 
   const { data: startupConfig } = useGetStartupConfig();

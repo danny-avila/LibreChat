@@ -62,7 +62,6 @@ export type EventHandlerParams = {
   setConversation?: SetterOrUpdater<TConversation | null>;
   newConversation?: ConvoGenerator;
   setShowStopButton: SetterOrUpdater<boolean>;
-  setLatestMessage: SetterOrUpdater<TMessage | null>;
 };
 
 const createErrorMessage = ({
@@ -175,7 +174,6 @@ export default function useEventHandlers({
   setIsSubmitting,
   newConversation,
   setShowStopButton,
-  setLatestMessage,
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
@@ -328,8 +326,6 @@ export default function useEventHandlers({
         ...responseMessage,
       };
 
-      logger.log('latest_message', 'syncHandler: setting latest message');
-      setLatestMessage(nextResponseMessage);
       setMessages([...messages, requestMessage, nextResponseMessage]);
 
       announcePolite({
@@ -376,15 +372,7 @@ export default function useEventHandlers({
 
       setShowStopButton(true);
     },
-    [
-      queryClient,
-      setMessages,
-      isAddedRequest,
-      announcePolite,
-      setConversation,
-      setShowStopButton,
-      setLatestMessage,
-    ],
+    [queryClient, setMessages, isAddedRequest, announcePolite, setConversation, setShowStopButton],
   );
 
   const createdHandler = useCallback(
@@ -408,8 +396,6 @@ export default function useEventHandlers({
         messageId: userMessage.messageId + '_',
         conversationId: userMessage.conversationId ?? submission.initialResponse.conversationId,
       };
-      logger.log('latest_message', 'createdHandler: setting latest message');
-      setLatestMessage(initialResponse);
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);
       } else {
@@ -477,7 +463,6 @@ export default function useEventHandlers({
       isAddedRequest,
       announcePolite,
       setConversation,
-      setLatestMessage,
       applyAgentTemplate,
     ],
   );

@@ -45,7 +45,6 @@ export default function SearchButtons({ message }: { message: TMessage }) {
           conversationId,
           title,
         } as TConversation),
-      { resetLatestMessage: true },
     );
   };
 
