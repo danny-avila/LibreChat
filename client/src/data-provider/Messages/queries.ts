@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions, QueryObserverResult, QueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
-import { logger } from '~/utils';
+import { isNotFoundError, logger } from '~/utils';
 
 type StableMessagesParams = {
   pathname: string;
@@ -62,6 +62,18 @@ export function getStableMessages({
   return result;
 }
 
+export function shouldPreserveMessagesOnNotFound({
+  pathname,
+  isStreaming = false,
+  currentMessages,
+}: Pick<StableMessagesParams, 'pathname' | 'isStreaming' | 'currentMessages'>): boolean {
+  if (!isStreaming || pathname.includes('/c/new') || !currentMessages?.length) {
+    return false;
+  }
+
+  return hasPendingAssistantTail(currentMessages);
+}
+
 function hasActiveJob(queryClient: QueryClient, id: string) {
   if (!id) {
     return false;
@@ -87,7 +99,32 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
   return useQuery<t.TMessage[], unknown, TData>(
     [QueryKeys.messages, id],
     async () => {
-      const result = await dataService.getMessagesByConvoId(id);
+      let result: t.TMessage[];
+      try {
+        result = await dataService.getMessagesByConvoId(id);
+      } catch (error) {
+        const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
+        const hasLiveStream = isStreamingRef.current || hasActiveJob(queryClient, id);
+        if (
+          currentMessages &&
+          isNotFoundError(error) &&
+          shouldPreserveMessagesOnNotFound({
+            pathname: location.pathname,
+            currentMessages,
+            isStreaming: hasLiveStream,
+          })
+        ) {
+          logger.warn(
+            'messages',
+            `Messages query for convo ${id} returned 404 while cache has a pending assistant tail; path: "${location.pathname}"`,
+            currentMessages,
+          );
+          return currentMessages;
+        }
+
+        throw error;
+      }
+
       const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
       const stableMessages = getStableMessages({
         pathname: location.pathname,

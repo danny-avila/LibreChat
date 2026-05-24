@@ -2,8 +2,22 @@ jest.mock('~/models', () => ({
   getConvo: jest.fn(),
 }));
 
+jest.mock('@librechat/api', () => ({
+  GenerationJobManager: {
+    getJob: jest.fn(),
+  },
+}));
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    warn: jest.fn(),
+  },
+}));
+
 const validateMessageReq = require('../validateMessageReq');
 const { getConvo } = require('~/models');
+const { GenerationJobManager } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 
 function createResponse() {
   const res = {
@@ -70,5 +84,154 @@ describe('validateMessageReq', () => {
 
     expect(getConvo).toHaveBeenCalledWith(userId, 'convo-owned');
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('should allow message reads for an owned active generation job before the conversation is saved', async () => {
+    const req = {
+      method: 'GET',
+      params: { conversationId: 'active-convo' },
+      body: {},
+      user: { id: userId, tenantId: 'tenant-a' },
+    };
+    const res = createResponse();
+    const next = jest.fn();
+    getConvo.mockResolvedValue(null);
+    GenerationJobManager.getJob.mockResolvedValue({
+      status: 'running',
+      metadata: { userId, tenantId: 'tenant-a' },
+    });
+
+    await validateMessageReq(req, res, next);
+
+    expect(GenerationJobManager.getJob).toHaveBeenCalledWith('active-convo');
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('should allow message reads for an owned active generation job without tenant metadata', async () => {
+    const req = {
+      method: 'GET',
+      params: { conversationId: 'active-convo' },
+      body: {},
+      user: { id: userId },
+    };
+    const res = createResponse();
+    const next = jest.fn();
+    getConvo.mockResolvedValue(null);
+    GenerationJobManager.getJob.mockResolvedValue({
+      status: 'running',
+      metadata: { userId },
+    });
+
+    await validateMessageReq(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('should reject active job message reads owned by another user', async () => {
+    const req = {
+      method: 'GET',
+      params: { conversationId: 'active-convo' },
+      body: {},
+      user: { id: userId },
+    };
+    const res = createResponse();
+    const next = jest.fn();
+    getConvo.mockResolvedValue(null);
+    GenerationJobManager.getJob.mockResolvedValue({
+      status: 'running',
+      metadata: { userId: 'another-user' },
+    });
+
+    await validateMessageReq(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Conversation not found' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('should reject active job message reads from another tenant', async () => {
+    const req = {
+      method: 'GET',
+      params: { conversationId: 'active-convo' },
+      body: {},
+      user: { id: userId, tenantId: 'tenant-a' },
+    };
+    const res = createResponse();
+    const next = jest.fn();
+    getConvo.mockResolvedValue(null);
+    GenerationJobManager.getJob.mockResolvedValue({
+      status: 'running',
+      metadata: { userId, tenantId: 'tenant-b' },
+    });
+
+    await validateMessageReq(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Conversation not found' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('should reject message-by-id reads before the conversation is saved', async () => {
+    const req = {
+      method: 'GET',
+      params: { conversationId: 'active-convo', messageId: 'message-id' },
+      body: {},
+      user: { id: userId },
+    };
+    const res = createResponse();
+    const next = jest.fn();
+    getConvo.mockResolvedValue(null);
+
+    await validateMessageReq(req, res, next);
+
+    expect(GenerationJobManager.getJob).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Conversation not found' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('should return not found when active job lookup fails', async () => {
+    const req = {
+      method: 'GET',
+      params: { conversationId: 'active-convo' },
+      body: {},
+      user: { id: userId },
+    };
+    const res = createResponse();
+    const next = jest.fn();
+    const error = new Error('job store unavailable');
+    getConvo.mockResolvedValue(null);
+    GenerationJobManager.getJob.mockRejectedValue(error);
+
+    await validateMessageReq(req, res, next);
+
+    expect(GenerationJobManager.getJob).toHaveBeenCalledWith('active-convo');
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[validateMessageReq] Active job lookup failed for active-convo:',
+      error,
+    );
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Conversation not found' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('should not allow unsaved conversation writes through active job ownership', async () => {
+    const req = {
+      method: 'POST',
+      params: { conversationId: 'active-convo' },
+      body: {},
+      user: { id: userId },
+    };
+    const res = createResponse();
+    const next = jest.fn();
+    getConvo.mockResolvedValue(null);
+
+    await validateMessageReq(req, res, next);
+
+    expect(GenerationJobManager.getJob).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(next).not.toHaveBeenCalled();
   });
 });

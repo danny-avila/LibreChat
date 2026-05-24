@@ -1,4 +1,31 @@
+const { GenerationJobManager } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { getConvo } = require('~/models');
+
+function hasTenantMismatch(job, user) {
+  // Untenanted jobs remain readable by their owner for pre-multi-tenancy deployments.
+  return job.metadata?.tenantId != null && job.metadata.tenantId !== user.tenantId;
+}
+
+async function canReadActiveJobConversation(req, conversationId) {
+  if (req.method !== 'GET' || req.params?.messageId) {
+    return false;
+  }
+
+  let job;
+  try {
+    job = await GenerationJobManager.getJob(conversationId);
+  } catch (error) {
+    logger.warn(`[validateMessageReq] Active job lookup failed for ${conversationId}:`, error);
+    return false;
+  }
+
+  if (!job || job.status !== 'running') {
+    return false;
+  }
+
+  return job.metadata?.userId === req.user.id && !hasTenantMismatch(job, req.user);
+}
 
 // Middleware to validate conversationId and user relationship
 const validateMessageReq = async (req, res, next) => {
@@ -25,6 +52,10 @@ const validateMessageReq = async (req, res, next) => {
   const conversation = await getConvo(req.user.id, conversationId);
 
   if (!conversation) {
+    if (await canReadActiveJobConversation(req, conversationId)) {
+      return next();
+    }
+
     return res.status(404).json({ error: 'Conversation not found' });
   }
 
