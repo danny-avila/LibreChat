@@ -485,6 +485,12 @@ async function upsertRemoteSkill(params: {
 }): Promise<ISkill & { _id: Types.ObjectId }> {
   const { deps, source, discovered, skillMdContent, commitSha, syncedAt } = params;
   const parsed = parseSkillMarkdown(skillMdContent);
+  if (parsed.parseError) {
+    throw new SkillSyncError(
+      'SKILL_PARSE_FAILED',
+      `${discovered.rootPath}/SKILL.md contains invalid YAML frontmatter: ${parsed.parseError}`,
+    );
+  }
   if (parsed.invalidBooleans.length > 0) {
     throw new SkillSyncError(
       'SKILL_PARSE_FAILED',
