@@ -94,10 +94,9 @@ function renderUseResumeOnLoad({
 
   return {
     getMessages,
-    ...renderHook(
-      () => useResumeOnLoad(conversationId, getMessages, 0, messagesLoaded),
-      { wrapper },
-    ),
+    ...renderHook(() => useResumeOnLoad(conversationId, getMessages, 0, messagesLoaded), {
+      wrapper,
+    }),
   };
 }
 
