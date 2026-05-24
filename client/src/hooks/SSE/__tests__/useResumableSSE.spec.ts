@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
-import type { TSubmission } from 'librechat-data-provider';
+import type { TMessage, TSubmission } from 'librechat-data-provider';
+import { logger } from '~/utils';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
 
@@ -75,6 +76,15 @@ jest.mock('~/data-provider', () => ({
 const mockErrorHandler = jest.fn();
 const mockSetIsSubmitting = jest.fn();
 const mockClearStepMaps = jest.fn();
+
+jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils'),
+  logger: {
+    log: jest.fn(),
+  },
+}));
+
+const mockLoggerLog = logger.log as jest.Mock;
 
 jest.mock('~/hooks/SSE/useEventHandlers', () =>
   jest.fn(() => ({
@@ -152,7 +162,7 @@ const buildSubmission = (overrides: Partial<PartialSubmission> = {}): TSubmissio
 
 const buildChatHelpers = () => ({
   setMessages: jest.fn(),
-  getMessages: jest.fn(() => []),
+  getMessages: jest.fn((): TMessage[] => []),
   setConversation: jest.fn(),
   setIsSubmitting: mockSetIsSubmitting,
   newConversation: jest.fn(),
@@ -164,6 +174,150 @@ const getLastSSE = (): MockSSEInstance => {
   expect(sse).toBeDefined();
   return sse;
 };
+
+describe('useResumableSSE - resume sync latest message alignment', () => {
+  beforeEach(() => {
+    mockSSEInstances.length = 0;
+    jest.clearAllMocks();
+  });
+
+  const renderResumeScenario = async (chatHelpers: ReturnType<typeof buildChatHelpers>) => {
+    const submission = {
+      ...buildSubmission(),
+      resumeStreamId: 'stream-resume-123',
+    } as TSubmission & { resumeStreamId: string };
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    return { sse: getLastSSE(), submission, unmount };
+  };
+
+  const emitResumeSync = async (
+    sse: MockSSEInstance,
+    resumeState: {
+      aggregatedContent: Array<{ type: string; text: string }>;
+      responseMessageId?: string;
+    },
+  ) => {
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState,
+          pendingEvents: [],
+        }),
+      });
+    });
+  };
+
+  it('sets latestMessage before replacing an existing resumed response', async () => {
+    const userMessage = {
+      messageId: 'msg-1',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const responseMessage = {
+      messageId: 'resp-server',
+      parentMessageId: 'msg-1',
+      conversationId: CONV_ID,
+      text: '',
+      content: [{ type: 'text', text: 'old content' }],
+      isCreatedByUser: false,
+    } as TMessage;
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([userMessage, responseMessage]);
+
+    const { sse, unmount } = await renderResumeScenario(chatHelpers);
+    chatHelpers.setLatestMessage.mockClear();
+    mockLoggerLog.mockClear();
+
+    await emitResumeSync(sse, {
+      responseMessageId: 'resp-server',
+      aggregatedContent: [{ type: 'text', text: 'resumed content' }],
+    });
+
+    const updatedMessages = chatHelpers.setMessages.mock.calls[0][0] as TMessage[];
+    const updatedResponse = updatedMessages[1];
+
+    expect(updatedResponse).toEqual({
+      ...responseMessage,
+      content: [{ type: 'text', text: 'resumed content' }],
+    });
+    expect(chatHelpers.setLatestMessage).toHaveBeenCalledWith(updatedResponse);
+    expect(chatHelpers.setLatestMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      chatHelpers.setMessages.mock.invocationCallOrder[0],
+    );
+    expect(mockLoggerLog).toHaveBeenCalledWith(
+      'latest_message',
+      'useResumableSSE.sync: setting latest message',
+    );
+    unmount();
+  });
+
+  it('sets latestMessage before appending a missing resumed response', async () => {
+    const userMessage = {
+      messageId: 'msg-1',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([userMessage]);
+
+    const { sse, unmount } = await renderResumeScenario(chatHelpers);
+    chatHelpers.setLatestMessage.mockClear();
+    mockLoggerLog.mockClear();
+
+    await emitResumeSync(sse, {
+      responseMessageId: 'resp-server',
+      aggregatedContent: [{ type: 'text', text: 'resumed content' }],
+    });
+
+    const updatedMessages = chatHelpers.setMessages.mock.calls[0][0] as TMessage[];
+    const newResponse = updatedMessages[1];
+
+    expect(updatedMessages).toEqual([userMessage, newResponse]);
+    expect(newResponse).toEqual({
+      messageId: 'resp-server',
+      parentMessageId: 'msg-1',
+      conversationId: CONV_ID,
+      text: '',
+      content: [{ type: 'text', text: 'resumed content' }],
+      isCreatedByUser: false,
+    });
+    expect(chatHelpers.setLatestMessage).toHaveBeenCalledWith(newResponse);
+    expect(chatHelpers.setLatestMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      chatHelpers.setMessages.mock.invocationCallOrder[0],
+    );
+    expect(mockLoggerLog).toHaveBeenCalledWith(
+      'latest_message',
+      'useResumableSSE.sync: setting latest message',
+    );
+    unmount();
+  });
+
+  it('seeds latestMessage from the resume submission after marking the stream submitting', async () => {
+    const chatHelpers = buildChatHelpers();
+
+    const { submission, unmount } = await renderResumeScenario(chatHelpers);
+
+    expect(mockSetIsSubmitting).toHaveBeenCalledWith(true);
+    expect(chatHelpers.setLatestMessage).toHaveBeenCalledWith(submission.initialResponse);
+    expect(mockSetIsSubmitting.mock.invocationCallOrder[0]).toBeLessThan(
+      chatHelpers.setLatestMessage.mock.invocationCallOrder[0],
+    );
+    expect(mockLoggerLog).toHaveBeenCalledWith(
+      'latest_message',
+      'useResumableSSE.resume: seeding latest message',
+    );
+    unmount();
+  });
+});
 
 describe('useResumableSSE - 404 error path', () => {
   beforeEach(() => {

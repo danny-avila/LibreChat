@@ -25,7 +25,7 @@ import {
 import type { ActiveJobsResponse } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
-import { clearAllDrafts } from '~/utils';
+import { clearAllDrafts, logger } from '~/utils';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -275,6 +275,8 @@ export default function useResumableSSE(
                   oldContentLength: Array.isArray(oldContent) ? oldContent.length : 0,
                   newContentLength: data.resumeState.aggregatedContent?.length,
                 });
+                logger.log('latest_message', 'useResumableSSE.sync: setting latest message');
+                setLatestMessage(updated[responseIdx]);
                 setMessages(updated);
                 resetContentHandler();
                 syncStepMessage(updated[responseIdx]);
@@ -289,6 +291,8 @@ export default function useResumableSSE(
                   content: data.resumeState.aggregatedContent,
                   isCreatedByUser: false,
                 } as TMessage;
+                logger.log('latest_message', 'useResumableSSE.sync: setting latest message');
+                setLatestMessage(newMessage);
                 setMessages([...messages, newMessage]);
                 resetContentHandler();
                 syncStepMessage(newMessage);
@@ -550,6 +554,7 @@ export default function useResumableSSE(
       setIsSubmitting,
       getMessages,
       setMessages,
+      setLatestMessage,
       startupConfig?.balance?.enabled,
       balanceQuery,
       removeActiveJob,
@@ -659,6 +664,10 @@ export default function useResumableSSE(
       if (resumeStreamId) {
         // Resume: just subscribe to existing stream, don't start new generation
         console.log('[ResumableSSE] Resuming existing stream:', resumeStreamId);
+        if (submission.initialResponse) {
+          logger.log('latest_message', 'useResumableSSE.resume: seeding latest message');
+          setLatestMessage(submission.initialResponse);
+        }
         setStreamId(resumeStreamId);
         // Optimistically add to active jobs (in case it's not already there)
         addActiveJob(resumeStreamId);
