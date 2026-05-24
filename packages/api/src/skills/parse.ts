@@ -30,6 +30,29 @@ function getCaseInsensitive(frontmatter: Record<string, unknown>, key: string): 
   return entry?.[1];
 }
 
+function getRawFrontmatterValue(block: string, key: string): string | undefined {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^\\s*${escapedKey}\\s*:\\s*(.*)$`, 'i');
+  const line = block.split('\n').find((candidate) => pattern.test(candidate));
+  const match = line?.match(pattern);
+  return match?.[1];
+}
+
+function stripInlineComment(value: string): string {
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i];
+    if ((char === '"' || char === "'") && (!quote || quote === char)) {
+      quote = quote ? null : char;
+      continue;
+    }
+    if (char === '#' && !quote) {
+      return value.slice(0, i).trim();
+    }
+  }
+  return value.trim();
+}
+
 function normalizeFrontmatterKeys(frontmatter: Record<string, unknown>): Record<string, unknown> {
   return Object.entries(frontmatter).reduce<Record<string, unknown>>((acc, [key, value]) => {
     acc[key.toLowerCase()] = value;
@@ -37,9 +60,10 @@ function normalizeFrontmatterKeys(frontmatter: Record<string, unknown>): Record<
   }, {});
 }
 
-function parseBoolean(value: unknown): boolean | undefined {
+function parseBoolean(value: unknown, rawValue?: string): boolean | undefined {
+  const raw = rawValue === undefined ? undefined : stripInlineComment(rawValue).toLowerCase();
   if (typeof value === 'boolean') {
-    return value;
+    return raw === 'true' || raw === 'false' ? value : undefined;
   }
   if (typeof value !== 'string') {
     return undefined;
@@ -75,6 +99,7 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
   const descriptionValue = getCaseInsensitive(frontmatter, 'description');
   const whenToUseValue = getCaseInsensitive(frontmatter, 'when-to-use');
   const alwaysApplyValue = getCaseInsensitive(frontmatter, 'always-apply');
+  const rawAlwaysApplyValue = getRawFrontmatterValue(block, 'always-apply');
   const name = typeof nameValue === 'string' ? nameValue : '';
   let description = '';
   if (typeof descriptionValue === 'string') {
@@ -85,7 +110,7 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
   let alwaysApply: boolean | undefined;
   const invalidBooleans: string[] = [];
   if (alwaysApplyValue !== undefined) {
-    alwaysApply = parseBoolean(alwaysApplyValue);
+    alwaysApply = parseBoolean(alwaysApplyValue, rawAlwaysApplyValue);
     if (alwaysApply === undefined && alwaysApplyValue !== null && alwaysApplyValue !== '') {
       invalidBooleans.push('always-apply');
     }
