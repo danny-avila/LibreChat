@@ -211,6 +211,15 @@ describe('parseFrontmatter', () => {
     });
   });
 
+  it('returns empty fields when frontmatter YAML is malformed', () => {
+    const raw = `---\nname: [\n---\n\nbody`;
+    expect(parseFrontmatter(raw)).toEqual({
+      name: '',
+      description: '',
+      invalidBooleans: [],
+    });
+  });
+
   it('ignores always-apply appearing outside the frontmatter block', () => {
     const raw = `---\nname: n\ndescription: d\n---\n\nalways-apply: true (but this is in the body)`;
     const result = parseFrontmatter(raw);
