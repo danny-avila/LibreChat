@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot, type MutableSnapshot } from 'recoil';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QueryKeys, type TConversation, type TMessage } from 'librechat-data-provider';
@@ -63,12 +63,17 @@ const olderFollowUpAssistantMessage = {
 function createWrapper(
   queryClient = createQueryClient(),
   initializeState?: (snapshot: MutableSnapshot) => void,
+  initialEntry = '/c/conversation-1',
 ) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
         <RecoilRoot initializeState={initializeState}>
-          <MemoryRouter initialEntries={['/c/conversation-1']}>{children}</MemoryRouter>
+          <MemoryRouter initialEntries={[initialEntry]}>
+            <Routes>
+              <Route path="/c/:conversationId?" element={children} />
+            </Routes>
+          </MemoryRouter>
         </RecoilRoot>
       </QueryClientProvider>
     );
@@ -101,6 +106,44 @@ describe('useLatestMessage', () => {
       expect.objectContaining({
         messageId: assistantMessage.messageId,
         depth: 1,
+      }),
+    );
+  });
+
+  it('uses the new-conversation route cache while the conversation atom has the server id', () => {
+    const queryClient = createQueryClient();
+    const serverConversation = {
+      ...conversation,
+      conversationId: 'server-conversation',
+    } as TConversation;
+    queryClient.setQueryData<TMessage[]>(
+      [QueryKeys.messages, 'new'],
+      [
+        {
+          ...userMessage,
+          conversationId: serverConversation.conversationId,
+        },
+        {
+          ...assistantMessage,
+          conversationId: serverConversation.conversationId,
+        },
+      ],
+    );
+
+    const { result } = renderHook(() => useLatestMessage(0), {
+      wrapper: createWrapper(
+        queryClient,
+        ({ set }) => {
+          set(store.conversationByIndex(0), serverConversation);
+        },
+        '/c/new',
+      ),
+    });
+
+    expect(result.current).toEqual(
+      expect.objectContaining({
+        messageId: assistantMessage.messageId,
+        conversationId: serverConversation.conversationId,
       }),
     );
   });

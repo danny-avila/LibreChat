@@ -29,9 +29,9 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const queryParam = paramId === 'new' ? paramId : (paramId ?? conversationId ?? '');
 
   const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
-  const latestMessage = useLatestMessage(index);
+  const latestMessage = useLatestMessage(index, queryParam);
 
-  const latestMessageId = useLatestMessageId(index) ?? undefined;
+  const latestMessageId = useLatestMessageId(index, queryParam) ?? undefined;
   const latestMessageDepth = latestMessage?.depth;
   const latestMessageRef = useRef(latestMessage);
   latestMessageRef.current = latestMessage;
