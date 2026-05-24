@@ -175,8 +175,6 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
       paths: input.paths,
       startedAt: input.startedAt,
       finishedAt: input.finishedAt,
-      errorCode: input.errorCode,
-      errorMessage: input.errorMessage,
       syncedSkillCount: input.syncedSkillCount ?? 0,
       syncedFileCount: input.syncedFileCount ?? 0,
       deletedSkillCount: input.deletedSkillCount ?? 0,
@@ -184,10 +182,16 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
       ...(success ? { lastSuccessAt: input.finishedAt ?? now } : {}),
       ...(failure ? { lastFailureAt: input.finishedAt ?? now } : {}),
     };
+    if (failure) {
+      setPayload.errorCode = input.errorCode;
+      setPayload.errorMessage = input.errorMessage;
+    }
+    const unsetPayload = failure ? {} : { errorCode: '', errorMessage: '' };
     const row = await Status.findOneAndUpdate(
       { provider: input.provider, sourceId: input.sourceId },
       {
         $set: setPayload,
+        ...(failure ? {} : { $unset: unsetPayload }),
         $setOnInsert: {
           provider: input.provider,
           sourceId: input.sourceId,
@@ -210,12 +214,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
       provider: params.provider,
       sourceId: LOCK_SOURCE_ID,
     }).lean<ISkillSyncStatus | null>();
-    if (
-      existing?.lockOwner &&
-      existing.lockOwner !== params.lockOwner &&
-      existing.lockExpiresAt &&
-      existing.lockExpiresAt > now
-    ) {
+    if (existing?.lockOwner && existing.lockExpiresAt && existing.lockExpiresAt > now) {
       return false;
     }
     if (!existing) {
@@ -241,11 +240,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
         {
           provider: params.provider,
           sourceId: LOCK_SOURCE_ID,
-          $or: [
-            { lockExpiresAt: { $exists: false } },
-            { lockExpiresAt: { $lte: now } },
-            { lockOwner: params.lockOwner },
-          ],
+          $or: [{ lockExpiresAt: { $exists: false } }, { lockExpiresAt: { $lte: now } }],
         },
         {
           $set: {
@@ -268,6 +263,31 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
       }
       throw error;
     }
+  }
+
+  async function refreshSkillSyncLock(params: {
+    provider: SkillSyncProvider;
+    lockOwner: string;
+    leaseMs: number;
+  }): Promise<boolean> {
+    const Status = mongoose.models.SkillSyncStatus as Model<ISkillSyncStatusDocument>;
+    const now = new Date();
+    const row = await Status.findOneAndUpdate(
+      {
+        provider: params.provider,
+        sourceId: LOCK_SOURCE_ID,
+        lockOwner: params.lockOwner,
+        lockExpiresAt: { $gt: now },
+      },
+      {
+        $set: {
+          status: 'running',
+          lockExpiresAt: new Date(now.getTime() + params.leaseMs),
+        },
+      },
+      { new: true },
+    ).lean<ISkillSyncStatus | null>();
+    return Boolean(row);
   }
 
   async function releaseSkillSyncLock(params: {
@@ -300,6 +320,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
     getSkillSyncStatus,
     upsertSkillSyncStatus,
     tryAcquireSkillSyncLock,
+    refreshSkillSyncLock,
     releaseSkillSyncLock,
   };
 }
