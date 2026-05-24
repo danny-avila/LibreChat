@@ -79,6 +79,7 @@ jest.mock('~/data-provider', () => ({
 }));
 
 const mockErrorHandler = jest.fn();
+const mockCreatedHandler = jest.fn();
 const mockSetIsSubmitting = jest.fn();
 const mockClearStepMaps = jest.fn();
 
@@ -86,7 +87,7 @@ jest.mock('~/hooks/SSE/useEventHandlers', () =>
   jest.fn(() => ({
     errorHandler: mockErrorHandler,
     finalHandler: jest.fn(),
-    createdHandler: jest.fn(),
+    createdHandler: mockCreatedHandler,
     attachmentHandler: jest.fn(),
     stepHandler: jest.fn(),
     contentHandler: jest.fn(),
@@ -175,6 +176,7 @@ describe('useResumableSSE - 404 error path', () => {
     mockSSEInstances.length = 0;
     localStorage.clear();
     mockErrorHandler.mockClear();
+    mockCreatedHandler.mockClear();
     mockClearStepMaps.mockClear();
     mockSetIsSubmitting.mockClear();
     mockSetQueryData.mockClear();
@@ -260,6 +262,47 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('invalidates the stream conversation id on 404 for a new conversation', async () => {
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+      initialResponse: {
+        messageId: 'msg-1_',
+        conversationId: null,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('error', { responseCode: 404 });
+    });
+
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.messages, 'stream-123'],
+    });
+    expect(mockRemoveQueries).toHaveBeenCalledWith({
+      queryKey: ['streamStatus', 'stream-123'],
+    });
+    unmount();
+  });
+
   it('closes the SSE connection on 404', async () => {
     const { sse, unmount } = await render404Scenario();
 
@@ -313,6 +356,56 @@ describe('useResumableSSE - 404 error path', () => {
     );
     expect(mockFindAll).toHaveBeenCalledWith([QueryKeys.allConversations], { exact: false });
 
+    unmount();
+  });
+
+  it('hydrates the submission conversation id before created handlers run', async () => {
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+      initialResponse: {
+        messageId: 'msg-1_',
+        conversationId: null,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          created: true,
+          message: {
+            messageId: 'msg-1',
+            conversationId: 'stream-123',
+          },
+        }),
+      });
+    });
+
+    expect(mockCreatedHandler).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        conversation: expect.objectContaining({ conversationId: 'stream-123' }),
+        userMessage: expect.objectContaining({ conversationId: 'stream-123' }),
+      }),
+    );
     unmount();
   });
 
@@ -438,7 +531,13 @@ describe('useResumableSSE - 404 error path', () => {
       pageParams: [],
     });
     expect(result.pages[0].conversations).toEqual([{ conversationId: 'other' }]);
-    expect(mockErrorHandler).toHaveBeenCalledTimes(1);
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        submission: expect.objectContaining({
+          conversation: expect.objectContaining({ conversationId: 'stream-123' }),
+        }),
+      }),
+    );
     unmount();
   });
 });

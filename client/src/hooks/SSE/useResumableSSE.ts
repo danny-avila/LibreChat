@@ -101,6 +101,10 @@ const hydrateSubmissionMessages = (
   conversationId: string,
 ): TSubmission => ({
   ...submission,
+  conversation: {
+    ...submission.conversation,
+    conversationId,
+  },
   userMessage: hydrateMessageConversationId(submission.userMessage, conversationId),
   initialResponse: submission.initialResponse
     ? hydrateMessageConversationId(submission.initialResponse, conversationId)
@@ -196,6 +200,7 @@ export default function useResumableSSE(
   const reconnectAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const submissionRef = useRef<TSubmission | null>(null);
+  const optimisticStreamIdsRef = useRef(new Set<string>());
   const createdStreamIdsRef = useRef(new Set<string>());
 
   const {
@@ -265,6 +270,9 @@ export default function useResumableSSE(
               hasResponseMessage: !!data.responseMessage,
             });
             clearAllDrafts(currentSubmission.conversation?.conversationId);
+            if (optimisticStreamIdsRef.current.has(currentStreamId)) {
+              clearAllDrafts(Constants.NEW_CONVO);
+            }
             try {
               finalHandler(data, currentSubmission as EventSubmission);
             } catch (error) {
@@ -279,6 +287,7 @@ export default function useResumableSSE(
             (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
             sse.close();
             setStreamId(null);
+            optimisticStreamIdsRef.current.delete(currentStreamId);
             createdStreamIdsRef.current.delete(currentStreamId);
             return;
           }
@@ -450,6 +459,9 @@ export default function useResumableSSE(
           sse.close();
           removeActiveJob(currentStreamId);
           clearAllDrafts(convoId);
+          if (optimisticStreamIdsRef.current.has(currentStreamId)) {
+            clearAllDrafts(Constants.NEW_CONVO);
+          }
           clearStepMaps();
           if (convoId) {
             queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, convoId] });
@@ -458,6 +470,7 @@ export default function useResumableSSE(
           setIsSubmitting(false);
           setShowStopButton(false);
           setStreamId(null);
+          optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
           reconnectAttemptRef.current = 0;
           return;
@@ -495,7 +508,7 @@ export default function useResumableSSE(
           removeActiveJob(currentStreamId);
           if (
             !createdStreamIdsRef.current.has(currentStreamId) &&
-            isInitialNewConversation(currentSubmission)
+            optimisticStreamIdsRef.current.has(currentStreamId)
           ) {
             removeConvoFromAllQueries(queryClient, currentStreamId);
           }
@@ -538,6 +551,7 @@ export default function useResumableSSE(
           setIsSubmitting(false);
           setShowStopButton(false);
           setStreamId(null);
+          optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
           reconnectAttemptRef.current = 0;
           return;
@@ -579,13 +593,14 @@ export default function useResumableSSE(
           removeActiveJob(currentStreamId);
           if (
             !createdStreamIdsRef.current.has(currentStreamId) &&
-            isInitialNewConversation(currentSubmission)
+            optimisticStreamIdsRef.current.has(currentStreamId)
           ) {
             removeConvoFromAllQueries(queryClient, currentStreamId);
           }
           setIsSubmitting(false);
           setShowStopButton(false);
           setStreamId(null);
+          optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
         }
       });
@@ -784,6 +799,9 @@ export default function useResumableSSE(
           const isNewConvo = submission.userMessage?.parentMessageId === Constants.NO_PARENT;
           if (isNewConvo) {
             queueTitleGeneration(newStreamId);
+          }
+          if (isInitialNewConversation(submission)) {
+            optimisticStreamIdsRef.current.add(newStreamId);
           }
           const streamSubmission = addOptimisticConversation(newStreamId, submission);
           submissionRef.current = streamSubmission;
