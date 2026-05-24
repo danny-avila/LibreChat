@@ -30,6 +30,47 @@ function blob(content: string) {
   };
 }
 
+function githubFetch(
+  skillMarkdown = '---\nname: research\ndescription: Research things\nalways-apply: true\n---\nBody',
+): typeof fetch {
+  return jest.fn(async (input: RequestInfo | URL) => {
+    const url = input.toString();
+    if (url.includes('/commits/main')) {
+      return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
+    }
+    if (url.includes('/git/trees/tree-sha')) {
+      return response({
+        sha: 'tree-sha',
+        truncated: false,
+        tree: [
+          {
+            path: 'skills/research/SKILL.md',
+            mode: '100644',
+            type: 'blob',
+            sha: 'skill-md-sha',
+            url: 'https://api.github.test/blob/skill',
+          },
+          {
+            path: 'skills/research/scripts/run.sh',
+            mode: '100644',
+            type: 'blob',
+            sha: 'file-sha',
+            size: 7,
+            url: 'https://api.github.test/blob/file',
+          },
+        ],
+      });
+    }
+    if (url.includes('/git/blobs/skill-md-sha')) {
+      return response(blob(skillMarkdown));
+    }
+    if (url.includes('/git/blobs/file-sha')) {
+      return response(blob('echo ok'));
+    }
+    return response({ message: 'not found' }, 404);
+  }) as unknown as typeof fetch;
+}
+
 function makeSkill(input: CreateSkillInput): ISkill & { _id: Types.ObjectId } {
   return {
     _id: new Types.ObjectId(),
@@ -135,44 +176,7 @@ function createDeps(
     saveBuffer: jest.fn(async () => ({ filepath: '/uploads/file-id__run.sh', source: 'local' })),
     deleteFile: jest.fn(async () => undefined),
     grantPermission: jest.fn(async () => undefined),
-    fetchFn: jest.fn(async (input: RequestInfo | URL) => {
-      const url = input.toString();
-      if (url.includes('/commits/main')) {
-        return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
-      }
-      if (url.includes('/git/trees/tree-sha')) {
-        return response({
-          sha: 'tree-sha',
-          truncated: false,
-          tree: [
-            {
-              path: 'skills/research/SKILL.md',
-              mode: '100644',
-              type: 'blob',
-              sha: 'skill-md-sha',
-              url: 'https://api.github.test/blob/skill',
-            },
-            {
-              path: 'skills/research/scripts/run.sh',
-              mode: '100644',
-              type: 'blob',
-              sha: 'file-sha',
-              size: 7,
-              url: 'https://api.github.test/blob/file',
-            },
-          ],
-        });
-      }
-      if (url.includes('/git/blobs/skill-md-sha')) {
-        return response(
-          blob('---\nname: research\ndescription: Research things\nalways-apply: true\n---\nBody'),
-        );
-      }
-      if (url.includes('/git/blobs/file-sha')) {
-        return response(blob('echo ok'));
-      }
-      return response({ message: 'not found' }, 404);
-    }) as unknown as typeof fetch,
+    fetchFn: githubFetch(),
     ...overrides,
   };
   return deps;
@@ -231,6 +235,26 @@ describe('createGitHubSkillSyncRunner', () => {
       expect.objectContaining({
         status: 'failed',
         errorCode: 'MISSING_CREDENTIAL',
+      }),
+    );
+  });
+
+  it('marks a source failed and skips mirror deletion when SKILL.md frontmatter is malformed', async () => {
+    const deps = createDeps({
+      fetchFn: githubFetch('---\nname: [\n---\nBody'),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.listSkillsBySource).not.toHaveBeenCalled();
+    expect(deps.deleteSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'SKILL_PARSE_FAILED',
+        errorMessage: expect.stringContaining('skills/research/SKILL.md'),
       }),
     );
   });
