@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createModels } from '../models';
 import { createSkillSyncMethods } from './skillSync';
+import type { ISkillSyncCredential } from '~/types/skillSync';
 import { encryptV2, decryptV2 } from '~/crypto';
 
 jest.mock('~/crypto', () => ({
@@ -46,12 +47,12 @@ describe('createSkillSyncMethods', () => {
     expect(JSON.stringify(summary)).not.toContain('ghp_secret');
     expect(JSON.stringify(summary)).not.toContain('encrypted:ghp_secret');
 
-    const raw = await mongoose.models.SkillSyncCredential.findOne({
+    const raw = (await mongoose.models.SkillSyncCredential.findOne({
       provider: 'github',
       credentialKey: 'github-skills-prod',
     })
       .select('+encryptedToken +tokenHash')
-      .lean();
+      .lean()) as ISkillSyncCredential | null;
     if (!raw) {
       throw new Error('Expected stored skill sync credential');
     }
