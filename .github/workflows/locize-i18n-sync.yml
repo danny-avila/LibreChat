@@ -65,6 +65,7 @@ jobs:
       # 3. Create a Pull Request using a dedicated fine-grained PAT so this
       # workflow does not depend on the global GITHUB_TOKEN PR-creation setting.
       - name: Create Pull Request
+        id: create-pull-request
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.LOCIZE_PR_TOKEN }}
@@ -73,7 +74,6 @@ jobs:
           commit-message: "🌍 i18n: Update translation.json with latest translations"
           base: main
           branch: i18n/locize-translation-update
-          reviewers: danny-avila
           title: "🌍 i18n: Update translation.json with latest translations"
           body: |
             **Description**:
@@ -81,3 +81,19 @@ jobs:
             - 🔍 **Details**: This PR is automatically generated upon receiving a versionPublished event with version "latest". It reflects the newest translations provided by locize.
             - ✅ **Status**: Ready for review.
           labels: "🌍 i18n"
+
+      - name: Request Reviewer
+        if: ${{ steps.create-pull-request.outputs.pull-request-number != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.LOCIZE_PR_TOKEN }}
+          PR_NUMBER: ${{ steps.create-pull-request.outputs.pull-request-number }}
+          REVIEWER: danny-avila
+        run: |
+          author="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json author --jq '.author.login')"
+
+          if [ "$author" = "$REVIEWER" ]; then
+            echo "Skipping reviewer request because $REVIEWER authored PR #$PR_NUMBER."
+            exit 0
+          fi
+
+          gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --add-reviewer "$REVIEWER"
