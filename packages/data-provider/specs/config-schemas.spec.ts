@@ -622,6 +622,89 @@ describe('configSchema fileStrategy', () => {
   });
 });
 
+describe('configSchema skillSync', () => {
+  it('accepts a GitHub skill sync source with explicit paths and credential key', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: true,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills', '.'],
+              credentialKey: 'github-skills-prod',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.skillSync?.github?.sources[0]?.paths).toEqual(['skills', '']);
+  });
+
+  it('rejects enabled GitHub skill sync without sources', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects GitHub skill sync intervals below five minutes', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          intervalMinutes: 4,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unsafe GitHub skill sync paths and credential keys', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              paths: ['../skills'],
+              credentialKey: '../token',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('interfaceSchema', () => {
   it('silently strips removed legacy fields', () => {
     const result = interfaceSchema.parse({

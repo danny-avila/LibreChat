@@ -58,6 +58,12 @@ import {
   type UpdateSkillResult,
   type ValidationIssue,
 } from './skill';
+import { createSkillSyncMethods, type SkillSyncMethods } from './skillSync';
+import type {
+  SkillSyncStatusInput,
+  SkillSyncCredentialSummary,
+  UpsertSkillSyncCredentialInput,
+} from './skillSync';
 /* Tier 5 — Agent */
 import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 /* Config */
@@ -97,6 +103,7 @@ export type AllMethods = UserMethods &
   SpendTokensMethods &
   PromptMethods &
   SkillMethods &
+  SkillSyncMethods &
   AgentMethods &
   ConfigMethods;
 
@@ -224,6 +231,7 @@ export function createMethods(
     ...spendTokensMethods,
     ...promptMethods,
     ...skillMethods,
+    ...createSkillSyncMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
     /* Config */
@@ -271,6 +279,10 @@ export type {
   ListSkillsByAccessResult,
   UpdateSkillResult,
   ValidationIssue,
+  SkillSyncStatusInput,
+  SkillSyncCredentialSummary,
+  UpsertSkillSyncCredentialInput,
+  SkillSyncMethods,
   AgentMethods,
   ConfigMethods,
 };

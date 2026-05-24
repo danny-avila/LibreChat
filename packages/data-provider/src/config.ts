@@ -236,6 +236,108 @@ export const cloudfrontConfigSchema = z
 
 export type CloudFrontConfig = z.infer<typeof cloudfrontConfigSchema>;
 
+const skillSyncIdentifierSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/, {
+    message: 'must start with a letter or digit and contain only letters, digits, underscores, or hyphens',
+  });
+
+const skillSyncGitHubOwnerSchema = z
+  .string()
+  .min(1)
+  .max(39)
+  .regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/, {
+    message: 'must be a valid GitHub owner name',
+  });
+
+const skillSyncGitHubRepoSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[a-zA-Z0-9._-]+$/, {
+    message: 'must be a valid GitHub repository name',
+  });
+
+const skillSyncGitHubRefSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((value) => !value.startsWith('/') && !value.endsWith('/'), {
+    message: 'must not start or end with a slash',
+  })
+  .refine((value) => !value.includes('..') && !value.includes('\\'), {
+    message: 'must not contain traversal segments or backslashes',
+  });
+
+const skillSyncPathSchema = z
+  .string()
+  .max(500)
+  .refine((value) => value.trim().length > 0, { message: 'must not be empty' })
+  .transform((value) => {
+    const trimmed = value.trim().replace(/^\/+|\/+$/g, '');
+    return trimmed === '.' ? '' : trimmed;
+  })
+  .refine((value) => !value.includes('\\') && !value.includes('..'), {
+    message: 'must not contain traversal segments or backslashes',
+  })
+  .refine((value) => value === '' || /^[a-zA-Z0-9._\-/]+$/.test(value), {
+    message: 'must contain only letters, digits, dots, underscores, hyphens, and slashes',
+  })
+  .refine(
+    (value) =>
+      value === '' || value.split('/').every((segment) => segment.length > 0 && segment !== '.'),
+    {
+      message: 'must not contain empty or dot path segments',
+    },
+  );
+
+export const skillSyncGitHubSourceSchema = z.object({
+  id: skillSyncIdentifierSchema,
+  owner: skillSyncGitHubOwnerSchema,
+  repo: skillSyncGitHubRepoSchema,
+  ref: skillSyncGitHubRefSchema.default('main'),
+  paths: z.array(skillSyncPathSchema).min(1),
+  credentialKey: skillSyncIdentifierSchema,
+});
+
+export const skillSyncConfigSchema = z
+  .object({
+    github: z
+      .object({
+        enabled: z.boolean().default(false),
+        intervalMinutes: z.number().int().min(5).default(60),
+        runOnStartup: z.boolean().default(false),
+        sources: z.array(skillSyncGitHubSourceSchema).default([]),
+      })
+      .superRefine((github, ctx) => {
+        if (github.enabled && github.sources.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sources'],
+            message: 'At least one GitHub source is required when skill sync is enabled',
+          });
+        }
+        const seen = new Set<string>();
+        for (const source of github.sources) {
+          if (seen.has(source.id)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['sources'],
+              message: `Duplicate GitHub skill sync source id "${source.id}"`,
+            });
+          }
+          seen.add(source.id);
+        }
+      })
+      .optional(),
+  })
+  .optional();
+
+export type SkillSyncConfig = z.infer<typeof skillSyncConfigSchema>;
+export type SkillSyncGitHubSourceConfig = z.infer<typeof skillSyncGitHubSourceSchema>;
+
 // Helper type to extract the shape of the Zod object schema
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
 
@@ -1383,6 +1485,7 @@ export const configSchema = z.object({
   webSearch: webSearchSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
+  skillSync: skillSyncConfigSchema,
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
