@@ -26,6 +26,7 @@ export * from './memory';
 export * from './prompts';
 /* Skills */
 export * from './skill';
+export * from './skillSync';
 /* Access Control */
 export * from './accessRole';
 export * from './aclEntry';

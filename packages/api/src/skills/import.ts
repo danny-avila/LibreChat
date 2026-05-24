@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import path from 'path';
 import JSZip from 'jszip';
 import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
-import { logger, stripYamlTrailingComment } from '@librechat/data-schemas';
+import { logger } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { Types } from 'mongoose';
 import type {
@@ -13,6 +13,7 @@ import type {
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
 import { resolveRequestTenantId } from '~/middleware/tenant';
+import { parseSkillMarkdown } from './parse';
 
 /** Security limits for zip processing. */
 const MAX_ZIP_BYTES = 50 * 1024 * 1024; // 50 MB compressed
@@ -26,35 +27,6 @@ export interface ImportLimits {
   maxDecompressedBytes: number;
   maxEntries: number;
   maxSingleFileBytes: number;
-}
-
-/** Strip surrounding YAML quotes (single or double) from a scalar value. */
-function unquoteYaml(value: string): string {
-  if (
-    value.length >= 2 &&
-    ((value[0] === '"' && value[value.length - 1] === '"') ||
-      (value[0] === "'" && value[value.length - 1] === "'"))
-  ) {
-    return value.slice(1, -1);
-  }
-  return value;
-}
-
-/**
- * Parse a YAML scalar as a strict boolean. Returns `undefined` when the
- * value is neither `true` nor `false`. Callers should pre-strip inline
- * comments with `stripYamlTrailingComment` when needed; this helper only
- * normalizes case / whitespace so the call site stays one-purpose.
- */
-function parseBooleanScalar(value: string): boolean | undefined {
-  const lowered = value.trim().toLowerCase();
-  if (lowered === 'true') {
-    return true;
-  }
-  if (lowered === 'false') {
-    return false;
-  }
-  return undefined;
 }
 
 /**
@@ -81,54 +53,21 @@ export function parseFrontmatter(raw: string): {
   /** Keys that carried non-boolean values for fields that must be boolean. */
   invalidBooleans: string[];
 } {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith('---')) {
-    return { name: '', description: '', invalidBooleans: [] };
+  const parsed = parseSkillMarkdown(raw);
+  const result: {
+    name: string;
+    description: string;
+    alwaysApply?: boolean;
+    invalidBooleans: string[];
+  } = {
+    name: parsed.name,
+    description: parsed.description,
+    invalidBooleans: parsed.invalidBooleans,
+  };
+  if ('alwaysApply' in parsed) {
+    result.alwaysApply = parsed.alwaysApply;
   }
-  const after = trimmed.slice(3);
-  const closingIdx = after.indexOf('\n---');
-  if (closingIdx === -1) {
-    return { name: '', description: '', invalidBooleans: [] };
-  }
-  const block = after.slice(0, closingIdx);
-  let name = '';
-  let description = '';
-  let alwaysApply: boolean | undefined;
-  const invalidBooleans: string[] = [];
-  for (const line of block.split('\n')) {
-    const colon = line.indexOf(':');
-    if (colon === -1) {
-      continue;
-    }
-    const key = line.slice(0, colon).trim().toLowerCase();
-    const rawValue = line.slice(colon + 1).trim();
-    if (key === 'name') {
-      name = unquoteYaml(rawValue);
-    } else if (key === 'description') {
-      description = unquoteYaml(rawValue);
-    } else if (key === 'always-apply') {
-      // Operate on the raw post-colon text (no outer `unquoteYaml`): a
-      // line like `always-apply: "true" # note` must have its comment
-      // stripped BEFORE unquoting. Running `unquoteYaml` on the whole
-      // line first would miss the quoted branch (the line doesn't end
-      // in a quote once the comment is attached), and unquoting twice
-      // would be fragile if `unquoteYaml` ever gains richer YAML-escape
-      // handling.
-      const stripped = stripYamlTrailingComment(rawValue).trim();
-      if (stripped === '') {
-        // Empty value or comment-only (`always-apply: # TBD`) — treat as
-        // absent so mid-edit placeholder states don't reject the save.
-        continue;
-      }
-      const parsed = parseBooleanScalar(unquoteYaml(stripped));
-      if (parsed === undefined) {
-        invalidBooleans.push(key);
-      } else {
-        alwaysApply = parsed;
-      }
-    }
-  }
-  return { name, description, alwaysApply, invalidBooleans };
+  return result;
 }
 
 /** Validates a relative path is safe (no traversal, no absolute paths). */
