@@ -35,7 +35,7 @@ type ChatHelpers = Pick<
   | 'setConversation'
   | 'setIsSubmitting'
   | 'newConversation'
-  | 'resetLatestMessage'
+  | 'setLatestMessage'
 >;
 
 const MAX_RETRIES = 5;
@@ -102,7 +102,7 @@ export default function useResumableSSE(
     setConversation,
     setIsSubmitting,
     newConversation,
-    resetLatestMessage,
+    setLatestMessage,
   } = chatHelpers;
 
   const {
@@ -125,7 +125,7 @@ export default function useResumableSSE(
     setIsSubmitting,
     newConversation,
     setShowStopButton,
-    resetLatestMessage,
+    setLatestMessage,
   });
 
   const { data: startupConfig } = useGetStartupConfig();
