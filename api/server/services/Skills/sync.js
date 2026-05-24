@@ -48,6 +48,7 @@ function createRunner() {
     listStatuses: db.listSkillSyncStatuses,
     upsertStatus: db.upsertSkillSyncStatus,
     tryAcquireLock: db.tryAcquireSkillSyncLock,
+    refreshLock: db.refreshSkillSyncLock,
     releaseLock: db.releaseSkillSyncLock,
     createSkill: db.createSkill,
     updateSkill: db.updateSkill,
