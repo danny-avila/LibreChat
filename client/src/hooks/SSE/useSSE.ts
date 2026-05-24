@@ -19,7 +19,7 @@ type ChatHelpers = Pick<
   | 'setConversation'
   | 'setIsSubmitting'
   | 'newConversation'
-  | 'resetLatestMessage'
+  | 'setLatestMessage'
 >;
 
 export default function useSSE(
@@ -41,7 +41,7 @@ export default function useSSE(
     setConversation,
     setIsSubmitting,
     newConversation,
-    resetLatestMessage,
+    setLatestMessage,
   } = chatHelpers;
 
   const {
@@ -64,7 +64,7 @@ export default function useSSE(
     setIsSubmitting,
     newConversation,
     setShowStopButton,
-    resetLatestMessage,
+    setLatestMessage,
   });
 
   const { data: startupConfig } = useGetStartupConfig();

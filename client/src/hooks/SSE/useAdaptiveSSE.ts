@@ -11,7 +11,7 @@ type ChatHelpers = Pick<
   | 'setConversation'
   | 'setIsSubmitting'
   | 'newConversation'
-  | 'resetLatestMessage'
+  | 'setLatestMessage'
 >;
 
 /**

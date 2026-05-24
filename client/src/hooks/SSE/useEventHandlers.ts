@@ -21,7 +21,7 @@ import type {
 } from 'librechat-data-provider';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { InfiniteData } from '@tanstack/react-query';
-import type { SetterOrUpdater, Resetter } from 'recoil';
+import type { SetterOrUpdater } from 'recoil';
 import type { ConversationCursorData } from '~/utils';
 import {
   logger,
@@ -62,7 +62,7 @@ export type EventHandlerParams = {
   setConversation?: SetterOrUpdater<TConversation | null>;
   newConversation?: ConvoGenerator;
   setShowStopButton: SetterOrUpdater<boolean>;
-  resetLatestMessage?: Resetter;
+  setLatestMessage: SetterOrUpdater<TMessage | null>;
 };
 
 const createErrorMessage = ({
@@ -175,7 +175,7 @@ export default function useEventHandlers({
   setIsSubmitting,
   newConversation,
   setShowStopButton,
-  resetLatestMessage,
+  setLatestMessage,
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
@@ -323,14 +323,14 @@ export default function useEventHandlers({
       const { initialResponse, messages: _messages, userMessage } = submission;
       const messages = _messages.filter((msg) => msg.messageId !== userMessage.messageId);
 
-      setMessages([
-        ...messages,
-        requestMessage,
-        {
-          ...initialResponse,
-          ...responseMessage,
-        },
-      ]);
+      const nextResponseMessage = {
+        ...initialResponse,
+        ...responseMessage,
+      };
+
+      logger.log('latest_message', 'syncHandler: setting latest message');
+      setLatestMessage(nextResponseMessage);
+      setMessages([...messages, requestMessage, nextResponseMessage]);
 
       announcePolite({
         message: 'start',
@@ -375,10 +375,6 @@ export default function useEventHandlers({
       }
 
       setShowStopButton(true);
-      if (resetLatestMessage) {
-        logger.log('latest_message', 'syncHandler: resetting latest message');
-        resetLatestMessage();
-      }
     },
     [
       queryClient,
@@ -387,7 +383,7 @@ export default function useEventHandlers({
       announcePolite,
       setConversation,
       setShowStopButton,
-      resetLatestMessage,
+      setLatestMessage,
     ],
   );
 
@@ -410,7 +406,10 @@ export default function useEventHandlers({
         ...submission.initialResponse,
         parentMessageId: userMessage.messageId,
         messageId: userMessage.messageId + '_',
+        conversationId: userMessage.conversationId ?? submission.initialResponse.conversationId,
       };
+      logger.log('latest_message', 'createdHandler: setting latest message');
+      setLatestMessage(initialResponse);
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);
       } else {
@@ -469,10 +468,6 @@ export default function useEventHandlers({
         });
       }
 
-      if (resetLatestMessage) {
-        logger.log('latest_message', 'createdHandler: resetting latest message');
-        resetLatestMessage();
-      }
       scrollToEnd(() => setAbortScroll(false));
     },
     [
@@ -482,7 +477,7 @@ export default function useEventHandlers({
       isAddedRequest,
       announcePolite,
       setConversation,
-      resetLatestMessage,
+      setLatestMessage,
       applyAgentTemplate,
     ],
   );
