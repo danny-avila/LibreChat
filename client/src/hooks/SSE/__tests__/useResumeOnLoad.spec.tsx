@@ -62,18 +62,20 @@ function buildSubmission(conversationId: string | null | undefined): TSubmission
 
 function renderUseResumeOnLoad({
   messages = [],
+  getMessages: getMessagesOverride,
   submission = null,
   conversationId = CONVERSATION_ID,
   messagesLoaded = true,
   onSubmission,
 }: {
   messages?: TMessage[];
+  getMessages?: () => TMessage[] | undefined;
   submission?: TSubmission | null;
   conversationId?: string;
   messagesLoaded?: boolean;
   onSubmission?: (submission: TSubmission | null) => void;
 }) {
-  const getMessages = jest.fn(() => messages);
+  const getMessages = jest.fn(getMessagesOverride ?? (() => messages));
   const initializeState = (snapshot: MutableSnapshot) => {
     snapshot.set(store.conversationByIndex(0), buildConversation(conversationId));
     snapshot.set(store.submissionByIndex(0), submission);
@@ -140,6 +142,22 @@ describe('useResumeOnLoad', () => {
     });
 
     expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
+  });
+
+  it('stops checking for resume after loaded messages prove a null-conversation submission belongs to the route', () => {
+    const submission = buildSubmission(null);
+    let messages: TMessage[] = [];
+    const { rerender } = renderUseResumeOnLoad({
+      submission,
+      getMessages: () => messages,
+    });
+
+    expect(mockUseStreamStatus).toHaveBeenLastCalledWith(CONVERSATION_ID, true);
+
+    messages = [buildUserMessage(CONVERSATION_ID)];
+    rerender();
+
+    expect(mockUseStreamStatus).toHaveBeenLastCalledWith(CONVERSATION_ID, false);
   });
 
   it('does not replace a null-conversation submission when stream status matches its resume state', async () => {
