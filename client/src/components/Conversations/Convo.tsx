@@ -142,7 +142,7 @@ export default function Conversation({
   }, []);
 
   const handleNavigation = (ctrlOrMetaKey: boolean) => {
-    if (ctrlOrMetaKey) {
+    if (ctrlOrMetaKey && !isGenerating) {
       toggleNav();
       const baseUrl = window.location.origin;
       const path = `/c/${conversationId}`;
@@ -278,7 +278,9 @@ export default function Conversation({
         // aria-hidden={!(isPopoverActive || isActiveConvo)}
       >
         {/* Only render ConvoOptions when user interacts (hover/focus) or for active conversation */}
-        {!renaming && (hasInteracted || isActiveConvo) && <ConvoOptions {...convoOptionsProps} />}
+        {!renaming && !isGenerating && (hasInteracted || isActiveConvo) && (
+          <ConvoOptions {...convoOptionsProps} />
+        )}
       </div>
     </div>
   );
