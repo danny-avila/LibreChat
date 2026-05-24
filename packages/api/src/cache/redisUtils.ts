@@ -32,7 +32,14 @@ export async function batchDeleteKeys(
 
   const size = chunkSize ?? cacheConfig.REDIS_DELETE_CHUNK_SIZE;
   const clusterSafe = cacheConfig.USE_REDIS_CLUSTER || cacheConfig.REDIS_CLUSTER_SAFE_DELETE;
-  const mode = cacheConfig.USE_REDIS_CLUSTER ? 'cluster' : clusterSafe ? 'cluster-safe' : 'single-node';
+  let mode = 'single-node';
+
+  if (cacheConfig.USE_REDIS_CLUSTER) {
+    mode = 'cluster';
+  } else if (cacheConfig.REDIS_CLUSTER_SAFE_DELETE) {
+    mode = 'cluster-safe';
+  }
+
   const deletePromises = [];
 
   if (clusterSafe) {
