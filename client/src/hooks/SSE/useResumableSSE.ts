@@ -467,6 +467,12 @@ export default function useResumableSSE(
             queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, convoId] });
             queryClient.removeQueries({ queryKey: streamStatusQueryKey(convoId) });
           }
+          if (
+            !createdStreamIdsRef.current.has(currentStreamId) &&
+            optimisticStreamIdsRef.current.has(currentStreamId)
+          ) {
+            removeConvoFromAllQueries(queryClient, currentStreamId);
+          }
           setIsSubmitting(false);
           setShowStopButton(false);
           setStreamId(null);

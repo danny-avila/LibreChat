@@ -476,6 +476,7 @@ export default function useEventHandlers({
         isRegenerate = false,
         isTemporary: _isTemporary = false,
       } = submission;
+      const serverConversation = conversation as TConversation;
 
       try {
         // Handle early abort - aborted during tool loading before any messages saved
@@ -611,7 +612,11 @@ export default function useEventHandlers({
             if (conversation.conversationId) {
               queryClient.setQueryData<TConversation>(
                 [QueryKeys.conversation, conversation.conversationId],
-                (cachedConvo) => ({ ...cachedConvo, ...update }) as TConversation,
+                (cachedConvo) =>
+                  ({
+                    ...cachedConvo,
+                    ...serverConversation,
+                  }) as TConversation,
               );
             }
             return update;

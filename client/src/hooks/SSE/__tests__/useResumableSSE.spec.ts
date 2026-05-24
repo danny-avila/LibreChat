@@ -263,6 +263,7 @@ describe('useResumableSSE - 404 error path', () => {
   });
 
   it('invalidates the stream conversation id on 404 for a new conversation', async () => {
+    mockFindAll.mockReturnValue([{ queryKey: [QueryKeys.allConversations] }]);
     const submission = buildSubmission({
       conversation: {},
       userMessage: {
@@ -300,6 +301,26 @@ describe('useResumableSSE - 404 error path', () => {
     expect(mockRemoveQueries).toHaveBeenCalledWith({
       queryKey: ['streamStatus', 'stream-123'],
     });
+
+    const allConversationWrites = mockSetQueryData.mock.calls.filter(
+      ([queryKey]) => Array.isArray(queryKey) && queryKey[0] === QueryKeys.allConversations,
+    );
+    expect(allConversationWrites).toHaveLength(2);
+
+    const removeUpdater = allConversationWrites[1][1] as (data: {
+      pages: { conversations: { conversationId: string }[]; nextCursor: null }[];
+      pageParams: never[];
+    }) => { pages: { conversations: { conversationId: string }[] }[] };
+    const result = removeUpdater({
+      pages: [
+        {
+          conversations: [{ conversationId: 'stream-123' }, { conversationId: 'other' }],
+          nextCursor: null,
+        },
+      ],
+      pageParams: [],
+    });
+    expect(result.pages[0].conversations).toEqual([{ conversationId: 'other' }]);
     unmount();
   });
 
