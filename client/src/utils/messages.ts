@@ -1,6 +1,7 @@
 import {
   QueryKeys,
   Constants,
+  buildTree,
   ContentTypes,
   isEphemeralAgentId,
   appendAgentIdSuffix,
@@ -16,6 +17,70 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { LocalizeFunction } from '~/common';
 
 export const TEXT_KEY_DIVIDER = '|||';
+
+type SiblingIndexLookup = (parentMessageId: string | null | undefined) => number;
+
+export const selectActiveBranchTail = (
+  messages: TMessage[] | null | undefined,
+  rootSiblingKey: string | null | undefined,
+  getSiblingIndex: SiblingIndexLookup = () => 0,
+): TMessage | null => {
+  const messagesTree = buildTree({ messages: messages ?? null });
+  if (!messagesTree?.length) {
+    return null;
+  }
+
+  let siblings = messagesTree;
+  let parentMessageId = rootSiblingKey;
+  let tail: TMessage | null = null;
+
+  while (siblings.length > 0) {
+    const siblingIdx = getSiblingIndex(parentMessageId);
+    const normalizedSiblingIdx = siblingIdx >= 0 && siblingIdx < siblings.length ? siblingIdx : 0;
+    const activeSiblingIndex = siblings.length - normalizedSiblingIdx - 1;
+    const message = siblings[activeSiblingIndex] ?? siblings[siblings.length - 1];
+    if (!message) {
+      return tail;
+    }
+
+    tail = message;
+    parentMessageId = message.messageId;
+    siblings = message.children ?? [];
+  }
+
+  return tail;
+};
+
+export const getMessageBranchSiblingParentIds = (
+  messages: TMessage[] | null | undefined,
+  rootSiblingKey: string | null | undefined,
+): (string | null)[] => {
+  const messagesTree = buildTree({ messages: messages ?? null });
+  if (!messagesTree?.length) {
+    return [];
+  }
+
+  const parentIds = new Set<string | null>();
+  const collectBranchParents = (
+    siblings: TMessage[] | undefined,
+    parentMessageId: string | null | undefined,
+  ) => {
+    if (!siblings?.length) {
+      return;
+    }
+
+    if (siblings.length > 1) {
+      parentIds.add(parentMessageId ?? null);
+    }
+
+    for (const message of siblings) {
+      collectBranchParents(message.children, message.messageId);
+    }
+  };
+
+  collectBranchParents(messagesTree, rootSiblingKey);
+  return Array.from(parentIds);
+};
 
 export const getLatestText = (message?: TMessage | null, includeIndex?: boolean): string => {
   if (!message) {

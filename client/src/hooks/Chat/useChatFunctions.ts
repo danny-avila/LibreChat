@@ -2,7 +2,7 @@ import { v4 } from 'uuid';
 import { cloneDeep } from 'lodash';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useResetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
+import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import {
   Constants,
   QueryKeys,
@@ -49,7 +49,6 @@ export default function useChatFunctions({
   isSubmitting,
   latestMessage,
   setSubmission,
-  setLatestMessage,
   conversation: immutableConversation,
 }: {
   index?: number;
@@ -62,7 +61,6 @@ export default function useChatFunctions({
   files?: Map<string, ExtendedFile>;
   setFiles?: SetterOrUpdater<Map<string, ExtendedFile>>;
   setSubmission: SetterOrUpdater<TSubmission | null>;
-  setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
   const navigate = useNavigate();
   const getSender = useGetSender();
@@ -74,7 +72,6 @@ export default function useChatFunctions({
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
-  const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
 
   /**
    * Atomically read + reset the per-conversation queue of manually-invoked
@@ -122,7 +119,6 @@ export default function useChatFunctions({
     } = {},
   ) => {
     setShowStopButton(false);
-    resetLatestMultiMessage();
 
     text = text.trim();
     if (!!isSubmitting || text === '') {
@@ -160,12 +156,13 @@ export default function useChatFunctions({
      *    a prior turn, not compose a new one).
      *  - Fresh submit → drain the per-convo atom into the message.
      */
-    const manualSkills =
-      overrideManualSkills != null
-        ? overrideManualSkills
-        : isRegenerate || isContinued || isEdited
+    let manualSkills = overrideManualSkills;
+    if (manualSkills == null) {
+      manualSkills =
+        isRegenerate || isContinued || isEdited
           ? []
           : drainPendingManualSkills(conversationId ?? Constants.NEW_CONVO);
+    }
     const isEditOrContinue = isEdited || isContinued;
 
     let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
@@ -398,9 +395,6 @@ export default function useChatFunctions({
       setMessages([...submission.messages, initialResponse]);
     } else {
       setMessages([...submission.messages, currentMsg, initialResponse]);
-    }
-    if (index === 0 && setLatestMessage) {
-      setLatestMessage(initialResponse);
     }
 
     setSubmission(submission);

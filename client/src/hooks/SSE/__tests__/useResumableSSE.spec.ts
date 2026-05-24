@@ -156,7 +156,6 @@ const buildChatHelpers = () => ({
   setConversation: jest.fn(),
   setIsSubmitting: mockSetIsSubmitting,
   newConversation: jest.fn(),
-  setLatestMessage: jest.fn(),
 });
 
 const getLastSSE = (): MockSSEInstance => {
