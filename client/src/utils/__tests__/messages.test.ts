@@ -1,6 +1,12 @@
 import type { TMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
-import { getMessageAriaLabel, getHeaderPrefixForScreenReader } from '../messages';
+import {
+  getMessageAriaLabel,
+  getHeaderPrefixForScreenReader,
+  scrollToEnd,
+  scrollToMessageStart,
+  hasMessageReachedContainerTop,
+} from '../messages';
 
 const translations: Record<string, string> = {
   com_endpoint_message: 'Message',
@@ -78,5 +84,80 @@ describe('getHeaderPrefixForScreenReader', () => {
   it('omits number when depth is negative', () => {
     const msg = makeMessage({ isCreatedByUser: false, depth: -5 });
     expect(getHeaderPrefixForScreenReader(msg, localize)).toBe('Response: ');
+  });
+});
+
+describe('scroll helpers', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('scrollToEnd scrolls the end sentinel immediately', () => {
+    const element = document.createElement('div');
+    element.id = 'messages-end';
+    element.scrollIntoView = jest.fn();
+    document.body.appendChild(element);
+
+    scrollToEnd();
+
+    expect(element.scrollIntoView).toHaveBeenCalledWith({ behavior: 'instant' });
+  });
+
+  it('scrollToMessageStart retries until the message is rendered', () => {
+    const callback = jest.fn();
+    const rafQueue: FrameRequestCallback[] = [];
+
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+      rafQueue.push(cb);
+      return rafQueue.length;
+    });
+
+    scrollToMessageStart('assistant-msg', callback);
+
+    const element = document.createElement('div');
+    element.id = 'assistant-msg';
+    element.scrollIntoView = jest.fn();
+    document.body.appendChild(element);
+
+    const nextFrame = rafQueue.shift();
+    expect(nextFrame).toBeDefined();
+
+    nextFrame?.(performance.now());
+
+    expect(element.scrollIntoView).toHaveBeenCalledWith({ behavior: 'instant', block: 'start' });
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('hasMessageReachedContainerTop', () => {
+  it('returns true when message top equals container top', () => {
+    expect(hasMessageReachedContainerTop(100, 100)).toBe(true);
+  });
+
+  it('returns true when message top is above container top (negative offset)', () => {
+    expect(hasMessageReachedContainerTop(50, 100)).toBe(true);
+  });
+
+  it('returns true within the 1px tolerance (messageTop = containerTop + 1)', () => {
+    expect(hasMessageReachedContainerTop(101, 100)).toBe(true);
+  });
+
+  it('returns false when message top is clearly below container top', () => {
+    expect(hasMessageReachedContainerTop(200, 100)).toBe(false);
+  });
+
+  it('returns false just outside the 1px tolerance (messageTop = containerTop + 2)', () => {
+    expect(hasMessageReachedContainerTop(102, 100)).toBe(false);
+  });
+
+  it('handles a container top of 0 (fullscreen layout)', () => {
+    expect(hasMessageReachedContainerTop(0, 0)).toBe(true);
+    expect(hasMessageReachedContainerTop(1, 0)).toBe(true);
+    expect(hasMessageReachedContainerTop(2, 0)).toBe(false);
+  });
+
+  it('handles fractional pixel values', () => {
+    expect(hasMessageReachedContainerTop(100.4, 100)).toBe(true);
+    expect(hasMessageReachedContainerTop(101.1, 100)).toBe(false);
   });
 });

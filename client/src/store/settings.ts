@@ -34,6 +34,7 @@ const localStorageAtoms = {
   chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
   autoExpandTools: atomWithLocalStorage(LocalStorageKeys.AUTO_EXPAND_TOOLS, false),
   saveDrafts: atomWithLocalStorage('saveDrafts', true),
+  autoScrollDuringGeneration: atomWithLocalStorage('autoScrollDuringGeneration', true),
   showScrollButton: atomWithLocalStorage('showScrollButton', true),
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
