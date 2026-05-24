@@ -12,7 +12,14 @@ export function startGitHubSkillSyncScheduler(params: {
   runner: GitHubSkillSyncRunner;
 }): GitHubSkillSyncScheduler | null {
   const github = params.getConfig()?.github;
-  if (!github?.enabled || github.sources.length === 0) {
+  const sources = Array.isArray(github?.sources) ? github.sources : [];
+  const intervalMinutes =
+    typeof github?.intervalMinutes === 'number' &&
+    Number.isFinite(github.intervalMinutes) &&
+    github.intervalMinutes >= 5
+      ? github.intervalMinutes
+      : 60;
+  if (!github?.enabled || sources.length === 0) {
     return null;
   }
   let stopped = false;
@@ -31,7 +38,7 @@ export function startGitHubSkillSyncScheduler(params: {
     run();
   }
 
-  timer = setInterval(run, github.intervalMinutes * 60 * 1000);
+  timer = setInterval(run, intervalMinutes * 60 * 1000);
 
   const scheduler = {
     stop: () => {
