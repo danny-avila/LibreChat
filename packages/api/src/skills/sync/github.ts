@@ -99,6 +99,11 @@ export type GitHubSkillSyncDeps = {
     lockOwner: string;
     leaseMs: number;
   }) => Promise<boolean>;
+  refreshLock: (params: {
+    provider: SkillSyncProvider;
+    lockOwner: string;
+    leaseMs: number;
+  }) => Promise<boolean>;
   releaseLock: (params: { provider: SkillSyncProvider; lockOwner: string }) => Promise<void>;
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   updateSkill: (params: {
@@ -879,6 +884,22 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
         sources: statuses,
       };
     }
+    const refreshTimer = setInterval(
+      () => {
+        deps
+          .refreshLock({ provider: PROVIDER, lockOwner, leaseMs: LOCK_LEASE_MS })
+          .then((refreshed) => {
+            if (!refreshed) {
+              logger.warn('[GitHubSkillSync] Failed to refresh active sync lock');
+            }
+          })
+          .catch((error) => {
+            logger.error('[GitHubSkillSync] Failed to refresh active sync lock:', error);
+          });
+      },
+      Math.max(60_000, Math.floor(LOCK_LEASE_MS / 3)),
+    );
+    refreshTimer.unref?.();
     try {
       const sources: ISkillSyncStatus[] = [];
       for (const source of github.sources) {
@@ -890,6 +911,7 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
         sources,
       };
     } finally {
+      clearInterval(refreshTimer);
       await deps.releaseLock({ provider: PROVIDER, lockOwner });
     }
   }

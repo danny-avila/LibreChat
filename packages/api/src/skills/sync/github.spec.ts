@@ -145,6 +145,7 @@ function createDeps(
       return status;
     }),
     tryAcquireLock: jest.fn(async () => true),
+    refreshLock: jest.fn(async () => true),
     releaseLock: jest.fn(async () => undefined),
     createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
       return { skill: makeSkill(input), warnings: [] };
