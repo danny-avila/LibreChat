@@ -404,6 +404,12 @@ export const skillFiles = (id: string) => `${getSkill(id)}/files`;
 export const skillFile = (id: string, relativePath: string) =>
   `${skillFiles(id)}/${encodeURIComponent(relativePath)}`;
 
+export const adminSkillsSync = () => `${BASE_URL}/api/admin/skills/sync`;
+export const adminSkillsSyncStatus = () => `${adminSkillsSync()}/status`;
+export const adminSkillsSyncRun = () => `${adminSkillsSync()}/run`;
+export const adminSkillsSyncCredential = (credentialKey: string) =>
+  `${adminSkillsSync()}/credentials/${encodeURIComponent(credentialKey)}`;
+
 /**
  * Skill filesystem tree (phase 2). URL shape mirrors the original UI PR so
  * the tree hooks keep their call surface. `path` is pre-encoded by the

@@ -83,6 +83,7 @@ export const AppService = async (params?: {
   const webSearch = loadWebSearchConfig(config.webSearch);
   const memory = loadMemoryConfig(config.memory);
   const summarization = loadSummarizationConfig(config);
+  const skillSync = config.skillSync;
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = (config.fileStrategy ?? configDefaults.fileStrategy) as
@@ -119,6 +120,7 @@ export const AppService = async (params?: {
     speech,
     balance,
     actions,
+    skillSync,
     webSearch,
     mcpSettings,
     transactions,
