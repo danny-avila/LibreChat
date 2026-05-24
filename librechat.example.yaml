@@ -61,6 +61,25 @@ cache: true
 #   # Recommended for download paths: attach a CloudFront response headers policy
 #   # with X-Content-Type-Options: nosniff and CSP default-src 'none'.
 
+# Skill sync configuration (optional)
+# GitHub tokens are not stored in this file. Configure credentialKey here, then
+# set the token through the admin API. Use a GitHub fine-grained personal access
+# token scoped to the selected repository with read-only Contents and Metadata
+# permissions.
+# skillSync:
+#   github:
+#     enabled: false
+#     intervalMinutes: 60
+#     runOnStartup: true
+#     sources:
+#       - id: librechat-skills
+#         owner: your-org
+#         repo: your-skills-repo
+#         ref: main
+#         paths:
+#           - skills
+#         credentialKey: github-skills-prod
+
 # Custom interface configuration
 interface:
   customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
