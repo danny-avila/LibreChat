@@ -82,10 +82,24 @@ describe('createSkillSyncMethods', () => {
     await expect(
       methods.tryAcquireSkillSyncLock({
         provider: 'github',
+        lockOwner: 'worker-a',
+        leaseMs: 60_000,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      methods.tryAcquireSkillSyncLock({
+        provider: 'github',
         lockOwner: 'worker-b',
         leaseMs: 60_000,
       }),
     ).resolves.toBe(false);
+    await expect(
+      methods.refreshSkillSyncLock({
+        provider: 'github',
+        lockOwner: 'worker-a',
+        leaseMs: 60_000,
+      }),
+    ).resolves.toBe(true);
     await methods.releaseSkillSyncLock({ provider: 'github', lockOwner: 'worker-a' });
     await expect(
       methods.tryAcquireSkillSyncLock({
@@ -94,5 +108,27 @@ describe('createSkillSyncMethods', () => {
         leaseMs: 60_000,
       }),
     ).resolves.toBe(true);
+  });
+
+  it('clears stale source errors after a successful sync status update', async () => {
+    await methods.upsertSkillSyncStatus({
+      provider: 'github',
+      sourceId: 'librechat-skills',
+      status: 'failed',
+      errorCode: 'SKILL_PARSE_FAILED',
+      errorMessage: 'bad frontmatter',
+    });
+
+    const success = await methods.upsertSkillSyncStatus({
+      provider: 'github',
+      sourceId: 'librechat-skills',
+      status: 'succeeded',
+      syncedSkillCount: 1,
+      syncedFileCount: 2,
+    });
+
+    expect(success.status).toBe('succeeded');
+    expect(success.errorCode).toBeUndefined();
+    expect(success.errorMessage).toBeUndefined();
   });
 });
