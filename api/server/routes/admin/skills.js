@@ -3,10 +3,7 @@ const { createAdminSkillsSyncHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
-const {
-  upsertSkillSyncCredential,
-  deleteSkillSyncCredential,
-} = require('~/models');
+const { upsertSkillSyncCredential, deleteSkillSyncCredential } = require('~/models');
 const { getGitHubSkillSyncRunner } = require('~/server/services/Skills/sync');
 
 const router = express.Router();

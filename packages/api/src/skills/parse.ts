@@ -24,10 +24,7 @@ function extractFrontmatterBlock(raw: string): string | null {
   return normalized.slice(4, closingIdx);
 }
 
-function getCaseInsensitive(
-  frontmatter: Record<string, unknown>,
-  key: string,
-): unknown {
+function getCaseInsensitive(frontmatter: Record<string, unknown>, key: string): unknown {
   const entry = Object.entries(frontmatter).find(([candidate]) => candidate.toLowerCase() === key);
   return entry?.[1];
 }
@@ -68,12 +65,12 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
   const whenToUseValue = getCaseInsensitive(frontmatter, 'when-to-use');
   const alwaysApplyValue = getCaseInsensitive(frontmatter, 'always-apply');
   const name = typeof nameValue === 'string' ? nameValue : '';
-  const description =
-    typeof descriptionValue === 'string'
-      ? descriptionValue
-      : typeof whenToUseValue === 'string'
-        ? whenToUseValue
-        : '';
+  let description = '';
+  if (typeof descriptionValue === 'string') {
+    description = descriptionValue;
+  } else if (typeof whenToUseValue === 'string') {
+    description = whenToUseValue;
+  }
   let alwaysApply: boolean | undefined;
   const invalidBooleans: string[] = [];
   if (alwaysApplyValue !== undefined) {

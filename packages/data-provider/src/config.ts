@@ -249,7 +249,8 @@ const skillSyncIdentifierSchema = z
   .min(1)
   .max(64)
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/, {
-    message: 'must start with a letter or digit and contain only letters, digits, underscores, or hyphens',
+    message:
+      'must start with a letter or digit and contain only letters, digits, underscores, or hyphens',
   });
 
 const skillSyncGitHubOwnerSchema = z
