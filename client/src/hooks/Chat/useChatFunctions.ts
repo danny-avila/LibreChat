@@ -156,12 +156,13 @@ export default function useChatFunctions({
      *    a prior turn, not compose a new one).
      *  - Fresh submit → drain the per-convo atom into the message.
      */
-    const manualSkills =
-      overrideManualSkills != null
-        ? overrideManualSkills
-        : isRegenerate || isContinued || isEdited
+    let manualSkills = overrideManualSkills;
+    if (manualSkills == null) {
+      manualSkills =
+        isRegenerate || isContinued || isEdited
           ? []
           : drainPendingManualSkills(conversationId ?? Constants.NEW_CONVO);
+    }
     const isEditOrContinue = isEdited || isContinued;
 
     let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];

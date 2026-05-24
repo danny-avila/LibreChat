@@ -25,7 +25,7 @@ export function ArtifactsProvider({ children, value }: ArtifactsProviderProps) {
 
   const chatLatestMessageText = useMemo(() => {
     return getLatestText(latestMessage);
-  }, [latestMessage?.messageId, latestMessage?.text, latestMessage?.content]);
+  }, [latestMessage]);
 
   const defaultContextValue = useMemo<ArtifactsContextValue>(
     () => ({
