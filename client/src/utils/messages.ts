@@ -22,7 +22,7 @@ type SiblingIndexLookup = (parentMessageId: string | null | undefined) => number
 
 export const selectActiveBranchTail = (
   messages: TMessage[] | null | undefined,
-  rootMessageId: string | null | undefined,
+  rootSiblingKey: string | null | undefined,
   getSiblingIndex: SiblingIndexLookup = () => 0,
 ): TMessage | null => {
   const messagesTree = buildTree({ messages: messages ?? null });
@@ -31,12 +31,13 @@ export const selectActiveBranchTail = (
   }
 
   let siblings = messagesTree;
-  let parentMessageId = rootMessageId;
+  let parentMessageId = rootSiblingKey;
   let tail: TMessage | null = null;
 
   while (siblings.length > 0) {
     const siblingIdx = getSiblingIndex(parentMessageId);
-    const activeSiblingIndex = Math.max(0, siblings.length - siblingIdx - 1);
+    const normalizedSiblingIdx = siblingIdx >= 0 && siblingIdx < siblings.length ? siblingIdx : 0;
+    const activeSiblingIndex = siblings.length - normalizedSiblingIdx - 1;
     const message = siblings[activeSiblingIndex] ?? siblings[siblings.length - 1];
     if (!message) {
       return tail;
@@ -52,17 +53,32 @@ export const selectActiveBranchTail = (
 
 export const getMessageBranchSiblingParentIds = (
   messages: TMessage[] | null | undefined,
-  rootMessageId: string | null | undefined,
+  rootSiblingKey: string | null | undefined,
 ): (string | null)[] => {
-  const parentIds = new Set<string | null>();
-  parentIds.add(rootMessageId ?? null);
-
-  for (const message of messages ?? []) {
-    if (message?.messageId) {
-      parentIds.add(message.messageId);
-    }
+  const messagesTree = buildTree({ messages: messages ?? null });
+  if (!messagesTree?.length) {
+    return [];
   }
 
+  const parentIds = new Set<string | null>();
+  const collectBranchParents = (
+    siblings: TMessage[] | undefined,
+    parentMessageId: string | null | undefined,
+  ) => {
+    if (!siblings?.length) {
+      return;
+    }
+
+    if (siblings.length > 1) {
+      parentIds.add(parentMessageId ?? null);
+    }
+
+    for (const message of siblings) {
+      collectBranchParents(message.children, message.messageId);
+    }
+  };
+
+  collectBranchParents(messagesTree, rootSiblingKey);
   return Array.from(parentIds);
 };
 

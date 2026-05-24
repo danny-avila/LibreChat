@@ -5,6 +5,7 @@ import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QueryKeys, type TConversation, type TMessage } from 'librechat-data-provider';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
+import { getMessageBranchSiblingParentIds } from '~/utils';
 import store from '~/store';
 
 function createQueryClient() {
@@ -132,6 +133,34 @@ describe('useLatestMessage', () => {
     );
   });
 
+  it('falls back to the latest sibling when a stored sibling index is out of range', () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData<TMessage[]>(
+      [QueryKeys.messages, conversation.conversationId],
+      [
+        userMessage,
+        olderAssistantMessage,
+        olderFollowUpUserMessage,
+        olderFollowUpAssistantMessage,
+        assistantMessage,
+      ],
+    );
+
+    const { result } = renderHook(() => useLatestMessage(0), {
+      wrapper: createWrapper(queryClient, ({ set }) => {
+        set(store.conversationByIndex(0), conversation);
+        set(store.messagesSiblingIdxFamily(userMessage.messageId), 99);
+      }),
+    });
+
+    expect(result.current).toEqual(
+      expect.objectContaining({
+        messageId: assistantMessage.messageId,
+        depth: 1,
+      }),
+    );
+  });
+
   it('keeps latestMessageId stable across token-only cache writes', () => {
     const queryClient = createQueryClient();
     queryClient.setQueryData<TMessage[]>(
@@ -163,5 +192,22 @@ describe('useLatestMessage', () => {
 
     expect(result.current).toBe(firstId);
     expect(renderCount).toBe(1);
+  });
+});
+
+describe('getMessageBranchSiblingParentIds', () => {
+  it('returns only parent keys that have branch choices', () => {
+    expect(
+      getMessageBranchSiblingParentIds(
+        [
+          userMessage,
+          olderAssistantMessage,
+          olderFollowUpUserMessage,
+          olderFollowUpAssistantMessage,
+          assistantMessage,
+        ],
+        conversation.conversationId,
+      ),
+    ).toEqual([userMessage.messageId]);
   });
 });
