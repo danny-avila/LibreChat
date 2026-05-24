@@ -1080,6 +1080,29 @@ export const updateSkillNodeContent = (variables: {
   });
 };
 
+export function getGitHubSkillSyncStatus(): Promise<sk.TGitHubSkillSyncStatusResponse> {
+  return request.get(endpoints.adminSkillsSyncStatus());
+}
+
+export function runGitHubSkillSync(): Promise<sk.TGitHubSkillSyncManualRunResponse> {
+  return request.post(endpoints.adminSkillsSyncRun());
+}
+
+export function setGitHubSkillSyncCredential(variables: {
+  credentialKey: string;
+  token: string;
+}): Promise<sk.TGitHubSkillSyncCredentialSummary> {
+  return request.put(endpoints.adminSkillsSyncCredential(variables.credentialKey), {
+    token: variables.token,
+  } satisfies sk.TGitHubSkillSyncCredentialUpdateRequest);
+}
+
+export function deleteGitHubSkillSyncCredential(
+  credentialKey: string,
+): Promise<{ credentialKey: string; deleted: boolean }> {
+  return request.delete(endpoints.adminSkillsSyncCredential(credentialKey));
+}
+
 /* Roles */
 export function listRoles(): Promise<q.ListRolesResponse> {
   return request.get(`${endpoints.adminRoles()}?limit=200`);
