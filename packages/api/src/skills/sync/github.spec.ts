@@ -18,7 +18,7 @@ function response(body: unknown, status = 200): Response {
       get: () => null,
     },
     json: async () => body,
-  } as Response;
+  } as unknown as Response;
 }
 
 function blob(content: string) {
@@ -172,7 +172,7 @@ function createDeps(
         return response(blob('echo ok'));
       }
       return response({ message: 'not found' }, 404);
-    }),
+    }) as unknown as typeof fetch,
     ...overrides,
   };
   return deps;
