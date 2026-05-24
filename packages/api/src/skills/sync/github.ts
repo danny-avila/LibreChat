@@ -1,11 +1,7 @@
 import crypto from 'crypto';
 import path from 'path';
 import { Types } from 'mongoose';
-import {
-  ResourceType,
-  PrincipalType,
-  AccessRoleIds,
-} from 'librechat-data-provider';
+import { ResourceType, PrincipalType, AccessRoleIds } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
 import type { SkillSyncConfig, SkillSyncGitHubSourceConfig } from 'librechat-data-provider';
 import type {
@@ -87,7 +83,10 @@ type SaveBufferResult = {
 
 export type GitHubSkillSyncDeps = {
   getConfig: () => SkillSyncConfig | undefined;
-  getCredentialToken: (provider: SkillSyncProvider, credentialKey: string) => Promise<string | null>;
+  getCredentialToken: (
+    provider: SkillSyncProvider,
+    credentialKey: string,
+  ) => Promise<string | null>;
   getCredentialSummary: (
     provider: SkillSyncProvider,
     credentialKey: string,
@@ -266,7 +265,10 @@ function sanitizeError(error: unknown): { code: string; message: string } {
     return { code: error.code, message: error.message };
   }
   if (error instanceof Error) {
-    return { code: 'SYNC_FAILED', message: error.message.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]') };
+    return {
+      code: 'SYNC_FAILED',
+      message: error.message.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]'),
+    };
   }
   return { code: 'SYNC_FAILED', message: 'Unknown skill sync failure' };
 }
@@ -303,7 +305,10 @@ async function githubJson<T>(params: {
   if (response.status === 404) {
     throw new SkillSyncError('GITHUB_NOT_FOUND', 'GitHub repository, ref, or path was not found');
   }
-  throw new SkillSyncError('GITHUB_REQUEST_FAILED', `GitHub request failed with HTTP ${response.status}`);
+  throw new SkillSyncError(
+    'GITHUB_REQUEST_FAILED',
+    `GitHub request failed with HTTP ${response.status}`,
+  );
 }
 
 async function fetchCommit(params: {
@@ -352,7 +357,10 @@ async function fetchBlob(params: {
     pathname: `/repos/${owner}/${repo}/git/blobs/${sha}`,
   });
   if (blob.encoding !== 'base64') {
-    throw new SkillSyncError('GITHUB_UNSUPPORTED_BLOB', `Unsupported GitHub blob encoding "${blob.encoding}"`);
+    throw new SkillSyncError(
+      'GITHUB_UNSUPPORTED_BLOB',
+      `Unsupported GitHub blob encoding "${blob.encoding}"`,
+    );
   }
   return Buffer.from(blob.content.replace(/\s/g, ''), 'base64');
 }
@@ -521,7 +529,10 @@ async function upsertRemoteSkill(params: {
     if (result.status === 'conflict') {
       throw new SkillSyncError('SKILL_CONFLICT', `Skill "${existing.name}" changed during sync`);
     }
-    throw new SkillSyncError('SKILL_NOT_FOUND', `Previously synced skill "${existing.name}" was removed`);
+    throw new SkillSyncError(
+      'SKILL_NOT_FOUND',
+      `Previously synced skill "${existing.name}" was removed`,
+    );
   }
   const createInput: CreateSkillInput = {
     ...(update as Omit<UpdateSkillInput, 'source'>),
@@ -628,7 +639,10 @@ async function syncSkillFiles(params: {
             tenantId: skill.tenantId,
           })
           .catch((cleanupError) =>
-            logger.error('[GitHubSkillSync] Failed to clean up orphaned synced file:', cleanupError),
+            logger.error(
+              '[GitHubSkillSync] Failed to clean up orphaned synced file:',
+              cleanupError,
+            ),
           );
       }
       throw error;
@@ -683,7 +697,10 @@ async function syncSource(params: {
   try {
     const token = await deps.getCredentialToken(PROVIDER, source.credentialKey);
     if (!token) {
-      throw new SkillSyncError('MISSING_CREDENTIAL', `Missing GitHub credential "${source.credentialKey}"`);
+      throw new SkillSyncError(
+        'MISSING_CREDENTIAL',
+        `Missing GitHub credential "${source.credentialKey}"`,
+      );
     }
     const commit = await fetchCommit({ fetchFn, token, source });
     const tree = await fetchTree({ fetchFn, token, source, treeSha: commit.commit.tree.sha });
@@ -702,7 +719,12 @@ async function syncSource(params: {
     const syncedAt = new Date();
 
     for (const discovered of discoveredSkills) {
-      const skillMdBuffer = await fetchBlob({ fetchFn, token, source, sha: discovered.skillMd.sha });
+      const skillMdBuffer = await fetchBlob({
+        fetchFn,
+        token,
+        source,
+        sha: discovered.skillMd.sha,
+      });
       const skill = await upsertRemoteSkill({
         deps,
         source,
@@ -726,7 +748,10 @@ async function syncSource(params: {
       counts.deletedFileCount += fileCounts.deletedFileCount;
     }
 
-    const existingSyncedSkills = await deps.listSkillsBySource({ source: PROVIDER, sourceId: source.id });
+    const existingSyncedSkills = await deps.listSkillsBySource({
+      source: PROVIDER,
+      sourceId: source.id,
+    });
     for (const skill of existingSyncedSkills) {
       const upstreamId =
         skill.sourceMetadata && typeof skill.sourceMetadata.upstreamId === 'string'
@@ -790,7 +815,9 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
       deps.listCredentials(PROVIDER),
     ]);
     const statusBySourceId = new Map(storedStatuses.map((status) => [status.sourceId, status]));
-    const credentialByKey = new Map(credentials.map((credential) => [credential.credentialKey, credential]));
+    const credentialByKey = new Map(
+      credentials.map((credential) => [credential.credentialKey, credential]),
+    );
     const sources = github.sources.map((source) => {
       const stored = statusBySourceId.get(source.id);
       const credential = credentialByKey.get(source.credentialKey);
@@ -840,7 +867,11 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
     });
     if (!acquired) {
       const statuses = await deps.listStatuses(PROVIDER);
-      return { status: 'skipped', message: 'GitHub skill sync is already running', sources: statuses };
+      return {
+        status: 'skipped',
+        message: 'GitHub skill sync is already running',
+        sources: statuses,
+      };
     }
     try {
       const sources: ISkillSyncStatus[] = [];

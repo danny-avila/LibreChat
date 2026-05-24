@@ -23,9 +23,7 @@ type AdminSkillsRequest = Request & {
 
 export type AdminSkillSyncDeps = {
   runner: GitHubSkillSyncRunner;
-  upsertCredential: (
-    input: UpsertSkillSyncCredentialInput,
-  ) => Promise<SkillSyncCredentialSummary>;
+  upsertCredential: (input: UpsertSkillSyncCredentialInput) => Promise<SkillSyncCredentialSummary>;
   deleteCredential: (
     provider: SkillSyncProvider,
     credentialKey: string,
