@@ -109,7 +109,10 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
     provider: SkillSyncProvider,
   ): Promise<SkillSyncCredentialSummary[]> {
     const Credential = mongoose.models.SkillSyncCredential as Model<ISkillSyncCredentialDocument>;
-    const rows = await Credential.find({ provider }).select('+tokenHash').sort({ credentialKey: 1 }).lean();
+    const rows = await Credential.find({ provider })
+      .select('+tokenHash')
+      .sort({ credentialKey: 1 })
+      .lean();
     return rows.map((row) => summarizeCredential(row as ISkillSyncCredential));
   }
 
