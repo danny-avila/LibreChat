@@ -6,6 +6,7 @@ export type ParsedSkillMarkdown = {
   alwaysApply?: boolean;
   frontmatter?: Record<string, unknown>;
   invalidBooleans: string[];
+  parseError?: string;
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -58,7 +59,17 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
   if (!block) {
     return { name: '', description: '', invalidBooleans: [] };
   }
-  const parsed = yaml.load(block);
+  let parsed: unknown;
+  try {
+    parsed = yaml.load(block);
+  } catch (error) {
+    return {
+      name: '',
+      description: '',
+      invalidBooleans: [],
+      parseError: error instanceof Error ? error.message : 'Invalid YAML frontmatter',
+    };
+  }
   const frontmatter = isPlainObject(parsed) ? normalizeFrontmatterKeys(parsed) : {};
   const nameValue = getCaseInsensitive(frontmatter, 'name');
   const descriptionValue = getCaseInsensitive(frontmatter, 'description');
