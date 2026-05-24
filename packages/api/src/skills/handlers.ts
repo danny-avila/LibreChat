@@ -206,6 +206,7 @@ function serializeSkillFile(file: ISkillFile & { _id: Types.ObjectId }): TSkillF
     storageKey: file.storageKey,
     storageRegion: file.storageRegion,
     source: file.source as TSkillFile['source'],
+    sourceMetadata: file.sourceMetadata as TSkillFile['sourceMetadata'],
     mimeType: file.mimeType,
     bytes: file.bytes,
     category: file.category,
