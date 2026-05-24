@@ -8,6 +8,7 @@ import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import { useAbortStreamMutation } from '~/data-provider';
 import useNewConvo from '~/hooks/useNewConvo';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
+import { getMessageCacheIds } from './cache';
 import store from '~/store';
 
 // this to be set somewhere else
@@ -42,9 +43,9 @@ export default function useChatHelpers(index = 0, paramId?: string) {
 
   const setMessages = useCallback(
     (messages: TMessage[]) => {
-      queryClient.setQueryData<TMessage[]>([QueryKeys.messages, queryParam], messages);
-      if (queryParam === 'new' && conversationId && conversationId !== 'new') {
-        queryClient.setQueryData<TMessage[]>([QueryKeys.messages, conversationId], messages);
+      const messageCacheIds = getMessageCacheIds({ queryParam, conversationId, messages });
+      for (const messageCacheId of messageCacheIds) {
+        queryClient.setQueryData<TMessage[]>([QueryKeys.messages, messageCacheId], messages);
       }
     },
     [queryParam, queryClient, conversationId],
