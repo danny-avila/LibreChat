@@ -12,6 +12,7 @@ describe('cacheConfig', () => {
     delete process.env.USE_REDIS;
     delete process.env.USE_REDIS_STREAMS;
     delete process.env.USE_REDIS_CLUSTER;
+    delete process.env.REDIS_CLUSTER_SAFE_DELETE;
     delete process.env.REDIS_PING_INTERVAL;
     delete process.env.FORCED_IN_MEMORY_CACHE_NAMESPACES;
 
@@ -128,6 +129,27 @@ describe('cacheConfig', () => {
       expect(cacheConfig.USE_REDIS_CLUSTER).toBe(true);
       expect(cacheConfig.USE_REDIS).toBe(true);
       expect(cacheConfig.REDIS_URI).toBe('redis://localhost:6379');
+    });
+  });
+
+  describe('REDIS_CLUSTER_SAFE_DELETE configuration', () => {
+    test('should default to false when REDIS_CLUSTER_SAFE_DELETE is not set', async () => {
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.REDIS_CLUSTER_SAFE_DELETE).toBe(false);
+    });
+
+    test('should be false when REDIS_CLUSTER_SAFE_DELETE is set to false', async () => {
+      process.env.REDIS_CLUSTER_SAFE_DELETE = 'false';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.REDIS_CLUSTER_SAFE_DELETE).toBe(false);
+    });
+
+    test('should be true when REDIS_CLUSTER_SAFE_DELETE is set to true', async () => {
+      process.env.REDIS_CLUSTER_SAFE_DELETE = 'true';
+
+      const { cacheConfig } = await import('../cacheConfig');
+      expect(cacheConfig.REDIS_CLUSTER_SAFE_DELETE).toBe(true);
     });
   });
 
