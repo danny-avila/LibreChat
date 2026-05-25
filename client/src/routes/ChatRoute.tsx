@@ -128,7 +128,6 @@ export default function ChatRoute() {
         /* this is necessary to load all existing settings */
         preset: initialConvoQuery.data as TPreset,
         modelsData: modelsQuery.data,
-        keepLatestMessage: true,
       });
       hasSetConversation.current = true;
     } else if (
@@ -177,7 +176,6 @@ export default function ChatRoute() {
         template: initialConvoQuery.data,
         preset: initialConvoQuery.data as TPreset,
         modelsData: modelsQuery.data,
-        keepLatestMessage: true,
       });
       hasSetConversation.current = true;
     }

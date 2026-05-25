@@ -10,6 +10,13 @@ import type {
   IJobStore,
 } from './interfaces/IJobStore';
 import type * as t from '~/types';
+import {
+  recordGenerationJob,
+  recordGenerationStreamResumePendingEvents,
+  recordGenerationStreamSubscription,
+  setGenerationJobsInFlight,
+} from '~/app/metrics';
+import type { GenerationJobStore } from '~/app/metrics';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 
@@ -87,6 +94,9 @@ class GenerationJobManagerClass {
   /** Runtime state - always in-memory, not serializable */
   private runtimeState = new Map<string, RuntimeJobState>();
 
+  /** Jobs actively generating in this process. */
+  private runningJobs = new Set<string>();
+
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   /** Whether we're using Redis stores */
@@ -144,6 +154,7 @@ class GenerationJobManagerClass {
     isRedis?: boolean;
     cleanupOnComplete?: boolean;
   }): void {
+    const previousStore = this.storeLabel;
     if (this.cleanupInterval) {
       logger.warn(
         '[GenerationJobManager] Reconfiguring after initialization - destroying existing services',
@@ -151,10 +162,14 @@ class GenerationJobManagerClass {
       this.destroy();
     }
 
+    this.runningJobs.clear();
+    setGenerationJobsInFlight(previousStore, 0);
+
     this.jobStore = services.jobStore;
     this.eventTransport = services.eventTransport;
     this._isRedis = services.isRedis ?? false;
     this._cleanupOnComplete = services.cleanupOnComplete ?? true;
+    this.syncRunningJobMetrics();
 
     logger.info(
       `[GenerationJobManager] Configured with ${this._isRedis ? 'Redis' : 'in-memory'} stores`,
@@ -166,6 +181,14 @@ class GenerationJobManagerClass {
    */
   get isRedis(): boolean {
     return this._isRedis;
+  }
+
+  private get storeLabel(): GenerationJobStore {
+    return this._isRedis ? 'redis' : 'memory';
+  }
+
+  private syncRunningJobMetrics(store: GenerationJobStore = this.storeLabel): void {
+    setGenerationJobsInFlight(store, this.runningJobs.size);
   }
 
   /**
@@ -226,6 +249,9 @@ class GenerationJobManagerClass {
       hasSubscriber: false,
     };
     this.runtimeState.set(streamId, runtime);
+    this.runningJobs.add(streamId);
+    this.syncRunningJobMetrics();
+    recordGenerationJob(this.storeLabel, 'created');
 
     // Resolve immediately - early event buffer handles late subscribers
     resolveReady!();
@@ -554,6 +580,9 @@ class GenerationJobManagerClass {
         completedAt: Date.now(),
         error,
       });
+      this.runningJobs.delete(streamId);
+      this.syncRunningJobMetrics();
+      recordGenerationJob(this.storeLabel, 'error');
       // Keep runtime state so subscribe() can access errorEvent
       logger.debug(
         `[GenerationJobManager] Job completed with error (keeping for late subscribers): ${streamId}`,
@@ -575,6 +604,9 @@ class GenerationJobManagerClass {
       });
     }
 
+    this.runningJobs.delete(streamId);
+    this.syncRunningJobMetrics();
+    recordGenerationJob(this.storeLabel, 'completed');
     logger.debug(`[GenerationJobManager] Job completed: ${streamId}`);
   }
 
@@ -592,6 +624,7 @@ class GenerationJobManagerClass {
 
     if (!jobData) {
       logger.warn(`[GenerationJobManager] Cannot abort - job not found: ${streamId}`);
+      recordGenerationJob(this.storeLabel, 'abort_failed');
       return {
         text: '',
         content: [],
@@ -682,6 +715,9 @@ class GenerationJobManagerClass {
       });
     }
 
+    this.runningJobs.delete(streamId);
+    this.syncRunningJobMetrics();
+    recordGenerationJob(this.storeLabel, 'aborted');
     logger.debug(`[GenerationJobManager] Job aborted: ${streamId}`);
 
     return {
@@ -723,9 +759,11 @@ class GenerationJobManagerClass {
     onError?: t.ErrorHandler,
     options?: t.SubscribeOptions,
   ): Promise<{ unsubscribe: t.UnsubscribeFn } | null> {
+    const subscriptionType = options?.skipBufferReplay ? 'resume' : 'initial';
     // Use lazy initialization to support cross-replica subscriptions
     const runtime = await this.getOrCreateRuntimeState(streamId);
     if (!runtime) {
+      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'not_found');
       return null;
     }
 
@@ -761,8 +799,14 @@ class GenerationJobManagerClass {
       onError,
     });
 
-    if (subscription.ready) {
-      await subscription.ready;
+    try {
+      if (subscription.ready) {
+        await subscription.ready;
+      }
+      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'success');
+    } catch (err) {
+      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
+      throw err;
     }
 
     const isFirst = this.eventTransport.isFirstSubscriber(streamId);
@@ -864,6 +908,11 @@ class GenerationJobManagerClass {
       : 0;
 
     const resumeState = await this.getResumeState(streamId);
+    recordGenerationStreamSubscription(
+      this.storeLabel,
+      'resume_state',
+      resumeState ? 'found' : 'missing',
+    );
 
     let pendingEvents: t.ServerSentEvent[] = [];
     if (!this._isRedis) {
@@ -872,6 +921,7 @@ class GenerationJobManagerClass {
         pendingEvents = runtime.earlyEventBuffer.slice(bufferLengthAtSnapshot);
         runtime.earlyEventBuffer = [];
         if (pendingEvents.length > 0) {
+          recordGenerationStreamResumePendingEvents(this.storeLabel, pendingEvents.length);
           logger.debug(
             `[GenerationJobManager] Captured ${pendingEvents.length} gap events for ${streamId}`,
           );
@@ -1179,11 +1229,13 @@ class GenerationJobManagerClass {
    */
   private async cleanup(): Promise<void> {
     const count = await this.jobStore.cleanup();
+    let runningJobsChanged = false;
 
     // Cleanup runtime state for deleted jobs
     for (const streamId of this.runtimeState.keys()) {
       if (!(await this.jobStore.hasJob(streamId))) {
         this.runtimeState.delete(streamId);
+        runningJobsChanged = this.runningJobs.delete(streamId) || runningJobsChanged;
         this.runStepBuffers?.delete(streamId);
         this.jobStore.clearContentState(streamId);
         this.eventTransport.cleanup(streamId);
@@ -1205,6 +1257,10 @@ class GenerationJobManagerClass {
       if (!(await this.jobStore.hasJob(streamId)) && !this.runtimeState.has(streamId)) {
         this.eventTransport.cleanup(streamId);
       }
+    }
+
+    if (runningJobsChanged) {
+      this.syncRunningJobMetrics();
     }
 
     if (count > 0) {
@@ -1295,6 +1351,8 @@ class GenerationJobManagerClass {
     await this.jobStore.destroy();
     this.eventTransport.destroy();
     this.runtimeState.clear();
+    this.runningJobs.clear();
+    this.syncRunningJobMetrics();
     this.runStepBuffers?.clear();
 
     logger.debug('[GenerationJobManager] Destroyed');
