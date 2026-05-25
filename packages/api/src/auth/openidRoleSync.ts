@@ -28,6 +28,7 @@ export type OpenIdRoleSyncSelectionResult = {
 type OpenIdRolesForOpenIdSyncInput = {
   options: OpenIdRoleSyncOptions;
   accessToken?: string;
+  accessClaims?: unknown;
   idToken?: string;
   claims?: unknown;
   userinfo?: unknown;
@@ -105,6 +106,7 @@ export function getOpenIdRoleSyncOptions(
 export async function getOpenIdRolesForOpenIdSync({
   options,
   accessToken,
+  accessClaims,
   idToken,
   claims,
   userinfo,
@@ -115,7 +117,7 @@ export async function getOpenIdRolesForOpenIdSync({
 
   switch (options.claimSource) {
     case 'access':
-      source = accessToken ? decodeToken(accessToken) : undefined;
+      source = accessClaims ?? (accessToken ? decodeToken(accessToken) : undefined);
       break;
     case 'id':
       source = idToken ? decodeToken(idToken) : claims;
