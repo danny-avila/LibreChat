@@ -110,7 +110,7 @@ const userSchema = new Schema<IUser>(
     },
     role: {
       type: String,
-      default: SystemRoles.USER,
+      default: SystemRoles.FARMER,
     },
     googleId: {
       type: String,

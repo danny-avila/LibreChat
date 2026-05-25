@@ -16,7 +16,7 @@ const jwtLogin = () =>
         if (user) {
           user.id = user._id.toString();
           if (!user.role) {
-            user.role = SystemRoles.USER;
+            user.role = SystemRoles.FARMER;
             await updateUser(user.id, { role: user.role });
           }
           done(null, user);
