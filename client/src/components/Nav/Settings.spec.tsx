@@ -4,9 +4,11 @@ import userEvent from '@testing-library/user-event';
 import Settings from './Settings';
 
 const mockUseGetStartupConfig = jest.fn();
+const mockUseGetEndpointsQuery = jest.fn();
 
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => mockUseGetStartupConfig(),
+  useGetEndpointsQuery: () => mockUseGetEndpointsQuery(),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -39,6 +41,7 @@ jest.mock('./SettingsTabs', () => ({
   Data: () => <div data-testid="data-panel" />,
   Balance: () => <div data-testid="balance-panel" />,
   Account: () => <div data-testid="account-panel" />,
+  APIKeys: () => <div data-testid="api-keys-panel" />,
   About: () => <div data-testid="about-panel" />,
 }));
 
@@ -48,6 +51,7 @@ function renderSettings() {
 
 beforeEach(() => {
   mockUseGetStartupConfig.mockReturnValue({ data: {} });
+  mockUseGetEndpointsQuery.mockReturnValue({ data: undefined });
 });
 
 describe('Settings', () => {
@@ -65,6 +69,36 @@ describe('Settings', () => {
     renderSettings();
 
     expect(screen.queryByText('com_nav_setting_about')).not.toBeInTheDocument();
+  });
+
+  it('hides the API Keys tab when no endpoint requires a user-provided key', () => {
+    mockUseGetEndpointsQuery.mockReturnValue({
+      data: { openAI: { userProvide: false, order: 0 } },
+    });
+
+    renderSettings();
+
+    expect(screen.queryByText('com_nav_setting_api_keys')).not.toBeInTheDocument();
+  });
+
+  it('shows the API Keys tab when an endpoint requires a user-provided key', () => {
+    mockUseGetEndpointsQuery.mockReturnValue({
+      data: { openAI: { userProvide: true, order: 0 } },
+    });
+
+    renderSettings();
+
+    expect(screen.getByText('com_nav_setting_api_keys')).toBeInTheDocument();
+  });
+
+  it('shows the API Keys tab when an endpoint uses Bedrock user-provided credentials', () => {
+    mockUseGetEndpointsQuery.mockReturnValue({
+      data: { bedrock: { userProvideBearerToken: true, order: 0 } },
+    });
+
+    renderSettings();
+
+    expect(screen.getByText('com_nav_setting_api_keys')).toBeInTheDocument();
   });
 
   it('resets the active tab when loaded config disables About', async () => {
