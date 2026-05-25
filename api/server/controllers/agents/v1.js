@@ -15,7 +15,6 @@ const {
   stripFileIdsFromToolResources,
 } = require('@librechat/api');
 const {
-  Time,
   Tools,
   CacheKeys,
   Constants,
@@ -1019,7 +1018,18 @@ const getListAgentsHandler = async (req, res) => {
         if (agent?._id && publicSet.has(agent._id.toString())) {
           agent.isPublic = true;
         }
-        if (urlCache && agent?.id && agent?.avatar && urlCache[agent.id]) {
+        // Only replay cached URLs onto avatars whose source is still a signed-URL
+        // provider. If the agent's avatar source changed (e.g. to `local`) after
+        // the cache entry was written, the stale signed URL would otherwise
+        // overwrite the new filepath until cache expiry.
+        if (
+          urlCache &&
+          agent?.id &&
+          agent?.avatar &&
+          (agent.avatar.source === FileSources.s3 ||
+            agent.avatar.source === FileSources.azure_blob) &&
+          urlCache[agent.id]
+        ) {
           agent.avatar = { ...agent.avatar, filepath: urlCache[agent.id] };
         }
       } catch (e) {

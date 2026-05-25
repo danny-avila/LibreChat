@@ -68,7 +68,11 @@ router.get('/', async (req, res) => {
           await cache.set(req.user.id, true, cacheTime);
         }
       } catch (error) {
-        logger.warn('[/files] Error refreshing file URLs for strategy:', appConfig.fileStrategy, error);
+        logger.warn(
+          '[/files] Error refreshing file URLs for strategy:',
+          appConfig.fileStrategy,
+          error,
+        );
       }
     }
     res.status(200).send(files);

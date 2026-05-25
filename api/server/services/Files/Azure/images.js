@@ -123,13 +123,35 @@ async function processAzureAvatar({
       containerName,
     });
 
-    // Only update user record if this is a user avatar (manual === 'true')
+    // Preserve the `manual=true` marker on manually-uploaded user avatars.
+    // The social-login strategies (samlStrategy / OpenID / OAuth) skip
+    // overwriting an avatar when `user.avatar?.includes('manual=true')`.
+    // Stripping this marker would let any subsequent social-login profile-
+    // sync flow overwrite a user's manually-uploaded avatar. Use the URL
+    // API so any existing query string (the SAS) is preserved.
     const isManual = manual === 'true';
+    const finalURL = (() => {
+      if (!isManual) {
+        return downloadURL;
+      }
+      try {
+        const u = new URL(downloadURL);
+        u.searchParams.set('manual', 'true');
+        return u.toString();
+      } catch {
+        // Defensive: if URL parsing somehow fails, fall back to the simple
+        // append. `downloadURL` should always be a well-formed http(s) URL.
+        return downloadURL.includes('?')
+          ? `${downloadURL}&manual=true`
+          : `${downloadURL}?manual=true`;
+      }
+    })();
+
     if (isManual && !agentId) {
-      await updateUser(userId, { avatar: downloadURL });
+      await updateUser(userId, { avatar: finalURL });
     }
 
-    return downloadURL;
+    return finalURL;
   } catch (error) {
     logger.error('[processAzureAvatar] Error uploading profile picture to Azure:', error);
     throw error;
