@@ -101,6 +101,16 @@ describe('Settings', () => {
     expect(screen.getByText('com_nav_setting_api_keys')).toBeInTheDocument();
   });
 
+  it('hides the API Keys tab for endpoints with a user-provided baseURL but a fixed API key', () => {
+    mockUseGetEndpointsQuery.mockReturnValue({
+      data: { LiteLLM: { userProvide: false, userProvideURL: true, order: 0 } },
+    });
+
+    renderSettings();
+
+    expect(screen.queryByText('com_nav_setting_api_keys')).not.toBeInTheDocument();
+  });
+
   it('resets the active tab when loaded config disables About', async () => {
     const user = userEvent.setup();
     const { rerender } = renderSettings();

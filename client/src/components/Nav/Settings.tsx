@@ -24,6 +24,7 @@ import {
   APIKeys,
   About,
 } from './SettingsTabs';
+import { isUserProvidedEndpointConfig } from './SettingsTabs/APIKeys/utils';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
@@ -45,18 +46,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     }
     const values = Object.values(endpointsConfig);
     for (let i = 0; i < values.length; i++) {
-      const config = values[i];
-      if (!config) {
-        continue;
-      }
-      if (
-        config.userProvide ||
-        config.userProvideURL ||
-        config.userProvideAccessKeyId ||
-        config.userProvideSecretAccessKey ||
-        config.userProvideSessionToken ||
-        config.userProvideBearerToken
-      ) {
+      if (isUserProvidedEndpointConfig(values[i])) {
         return true;
       }
     }

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { isUserProvidedEndpointConfig } from './utils';
 import APIKeyRow from './APIKeyRow';
 
 function APIKeys() {
@@ -15,17 +16,7 @@ function APIKeys() {
     const result: string[] = [];
     for (let i = 0; i < entries.length; i++) {
       const [endpoint, config] = entries[i];
-      if (!config) {
-        continue;
-      }
-      if (
-        config.userProvide ||
-        config.userProvideURL ||
-        config.userProvideAccessKeyId ||
-        config.userProvideSecretAccessKey ||
-        config.userProvideSessionToken ||
-        config.userProvideBearerToken
-      ) {
+      if (isUserProvidedEndpointConfig(config)) {
         result.push(endpoint);
       }
     }

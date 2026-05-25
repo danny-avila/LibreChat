@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Button } from '@librechat/client';
 import { alternateName, getEndpointField } from 'librechat-data-provider';
-import type { EModelEndpoint, TEndpointsConfig } from 'librechat-data-provider';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { useUserKey, useLocalize } from '~/hooks';
@@ -62,7 +62,7 @@ const APIKeyRow = ({ endpoint, endpointsConfig }: APIKeyRowProps) => {
         <SetKeyDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}
-          endpoint={endpoint as EModelEndpoint}
+          endpoint={endpoint}
           endpointType={endpointType}
           userProvideURL={getEndpointField(endpointsConfig, endpoint, 'userProvideURL')}
           userProvideAccessKeyId={getEndpointField(
