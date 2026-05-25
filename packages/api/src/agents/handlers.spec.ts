@@ -7,10 +7,16 @@ import type {
 } from '@librechat/agents';
 import { createToolExecuteHandler, ToolExecuteOptions } from './handlers';
 
-function createMockTool(name: string, capturedConfigs: Record<string, unknown>[]) {
+function createMockTool(
+  name: string,
+  capturedConfigs: Record<string, unknown>[],
+  options: { schema?: unknown; capturedArgs?: unknown[] } = {},
+) {
   return {
     name,
+    schema: options.schema,
     invoke: jest.fn(async (_args: unknown, config: Record<string, unknown>) => {
+      options.capturedArgs?.push(_args);
       capturedConfigs.push({ ...(config.toolCall as Record<string, unknown>) });
       return {
         content: `stdout:\n${name} executed\n`,
@@ -242,6 +248,83 @@ describe('createToolExecuteHandler', () => {
       expect(capturedConfigs).toHaveLength(1);
       expect(capturedConfigs[0].session_id).toBeUndefined();
       expect(capturedConfigs[0]._injected_files).toBeUndefined();
+    });
+  });
+
+  describe('tool argument normalization', () => {
+    it('parses JSON-string args for object-schema tools before invocation', async () => {
+      const capturedArgs: unknown[] = [];
+      const tool = createMockTool(Constants.BASH_PROGRAMMATIC_TOOL_CALLING, [], {
+        capturedArgs,
+        schema: {
+          type: 'object',
+          properties: {
+            code: { type: 'string' },
+            timeout: { type: 'number' },
+          },
+          required: ['code'],
+        },
+      });
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_bash_json_string',
+          name: Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
+          args: '{"code":"echo hi","timeout":30000}' as unknown as ToolCallRequest['args'],
+        },
+      ]);
+
+      expect(capturedArgs).toEqual([{ code: 'echo hi', timeout: 30000 }]);
+    });
+
+    it('preserves JSON-looking strings for string-schema tools', async () => {
+      const capturedArgs: unknown[] = [];
+      const payload = '{"serviceId":"svc","query":"SELECT price / 10.0 FROM default.uk_prices_3"}';
+      const tool = createMockTool('raw_string_tool', [], {
+        capturedArgs,
+        schema: { type: 'string' },
+      });
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_raw_string',
+          name: 'raw_string_tool',
+          args: payload as unknown as ToolCallRequest['args'],
+        },
+      ]);
+
+      expect(capturedArgs).toEqual([payload]);
+    });
+
+    it('preserves JSON-looking strings when a tool accepts string or object input', async () => {
+      const capturedArgs: unknown[] = [];
+      const payload = '{"query":"SELECT * FROM t WHERE name IN (\'a\',\'b\')"}';
+      const tool = createMockTool('union_tool', [], {
+        capturedArgs,
+        schema: { anyOf: [{ type: 'string' }, { type: 'object' }] },
+      });
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_union',
+          name: 'union_tool',
+          args: payload as unknown as ToolCallRequest['args'],
+        },
+      ]);
+
+      expect(capturedArgs).toEqual([payload]);
     });
   });
 

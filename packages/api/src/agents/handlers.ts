@@ -159,6 +159,11 @@ const MAX_TOOL_ERROR_STACK_CHARS = 4_000;
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
+type ToolInputSchemaKind = {
+  object: boolean;
+  string: boolean;
+};
+
 function truncateMiddle(value: string, maxChars: number): string {
   if (value.length <= maxChars) {
     return value;
@@ -223,6 +228,120 @@ function getSafeToolError(error: unknown): {
       stack: stack ? truncateMiddle(stack, MAX_TOOL_ERROR_STACK_CHARS) : undefined,
     },
   };
+}
+
+function mergeSchemaKind(target: ToolInputSchemaKind, source: ToolInputSchemaKind): void {
+  target.object ||= source.object;
+  target.string ||= source.string;
+}
+
+function detectToolInputSchemaKind(schema: unknown): ToolInputSchemaKind {
+  const kind: ToolInputSchemaKind = { object: false, string: false };
+
+  if (!schema || typeof schema !== 'object') {
+    return kind;
+  }
+
+  const jsonSchemaType = (schema as { type?: unknown }).type;
+  if (jsonSchemaType === 'object') {
+    kind.object = true;
+  } else if (jsonSchemaType === 'string') {
+    kind.string = true;
+  } else if (Array.isArray(jsonSchemaType)) {
+    kind.object = jsonSchemaType.includes('object');
+    kind.string = jsonSchemaType.includes('string');
+  }
+
+  for (const compositeKey of ['anyOf', 'oneOf', 'allOf'] as const) {
+    const options = (schema as Record<typeof compositeKey, unknown>)[compositeKey];
+    if (Array.isArray(options)) {
+      for (const option of options) {
+        mergeSchemaKind(kind, detectToolInputSchemaKind(option));
+      }
+    }
+  }
+
+  const zodDef = (schema as { _def?: unknown })._def;
+  if (!zodDef || typeof zodDef !== 'object') {
+    return kind;
+  }
+
+  const zodType = (zodDef as { type?: unknown; typeName?: unknown }).type;
+  const zodTypeName = (zodDef as { type?: unknown; typeName?: unknown }).typeName;
+
+  if (zodType === 'object' || zodTypeName === 'ZodObject') {
+    kind.object = true;
+  } else if (zodType === 'string' || zodTypeName === 'ZodString') {
+    kind.string = true;
+  }
+
+  const innerSchema =
+    (zodDef as { innerType?: unknown; schema?: unknown }).innerType ??
+    (zodDef as { schema?: unknown }).schema;
+  if (innerSchema) {
+    mergeSchemaKind(kind, detectToolInputSchemaKind(innerSchema));
+  }
+
+  const zodOptions = (zodDef as { options?: unknown }).options;
+  if (Array.isArray(zodOptions)) {
+    for (const option of zodOptions) {
+      mergeSchemaKind(kind, detectToolInputSchemaKind(option));
+    }
+  }
+
+  return kind;
+}
+
+function getToolInputSchemaKind(tool: StructuredToolInterface): ToolInputSchemaKind {
+  const constructorName = (tool as { constructor?: { name?: string } }).constructor?.name;
+  if (constructorName === 'DynamicTool') {
+    return { object: false, string: true };
+  }
+
+  return detectToolInputSchemaKind((tool as { schema?: unknown }).schema);
+}
+
+function normalizeToolInvokeArgs(args: unknown, tool: StructuredToolInterface): unknown {
+  const schemaKind = getToolInputSchemaKind(tool);
+
+  if (typeof args !== 'string') {
+    if (!schemaKind.string || schemaKind.object) {
+      return args;
+    }
+
+    const inputValue = (args as { input?: unknown })?.input;
+    return typeof inputValue === 'string' ? args : JSON.stringify(args);
+  }
+
+  if (!schemaKind.object || schemaKind.string) {
+    return args;
+  }
+
+  const trimmed = args.trim();
+  if (!trimmed.startsWith('{')) {
+    return args;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {
+    return args;
+  }
+
+  return args;
+}
+
+function getValueShape(value: unknown): string {
+  if (value === null) {
+    return 'null';
+  }
+  if (Array.isArray(value)) {
+    return 'array';
+  }
+  return typeof value;
 }
 
 function addLineNumbers(content: string): string {
@@ -1218,7 +1337,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     }
                   }
 
-                  const result = await tool.invoke(tc.args, {
+                  const result = await tool.invoke(normalizeToolInvokeArgs(tc.args, tool), {
                     toolCall: toolCallConfig,
                     configurable: mergedConfigurable,
                     metadata,
@@ -1264,7 +1383,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   };
                 } catch (toolError) {
                   const { message, logContext } = getSafeToolError(toolError);
-                  logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, logContext);
+                  logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                    ...logContext,
+                    toolCallArgsShape: getValueShape(tc.args),
+                    toolInputSchemaKind: getToolInputSchemaKind(tool),
+                  });
                   return {
                     toolCallId: tc.id,
                     status: 'error' as const,
