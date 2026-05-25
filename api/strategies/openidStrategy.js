@@ -5,7 +5,7 @@ const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { hashToken, logger } = require('@librechat/data-schemas');
+const { hashToken, logger, tenantStorage } = require('@librechat/data-schemas');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const { CacheKeys, ErrorTypes, SystemRoles } = require('librechat-data-provider');
 const {
@@ -19,10 +19,14 @@ const {
   isEmailDomainAllowed,
   getAvatarFileStrategy,
   getAvatarSaveParams,
+  selectOpenIdRole,
+  getOpenIdRoleSyncOptions,
+  getOpenIdRolesForOpenIdSync,
+  getLibreChatRolesForOpenIdSync,
   resolveAppConfigForUser,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { findUser, createUser, updateUser } = require('~/models');
+const { findUser, createUser, updateUser, findRoleByName } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 
@@ -426,6 +430,71 @@ async function resolveGroupsFromOverage(accessToken, sub) {
 }
 
 /**
+ * Applies generic OpenID role sync to the request-local user before the existing final update.
+ */
+async function applyOpenIdRoleSync({
+  user,
+  username,
+  tokenset,
+  claims,
+  userinfo,
+  resolvedOverageGroups,
+}) {
+  const options = getOpenIdRoleSyncOptions();
+  if (!options.enabled) {
+    return;
+  }
+
+  const resolveGroupOverage = async () =>
+    resolvedOverageGroups || (await resolveGroupsFromOverage(tokenset.access_token, claims.sub));
+
+  const openIdRoleValues = await getOpenIdRolesForOpenIdSync({
+    options,
+    accessToken: tokenset.access_token,
+    idToken: tokenset.id_token,
+    claims,
+    userinfo,
+    decodeToken: jwtDecode,
+    resolveGroupOverage,
+  });
+  if (!openIdRoleValues) {
+    logger.warn(
+      `[openidStrategy] OpenID role sync skipped; claim '${options.claim}' was not found, invalid, or unresolved`,
+    );
+    return;
+  }
+
+  const libreChatRoles = {
+    getRoleByName: findRoleByName,
+    rolePriority: options.rolePriority,
+    fallbackRole: options.fallbackRole,
+    logPrefix: '[openidStrategy]',
+  };
+
+  /** Role definitions are tenant-scoped, so validate configured roles in the matched user's tenant. */
+  const { rolePriority, fallbackRole } = user?.tenantId
+    ? await tenantStorage.run({ tenantId: user.tenantId }, () =>
+        getLibreChatRolesForOpenIdSync(libreChatRoles),
+      )
+    : await getLibreChatRolesForOpenIdSync(libreChatRoles);
+  const result = selectOpenIdRole({
+    currentRole: user.role,
+    openIdRoleValues,
+    rolePriority,
+    fallbackRole,
+  });
+
+  if (!result.selectedRole || result.selectedRole === user.role) {
+    return;
+  }
+
+  logger.info(
+    `[openidStrategy] OpenID role sync updated role for ${username}: ${user.role || 'unset'} -> ${result.selectedRole}`,
+  );
+  user.role = result.selectedRole;
+}
+
+/**
  * Process OpenID authentication tokenset and userinfo
  * This is the core logic extracted from the passport strategy callback
  * Can be reused by both the passport strategy and proxy authentication
@@ -589,6 +658,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   const adminRole = process.env.OPENID_ADMIN_ROLE;
   const adminRoleParameterPath = process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH;
   const adminRoleTokenKind = process.env.OPENID_ADMIN_ROLE_TOKEN_KIND;
+  let adminRoleGranted = false;
 
   if (adminRole && adminRoleParameterPath && adminRoleTokenKind) {
     let adminRoleObject;
@@ -637,6 +707,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
     if (adminRoles && (adminRoles === true || adminRoleValues.includes(adminRole))) {
       user.role = SystemRoles.ADMIN;
+      adminRoleGranted = true;
       logger.info(`[openidStrategy] User ${username} is an admin based on role: ${adminRole}`);
     } else if (user.role === SystemRoles.ADMIN) {
       user.role = SystemRoles.USER;
@@ -644,6 +715,17 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
         `[openidStrategy] User ${username} demoted from admin - role no longer present in token`,
       );
     }
+  }
+
+  if (!adminRoleGranted) {
+    await applyOpenIdRoleSync({
+      user,
+      username,
+      tokenset,
+      claims,
+      userinfo,
+      resolvedOverageGroups,
+    });
   }
 
   if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {

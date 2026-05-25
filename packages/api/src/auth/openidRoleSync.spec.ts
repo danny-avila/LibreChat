@@ -1,8 +1,8 @@
 import { SystemRoles } from 'librechat-data-provider';
 import {
   getOpenIdRoleSyncOptions,
-  normalizeOpenIdRoleValues,
-  parseOpenIdRoleSyncList,
+  getOpenIdRolesForOpenIdSync,
+  getLibreChatRolesForOpenIdSync,
   selectOpenIdRole,
 } from './openidRoleSync';
 
@@ -75,43 +75,120 @@ describe('getOpenIdRoleSyncOptions', () => {
   });
 });
 
-describe('parseOpenIdRoleSyncList', () => {
-  it('parses comma-separated values and removes blanks', () => {
-    expect(parseOpenIdRoleSyncList(' STANDARD-USER, ,BASIC-USER,')).toEqual([
-      'STANDARD-USER',
-      'BASIC-USER',
-    ]);
+describe('getOpenIdRolesForOpenIdSync', () => {
+  const options = {
+    enabled: true,
+    apiEnabled: false,
+    claimSource: 'id' as const,
+    claim: 'roles',
+    rolePriority: ['STANDARD-USER'],
+  };
+
+  it('extracts a configured claim from the selected source', async () => {
+    await expect(
+      getOpenIdRolesForOpenIdSync({
+        options,
+        idToken: 'id-token',
+        decodeToken: () => ({ roles: ['STANDARD-USER'] }),
+      }),
+    ).resolves.toEqual(['STANDARD-USER']);
+  });
+
+  it('returns undefined for missing or invalid claim values', async () => {
+    await expect(
+      getOpenIdRolesForOpenIdSync({
+        options,
+        idToken: 'id-token',
+        decodeToken: () => ({ roles: { STANDARD_USER: true } }),
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('uses overage resolution for id token groups', async () => {
+    await expect(
+      getOpenIdRolesForOpenIdSync({
+        options: { ...options, claim: 'groups' },
+        idToken: 'id-token',
+        decodeToken: () => ({ hasgroups: true }),
+        resolveGroupOverage: async () => ['group-a'],
+      }),
+    ).resolves.toEqual(['group-a']);
+  });
+
+  it('decodes only the configured access token source', async () => {
+    const decodeToken = jest.fn((token: string) => ({ token }));
+
+    await expect(
+      getOpenIdRolesForOpenIdSync({
+        options: { ...options, claimSource: 'access' },
+        accessToken: 'access-token',
+        idToken: 'id-token',
+        decodeToken,
+      }),
+    ).resolves.toBeUndefined();
+    expect(decodeToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses claims for the id source when no id token is available', async () => {
+    const decodeToken = jest.fn();
+    const claims = { roles: ['STANDARD-USER'] };
+
+    await expect(
+      getOpenIdRolesForOpenIdSync({
+        options,
+        claims,
+        decodeToken,
+      }),
+    ).resolves.toEqual(['STANDARD-USER']);
+    expect(decodeToken).not.toHaveBeenCalled();
+  });
+
+  it('uses userinfo directly for the userinfo source', async () => {
+    const userinfo = { roles: ['STANDARD-USER'] };
+
+    await expect(
+      getOpenIdRolesForOpenIdSync({
+        options: { ...options, claimSource: 'userinfo' },
+        userinfo,
+        decodeToken: jest.fn(),
+      }),
+    ).resolves.toEqual(['STANDARD-USER']);
   });
 });
 
-describe('normalizeOpenIdRoleValues', () => {
-  it('normalizes values and deduplicates case-insensitively', () => {
-    expect([
-      ...normalizeOpenIdRoleValues([' BASIC-USER ', 'basic-user', '', 'STANDARD-USER', ' ']),
-    ]).toEqual(['basic-user', 'standard-user']);
+describe('getLibreChatRolesForOpenIdSync', () => {
+  it('deduplicates configured roles and returns canonical role names', async () => {
+    const getRoleByName = jest.fn(async (roleName: string) => ({
+      name: roleName.toLowerCase() === 'standard-user' ? 'STANDARD-USER' : roleName,
+    }));
+
+    await expect(
+      getLibreChatRolesForOpenIdSync({
+        getRoleByName,
+        rolePriority: [' standard-user ', 'STANDARD-USER'],
+        fallbackRole: SystemRoles.USER,
+      }),
+    ).resolves.toEqual({
+      rolePriority: ['STANDARD-USER', 'STANDARD-USER'],
+      fallbackRole: SystemRoles.USER,
+    });
+    expect(getRoleByName).toHaveBeenCalledTimes(2);
+    expect(getRoleByName).toHaveBeenCalledWith('standard-user', 'name');
+    expect(getRoleByName).toHaveBeenCalledWith(SystemRoles.USER, 'name');
   });
 
-  it('splits string values on whitespace and commas while excluding ADMIN', () => {
-    expect([...normalizeOpenIdRoleValues(' BASIC-USER,standard-user ADMIN ')]).toEqual([
-      'basic-user',
-      'standard-user',
-    ]);
-  });
+  it('rejects configured roles that do not exist', async () => {
+    const getRoleByName = jest.fn(async (roleName: string) =>
+      roleName === 'MISSING' ? null : { name: roleName },
+    );
 
-  it('returns an empty list for missing values', () => {
-    expect(normalizeOpenIdRoleValues()).toEqual(new Set());
-  });
-
-  it('filters values that are not assignable roles', () => {
-    expect([
-      ...normalizeOpenIdRoleValues('BASIC-USER unknown STANDARD-USER', ['STANDARD-USER', 'USER']),
-    ]).toEqual(['standard-user']);
-  });
-
-  it('ignores non-string array entries from malformed claims', () => {
-    expect([
-      ...normalizeOpenIdRoleValues(['STANDARD-USER', 123, null, false], ['STANDARD-USER']),
-    ]).toEqual(['standard-user']);
+    await expect(
+      getLibreChatRolesForOpenIdSync({
+        getRoleByName,
+        rolePriority: ['STANDARD-USER', 'MISSING'],
+        logPrefix: '[openidStrategy]',
+      }),
+    ).rejects.toThrow('[openidStrategy] OpenID role sync configured roles do not exist: MISSING');
   });
 });
 

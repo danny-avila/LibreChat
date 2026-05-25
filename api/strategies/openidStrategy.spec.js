@@ -2,7 +2,7 @@ const undici = require('undici');
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes, FileSources } = require('librechat-data-provider');
-const { findUser, createUser, updateUser } = require('~/models');
+const { findUser, createUser, updateUser, findRoleByName } = require('~/models');
 const { getOpenIdIssuer, resolveAppConfigForUser, isEnabled } = require('@librechat/api');
 const { getAppConfig } = require('~/server/services/Config');
 const { setupOpenId } = require('./openidStrategy');
@@ -90,6 +90,7 @@ jest.mock('~/models', () => ({
   findUser: jest.fn(),
   createUser: jest.fn(),
   updateUser: jest.fn(),
+  findRoleByName: jest.fn(),
 }));
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/api'),
@@ -98,6 +99,9 @@ jest.mock('@librechat/data-schemas', () => ({
     warn: jest.fn(),
     debug: jest.fn(),
     error: jest.fn(),
+  },
+  tenantStorage: {
+    run: jest.fn((_context, fn) => fn()),
   },
   hashToken: jest.fn().mockResolvedValue('hashed-token'),
 }));
@@ -218,6 +222,12 @@ describe('setupOpenId', () => {
     delete process.env.PROXY;
     delete process.env.OPENID_USE_PKCE;
     delete process.env.OPENID_GENERATE_NONCE;
+    delete process.env.OPENID_ROLE_SYNC_ENABLED;
+    delete process.env.OPENID_ROLE_SYNC_API_ENABLED;
+    delete process.env.OPENID_ROLE_SYNC_SOURCE;
+    delete process.env.OPENID_ROLE_SYNC_CLAIM;
+    delete process.env.OPENID_ROLE_SYNC_ROLE_PRIORITY;
+    delete process.env.OPENID_ROLE_SYNC_FALLBACK_ROLE;
 
     // Default jwtDecode mock returns a token that includes the required role.
     jwtDecode.mockReturnValue({
@@ -234,6 +244,7 @@ describe('setupOpenId', () => {
     updateUser.mockImplementation(async (id, userData) => {
       return { _id: id, ...userData };
     });
+    findRoleByName.mockImplementation(async (roleName) => ({ name: roleName }));
 
     // For image download, simulate a successful response
     const fakeBuffer = Buffer.from('fake image');
@@ -1420,6 +1431,193 @@ describe('setupOpenId', () => {
 
     // Assert – verify that the user role is not defined
     expect(user.role).toBeUndefined();
+  });
+
+  describe('OpenID role sync', () => {
+    beforeEach(() => {
+      process.env.OPENID_ROLE_SYNC_ENABLED = 'true';
+      process.env.OPENID_ROLE_SYNC_SOURCE = 'id';
+      process.env.OPENID_ROLE_SYNC_CLAIM = 'roles';
+      process.env.OPENID_ROLE_SYNC_ROLE_PRIORITY = 'STANDARD-USER,BASIC-USER';
+      process.env.OPENID_ROLE_SYNC_FALLBACK_ROLE = 'USER';
+    });
+
+    it('selects the highest configured matching role from the OpenID token', async () => {
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole', 'BASIC-USER', 'STANDARD-USER'],
+        permissions: ['not-admin'],
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('STANDARD-USER');
+      expect(updateUser).toHaveBeenCalledWith(
+        'newUserId',
+        expect.objectContaining({ role: 'STANDARD-USER' }),
+      );
+    });
+
+    it('does not run when disabled', async () => {
+      delete process.env.OPENID_ROLE_SYNC_ENABLED;
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole', 'STANDARD-USER'],
+        permissions: ['not-admin'],
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBeUndefined();
+      expect(findRoleByName).not.toHaveBeenCalled();
+    });
+
+    it('leaves ADMIN authoritative when OPENID_ADMIN_ROLE grants admin', async () => {
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole', 'STANDARD-USER'],
+        permissions: ['admin'],
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('ADMIN');
+    });
+
+    it('uses fallback when a valid role claim has no configured role match', async () => {
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole', 'external-role'],
+        permissions: ['not-admin'],
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('USER');
+    });
+
+    it('rejects login when configured sync roles do not exist', async () => {
+      findRoleByName.mockImplementation(async (roleName) =>
+        roleName === 'STANDARD-USER' ? null : { name: roleName },
+      );
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole', 'STANDARD-USER'],
+        permissions: ['not-admin'],
+      });
+
+      await expect(validate(tokenset)).rejects.toThrow(
+        'OpenID role sync configured roles do not exist: STANDARD-USER',
+      );
+    });
+
+    it('can assign a non-admin role after the existing admin demotion path runs', async () => {
+      const existingAdminUser = {
+        _id: 'existingAdminId',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'adminuser',
+        name: 'Admin User',
+        role: 'ADMIN',
+      };
+
+      findUser.mockImplementation(async (query) => {
+        if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+          return existingAdminUser;
+        }
+        return null;
+      });
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole', 'STANDARD-USER'],
+        permissions: ['not-admin'],
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('STANDARD-USER');
+      expect(updateUser).toHaveBeenCalledWith(
+        existingAdminUser._id,
+        expect.objectContaining({ role: 'STANDARD-USER' }),
+      );
+    });
+
+    it('wraps role lookup in tenant context for tenant users', async () => {
+      const existingUser = {
+        _id: 'existingTenantUserId',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'tenantuser',
+        name: 'Tenant User',
+        tenantId: 'tenant-a',
+        role: 'USER',
+      };
+      const { tenantStorage } = require('@librechat/data-schemas');
+
+      findUser.mockImplementation(async (query) => {
+        if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+          return existingUser;
+        }
+        return null;
+      });
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole', 'BASIC-USER'],
+        permissions: ['not-admin'],
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('BASIC-USER');
+      expect(tenantStorage.run).toHaveBeenCalledWith(
+        { tenantId: 'tenant-a' },
+        expect.any(Function),
+      );
+    });
+
+    it('reuses required-role overage groups for role sync', async () => {
+      process.env.OPENID_REQUIRED_ROLE = 'group-required';
+      process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';
+      process.env.OPENID_ROLE_SYNC_CLAIM = 'groups';
+
+      jwtDecode.mockReturnValue({
+        hasgroups: true,
+        permissions: ['not-admin'],
+      });
+      undici.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ value: ['group-required', 'STANDARD-USER'] }),
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('STANDARD-USER');
+      expect(undici.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the role unchanged when role-sync group overage cannot be resolved', async () => {
+      process.env.OPENID_ROLE_SYNC_CLAIM = 'groups';
+      const existingUser = {
+        _id: 'existingUserId',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'existinguser',
+        name: 'Existing User',
+        role: 'BASIC-USER',
+      };
+
+      findUser.mockImplementation(async (query) => {
+        if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+          return existingUser;
+        }
+        return null;
+      });
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole'],
+        hasgroups: true,
+        permissions: ['not-admin'],
+      });
+
+      const { user } = await validate({ ...tokenset, access_token: undefined });
+
+      expect(user.role).toBe('BASIC-USER');
+    });
   });
 
   it('should demote existing admin user when admin role is removed from token', async () => {
