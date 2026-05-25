@@ -104,6 +104,8 @@ describe('spendMediaTokens + media pricing', () => {
       ['whisper', 'audio_input', 100],
       ['azure-whisper', 'audio_input', 100],
       ['tts-1', 'audio_output', 15],
+      ['tts', 'audio_output', 15],
+      ['azure-tts', 'audio_output', 15],
       ['tts-1-hd', 'audio_output', 30],
       ['gpt-4o-mini-tts', 'audio_output', 12],
       ['eleven_multilingual_v2', 'audio_output', 30],
