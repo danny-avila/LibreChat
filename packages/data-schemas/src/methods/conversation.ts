@@ -61,6 +61,7 @@ export interface ConversationMethods {
     conversationId: string,
   ): Promise<Pick<IConversation, 'expiredAt'> | null>;
   getConvoTitle(user: string, conversationId: string): Promise<string | null>;
+  getConvoByResponseId(user: string, responseId: string): Promise<IConversation | null>;
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
@@ -741,6 +742,19 @@ export function createConversationMethods(
   }
 
   /**
+   * Fetches specific conversation by response id.
+   */
+  async function getConvoByResponseId(user: string, responseId: string) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOne({ user, responseId }).lean<IConversation>();
+    } catch (error) {
+      logger.error('[getConvoByResponseId] Error getting conversation by responseId', error);
+      throw new Error('Error getting conversation by responseId');
+    }
+  }
+
+  /**
    * Deletes conversations and their associated messages for a given user and filter.
    */
   async function deleteConvos(user: string, filter: FilterQuery<IConversation>) {
@@ -829,6 +843,7 @@ export function createConversationMethods(
     getConvo,
     getConvoRetention,
     getConvoTitle,
+    getConvoByResponseId,
     deleteConvos,
   };
 }

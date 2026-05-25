@@ -251,6 +251,7 @@ jest.mock('~/models', () => ({
   getConvoFiles: jest.fn().mockResolvedValue([]),
   saveConvo: jest.fn().mockResolvedValue({}),
   getConvo: jest.fn().mockResolvedValue(null),
+  getConvoByResponseId: jest.fn().mockResolvedValue(null),
 }));
 
 describe('createResponse controller', () => {
@@ -317,7 +318,7 @@ describe('createResponse controller', () => {
 
     it('should return 404 when conversation is not owned by user', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
-      const { getConvo } = require('~/models');
+      const { getConvoByResponseId } = require('~/models');
       validateResponseRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -326,10 +327,10 @@ describe('createResponse controller', () => {
           previous_response_id: 'resp_abc',
         },
       });
-      getConvo.mockResolvedValueOnce(null);
+      getConvoByResponseId.mockResolvedValueOnce(null);
 
       await createResponse(req, res);
-      expect(getConvo).toHaveBeenCalledWith('user-123', 'resp_abc');
+      expect(getConvoByResponseId).toHaveBeenCalledWith('user-123', 'resp_abc');
       expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
         res,
         404,
@@ -340,7 +341,7 @@ describe('createResponse controller', () => {
 
     it('should proceed when conversation is owned by user', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
-      const { getConvo } = require('~/models');
+      const { getConvoByResponseId } = require('~/models');
       validateResponseRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -349,10 +350,13 @@ describe('createResponse controller', () => {
           previous_response_id: 'resp_abc',
         },
       });
-      getConvo.mockResolvedValueOnce({ conversationId: 'resp_abc', user: 'user-123' });
+      getConvoByResponseId.mockResolvedValueOnce({
+        conversationId: 'mock-uuid-456',
+        user: 'user-123',
+      });
 
       await createResponse(req, res);
-      expect(getConvo).toHaveBeenCalledWith('user-123', 'resp_abc');
+      expect(getConvoByResponseId).toHaveBeenCalledWith('user-123', 'resp_abc');
       expect(sendResponsesErrorResponse).not.toHaveBeenCalledWith(
         res,
         404,
@@ -363,7 +367,7 @@ describe('createResponse controller', () => {
 
     it('should return 500 when getConvo throws a DB error', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
-      const { getConvo } = require('~/models');
+      const { getConvoByResponseId } = require('~/models');
       validateResponseRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -372,13 +376,57 @@ describe('createResponse controller', () => {
           previous_response_id: 'resp_abc',
         },
       });
-      getConvo.mockRejectedValueOnce(new Error('DB connection failed'));
+      getConvoByResponseId.mockRejectedValueOnce(new Error('DB connection failed'));
 
       await createResponse(req, res);
       expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
         res,
         500,
         expect.any(String),
+        expect.any(String),
+      );
+    });
+  });
+
+  describe('conversation history loading', () => {
+    it('should use conversationId from DB record, not previous_response_id, when loading history', async () => {
+      const { validateResponseRequest } = require('@librechat/api');
+      const { getConvoByResponseId, getMessages } = require('~/models');
+
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_abc',
+        },
+      });
+      // responseId and conversationId are different — this is the key assertion
+      getConvoByResponseId.mockResolvedValueOnce({
+        conversationId: 'internal-uuid-xyz',
+        user: 'user-123',
+      });
+
+      await createResponse(req, res);
+
+      expect(getMessages).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'internal-uuid-xyz' }),
+      );
+    });
+  });
+
+  describe('response context', () => {
+    it('should reflect store flag from request in response context', async () => {
+      const { validateResponseRequest, createResponseContext } = require('@librechat/api');
+
+      validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Hello', stream: false, store: true },
+      });
+
+      await createResponse(req, res);
+
+      expect(createResponseContext).toHaveBeenCalledWith(
+        expect.objectContaining({ store: true }),
         expect.any(String),
       );
     });
