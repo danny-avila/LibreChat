@@ -225,9 +225,18 @@ function countNamedWebSearchTools(tools: unknown[] | undefined): number {
   );
 }
 
-function countWebSearchDefinitions(
-  toolDefinitions: Array<{ name: string }> | undefined,
-): number {
+function countGoogleSearchTools(tools: unknown[] | undefined): number {
+  return (
+    tools?.filter((tool) => {
+      if (tool == null || typeof tool !== 'object') {
+        return false;
+      }
+      return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
+    }).length ?? 0
+  );
+}
+
+function countWebSearchDefinitions(toolDefinitions: Array<{ name: string }> | undefined): number {
   return (
     toolDefinitions?.filter((toolDefinition) => toolDefinition.name === Tools.web_search).length ??
     0
@@ -308,14 +317,20 @@ describe('initializeAgent — custom provider token lookup', () => {
   });
 });
 
-describe('initializeAgent — Anthropic web_search precedence', () => {
+describe('initializeAgent — provider web_search precedence', () => {
   const nativeWebSearchTool = {
     type: 'web_search_20250305',
     name: Tools.web_search,
   };
+  const nativeGoogleSearchTool = { googleSearch: {} };
   const libreChatWebSearchDefinition = {
     name: Tools.web_search,
     description: 'Search the web',
+    parameters: { type: 'object', properties: {} },
+  };
+  const mcpToolDefinition = {
+    name: 'mcp_lookup',
+    description: 'Lookup context',
     parameters: { type: 'object', properties: {} },
   };
 
@@ -398,7 +413,85 @@ describe('initializeAgent — Anthropic web_search precedence', () => {
     expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
   });
 
-  it('leaves non-Anthropic providers unchanged', async () => {
+  it('keeps Google native search when LibreChat web_search is not selected', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [mcpToolDefinition],
+    });
+    agent.tools = ['mcp_lookup'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(countGoogleSearchTools(result.tools)).toBe(1);
+    expect(result.toolDefinitions).toContain(mcpToolDefinition);
+  });
+
+  it('rejects Google native search with external tools for unsupported Gemini models', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-2.5-flash',
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [mcpToolDefinition],
+    });
+    agent.tools = ['mcp_lookup'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).rejects.toThrow(/google_tool_conflict/);
+  });
+
+  it('prefers LibreChat web_search when Google native search is also enabled', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([]);
+    expect(countGoogleSearchTools(result.tools)).toBe(0);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+
+  it('leaves providers without a native web search conflict unchanged', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.OPENAI,
       providerTools: [nativeWebSearchTool],
@@ -1456,27 +1549,21 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(neitherAgent.codeEnvAvailable).toBe(false);
   });
 
-  it('trips GOOGLE_TOOL_CONFLICT on Google/Vertex when execute_code expands alongside provider tools', async () => {
-    /* Pre-Phase 8, an `execute_code`-only agent on Google/Vertex with
-       `options.tools` populated would throw GOOGLE_TOOL_CONFLICT because
-       `CodeExecutionToolDefinition` populated `toolDefinitions` and
-       `hasAgentTools` was true. After dropping that registry entry, the
-       check is now gated on the runtime-expanded `bash_tool` + `read_file`
-       pair — so the expansion MUST happen before `hasAgentTools` is
-       computed or the guard silently goes away for this scenario. */
+  it('allows Google provider tools alongside execute_code definitions', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.GOOGLE,
       overrideProvider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
     });
     agent.tools = ['execute_code'];
 
     /* Surface an options.tools array from the provider config — this is
-       the `google_search` / `url_context` built-in LLM tooling that
+       the `googleSearch` / `urlContext` built-in LLM tooling that
        Google/Vertex exposes via provider options. */
     mockGetProviderConfig.mockReturnValue({
       getOptions: jest.fn().mockResolvedValue({
-        llmConfig: { model: 'test-model', maxTokens: 4096 },
-        tools: [{ google_search: {} }],
+        llmConfig: { model: 'gemini-3.5-flash', maxTokens: 4096 },
+        tools: [{ googleSearch: {} }],
       } satisfies InitializeResultBase),
       overrideProvider: Providers.GOOGLE,
     });
@@ -1495,7 +1582,52 @@ describe('initializeAgent — execute_code capability expansion', () => {
         },
         db,
       ),
-    ).rejects.toThrow(/google_tool_conflict/);
+    ).resolves.toEqual(
+      expect.objectContaining({
+        tools: [{ googleSearch: {} }],
+        toolDefinitions: expect.arrayContaining([
+          expect.objectContaining({ name: 'bash_tool' }),
+          expect.objectContaining({ name: 'read_file' }),
+        ]),
+      }),
+    );
+  });
+
+  it('combines Google provider tools with structured external tools', async () => {
+    const structuredTool = {
+      name: 'weather',
+      description: 'Get weather',
+      schema: { type: 'object', properties: {} },
+    };
+    const providerTool = { googleSearch: {} };
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      overrideProvider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [providerTool],
+      structuredTools: [structuredTool],
+    });
+    agent.tools = ['weather'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+          codeEnvAvailable: false,
+        },
+        db,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        tools: [structuredTool, providerTool],
+      }),
+    );
   });
 });
 

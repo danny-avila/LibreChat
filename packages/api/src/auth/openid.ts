@@ -2,6 +2,8 @@ import { logger } from '@librechat/data-schemas';
 import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
 import type { FilterQuery } from 'mongoose';
+import { isMetricsConfigured, recordOpenIDUserLookup } from '~/app/metrics';
+import type { OpenIDUserLookupResult } from '~/app/metrics';
 
 export type OpenIdEmailClaims = {
   email?: unknown;
@@ -63,6 +65,17 @@ function isLegacyOpenIdIssuer(openidIssuer: string | undefined): boolean {
 
 function hasOpenIdLookupValue(value: string | undefined): value is string {
   return typeof value === 'string' && value.length > 0;
+}
+
+function getElapsedSeconds(startedAt: bigint): number {
+  return Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
+}
+
+function getOpenIDUserLookupResult(resolution: OpenIdUserResolution): OpenIDUserLookupResult {
+  if (resolution.error) return 'auth_failed';
+  if (resolution.migration) return 'migration';
+  if (resolution.user) return 'found';
+  return 'not_found';
 }
 
 function getIssuerExactCondition(
@@ -208,61 +221,79 @@ export async function findOpenIDUser({
   idOnTheSource?: string;
   strategyName?: string;
 }): Promise<OpenIdUserResolution> {
-  const normalizedIssuer = normalizeOpenIdIssuer(openidIssuer);
-  const primaryConditions = getPrimaryLookupConditions(openidId, idOnTheSource, normalizedIssuer);
-
-  let user: IUser | null = null;
-  if (primaryConditions.length > 0) {
-    user = await findFirstOpenIdUser(findUser, primaryConditions);
-  }
-
-  const primaryIssuerResolution = resolveIssuerBoundUser(
-    user,
-    normalizedIssuer,
-    strategyName,
-    'OpenID lookup',
-  );
-  if (primaryIssuerResolution) return primaryIssuerResolution;
-
-  if (!user && email) {
-    user = await findUser({ email });
-    logger.warn(
-      `[${strategyName}] user ${user ? 'found' : 'not found'} with email: ${email} for openidId: ${openidId}`,
-    );
-
-    // If user found by email, check if they're allowed to use OpenID provider
-    if (user && user.provider && user.provider !== 'openid') {
-      logger.warn(
-        `[${strategyName}] Attempted OpenID login by user ${user.email}, was registered with "${user.provider}" provider`,
+  const lookupStartedAt = isMetricsConfigured() ? process.hrtime.bigint() : null;
+  const finish = (resolution: OpenIdUserResolution): OpenIdUserResolution => {
+    if (lookupStartedAt != null) {
+      recordOpenIDUserLookup(
+        getOpenIDUserLookupResult(resolution),
+        getElapsedSeconds(lookupStartedAt),
       );
-      return { user: null, error: ErrorTypes.AUTH_FAILED, migration: false };
+    }
+    return resolution;
+  };
+
+  try {
+    const normalizedIssuer = normalizeOpenIdIssuer(openidIssuer);
+    const primaryConditions = getPrimaryLookupConditions(openidId, idOnTheSource, normalizedIssuer);
+
+    let user: IUser | null = null;
+    if (primaryConditions.length > 0) {
+      user = await findFirstOpenIdUser(findUser, primaryConditions);
     }
 
-    if (user?.openidId && user.openidId !== openidId) {
-      logger.warn(
-        `[${strategyName}] Rejected email fallback for ${user.email}: stored openidId does not match token sub`,
-      );
-      return { user: null, error: ErrorTypes.AUTH_FAILED, migration: false };
-    }
-
-    const emailIssuerResolution = resolveIssuerBoundUser(
+    const primaryIssuerResolution = resolveIssuerBoundUser(
       user,
       normalizedIssuer,
       strategyName,
-      'email fallback',
+      'OpenID lookup',
     );
-    if (emailIssuerResolution) return emailIssuerResolution;
+    if (primaryIssuerResolution) return finish(primaryIssuerResolution);
 
-    if (user && !user.openidId) {
-      logger.info(
-        `[${strategyName}] Preparing user ${user.email} for migration to OpenID with sub: ${openidId}`,
+    if (!user && email) {
+      user = await findUser({ email });
+      logger.warn(
+        `[${strategyName}] user ${user ? 'found' : 'not found'} with email: ${email} for openidId: ${openidId}`,
       );
-      user.provider = 'openid';
-      user.openidId = openidId;
-      if (normalizedIssuer) user.openidIssuer = normalizedIssuer;
-      return { user, error: null, migration: true };
-    }
-  }
 
-  return { user, error: null, migration: false };
+      // If user found by email, check if they're allowed to use OpenID provider
+      if (user && user.provider && user.provider !== 'openid') {
+        logger.warn(
+          `[${strategyName}] Attempted OpenID login by user ${user.email}, was registered with "${user.provider}" provider`,
+        );
+        return finish({ user: null, error: ErrorTypes.AUTH_FAILED, migration: false });
+      }
+
+      if (user?.openidId && user.openidId !== openidId) {
+        logger.warn(
+          `[${strategyName}] Rejected email fallback for ${user.email}: stored openidId does not match token sub`,
+        );
+        return finish({ user: null, error: ErrorTypes.AUTH_FAILED, migration: false });
+      }
+
+      const emailIssuerResolution = resolveIssuerBoundUser(
+        user,
+        normalizedIssuer,
+        strategyName,
+        'email fallback',
+      );
+      if (emailIssuerResolution) return finish(emailIssuerResolution);
+
+      if (user && !user.openidId) {
+        logger.info(
+          `[${strategyName}] Preparing user ${user.email} for migration to OpenID with sub: ${openidId}`,
+        );
+        user.provider = 'openid';
+        user.openidId = openidId;
+        if (normalizedIssuer) user.openidIssuer = normalizedIssuer;
+        return finish({ user, error: null, migration: true });
+      }
+    }
+
+    return finish({ user, error: null, migration: false });
+  } catch (error) {
+    if (lookupStartedAt != null) {
+      recordOpenIDUserLookup('error', getElapsedSeconds(lookupStartedAt));
+    }
+    throw error;
+  }
 }

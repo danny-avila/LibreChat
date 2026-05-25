@@ -82,13 +82,7 @@ describe('cleanCodeToolOutput', () => {
       'Session files: 4 persisted file(s) are available in /mnt/data, including 1 image(s). ' +
       'Use known /mnt/data paths directly in later code-tool calls. ' +
       'The app displays files/images automatically; do not invent download links or wrap generated images in Markdown.';
-    const input = [
-      'stdout:',
-      'Report generated',
-      '',
-      'Generated files:',
-      summary,
-    ].join('\n');
+    const input = ['stdout:', 'Report generated', '', 'Generated files:', summary].join('\n');
     const output = cleanCodeToolOutput(input);
     expect(output).toBe(input);
   });

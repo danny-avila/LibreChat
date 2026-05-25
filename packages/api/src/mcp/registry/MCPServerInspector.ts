@@ -106,7 +106,11 @@ export class MCPServerInspector {
       return;
     }
 
-    const result = await detectOAuthRequirement(this.config.url);
+    const result = await detectOAuthRequirement(
+      this.config.url,
+      this.allowedDomains,
+      this.allowedAddresses,
+    );
     this.config.requiresOAuth = result.requiresOAuth;
     this.config.oauthMetadata = result.metadata;
   }

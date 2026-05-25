@@ -38,6 +38,12 @@ jobs:
           fi
           printf 'LATEST_TAG=%s\n' "$LATEST_TAG" >> "$GITHUB_ENV"
 
+      - name: Compute build metadata
+        run: |
+          printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          printf 'BUILD_BRANCH=main\n' >> "$GITHUB_ENV"
+          printf 'BUILD_DATE=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+
       # Set up QEMU
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -80,3 +86,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:latest
           platforms: linux/amd64,linux/arm64
           target: ${{ matrix.target }}
+          build-args: |
+            BUILD_COMMIT=${{ env.BUILD_COMMIT }}
+            BUILD_BRANCH=${{ env.BUILD_BRANCH }}
+            BUILD_DATE=${{ env.BUILD_DATE }}

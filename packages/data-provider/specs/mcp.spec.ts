@@ -1,10 +1,11 @@
 import {
+  MCPOptionsSchema,
   SSEOptionsSchema,
   StreamableHTTPOptionsSchema,
   MCPServerUserInputSchema,
 } from '../src/mcp';
 
-describe('MCPServerUserInputSchema', () => {
+describe('MCP schemas', () => {
   describe('env variable exfiltration prevention', () => {
     it('should confirm admin schema resolves env vars (attack vector baseline)', () => {
       process.env.FAKE_SECRET = 'leaked-secret-value';
@@ -198,6 +199,77 @@ describe('MCPServerUserInputSchema', () => {
         type: 'http',
         url: 'http://mcp-server.com/mcp',
       });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('OAuth confidential client endpoint pinning', () => {
+    it('should reject client_secret without client_id', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          authorization_url: 'https://auth.example.com/authorize',
+          token_url: 'https://auth.example.com/token',
+          client_secret: 'client-secret',
+        },
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject client_secret with client_id when authorization_url is missing', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          token_url: 'https://auth.example.com/token',
+          client_id: 'client-id',
+          client_secret: 'client-secret',
+        },
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject client_secret with client_id when token_url is missing', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          authorization_url: 'https://auth.example.com/authorize',
+          client_id: 'client-id',
+          client_secret: 'client-secret',
+        },
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept client_id without client_secret for auto-discovery', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          client_id: 'public-client-id',
+        },
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('should accept client_secret when both OAuth endpoints are pinned', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          authorization_url: 'https://auth.example.com/authorize',
+          token_url: 'https://auth.example.com/token',
+          client_id: 'client-id',
+          client_secret: 'client-secret',
+        },
+      });
+
       expect(result.success).toBe(true);
     });
   });
