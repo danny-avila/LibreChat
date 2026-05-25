@@ -23,6 +23,7 @@ const mockGetCache = jest.fn().mockReturnValue(mockCache);
 let Role: mongoose.Model<IRole>;
 let User: mongoose.Model<IUser>;
 let getRoleByName: ReturnType<typeof createRoleMethods>['getRoleByName'];
+let findRoleByName: ReturnType<typeof createRoleMethods>['findRoleByName'];
 let updateAccessPermissions: ReturnType<typeof createRoleMethods>['updateAccessPermissions'];
 let initializeRoles: ReturnType<typeof createRoleMethods>['initializeRoles'];
 let createRoleByName: ReturnType<typeof createRoleMethods>['createRoleByName'];
@@ -44,6 +45,7 @@ beforeAll(async () => {
   User = mongoose.models.User as mongoose.Model<IUser>;
   const methods = createRoleMethods(mongoose, { getCache: mockGetCache });
   getRoleByName = methods.getRoleByName;
+  findRoleByName = methods.findRoleByName;
   updateAccessPermissions = methods.updateAccessPermissions;
   initializeRoles = methods.initializeRoles;
   createRoleByName = methods.createRoleByName;
@@ -68,6 +70,19 @@ beforeEach(async () => {
   mockCache.get.mockClear();
   mockCache.set.mockClear();
   mockCache.del.mockClear();
+});
+
+describe('findRoleByName', () => {
+  it('queries storage without reading or writing the role cache', async () => {
+    await Role.create({ name: 'STANDARD-USER', permissions: {} });
+
+    await expect(findRoleByName('STANDARD-USER', 'name')).resolves.toMatchObject({
+      name: 'STANDARD-USER',
+    });
+    expect(mockGetCache).not.toHaveBeenCalled();
+    expect(mockCache.get).not.toHaveBeenCalled();
+    expect(mockCache.set).not.toHaveBeenCalled();
+  });
 });
 
 describe('updateAccessPermissions', () => {

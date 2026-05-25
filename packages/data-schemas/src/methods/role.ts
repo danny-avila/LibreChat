@@ -124,6 +124,24 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   }
 
   /**
+   * Find a role by name without using or populating the shared role-name cache.
+   * Use this for tenant-scoped lookups where the active ALS tenant context must control the query.
+   */
+  async function findRoleByName(roleName: string, fieldsToSelect: string | string[] | null = null) {
+    try {
+      const Role = mongoose.models.Role;
+      let query = Role.findOne({ name: roleName });
+      if (fieldsToSelect) {
+        query = query.select(fieldsToSelect);
+      }
+
+      return (await query.lean().exec()) as IRole | null;
+    } catch (error) {
+      throw new Error(`Failed to retrieve role: ${(error as Error).message}`);
+    }
+  }
+
+  /**
    * Update role values by name.
    */
   async function updateRoleByName(roleName: string, updates: Partial<IRole>) {
@@ -510,6 +528,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     countRoles,
     initializeRoles,
     getRoleByName,
+    findRoleByName,
     updateRoleByName,
     updateAccessPermissions,
     migrateRoleSchema,
