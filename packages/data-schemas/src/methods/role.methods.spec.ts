@@ -4,6 +4,7 @@ import { SystemRoles, Permissions, roleDefaults, PermissionTypes } from 'librech
 import type { IRole, IUser, RolePermissions } from '..';
 import { createRoleMethods } from './role';
 import { createModels } from '../models';
+import { tenantStorage } from '~/config/tenantContext';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -23,7 +24,7 @@ const mockGetCache = jest.fn().mockReturnValue(mockCache);
 let Role: mongoose.Model<IRole>;
 let User: mongoose.Model<IUser>;
 let getRoleByName: ReturnType<typeof createRoleMethods>['getRoleByName'];
-let findRoleByName: ReturnType<typeof createRoleMethods>['findRoleByName'];
+let findRolesByNames: ReturnType<typeof createRoleMethods>['findRolesByNames'];
 let updateAccessPermissions: ReturnType<typeof createRoleMethods>['updateAccessPermissions'];
 let initializeRoles: ReturnType<typeof createRoleMethods>['initializeRoles'];
 let createRoleByName: ReturnType<typeof createRoleMethods>['createRoleByName'];
@@ -45,7 +46,7 @@ beforeAll(async () => {
   User = mongoose.models.User as mongoose.Model<IUser>;
   const methods = createRoleMethods(mongoose, { getCache: mockGetCache });
   getRoleByName = methods.getRoleByName;
-  findRoleByName = methods.findRoleByName;
+  findRolesByNames = methods.findRolesByNames;
   updateAccessPermissions = methods.updateAccessPermissions;
   initializeRoles = methods.initializeRoles;
   createRoleByName = methods.createRoleByName;
@@ -72,16 +73,57 @@ beforeEach(async () => {
   mockCache.del.mockClear();
 });
 
-describe('findRoleByName', () => {
+describe('findRolesByNames', () => {
   it('queries storage without reading or writing the role cache', async () => {
-    await Role.create({ name: 'STANDARD-USER', permissions: {} });
+    await Role.create([
+      { name: 'STANDARD-USER', permissions: {} },
+      { name: 'BASIC-USER', permissions: {} },
+    ]);
 
-    await expect(findRoleByName('STANDARD-USER', 'name')).resolves.toMatchObject({
-      name: 'STANDARD-USER',
-    });
+    await expect(findRolesByNames(['STANDARD-USER', 'BASIC-USER'], 'name')).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'STANDARD-USER' }),
+        expect.objectContaining({ name: 'BASIC-USER' }),
+      ]),
+    );
     expect(mockGetCache).not.toHaveBeenCalled();
     expect(mockCache.get).not.toHaveBeenCalled();
     expect(mockCache.set).not.toHaveBeenCalled();
+  });
+
+  it('matches role names case-insensitively without using pagination', async () => {
+    const roles = Array.from({ length: 75 }, (_value, index) => ({
+      name: `ROLE-${index}`,
+      permissions: {},
+    }));
+    await Role.create([...roles, { name: 'STANDARD-USER', permissions: {} }]);
+
+    await expect(findRolesByNames(['standard-user'], 'name')).resolves.toEqual([
+      expect.objectContaining({ name: 'STANDARD-USER' }),
+    ]);
+  });
+
+  it('uses the active tenant context for matching role names', async () => {
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      await Role.create({ name: 'TENANT-ROLE', permissions: {} });
+    });
+    await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
+      await Role.create({ name: 'TENANT-ROLE', permissions: {} });
+    });
+
+    const tenantARoles = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+      findRolesByNames(['TENANT-ROLE'], 'name tenantId'),
+    );
+    const tenantBRoles = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
+      findRolesByNames(['TENANT-ROLE'], 'name tenantId'),
+    );
+
+    expect(tenantARoles).toEqual([
+      expect.objectContaining({ name: 'TENANT-ROLE', tenantId: 'tenant-a' }),
+    ]);
+    expect(tenantBRoles).toEqual([
+      expect.objectContaining({ name: 'TENANT-ROLE', tenantId: 'tenant-b' }),
+    ]);
   });
 });
 

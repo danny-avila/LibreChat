@@ -217,7 +217,9 @@ function makeDeps(appConfig: AppConfig = makeConfig()) {
   return {
     findUser: makeFindUser(makeUser()),
     updateUser: jest.fn(),
-    getRoleByName: jest.fn(async (roleName: string) => ({ name: roleName })),
+    getRolesByNames: jest.fn(async (roleNames: string[]) =>
+      roleNames.map((roleName) => ({ name: roleName })),
+    ),
     getAppConfig: jest.fn().mockResolvedValue(appConfig),
     apiKeyMiddleware: jest.fn((_req: unknown, _res: unknown, next: () => void) => next()),
   };
@@ -1459,7 +1461,7 @@ describe('createRemoteAgentAuth', () => {
         mockNext,
       );
 
-      expect(deps.getRoleByName).not.toHaveBeenCalled();
+      expect(deps.getRolesByNames).not.toHaveBeenCalled();
       expect(deps.updateUser).not.toHaveBeenCalled();
       expect(mockNext).toHaveBeenCalled();
     });
@@ -1505,7 +1507,7 @@ describe('createRemoteAgentAuth', () => {
       const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
       await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
 
-      expect(deps.getRoleByName).not.toHaveBeenCalled();
+      expect(deps.getRolesByNames).not.toHaveBeenCalled();
       expect(deps.updateUser).not.toHaveBeenCalled();
       expect(req.user).toMatchObject({ role: 'user' });
     });
@@ -1541,7 +1543,10 @@ describe('createRemoteAgentAuth', () => {
 
       await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
 
-      expect(deps.getRoleByName).toHaveBeenCalledWith('BASIC-USER', 'name');
+      expect(deps.getRolesByNames).toHaveBeenCalledWith(
+        ['STANDARD-USER', 'BASIC-USER', 'USER'],
+        'name',
+      );
       expect(deps.updateUser).toHaveBeenCalledWith('uid123', { role: 'BASIC-USER' });
       expect(req.user).toMatchObject({ tenantId: 'tenant-role-sync', role: 'BASIC-USER' });
     });

@@ -158,13 +158,15 @@ describe('getOpenIdRolesForOpenIdSync', () => {
 
 describe('getLibreChatRolesForOpenIdSync', () => {
   it('deduplicates configured roles and returns canonical role names', async () => {
-    const getRoleByName = jest.fn(async (roleName: string) => ({
-      name: roleName.toLowerCase() === 'standard-user' ? 'STANDARD-USER' : roleName,
-    }));
+    const getRolesByNames = jest.fn(async (roleNames: string[]) =>
+      roleNames.map((roleName) => ({
+        name: roleName.toLowerCase() === 'standard-user' ? 'STANDARD-USER' : roleName,
+      })),
+    );
 
     await expect(
       getLibreChatRolesForOpenIdSync({
-        getRoleByName,
+        getRolesByNames,
         rolePriority: [' standard-user ', 'STANDARD-USER'],
         fallbackRole: SystemRoles.USER,
       }),
@@ -172,19 +174,20 @@ describe('getLibreChatRolesForOpenIdSync', () => {
       rolePriority: ['STANDARD-USER', 'STANDARD-USER'],
       fallbackRole: SystemRoles.USER,
     });
-    expect(getRoleByName).toHaveBeenCalledTimes(2);
-    expect(getRoleByName).toHaveBeenCalledWith('standard-user', 'name');
-    expect(getRoleByName).toHaveBeenCalledWith(SystemRoles.USER, 'name');
+    expect(getRolesByNames).toHaveBeenCalledTimes(1);
+    expect(getRolesByNames).toHaveBeenCalledWith(['standard-user', SystemRoles.USER], 'name');
   });
 
   it('rejects configured roles that do not exist', async () => {
-    const getRoleByName = jest.fn(async (roleName: string) =>
-      roleName === 'MISSING' ? null : { name: roleName },
+    const getRolesByNames = jest.fn(async (roleNames: string[]) =>
+      roleNames
+        .filter((roleName) => roleName !== 'MISSING')
+        .map((roleName) => ({ name: roleName })),
     );
 
     await expect(
       getLibreChatRolesForOpenIdSync({
-        getRoleByName,
+        getRolesByNames,
         rolePriority: ['STANDARD-USER', 'MISSING'],
         logPrefix: '[openidStrategy]',
       }),

@@ -36,15 +36,15 @@ type OpenIdRolesForOpenIdSyncInput = {
   resolveGroupOverage?: () => Promise<string[] | null>;
 };
 
-type OpenIdRoleSyncRoleLookup = (
-  roleName: string,
+type OpenIdRoleSyncRolesLookup = (
+  roleNames: string[],
   fieldsToSelect?: string | string[] | null,
-) => Promise<{ name?: string | null } | null | undefined>;
+) => Promise<Array<{ name?: string | null }> | null | undefined>;
 
 type LibreChatRolesForOpenIdSyncInput = {
   rolePriority: string[];
   fallbackRole?: string;
-  getRoleByName: OpenIdRoleSyncRoleLookup;
+  getRolesByNames: OpenIdRoleSyncRolesLookup;
   logPrefix?: string;
 };
 
@@ -178,9 +178,7 @@ export async function getLibreChatRolesForOpenIdSync(
     uniqueRoleNames.push(trimmed);
   }
 
-  const roles = await Promise.all(
-    uniqueRoleNames.map((roleName) => input.getRoleByName(roleName, 'name')),
-  );
+  const roles = (await input.getRolesByNames(uniqueRoleNames, 'name')) ?? [];
   const existingRoleNames = new Map(
     roles
       .filter((role): role is { name: string } => typeof role?.name === 'string')
