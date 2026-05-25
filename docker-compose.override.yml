@@ -17,7 +17,7 @@ services:
     - type: bind
       source: ./librechat.yaml
       target: /app/librechat.yaml
-    image: librechat-custom:latest
+    image: ghcr.io/lexaeon-org/libre-chat:latest
     build:
       context: .
       target: node
