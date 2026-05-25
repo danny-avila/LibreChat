@@ -1,14 +1,14 @@
 import logger from '~/config/winston';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IBalance, IBalanceUpdate, TransactionData } from '~/types';
-import type { ITransaction } from '~/schema/transaction';
+import type { ITransaction, TokenType } from '~/schema/transaction';
 
 const cancelRate = 1.15;
 
 type MultiplierParams = {
   model?: string;
   valueKey?: string;
-  tokenType?: 'prompt' | 'completion';
+  tokenType?: TokenType;
   inputTokenCount?: number;
   endpointTokenConfig?: Record<string, Record<string, number>>;
 };
@@ -22,7 +22,7 @@ type CacheMultiplierParams = {
 /** Fields read/written by the internal token value calculators */
 interface InternalTxDoc {
   valueKey?: string;
-  tokenType?: 'prompt' | 'completion' | 'credits';
+  tokenType?: TokenType;
   model?: string;
   endpointTokenConfig?: Record<string, Record<string, number>> | null;
   inputTokenCount?: number;
@@ -42,7 +42,7 @@ export interface TxData {
   conversationId?: string;
   model?: string;
   context?: string;
-  tokenType?: 'prompt' | 'completion' | 'credits';
+  tokenType?: TokenType;
   rawAmount?: number;
   valueKey?: string;
   endpointTokenConfig?: Record<string, Record<string, number>> | null;
@@ -77,7 +77,7 @@ export function createTransactionMethods(
     const multiplier = Math.abs(
       txMethods.getMultiplier({
         valueKey,
-        tokenType: tokenType as 'prompt' | 'completion' | undefined,
+        tokenType,
         model,
         endpointTokenConfig: endpointTokenConfig ?? undefined,
         inputTokenCount,

@@ -1,5 +1,12 @@
 import logger from '~/config/winston';
+import type { MediaTokenType } from './tx';
 import type { TxData, TransactionResult } from './transaction';
+
+/** Single non-text usage event (one second of audio, one page of OCR, one image). */
+export interface MediaUsage {
+  type: MediaTokenType;
+  amount: number;
+}
 
 /** Base transaction context passed by callers — does not include fields added internally */
 export interface SpendTxData {
@@ -139,7 +146,51 @@ export function createSpendTokensMethods(
     return { prompt, completion };
   }
 
-  return { spendTokens, spendStructuredTokens };
+  /**
+   * Records a single transaction for non-text usage — STT (audio_input/sec),
+   * TTS (audio_output/char), OCR (ocr_pages), image-gen (image_count).
+   *
+   * Sign convention matches `spendTokens`: rawAmount is stored negative so
+   * `tokenValue = rawAmount × multiplier` produces a negative credit debit.
+   * Zero/negative/non-finite `amount` is treated as a no-op.
+   */
+  async function spendMediaTokens(
+    txData: SpendTxData,
+    usage: MediaUsage,
+  ): Promise<TransactionResult | undefined> {
+    if (!usage || !Number.isFinite(usage.amount) || usage.amount <= 0) {
+      return;
+    }
+    if (!txData.user) {
+      logger.warn('[spendMediaTokens] no user; skipping');
+      return;
+    }
+    logger.debug(
+      `[spendMediaTokens] conversationId: ${txData.conversationId}${
+        txData?.context ? ` | Context: ${txData?.context}` : ''
+      } | type=${usage.type} amount=${usage.amount} model=${txData.model}`,
+    );
+    try {
+      const result = await transactionMethods.createTransaction({
+        ...txData,
+        tokenType: usage.type,
+        rawAmount: -usage.amount,
+      });
+      if (result) {
+        logger.debug('[spendMediaTokens] Transaction recorded', {
+          user: String(txData.user),
+          type: usage.type,
+          rate: result.rate,
+          balance: result.balance,
+        });
+      }
+      return result;
+    } catch (err) {
+      logger.error('[spendMediaTokens]', err);
+    }
+  }
+
+  return { spendTokens, spendStructuredTokens, spendMediaTokens };
 }
 
 export type SpendTokensMethods = ReturnType<typeof createSpendTokensMethods>;

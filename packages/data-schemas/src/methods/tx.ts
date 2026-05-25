@@ -344,6 +344,64 @@ export const premiumTokenValues: Record<
   'gemini-3.1': { threshold: 200000, prompt: 4, completion: 18 },
 };
 
+/**
+ * Non-text token types — STT (audio_input), TTS (audio_output), OCR (ocr_pages),
+ * image-gen (image_count). Tracked alongside prompt/completion so providers
+ * billing per second/character/page/image are reflected in the user's balance.
+ */
+export type MediaTokenType = 'audio_input' | 'audio_output' | 'ocr_pages' | 'image_count';
+
+export const MEDIA_TOKEN_TYPES: readonly MediaTokenType[] = [
+  'audio_input',
+  'audio_output',
+  'ocr_pages',
+  'image_count',
+] as const;
+
+/**
+ * Multipliers for non-text usage dimensions, expressed in microdollars (µ$)
+ * per unit of rawAmount — same convention as `tokenValues`, where 1 µ$ ≡ 1
+ * tokenCredit (see `Balance.tokenCredits` schema comment).
+ *
+ *   audio_input  → rawAmount = seconds  → multiplier = µ$/sec
+ *   audio_output → rawAmount = chars    → multiplier = µ$/char
+ *   ocr_pages    → rawAmount = pages    → multiplier = µ$/page
+ *   image_count  → rawAmount = images   → multiplier = µ$/image
+ *
+ * Examples:
+ *   Whisper        $0.006/min          = 100   µ$/sec
+ *   tts-1          $15 / 1M chars      = 15    µ$/char
+ *   mistral-ocr    $0.001 / page       = 1000  µ$/page
+ *   dall-e-3 std   $0.04 / image       = 40000 µ$/image
+ */
+export const mediaTokenValues: Record<string, Partial<Record<MediaTokenType, number>>> = {
+  'whisper-1': { audio_input: 100 },
+  whisper: { audio_input: 100 },
+  'azure-whisper': { audio_input: 100 },
+  'tts-1': { audio_output: 15 },
+  'tts-1-hd': { audio_output: 30 },
+  'gpt-4o-mini-tts': { audio_output: 12 },
+  eleven_multilingual_v2: { audio_output: 30 },
+  eleven_turbo_v2: { audio_output: 15 },
+  'mistral-ocr-2505': { ocr_pages: 1000 },
+  'mistral-ocr': { ocr_pages: 1000 },
+  'dall-e-3': { image_count: 40000 },
+  'dall-e-3-hd': { image_count: 80000 },
+  // Flux endpoint-to-pricing mapping (BFL pricing in USD/image × 1e6).
+  // Keys match the model name passed by FluxAPI.js (derived from endpoint path).
+  'flux-pro': { image_count: 50000 },
+  'flux-pro-1.1': { image_count: 40000 },
+  'flux-pro-1.1-ultra': { image_count: 60000 },
+  'flux-pro-finetuned': { image_count: 60000 },
+  'flux-pro-1.1-ultra-finetuned': { image_count: 70000 },
+  'flux-dev': { image_count: 25000 },
+  'gpt-image-1': { image_count: 20000 },
+};
+
+function isMediaTokenType(t: unknown): t is MediaTokenType {
+  return typeof t === 'string' && (MEDIA_TOKEN_TYPES as readonly string[]).includes(t);
+}
+
 export function createTxMethods(_mongoose: typeof import('mongoose'), txDeps: TxDeps) {
   const { matchModelName, findMatchingPattern } = txDeps;
 
@@ -418,10 +476,25 @@ export function createTxMethods(_mongoose: typeof import('mongoose'), txDeps: Tx
     model?: string;
     valueKey?: string;
     endpoint?: string;
-    tokenType?: 'prompt' | 'completion';
+    /** 'credits' is accepted for interface symmetry but falls through to defaultRate. */
+    tokenType?: 'prompt' | 'completion' | 'credits' | MediaTokenType;
     inputTokenCount?: number;
     endpointTokenConfig?: Record<string, Record<string, number>>;
   }): number {
+    if (isMediaTokenType(tokenType)) {
+      if (endpointTokenConfig && model) {
+        const override = endpointTokenConfig[model]?.[tokenType];
+        if (override != null) return override;
+      }
+      const mediaKey =
+        valueKey ?? (model ? findMatchingPattern(model, mediaTokenValues) : undefined);
+      const rate = mediaKey ? mediaTokenValues[mediaKey]?.[tokenType] : undefined;
+      // Defensive: unknown media model returns 0, not defaultRate. A non-zero
+      // default would 1000× over-bill an unrecognised audio/image model. The
+      // operator sees the resulting near-zero cost and adds an entry.
+      return rate ?? 0;
+    }
+
     if (endpointTokenConfig && model) {
       return endpointTokenConfig?.[model]?.[tokenType as string] ?? defaultRate;
     }
@@ -431,7 +504,7 @@ export function createTxMethods(_mongoose: typeof import('mongoose'), txDeps: Tx
       if (premiumRate != null) {
         return premiumRate;
       }
-      return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
+      return tokenValues[valueKey]?.[tokenType as 'prompt' | 'completion'] ?? defaultRate;
     }
 
     if (!tokenType || !model) {
@@ -448,7 +521,7 @@ export function createTxMethods(_mongoose: typeof import('mongoose'), txDeps: Tx
       return premiumRate;
     }
 
-    return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
+    return tokenValues[valueKey]?.[tokenType as 'prompt' | 'completion'] ?? defaultRate;
   }
 
   /**
@@ -490,6 +563,7 @@ export function createTxMethods(_mongoose: typeof import('mongoose'), txDeps: Tx
   return {
     tokenValues,
     premiumTokenValues,
+    mediaTokenValues,
     getValueKey,
     getMultiplier,
     getPremiumRate,

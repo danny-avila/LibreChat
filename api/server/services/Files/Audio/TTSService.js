@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { genAzureEndpoint, logAxiosError } = require('@librechat/api');
+const { genAzureEndpoint, logAxiosError, recordUsage } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 const { getAppConfig } = require('~/server/services/Config');
@@ -255,7 +255,7 @@ class TTSService {
    * @returns {Promise<Object>} The axios response object.
    * @throws {Error} If the provider is invalid or the request fails.
    */
-  async ttsRequest(provider, ttsSchema, { input, voice, stream = true }) {
+  async ttsRequest(provider, ttsSchema, { input, voice, stream = true }, req) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
@@ -272,7 +272,27 @@ class TTSService {
     }
 
     try {
-      return await axios.post(url, data, options);
+      const response = await axios.post(url, data, options);
+      // OpenAI/Azure/ElevenLabs TTS all bill per input character. We record
+      // exactly what was submitted (per chunk for the streaming/chunked paths
+      // so partial failures still bill the parts actually generated).
+      const charCount = typeof input === 'string' ? input.length : 0;
+      if (req?.user?.id && charCount > 0) {
+        const db = require('~/models');
+        const model =
+          ttsSchema?.deploymentName ||
+          ttsSchema?.model ||
+          (provider === TTSProviders.AZURE_OPENAI ? 'azure-tts' : 'tts-1');
+        await recordUsage(db, {
+          user: req.user.id,
+          model,
+          context: 'tts',
+          balance: req?.config?.balance,
+          transactions: req?.config?.transactions,
+          media: { type: 'audio_output', amount: charCount },
+        });
+      }
+      return response;
     } catch (error) {
       logAxiosError({ message: `TTS request failed for provider ${provider}:`, error });
       throw error;
@@ -307,7 +327,7 @@ class TTSService {
       const voice = await this.getVoice(ttsSchema, requestVoice);
 
       if (input.length < 4096) {
-        const response = await this.ttsRequest(provider, ttsSchema, { input, voice });
+        const response = await this.ttsRequest(provider, ttsSchema, { input, voice }, req);
         response.data.pipe(res);
         return;
       }
@@ -316,11 +336,16 @@ class TTSService {
 
       for (const chunk of textChunks) {
         try {
-          const response = await this.ttsRequest(provider, ttsSchema, {
-            voice,
-            input: chunk.text,
-            stream: true,
-          });
+          const response = await this.ttsRequest(
+            provider,
+            ttsSchema,
+            {
+              voice,
+              input: chunk.text,
+              stream: true,
+            },
+            req,
+          );
 
           logger.debug(`[textToSpeech] user: ${req?.user?.id} | writing audio stream`);
           await new Promise((resolve) => {
@@ -398,11 +423,16 @@ class TTSService {
 
         for (const update of updates) {
           try {
-            const response = await this.ttsRequest(provider, ttsSchema, {
-              voice,
-              input: update.text,
-              stream: true,
-            });
+            const response = await this.ttsRequest(
+              provider,
+              ttsSchema,
+              {
+                voice,
+                input: update.text,
+                stream: true,
+              },
+              req,
+            );
 
             if (!shouldContinue) {
               break;

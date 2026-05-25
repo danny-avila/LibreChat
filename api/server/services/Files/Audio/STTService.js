@@ -4,7 +4,7 @@ const FormData = require('form-data');
 const { Readable } = require('stream');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { genAzureEndpoint, logAxiosError } = require('@librechat/api');
+const { genAzureEndpoint, logAxiosError, recordUsage } = require('@librechat/api');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const { getAppConfig } = require('~/server/services/Config');
 
@@ -201,6 +201,9 @@ class STTService {
     const data = {
       file: audioReadStream,
       model: sttSchema.model,
+      // Request verbose_json so response.duration is populated — required for
+      // accurate audio_input billing (see recordUsage call in sttRequest).
+      response_format: 'verbose_json',
     };
 
     const validLanguage = getValidatedLanguageCode(language);
@@ -255,6 +258,8 @@ class STTService {
       filename: audioFile.originalname,
       contentType: audioFile.mimetype,
     });
+    // Request verbose_json so response.duration is populated for billing.
+    formData.append('response_format', 'verbose_json');
 
     const validLanguage = getValidatedLanguageCode(language);
     if (validLanguage) {
@@ -282,7 +287,7 @@ class STTService {
    * @returns {Promise<string>} A promise that resolves to the transcribed text.
    * @throws {Error} If the provider is invalid, the response status is not 200, or the response data is missing.
    */
-  async sttRequest(provider, sttSchema, { audioBuffer, audioFile, language }) {
+  async sttRequest(provider, sttSchema, { audioBuffer, audioFile, language }, req) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
@@ -318,6 +323,30 @@ class STTService {
         throw new Error('Missing data in response from the STT API');
       }
 
+      // response_format=verbose_json is always requested above, so duration is
+      // the source of truth. If absent (unexpected provider shape), skip
+      // billing rather than guess — codec varies and any byte-size formula
+      // would mis-charge the user.
+      if (req?.user?.id) {
+        if (typeof response.data.duration === 'number' && response.data.duration > 0) {
+          const db = require('~/models');
+          const model =
+            provider === STTProviders.AZURE_OPENAI
+              ? sttSchema?.deploymentName || sttSchema?.model || 'azure-whisper'
+              : sttSchema?.model || 'whisper-1';
+          await recordUsage(db, {
+            user: req.user.id,
+            model,
+            context: 'stt',
+            balance: req?.config?.balance,
+            transactions: req?.config?.transactions,
+            media: { type: 'audio_input', amount: response.data.duration },
+          });
+        } else {
+          logger.warn('[STT] response.duration missing/invalid; billing skipped for this request');
+        }
+      }
+
       return response.data.text.trim();
     } catch (error) {
       logAxiosError({ message: `STT request failed for provider ${provider}:`, error });
@@ -347,7 +376,12 @@ class STTService {
     try {
       const [provider, sttSchema] = await this.getProviderSchema(req);
       const language = req.body?.language || '';
-      const text = await this.sttRequest(provider, sttSchema, { audioBuffer, audioFile, language });
+      const text = await this.sttRequest(
+        provider,
+        sttSchema,
+        { audioBuffer, audioFile, language },
+        req,
+      );
       res.json({ text });
     } catch (error) {
       logAxiosError({ message: 'An error occurred while processing the audio:', error });

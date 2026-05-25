@@ -25,6 +25,7 @@ jest.mock('@librechat/api', () => ({
     },
   },
   extractBaseURL: jest.fn((url) => url),
+  recordUsage: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('~/server/services/Files/strategies', () => ({
@@ -33,6 +34,8 @@ jest.mock('~/server/services/Files/strategies', () => ({
 
 jest.mock('~/models', () => ({
   getFiles: jest.fn().mockResolvedValue([]),
+  spendTokens: jest.fn().mockResolvedValue(undefined),
+  spendMediaTokens: jest.fn().mockResolvedValue(undefined),
 }));
 
 describe('OpenAIImageTools - IMAGE_GEN_OAI_MODEL environment variable', () => {

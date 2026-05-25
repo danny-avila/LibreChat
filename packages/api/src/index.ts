@@ -55,6 +55,8 @@ export * from './web';
 export * from './cache';
 /* Stream */
 export * from './stream';
+/* Billing */
+export * from './billing';
 /* Diagnostics */
 export { memoryDiagnostics } from './utils/memory';
 /* types */

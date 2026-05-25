@@ -7,9 +7,10 @@ const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { tool } = require('@librechat/agents/langchain/tools');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
-const { logAxiosError, oaiToolkit, extractBaseURL } = require('@librechat/api');
+const { logAxiosError, oaiToolkit, extractBaseURL, recordUsage } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { getFiles } = require('~/models');
+const db = require('~/models');
+const { getFiles } = db;
 
 const displayMessage =
   "The tool displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
@@ -192,8 +193,19 @@ Error Message: ${error.message}`);
         );
       }
 
+      const imageCount = Array.isArray(resp?.data) ? resp.data.length : 1;
+      if (req?.user?.id && imageCount > 0) {
+        await recordUsage(db, {
+          user: req.user.id,
+          model: imageModel || 'gpt-image-1',
+          context: 'image_gen',
+          balance: req?.config?.balance,
+          transactions: req?.config?.transactions,
+          media: { type: 'image_count', amount: imageCount },
+        });
+      }
+
       // For gpt-image-1, the response contains base64-encoded images
-      // TODO: handle cost in `resp.usage`
       const base64Image = resp.data[0].b64_json;
 
       if (!base64Image) {
@@ -365,6 +377,17 @@ Error Message: ${error.message}`);
           return returnValue(
             'No image data returned from OpenAI API. There may be a problem with the API or your configuration.',
           );
+        }
+
+        if (req?.user?.id && response.data.data.length > 0) {
+          await recordUsage(db, {
+            user: req.user.id,
+            model: imageModel || 'gpt-image-1',
+            context: 'image_gen',
+            balance: req?.config?.balance,
+            transactions: req?.config?.transactions,
+            media: { type: 'image_count', amount: response.data.data.length },
+          });
         }
 
         const base64Image = response.data.data[0].b64_json;

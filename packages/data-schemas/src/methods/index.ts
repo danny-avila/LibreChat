@@ -37,11 +37,14 @@ import {
   createTxMethods,
   type TxMethods,
   type TxDeps,
+  type MediaTokenType,
   tokenValues,
   cacheTokenValues,
   premiumTokenValues,
   defaultRate,
 } from './tx';
+export type { MediaTokenType };
+export { mediaTokenValues } from './tx';
 import { createTransactionMethods, type TransactionMethods } from './transaction';
 import { createSpendTokensMethods, type SpendTokensMethods } from './spendTokens';
 import { createPromptMethods, type PromptMethods, type PromptDeps } from './prompt';
