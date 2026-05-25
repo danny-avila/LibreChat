@@ -175,8 +175,14 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
         typeof marketplaceConfig.categories.enableDefaultCategories === 'boolean'
           ? marketplaceConfig.categories.enableDefaultCategories
           : true;
-      const customCategoriesList = marketplaceConfig.categories.list || [];
-      logger.info(`Found ${customCategoriesList.length} custom categories to sync.`);
+      const customCategoriesList = marketplaceConfig.categories.list;
+      if (Array.isArray(customCategoriesList)) {
+        logger.info(`Found ${customCategoriesList.length} custom categories to sync.`);
+      } else {
+        logger.info(
+          'No custom categories `list` provided; only default-category toggling will run.',
+        );
+      }
       await syncCategories(customCategoriesList, enableDefaultCategories);
     }
   }

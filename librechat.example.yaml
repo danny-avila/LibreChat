@@ -167,14 +167,14 @@ interface:
     groups: true
     roles: true
   marketplace:
-    use: false 
+    use: false
     categories:
-      enableDefaultCategories: true 
-        # list:
-        #     - value: "Education"
-        #       description: "Educational agents."
-        #     - value: "Productivity"
-        #       description: "Productivity agents."
+      enableDefaultCategories: true
+      # list:
+      #   - value: "Education"
+      #     description: "Educational agents."
+      #   - value: "Productivity"
+      #     description: "Productivity agents."
 
   fileCitations: true
   # Tools pinned to the prompt bar by default for all users.

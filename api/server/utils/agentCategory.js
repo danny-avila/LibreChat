@@ -1,15 +1,18 @@
 const { logger } = require('@librechat/data-schemas');
 
+function normalizeValue(raw) {
+  return (raw ?? '').toString().trim().toLowerCase();
+}
+
 /**
- * Synchronizes custom agent categories with the database.
- * @param {Array} customCategoriesList - List of custom categories to be synchronized.
- * @param {boolean} enableDefaultCategories - Flag indicating whether to enable default categories.
+ * Synchronizes agent categories with the database.
+ * @param {Array|undefined} customCategoriesList - Custom categories from config. When `undefined`, custom categories are left untouched (only defaults are toggled). An explicit empty array opts in to deleting all existing custom categories.
+ * @param {boolean} enableDefaultCategories - Whether default categories should be active.
  */
 async function syncCategories(customCategoriesList, enableDefaultCategories) {
   const { getAllCategories, createCategory, updateCategory, deleteCategory } = require('~/models');
   logger.info('Syncing custom agent categories...');
 
-  // Get all categories from DB
   const dbCategories = await getAllCategories();
   logger.info(`Found ${dbCategories.length} categories in the database.`);
 
@@ -21,50 +24,65 @@ async function syncCategories(customCategoriesList, enableDefaultCategories) {
     await updateCategory(cat.value, { isActive: enableDefaultCategories });
   }
 
-  // Initial order takes the max value of existing default categories + 1
+  if (!Array.isArray(customCategoriesList)) {
+    logger.info(
+      'No custom categories list provided; leaving existing custom categories untouched.',
+    );
+    return;
+  }
+
   const defaultCategoriesInDb = dbCategories.filter((cat) => !cat.custom);
   const initialOrder =
     defaultCategoriesInDb.reduce((max, cat) => Math.max(max, cat.order || 0), 0) + 1;
   logger.info(`Current order for new custom categories starts at ${initialOrder}.`);
 
-  // Inject order to custom categories
-  logger.info('Assigning order to custom categories.');
-  customCategoriesList = customCategoriesList.map((cat, index) => ({
-    ...cat,
-    order: initialOrder + index,
-  }));
+  const preparedCategories = customCategoriesList.reduce((acc, cat, index) => {
+    const normalizedValue = normalizeValue(cat?.value);
+    if (!normalizedValue) {
+      logger.warn(
+        `Skipping invalid custom category entry at index ${index}: missing or empty value.`,
+      );
+      return acc;
+    }
+    acc.push({
+      normalizedValue,
+      label: cat.value.toString().trim(),
+      description: typeof cat.description === 'string' ? cat.description : '',
+      order: initialOrder + acc.length,
+    });
+    return acc;
+  }, []);
 
-  // Delete custom categories not in the config file
-  const customCategoryValues = new Set(customCategoriesList.map((cat) => cat.value.toLowerCase()));
+  const configuredValues = new Set(preparedCategories.map((c) => c.normalizedValue));
   const categoriesToDelete = dbCategories.filter(
-    (cat) => cat.custom && !customCategoryValues.has(cat.value.toLowerCase()),
+    (cat) => cat.custom && !configuredValues.has(normalizeValue(cat.value)),
   );
   for (const cat of categoriesToDelete) {
     logger.info(`Deleting custom category not in config: ${cat.value}`);
     await deleteCategory(cat.value);
   }
 
-  // Sync custom categories
-  for (const category of customCategoriesList) {
-    let formattedCategory;
-    try {
-      formattedCategory = {
-        value: category.value.toLowerCase() || 'unnamed',
-        label: category.value || 'Unnamed',
-        description: category.description || '',
-        isActive: true,
-        custom: true,
-        order: category.order,
-      };
-    } catch (error) {
-      logger.error('Error formatting category: ', category, error);
+  for (const prepared of preparedCategories) {
+    const existing = dbCategories.find(
+      (cat) => normalizeValue(cat.value) === prepared.normalizedValue,
+    );
+
+    if (existing && existing.custom === false) {
+      logger.warn(
+        `Skipping custom category '${prepared.label}': value collides with an existing default category.`,
+      );
       continue;
     }
 
-    // Check if category exists by value
-    const existing = dbCategories.find(
-      (cat) => cat.value.toLowerCase() === formattedCategory.value,
-    );
+    const formattedCategory = {
+      value: prepared.normalizedValue,
+      label: prepared.label,
+      description: prepared.description,
+      isActive: true,
+      custom: true,
+      order: prepared.order,
+    };
+
     if (existing) {
       logger.info(`Updating category: ${formattedCategory.value}`);
       await updateCategory(existing.value, formattedCategory);
