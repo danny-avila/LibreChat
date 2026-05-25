@@ -1,4 +1,16 @@
 import { SystemRoles } from 'librechat-data-provider';
+import { isEnabled } from '~/utils';
+
+export type OpenIdRoleSyncClaimSource = 'access' | 'id' | 'userinfo';
+
+export type OpenIdRoleSyncOptions = {
+  enabled: boolean;
+  apiEnabled: boolean;
+  claimSource: OpenIdRoleSyncClaimSource;
+  claim?: string;
+  rolePriority: string[];
+  fallbackRole?: string;
+};
 
 export type OpenIdRoleSyncSelectionInput = {
   currentRole?: string;
@@ -11,6 +23,55 @@ export type OpenIdRoleSyncSelectionResult = {
   selectedRole?: string;
   reason?: 'matched_priority' | 'kept_current' | 'fallback' | 'no_matching_role';
 };
+
+export function parseOpenIdRoleSyncList(value?: string): string[] {
+  return (
+    value
+      ?.split(',')
+      .map((role) => role.trim())
+      .filter(Boolean) ?? []
+  );
+}
+
+export function getOpenIdRoleSyncOptions(
+  env: NodeJS.ProcessEnv = process.env,
+): OpenIdRoleSyncOptions {
+  const enabled = isEnabled(env.OPENID_ROLE_SYNC_ENABLED);
+  const apiEnabled = isEnabled(env.OPENID_ROLE_SYNC_API_ENABLED);
+  const rawSource = env.OPENID_ROLE_SYNC_SOURCE?.trim() || 'id';
+  const claimSource = rawSource as OpenIdRoleSyncClaimSource;
+  const claim = env.OPENID_ROLE_SYNC_CLAIM?.trim() || undefined;
+  const rolePriority = parseOpenIdRoleSyncList(env.OPENID_ROLE_SYNC_ROLE_PRIORITY);
+  const fallbackRole = env.OPENID_ROLE_SYNC_FALLBACK_ROLE?.trim() || undefined;
+
+  if (!['access', 'id', 'userinfo'].includes(claimSource)) {
+    throw new Error(
+      `[openidRoleSync] OPENID_ROLE_SYNC_SOURCE must be one of: access, id, userinfo`,
+    );
+  }
+
+  if (enabled && !claim) {
+    throw new Error(
+      '[openidRoleSync] OPENID_ROLE_SYNC_CLAIM is required when role sync is enabled',
+    );
+  }
+
+  if (apiEnabled && !enabled) {
+    throw new Error(
+      '[openidRoleSync] OPENID_ROLE_SYNC_API_ENABLED requires OPENID_ROLE_SYNC_ENABLED=true',
+    );
+  }
+
+  if (rolePriority.some((role) => role.toLowerCase() === SystemRoles.ADMIN.toLowerCase())) {
+    throw new Error('[openidRoleSync] OPENID_ROLE_SYNC_ROLE_PRIORITY cannot include ADMIN');
+  }
+
+  if (fallbackRole?.toLowerCase() === SystemRoles.ADMIN.toLowerCase()) {
+    throw new Error('[openidRoleSync] OPENID_ROLE_SYNC_FALLBACK_ROLE cannot be ADMIN');
+  }
+
+  return { enabled, apiEnabled, claimSource, claim, rolePriority, fallbackRole };
+}
 
 export function normalizeOpenIdRoleValues(
   openIDRoles?: string | unknown[],
