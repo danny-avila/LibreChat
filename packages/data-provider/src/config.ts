@@ -2107,6 +2107,10 @@ export enum SettingsTabValues {
    */
   ACCOUNT = 'account',
   /**
+   * Tab for managing user-provided API keys
+   */
+  API_KEYS = 'api_keys',
+  /**
    * Chat input commands
    */
   COMMANDS = 'commands',

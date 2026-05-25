@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
-import { MessageSquare, Command, DollarSign, Info } from 'lucide-react';
+import { MessageSquare, Command, DollarSign, Info, KeyRound } from 'lucide-react';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import {
   GearIcon,
@@ -21,21 +21,47 @@ import {
   Data,
   Balance,
   Account,
+  APIKeys,
   About,
 } from './SettingsTabs';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useLocalize, TranslationKeys } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { cn } from '~/utils';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const { data: startupConfig } = useGetStartupConfig();
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const localize = useLocalize();
   const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
   const tabRefs = useRef({});
   const { hasAnyPersonalizationFeature, hasMemoryOptOut } = usePersonalizationAccess();
   const aboutEnabled = startupConfig?.interface?.buildInfo !== false;
+
+  const hasUserProvidedEndpoint = useMemo(() => {
+    if (!endpointsConfig) {
+      return false;
+    }
+    const values = Object.values(endpointsConfig);
+    for (let i = 0; i < values.length; i++) {
+      const config = values[i];
+      if (!config) {
+        continue;
+      }
+      if (
+        config.userProvide ||
+        config.userProvideURL ||
+        config.userProvideAccessKeyId ||
+        config.userProvideSecretAccessKey ||
+        config.userProvideSessionToken ||
+        config.userProvideBearerToken
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }, [endpointsConfig]);
 
   useEffect(() => {
     if (!aboutEnabled && activeTab === SettingsTabValues.ABOUT) {
@@ -53,6 +79,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       SettingsTabValues.DATA,
       ...(startupConfig?.balance?.enabled ? [SettingsTabValues.BALANCE] : []),
       SettingsTabValues.ACCOUNT,
+      ...(hasUserProvidedEndpoint ? [SettingsTabValues.API_KEYS] : []),
       ...(aboutEnabled ? [SettingsTabValues.ABOUT] : []),
     ];
     const currentIndex = tabs.indexOf(activeTab);
@@ -130,6 +157,15 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
       icon: <UserIcon />,
       label: 'com_nav_setting_account',
     },
+    ...(hasUserProvidedEndpoint
+      ? [
+          {
+            value: SettingsTabValues.API_KEYS,
+            icon: <KeyRound className="icon-sm" aria-hidden="true" />,
+            label: 'com_nav_setting_api_keys' as TranslationKeys,
+          },
+        ]
+      : ([] as { value: SettingsTabValues; icon: React.JSX.Element; label: TranslationKeys }[])),
     ...(aboutEnabled
       ? [
           {
@@ -269,6 +305,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     <Tabs.Content value={SettingsTabValues.ACCOUNT} tabIndex={-1}>
                       <Account />
                     </Tabs.Content>
+                    {hasUserProvidedEndpoint && (
+                      <Tabs.Content value={SettingsTabValues.API_KEYS} tabIndex={-1}>
+                        <APIKeys />
+                      </Tabs.Content>
+                    )}
                     {aboutEnabled && (
                       <Tabs.Content value={SettingsTabValues.ABOUT} tabIndex={-1}>
                         <About />
