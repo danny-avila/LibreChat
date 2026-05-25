@@ -1,5 +1,88 @@
 import { SystemRoles } from 'librechat-data-provider';
-import { normalizeOpenIdRoleValues, selectOpenIdRole } from './openidRoleSync';
+import {
+  getOpenIdRoleSyncOptions,
+  normalizeOpenIdRoleValues,
+  parseOpenIdRoleSyncList,
+  selectOpenIdRole,
+} from './openidRoleSync';
+
+describe('getOpenIdRoleSyncOptions', () => {
+  it('defaults role sync and API role sync to disabled', () => {
+    expect(getOpenIdRoleSyncOptions({})).toEqual({
+      enabled: false,
+      apiEnabled: false,
+      claimSource: 'id',
+      claim: undefined,
+      rolePriority: [],
+      fallbackRole: undefined,
+    });
+  });
+
+  it('parses enabled config and comma-separated priority roles', () => {
+    expect(
+      getOpenIdRoleSyncOptions({
+        OPENID_ROLE_SYNC_ENABLED: 'true',
+        OPENID_ROLE_SYNC_API_ENABLED: 'true',
+        OPENID_ROLE_SYNC_SOURCE: 'access',
+        OPENID_ROLE_SYNC_CLAIM: 'roles',
+        OPENID_ROLE_SYNC_ROLE_PRIORITY: 'STANDARD-USER, BASIC-USER',
+        OPENID_ROLE_SYNC_FALLBACK_ROLE: SystemRoles.USER,
+      }),
+    ).toEqual({
+      enabled: true,
+      apiEnabled: true,
+      claimSource: 'access',
+      claim: 'roles',
+      rolePriority: ['STANDARD-USER', 'BASIC-USER'],
+      fallbackRole: SystemRoles.USER,
+    });
+  });
+
+  it('requires claim when role sync is enabled', () => {
+    expect(() => getOpenIdRoleSyncOptions({ OPENID_ROLE_SYNC_ENABLED: 'true' })).toThrow(
+      'OPENID_ROLE_SYNC_CLAIM is required',
+    );
+  });
+
+  it('rejects invalid claim sources', () => {
+    expect(() =>
+      getOpenIdRoleSyncOptions({
+        OPENID_ROLE_SYNC_SOURCE: 'profile',
+      }),
+    ).toThrow('OPENID_ROLE_SYNC_SOURCE must be one of');
+  });
+
+  it('rejects API role sync when global role sync is disabled', () => {
+    expect(() =>
+      getOpenIdRoleSyncOptions({
+        OPENID_ROLE_SYNC_API_ENABLED: 'true',
+      }),
+    ).toThrow('OPENID_ROLE_SYNC_API_ENABLED requires OPENID_ROLE_SYNC_ENABLED=true');
+  });
+
+  it('rejects ADMIN in role priority and fallback role', () => {
+    expect(() =>
+      getOpenIdRoleSyncOptions({
+        OPENID_ROLE_SYNC_ROLE_PRIORITY: `STANDARD-USER,${SystemRoles.ADMIN}`,
+      }),
+    ).toThrow('OPENID_ROLE_SYNC_ROLE_PRIORITY cannot include ADMIN');
+
+    expect(() =>
+      getOpenIdRoleSyncOptions({
+        OPENID_ROLE_SYNC_FALLBACK_ROLE: SystemRoles.ADMIN,
+      }),
+    ).toThrow('OPENID_ROLE_SYNC_FALLBACK_ROLE cannot be ADMIN');
+  });
+});
+
+describe('parseOpenIdRoleSyncList', () => {
+  it('parses comma-separated values and removes blanks', () => {
+    expect(parseOpenIdRoleSyncList(' STANDARD-USER, ,BASIC-USER,')).toEqual([
+      'STANDARD-USER',
+      'BASIC-USER',
+    ]);
+  });
+});
 
 describe('normalizeOpenIdRoleValues', () => {
   it('normalizes values and deduplicates case-insensitively', () => {
