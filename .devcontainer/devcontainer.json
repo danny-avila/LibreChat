@@ -1,4 +1,61 @@
 {
+  "name": "LibreChat Dev",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces",
+  "shutdownAction": "stopCompose",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "ms-playwright.playwright",
+        "ms-vscode.vscode-typescript-next",
+        "orta.vscode-jest",
+        "eamodio.gitlens",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "typescript.enablePromptUseWorkspaceTsdk": true,
+        "files.eol": "\n",
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true
+      }
+    }
+  },
+
+  "forwardPorts": [3080, 3000, 27017, 7700, 5432, 8000],
+  "portsAttributes": {
+    "3080": { "label": "LibreChat API", "onAutoForward": "notify" },
+    "3000": { "label": "LibreChat Client (Dev)", "onAutoForward": "notify" },
+    "27017": { "label": "MongoDB", "onAutoForward": "silent" },
+    "7700": { "label": "Meilisearch", "onAutoForward": "silent" },
+    "5432": { "label": "PostgreSQL (VectorDB)", "onAutoForward": "silent" },
+    "8000": { "label": "RAG API", "onAutoForward": "silent" }
+  },
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postStartCommand": "echo 'DevContainer started. docker-compose services are available.'",
+
+  "remoteUser": "vscode",
+  "remoteEnv": {
+    "NODE_ENV": "development"
+  },
+
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  }
+}
+{
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
   "workspaceFolder": "/workspaces",

@@ -166,6 +166,9 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               </TooltipAnchor>
             )}
           </div>
+          <div className="ctw-logo-bg" data-logo-url="assets/claytechworks_logo_typeA_gray.svg">
+            <img src="assets/claytechworks_logo_typeA_gray.svg" alt="Claytech Works Logo" />
+          </div>
           {((isAgent || isAssistant) && name) || name ? (
             <div className="flex flex-col items-center gap-0 p-2">
               <SplitText
