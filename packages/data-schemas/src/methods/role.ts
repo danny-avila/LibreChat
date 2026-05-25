@@ -17,6 +17,10 @@ function isSystemRoleName(name: string): boolean {
   return systemRoleValues.has(name.toUpperCase());
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export class RoleConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -124,20 +128,34 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   }
 
   /**
-   * Find a role by name without using or populating the shared role-name cache.
-   * Use this for tenant-scoped lookups where the active ALS tenant context must control the query.
+   * Find roles by name without using or populating the shared role-name cache.
+   * Use this for tenant-scoped authorization lookups where the active ALS tenant context must control the query.
    */
-  async function findRoleByName(roleName: string, fieldsToSelect: string | string[] | null = null) {
+  async function findRolesByNames(
+    roleNames: string[],
+    fieldsToSelect: string | string[] | null = null,
+  ) {
     try {
+      const uniqueRoleNames = [
+        ...new Set(roleNames.map((roleName) => roleName.trim()).filter(Boolean)),
+      ];
+      if (uniqueRoleNames.length === 0) {
+        return [] as IRole[];
+      }
+
       const Role = mongoose.models.Role;
-      let query = Role.findOne({ name: roleName });
+      let query = Role.find({
+        $or: uniqueRoleNames.map((roleName) => ({
+          name: new RegExp(`^${escapeRegex(roleName)}$`, 'i'),
+        })),
+      });
       if (fieldsToSelect) {
         query = query.select(fieldsToSelect);
       }
 
-      return (await query.lean().exec()) as IRole | null;
+      return await query.lean<IRole[]>().exec();
     } catch (error) {
-      throw new Error(`Failed to retrieve role: ${(error as Error).message}`);
+      throw new Error(`Failed to retrieve roles: ${(error as Error).message}`);
     }
   }
 
@@ -528,7 +546,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     countRoles,
     initializeRoles,
     getRoleByName,
-    findRoleByName,
+    findRolesByNames,
     updateRoleByName,
     updateAccessPermissions,
     migrateRoleSchema,

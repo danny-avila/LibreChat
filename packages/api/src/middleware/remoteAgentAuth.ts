@@ -22,7 +22,7 @@ import { isEnabled, math } from '~/utils';
 export interface RemoteAgentAuthDeps {
   apiKeyMiddleware: RequestHandler;
   findUser: UserMethods['findUser'];
-  getRoleByName: RoleMethods['findRoleByName'];
+  getRolesByNames: RoleMethods['findRolesByNames'];
   updateUser: UserMethods['updateUser'];
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
 }
@@ -454,7 +454,7 @@ async function resolveUser(
 async function getOpenIdRoleSyncUpdate(
   payload: JwtPayload,
   user: IUser,
-  getRoleByName: RemoteAgentAuthDeps['getRoleByName'],
+  getRolesByNames: RemoteAgentAuthDeps['getRolesByNames'],
 ): Promise<string | undefined> {
   const options = getOpenIdRoleSyncOptions();
   if (!options.enabled || !options.apiEnabled) {
@@ -482,7 +482,7 @@ async function getOpenIdRoleSyncUpdate(
 
   const loadLibreChatRoles = () =>
     getLibreChatRolesForOpenIdSync({
-      getRoleByName,
+      getRolesByNames,
       rolePriority: options.rolePriority,
       fallbackRole: options.fallbackRole,
       logPrefix: '[remoteAgentAuth]',
@@ -511,9 +511,9 @@ async function getOpenIdRoleSyncUpdate(
 async function applyOpenIdRoleSyncToResolvedUser(
   payload: JwtPayload,
   userResolution: Extract<UserResolution, { status: 'resolved' }>,
-  getRoleByName: RemoteAgentAuthDeps['getRoleByName'],
+  getRolesByNames: RemoteAgentAuthDeps['getRolesByNames'],
 ): Promise<boolean> {
-  const selectedRole = await getOpenIdRoleSyncUpdate(payload, userResolution.user, getRoleByName);
+  const selectedRole = await getOpenIdRoleSyncUpdate(payload, userResolution.user, getRolesByNames);
 
   if (!selectedRole) {
     return false;
@@ -565,7 +565,7 @@ async function updateResolvedUser(
 export function createRemoteAgentAuth({
   apiKeyMiddleware,
   findUser,
-  getRoleByName,
+  getRolesByNames,
   updateUser,
   getAppConfig,
 }: RemoteAgentAuthDeps): RequestHandler {
@@ -670,7 +670,7 @@ export function createRemoteAgentAuth({
       const roleChanged = await applyOpenIdRoleSyncToResolvedUser(
         payload,
         userResolution,
-        getRoleByName,
+        getRolesByNames,
       );
       if (
         roleChanged &&

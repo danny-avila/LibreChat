@@ -25,7 +25,7 @@ const {
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
-const { findUser, createUser, updateUser, findRoleByName } = require('~/models');
+const { findUser, createUser, updateUser, findRolesByNames } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 
@@ -511,7 +511,7 @@ async function applyOpenIdRoleSync({
   }
 
   const libreChatRoles = {
-    getRoleByName: findRoleByName,
+    getRolesByNames: findRolesByNames,
     rolePriority: options.rolePriority,
     fallbackRole: options.fallbackRole,
     logPrefix: '[openidStrategy]',

@@ -2,7 +2,7 @@ const undici = require('undici');
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes, FileSources } = require('librechat-data-provider');
-const { findUser, createUser, updateUser, findRoleByName } = require('~/models');
+const { findUser, createUser, updateUser, findRolesByNames } = require('~/models');
 const { getOpenIdIssuer, resolveAppConfigForUser, isEnabled } = require('@librechat/api');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getAppConfig } = require('~/server/services/Config');
@@ -94,7 +94,7 @@ jest.mock('~/models', () => ({
   findUser: jest.fn(),
   createUser: jest.fn(),
   updateUser: jest.fn(),
-  findRoleByName: jest.fn(),
+  findRolesByNames: jest.fn(),
 }));
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/api'),
@@ -206,6 +206,15 @@ describe('setupOpenId', () => {
     // Clear previous mock calls and reset implementations
     jest.clearAllMocks();
     isEnabled.mockImplementation(jest.requireActual('@librechat/api').isEnabled);
+    require('~/cache/getLogStores').mockImplementation(() => ({
+      get: jest.fn(),
+      set: jest.fn(),
+    }));
+    require('openid-client').genericGrantRequest.mockReset();
+    require('openid-client').genericGrantRequest.mockResolvedValue({
+      access_token: 'exchanged_graph_token',
+      expires_in: 3600,
+    });
 
     // Reset environment variables needed by the strategy
     process.env.OPENID_ISSUER = 'https://fake-issuer.com';
@@ -233,6 +242,8 @@ describe('setupOpenId', () => {
     delete process.env.OPENID_ROLE_SYNC_CLAIM;
     delete process.env.OPENID_ROLE_SYNC_ROLE_PRIORITY;
     delete process.env.OPENID_ROLE_SYNC_FALLBACK_ROLE;
+    delete process.env.OPENID_ON_BEHALF_FLOW_FOR_USERINFO_REQUIRED;
+    delete process.env.OPENID_ON_BEHALF_FLOW_USERINFO_SCOPE;
 
     // Default jwtDecode mock returns a token that includes the required role.
     jwtDecode.mockReturnValue({
@@ -249,7 +260,9 @@ describe('setupOpenId', () => {
     updateUser.mockImplementation(async (id, userData) => {
       return { _id: id, ...userData };
     });
-    findRoleByName.mockImplementation(async (roleName) => ({ name: roleName }));
+    findRolesByNames.mockImplementation(async (roleNames) =>
+      roleNames.map((roleName) => ({ name: roleName })),
+    );
 
     resizeAvatar.mockResolvedValue(Buffer.from('safe avatar'));
 
@@ -985,6 +998,10 @@ describe('setupOpenId', () => {
   });
 
   describe('OBO token exchange for overage', () => {
+    beforeEach(() => {
+      delete process.env.OPENID_ADMIN_ROLE;
+    });
+
     it('exchanges access token via OBO before calling Graph API', async () => {
       const openidClient = require('openid-client');
       process.env.OPENID_REQUIRED_ROLE = 'group-required';
@@ -1579,7 +1596,7 @@ describe('setupOpenId', () => {
       const { user } = await validate(tokenset);
 
       expect(user.role).toBeUndefined();
-      expect(findRoleByName).not.toHaveBeenCalled();
+      expect(findRolesByNames).not.toHaveBeenCalled();
     });
 
     it('leaves ADMIN authoritative when OPENID_ADMIN_ROLE grants admin', async () => {
@@ -1605,8 +1622,10 @@ describe('setupOpenId', () => {
     });
 
     it('rejects login when configured sync roles do not exist', async () => {
-      findRoleByName.mockImplementation(async (roleName) =>
-        roleName === 'STANDARD-USER' ? null : { name: roleName },
+      findRolesByNames.mockImplementation(async (roleNames) =>
+        roleNames
+          .filter((roleName) => roleName !== 'STANDARD-USER')
+          .map((roleName) => ({ name: roleName })),
       );
       jwtDecode.mockReturnValue({
         roles: ['requiredRole', 'STANDARD-USER'],
