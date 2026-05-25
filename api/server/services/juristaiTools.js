@@ -137,6 +137,87 @@ const getAppId = (req) => {
 };
 
 const SEARCH_CASE_TOOL = `${JURISTAI_TOOL_PREFIX}search-case`;
+const JURISTAI_TOOL_CONTEXT_BODY_KEYS = ['juristaiToolContext', 'toolContext'];
+const MILESTONE_ONE_ALIAS_TO_OPERATION_IDS = Object.freeze({
+  search_case: ['search-case'],
+  retrieve_my_cases: ['list-my-cases'],
+  get_case_metadata: ['get-case-metadata'],
+  retrieve_case_details: ['get-case-metadata'],
+  generate_case_summary: ['generate-case-summary'],
+  retrieve_case_summary: ['retrieve-case-summary'],
+  retrieve_case_action_items: ['list-action-items'],
+  retrieve_case_important_dates: ['list-case-important-dates'],
+  retrieve_case_timeline: ['list-case-timeline'],
+  retrieve_case_calendar: ['get-case-calendar'],
+  retrieve_latest_docket_entry: ['get-latest-docket-entry'],
+  people_insight: ['read-people-dossiers'],
+  search_precedents: ['precedent-query'],
+  query_processor: ['query-processor'],
+  deadlines_insight: ['deadlines-insight'],
+  summarize_document: ['summarize-document'],
+  doc_critique: ['doc-critique'],
+  lawsuit_recommendation: ['recommend-lawsuit'],
+  legal_team_invite: ['legal-team-invite'],
+  accept_legal_team_invite: ['accept-legal-team-invite'],
+  manage_legal_team: [
+    'list-legal-team-members',
+    'rename-legal-team',
+    'remove-legal-team-member',
+    'assign-legal-team-to-case',
+    'delete-legal-team',
+  ],
+  list_legal_team_members: ['list-legal-team-members'],
+  rename_legal_team: ['rename-legal-team'],
+  remove_legal_team_member: ['remove-legal-team-member'],
+  assign_legal_team_to_case: ['assign-legal-team-to-case'],
+  delete_legal_team: ['delete-legal-team'],
+  manage_organization: ['list-organization-members'],
+  account_manager: ['account-manager'],
+  retrieve_case_billing_summary: ['retrieve-case-billing-summary'],
+  generate_case_bill: ['generate-case-bill'],
+  list_host_scheduling_schedules: ['list-host-scheduling-schedules'],
+  create_scheduling_schedule: ['create-scheduling-schedule'],
+  update_scheduling_schedule: ['update-scheduling-schedule'],
+  list_host_scheduling_event_types: ['list-host-scheduling-event-types'],
+  create_scheduling_event_type: ['create-scheduling-event-type'],
+  update_scheduling_event_type: ['update-scheduling-event-type'],
+  get_public_scheduling_link: ['get-public-scheduling-link'],
+  search_scheduling_slots: ['search-scheduling-slots'],
+  create_scheduling_reservation: ['create-scheduling-reservation'],
+  delete_scheduling_reservation: ['delete-scheduling-reservation'],
+  list_host_scheduling_bookings: ['list-host-scheduling-bookings'],
+  create_scheduling_booking: ['create-scheduling-booking'],
+  cancel_scheduling_booking: ['cancel-scheduling-booking'],
+  reschedule_scheduling_booking: ['reschedule-scheduling-booking'],
+  confirm_scheduling_booking: ['confirm-scheduling-booking'],
+  retry_scheduling_conferencing: ['retry-scheduling-conferencing'],
+  connect_scheduling_conferencing: ['connect-scheduling-conferencing'],
+  disconnect_scheduling_conferencing: ['disconnect-scheduling-conferencing'],
+  create_signature_request: ['create-signature-request'],
+  list_case_signatures: ['list-case-signatures'],
+  get_signature_request_detail: ['get-signature-request-detail'],
+  send_signature_reminder: ['send-signature-reminder'],
+  void_signature_request: ['void-signature-request'],
+  create_self_sign_session: ['create-self-sign-session'],
+  reconcile_signature_request: ['reconcile-signature-request'],
+  create_case_action_item: ['create-action-item'],
+  update_case_action_item: ['update-action-item'],
+  assign_case_action_item: ['assign-action-item'],
+  complete_case_action_item: ['complete-action-item'],
+  create_case_important_date: ['create-case-important-date'],
+  update_case_important_date: ['update-case-important-date'],
+  delete_case_important_date: ['delete-case-important-date'],
+  assign_user_to_case: ['assign-user-to-case'],
+  remove_user_from_case: ['remove-user-from-case'],
+  start_motion_generation: ['generate-motion'],
+  start_demand_letter_generation: ['demand-letter'],
+  start_lawsuit_generation: ['generate-lawsuit'],
+});
+const WORKFLOW_STARTER_OPERATION_IDS = new Set([
+  'generate-motion',
+  'demand-letter',
+  'generate-lawsuit',
+]);
 
 /**
  * Fills the django-hub-required fields the model can't reasonably know.
@@ -167,6 +248,14 @@ const applySearchCaseDefaults = (args, req) => {
   return merged;
 };
 
+const applyWorkflowStarterDefaults = (args, req, toolName) => {
+  const merged = applySharedDefaults(args, req, toolName);
+  if (merged.asyncInvoke !== true) {
+    merged.asyncInvoke = true;
+  }
+  return merged;
+};
+
 const TOOL_DEFAULT_APPLIERS = {
   [SEARCH_CASE_TOOL]: applySearchCaseDefaults,
 };
@@ -175,8 +264,99 @@ const applyToolDefaults = (toolName, input, req) => {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     return input;
   }
-  const applyDefaults = TOOL_DEFAULT_APPLIERS[toolName] ?? applySharedDefaults;
+  const operationId = toolName.replace(JURISTAI_TOOL_PREFIX, '');
+  const applyDefaults =
+    TOOL_DEFAULT_APPLIERS[toolName] ??
+    (WORKFLOW_STARTER_OPERATION_IDS.has(operationId)
+      ? applyWorkflowStarterDefaults
+      : applySharedDefaults);
   return applyDefaults(input, req, toolName);
+};
+
+const readRequestedToolEntries = (req) => {
+  for (const key of JURISTAI_TOOL_CONTEXT_BODY_KEYS) {
+    const value = req.body?.[key];
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const availableTools = value.availableTools;
+      if (Array.isArray(availableTools)) {
+        return availableTools;
+      }
+    }
+  }
+  return [];
+};
+
+const normalizeRequestedToolTokens = (req) => {
+  const tokens = new Set();
+  for (const entry of readRequestedToolEntries(req)) {
+    if (typeof entry === 'string') {
+      const trimmed = entry.trim();
+      if (trimmed) {
+        tokens.add(trimmed);
+      }
+      continue;
+    }
+    if (entry && typeof entry === 'object') {
+      const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+      const operationId = typeof entry.operationId === 'string' ? entry.operationId.trim() : '';
+      const operationIds = Array.isArray(entry.operationIds)
+        ? entry.operationIds
+            .filter((value) => typeof value === 'string')
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : [];
+      if (name) {
+        tokens.add(name);
+      }
+      if (operationId) {
+        tokens.add(operationId);
+      }
+      for (const value of operationIds) {
+        tokens.add(value);
+      }
+    }
+  }
+  return tokens;
+};
+
+const resolveCatalogSubset = (catalog, req) => {
+  const requested = normalizeRequestedToolTokens(req);
+  if (requested.size === 0) {
+    return catalog;
+  }
+
+  const directToolNames = new Set();
+  const directOperationIds = new Set();
+  for (const token of requested) {
+    if (token.startsWith(JURISTAI_TOOL_PREFIX)) {
+      directToolNames.add(token);
+      continue;
+    }
+    directOperationIds.add(token);
+    for (const aliasOperationId of MILESTONE_ONE_ALIAS_TO_OPERATION_IDS[token] ?? []) {
+      directOperationIds.add(aliasOperationId);
+    }
+  }
+
+  const filtered = catalog.filter((tool) => {
+    if (directToolNames.has(tool.name)) {
+      return true;
+    }
+    if (directOperationIds.has(tool.operationId)) {
+      return true;
+    }
+    const toolSuffix = tool.name.startsWith(JURISTAI_TOOL_PREFIX)
+      ? tool.name.slice(JURISTAI_TOOL_PREFIX.length)
+      : tool.name;
+    return directOperationIds.has(toolSuffix);
+  });
+
+  logger.debug('[juristaiTools] Applied request tool scope', {
+    appId: getAppId(req),
+    requestedTools: Array.from(requested),
+    resolvedToolNames: filtered.map((tool) => tool.name),
+  });
+  return filtered;
 };
 
 const extractHttpStatus = (value) => {
@@ -361,7 +541,8 @@ const withServerDefaults = (tool, toolName, req) => {
 const getCatalog = async (req) => {
   const specConfig = getSpecConfig();
   try {
-    return await loadJuristaiToolCatalog(specConfig, getAppId(req));
+    const catalog = await loadJuristaiToolCatalog(specConfig, getAppId(req));
+    return resolveCatalogSubset(catalog, req);
   } catch (error) {
     logger.error('[juristaiTools] Failed to load live django-hub tool catalog', {
       baseUrl: specConfig.djangoBaseUrl,
@@ -379,7 +560,7 @@ const getCatalog = async (req) => {
             staticSpec: SEARCH_CASE_SPEC,
           },
           getAppId(req),
-        );
+        ).then((catalog) => resolveCatalogSubset(catalog, req));
       } catch (fallbackError) {
         logger.error('[juristaiTools] Failed to load fallback JuristAI tool catalog', {
           error: fallbackError?.message ?? String(fallbackError),

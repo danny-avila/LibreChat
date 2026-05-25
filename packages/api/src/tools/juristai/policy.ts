@@ -15,6 +15,12 @@ export const SHARED_CORE_OPERATIONS = [
   'get-case-metadata',
   'generate-case-summary',
   'retrieve-case-summary',
+  'list-my-cases',
+  'list-case-timeline',
+  'get-latest-docket-entry',
+  'get-case-calendar',
+  'assign-user-to-case',
+  'remove-user-from-case',
   'read-people-dossiers',
   'generate-motion',
   'summarize-document',
@@ -23,6 +29,13 @@ export const SHARED_CORE_OPERATIONS = [
   'query-processor',
   'deadlines-insight',
   'legal-team-invite',
+  'accept-legal-team-invite',
+  'list-organization-members',
+  'list-legal-team-members',
+  'rename-legal-team',
+  'remove-legal-team-member',
+  'assign-legal-team-to-case',
+  'delete-legal-team',
   'account-manager',
 ] as const;
 
@@ -30,6 +43,8 @@ export const LITIGAI_ONLY_OPERATIONS = [
   'demand-letter',
   'generate-lawsuit',
   'recommend-lawsuit',
+  'retrieve-case-billing-summary',
+  'generate-case-bill',
   'list-action-items',
   'create-action-item',
   'update-action-item',
@@ -42,6 +57,12 @@ export const LITIGAI_ONLY_OPERATIONS = [
 ] as const;
 
 export const SCHEDULING_OPERATIONS = [
+  'list-host-scheduling-schedules',
+  'create-scheduling-schedule',
+  'update-scheduling-schedule',
+  'list-host-scheduling-event-types',
+  'create-scheduling-event-type',
+  'update-scheduling-event-type',
   'get-public-scheduling-link',
   'search-scheduling-slots',
   'create-scheduling-reservation',
