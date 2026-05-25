@@ -9,6 +9,8 @@ import type { TResData } from '~/common';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
+import { enqueueMCPConfirmation } from './enqueueMCPConfirmation';
+import { pendingMCPConfirmationsAtom } from '~/store/mcpConfirmation';
 import { clearAllDrafts } from '~/utils';
 import store from '~/store';
 
@@ -24,6 +26,7 @@ export default function useSSE(
   runIndex = 0,
 ) {
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
+  const setPendingMCPConfirmations = useSetRecoilState(pendingMCPConfirmationsAtom);
 
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
@@ -113,6 +116,13 @@ export default function useSSE(
         };
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
+      } else if (data.event === 'mcp_confirmation_required') {
+        // Intercept before stepHandler — this event is not a step delta and
+        // must surface the confirmation modal instead of feeding the chunk
+        // pipeline. The backend has suspended the agent loop awaiting the
+        // user's decision via POST /api/mcp/confirm/:confirmationId.
+        // See enqueueMCPConfirmation for the enqueue+dedup+deadline rationale.
+        setPendingMCPConfirmations((prev) => enqueueMCPConfirmation(prev, data.data));
       } else if (data.event != null) {
         stepHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.sync != null) {
