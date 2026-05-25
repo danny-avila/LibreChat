@@ -42,11 +42,25 @@ jest.mock('~/models', () => ({
   deleteUserById: jest.fn(),
   generateRefreshToken: jest.fn(),
 }));
-jest.mock('~/strategies/validators', () => ({ registerSchema: { parse: jest.fn() } }));
+jest.mock('~/strategies/validators', () => ({
+  registerSchema: {
+    safeParse: jest.fn((user) => ({
+      success: true,
+      data: {
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        password: user.password,
+        confirm_password: user.confirm_password,
+      },
+    })),
+  },
+}));
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
 
 const {
+  checkEmailConfig,
   shouldUseSecureCookie,
   isEmailDomainAllowed,
   resolveAppConfigForUser,
@@ -58,6 +72,9 @@ const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
 const {
   findUser,
+  createUser,
+  updateUser,
+  countUsers,
   getUserById,
   generateToken,
   generateRefreshToken,
@@ -67,6 +84,7 @@ const { getAppConfig } = require('~/server/services/Config');
 const {
   setOpenIDAuthTokens,
   requestPasswordReset,
+  registerUser,
   setAuthTokens,
   setCloudFrontAuthCookies,
 } = require('./AuthService');
@@ -378,6 +396,59 @@ describe('setOpenIDAuthTokens', () => {
       expect(result).toBe('the-id-token');
       expect(req.session.openidTokens.refreshToken).toBe('existing-refresh');
     });
+  });
+});
+
+describe('registerUser', () => {
+  const registrationPayload = {
+    name: 'Test User',
+    username: 'testuser',
+    email: 'test@example.com',
+    password: 'Password123!',
+    confirm_password: 'Password123!',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN = 'false';
+    checkEmailConfig.mockReturnValue(false);
+    isEmailDomainAllowed.mockReturnValue(true);
+    getAppConfig.mockResolvedValue({
+      balance: { enabled: false },
+      registration: { allowedDomains: [] },
+    });
+    findUser.mockResolvedValue(null);
+    countUsers.mockResolvedValue(1);
+    createUser.mockResolvedValue({ _id: 'new-user-id' });
+    updateUser.mockResolvedValue({ _id: 'new-user-id' });
+  });
+
+  it('ignores provider values from the public registration payload', async () => {
+    const result = await registerUser({ ...registrationPayload, provider: 'google' });
+
+    expect(result.status).toBe(200);
+    expect(createUser.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        email: registrationPayload.email,
+        provider: 'local',
+      }),
+    );
+  });
+
+  it('allows trusted callers to set provider through additional data', async () => {
+    const result = await registerUser(registrationPayload, {
+      emailVerified: true,
+      provider: 'google',
+    });
+
+    expect(result.status).toBe(200);
+    expect(createUser.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        email: registrationPayload.email,
+        emailVerified: true,
+        provider: 'google',
+      }),
+    );
   });
 });
 
