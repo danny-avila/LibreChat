@@ -15,7 +15,32 @@ const { logger } = require('@librechat/data-schemas');
  */
 
 /**
- * Extracts a claim value from a JWT token using dot-notation path
+ * Splits a claim path on unescaped '.'; '\.' is treated as a literal dot so
+ * namespaced OIDC claim keys (e.g. Auth0 'https://app\.example\.com/roles') resolve.
+ * @param {string} claimPath
+ * @returns {string[]}
+ */
+function splitClaimPath(claimPath) {
+  const parts = [];
+  let current = '';
+  for (let i = 0; i < claimPath.length; i++) {
+    if (claimPath[i] === '\\' && claimPath[i + 1] === '.') {
+      current += '.';
+      i += 1;
+    } else if (claimPath[i] === '.') {
+      parts.push(current);
+      current = '';
+    } else {
+      current += claimPath[i];
+    }
+  }
+  parts.push(current);
+  return parts;
+}
+
+/**
+ * Extracts a claim value from a JWT token using dot-notation path.
+ * Use '\.' to embed a literal dot in a single segment (e.g. namespaced claims).
  * @param {string} token - The JWT token to decode
  * @param {string} claimPath - Dot-notation path to the claim (e.g., 'realm_access.roles')
  * @returns {Array<string>|null} Array of claim values, or null if not found
@@ -39,8 +64,7 @@ function extractClaimFromToken(token, claimPath) {
       return null;
     }
 
-    // Navigate the claim path
-    const pathParts = claimPath.split('.');
+    const pathParts = splitClaimPath(claimPath);
     let value = decoded;
 
     for (const part of pathParts) {
@@ -75,29 +99,19 @@ function extractClaimFromToken(token, claimPath) {
 }
 
 /**
- * Sanitizes a group name to ensure it's safe for database storage
- * Removes or replaces characters that could cause issues in MongoDB
+ * Strips MongoDB operator characters and length-limits a group identifier.
+ * Slashes/dots are preserved so distinct upstream groups (e.g. '/team-a' vs
+ * 'team-a') don't collapse to the same idOnTheSource.
  * @param {string} groupName - The raw group name from JWT
- * @returns {string} Sanitized group name
+ * @returns {string}
  */
 function sanitizeGroupName(groupName) {
   if (!groupName || typeof groupName !== 'string') {
     return '';
   }
 
-  // Remove leading/trailing whitespace
-  let sanitized = groupName.trim();
+  let sanitized = groupName.trim().replace(/[${}]/g, '');
 
-  // Remove leading slashes from hierarchical group names (e.g., /admin/users -> admin/users)
-  sanitized = sanitized.replace(/^\/+/, '');
-
-  // Replace remaining slashes with hyphens for flat structure
-  sanitized = sanitized.replace(/\//g, '-');
-
-  // Remove MongoDB operators and special characters
-  sanitized = sanitized.replace(/[${}]/g, '');
-
-  // Limit length (MongoDB field size limits)
   if (sanitized.length > 100) {
     sanitized = sanitized.substring(0, 100);
     logger.warn(`[sanitizeGroupName] Group name truncated to 100 characters: ${groupName}`);

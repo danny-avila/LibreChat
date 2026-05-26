@@ -116,6 +116,44 @@ describe('extractClaimFromToken', () => {
     const result = extractClaimFromToken(token, 'data');
     expect(result).toBeNull();
   });
+
+  it('should resolve namespaced claim keys with escaped dots', () => {
+    const token = 'dummy.jwt.token';
+    jwtDecode.mockReturnValue({
+      'https://myapp.example.com/roles': ['admin', 'user'],
+    });
+
+    const result = extractClaimFromToken(
+      token,
+      'https://myapp\\.example\\.com/roles',
+    );
+    expect(result).toEqual(['admin', 'user']);
+  });
+
+  it('should still split unescaped dots normally', () => {
+    const token = 'dummy.jwt.token';
+    jwtDecode.mockReturnValue({
+      realm_access: { roles: ['admin'] },
+    });
+
+    const result = extractClaimFromToken(token, 'realm_access.roles');
+    expect(result).toEqual(['admin']);
+  });
+
+  it('should support a mix of escaped and unescaped dots', () => {
+    const token = 'dummy.jwt.token';
+    jwtDecode.mockReturnValue({
+      'https://app.example.com': {
+        roles: ['admin'],
+      },
+    });
+
+    const result = extractClaimFromToken(
+      token,
+      'https://app\\.example\\.com.roles',
+    );
+    expect(result).toEqual(['admin']);
+  });
 });
 
 describe('sanitizeGroupName', () => {
@@ -123,14 +161,19 @@ describe('sanitizeGroupName', () => {
     expect(sanitizeGroupName('  admin  ')).toBe('admin');
   });
 
-  it('should remove leading slashes', () => {
-    expect(sanitizeGroupName('/admin')).toBe('admin');
-    expect(sanitizeGroupName('///admin')).toBe('admin');
+  it('should preserve leading slashes (distinct upstream identity)', () => {
+    expect(sanitizeGroupName('/admin')).toBe('/admin');
+    expect(sanitizeGroupName('///admin')).toBe('///admin');
   });
 
-  it('should replace remaining slashes with hyphens', () => {
-    expect(sanitizeGroupName('admin/users')).toBe('admin-users');
-    expect(sanitizeGroupName('org/dept/team')).toBe('org-dept-team');
+  it('should preserve internal slashes (distinct upstream identity)', () => {
+    expect(sanitizeGroupName('admin/users')).toBe('admin/users');
+    expect(sanitizeGroupName('org/dept/team')).toBe('org/dept/team');
+  });
+
+  it('should keep path-style and flat-style names distinct', () => {
+    expect(sanitizeGroupName('/team-a')).not.toBe(sanitizeGroupName('team-a'));
+    expect(sanitizeGroupName('finance/admin')).not.toBe(sanitizeGroupName('finance-admin'));
   });
 
   it('should remove MongoDB special characters', () => {
@@ -139,8 +182,8 @@ describe('sanitizeGroupName', () => {
     expect(sanitizeGroupName('admin}test')).toBe('admintest');
   });
 
-  it('should handle hierarchical paths', () => {
-    expect(sanitizeGroupName('/engineering/backend/team')).toBe('engineering-backend-team');
+  it('should preserve hierarchical paths verbatim', () => {
+    expect(sanitizeGroupName('/engineering/backend/team')).toBe('/engineering/backend/team');
   });
 
   it('should truncate long group names', () => {
@@ -207,7 +250,7 @@ describe('extractGroupsFromToken', () => {
     expect(result).toEqual(['admin', 'user']);
   });
 
-  it('should sanitize all group names', () => {
+  it('should preserve slashes and only strip MongoDB operators', () => {
     const tokenset = {
       access_token: 'access.jwt.token',
     };
@@ -217,7 +260,7 @@ describe('extractGroupsFromToken', () => {
     });
 
     const result = extractGroupsFromToken(tokenset, 'groups');
-    expect(result).toEqual(['admin', 'engineering-backend', 'userrole']);
+    expect(result).toEqual(['/admin', '/engineering/backend', 'userrole']);
   });
 
   it('should remove duplicate groups', () => {
@@ -273,13 +316,13 @@ describe('extractGroupsFromToken', () => {
     expect(result).toEqual([]);
   });
 
-  it('should filter out empty group names after sanitization', () => {
+  it('should filter out group names that become empty after sanitization', () => {
     const tokenset = {
       access_token: 'access.jwt.token',
     };
 
     jwtDecode.mockReturnValue({
-      groups: ['admin', '  ', '//', '', 'user'],
+      groups: ['admin', '   ', '${}', '', 'user'],
     });
 
     const result = extractGroupsFromToken(tokenset, 'groups');

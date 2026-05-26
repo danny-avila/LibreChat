@@ -238,6 +238,7 @@ export type TPrincipalSearchResponse = {
   sources: {
     local: number;
     entra: number;
+    oidc: number;
   };
 };
 
