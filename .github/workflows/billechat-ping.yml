@@ -1,0 +1,13 @@
+name: BilleChat Ping
+
+on:
+  push:
+    branches:
+      - billechat
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "billechat workflow trigger ok"
