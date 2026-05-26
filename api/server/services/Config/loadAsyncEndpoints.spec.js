@@ -89,7 +89,7 @@ describe('loadAsyncEndpoints', () => {
 
     const result = await loadAsyncEndpoints();
 
-    expect(result).toEqual({ google: { userProvide: undefined } });
+    expect(result).toEqual({ google: { userProvide: false } });
     expect(mockLoadServiceKey).toHaveBeenCalledWith(expect.stringContaining('api/data/auth.json'));
   });
 
@@ -102,7 +102,7 @@ describe('loadAsyncEndpoints', () => {
 
     const result = await loadAsyncEndpoints();
 
-    expect(result).toEqual({ google: { userProvide: undefined } });
+    expect(result).toEqual({ google: { userProvide: false } });
     expect(mockAccess).not.toHaveBeenCalled();
     expect(mockLoadServiceKey).toHaveBeenCalledWith('/secrets/google-service-account.json');
   });

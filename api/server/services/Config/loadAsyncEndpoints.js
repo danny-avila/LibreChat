@@ -16,7 +16,7 @@ async function getServiceKeyPath() {
     await fs.access(defaultServiceKeyPath);
     return defaultServiceKeyPath;
   } catch (error) {
-    if (error?.code && error.code !== 'ENOENT') {
+    if (error?.code !== 'ENOENT') {
       logger.warn(
         `Unable to access default Google service key file: ${defaultServiceKeyPath}`,
         error,
@@ -27,7 +27,8 @@ async function getServiceKeyPath() {
 }
 
 async function loadAsyncEndpoints() {
-  let serviceKey, googleUserProvides;
+  let serviceKey;
+  let googleUserProvides = false;
   const { googleKey } = config;
 
   /** Check if GOOGLE_KEY is provided at all(including 'user_provided') */
