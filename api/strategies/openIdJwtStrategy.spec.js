@@ -339,7 +339,7 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
       role: SystemRoles.USER,
     };
     findUser.mockImplementation(async (query) => {
-      if (query.$or && query.$or.some((c) => c.openidId === payload.sub)) {
+      if (query.openidId === payload.sub && query.openidIssuer === 'https://issuer.example.com') {
         return existingUser;
       }
       return null;
@@ -348,13 +348,10 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     const req = { headers: { authorization: 'Bearer tok' }, session: {} };
     await invokeVerify(req, payload);
 
-    expect(findUser).toHaveBeenCalledWith(
-      expect.objectContaining({
-        $or: expect.arrayContaining([
-          { openidId: payload.sub, openidIssuer: 'https://issuer.example.com' },
-        ]),
-      }),
-    );
+    expect(findUser).toHaveBeenCalledWith({
+      openidId: payload.sub,
+      openidIssuer: 'https://issuer.example.com',
+    });
   });
 
   it('should use OPENID_EMAIL_CLAIM when set for email lookup', async () => {
@@ -365,12 +362,13 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     const { user } = await invokeVerify(req, payload);
 
     expect(findUser).toHaveBeenCalledTimes(2);
-    expect(findUser.mock.calls[0][0]).toMatchObject({
-      $or: expect.arrayContaining([
-        { openidId: payload.sub, openidIssuer: 'https://issuer.example.com' },
-      ]),
+    expect(findUser.mock.calls[0][0]).toEqual({
+      openidId: payload.sub,
+      openidIssuer: 'https://issuer.example.com',
     });
-    expect(findUser.mock.calls[1][0]).toEqual({ email: 'test@corp.example.com' });
+    expect(findUser.mock.calls[1][0]).toEqual({
+      email: 'test@corp.example.com',
+    });
     expect(user).toBe(false);
   });
 

@@ -33,26 +33,40 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, Tools } from 'librechat-data-provider';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
 import { DEFAULT_MAX_CONTEXT_TOKENS } from '../initialize';
 
-// Mock logger
+// Mock logger — `format` must be a callable factory so @librechat/data-schemas
+// dist module-load completes cleanly; see api/test/__mocks__/logger.js.
 jest.mock('winston', () => ({
   createLogger: jest.fn(() => ({
     debug: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
+    info: jest.fn(),
   })),
-  format: {
-    combine: jest.fn(),
-    colorize: jest.fn(),
-    simple: jest.fn(),
-  },
+  format: Object.assign(
+    jest.fn((fn) => () => ({ transform: fn })),
+    {
+      combine: jest.fn(),
+      colorize: jest.fn(),
+      simple: jest.fn(),
+      label: jest.fn(),
+      timestamp: jest.fn(),
+      printf: jest.fn(),
+      errors: jest.fn(),
+      splat: jest.fn(),
+      json: jest.fn(),
+    },
+  ),
+  addColors: jest.fn(),
   transports: {
     Console: jest.fn(),
+    DailyRotateFile: jest.fn(),
+    File: jest.fn(),
   },
 }));
 
@@ -112,6 +126,13 @@ function createMocks(overrides?: {
   maxOutputTokens?: number;
   endpointTokenConfig?: EndpointTokenConfig;
   useRealTokenLookup?: boolean;
+  providerTools?: unknown[];
+  loadedToolDefinitions?: Array<{
+    name: string;
+    description?: string;
+    parameters?: object;
+  }>;
+  structuredTools?: unknown[];
 }) {
   const {
     provider = Providers.OPENAI,
@@ -122,6 +143,9 @@ function createMocks(overrides?: {
     maxOutputTokens = 4096,
     endpointTokenConfig,
     useRealTokenLookup = false,
+    providerTools,
+    loadedToolDefinitions = [],
+    structuredTools = [],
   } = overrides ?? {};
 
   const resolvedOverrideProvider = overrideProvider ?? provider;
@@ -144,6 +168,7 @@ function createMocks(overrides?: {
   const mockGetOptions = jest.fn().mockResolvedValue({
     llmConfig: { model, maxTokens: maxOutputTokens },
     endpointTokenConfig,
+    ...(providerTools !== undefined ? { tools: providerTools } : {}),
   } satisfies InitializeResultBase);
 
   mockGetProviderConfig.mockReturnValue({
@@ -167,12 +192,12 @@ function createMocks(overrides?: {
   mockOptionalChainWithEmptyCheck.mockImplementation(realUtils.optionalChainWithEmptyCheck);
 
   const loadTools = jest.fn().mockResolvedValue({
-    tools: [],
+    tools: structuredTools,
     toolContextMap: {},
     dynamicToolContextMap: {},
     userMCPAuthMap: undefined,
     toolRegistry: undefined,
-    toolDefinitions: [],
+    toolDefinitions: loadedToolDefinitions,
     hasDeferredTools: false,
   });
 
@@ -186,6 +211,36 @@ function createMocks(overrides?: {
   };
 
   return { agent, req, res, loadTools, db };
+}
+
+function countNamedWebSearchTools(tools: unknown[] | undefined): number {
+  return (
+    tools?.filter((tool) => {
+      if (tool == null || typeof tool !== 'object') {
+        return false;
+      }
+      const { name } = tool as { name?: unknown };
+      return name === Tools.web_search;
+    }).length ?? 0
+  );
+}
+
+function countGoogleSearchTools(tools: unknown[] | undefined): number {
+  return (
+    tools?.filter((tool) => {
+      if (tool == null || typeof tool !== 'object') {
+        return false;
+      }
+      return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
+    }).length ?? 0
+  );
+}
+
+function countWebSearchDefinitions(toolDefinitions: Array<{ name: string }> | undefined): number {
+  return (
+    toolDefinitions?.filter((toolDefinition) => toolDefinition.name === Tools.web_search).length ??
+    0
+  );
 }
 
 describe('initializeAgent — custom provider token lookup', () => {
@@ -259,6 +314,207 @@ describe('initializeAgent — custom provider token lookup', () => {
     // optionalChainWithEmptyCheck → Math.max formula. The toHaveBeenCalledWith
     // assertion above catches the actual provider-resolution regression.
     expect(result.maxContextTokens).toBe(Math.round((65536 - 4096) * 0.95));
+  });
+});
+
+describe('initializeAgent — provider web_search precedence', () => {
+  const nativeWebSearchTool = {
+    type: 'web_search_20250305',
+    name: Tools.web_search,
+  };
+  const nativeGoogleSearchTool = { googleSearch: {} };
+  const libreChatWebSearchDefinition = {
+    name: Tools.web_search,
+    description: 'Search the web',
+    parameters: { type: 'object', properties: {} },
+  };
+  const mcpToolDefinition = {
+    name: 'mcp_lookup',
+    description: 'Lookup context',
+    parameters: { type: 'object', properties: {} },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('keeps Anthropic native web_search when LibreChat search is not selected', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.ANTHROPIC,
+      providerTools: [nativeWebSearchTool],
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.ANTHROPIC]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeWebSearchTool]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(1);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(0);
+  });
+
+  it('keeps LibreChat web_search definitions when native Anthropic search is not enabled', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.ANTHROPIC,
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.ANTHROPIC]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(0);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+
+  it('prefers LibreChat web_search when Anthropic native search is also enabled', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.ANTHROPIC,
+      providerTools: [nativeWebSearchTool],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.ANTHROPIC]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(0);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+
+  it('keeps Google native search when LibreChat web_search is not selected', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [mcpToolDefinition],
+    });
+    agent.tools = ['mcp_lookup'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(countGoogleSearchTools(result.tools)).toBe(1);
+    expect(result.toolDefinitions).toContain(mcpToolDefinition);
+  });
+
+  it('rejects Google native search with external tools for unsupported Gemini models', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-2.5-flash',
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [mcpToolDefinition],
+    });
+    agent.tools = ['mcp_lookup'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).rejects.toThrow(/google_tool_conflict/);
+  });
+
+  it('prefers LibreChat web_search when Google native search is also enabled', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([]);
+    expect(countGoogleSearchTools(result.tools)).toBe(0);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+
+  it('leaves providers without a native web search conflict unchanged', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.OPENAI,
+      providerTools: [nativeWebSearchTool],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeWebSearchTool]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(1);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
   });
 });
 
@@ -336,6 +592,45 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     );
 
     expect(result.additional_instructions).toBe('Existing dynamic\n\nArtifact guidance');
+  });
+});
+
+describe('initializeAgent — attachment scoping', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('keeps request attachments separate from agent context attachments', async () => {
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const requestFile = { file_id: 'request-file', filename: 'request.txt' };
+    const agentContextFile = { file_id: 'agent-context-file', filename: 'agent-context.txt' };
+    primeResources.mockResolvedValueOnce({
+      attachments: [agentContextFile, requestFile],
+      requestAttachments: [requestFile],
+      agentContextAttachments: [agentContextFile],
+      tool_resources: undefined,
+    });
+
+    const { agent, req, res, loadTools, db } = createMocks();
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.attachments).toEqual([agentContextFile, requestFile]);
+    expect(result.requestAttachments).toEqual([requestFile]);
+    expect(result.agentContextAttachments).toEqual([agentContextFile]);
   });
 });
 
@@ -1254,27 +1549,21 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(neitherAgent.codeEnvAvailable).toBe(false);
   });
 
-  it('trips GOOGLE_TOOL_CONFLICT on Google/Vertex when execute_code expands alongside provider tools', async () => {
-    /* Pre-Phase 8, an `execute_code`-only agent on Google/Vertex with
-       `options.tools` populated would throw GOOGLE_TOOL_CONFLICT because
-       `CodeExecutionToolDefinition` populated `toolDefinitions` and
-       `hasAgentTools` was true. After dropping that registry entry, the
-       check is now gated on the runtime-expanded `bash_tool` + `read_file`
-       pair — so the expansion MUST happen before `hasAgentTools` is
-       computed or the guard silently goes away for this scenario. */
+  it('allows Google provider tools alongside execute_code definitions', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.GOOGLE,
       overrideProvider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
     });
     agent.tools = ['execute_code'];
 
     /* Surface an options.tools array from the provider config — this is
-       the `google_search` / `url_context` built-in LLM tooling that
+       the `googleSearch` / `urlContext` built-in LLM tooling that
        Google/Vertex exposes via provider options. */
     mockGetProviderConfig.mockReturnValue({
       getOptions: jest.fn().mockResolvedValue({
-        llmConfig: { model: 'test-model', maxTokens: 4096 },
-        tools: [{ google_search: {} }],
+        llmConfig: { model: 'gemini-3.5-flash', maxTokens: 4096 },
+        tools: [{ googleSearch: {} }],
       } satisfies InitializeResultBase),
       overrideProvider: Providers.GOOGLE,
     });
@@ -1293,7 +1582,52 @@ describe('initializeAgent — execute_code capability expansion', () => {
         },
         db,
       ),
-    ).rejects.toThrow(/google_tool_conflict/);
+    ).resolves.toEqual(
+      expect.objectContaining({
+        tools: [{ googleSearch: {} }],
+        toolDefinitions: expect.arrayContaining([
+          expect.objectContaining({ name: 'bash_tool' }),
+          expect.objectContaining({ name: 'read_file' }),
+        ]),
+      }),
+    );
+  });
+
+  it('combines Google provider tools with structured external tools', async () => {
+    const structuredTool = {
+      name: 'weather',
+      description: 'Get weather',
+      schema: { type: 'object', properties: {} },
+    };
+    const providerTool = { googleSearch: {} };
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      overrideProvider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [providerTool],
+      structuredTools: [structuredTool],
+    });
+    agent.tools = ['weather'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+          codeEnvAvailable: false,
+        },
+        db,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        tools: [structuredTool, providerTool],
+      }),
+    );
   });
 });
 

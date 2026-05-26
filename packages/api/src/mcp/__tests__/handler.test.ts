@@ -270,6 +270,113 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
     });
   });
 
+  describe('Auto-discovered predefined clients', () => {
+    it('should reject configured client_secret without client_id', async () => {
+      await expect(
+        MCPOAuthHandler.initiateOAuthFlow(
+          mockServerName,
+          mockServerUrl,
+          mockUserId,
+          {},
+          {
+            client_secret: 'configured-client-secret',
+          },
+        ),
+      ).rejects.toThrow(/client_secret requires oauth\.client_id/);
+
+      expect(mockProbeResourceMetadataHint).not.toHaveBeenCalled();
+      expect(mockDiscoverOAuthProtectedResourceMetadata).not.toHaveBeenCalled();
+      expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+      expect(mockRegisterClient).not.toHaveBeenCalled();
+      expect(mockStartAuthorization).not.toHaveBeenCalled();
+    });
+
+    it('should reject configured client_secret when OAuth endpoints are not pinned', async () => {
+      await expect(
+        MCPOAuthHandler.initiateOAuthFlow(
+          mockServerName,
+          mockServerUrl,
+          mockUserId,
+          {},
+          {
+            client_id: 'configured-client-id',
+            client_secret: 'configured-client-secret',
+          },
+        ),
+      ).rejects.toThrow(
+        /client_secret requires both oauth\.authorization_url and oauth\.token_url/,
+      );
+
+      expect(mockProbeResourceMetadataHint).not.toHaveBeenCalled();
+      expect(mockDiscoverOAuthProtectedResourceMetadata).not.toHaveBeenCalled();
+      expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+      expect(mockRegisterClient).not.toHaveBeenCalled();
+      expect(mockStartAuthorization).not.toHaveBeenCalled();
+    });
+
+    it('should use configured client_id without client_secret as a public auto-discovered client', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://example.com',
+        authorization_endpoint: 'https://example.com/authorize',
+        token_endpoint: 'https://example.com/token',
+        registration_endpoint: 'https://example.com/register',
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        {
+          client_id: 'public-client-id',
+          scope: 'read write',
+        },
+      );
+
+      expect(mockRegisterClient).not.toHaveBeenCalled();
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        mockServerUrl,
+        expect.objectContaining({
+          clientInformation: expect.objectContaining({
+            client_id: 'public-client-id',
+            scope: 'read write',
+            token_endpoint_auth_method: 'none',
+          }),
+        }),
+      );
+
+      const startOptions = mockStartAuthorization.mock.calls[0]?.[1];
+      expect(startOptions?.clientInformation).not.toHaveProperty('client_secret');
+    });
+
+    it('should reject stored configured client_secret when refresh would auto-discover token endpoint', async () => {
+      await expect(
+        MCPOAuthHandler.refreshOAuthTokens(
+          'refresh-token-12345',
+          {
+            serverName: 'test-server',
+            serverUrl: 'https://example.com/mcp',
+            clientInfo: {
+              client_id: 'configured-client-id',
+              client_secret: 'configured-client-secret',
+            },
+          },
+          {},
+          {
+            client_id: 'configured-client-id',
+            client_secret: 'configured-client-secret',
+          },
+        ),
+      ).rejects.toThrow(/cannot be used with auto-discovered token endpoints/);
+
+      expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+    });
+  });
+
   describe('refreshOAuthTokens', () => {
     const mockRefreshToken = 'refresh-token-12345';
     const originalFetch = global.fetch;
@@ -836,14 +943,17 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
 
       await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'access', metadata);
 
-      expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
-        method: 'POST',
-        body: 'token=test-token-12345&token_type_hint=access_token',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`,
-        },
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        new URL('https://auth.example.com/oauth/revoke'),
+        expect.objectContaining({
+          method: 'POST',
+          body: 'token=test-token-12345&token_type_hint=access_token',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization: `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`,
+          },
+        }),
+      );
     });
 
     it('should successfully revoke a refresh token with client_secret_basic auth', async () => {
@@ -862,14 +972,17 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
 
       await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'refresh', metadata);
 
-      expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
-        method: 'POST',
-        body: 'token=test-token-12345&token_type_hint=refresh_token',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`,
-        },
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        new URL('https://auth.example.com/oauth/revoke'),
+        expect.objectContaining({
+          method: 'POST',
+          body: 'token=test-token-12345&token_type_hint=refresh_token',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization: `Basic ${Buffer.from('test-client-id:test-client-secret').toString('base64')}`,
+          },
+        }),
+      );
     });
 
     it('should successfully revoke an access token with client_secret_post auth', async () => {
@@ -888,13 +1001,16 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
 
       await MCPOAuthHandler.revokeOAuthToken(mockServerName, mockToken, 'access', metadata);
 
-      expect(mockFetch).toHaveBeenCalledWith(new URL('https://auth.example.com/oauth/revoke'), {
-        method: 'POST',
-        body: 'token=test-token-12345&token_type_hint=access_token&client_secret=test-client-secret&client_id=test-client-id',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        new URL('https://auth.example.com/oauth/revoke'),
+        expect.objectContaining({
+          method: 'POST',
+          body: 'token=test-token-12345&token_type_hint=access_token&client_secret=test-client-secret&client_id=test-client-id',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        }),
+      );
     });
 
     it('should fallback to /revoke endpoint when revocationEndpoint is not provided', async () => {

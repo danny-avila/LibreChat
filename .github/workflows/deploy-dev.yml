@@ -7,6 +7,9 @@ on:
       - completed
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -29,7 +32,7 @@ jobs:
         DO_HOST: ${{ secrets.DO_HOST }}
         DO_USER: ${{ secrets.DO_USER }}
       run: |
-        ssh -o StrictHostKeyChecking=no ${DO_USER}@${DO_HOST} << EOF
+        ssh ${DO_USER}@${DO_HOST} << EOF
         sudo -i -u danny bash << 'EEOF'
         cd ~/LibreChat && \
         git fetch origin main && \

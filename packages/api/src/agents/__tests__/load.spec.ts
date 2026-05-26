@@ -233,6 +233,26 @@ describe('loadAgent', () => {
     }
   });
 
+  test('should use parsed promptPrefix for ephemeral agent instructions', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const result = await loadAgent(
+      {
+        req: { user: { id: 'user123' }, body: {} },
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: {
+          model: 'gpt-4',
+          promptPrefix: 'Server-side model spec instructions',
+        } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(result?.instructions).toBe('Server-side model spec instructions');
+    expect(result?.model_parameters).not.toHaveProperty('promptPrefix');
+  });
+
   test('should handle ephemeral agent with undefined ephemeralAgent in body', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 

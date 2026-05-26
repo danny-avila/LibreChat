@@ -12,9 +12,6 @@ const mockCommandToggles = { at: true, plus: true, slash: true, dollar: true };
 jest.mock('recoil', () => ({
   ...jest.requireActual('recoil'),
   useRecoilValue: jest.fn((atom) => {
-    if (atom === 'latestMessageFamily-0') {
-      return null;
-    }
     if (atom === 'effectiveEndpointByIndex-0') {
       return mockEndpoint.current;
     }
@@ -55,7 +52,6 @@ jest.mock('~/store', () => ({
   showPlusPopoverFamily: (idx: number) => `showPlusPopoverFamily-${idx}`,
   showSkillsPopoverFamily: (idx: number) => `showSkillsPopoverFamily-${idx}`,
   effectiveEndpointByIndex: (idx: number) => `effectiveEndpointByIndex-${idx}`,
-  latestMessageFamily: (idx: number) => `latestMessageFamily-${idx}`,
   atCommand: 'atCommand',
   plusCommand: 'plusCommand',
   slashCommand: 'slashCommand',
@@ -86,6 +82,10 @@ jest.mock('~/hooks/Agents/useAgentCapabilities', () =>
     skillsEnabled: mockSkillsEnabled.current,
   })),
 );
+
+jest.mock('~/hooks/Messages/useLatestMessage', () => ({
+  useLatestMessage: jest.fn(() => null),
+}));
 
 import React from 'react';
 import { renderHook, act } from '@testing-library/react';

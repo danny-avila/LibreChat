@@ -1,4 +1,5 @@
 import { Constants } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import type {
   ToolExecuteBatchRequest,
   ToolExecuteResult,
@@ -275,6 +276,128 @@ describe('createToolExecuteHandler', () => {
       expect(capturedConfigs).toHaveLength(1);
       expect(capturedConfigs[0].toolDefs).toEqual([{ name: 'custom_tool' }]);
       expect(capturedConfigs[0].toolMap).toBe(ptcToolMap);
+    });
+  });
+
+  describe('tool error handling', () => {
+    it('truncates oversized tool errors in the result and log context', async () => {
+      const oversizedMessage = `tool failed: ${'x'.repeat(15_000)}`;
+      const thrown = new Error(oversizedMessage);
+      thrown.stack = `Error: ${oversizedMessage}\n${'stack-line\n'.repeat(600)}`;
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [
+          {
+            name: 'bad_tool',
+            invoke: jest.fn(async () => {
+              throw thrown;
+            }),
+          },
+        ] as never[],
+      }));
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      try {
+        const handler = createToolExecuteHandler({ loadTools });
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_bad',
+            name: 'bad_tool',
+            args: {},
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('truncated');
+        expect(result.errorMessage!.length).toBeLessThanOrEqual(12_000);
+        expect(errorSpy).toHaveBeenCalledWith(
+          '[ON_TOOL_EXECUTE] Tool bad_tool error',
+          expect.objectContaining({
+            messageTruncated: true,
+            messageLength: oversizedMessage.length,
+          }),
+        );
+        const [, logContext] = errorSpy.mock.calls[0] as unknown as [string, { stack?: string }];
+        expect(logContext.stack!.length).toBeLessThanOrEqual(4_000);
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
+    it('returns a per-tool error when thrown value stringification fails', async () => {
+      const thrown = {
+        toString() {
+          throw new Error('toString failed');
+        },
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [
+          {
+            name: 'bad_to_string_tool',
+            invoke: jest.fn(async () => {
+              throw thrown;
+            }),
+          },
+        ] as never[],
+      }));
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      try {
+        const handler = createToolExecuteHandler({ loadTools });
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_bad_to_string',
+            name: 'bad_to_string_tool',
+            args: {},
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toBe('[Thrown value could not be converted to string]');
+        expect(errorSpy).toHaveBeenCalledWith(
+          '[ON_TOOL_EXECUTE] Tool bad_to_string_tool error',
+          expect.objectContaining({
+            name: 'object',
+            messageTruncated: false,
+          }),
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
+    it('preserves message from thrown plain objects', async () => {
+      const thrown = { message: 'plain object timeout' };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [
+          {
+            name: 'plain_object_tool',
+            invoke: jest.fn(async () => {
+              throw thrown;
+            }),
+          },
+        ] as never[],
+      }));
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      try {
+        const handler = createToolExecuteHandler({ loadTools });
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_plain_object',
+            name: 'plain_object_tool',
+            args: {},
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toBe('plain object timeout');
+        expect(errorSpy).toHaveBeenCalledWith(
+          '[ON_TOOL_EXECUTE] Tool plain_object_tool error',
+          expect.objectContaining({
+            message: 'plain object timeout',
+            messageTruncated: false,
+          }),
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
     });
   });
 

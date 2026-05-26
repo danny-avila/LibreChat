@@ -15,6 +15,9 @@ on:
       - 'redis-config/**'
       - '.github/workflows/cache-integration-tests.yml'
 
+permissions:
+  contents: read
+
 jobs:
   cache_integration_tests:
     name: Integration Tests that use actual Redis Cache

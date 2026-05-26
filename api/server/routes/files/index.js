@@ -6,6 +6,7 @@ const {
   uaParser,
   checkBan,
 } = require('~/server/middleware');
+const { restoreTenantContextFromReq } = require('@librechat/api');
 const { avatar: asstAvatarRouter } = require('~/server/routes/assistants/v1');
 const { avatar: agentAvatarRouter } = require('~/server/routes/agents/v1');
 const { createMulterInstance } = require('./multer');
@@ -23,7 +24,7 @@ const initialize = async () => {
   router.use(uaParser);
 
   const upload = await createMulterInstance();
-  router.post('/speech/stt', upload.single('audio'));
+  router.post('/speech/stt', upload.single('audio'), restoreTenantContextFromReq);
 
   /* Important: speech route must be added before the upload limiters */
   router.use('/speech', speech);
@@ -43,11 +44,19 @@ const initialize = async () => {
     next();
   });
 
-  router.post('/', upload.single('file'));
-  router.post('/images', upload.single('file'));
-  router.post('/images/avatar', upload.single('file'));
-  router.post('/images/agents/:agent_id/avatar', upload.single('file'));
-  router.post('/images/assistants/:assistant_id/avatar', upload.single('file'));
+  router.post('/', upload.single('file'), restoreTenantContextFromReq);
+  router.post('/images', upload.single('file'), restoreTenantContextFromReq);
+  router.post('/images/avatar', upload.single('file'), restoreTenantContextFromReq);
+  router.post(
+    '/images/agents/:agent_id/avatar',
+    upload.single('file'),
+    restoreTenantContextFromReq,
+  );
+  router.post(
+    '/images/assistants/:assistant_id/avatar',
+    upload.single('file'),
+    restoreTenantContextFromReq,
+  );
 
   router.use('/', files);
   router.use('/images', images);

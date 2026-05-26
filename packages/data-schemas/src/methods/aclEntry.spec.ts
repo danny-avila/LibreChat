@@ -1626,6 +1626,7 @@ describe('AclEntry Model Tests', () => {
     describe('rejection of out-of-range inputs (cache-growth safety)', () => {
       const MAX =
         PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+      const FIRST_TRUNCATED_32_BIT_VALUE = 2 ** 32;
       const SHARED_EMPTY = permissionBitSupersets(MAX + 1);
 
       test('returns a frozen empty array for requiredBits above MAX_PERM_BITS', () => {
@@ -1641,9 +1642,19 @@ describe('AclEntry Model Tests', () => {
         expect(permissionBitSupersets(MAX + 1)).toBe(SHARED_EMPTY);
         expect(permissionBitSupersets(MAX + 100)).toBe(SHARED_EMPTY);
         expect(permissionBitSupersets(-1)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(FIRST_TRUNCATED_32_BIT_VALUE)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(FIRST_TRUNCATED_32_BIT_VALUE * 2)).toBe(SHARED_EMPTY);
         expect(permissionBitSupersets(Number.MAX_SAFE_INTEGER)).toBe(SHARED_EMPTY);
         expect(permissionBitSupersets(NaN)).toBe(SHARED_EMPTY);
         expect(permissionBitSupersets(1.5)).toBe(SHARED_EMPTY);
+      });
+
+      test('rejects large integers that truncate to in-range 32-bit values', () => {
+        expect(FIRST_TRUNCATED_32_BIT_VALUE & ~MAX).toBe(0);
+        expect(permissionBitSupersets(FIRST_TRUNCATED_32_BIT_VALUE)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(FIRST_TRUNCATED_32_BIT_VALUE + PermissionBits.VIEW)).toBe(
+          SHARED_EMPTY,
+        );
       });
 
       test('rejects inputs with bits above MAX_PERM_BITS even if some in-range bits are set', () => {
@@ -1692,6 +1703,7 @@ describe('AclEntry Model Tests', () => {
           const before = setSpy.mock.calls.length;
           for (let i = 0; i < 500; i++) {
             permissionBitSupersets(MAX + 1 + i);
+            permissionBitSupersets(FIRST_TRUNCATED_32_BIT_VALUE + i);
             permissionBitSupersets(-(i + 1));
             permissionBitSupersets(i + 0.5);
           }

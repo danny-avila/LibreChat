@@ -17,6 +17,62 @@ import { withTimeout } from '~/utils';
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
 const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
 
+/**
+ * Fields an admin override can legitimately set. Used to detect whether a
+ * resolved entry differs from its YAML base so unmodified YAML servers can
+ * skip lazy-init (avoids per-request inspect storms and prevents these
+ * servers from being cached in the config tier).
+ */
+const ADMIN_CONFIGURABLE_FIELDS = [
+  'type',
+  'command',
+  'args',
+  'env',
+  'stderr',
+  'url',
+  'headers',
+  'proxy',
+  'requiresOAuth',
+  'apiKey',
+  'oauth',
+  'oauth_headers',
+  'title',
+  'description',
+  'iconPath',
+  'startup',
+  'chatMenu',
+  'serverInstructions',
+  'customUserVars',
+  'timeout',
+  'sseReadTimeout',
+  'initTimeout',
+] as const;
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== 'object') return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  if (Array.isArray(b)) return false;
+  const aObj = a as Record<string, unknown>;
+  const bObj = b as Record<string, unknown>;
+  const aKeys = Object.keys(aObj);
+  const bKeys = Object.keys(bObj);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (!Object.prototype.hasOwnProperty.call(bObj, key)) return false;
+    if (!deepEqual(aObj[key], bObj[key])) return false;
+  }
+  return true;
+}
+
 const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
   const raw = process.env.MCP_INIT_TIMEOUT_MS;
   if (raw == null) {
@@ -35,12 +91,12 @@ const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
  * - Config Cache (configCacheRepo): Admin-defined configs from Config overrides, lazily initialized
  * - DB Repository (dbConfigsRepo): User-provided configs created at runtime (MongoDB + ACL)
  *
- * Query priority: YAML cache → Config cache → DB.
+ * Query priority: Config cache → YAML cache → DB.
  */
 export class MCPServersRegistry {
   private static instance: MCPServersRegistry;
 
-  private readonly dbConfigsRepo: IServerConfigsRepositoryInterface;
+  private readonly dbConfigsRepo: ServerConfigsDB;
   private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly configCacheRepo: IServerConfigsRepositoryInterface;
   private readonly allowedDomains?: string[] | null;
@@ -133,58 +189,90 @@ export class MCPServersRegistry {
   }
 
   /**
-   * Returns the config for a single server. When `configServers` is provided, config-source
-   * servers are resolved from it directly (no global state, no cross-tenant race).
+   * Returns the config for a single server, mirroring the precedence used by
+   * getAllServerConfigs so list views and single-server lookups agree on
+   * the same name:
+   *   1. user-tier base entry wins absolutely over a config-tier candidate
+   *   2. healthy YAML/DB base wins over a failed (inspectionFailed) candidate
+   *   3. healthy candidate overlays its fields onto the base, preserving the
+   *      base entry's source tag so downstream recovery routes correctly
+   *   4. with no base, the candidate is returned as-is (config-only server)
+   *
+   * readThroughCache memoizes only the global YAML/DB lookup; the per-call
+   * configServers candidate is tenant-scoped and is never cached, so a
+   * failed stub from one tenant can never satisfy a no-userId lookup from
+   * another.
    */
   public async getServerConfig(
     serverName: string,
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<t.ParsedServerConfig | undefined> {
-    if (configServers?.[serverName]) {
-      return configServers[serverName];
-    }
+    const candidate = configServers?.[serverName];
 
     const cacheKey = this.getReadThroughCacheKey(serverName, userId);
-
+    let base: t.ParsedServerConfig | undefined;
     if (await this.readThroughCache.has(cacheKey)) {
-      return await this.readThroughCache.get(cacheKey);
+      base = await this.readThroughCache.get(cacheKey);
+    } else {
+      const configFromYaml = await this.cacheConfigsRepo.get(serverName);
+      if (configFromYaml) {
+        base = configFromYaml;
+      } else {
+        base = await this.dbConfigsRepo.get(serverName, userId);
+      }
+      await this.readThroughCache.set(cacheKey, base);
     }
 
-    const configFromYaml = await this.cacheConfigsRepo.get(serverName);
-    if (configFromYaml) {
-      await this.readThroughCache.set(cacheKey, configFromYaml);
-      return configFromYaml;
-    }
-
-    const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
-    await this.readThroughCache.set(cacheKey, configFromDB);
-    return configFromDB;
+    if (!candidate) return base;
+    if (base?.source === 'user') return base;
+    if (candidate.inspectionFailed) return base ?? candidate;
+    return base ? { ...candidate, source: base.source } : candidate;
   }
 
   /**
-   * Returns all server configs visible to the given user.
-   * YAML and Config tiers are mutually exclusive by design (`ensureConfigServers` filters
-   * YAML names), so the spread order only matters for User DB (highest priority) overriding both.
+   * Returns the full server config map after merging YAML cache, Config-tier overrides,
+   * and User-DB entries.
+   *
+   * Precedence (lowest to highest): YAML cache > Config-tier overrides (success only) > User DB.
+   * Two guards keep the merge safe:
+   *   1. Config-tier entries carrying `inspectionFailed: true` never overlay an existing
+   *      base entry; the healthy base is preserved for the duration of the retry window.
+   *   2. User-DB entries (`source: 'user'`) are never replaced by Config-tier overlays.
+   * On a successful overlay the base entry's `source` field is preserved so downstream
+   * recovery logic routes to the correct storage location.
    */
   public async getAllServerConfigs(
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
+    role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
     if (configServers == null || !Object.keys(configServers).length) {
-      return this.getBaseServerConfigs(userId);
+      return this.getBaseServerConfigs(userId, role);
     }
-    const base = await this.getBaseServerConfigs(userId);
-    return { ...configServers, ...base };
+    const base = await this.getBaseServerConfigs(userId, role);
+    const result: Record<string, t.ParsedServerConfig> = { ...base };
+    for (const [name, override] of Object.entries(configServers)) {
+      if (result[name]?.source === 'user') {
+        logger.debug(`[MCP][config][${name}] Admin override shadowed by user-tier entry`);
+        continue;
+      }
+      if (override.inspectionFailed && result[name]) continue;
+      const baseSource = result[name]?.source;
+      result[name] = baseSource ? { ...override, source: baseSource } : override;
+    }
+    return result;
   }
 
   /**
    * Returns YAML + user-DB server configs, cached via `readThroughCacheAll`.
+   * YAML wins on name collisions so a user-created server cannot hide global config.
    * Always called by `getAllServerConfigs` so the DB query is amortized across
    * requests within the TTL window regardless of whether `configServers` is present.
    */
   private async getBaseServerConfigs(
     userId?: string,
+    role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
     const cacheKey = userId ?? '__no_user__';
 
@@ -197,7 +285,7 @@ export class MCPServersRegistry {
       return pending;
     }
 
-    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId);
+    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId, role);
     this.pendingGetAllPromises.set(cacheKey, fetchPromise);
 
     try {
@@ -210,11 +298,16 @@ export class MCPServersRegistry {
   private async fetchBaseServerConfigs(
     cacheKey: string,
     userId?: string,
+    role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
-    const result = {
-      ...(await this.cacheConfigsRepo.getAll()),
-      ...(await this.dbConfigsRepo.getAll(userId)),
-    };
+    const [dbConfigs, yamlConfigs] = await Promise.all([
+      this.dbConfigsRepo.getAll(userId, role),
+      this.cacheConfigsRepo.getAll(),
+    ]);
+
+    this.warnOnOperatorManagedNameCollisions(yamlConfigs, dbConfigs, 'YAML');
+
+    const result = { ...dbConfigs, ...yamlConfigs };
 
     await this.readThroughCacheAll.set(cacheKey, result);
     return result;
@@ -227,15 +320,14 @@ export class MCPServersRegistry {
   public async addServerStub(
     serverName: string,
     config: t.MCPOptions,
-    storageLocation: 'CACHE' | 'DB',
+    storageLocation: 'CACHE',
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source: t.MCPServerSource = storageLocation === 'CACHE' ? 'yaml' : 'user';
-    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true, source };
+    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true, source: 'yaml' };
     const result = await configRepo.add(serverName, stubConfig, userId);
-    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName, userId));
-    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName));
+    await this.invalidateServerReadCaches(result.serverName, userId);
+    this.resetYamlServerNamesMemo();
     return result;
   }
 
@@ -244,6 +336,7 @@ export class MCPServersRegistry {
     config: t.MCPOptions,
     storageLocation: 'CACHE' | 'DB',
     userId?: string,
+    reservedServerNames?: Iterable<string>,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
     let parsedConfig: t.ParsedServerConfig;
@@ -266,7 +359,20 @@ export class MCPServersRegistry {
       ...parsedConfig,
       source: (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource,
     };
-    return await configRepo.add(serverName, tagged, userId);
+    const result =
+      storageLocation === 'DB'
+        ? await this.dbConfigsRepo.add(
+            serverName,
+            tagged,
+            userId,
+            await this.getOperatorManagedServerNames(reservedServerNames),
+          )
+        : await configRepo.add(serverName, tagged, userId);
+    await this.invalidateServerReadCaches(result.serverName, userId);
+    if (storageLocation === 'CACHE') {
+      this.resetYamlServerNamesMemo();
+    }
+    return result;
   }
 
   /**
@@ -309,10 +415,7 @@ export class MCPServersRegistry {
 
     const updatedConfig = { ...parsedConfig, updatedAt: Date.now() };
     await configRepo.update(serverName, updatedConfig, userId);
-    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName, userId));
-    await this.readThroughCache.delete(this.getReadThroughCacheKey(serverName));
-    // Full clear required: getAllServerConfigs is keyed by userId with no reverse index to enumerate cached keys
-    await this.readThroughCacheAll.clear();
+    await this.invalidateServerReadCaches(serverName, userId);
     return { serverName, config: updatedConfig };
   }
 
@@ -356,6 +459,7 @@ export class MCPServersRegistry {
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
     await configRepo.update(serverName, parsedConfig, userId);
+    await this.invalidateServerReadCaches(serverName, userId);
     return parsedConfig;
   }
 
@@ -374,19 +478,16 @@ export class MCPServersRegistry {
       return {};
     }
 
-    const yamlNames = await this.getYamlServerNames();
-    const configServerEntries = Object.entries(resolvedMcpConfig).filter(
-      ([name]) => !yamlNames.has(name),
-    );
-
-    if (configServerEntries.length === 0) {
-      return {};
-    }
-
     const result: Record<string, t.ParsedServerConfig> = {};
 
+    /** Single snapshot of the YAML cache for the whole pass: in the Redis aggregate-key backend, every per-name get() reads and deserializes the full map, so N concurrent per-server lookups would issue N full-map reads. The snapshot also keeps the unchanged-YAML comparison consistent against one view of YAML across all entries. */
+    const yamlSnapshot = await this.cacheConfigsRepo.getAll();
+
     const settled = await Promise.allSettled(
-      configServerEntries.map(async ([serverName, rawConfig]) => {
+      Object.entries(resolvedMcpConfig).map(async ([serverName, rawConfig]) => {
+        if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
+          return;
+        }
         const parsed = await this.ensureSingleConfigServer(serverName, rawConfig);
         if (parsed) {
           result[serverName] = parsed;
@@ -400,6 +501,31 @@ export class MCPServersRegistry {
     }
 
     return result;
+  }
+
+  /**
+   * Returns true when `rawConfig` matches the YAML cache entry for this server
+   * on every admin-configurable field, so an unmodified YAML-defined server
+   * can skip lazy-init and avoid being re-inspected or shadowed in the
+   * config tier.
+   */
+  private isUnmodifiedYamlServer(
+    yamlSnapshot: Record<string, t.ParsedServerConfig>,
+    serverName: string,
+    rawConfig: t.MCPOptions,
+  ): boolean {
+    const yamlEntry = yamlSnapshot[serverName];
+    if (!yamlEntry || yamlEntry.source !== 'yaml') {
+      return false;
+    }
+    const yamlRecord = yamlEntry as unknown as Record<string, unknown>;
+    const rawRecord = rawConfig as unknown as Record<string, unknown>;
+    /** rawConfig is the pre-inspection MCPOptions; absent fields mean the admin didn't override and shouldn't count as a diff against inspector-derived values on the cached YAML entry. */
+    return ADMIN_CONFIGURABLE_FIELDS.every((field) => {
+      const rawVal = rawRecord[field];
+      if (rawVal === undefined) return true;
+      return deepEqual(yamlRecord[field], rawVal);
+    });
   }
 
   /**
@@ -512,12 +638,7 @@ export class MCPServersRegistry {
   public async invalidateConfigCache(): Promise<string[]> {
     const allCached = await this.configCacheRepo.getAll();
     const evictedNames = [
-      ...new Set(
-        Object.keys(allCached).map((key) => {
-          const lastColon = key.lastIndexOf(':');
-          return lastColon > 0 ? key.slice(0, lastColon) : key;
-        }),
-      ),
+      ...new Set(Object.keys(allCached).map((key) => this.parseServerNameFromConfigCacheKey(key))),
     ];
 
     await Promise.all([
@@ -550,8 +671,7 @@ export class MCPServersRegistry {
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.clear();
-    this.yamlServerNames = null;
-    this.yamlServerNamesPromise = null;
+    this.resetYamlServerNamesMemo();
   }
 
   public async removeServer(
@@ -561,6 +681,10 @@ export class MCPServersRegistry {
   ): Promise<void> {
     const configRepo = this.getConfigRepository(storageLocation);
     await configRepo.remove(serverName, userId);
+    await this.invalidateServerReadCaches(serverName, userId);
+    if (storageLocation === 'CACHE') {
+      this.resetYamlServerNamesMemo();
+    }
   }
 
   private getConfigRepository(storageLocation: 'CACHE' | 'DB'): IServerConfigsRepositoryInterface {
@@ -578,6 +702,55 @@ export class MCPServersRegistry {
 
   private getReadThroughCacheKey(serverName: string, userId?: string): string {
     return userId ? `${serverName}::${userId}` : serverName;
+  }
+
+  private async invalidateServerReadCaches(serverName: string, userId?: string): Promise<void> {
+    const deletes = [
+      this.readThroughCache.delete(this.getReadThroughCacheKey(serverName)),
+      this.readThroughCacheAll.clear(),
+    ];
+
+    if (userId) {
+      deletes.push(this.readThroughCache.delete(this.getReadThroughCacheKey(serverName, userId)));
+    }
+
+    await Promise.all(deletes);
+  }
+
+  private async getOperatorManagedServerNames(
+    reservedServerNames: Iterable<string> = [],
+  ): Promise<string[]> {
+    const yamlNames = await this.getYamlServerNames();
+
+    return [...new Set([...yamlNames, ...reservedServerNames])];
+  }
+
+  private parseServerNameFromConfigCacheKey(cacheKey: string): string {
+    const lastColon = cacheKey.lastIndexOf(':');
+    return lastColon > 0 ? cacheKey.slice(0, lastColon) : cacheKey;
+  }
+
+  private warnOnOperatorManagedNameCollisions(
+    operatorConfigs: Record<string, t.ParsedServerConfig>,
+    candidateConfigs: Record<string, t.ParsedServerConfig>,
+    operatorSource: 'Config' | 'YAML',
+  ): void {
+    const shadowedNames = Object.keys(operatorConfigs).filter(
+      (serverName) => candidateConfigs[serverName]?.source === 'user',
+    );
+    if (!shadowedNames.length) {
+      return;
+    }
+
+    logger.warn(
+      `[MCPServersRegistry] ${operatorSource} MCP server(s) shadow DB-backed server(s) with colliding name(s): ` +
+        `${shadowedNames.join(', ')}. DB records remain stored but are hidden while operator-managed servers use these names.`,
+    );
+  }
+
+  private resetYamlServerNamesMemo(): void {
+    this.yamlServerNames = null;
+    this.yamlServerNamesPromise = null;
   }
 
   /**

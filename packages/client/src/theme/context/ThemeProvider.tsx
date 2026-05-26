@@ -1,4 +1,12 @@
-import React, { createContext, useContext, useEffect, useMemo, useCallback, useState, useRef } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useCallback,
+  useState,
+  useRef,
+} from 'react';
 import { IThemeRGB } from '../types';
 import applyTheme from '../utils/applyTheme';
 

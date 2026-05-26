@@ -186,6 +186,7 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'gemini-3-pro-image': { prompt: 2, completion: 120 },
     'gemini-3.1': { prompt: 2, completion: 12 },
     'gemini-3.1-flash-lite': { prompt: 0.25, completion: 1.5 },
+    'gemini-3.5-flash': { prompt: 1.5, completion: 9 },
     'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
     grok: { prompt: 2.0, completion: 10.0 },
     'grok-beta': { prompt: 5.0, completion: 15.0 },
@@ -329,6 +330,8 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'gemini-3.1': { write: 2, read: 0.2 },
   // Gemini 3.1 Flash-Lite - cache write: $0.25/1M, cache read: $0.025/1M
   'gemini-3.1-flash-lite': { write: 0.25, read: 0.025 },
+  // Gemini 3.5 Flash - cache write: $1.50/1M, cache read: $0.15/1M
+  'gemini-3.5-flash': { write: 1.5, read: 0.15 },
 };
 
 /**

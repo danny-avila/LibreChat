@@ -20,6 +20,19 @@ jest.mock('@librechat/data-schemas', () => ({
   getTenantId: (...args) => mockGetTenantId(...args),
 }));
 
+const mockGetCloudFrontConfig = jest.fn(() => null);
+const mockResolveBuildInfo = jest.fn(() => ({
+  commit: null,
+  commitShort: null,
+  branch: null,
+  buildDate: null,
+}));
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  getCloudFrontConfig: (...args) => mockGetCloudFrontConfig(...args),
+  resolveBuildInfo: (...args) => mockResolveBuildInfo(...args),
+}));
+
 const request = require('supertest');
 const express = require('express');
 const configRoute = require('../config');
@@ -57,6 +70,12 @@ const mockUser = {
 
 afterEach(() => {
   jest.resetAllMocks();
+  mockResolveBuildInfo.mockReturnValue({
+    commit: null,
+    commitShort: null,
+    branch: null,
+    buildDate: null,
+  });
   delete process.env.APP_TITLE;
   delete process.env.CHECK_BALANCE;
   delete process.env.START_BALANCE;
@@ -187,6 +206,53 @@ describe('GET /api/config', () => {
       expect(response.body).toHaveProperty('serverDomain');
     });
 
+    it('should advertise CloudFront cookie refresh only when signed-cookie mode is active', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetCloudFrontConfig.mockReturnValue({
+        domain: 'https://cdn.example.com',
+        imageSigning: 'cookies',
+        cookieDomain: '.example.com',
+        privateKey: 'test-private-key',
+        keyPairId: 'K123ABC',
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.cloudFront).toEqual({
+        cookieRefresh: {
+          endpoint: '/api/auth/cloudfront/refresh',
+          domain: 'https://cdn.example.com',
+        },
+      });
+    });
+
+    it('should omit CloudFront cookie refresh when signed-cookie mode is inactive', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetCloudFrontConfig.mockReturnValue({
+        domain: 'https://cdn.example.com',
+        imageSigning: 'url',
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('cloudFront');
+    });
+
+    it('should omit CloudFront cookie refresh when cookie mode cannot mint cookies', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetCloudFrontConfig.mockReturnValue({
+        domain: 'https://cdn.example.com',
+        imageSigning: 'cookies',
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('cloudFront');
+    });
+
     it('should default allowAccountDeletion to true when env var is unset', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       const app = createApp(null);
@@ -267,6 +333,43 @@ describe('GET /api/config', () => {
       expect(response.body.modelSpecs).toEqual({ list: [{ name: 'test-spec' }] });
       expect(response.body.balance).toEqual({ enabled: true, startBalance: 10000 });
       expect(response.body.webSearch).toEqual({ searchProvider: 'tavily' });
+    });
+
+    it('should strip private prompt fields from model spec presets', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        modelSpecs: {
+          enforce: false,
+          prioritize: true,
+          list: [
+            {
+              name: 'guarded-spec',
+              label: 'Guarded Spec',
+              preset: {
+                endpoint: 'openAI',
+                model: 'gpt-4o',
+                promptPrefix: 'private prompt prefix',
+                instructions: 'private assistant instructions',
+                additional_instructions: 'private additional instructions',
+                system: 'private bedrock system',
+                context: 'private context',
+                examples: [{ input: { content: 'a' }, output: { content: 'b' } }],
+                greeting: 'Hello',
+              },
+            },
+          ],
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.modelSpecs.list[0].preset).toEqual({
+        endpoint: 'openAI',
+        model: 'gpt-4o',
+        greeting: 'Hello',
+      });
     });
 
     it('should include full interface config', async () => {
@@ -354,6 +457,114 @@ describe('GET /api/config', () => {
 
       expect(response.statusCode).toBe(500);
       expect(response.body).toHaveProperty('error');
+    });
+  });
+
+  describe('buildInfo payload', () => {
+    const populatedBuildInfo = {
+      commit: 'abcdef1234567890abcdef1234567890abcdef12',
+      commitShort: 'abcdef1',
+      branch: 'dev',
+      buildDate: '2026-04-20T12:00:00Z',
+    };
+
+    it('includes buildInfo in authenticated response when interface flag is not explicitly disabled', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockResolveBuildInfo.mockReturnValue(populatedBuildInfo);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.buildInfo).toEqual(populatedBuildInfo);
+    });
+
+    it('omits buildInfo when interface.buildInfo is false', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { ...baseAppConfig.interfaceConfig, buildInfo: false },
+      });
+      mockResolveBuildInfo.mockReturnValue(populatedBuildInfo);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('buildInfo');
+    });
+
+    it('omits buildInfo when all resolver fields are null', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockResolveBuildInfo.mockReturnValue({
+        commit: null,
+        commitShort: null,
+        branch: null,
+        buildDate: null,
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('buildInfo');
+    });
+
+    it('includes buildInfo in unauthenticated response when flag is not disabled', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockResolveBuildInfo.mockReturnValue(populatedBuildInfo);
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.buildInfo).toEqual(populatedBuildInfo);
+    });
+
+    it('omits buildInfo in unauthenticated response when interface.buildInfo is false', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { ...baseAppConfig.interfaceConfig, buildInfo: false },
+      });
+      mockResolveBuildInfo.mockReturnValue(populatedBuildInfo);
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('buildInfo');
+    });
+
+    it('propagates interface.buildInfo=false in unauthenticated response so clients can hide About tab', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { ...baseAppConfig.interfaceConfig, buildInfo: false },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.interface).toBeDefined();
+      expect(response.body.interface.buildInfo).toBe(false);
+    });
+
+    it('does not add interface.buildInfo=true to unauthenticated response (default stays implicit)', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { privacyPolicy: { externalUrl: 'https://x' }, buildInfo: true },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.interface).toBeDefined();
+      expect(response.body.interface).not.toHaveProperty('buildInfo');
+    });
+
+    it('includes interface block with only buildInfo=false when nothing else is set', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { buildInfo: false },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.interface).toEqual({ buildInfo: false });
     });
   });
 });

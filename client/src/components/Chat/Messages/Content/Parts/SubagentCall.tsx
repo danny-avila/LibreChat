@@ -42,10 +42,10 @@ interface SubagentCallProps {
 }
 
 const TICKER_MAX_LINES = 3;
-/** Trailing-edge throttle window for the live preview. Tuned down from
- *  the original 1.2s so the ticker feels snappy when the container is
- *  already full and frames are scrolling. */
-const TICKER_THROTTLE_MS = 800;
+/** Trailing-edge refresh window for the live preview once the ticker has
+ *  enough text to fill the row. Keeps long streaming lines from repainting
+ *  every token while still letting the collapsed subagent UI feel responsive. */
+export const SUBAGENT_TICKER_THROTTLE_MS = 400;
 /** Below this live-buffer length we skip throttling entirely. Without
  *  this the user would see "Reasoning: I" for ~1s while the model
  *  streams the rest of the sentence — the pass-through lets early
@@ -243,7 +243,7 @@ export default function SubagentCall({
 
   const displayedTickerLines = useThrottledValue(
     tickerLines,
-    TICKER_THROTTLE_MS,
+    SUBAGENT_TICKER_THROTTLE_MS,
     shouldThrottleTicker,
   );
 

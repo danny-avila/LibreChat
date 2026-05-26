@@ -1,6 +1,6 @@
 import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
+import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
   checkResourceAllowed,
@@ -32,17 +32,12 @@ import {
 import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
 import { probeResourceMetadataHint } from './resourceHint';
 import { MCPTokenStorage } from './tokens';
+import { createHardenedOAuthFetch } from './hardenedFetch';
+import { getOAuthUrlPort } from './url';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
-
-function getOAuthUrlPort(url: URL): string {
-  if (url.port) return url.port;
-  if (url.protocol === 'http:') return '80';
-  if (url.protocol === 'https:') return '443';
-  return '';
-}
 
 export class MCPOAuthHandler {
   private static readonly FLOW_TYPE = 'mcp_oauth';
@@ -96,7 +91,11 @@ export class MCPOAuthHandler {
   private static createOAuthFetch(
     headers: Record<string, string>,
     clientInfo?: OAuthClientInformation,
+    allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
   ): FetchLike {
+    const hardenedFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
+
     return async (url: string | URL, init?: RequestInit): Promise<Response> => {
       const newHeaders = new Headers(init?.headers ?? {});
       for (const [key, value] of Object.entries(headers)) {
@@ -160,13 +159,13 @@ export class MCPOAuthHandler {
           }
         }
 
-        return fetch(url, {
+        return hardenedFetch(url, {
           ...init,
           body: params.toString(),
           headers: newHeaders,
         });
       }
-      return fetch(url, {
+      return hardenedFetch(url, {
         ...init,
         headers: newHeaders,
       });
@@ -193,7 +192,12 @@ export class MCPOAuthHandler {
     let authServerUrl = new URL(serverUrl);
     let resourceMetadata: OAuthProtectedResourceMetadata | undefined;
 
-    const fetchFn = this.createOAuthFetch(oauthHeaders);
+    const fetchFn = this.createOAuthFetch(
+      oauthHeaders,
+      undefined,
+      allowedDomains,
+      allowedAddresses,
+    );
 
     /**
      * RFC 9728 §5.1: when the server's 401 `WWW-Authenticate` header advertises a
@@ -399,6 +403,27 @@ export class MCPOAuthHandler {
     return metadata;
   }
 
+  private static hasUnpinnedClientSecret(config?: MCPOptions['oauth']): boolean {
+    return !!(
+      config?.client_id &&
+      config.client_secret &&
+      (!config.authorization_url || !config.token_url)
+    );
+  }
+
+  private static assertNoUnpinnedClientSecret(config?: MCPOptions['oauth']): void {
+    if (config?.client_secret && !config.client_id) {
+      throw new Error('[MCPOAuth] OAuth client_secret requires oauth.client_id.');
+    }
+
+    if (!this.hasUnpinnedClientSecret(config)) {
+      return;
+    }
+    throw new Error(
+      '[MCPOAuth] OAuth client_secret requires both oauth.authorization_url and oauth.token_url; refusing to use it with auto-discovered OAuth endpoints.',
+    );
+  }
+
   /**
    * Registers an OAuth client dynamically
    */
@@ -409,6 +434,8 @@ export class MCPOAuthHandler {
     resourceMetadata?: OAuthProtectedResourceMetadata,
     redirectUri?: string,
     tokenExchangeMethod?: TokenExchangeMethodEnum,
+    allowedDomains?: string[] | null,
+    allowedAddresses?: string[] | null,
   ): Promise<OAuthClientInformation> {
     logger.debug(
       `[MCPOAuth] Starting client registration for ${sanitizeUrlForLogging(serverUrl)}, server metadata:`,
@@ -470,7 +497,7 @@ export class MCPOAuthHandler {
     const clientInfo = await registerClient(serverUrl, {
       metadata: metadata as unknown as SDKOAuthMetadata,
       clientMetadata,
-      fetchFn: this.createOAuthFetch(oauthHeaders),
+      fetchFn: this.createOAuthFetch(oauthHeaders, undefined, allowedDomains, allowedAddresses),
     });
 
     const forcedAuthMethod = getForcedTokenEndpointAuthMethod(tokenExchangeMethod);
@@ -516,6 +543,8 @@ export class MCPOAuthHandler {
     logger.debug(`[MCPOAuth] Generated flowId: ${flowId}, state: ${state}`);
 
     try {
+      this.assertNoUnpinnedClientSecret(config);
+
       if (config?.authorization_url && config?.token_url && config?.client_id) {
         logger.debug(`[MCPOAuth] Using pre-configured OAuth settings for ${serverName}`);
 
@@ -609,6 +638,8 @@ export class MCPOAuthHandler {
           codeVerifier,
           clientInfo,
           metadata,
+          ...(allowedDomains !== undefined && { allowedDomains }),
+          ...(allowedAddresses !== undefined && { allowedAddresses }),
           ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
         };
 
@@ -642,7 +673,16 @@ export class MCPOAuthHandler {
       let clientInfo: OAuthClientInformation | undefined;
       let reusedStoredClient = false;
 
-      if (findToken) {
+      if (config?.client_id) {
+        logger.debug(`[MCPOAuth] Using predefined public client_id for ${serverName}`);
+        clientInfo = {
+          client_id: config.client_id,
+          redirect_uris: [redirectUri],
+          scope: config.scope,
+          token_endpoint_auth_method: 'none',
+        };
+        logger.debug(`[MCPOAuth] Using predefined client with ID: ${clientInfo.client_id}`);
+      } else if (findToken) {
         try {
           const existing = await MCPTokenStorage.getClientInfoAndMetadata({
             userId,
@@ -683,6 +723,7 @@ export class MCPOAuthHandler {
       }
 
       if (!clientInfo) {
+        logger.debug(`[MCPOAuth] Registering OAuth client with redirect URI: ${redirectUri}`);
         clientInfo = await this.registerOAuthClient(
           authServerUrl.toString(),
           metadata,
@@ -690,6 +731,8 @@ export class MCPOAuthHandler {
           resourceMetadata,
           redirectUri,
           config?.token_exchange_method,
+          allowedDomains,
+          allowedAddresses,
         );
         logger.debug(`[MCPOAuth] Client registered with ID: ${clientInfo.client_id}`);
       }
@@ -764,6 +807,8 @@ export class MCPOAuthHandler {
         clientInfo,
         metadata,
         resourceMetadata,
+        ...(allowedDomains !== undefined && { allowedDomains }),
+        ...(allowedAddresses !== undefined && { allowedAddresses }),
         ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
         ...(reusedStoredClient && { reusedStoredClient }),
       };
@@ -792,9 +837,9 @@ export class MCPOAuthHandler {
   /**
    * Completes the OAuth flow by exchanging the authorization code for tokens.
    *
-   * `allowedDomains` is intentionally absent: all URLs used here (serverUrl,
-   * token_endpoint) originate from {@link MCPOAuthFlowMetadata} that was
-   * SSRF-validated during {@link initiateOAuthFlow}. No new URL resolution occurs.
+   * The token exchange reuses the SSRF policy captured during
+   * {@link initiateOAuthFlow} and enforces it again at connect time. This closes
+   * DNS rebinding gaps between the preflight validation and the callback request.
    */
   static async completeOAuthFlow(
     flowId: string,
@@ -842,7 +887,12 @@ export class MCPOAuthHandler {
         codeVerifier: metadata.codeVerifier,
         authorizationCode,
         resource,
-        fetchFn: this.createOAuthFetch(oauthHeaders, metadata.clientInfo),
+        fetchFn: this.createOAuthFetch(
+          oauthHeaders,
+          metadata.clientInfo,
+          metadata.allowedDomains,
+          metadata.allowedAddresses,
+        ),
       });
 
       logger.debug('[MCPOAuth] Token exchange successful', {
@@ -1121,9 +1171,24 @@ export class MCPOAuthHandler {
         } else if (!metadata.serverUrl) {
           throw new Error('No token URL available for refresh');
         } else {
+          if (
+            this.hasUnpinnedClientSecret(config) &&
+            metadata.clientInfo.client_id === config?.client_id &&
+            metadata.clientInfo.client_secret === config.client_secret
+          ) {
+            throw new Error(
+              '[MCPOAuth] Stored OAuth client_secret from unpinned configuration cannot be used with auto-discovered token endpoints. Configure oauth.token_url or re-authenticate without oauth.client_secret.',
+            );
+          }
+
           /** Auto-discover OAuth configuration for refresh */
           const serverUrl = new URL(metadata.serverUrl);
-          const fetchFn = this.createOAuthFetch(oauthHeaders);
+          const fetchFn = this.createOAuthFetch(
+            oauthHeaders,
+            undefined,
+            allowedDomains,
+            allowedAddresses,
+          );
           const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
           if (!oauthMetadata) {
@@ -1202,7 +1267,8 @@ export class MCPOAuthHandler {
           has_auth_header: !!headers['Authorization'],
         });
 
-        const response = await fetch(tokenUrl, {
+        const oauthFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
+        const response = await oauthFetch(tokenUrl, {
           method: 'POST',
           headers,
           body,
@@ -1285,7 +1351,8 @@ export class MCPOAuthHandler {
           body.append('client_id', config.client_id);
         }
 
-        const response = await fetch(tokenUrl, {
+        const oauthFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
+        const response = await oauthFetch(tokenUrl, {
           method: 'POST',
           headers,
           body,
@@ -1309,7 +1376,12 @@ export class MCPOAuthHandler {
 
       /** Auto-discover OAuth configuration for refresh */
       const serverUrl = new URL(metadata.serverUrl);
-      const fetchFn = this.createOAuthFetch(oauthHeaders);
+      const fetchFn = this.createOAuthFetch(
+        oauthHeaders,
+        undefined,
+        allowedDomains,
+        allowedAddresses,
+      );
       const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
       let tokenUrl: URL;
@@ -1339,7 +1411,8 @@ export class MCPOAuthHandler {
         ...oauthHeaders,
       };
 
-      const response = await fetch(tokenUrl, {
+      const oauthFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
+      const response = await oauthFetch(tokenUrl, {
         method: 'POST',
         headers,
         body,
@@ -1414,7 +1487,8 @@ export class MCPOAuthHandler {
     logger.info(
       `[MCPOAuth] Revoking tokens for ${serverName} via ${sanitizeUrlForLogging(revokeUrl.toString())}`,
     );
-    const response = await fetch(revokeUrl, {
+    const oauthFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
+    const response = await oauthFetch(revokeUrl, {
       method: 'POST',
       body: body.toString(),
       headers,

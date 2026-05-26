@@ -3,9 +3,42 @@ import type { ParsedServerConfig } from '~/mcp/types';
 
 export const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
+/** Whether a server should use MCP OAuth handling. */
+export function isOAuthServer(
+  config: Pick<ParsedServerConfig, 'requiresOAuth' | 'oauth'>,
+): boolean {
+  if (config.requiresOAuth === false) {
+    return false;
+  }
+  return config.requiresOAuth === true || config.oauth != null;
+}
+
 /** Checks that `customUserVars` is present AND non-empty (guards against truthy `{}`) */
 export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVars'>): boolean {
   return !!config.customUserVars && Object.keys(config.customUserVars).length > 0;
+}
+
+/**
+ * Returns the names of `customUserVars` declared on the server config for which
+ * the user has not supplied a non-blank value (unset, empty, or whitespace-only
+ * values count as missing, since they still fail auth). An empty array means
+ * every declared variable is satisfied (or the server declares none).
+ *
+ * Used to gate tool exposure: a server that requires user-provided credentials
+ * should not surface its tools to the model until those values are set,
+ * otherwise every tool call fails authentication. See issue #10969.
+ */
+export function getMissingCustomUserVars(
+  config: Pick<ParsedServerConfig, 'customUserVars'>,
+  providedVars?: Record<string, string> | null,
+): string[] {
+  if (!hasCustomUserVars(config)) {
+    return [];
+  }
+  return Object.keys(config.customUserVars ?? {}).filter((key) => {
+    const value = providedVars?.[key];
+    return value == null || (typeof value === 'string' && value.trim() === '');
+  });
 }
 
 /**

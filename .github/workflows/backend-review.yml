@@ -5,6 +5,9 @@ on:
       - 'api/**'
       - 'packages/**'
 
+permissions:
+  contents: read
+
 env:
   NODE_ENV: CI
   NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'

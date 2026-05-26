@@ -10,6 +10,7 @@ import {
   groupConversationsByDate,
   updateConvoFieldsInfinite,
   addConvoToAllQueries,
+  upsertConvoInAllQueries,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
   addConversationToAllConversationsQueries,
@@ -588,6 +589,47 @@ describe('Conversation Utilities', () => {
         addConvoToAllQueries(queryClient, convoA);
         const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
         expect(data!.pages[0].conversations.filter((c) => c.conversationId === 'a').length).toBe(1);
+      });
+
+      it('upsertConvoInAllQueries adds missing conversations to the top', () => {
+        upsertConvoInAllQueries(queryClient, convoB);
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations[0].conversationId).toBe('b');
+        expect(data!.pages[0].conversations[1].conversationId).toBe('a');
+      });
+
+      it('upsertConvoInAllQueries updates existing conversations without duplicating them', () => {
+        upsertConvoInAllQueries(queryClient, {
+          ...convoA,
+          title: 'Updated Conversation A',
+        });
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations).toHaveLength(1);
+        expect(data!.pages[0].conversations[0].title).toBe('Updated Conversation A');
+      });
+
+      it('upsertConvoInAllQueries moves an existing conversation to the top once', () => {
+        const convoC = { conversationId: 'c', updatedAt: '2024-01-03T12:00:00Z' } as TConversation;
+        queryClient.setQueryData(['allConversations'], {
+          pages: [{ conversations: [convoC, convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        upsertConvoInAllQueries(queryClient, {
+          ...convoA,
+          title: 'Updated Conversation A',
+        });
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['a', 'c']);
       });
 
       it('updateConvoInAllQueries updates correct convo', () => {

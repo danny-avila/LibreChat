@@ -23,6 +23,8 @@ export { default as meiliLogger } from './config/meiliLogger';
 export {
   tenantStorage,
   getTenantId,
+  getUserId,
+  getRequestId,
   runAsSystem,
   scopedCacheKey,
   SYSTEM_TENANT_ID,

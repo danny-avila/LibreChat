@@ -47,9 +47,11 @@ export default function useSelectMention({
       }
 
       const conversation = getConversation();
-      const { preset } = spec;
-      preset.iconURL = getModelSpecIconURL(spec);
-      preset.spec = spec.name;
+      const preset = {
+        ...spec.preset,
+        iconURL: getModelSpecIconURL(spec),
+        spec: spec.name,
+      } as TPreset;
       const { endpoint } = preset;
       const newEndpoint = endpoint ?? '';
       if (!newEndpoint) {
@@ -98,7 +100,6 @@ export default function useSelectMention({
         newConversation({
           template: currentConvo,
           preset,
-          keepLatestMessage: true,
           keepAddedConvos: true,
         });
         return;
@@ -193,7 +194,6 @@ export default function useSelectMention({
         newConversation({
           template: currentConvo,
           preset: currentConvo,
-          keepLatestMessage: true,
           keepAddedConvos: true,
         });
         return;
@@ -256,7 +256,6 @@ export default function useSelectMention({
         newConversation({
           template: currentConvo,
           preset: newPreset,
-          keepLatestMessage: true,
           keepAddedConvos: true,
           disableParams,
         });

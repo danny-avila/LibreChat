@@ -1,5 +1,6 @@
 import type { DeepPartial, TCustomConfig } from 'librechat-data-provider';
-import { loadSummarizationConfig } from './service';
+import { EModelEndpoint, defaultAssistantsVersion } from 'librechat-data-provider';
+import { AppService, loadSummarizationConfig } from './service';
 import logger from '~/config/winston';
 
 jest.mock('~/config/winston', () => ({
@@ -76,5 +77,72 @@ describe('loadSummarizationConfig', () => {
     expect(result).toBeUndefined();
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(String(warnSpy.mock.calls[0][0])).toContain('Invalid summarization config');
+  });
+});
+
+describe('AppService assistants config', () => {
+  it('preserves configured Assistants API versions', async () => {
+    const config = {
+      endpoints: {
+        [EModelEndpoint.assistants]: {
+          version: 'v3',
+        },
+        [EModelEndpoint.azureOpenAI]: {
+          assistants: true,
+          groups: [
+            {
+              group: 'azure-assistants-test',
+              apiKey: 'test-key',
+              instanceName: 'azure-assistants-test',
+              assistants: true,
+              version: '2024-02-15-preview',
+              models: {
+                'gpt-4': {
+                  deploymentName: 'gpt-4',
+                },
+              },
+            },
+          ],
+        },
+        [EModelEndpoint.azureAssistants]: {
+          version: 4,
+        },
+      },
+    } as DeepPartial<TCustomConfig>;
+
+    const result = await AppService({ config });
+
+    expect(result.endpoints?.[EModelEndpoint.assistants]?.version).toBe('v3');
+    expect(result.endpoints?.[EModelEndpoint.azureAssistants]?.version).toBe(4);
+  });
+
+  it('keeps Azure Assistants default version when only Azure OpenAI enables assistants', async () => {
+    const config = {
+      endpoints: {
+        [EModelEndpoint.azureOpenAI]: {
+          assistants: true,
+          groups: [
+            {
+              group: 'azure-assistants-test',
+              apiKey: 'test-key',
+              instanceName: 'azure-assistants-test',
+              assistants: true,
+              version: '2024-02-15-preview',
+              models: {
+                'gpt-4': {
+                  deploymentName: 'gpt-4',
+                },
+              },
+            },
+          ],
+        },
+      },
+    } as DeepPartial<TCustomConfig>;
+
+    const result = await AppService({ config });
+
+    expect(result.endpoints?.[EModelEndpoint.azureAssistants]?.version).toBe(
+      defaultAssistantsVersion.azureAssistants,
+    );
   });
 });

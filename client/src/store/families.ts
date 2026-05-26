@@ -11,13 +11,7 @@ import {
   useRecoilCallback,
 } from 'recoil';
 import { LocalStorageKeys, isEphemeralAgentId, Constants } from 'librechat-data-provider';
-import type {
-  EModelEndpoint,
-  TConversation,
-  TSubmission,
-  TMessage,
-  TPreset,
-} from 'librechat-data-provider';
+import type { EModelEndpoint, TConversation, TSubmission, TPreset } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import {
   clearModelForNonEphemeralAgent,
@@ -27,44 +21,14 @@ import {
 } from '~/utils';
 import { useSetConvoContext } from '~/Providers/SetConvoContext';
 
-const latestMessageKeysAtom = atom<(string | number)[]>({
-  key: 'latestMessageKeys',
-  default: [],
-});
-
 const submissionKeysAtom = atom<(string | number)[]>({
   key: 'submissionKeys',
   default: [],
 });
 
-const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
-  key: 'latestMessageByIndex',
-  default: null,
-  effects: [
-    ({ onSet, node }) => {
-      onSet(async (newValue) => {
-        const key = Number(node.key.split(Constants.COMMON_DIVIDER)[1]);
-        logger.log('Recoil Effect: Setting latestMessage', { key, newValue });
-      });
-    },
-  ] as const,
-});
-
 const submissionByIndex = atomFamily<TSubmission | null, string | number>({
   key: 'submissionByIndex',
   default: null,
-});
-
-const latestMessageKeysSelector = selector<(string | number)[]>({
-  key: 'latestMessageKeysSelector',
-  get: ({ get }) => {
-    const keys = get(conversationKeysAtom);
-    return keys.filter((key) => get(latestMessageFamily(key)) !== null);
-  },
-  set: ({ set }, newKeys) => {
-    logger.log('setting latestMessageKeys', { newKeys });
-    set(latestMessageKeysAtom, newKeys);
-  },
 });
 
 const submissionKeysSelector = selector<(string | number)[]>({
@@ -385,11 +349,6 @@ function useClearConvoState() {
           }
 
           reset(conversationByIndex(conversationKey));
-
-          const conversation = await snapshot.getPromise(conversationByIndex(conversationKey));
-          if (conversation) {
-            reset(latestMessageFamily(conversationKey));
-          }
         }
 
         reset(conversationKeysAtom);
@@ -424,33 +383,6 @@ function useClearSubmissionState() {
   );
 
   return clearAllSubmissions;
-}
-
-function useClearLatestMessages(context?: string) {
-  const clearAllLatestMessages = useRecoilCallback(
-    ({ reset, set, snapshot }) =>
-      async (skipFirst?: boolean) => {
-        const latestMessageKeys = await snapshot.getPromise(latestMessageKeysSelector);
-        logger.log('[clearAllLatestMessages] latestMessageKeys', latestMessageKeys);
-        if (context != null && context) {
-          logger.log(`[clearAllLatestMessages] context: ${context}`);
-        }
-
-        for (const key of latestMessageKeys) {
-          if (skipFirst === true && key == 0) {
-            continue;
-          }
-
-          logger.log(`[clearAllLatestMessages] resetting latest message; key: ${key}`);
-          reset(latestMessageFamily(key));
-        }
-
-        set(latestMessageKeysSelector, []);
-      },
-    [],
-  );
-
-  return clearAllLatestMessages;
 }
 
 const updateConversationSelector = selectorFamily({
@@ -490,7 +422,6 @@ export default {
   isSubmittingFamily,
   optionSettingsFamily,
   showPopoverFamily,
-  latestMessageFamily,
   messagesSiblingIdxFamily,
   anySubmittingSelector,
   allConversationsSelector,
@@ -514,7 +445,6 @@ export default {
   showPlusPopoverFamily,
   activePromptByIndex,
   useClearSubmissionState,
-  useClearLatestMessages,
   showPromptsPopoverFamily,
   showSkillsPopoverFamily,
   pendingManualSkillsByConvoId,

@@ -1,4 +1,4 @@
-import { getTenantId, logger } from '@librechat/data-schemas';
+import { getTenantId, getRequestId, logger } from '@librechat/data-schemas';
 import { preAuthTenantMiddleware } from './preAuthTenant';
 import type { Request, Response, NextFunction } from 'express';
 
@@ -52,6 +52,17 @@ describe('preAuthTenantMiddleware', () => {
 
     preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
     expect(capturedTenantId).toBe('acme-corp');
+  });
+
+  it('propagates request ID from pre-auth routes', () => {
+    req.headers = { 'x-request-id': 'req-preauth' };
+    let capturedRequestId: string | undefined;
+    const capturedNext: NextFunction = () => {
+      capturedRequestId = getRequestId();
+    };
+
+    preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
+    expect(capturedRequestId).toBe('req-preauth');
   });
 
   it('ignores __SYSTEM__ sentinel and logs warning', () => {

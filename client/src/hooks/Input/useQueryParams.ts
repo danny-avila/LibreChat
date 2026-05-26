@@ -90,10 +90,11 @@ export default function useQueryParams({
         if (!spec) {
           return;
         }
-        const { preset } = spec;
-        preset.iconURL = getModelSpecIconURL(spec);
-        preset.spec = spec.name;
-        newPreset = preset;
+        newPreset = {
+          ...spec.preset,
+          iconURL: getModelSpecIconURL(spec),
+          spec: spec.name,
+        } as TPreset;
       }
 
       let newEndpoint = newPreset.endpoint ?? '';
@@ -161,7 +162,6 @@ export default function useQueryParams({
         newConversation({
           template: currentConvo,
           preset: newPreset,
-          keepLatestMessage: true,
           keepAddedConvos: true,
         });
         return;

@@ -11,7 +11,11 @@ import http from 'node:http';
 import type { LookupFunction } from 'node:net';
 import { createSSRFSafeAgents, createSSRFSafeUndiciConnect } from './agent';
 
-type LookupCallback = (err: NodeJS.ErrnoException | null, address: string, family: number) => void;
+type LookupCallback = (
+  err: NodeJS.ErrnoException | null,
+  address: string | dns.LookupAddress[],
+  family?: number,
+) => void;
 
 const mockedDnsLookup = dns.lookup as jest.MockedFunction<typeof dns.lookup>;
 const httpAgentPrototype = http.Agent.prototype as unknown as {
@@ -25,6 +29,16 @@ function mockDnsResult(address: string, family: number): void {
     callback: LookupCallback,
   ) => {
     callback(null, address, family);
+  }) as never);
+}
+
+function mockDnsAllResult(addresses: dns.LookupAddress[]): void {
+  mockedDnsLookup.mockImplementation(((
+    _hostname: string,
+    _options: unknown,
+    callback: LookupCallback,
+  ) => {
+    callback(null, addresses);
   }) as never);
 }
 
@@ -121,6 +135,73 @@ describe('createSSRFSafeUndiciConnect', () => {
 
     expect(result.err).toBeNull();
     expect(result.address).toBe('93.184.216.34');
+  });
+
+  it('lookup should block private IPs when DNS returns all addresses', async () => {
+    mockDnsAllResult([{ address: '127.0.0.1', family: 4 }]);
+    const connect = createSSRFSafeUndiciConnect();
+
+    const result = await new Promise<{ err: NodeJS.ErrnoException | null }>((resolve) => {
+      connect.lookup('localhost', { all: true }, (err) => {
+        resolve({ err });
+      });
+    });
+
+    expect(result.err).toBeTruthy();
+    expect(result.err!.code).toBe('ESSRF');
+  });
+
+  it('lookup should allow public IPs when DNS returns all addresses', async () => {
+    const addresses = [{ address: '93.184.216.34', family: 4 }];
+    mockDnsAllResult(addresses);
+    const connect = createSSRFSafeUndiciConnect();
+
+    const result = await new Promise<{
+      err: NodeJS.ErrnoException | null;
+      address: string | dns.LookupAddress[];
+    }>((resolve) => {
+      connect.lookup('example.com', { all: true }, (err, address) => {
+        resolve({ err, address });
+      });
+    });
+
+    expect(result.err).toBeNull();
+    expect(result.address).toEqual(addresses);
+  });
+
+  it('lookup should block mixed public and private all-address results', async () => {
+    mockDnsAllResult([
+      { address: '93.184.216.34', family: 4 },
+      { address: '10.0.0.1', family: 4 },
+    ]);
+    const connect = createSSRFSafeUndiciConnect();
+
+    const result = await new Promise<{ err: NodeJS.ErrnoException | null }>((resolve) => {
+      connect.lookup('rebinding.example.com', { all: true }, (err) => {
+        resolve({ err });
+      });
+    });
+
+    expect(result.err).toBeTruthy();
+    expect(result.err!.code).toBe('ESSRF');
+  });
+
+  it('lookup should honor allowedAddresses when DNS returns all addresses', async () => {
+    const addresses = [{ address: '10.0.0.5', family: 4 }];
+    mockDnsAllResult(addresses);
+    const connect = createSSRFSafeUndiciConnect(['10.0.0.5:11434'], '11434');
+
+    const result = await new Promise<{
+      err: NodeJS.ErrnoException | null;
+      address: string | dns.LookupAddress[];
+    }>((resolve) => {
+      connect.lookup('private.example.com', { all: true }, (err, address) => {
+        resolve({ err, address });
+      });
+    });
+
+    expect(result.err).toBeNull();
+    expect(result.address).toEqual(addresses);
   });
 
   it('lookup should forward DNS errors', async () => {

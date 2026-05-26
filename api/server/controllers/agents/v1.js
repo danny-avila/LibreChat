@@ -59,6 +59,39 @@ const getSafeModelParameters = (modelParameters) => {
   const { useResponsesApi } = modelParameters ?? {};
   return typeof useResponsesApi === 'boolean' ? { useResponsesApi } : {};
 };
+const hasEditBit = (permission) => (permission & PermissionBits.EDIT) === PermissionBits.EDIT;
+
+const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
+  const skillScopeEnabled = agent.skills_enabled === true;
+  delete agent.skills_enabled;
+
+  if (!skillScopeEnabled) {
+    delete agent.skills;
+    return agent;
+  }
+
+  const configuredSkills = Array.isArray(agent.skills) ? agent.skills : [];
+  if (configuredSkills.length === 0) {
+    delete agent.skills;
+    if (accessibleSkillSet.size > 0) {
+      agent.skills_enabled = true;
+    }
+    return agent;
+  }
+
+  const visibleSkills = configuredSkills
+    .map((skillId) => String(skillId))
+    .filter((skillId) => accessibleSkillSet.has(skillId));
+
+  if (visibleSkills.length === 0) {
+    delete agent.skills;
+    return agent;
+  }
+
+  agent.skills = visibleSkills;
+  agent.skills_enabled = true;
+  return agent;
+};
 
 /**
  * Looks up each referenced agent id in Mongo, splits them into three
@@ -156,6 +189,7 @@ const isSubagentsCapabilityEnabled = (req) => {
  * @param {object} params
  * @param {string[]} params.tools - Raw tool strings from the request
  * @param {string} params.userId - Requesting user ID for MCP server access check
+ * @param {string} [params.role] - Requesting user's role for ACL principal resolution
  * @param {Record<string, unknown>} params.availableTools - Global non-MCP tool cache
  * @param {string[]} [params.existingTools] - Tools already persisted on the agent document
  * @param {Record<string, unknown>} [params.configServers] - Config-source MCP servers resolved from appConfig overrides
@@ -164,6 +198,7 @@ const isSubagentsCapabilityEnabled = (req) => {
 const filterAuthorizedTools = async ({
   tools,
   userId,
+  role,
   availableTools,
   existingTools,
   configServers,
@@ -186,7 +221,9 @@ const filterAuthorizedTools = async ({
     if (mcpServerConfigs === undefined) {
       try {
         mcpServerConfigs =
-          (await getMCPServersRegistry().getAllServerConfigs(userId, configServers)) ?? {};
+          (role
+            ? await getMCPServersRegistry().getAllServerConfigs(userId, configServers, role)
+            : await getMCPServersRegistry().getAllServerConfigs(userId, configServers)) ?? {};
       } catch (e) {
         logger.warn(
           '[filterAuthorizedTools] MCP registry unavailable, filtering all MCP tools',
@@ -354,6 +391,7 @@ const createAgentHandler = async (req, res) => {
     agentData.tools = await filterAuthorizedTools({
       tools,
       userId,
+      role: req.user.role,
       availableTools,
       configServers,
     });
@@ -587,6 +625,7 @@ const updateAgentHandler = async (req, res) => {
         const approvedNew = await filterAuthorizedTools({
           tools: newMCPTools,
           userId: req.user.id,
+          role: req.user.role,
           availableTools,
           configServers,
         });
@@ -748,6 +787,7 @@ const duplicateAgentHandler = async (req, res) => {
       newAgentData.tools = await filterAuthorizedTools({
         tools: newAgentData.tools,
         userId,
+        role: req.user.role,
         availableTools,
         existingTools: newAgentData.tools,
         configServers,
@@ -848,6 +888,7 @@ const getListAgentsHandler = async (req, res) => {
     } else if (typeof requiredPermission !== 'number') {
       requiredPermission = PermissionBits.VIEW;
     }
+    const canReturnSkillConfig = hasEditBit(requiredPermission);
     // Base filter
     const filter = {};
 
@@ -921,6 +962,7 @@ const getListAgentsHandler = async (req, res) => {
       otherParams: filter,
       limit,
       after: cursor,
+      includeSkillConfig: true,
     });
 
     const agents = data?.data ?? [];
@@ -928,10 +970,24 @@ const getListAgentsHandler = async (req, res) => {
       return res.json(data);
     }
 
+    let accessibleSkillSet = null;
+    if (!canReturnSkillConfig) {
+      const accessibleSkillIds = await findAccessibleResources({
+        userId,
+        role: req.user.role,
+        resourceType: ResourceType.SKILL,
+        requiredPermissions: PermissionBits.VIEW,
+      });
+      accessibleSkillSet = new Set(accessibleSkillIds.map((oid) => oid.toString()));
+    }
+
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
 
     const urlCache = cachedRefresh?.urlCache;
     data.data = agents.map((agent) => {
+      if (accessibleSkillSet) {
+        sanitizeViewerSkillScope(agent, accessibleSkillSet);
+      }
       try {
         if (agent?._id && publicSet.has(agent._id.toString())) {
           agent.isPublic = true;
@@ -1106,6 +1162,7 @@ const revertAgentVersionHandler = async (req, res) => {
       const filteredTools = await filterAuthorizedTools({
         tools: updatedAgent.tools,
         userId: req.user.id,
+        role: req.user.role,
         availableTools,
         existingTools: updatedAgent.tools,
         configServers,

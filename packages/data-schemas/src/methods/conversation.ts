@@ -1,5 +1,7 @@
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
+import { RetentionMode } from 'librechat-data-provider';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 import type { AppConfig, IConversation } from '~/types';
@@ -47,6 +49,10 @@ export interface ConversationMethods {
     convoMap: Record<string, unknown>;
   }>;
   getConvo(user: string, conversationId: string): Promise<IConversation | null>;
+  getConvoRetention(
+    user: string,
+    conversationId: string,
+  ): Promise<Pick<IConversation, 'expiredAt'> | null>;
   getConvoTitle(user: string, conversationId: string): Promise<string | null>;
   deleteConvos(
     user: string,
@@ -63,6 +69,10 @@ export function createConversationMethods(
       throw new Error('Message methods not injected into conversation methods');
     }
     return messageMethods;
+  }
+
+  function getVisibleConversationRetentionFilter(): FilterQuery<IConversation> {
+    return buildRetentionVisibilityFilter<IConversation>();
   }
 
   /**
@@ -91,6 +101,24 @@ export function createConversationMethods(
     } catch (error) {
       logger.error('[getConvo] Error getting single conversation', error);
       throw new Error('Error getting single conversation');
+    }
+  }
+
+  /**
+   * Retrieves only the retention deadline for a conversation.
+   */
+  async function getConvoRetention(
+    user: string,
+    conversationId: string,
+  ): Promise<Pick<IConversation, 'expiredAt'> | null> {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOne({ user, conversationId }, 'expiredAt').lean<
+        Pick<IConversation, 'expiredAt'>
+      >();
+    } catch (error) {
+      logger.error('[getConvoRetention] Error getting conversation retention fields', error);
+      throw new Error('Error getting conversation retention fields');
     }
   }
 
@@ -178,22 +206,35 @@ export function createConversationMethods(
         logger.debug(`[saveConvo] ${metadata.context}`);
       }
 
-      const messages = await getMessages({ conversationId }, '_id');
+      const messages = await getMessages({ conversationId, user: userId }, '_id');
       const update: Record<string, unknown> = { ...convo, messages, user: userId };
 
       if (newConversationId) {
         update.conversationId = newConversationId;
       }
 
-      if (isTemporary) {
+      if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
+        if (typeof isTemporary === 'boolean') {
+          update.isTemporary = isTemporary;
+        }
         try {
           update.expiredAt = createTempChatExpirationDate(interfaceConfig);
         } catch (err) {
           logger.error('Error creating temporary chat expiration date:', err);
           logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
-          update.expiredAt = null;
+          update.expiredAt = createFallbackRetentionDate();
         }
-      } else {
+      } else if (isTemporary === true) {
+        update.isTemporary = true;
+        try {
+          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
+        } catch (err) {
+          logger.error('Error creating temporary chat expiration date:', err);
+          logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
+          update.expiredAt = createFallbackRetentionDate();
+        }
+      } else if (isTemporary === false) {
+        update.isTemporary = false;
         update.expiredAt = null;
       }
 
@@ -227,6 +268,19 @@ export function createConversationMethods(
       if (!conversation) {
         logger.debug('[saveConvo] Conversation not found, skipping update');
         return null;
+      }
+
+      if (
+        interfaceConfig?.retentionMode === RetentionMode.ALL &&
+        typeof isTemporary !== 'boolean' &&
+        (conversation.isTemporary == null ||
+          (conversation.isTemporary === false && conversation.$isDefault('isTemporary')))
+      ) {
+        await Conversation.updateOne(
+          { _id: conversation._id, isTemporary: { $ne: false } },
+          { $set: { isTemporary: false } },
+        );
+        conversation.isTemporary = false;
       }
 
       return conversation.toObject();
@@ -302,9 +356,7 @@ export function createConversationMethods(
       filters.push({ tags: { $in: tags } } as FilterQuery<IConversation>);
     }
 
-    filters.push({
-      $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }],
-    } as FilterQuery<IConversation>);
+    filters.push(getVisibleConversationRetentionFilter());
 
     if (search) {
       try {
@@ -429,7 +481,7 @@ export function createConversationMethods(
       const results = await Conversation.find({
         user,
         conversationId: { $in: conversationIds },
-        $or: [{ expiredAt: { $exists: false } }, { expiredAt: null }],
+        ...getVisibleConversationRetentionFilter(),
       }).lean<IConversation[]>();
 
       results.sort(
@@ -516,6 +568,7 @@ export function createConversationMethods(
     getConvosByCursor,
     getConvosQueried,
     getConvo,
+    getConvoRetention,
     getConvoTitle,
     deleteConvos,
   };

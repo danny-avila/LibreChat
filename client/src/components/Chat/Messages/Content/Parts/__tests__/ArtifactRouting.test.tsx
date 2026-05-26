@@ -16,6 +16,10 @@ jest.mock('~/hooks', () => ({
    * routing tests don't exercise the preview flow itself — stub it
    * to a no-op so it doesn't blow up jsdom rendering. */
   useAttachmentPreviewSync: () => ({ status: 'ready', previewError: undefined, isPolling: false }),
+  useExpandCollapse: (isExpanded: boolean) => ({
+    style: { display: 'grid', gridTemplateRows: isExpanded ? '1fr' : '0fr' },
+    ref: { current: null },
+  }),
 }));
 
 jest.mock('../LogLink', () => ({
@@ -716,12 +720,57 @@ describe('AttachmentGroup routing', () => {
       bytes: 1024,
     } as Partial<TAttachment>);
     const { container } = renderWith(<AttachmentGroup attachments={[empty, real]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_show_n_files' }));
     const chips = Array.from(container.querySelectorAll('[data-testid="file-container"]'));
     expect(chips.length).toBe(2);
     const filenames = chips.map((c) => c.textContent ?? '');
     // Real chip must render before the empty placeholder.
     expect(filenames[0]).toMatch(/archive\.zip/);
     expect(filenames[1]).toMatch(/placeholder\.zip/);
+  });
+
+  it('keeps multiple downloadable files in their own collapsed group while images render outwardly', () => {
+    const first = baseAttachment({
+      file_id: 'file-a',
+      filename: 'a.zip',
+      type: 'application/zip',
+    } as Partial<TAttachment>);
+    const second = baseAttachment({
+      file_id: 'file-b',
+      filename: 'b.zip',
+      type: 'application/zip',
+    } as Partial<TAttachment>);
+    const json = baseAttachment({
+      file_id: 'file-c',
+      filename: 'c.json',
+      type: 'application/json',
+      text: '{"c":true}',
+    } as Partial<TAttachment>);
+    const image = baseAttachment({
+      file_id: 'image-a',
+      filename: 'preview.png',
+      type: 'image/png',
+      width: 16,
+      height: 16,
+    } as Partial<TAttachment>);
+
+    const { container } = renderWith(
+      <AttachmentGroup attachments={[first, second, json, image]} />,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'com_ui_show_n_files' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    expect(panel?.firstElementChild).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByTestId('image')).toBeInTheDocument();
+    expect(screen.getAllByTestId('file-container').map((chip) => chip.textContent)).not.toContain(
+      'c.json',
+    );
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('c.json')).toBeInTheDocument();
+    expect(container.querySelector('pre')?.textContent).toBe('{"c":true}');
   });
 
   it('passes a non-dotfile filename through to FileContainer unchanged', () => {
@@ -826,9 +875,15 @@ describe('AttachmentGroup routing', () => {
     expect(screen.getByText('index.html')).toBeInTheDocument();
     // Mermaid render
     expect(screen.getByTestId('mermaid-render')).toBeInTheDocument();
-    // Inline text fallback for JSON (CSV now goes to SPREADSHEET)
-    expect(container.querySelector('pre')).not.toBeNull();
-    // FileContainer for the plain zip (and potentially others)
-    expect(screen.getAllByTestId('file-container').length).toBeGreaterThan(0);
+    // JSON and plain zip are both downloadable file outputs, so they collapse together.
+    const toggle = screen.getByRole('button', { name: 'com_ui_show_n_files' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const chipLabels = screen.getAllByTestId('file-container').map((chip) => chip.textContent);
+    expect(chipLabels).toContain('archive.zip');
+    expect(chipLabels).not.toContain('data.json');
+
+    fireEvent.click(toggle);
+    expect(screen.getByText('data.json')).toBeInTheDocument();
+    expect(container.querySelector('pre')?.textContent).toBe('{"a":1}');
   });
 });

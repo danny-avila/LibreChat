@@ -29,6 +29,26 @@ export function initializeCloudFront(config: CloudFrontConfig): boolean {
   const keyPairId = process.env.CLOUDFRONT_KEY_PAIR_ID ?? null;
   const privateKey = process.env.CLOUDFRONT_PRIVATE_KEY ?? null;
 
+  const requireSignedAccess = config.requireSignedAccess === true;
+
+  if (requireSignedAccess) {
+    logger.info('[initializeCloudFront] Strict signed CloudFront access enabled at startup.');
+
+    if (config.imageSigning !== 'cookies') {
+      logger.error(
+        `[initializeCloudFront] Strict startup failure: cloudfront.requireSignedAccess=true requires cloudfront.imageSigning="cookies" (got "${config.imageSigning ?? 'none'}"); signed URL mode is not yet implemented.`,
+      );
+      return false;
+    }
+
+    if (!keyPairId || !privateKey) {
+      logger.error(
+        '[initializeCloudFront] Strict startup failure: cloudfront.requireSignedAccess=true but CLOUDFRONT_KEY_PAIR_ID and/or CLOUDFRONT_PRIVATE_KEY are missing.',
+      );
+      return false;
+    }
+  }
+
   if (config.imageSigning === 'cookies' && (!keyPairId || !privateKey)) {
     logger.error(
       '[initializeCloudFront] imageSigning="cookies" requires CLOUDFRONT_KEY_PAIR_ID and CLOUDFRONT_PRIVATE_KEY env vars.',
@@ -38,7 +58,7 @@ export function initializeCloudFront(config: CloudFrontConfig): boolean {
 
   cloudFrontConfig = { ...config, privateKey, keyPairId };
 
-  if (config.imageSigning === 'cookies') {
+  if (config.imageSigning === 'cookies' && !requireSignedAccess) {
     logger.info(
       '[initializeCloudFront] CloudFront cookie signing enabled. Cookies will be set during auth.',
     );

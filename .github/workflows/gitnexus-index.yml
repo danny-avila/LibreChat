@@ -25,9 +25,13 @@ on:
         type: string
         default: ''
       pr_ref:
-        description: 'PR head SHA or ref to check out (set by /gitnexus command)'
+        description: 'Optional PR head ref to check out; defaults to refs/pull/<pr_number>/head when pr_number is set'
         type: string
         default: ''
+      deploy_after:
+        description: 'Dispatch GitNexus Deploy after a successful index run'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -61,10 +65,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - name: Validate dispatch inputs
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          PR_REF: ${{ inputs.pr_ref }}
+        run: |
+          set -euo pipefail
+          if [ -n "$PR_NUMBER" ]; then
+            if [[ ! "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+              echo "::error::pr_number must be numeric"
+              exit 1
+            fi
+            EXPECTED_REF="refs/pull/${PR_NUMBER}/head"
+            if [ -n "$PR_REF" ] && [ "$PR_REF" != "$EXPECTED_REF" ]; then
+              echo "::error::pr_ref must match ${EXPECTED_REF}"
+              exit 1
+            fi
+          elif [ -n "$PR_REF" ]; then
+            echo "::error::pr_ref requires pr_number"
+            exit 1
+          fi
+
       - name: Resolve GitNexus flags
         id: flags
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          ENABLE_EMBEDDINGS_INPUT: ${{ inputs.embeddings }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
 
@@ -79,15 +108,14 @@ jobs:
           #                           (default false). This also covers the
           #                           /gitnexus index [embeddings] command.
           ENABLE_EMBEDDINGS=false
-          case "${{ github.event_name }}" in
+          case "$EVENT_NAME" in
             workflow_dispatch)
-              [ "${{ inputs.embeddings }}" = "true" ] && ENABLE_EMBEDDINGS=true
+              [ "$ENABLE_EMBEDDINGS_INPUT" = "true" ] && ENABLE_EMBEDDINGS=true
               ;;
             push)
               ENABLE_EMBEDDINGS=true
               ;;
             pull_request)
-              PR_NUM="${{ github.event.pull_request.number }}"
               CHANGED=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUM/files" \
                 --paginate --jq '.[].filename' 2>/dev/null || echo "")
               if printf '%s\n' "$CHANGED" | grep -qE '^(api/|client/|packages/)'; then
@@ -145,13 +173,15 @@ jobs:
           # repo for every PR, so checkout works for fork PRs too. When
           # pr_ref is empty (native push/pull_request), fall back to the
           # default ref actions/checkout would use.
-          ref: ${{ inputs.pr_ref || '' }}
+          ref: ${{ inputs.pr_ref || (inputs.pr_number != '' && format('refs/pull/{0}/head', inputs.pr_number) || '') }}
           fetch-depth: 1
           persist-credentials: false
 
       - name: Run GitNexus Analyze
         working-directory: ${{ runner.temp }}
         env:
+          ENABLE_EMBEDDINGS: ${{ steps.flags.outputs.enable_embeddings }}
+          FORCE: ${{ inputs.force }}
           GITNEXUS_BIN: ${{ runner.temp }}/gitnexus-cli/node_modules/.bin/gitnexus
           NPM_CONFIG_AUDIT: false
           NPM_CONFIG_CACHE: ${{ runner.temp }}/gitnexus-npm-cache
@@ -163,10 +193,10 @@ jobs:
           set -euo pipefail
           FLAGS=(--skip-agents-md --verbose)
 
-          if [ "${{ steps.flags.outputs.enable_embeddings }}" = "true" ]; then
+          if [ "$ENABLE_EMBEDDINGS" = "true" ]; then
             FLAGS+=(--embeddings)
           fi
-          if [ "${{ inputs.force }}" = "true" ]; then
+          if [ "$FORCE" = "true" ]; then
             FLAGS+=(--force)
           fi
           "$GITNEXUS_BIN" analyze "$GITHUB_WORKSPACE" "${FLAGS[@]}"
@@ -206,27 +236,25 @@ jobs:
     if: |
       always() &&
       (inputs.pr_number != '' ||
-       (github.triggering_actor == 'github-actions[bot]' && needs.index.result == 'success'))
+       inputs.deploy_after)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
-      actions: write # dispatch gitnexus-deploy.yml on bot-triggered runs
+      actions: write # dispatch gitnexus-deploy.yml when deploy_after is set
       pull-requests: write # post completion comments for /gitnexus command runs
     steps:
-      # GitHub suppresses workflow_run events for workflow runs whose
-      # triggering actor is GITHUB_TOKEN (to prevent recursive chaining).
-      # That means when this workflow is dispatched by gitnexus-pr-command
-      # via `gh api workflow_dispatch`, the deploy workflow's workflow_run
-      # trigger never fires. Manually dispatch the deploy here in that
-      # specific case — user-triggered runs continue to rely on the
-      # existing workflow_run trigger, so we don't double-deploy.
-      - name: Trigger deploy workflow for bot-triggered runs
-        if: github.triggering_actor == 'github-actions[bot]' && needs.index.result == 'success'
+      # GitHub suppresses workflow_run events for workflow runs triggered
+      # by GITHUB_TOKEN (to prevent recursive chaining). Command-triggered
+      # index runs opt into a deploy by setting deploy_after=true.
+      - name: Trigger deploy workflow after command-triggered runs
+        if: inputs.deploy_after && needs.index.result == 'success'
         uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
         with:
           script: |
-            core.info('Triggering actor is github-actions[bot]; workflow_run would not fire. Dispatching gitnexus-deploy.yml manually.');
+            core.info('deploy_after=true; dispatching gitnexus-deploy.yml manually.');
             // Pass pr_number through so the deploy workflow knows which
             // PR to post its completion comment on (for /gitnexus
             // command runs this will be set; for other bot dispatches
@@ -237,7 +265,7 @@ jobs:
               workflow_id: 'gitnexus-deploy.yml',
               ref: 'main',
               inputs: {
-                pr_number: '${{ inputs.pr_number }}',
+                pr_number: process.env.PR_NUMBER || '',
               },
             });
 
@@ -249,19 +277,28 @@ jobs:
       - name: Comment on PR — index complete
         if: inputs.pr_number != ''
         uses: actions/github-script@v7
+        env:
+          EMBEDDINGS_INPUT: ${{ inputs.embeddings }}
+          INDEX_RESULT: ${{ needs.index.result }}
+          PR_NUMBER: ${{ inputs.pr_number }}
         with:
           script: |
-            const outcome = '${{ needs.index.result }}' === 'success' ? '✅ indexed' : '❌ index failed';
-            const prNum = parseInt('${{ inputs.pr_number }}', 10);
+            const indexSucceeded = process.env.INDEX_RESULT === 'success';
+            const outcome = indexSucceeded ? '✅ indexed' : '❌ index failed';
+            const prNum = parseInt(process.env.PR_NUMBER || '', 10);
+            if (!Number.isSafeInteger(prNum)) {
+              core.setFailed(`Invalid PR number: ${process.env.PR_NUMBER}`);
+              return;
+            }
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const embeddingsFlag = '${{ inputs.embeddings }}' === 'true' ? 'with embeddings' : 'graph-only';
+            const embeddingsFlag = process.env.EMBEDDINGS_INPUT === 'true' ? 'with embeddings' : 'graph-only';
             const body = [
               `### GitNexus: ${outcome}`,
               ``,
               `PR #${prNum} was indexed ${embeddingsFlag}.`,
               `[Index run](${runUrl})`,
               '',
-              '${{ needs.index.result }}' === 'success'
+              indexSucceeded
                 ? '⏳ Waiting for deploy to serve the fresh index…'
                 : '_Index run failed — the previous index (if any) continues to be served._',
             ].join('\n');

@@ -176,17 +176,17 @@ export const useCreateSharedLinkMutation = (
 };
 
 export const useUpdateSharedLinkMutation = (
-  options?: t.MutationOptions<t.TUpdateShareLinkRequest, { shareId: string }>,
-): UseMutationResult<t.TSharedLinkResponse, unknown, { shareId: string }, unknown> => {
+  options?: t.MutationOptions<t.TUpdateShareLinkRequest, t.TUpdateShareLinkRequest>,
+): UseMutationResult<t.TSharedLinkResponse, unknown, t.TUpdateShareLinkRequest, unknown> => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ shareId }) => {
+    ({ shareId, targetMessageId }) => {
       if (!shareId) {
         throw new Error('Share ID is required');
       }
-      return dataService.updateSharedLink(shareId);
+      return dataService.updateSharedLink(shareId, targetMessageId);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {

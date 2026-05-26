@@ -467,7 +467,7 @@ async function checkMessageGaps({
     apiMessages.push(currentMessage);
   }
 
-  const dbMessages = await getMessages({ conversationId });
+  const dbMessages = await getMessages({ conversationId, user: openai.req.user.id });
   const assistant_id = dbMessages?.[0]?.model;
 
   const syncedMessages = await syncMessages({

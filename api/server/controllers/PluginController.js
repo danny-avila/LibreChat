@@ -6,7 +6,13 @@ const { getAppConfig } = require('~/server/services/Config');
 
 const getAvailablePluginsController = async (req, res) => {
   try {
-    const appConfig = await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId });
+    const appConfig =
+      req.config ??
+      (await getAppConfig({
+        role: req.user?.role,
+        userId: req.user?.id,
+        tenantId: req.user?.tenantId,
+      }));
     const { filteredTools = [], includedTools = [] } = appConfig;
 
     const uniquePlugins = filterUniquePlugins(availableTools);
@@ -41,7 +47,12 @@ const getAvailableTools = async (req, res) => {
     }
 
     const appConfig =
-      req.config ?? (await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId }));
+      req.config ??
+      (await getAppConfig({
+        role: req.user?.role,
+        userId: req.user?.id,
+        tenantId: req.user?.tenantId,
+      }));
 
     let toolDefinitions = await getCachedTools();
 

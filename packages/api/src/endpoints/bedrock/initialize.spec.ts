@@ -4,6 +4,7 @@ import {
   BEDROCK_OUTPUT_128K_BETA,
   BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA,
 } from 'librechat-data-provider';
+import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { initializeBedrock } from './initialize';
 import type { BaseInitializeParams, BedrockLLMConfigResult } from '~/types';
 import { checkUserKeyExpiry } from '~/utils';
@@ -14,6 +15,13 @@ jest.mock('https-proxy-agent', () => ({
 
 jest.mock('@smithy/node-http-handler', () => ({
   NodeHttpHandler: jest.fn().mockImplementation((options) => ({ ...options })),
+}));
+
+jest.mock('@aws-sdk/credential-providers', () => ({
+  fromNodeProviderChain: jest.fn().mockImplementation((config) => {
+    const provider = jest.fn();
+    return Object.assign(provider, { config });
+  }),
 }));
 
 jest.mock('@aws-sdk/client-bedrock-runtime', () => ({
@@ -28,6 +36,7 @@ jest.mock('~/utils', () => ({
 }));
 
 const mockedCheckUserKeyExpiry = jest.mocked(checkUserKeyExpiry);
+const mockedFromNodeProviderChain = jest.mocked(fromNodeProviderChain);
 const BEDROCK_CLAUDE_4_BETAS = [BEDROCK_OUTPUT_128K_BETA, BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA];
 
 const createMockParams = (
@@ -66,6 +75,11 @@ describe('initializeBedrock', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env = { ...originalEnv };
+    delete process.env.BEDROCK_AWS_BEARER_TOKEN;
+    delete process.env.BEDROCK_AWS_PROFILE;
+    delete process.env.BEDROCK_AWS_SESSION_TOKEN;
+    delete process.env.BEDROCK_REVERSE_PROXY;
+    delete process.env.PROXY;
     process.env.BEDROCK_AWS_ACCESS_KEY_ID = 'test-access-key';
     process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = 'test-secret-key';
     process.env.BEDROCK_AWS_DEFAULT_REGION = 'us-east-1';
@@ -121,6 +135,34 @@ describe('initializeBedrock', () => {
         sessionToken: 'test-session-token',
       });
     });
+
+    it('should pass BEDROCK_AWS_BEARER_TOKEN as a BedrockRuntimeClient token', async () => {
+      process.env.BEDROCK_AWS_BEARER_TOKEN = 'test-bedrock-api-key';
+      const params = createMockParams();
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(result.llmConfig).toHaveProperty('client');
+      expect(result.llmConfig.client).toHaveProperty('_isBedrockClient', true);
+      expect(result.llmConfig.client).toHaveProperty('token', {
+        token: 'test-bedrock-api-key',
+      });
+      expect(result.llmConfig.client).toHaveProperty('authSchemePreference', ['httpBearerAuth']);
+      expect(result.llmConfig).not.toHaveProperty('credentials');
+      expect(result.llmConfig).not.toHaveProperty('profile');
+    });
+
+    it('should pass AWS profile to ChatBedrockConverse when static credentials are unset', async () => {
+      delete process.env.BEDROCK_AWS_ACCESS_KEY_ID;
+      delete process.env.BEDROCK_AWS_SECRET_ACCESS_KEY;
+      process.env.BEDROCK_AWS_PROFILE = 'dev-profile';
+      const params = createMockParams();
+      const result = await initializeBedrock(params);
+
+      expect(result.llmConfig).toHaveProperty('profile', 'dev-profile');
+      expect(result.llmConfig).not.toHaveProperty('credentials');
+      expect(result.llmConfig).not.toHaveProperty('client');
+      expect(mockedFromNodeProviderChain).not.toHaveBeenCalled();
+    });
   });
 
   describe('GuardrailConfig', () => {
@@ -129,6 +171,7 @@ describe('initializeBedrock', () => {
         guardrailIdentifier: 'test-guardrail-id',
         guardrailVersion: '1',
         trace: 'enabled' as const,
+        streamProcessingMode: 'async',
       };
 
       const params = createMockParams({
@@ -209,6 +252,125 @@ describe('initializeBedrock', () => {
       expect(result.llmConfig.guardrailConfig).toEqual(guardrailConfig);
       expect(result.llmConfig.guardrailConfig?.trace).toBe('enabled_full');
     });
+
+    it.each([
+      {
+        description: 'guardrailIdentifier only',
+        envVars: { GUARDRAIL_ID: 'gr-abc123xyz' },
+        input: {
+          guardrailIdentifier: '${GUARDRAIL_ID}',
+          guardrailVersion: '1',
+        },
+        expected: {
+          guardrailIdentifier: 'gr-abc123xyz',
+          guardrailVersion: '1',
+        },
+      },
+      {
+        description: 'guardrailVersion only',
+        envVars: { GUARDRAIL_VERSION: 'DRAFT' },
+        input: {
+          guardrailIdentifier: 'static-guardrail-id',
+          guardrailVersion: '${GUARDRAIL_VERSION}',
+        },
+        expected: {
+          guardrailIdentifier: 'static-guardrail-id',
+          guardrailVersion: 'DRAFT',
+        },
+      },
+      {
+        description: 'both guardrailIdentifier and guardrailVersion',
+        envVars: { PROD_GUARDRAIL_ID: 'gr-production-123', PROD_GUARDRAIL_VERSION: '5' },
+        input: {
+          guardrailIdentifier: '${PROD_GUARDRAIL_ID}',
+          guardrailVersion: '${PROD_GUARDRAIL_VERSION}',
+          trace: 'enabled' as const,
+        },
+        expected: {
+          guardrailIdentifier: 'gr-production-123',
+          guardrailVersion: '5',
+          trace: 'enabled',
+        },
+      },
+      {
+        description: 'direct values when no env variable syntax is used',
+        envVars: {},
+        input: {
+          guardrailIdentifier: 'direct-guardrail-id',
+          guardrailVersion: '3',
+        },
+        expected: {
+          guardrailIdentifier: 'direct-guardrail-id',
+          guardrailVersion: '3',
+        },
+      },
+      {
+        description: 'fallback to original string when env variable is not set',
+        envVars: {},
+        deleteEnvVars: ['NONEXISTENT_GUARDRAIL_ID'],
+        input: {
+          guardrailIdentifier: '${NONEXISTENT_GUARDRAIL_ID}',
+          guardrailVersion: '1',
+        },
+        expected: {
+          guardrailIdentifier: '${NONEXISTENT_GUARDRAIL_ID}',
+          guardrailVersion: '1',
+        },
+      },
+      {
+        description: 'env variable with whitespace around it',
+        envVars: { TRIMMED_GUARDRAIL_ID: 'gr-trimmed-123' },
+        input: {
+          guardrailIdentifier: '  ${TRIMMED_GUARDRAIL_ID}  ',
+          guardrailVersion: '2',
+        },
+        expected: {
+          guardrailIdentifier: 'gr-trimmed-123',
+          guardrailVersion: '2',
+        },
+      },
+      {
+        description: 'preserve trace field when resolving env variables',
+        envVars: { GUARDRAIL_WITH_TRACE: 'gr-with-trace' },
+        input: {
+          guardrailIdentifier: '${GUARDRAIL_WITH_TRACE}',
+          guardrailVersion: '1',
+          trace: 'enabled_full' as const,
+        },
+        expected: {
+          guardrailIdentifier: 'gr-with-trace',
+          guardrailVersion: '1',
+          trace: 'enabled_full',
+        },
+      },
+    ])(
+      'should resolve environment variables: $description',
+      async ({ envVars, deleteEnvVars, input, expected }) => {
+        // Set up environment variables
+        Object.entries(envVars).forEach(([key, value]) => {
+          process.env[key] = value;
+        });
+
+        // Delete specified environment variables
+        deleteEnvVars?.forEach((key) => {
+          delete process.env[key];
+        });
+
+        const params = createMockParams({
+          config: {
+            endpoints: {
+              [EModelEndpoint.bedrock]: {
+                guardrailConfig: input,
+              },
+            },
+          },
+        });
+
+        const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+        expect(result.llmConfig.guardrailConfig).toEqual(expected);
+      },
+    );
   });
 
   describe('Proxy Configuration', () => {
@@ -234,6 +396,23 @@ describe('initializeBedrock', () => {
         'https://custom-bedrock-endpoint.com',
       );
     });
+
+    it('should use AWS profile provider when PROXY is set and static credentials are unset', async () => {
+      delete process.env.BEDROCK_AWS_ACCESS_KEY_ID;
+      delete process.env.BEDROCK_AWS_SECRET_ACCESS_KEY;
+      process.env.BEDROCK_AWS_PROFILE = 'dev-profile';
+      process.env.PROXY = 'http://proxy:8080';
+      const params = createMockParams();
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(mockedFromNodeProviderChain).toHaveBeenCalledWith({ profile: 'dev-profile' });
+      expect(result.llmConfig).toHaveProperty('client');
+      expect(result.llmConfig).not.toHaveProperty('credentials');
+
+      const client = result.llmConfig.client as unknown as Record<string, unknown>;
+      const credentials = client.credentials as { config?: Record<string, string> };
+      expect(credentials.config).toEqual({ profile: 'dev-profile' });
+    });
   });
 
   describe('Reverse Proxy Configuration', () => {
@@ -249,6 +428,7 @@ describe('initializeBedrock', () => {
 
   describe('User-Provided Credentials', () => {
     it('should fetch credentials from database when user-provided', async () => {
+      process.env.BEDROCK_AWS_ACCESS_KEY_ID = AuthType.USER_PROVIDED;
       process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = AuthType.USER_PROVIDED;
       const params = createMockParams({
         body: { key: '2024-12-31T23:59:59Z' },
@@ -277,6 +457,100 @@ describe('initializeBedrock', () => {
 
       expect(mockedCheckUserKeyExpiry).toHaveBeenCalledWith(expiresAt, EModelEndpoint.bedrock);
     });
+
+    it('should fetch a user-provided Bedrock API key from database', async () => {
+      process.env.BEDROCK_AWS_BEARER_TOKEN = AuthType.USER_PROVIDED;
+      const params = createMockParams();
+      (params.db.getUserKey as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          apiKey: JSON.stringify({
+            bearerToken: 'user-bedrock-api-key',
+          }),
+        }),
+      );
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(params.db.getUserKey).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        name: EModelEndpoint.bedrock,
+      });
+      expect(result.llmConfig).toHaveProperty('client');
+      expect(result.llmConfig.client).toHaveProperty('token', {
+        token: 'user-bedrock-api-key',
+      });
+      expect(result.llmConfig.client).toHaveProperty('authSchemePreference', ['httpBearerAuth']);
+      expect(result.llmConfig).not.toHaveProperty('credentials');
+    });
+
+    it('should reject a non-string user-provided Bedrock API key', async () => {
+      process.env.BEDROCK_AWS_BEARER_TOKEN = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_ACCESS_KEY_ID = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = AuthType.USER_PROVIDED;
+      const params = createMockParams();
+      (params.db.getUserKey as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          apiKey: JSON.stringify({
+            bearerToken: {},
+            accessKeyId: 'user-access-key',
+            secretAccessKey: 'user-secret-key',
+          }),
+        }),
+      );
+
+      await expect(initializeBedrock(params)).rejects.toThrow(
+        'Bedrock credentials not provided. Please provide them again.',
+      );
+    });
+
+    it('should not use stored access keys when only bearer token mode is configured', async () => {
+      process.env.BEDROCK_AWS_BEARER_TOKEN = AuthType.USER_PROVIDED;
+      const params = createMockParams();
+
+      await expect(initializeBedrock(params)).rejects.toThrow(
+        'Bedrock credentials not provided. Please provide them again.',
+      );
+    });
+
+    it('should merge user-provided access key ID with static secret access key', async () => {
+      process.env.BEDROCK_AWS_ACCESS_KEY_ID = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = 'static-secret-key';
+      const params = createMockParams();
+      (params.db.getUserKey as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          apiKey: JSON.stringify({
+            accessKeyId: 'user-access-key',
+            bearerToken: 'ignored-bedrock-api-key',
+          }),
+        }),
+      );
+
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+
+      expect(result.llmConfig.credentials).toEqual({
+        accessKeyId: 'user-access-key',
+        secretAccessKey: 'static-secret-key',
+      });
+      expect(result.llmConfig).not.toHaveProperty('client');
+    });
+
+    it('should reject non-string user-provided access key values', async () => {
+      process.env.BEDROCK_AWS_ACCESS_KEY_ID = AuthType.USER_PROVIDED;
+      process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = AuthType.USER_PROVIDED;
+      const params = createMockParams();
+      (params.db.getUserKey as jest.Mock).mockResolvedValue(
+        JSON.stringify({
+          apiKey: JSON.stringify({
+            accessKeyId: {},
+            secretAccessKey: 'user-secret-key',
+          }),
+        }),
+      );
+
+      await expect(initializeBedrock(params)).rejects.toThrow(
+        'Bedrock credentials not provided. Please provide them again.',
+      );
+    });
   });
 
   describe('Credentials Edge Cases', () => {
@@ -296,6 +570,15 @@ describe('initializeBedrock', () => {
       const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
 
       expect(result.llmConfig.credentials).toBeUndefined();
+    });
+
+    it('should throw when only one static credential value is set', async () => {
+      delete process.env.BEDROCK_AWS_SECRET_ACCESS_KEY;
+      const params = createMockParams();
+
+      await expect(initializeBedrock(params)).rejects.toThrow(
+        'Both BEDROCK_AWS_ACCESS_KEY_ID and BEDROCK_AWS_SECRET_ACCESS_KEY must be provided together.',
+      );
     });
 
     it('should throw error when user-provided credentials are not found', async () => {

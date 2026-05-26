@@ -512,37 +512,26 @@ export function createPromptMethods(mongoose: typeof import('mongoose'), deps: P
       const tenantId = getTenantId();
       const useTenantFilter = tenantId && tenantId !== SYSTEM_TENANT_ID;
 
-      const lookupStage = useTenantFilter
-        ? {
-            $lookup: {
-              from: 'prompts',
-              let: { prodId: '$productionId' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: { $eq: ['$_id', '$$prodId'] },
-                    tenantId,
-                  },
-                },
-              ],
-              as: 'productionPrompt',
-            },
-          }
-        : {
-            $lookup: {
-              from: 'prompts',
-              localField: 'productionId',
-              foreignField: '_id',
-              as: 'productionPrompt',
-            },
-          };
-
       const result = await PromptGroup.aggregate([
         { $match: matchFilter },
-        lookupStage,
+        {
+          $lookup: {
+            from: 'prompts',
+            localField: 'productionId',
+            foreignField: '_id',
+            as: 'productionPrompt',
+          },
+        },
         { $unwind: { path: '$productionPrompt', preserveNullAndEmptyArrays: true } },
       ]);
       const group = result[0] || null;
+      if (
+        group?.productionPrompt &&
+        useTenantFilter &&
+        group.productionPrompt.tenantId !== tenantId
+      ) {
+        group.productionPrompt = null;
+      }
       if (group?.author) {
         group.author = group.author.toString();
       }

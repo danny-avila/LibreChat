@@ -26,7 +26,13 @@ const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
 const getUserController = async (req, res) => {
-  const appConfig = await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId });
+  const appConfig =
+    req.config ??
+    (await getAppConfig({
+      role: req.user?.role,
+      userId: req.user?.id,
+      tenantId: req.user?.tenantId,
+    }));
   /** @type {IUser} */
   const userData = req.user.toObject != null ? req.user.toObject() : { ...req.user };
   /**
@@ -165,7 +171,13 @@ const deleteUserMcpServers = async (userId) => {
 };
 
 const updateUserPluginsController = async (req, res) => {
-  const appConfig = await getAppConfig({ role: req.user?.role, tenantId: req.user?.tenantId });
+  const appConfig =
+    req.config ??
+    (await getAppConfig({
+      role: req.user?.role,
+      userId: req.user?.id,
+      tenantId: req.user?.tenantId,
+    }));
   const { user } = req;
   const { pluginKey, action, auth, isEntityTool } = req.body;
   try {

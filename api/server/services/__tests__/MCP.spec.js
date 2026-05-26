@@ -23,6 +23,17 @@ jest.mock('~/server/services/Config', () => ({
   loadCustomConfig: jest.fn(),
 }));
 
+jest.mock('@librechat/api', () => ({
+  sendEvent: jest.fn(),
+  MCPOAuthHandler: jest.fn(),
+  isMCPDomainAllowed: jest.fn(),
+  normalizeServerName: jest.fn((name) => name),
+  normalizeJsonSchema: jest.fn((schema) => schema),
+  GenerationJobManager: jest.fn(),
+  resolveJsonSchemaRefs: jest.fn((schema) => schema),
+  buildOAuthToolCallName: jest.fn((name) => name),
+}));
+
 jest.mock('~/cache', () => ({ getLogStores: jest.fn() }));
 jest.mock('~/models', () => ({
   findToken: jest.fn(),
@@ -37,7 +48,7 @@ jest.mock('~/server/services/Tools/mcp', () => ({
 }));
 
 const { getAppConfig } = require('~/server/services/Config');
-const { resolveConfigServers, resolveAllMcpConfigs } = require('../MCP');
+const { resolveConfigServers, resolveMcpConfigNames, resolveAllMcpConfigs } = require('../MCP');
 
 describe('resolveConfigServers', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -82,6 +93,35 @@ describe('resolveConfigServers', () => {
   });
 });
 
+describe('resolveMcpConfigNames', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('resolves current request config server names', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { cfg_srv: {}, yaml_srv: {} } });
+
+    const result = await resolveMcpConfigNames({ user: { id: 'u1', role: 'admin' } });
+
+    expect(result).toEqual(['cfg_srv', 'yaml_srv']);
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'admin', userId: 'u1' }),
+    );
+  });
+
+  it('returns [] when mcpConfig is absent', async () => {
+    getAppConfig.mockResolvedValue({});
+
+    const result = await resolveMcpConfigNames({ user: { id: 'u1' } });
+
+    expect(result).toEqual([]);
+  });
+
+  it('propagates getAppConfig failures for write-path callers', async () => {
+    getAppConfig.mockRejectedValue(new Error('db timeout'));
+
+    await expect(resolveMcpConfigNames({ user: { id: 'u1' } })).rejects.toThrow('db timeout');
+  });
+});
+
 describe('resolveAllMcpConfigs', () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -99,9 +139,13 @@ describe('resolveAllMcpConfigs', () => {
       cfg_srv: { name: 'cfg_srv' },
       yaml_srv: { name: 'yaml_srv' },
     });
-    expect(mockRegistry.getAllServerConfigs).toHaveBeenCalledWith('u1', {
-      cfg_srv: { name: 'cfg_srv' },
-    });
+    expect(mockRegistry.getAllServerConfigs).toHaveBeenCalledWith(
+      'u1',
+      {
+        cfg_srv: { name: 'cfg_srv' },
+      },
+      'user',
+    );
   });
 
   it('continues with empty configServers when ensureConfigServers fails', async () => {

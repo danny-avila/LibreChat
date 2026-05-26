@@ -151,9 +151,7 @@ export async function updateInterfacePermissions({
         } else if (isMemoryDisabled) {
           logger.debug(`Role '${roleName}': Disabling memories as memory.disabled is true`);
         } else if (isMemoryReenabling) {
-          logger.debug(
-            `Role '${roleName}': Re-enabling memories due to memory configuration`,
-          );
+          logger.debug(`Role '${roleName}': Re-enabling memories due to memory configuration`);
         }
       } else {
         logger.debug(`Role '${roleName}': Preserving existing permissions for '${permType}'`);

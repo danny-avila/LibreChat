@@ -282,6 +282,50 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     return await Agent.find(searchParameter).lean<IAgent[]>();
   }
 
+  async function hasAgentWithMCPServerName({
+    agentIds,
+    serverName,
+  }: {
+    agentIds: Types.ObjectId[];
+    serverName: string;
+  }): Promise<boolean> {
+    if (agentIds.length === 0) {
+      return false;
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const agent = await Agent.exists({
+      _id: { $in: agentIds },
+      mcpServerNames: serverName,
+    });
+
+    return agent !== null;
+  }
+
+  async function getMCPServerNamesByAgentIds(agentIds: Types.ObjectId[]): Promise<string[]> {
+    if (agentIds.length === 0) {
+      return [];
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const agents = await Agent.find(
+      {
+        _id: { $in: agentIds },
+        mcpServerNames: { $exists: true, $not: { $size: 0 } },
+      },
+      { mcpServerNames: 1 },
+    ).lean<Array<Pick<IAgent, 'mcpServerNames'>>>();
+
+    const serverNames = new Set<string>();
+    for (const agent of agents) {
+      for (const serverName of agent.mcpServerNames ?? []) {
+        serverNames.add(serverName);
+      }
+    }
+
+    return Array.from(serverNames);
+  }
+
   /**
    * Update an agent with new data without overwriting existing properties,
    * or create a new agent if it doesn't exist.
@@ -648,11 +692,13 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     otherParams = {},
     limit = null,
     after = null,
+    includeSkillConfig = false,
   }: {
     accessibleIds?: Types.ObjectId[];
     otherParams?: Record<string, unknown>;
     limit?: number | null;
     after?: string | null;
+    includeSkillConfig?: boolean;
   }): Promise<{
     object: string;
     data: Array<Record<string, unknown>>;
@@ -700,7 +746,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
       }
     }
 
-    let query = Agent.find(baseQuery, {
+    const projection: Record<string, 1> = {
       id: 1,
       _id: 1,
       name: 1,
@@ -711,13 +757,14 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
       category: 1,
       support_contact: 1,
       is_promoted: 1,
-      /* Needed so the client can scope the `$` skill popover to each agent's
-         configured catalog without refetching the full agent document. The
-         master toggle is required alongside the allowlist so the popover can
-         distinguish "enabled with full catalog" from "disabled". */
-      skills: 1,
-      skills_enabled: 1,
-    }).sort({ updatedAt: -1, _id: 1 });
+    };
+
+    if (includeSkillConfig) {
+      projection.skills = 1;
+      projection.skills_enabled = 1;
+    }
+
+    let query = Agent.find(baseQuery, projection).sort({ updatedAt: -1, _id: 1 });
 
     if (isPaginated && normalizedLimit) {
       query = query.limit(normalizedLimit + 1);
@@ -820,6 +867,8 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     getAgent,
     getAgents,
     createAgent,
+    hasAgentWithMCPServerName,
+    getMCPServerNamesByAgentIds,
     updateAgent,
     deleteAgent,
     deleteUserAgents,

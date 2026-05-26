@@ -7,9 +7,21 @@ import { isEnabled } from '~/utils';
 
 type GoogleThinkingLevel = 'THINKING_LEVEL_UNSPECIFIED' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
 type GoogleThinkingConfig = {
-  includeThoughts: boolean;
+  includeThoughts?: boolean;
   thinkingLevel?: GoogleThinkingLevel;
 };
+
+const GEMINI_3_5_FLASH = 'gemini-3.5-flash';
+const GEMINI_3_5_FLASH_DEFAULT_THINKING_LEVEL: GoogleThinkingLevel = 'MEDIUM';
+const gemini35FlashLegacyParams = [
+  'temperature',
+  'topP',
+  'topK',
+  'top_p',
+  'top_k',
+  'thinkingBudget',
+  'thinking_budget',
+] as const;
 
 const googleThinkingLevels = new Set<GoogleThinkingLevel>([
   'THINKING_LEVEL_UNSPECIFIED',
@@ -116,6 +128,12 @@ function normalizeGoogleThinkingLevel(value: unknown): GoogleThinkingLevel | und
   return normalized;
 }
 
+function isGemini35Flash(model: string) {
+  const normalized = model.toLowerCase();
+  const modelId = normalized.split('/').pop() ?? normalized;
+  return modelId === GEMINI_3_5_FLASH || modelId.startsWith(`${GEMINI_3_5_FLASH}-`);
+}
+
 function getVertexMultiRegionEndpoint(location: string): string | undefined {
   return vertexMultiRegionEndpoints.get(location);
 }
@@ -126,6 +144,68 @@ function sanitizeModelOptions(modelOptions: Partial<t.GoogleParameters> | undefi
     delete sanitizedOptions[param];
   });
   return sanitizedOptions;
+}
+
+function applyGemini35FlashOverrides({
+  config,
+  provider,
+  thinking,
+  dropParams,
+}: {
+  config: GoogleClientOptions | VertexAIClientOptions;
+  provider: Providers;
+  thinking: boolean;
+  dropParams?: string[];
+}) {
+  const mutableConfig = config as Record<string, unknown>;
+  const model = mutableConfig.model;
+  if (typeof model !== 'string' || !isGemini35Flash(model)) {
+    return;
+  }
+
+  gemini35FlashLegacyParams.forEach((param) => {
+    delete mutableConfig[param];
+  });
+
+  if (!thinking) {
+    return;
+  }
+
+  const droppedParams = new Set(dropParams ?? []);
+  if (droppedParams.has('thinkingConfig')) {
+    return;
+  }
+
+  const shouldDropIncludeThoughts = droppedParams.has('includeThoughts');
+  const shouldDropThinkingLevel = droppedParams.has('thinkingLevel');
+  const configWithThinking = config as { thinkingConfig?: GoogleThinkingConfig };
+  const thinkingConfig: GoogleThinkingConfig = { ...(configWithThinking.thinkingConfig ?? {}) };
+
+  if (shouldDropIncludeThoughts) {
+    delete thinkingConfig.includeThoughts;
+  }
+
+  if (shouldDropThinkingLevel) {
+    delete thinkingConfig.thinkingLevel;
+  }
+
+  if (!shouldDropIncludeThoughts && thinkingConfig.includeThoughts == null) {
+    thinkingConfig.includeThoughts = true;
+  }
+
+  if (!shouldDropThinkingLevel && !thinkingConfig.thinkingLevel) {
+    thinkingConfig.thinkingLevel = GEMINI_3_5_FLASH_DEFAULT_THINKING_LEVEL;
+  }
+
+  if (Object.keys(thinkingConfig).length > 0) {
+    configWithThinking.thinkingConfig = thinkingConfig;
+  } else {
+    delete configWithThinking.thinkingConfig;
+  }
+
+  if (provider === Providers.VERTEXAI && !shouldDropIncludeThoughts) {
+    (config as VertexAIClientOptions).includeThoughts = true;
+  }
 }
 
 function isAllowedVertexEndpoint(endpoint: string): boolean {
@@ -452,6 +532,13 @@ export function getGoogleConfig(
       }
     });
   }
+
+  applyGemini35FlashOverrides({
+    config: llmConfig,
+    provider,
+    thinking,
+    dropParams: Array.isArray(options.dropParams) ? options.dropParams : undefined,
+  });
 
   if (provider === Providers.VERTEXAI && shouldSyncVertexEndpoint && !hasCustomVertexEndpoint) {
     applyVertexMultiRegionEndpoint(llmConfig as VertexAIClientOptions & { endpoint?: string });

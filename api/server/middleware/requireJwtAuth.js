@@ -1,7 +1,11 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const passport = require('passport');
-const { isEnabled, tenantContextMiddleware } = require('@librechat/api');
+const {
+  isEnabled,
+  tenantContextMiddleware,
+  maybeRefreshCloudFrontAuthCookiesMiddleware,
+} = require('@librechat/api');
 
 const hasPassportStrategy = (strategy) =>
   typeof passport._strategy === 'function' && passport._strategy(strategy) != null;
@@ -23,14 +27,16 @@ const getValidOpenIdReuseUserId = (parsedCookies) => {
 };
 
 const getAuthenticatedUserId = (user) => user?.id?.toString?.() ?? user?._id?.toString?.();
+const refreshCloudFrontCookies =
+  maybeRefreshCloudFrontAuthCookiesMiddleware ?? ((_req, _res, next) => next());
 
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse.
  * Switches between JWT and OpenID authentication based on cookies and environment settings.
  *
  * After successful authentication (req.user populated), automatically chains into
- * `tenantContextMiddleware` to propagate `req.user.tenantId` into AsyncLocalStorage
- * for downstream Mongoose tenant isolation.
+ * `tenantContextMiddleware` to propagate request context into AsyncLocalStorage
+ * for downstream Mongoose tenant isolation and structured logging.
  */
 const requireJwtAuth = (req, res, next) => {
   const cookieHeader = req.headers.cookie;
@@ -65,8 +71,12 @@ const requireJwtAuth = (req, res, next) => {
       }
       req.user = user;
       req.authStrategy = strategy;
-      // req.user is now populated by passport — set up tenant ALS context
-      tenantContextMiddleware(req, res, next);
+      tenantContextMiddleware(req, res, (tenantErr) => {
+        if (tenantErr) {
+          return next(tenantErr);
+        }
+        refreshCloudFrontCookies(req, res, next);
+      });
     })(req, res, next);
   };
 
