@@ -14,15 +14,20 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function extractFrontmatterBlock(raw: string): string | null {
-  const normalized = raw.replace(/\r\n/g, '\n');
-  if (!normalized.startsWith('---\n')) {
+  const normalized = raw.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  const firstContentIndex = normalized.search(/\S/);
+  if (firstContentIndex === -1) {
     return null;
   }
-  const closingIdx = normalized.indexOf('\n---', 4);
+  const content = normalized.slice(firstContentIndex);
+  if (!content.startsWith('---\n')) {
+    return null;
+  }
+  const closingIdx = content.indexOf('\n---', 4);
   if (closingIdx === -1) {
     return null;
   }
-  return normalized.slice(4, closingIdx);
+  return content.slice(4, closingIdx);
 }
 
 function getCaseInsensitive(frontmatter: Record<string, unknown>, key: string): unknown {
