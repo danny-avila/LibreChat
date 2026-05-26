@@ -174,6 +174,7 @@ claude-flow.config.json
 *.sqlite-wal
 claude-flow
 .playwright-mcp/*
+.playwright/
 # Removed Windows wrapper files per user request
 hive-mind-prompt-*.txt
 CLAUDE.md
