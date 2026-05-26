@@ -36,7 +36,7 @@ interface:
   fileCitations: false
   fileSearch: false # Can be overridden with env var INTERFACE_FILE_SEARCH
   marketplace:
-    use: false
+    use: true
   memories: false
   multiConvo: false
   parameters: false

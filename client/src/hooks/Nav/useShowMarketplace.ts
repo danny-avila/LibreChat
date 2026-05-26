@@ -19,6 +19,13 @@ export default function useShowMarketplace(): boolean {
     permission: Permissions.USE,
   });
 
+  // NJ: For now, using an agent is linked to being able to create agents (via flagging)
+  // TODO: Remove this once agent flags are removed
+  const canCreateAgents = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
+    permission: Permissions.CREATE,
+  });
+
   const hasAccessToMarketplace = useHasAccess({
     permissionType: PermissionTypes.MARKETPLACE,
     permission: Permissions.USE,
@@ -33,5 +40,5 @@ export default function useShowMarketplace(): boolean {
   );
 
   // Show agent marketplace when marketplace permission is enabled, auth is ready, and user has access to agents
-  return authReady && hasAccessToAgents && hasAccessToMarketplace;
+  return authReady && hasAccessToAgents && hasAccessToMarketplace && canCreateAgents;
 }
