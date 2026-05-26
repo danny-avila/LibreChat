@@ -209,6 +209,16 @@ describe('parseFrontmatter', () => {
     });
   });
 
+  it('extracts frontmatter after a BOM and leading blank lines', () => {
+    const raw = `\uFEFF\n\n---\nname: prologue\ndescription: Has leading whitespace.\n---\n\nbody`;
+    expect(parseFrontmatter(raw)).toEqual({
+      name: 'prologue',
+      description: 'Has leading whitespace.',
+      alwaysApply: undefined,
+      invalidBooleans: [],
+    });
+  });
+
   it('returns empty fields when frontmatter is unterminated', () => {
     const raw = `---\nname: incomplete\n`;
     expect(parseFrontmatter(raw)).toEqual({

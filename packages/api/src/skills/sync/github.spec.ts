@@ -35,7 +35,7 @@ function githubFetch(
 ): typeof fetch {
   return jest.fn(async (input: RequestInfo | URL) => {
     const url = input.toString();
-    if (url.includes('/commits/main')) {
+    if (url.includes('/commits/')) {
       return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
     }
     if (url.includes('/git/trees/tree-sha')) {
@@ -200,7 +200,7 @@ describe('createGitHubSkillSyncRunner', () => {
         sourceMetadata: expect.objectContaining({
           provider: 'github',
           sourceId: 'librechat-skills',
-          upstreamId: 'librechat-skills:LibreChat/skills:main:skills/research',
+          upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
           skillBlobSha: 'skill-md-sha',
         }),
       }),
@@ -209,6 +209,7 @@ describe('createGitHubSkillSyncRunner', () => {
       expect.objectContaining({
         relativePath: 'scripts/run.sh',
         sourceMetadata: expect.objectContaining({
+          upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
           blobSha: 'file-sha',
           commitSha: 'commit-sha',
         }),
@@ -256,6 +257,73 @@ describe('createGitHubSkillSyncRunner', () => {
         status: 'failed',
         errorCode: 'SKILL_PARSE_FAILED',
         errorMessage: expect.stringContaining('skills/research/SKILL.md'),
+      }),
+    );
+  });
+
+  it('uses a ref-independent upstream identity when updating an existing GitHub skill', async () => {
+    const existing = makeSkill({
+      name: 'research',
+      description: 'Old description',
+      author: new Types.ObjectId(),
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const deps = createDeps({
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'release',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+            },
+          ],
+        },
+      }),
+      findSkillBySourceIdentity: jest.fn(async () => existing),
+      updateSkill: jest.fn(async ({ update }) => ({
+        status: 'updated' as const,
+        skill: {
+          ...existing,
+          ...update,
+          version: existing.version + 1,
+        },
+        warnings: [],
+      })),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.findSkillBySourceIdentity).toHaveBeenCalledWith({
+      source: 'github',
+      upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
+    });
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.updateSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          sourceMetadata: expect.objectContaining({
+            ref: 'release',
+            upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
+          }),
+        }),
       }),
     );
   });
