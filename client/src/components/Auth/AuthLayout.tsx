@@ -68,6 +68,9 @@ function AuthLayout({
           />
         </div>
       </BlinkAnimation>
+      <p className="mt-2 text-center text-sm font-medium text-gray-500 dark:text-gray-400">
+        {localize('com_ui_smb_team')}
+      </p>
       <DisplayError />
       <div className="absolute bottom-0 left-0 md:m-4">
         <ThemeSelector />
