@@ -34,31 +34,21 @@ jobs:
         with:
           ref: billechat
 
-      - name: Log in to Azure Container Registry
-        uses: azure/docker-login@v1
-        with:
-          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-
-      - name: Set image tags
+      - name: Build and push image
         id: meta
+        env:
+          REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
-          SHORT_SHA="${GITHUB_SHA::7}"
-          REGISTRY="${{ secrets.ACR_LOGIN_SERVER }}"
+          cp .env.example .env
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          IMAGE="${REGISTRY}/${{ env.IMAGE_NAME }}"
+          echo "${ACR_PASSWORD}" | docker login "${REGISTRY}" -u "${ACR_USERNAME}" --password-stdin
+          docker build -t "${IMAGE}:${SHORT_SHA}" -t "${IMAGE}:latest" -f Dockerfile .
+          docker push "${IMAGE}:${SHORT_SHA}"
+          docker push "${IMAGE}:latest"
           echo "version=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "tags=${REGISTRY}/${{ env.IMAGE_NAME }}:${SHORT_SHA},${REGISTRY}/${{ env.IMAGE_NAME }}:latest" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare build context
-        run: cp .env.example .env
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
 
   deploy:
     name: Deploy to AKS
