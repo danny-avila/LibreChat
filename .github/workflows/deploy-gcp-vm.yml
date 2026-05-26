@@ -16,6 +16,7 @@ jobs:
       - name: Pull latest code
         run: |
           set -e
+          git config --global --add safe.directory ${{ vars.GCP_VM_APP_DIR }}
           cd ${{ vars.GCP_VM_APP_DIR }}
           echo "==> Pulling latest main..."
           git fetch origin main
