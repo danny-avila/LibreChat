@@ -11,30 +11,26 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - name: Install SSH Key
-        uses: shimataro/ssh-key-action@v2
-        with:
-          key: ${{ secrets.GCP_VM_SSH_KEY }}
-          known_hosts: ${{ secrets.GCP_VM_KNOWN_HOSTS }}
-
-      - name: Deploy to GCP VM
-        env:
-          VM_HOST: ${{ secrets.GCP_VM_HOST }}
-          VM_USER: ${{ secrets.GCP_VM_USER }}
-          APP_DIR: ${{ vars.GCP_VM_APP_DIR }}
+      - name: Pull latest code
         run: |
-          ssh ${VM_USER}@${VM_HOST} << 'DEPLOY'
           set -e
-          cd ${APP_DIR:-~/AI-Workforce-Pro}
+          cd ${{ vars.GCP_VM_APP_DIR }}
           echo "==> Pulling latest main..."
           git fetch origin main
           git reset --hard origin/main
+
+      - name: Rebuild and restart containers
+        run: |
+          set -e
+          cd ${{ vars.GCP_VM_APP_DIR }}
           echo "==> Rebuilding and restarting containers..."
           docker compose pull
           docker compose up --build -d
-          echo "==> Verifying..."
+
+      - name: Verify
+        run: |
+          cd ${{ vars.GCP_VM_APP_DIR }}
           docker compose ps
           echo "==> Deploy complete."
-          DEPLOY
