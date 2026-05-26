@@ -68,6 +68,11 @@ function AuthLayout({
               alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
             />
           </div>
+          <img
+            src="assets/billechat-mascot.png"
+            className="mx-auto h-28 w-28 object-contain sm:h-36 sm:w-36 md:h-44 md:w-44"
+            alt="Billechat"
+          />
         </div>
       </BlinkAnimation>
       <DisplayError />
