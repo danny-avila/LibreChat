@@ -57,12 +57,15 @@ Stood up the v0 frontend for "AI Workforce Pro": a LibreChat instance Greta can 
 3. Browser at `http://34.136.159.99:3080` shows Login page (no Sign-up tab — registration off)
 4. Login with admin creds succeeds; Claude responds in the chat UI
 
-### Outstanding (for the developer starting next Tuesday)
+### CI/CD pipeline (added 2026-05-26)
+
+`.github/workflows/deploy-gcp-vm.yml` — triggers on every push to `main`. SSHes into `librechat-vm`, runs `git reset --hard origin/main` + `docker compose up --build -d`. Required GitHub secrets: `GCP_VM_HOST`, `GCP_VM_USER`, `GCP_VM_SSH_KEY`, `GCP_VM_KNOWN_HOSTS`. Required variable: `GCP_VM_APP_DIR`.
+
+### Outstanding
 - Reserve a static IP and bind a DNS A record (e.g. `chat.smbteam.com`)
 - TLS via Caddy/nginx + Let's Encrypt
 - Restrict firewall `--source-ranges` to SMB office IPs or front with IAP
 - SMTP config for password reset emails (currently `ALLOW_PASSWORD_RESET=false`)
 - VM snapshot schedule
-- Eventual Cloud Run migration with Mongo Atlas
 - Build a real invite flow instead of `npm run create-user` for each new user
 - Add a `librechat.yaml` to silence the startup warning and to configure custom endpoints/agents
