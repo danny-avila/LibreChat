@@ -193,7 +193,7 @@ function isSafeRelativePath(value: string): boolean {
 }
 
 function makeUpstreamId(source: SkillSyncGitHubSourceConfig, rootPath: string): string {
-  return `${source.id}:${source.owner}/${source.repo}:${source.ref}:${rootPath}`;
+  return `${source.id}:${source.owner}/${source.repo}:${rootPath}`;
 }
 
 function toSkillName(value: string): string {
