@@ -4,15 +4,6 @@ on:
   push:
     branches:
       - billechat
-    paths:
-      - 'api/**'
-      - 'client/**'
-      - 'packages/**'
-      - 'deploy/azure/**'
-      - 'helm/**'
-      - 'Dockerfile'
-      - 'librechat.yaml'
-      - '.github/workflows/billechat-deploy.yml'
   workflow_dispatch:
 
 concurrency:
