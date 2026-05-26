@@ -223,21 +223,26 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                   <MarketplaceAdminSettings compact />
                 </div>
                 {/* Search bar */}
+                {/* NJ: We have so few agents ATM that we hide the search bar
                 <div className="mx-auto flex max-w-2xl gap-2 pb-6">
                   <SearchBar value={searchQuery} onSearch={handleSearch} />
                   {/* TODO: Remove this once we have a better way to handle admin settings */}
+                {/*
                   <div className="hidden md:block">
                     <MarketplaceAdminSettings />
                   </div>
                 </div>
+                */}
 
                 {/* Category tabs */}
+                {/* NJ: We have so few agents ATM that we hide category filters
                 <CategoryTabs
                   categories={categoriesQuery.data || []}
                   activeTab={displayCategory}
                   isLoading={categoriesQuery.isLoading}
                   onChange={handleTabChange}
                 />
+                 */}
               </div>
             </div>
             {/* Scrollable content area */}
@@ -255,7 +260,8 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                   key={`pane-current-${displayCategory}`}
                 >
                   {/* Category header - only show when not searching */}
-                  {!searchQuery && (
+                  {/* NJ: We turned off categories, so no need for this category header */}
+                  {false && !searchQuery && (
                     <div className="mb-6 mt-6">
                       {(() => {
                         // Get category data for display
