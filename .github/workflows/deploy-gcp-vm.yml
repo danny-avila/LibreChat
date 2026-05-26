@@ -26,9 +26,10 @@ jobs:
         run: |
           set -e
           cd ${{ vars.GCP_VM_APP_DIR }}
-          echo "==> Rebuilding and restarting containers..."
-          docker compose pull
-          docker compose up --build -d
+          echo "==> Building image from source..."
+          docker compose -f docker-compose.yml build api
+          echo "==> Restarting containers..."
+          docker compose -f docker-compose.yml up -d
 
       - name: Verify
         run: |
