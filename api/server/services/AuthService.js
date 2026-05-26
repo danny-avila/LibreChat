@@ -211,7 +211,7 @@ const registerUser = async (user, additionalData = {}) => {
 
   let newUserId;
   try {
-    const appConfig = await getAppConfig({ baseOnly: true });
+    const appConfig = await getAppConfig();
     if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
