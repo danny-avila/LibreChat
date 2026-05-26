@@ -1,3 +1,4 @@
+# Deploys billechat branch to AKS on push or manual run.
 name: BilleChat Build & Deploy
 
 on:
@@ -75,7 +76,6 @@ jobs:
     name: Deploy to AKS
     runs-on: ubuntu-latest
     needs: build
-    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
