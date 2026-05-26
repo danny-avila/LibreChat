@@ -11,6 +11,9 @@ concurrency:
   group: billechat-deploy
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   ACR_NAME: billechatacr
   AKS_CLUSTER: billechat-aks
@@ -30,11 +33,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: billechat
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
 
       - name: Log in to Azure Container Registry
         uses: azure/docker-login@v1
