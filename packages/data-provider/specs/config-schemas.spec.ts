@@ -703,6 +703,40 @@ describe('configSchema skillSync', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('rejects malformed GitHub skill sync refs during config validation', () => {
+    const invalidRefs = [
+      'feature branch',
+      'release:2026',
+      'bad?ref',
+      'bad*ref',
+      '[bad]',
+      '@{upstream}',
+      'main.lock',
+    ];
+
+    for (const ref of invalidRefs) {
+      const result = configSchema.safeParse({
+        version: '1.3.11',
+        skillSync: {
+          github: {
+            enabled: true,
+            sources: [
+              {
+                id: 'librechat-skills',
+                owner: 'LibreChat',
+                repo: 'skills',
+                ref,
+                paths: ['skills'],
+                credentialKey: 'github-skills-prod',
+              },
+            ],
+          },
+        },
+      });
+      expect(result.success).toBe(false);
+    }
+  });
 });
 
 describe('interfaceSchema', () => {

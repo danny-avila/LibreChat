@@ -268,9 +268,27 @@ const skillSyncGitHubRefSchema = z
   .refine((value) => !value.startsWith('/') && !value.endsWith('/'), {
     message: 'must not start or end with a slash',
   })
-  .refine((value) => !value.includes('..') && !value.includes('\\'), {
-    message: 'must not contain traversal segments or backslashes',
-  });
+  .refine((value) => !value.includes('..') && !value.includes('//') && !value.includes('\\'), {
+    message: 'must not contain traversal segments, empty path segments, or backslashes',
+  })
+  .refine((value) => !value.includes('@{') && value !== '@', {
+    message: 'must not contain invalid Git ref syntax',
+  })
+  .refine((value) => !value.endsWith('.'), {
+    message: 'must not end with a dot',
+  })
+  .refine((value) => !/[\x00-\x20\x7f~^:?*\[]/.test(value), {
+    message: 'must not contain invalid Git ref characters',
+  })
+  .refine(
+    (value) =>
+      value
+        .split('/')
+        .every((segment) => segment && !segment.startsWith('.') && !segment.endsWith('.lock')),
+    {
+      message: 'must contain valid Git ref path segments',
+    },
+  );
 
 const skillSyncPathSchema = z
   .string()
