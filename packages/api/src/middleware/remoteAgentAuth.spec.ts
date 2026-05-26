@@ -46,6 +46,7 @@ jest.mock('../auth/openid', () => {
 
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
+import { SystemRoles } from 'librechat-data-provider';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { logger, tenantStorage } from '@librechat/data-schemas';
 import { clearRemoteAgentAuthCache, createRemoteAgentAuth } from './remoteAgentAuth';
@@ -1497,6 +1498,24 @@ describe('createRemoteAgentAuth', () => {
 
       expect(deps.updateUser).toHaveBeenCalledWith('uid123', { role: 'USER' });
       expect(req.user).toMatchObject({ role: 'USER' });
+    });
+
+    it('preserves an existing ADMIN role because generic role sync cannot manage admin', async () => {
+      enableApiRoleSync();
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        roles: ['STANDARD-USER'],
+      });
+
+      const deps = makeDeps();
+      deps.findUser = makeFindUser(makeUser({ role: SystemRoles.ADMIN }));
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.getRolesByNames).not.toHaveBeenCalled();
+      expect(deps.updateUser).not.toHaveBeenCalled();
+      expect(req.user).toMatchObject({ role: SystemRoles.ADMIN });
     });
 
     it('leaves the role unchanged when the configured source is unavailable to API auth', async () => {

@@ -1498,6 +1498,37 @@ describe('setupOpenId', () => {
       expect(user.role).toBe('ADMIN');
     });
 
+    it('preserves an existing ADMIN role when admin is manually assigned', async () => {
+      delete process.env.OPENID_ADMIN_ROLE;
+      delete process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH;
+      delete process.env.OPENID_ADMIN_ROLE_TOKEN_KIND;
+      const existingAdminUser = {
+        _id: 'existingAdminId',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'adminuser',
+        name: 'Admin User',
+        role: 'ADMIN',
+      };
+
+      findUser.mockImplementation(async (query) => {
+        if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+          return existingAdminUser;
+        }
+        return null;
+      });
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole', 'STANDARD-USER'],
+        permissions: ['not-admin'],
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('ADMIN');
+      expect(findRolesByNames).not.toHaveBeenCalled();
+    });
+
     it('uses fallback when a valid role claim has no configured role match', async () => {
       jwtDecode.mockReturnValue({
         roles: ['requiredRole', 'external-role'],
