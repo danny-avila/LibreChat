@@ -451,7 +451,7 @@ async function resolveUser(
   return { status: 'resolved', user, updateData };
 }
 
-async function getOpenIdRoleSyncUpdate(
+async function selectOpenIdRoleForOpenIdSync(
   payload: JwtPayload,
   user: IUser,
   getRolesByNames: RemoteAgentAuthDeps['getRolesByNames'],
@@ -503,25 +503,9 @@ async function getOpenIdRoleSyncUpdate(
   }
 
   logger.info(
-    `[remoteAgentAuth] OpenID role sync updated role for ${user.id}: ${user.role || 'unset'} -> ${result.selectedRole}`,
+    `[remoteAgentAuth] OpenID role sync selected role for ${user.id}: ${user.role || 'unset'} -> ${result.selectedRole}`,
   );
   return result.selectedRole;
-}
-
-async function applyOpenIdRoleSyncToResolvedUser(
-  payload: JwtPayload,
-  userResolution: Extract<UserResolution, { status: 'resolved' }>,
-  getRolesByNames: RemoteAgentAuthDeps['getRolesByNames'],
-): Promise<boolean> {
-  const selectedRole = await getOpenIdRoleSyncUpdate(payload, userResolution.user, getRolesByNames);
-
-  if (!selectedRole) {
-    return false;
-  }
-
-  userResolution.user.role = selectedRole;
-  userResolution.updateData.role = selectedRole;
-  return true;
 }
 
 async function updateResolvedUser(
@@ -667,11 +651,17 @@ export function createRemoteAgentAuth({
         return;
       }
 
-      const roleChanged = await applyOpenIdRoleSyncToResolvedUser(
+      const selectedRole = await selectOpenIdRoleForOpenIdSync(
         payload,
-        userResolution,
+        userResolution.user,
         getRolesByNames,
       );
+      const roleChanged = Boolean(selectedRole);
+      if (selectedRole) {
+        userResolution.user.role = selectedRole;
+        userResolution.updateData.role = selectedRole;
+      }
+
       if (
         roleChanged &&
         !(await enforceOidcTenantPolicy(
