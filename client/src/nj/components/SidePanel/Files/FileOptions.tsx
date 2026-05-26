@@ -39,11 +39,13 @@ export default function FileOptions({
       label: file.pinned ? localize('com_ui_unpin') : localize('com_ui_pin'),
       onClick: () => updateMutation.mutate({ file_id: file.file_id, pinned: !file.pinned }),
       icon: <Pin className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+      ariaLabel: file.pinned ? `Unpin "${file.filename}"` : `Pin "${file.filename}"`,
     },
     {
       label: localize('com_ui_rename'),
       onClick: onRename,
       icon: <Pen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+      ariaLabel: `Rename "${file.filename}"`,
     },
   ];
 
@@ -58,7 +60,7 @@ export default function FileOptions({
       setIsOpen={setIsPopoverActive}
       trigger={
         <Ariakit.MenuButton
-          aria-label="File options"
+          aria-label={`File menu options for "${file.filename}"`}
           aria-expanded={isPopoverActive}
           className="inline-flex h-7 w-7 items-center justify-center rounded-md p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
           onClick={(e: MouseEvent<HTMLButtonElement>) => e.stopPropagation()}

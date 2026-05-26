@@ -1,3 +1,6 @@
+/* eslint-disable i18next/no-literal-string */
+/* ^ We're not worried about i18n for this app ^ */
+
 import { useEffect, useState } from 'react';
 import type { TFile } from 'librechat-data-provider';
 import icons from '@uswds/uswds/img/sprite.svg';
@@ -65,6 +68,7 @@ export default function FileCell({
           onFileClick(file);
         }
       }}
+      aria-label={`Add ${file.pinned ? 'pinned' : ''} file "${file.filename}" to current conversation`}
     >
       <FileIcon file={file} />
       {renaming ? (

@@ -35,6 +35,7 @@ export default function FilesSection({
   if (files.length === 0 && !emptyText) return null;
 
   const headingId = `files-section-${title.toLowerCase()}`;
+  const listId = `${headingId}-list`;
 
   return (
     <section aria-labelledby={headingId} className="mb-3 flex flex-col">
@@ -48,11 +49,13 @@ export default function FilesSection({
 
       {/* Files (or empty text if none) */}
       {files.length !== 0 ? (
-        <div className="flex flex-col">
+        <ol id={listId} className="flex flex-col">
           {filesToShow.map((file: TFile) => (
-            <FileCell key={file.file_id} file={file} onFileClick={handleFileClick} />
+            <li key={file.file_id}>
+              <FileCell file={file} onFileClick={handleFileClick} />
+            </li>
           ))}
-        </div>
+        </ol>
       ) : (
         <div className="pl-2 text-sm">{emptyText}</div>
       )}
@@ -61,6 +64,8 @@ export default function FilesSection({
       {canCollapse && (
         <button
           className="mt-3 font-bold text-jersey-blue underline hover:decoration-2"
+          aria-expanded={showAll}
+          aria-controls={listId}
           onClick={() => setShowAll(!showAll)}
         >
           {!showingAll ? showMoreText : 'Show less'}
