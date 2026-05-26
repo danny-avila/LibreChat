@@ -1,0 +1,40 @@
+name: Deploy to GCP VM
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-gcp-vm
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.GCP_VM_SSH_KEY }}
+          known_hosts: ${{ secrets.GCP_VM_KNOWN_HOSTS }}
+
+      - name: Deploy to GCP VM
+        env:
+          VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          VM_USER: ${{ secrets.GCP_VM_USER }}
+          APP_DIR: ${{ vars.GCP_VM_APP_DIR }}
+        run: |
+          ssh ${VM_USER}@${VM_HOST} << 'DEPLOY'
+          set -e
+          cd ${APP_DIR:-~/AI-Workforce-Pro}
+          echo "==> Pulling latest main..."
+          git fetch origin main
+          git reset --hard origin/main
+          echo "==> Rebuilding and restarting containers..."
+          docker compose pull
+          docker compose up --build -d
+          echo "==> Verifying..."
+          docker compose ps
+          echo "==> Deploy complete."
+          DEPLOY
