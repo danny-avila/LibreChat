@@ -1,6 +1,6 @@
 # BilleChat Helm Values
 # Custom values for deploying LibreChat as BilleChat on AKS
-# ci: redeploy after upstream merge (2026-05-26)
+# ci: redeploy after upstream merge + workflow on main (2026-05-26)
 
 replicaCount: 1
 
