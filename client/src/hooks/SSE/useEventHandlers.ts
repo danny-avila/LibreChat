@@ -1,4 +1,5 @@
 import { v4 } from 'uuid';
+import posthog from 'posthog-js';
 import { useCallback, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -183,7 +184,7 @@ export default function useEventHandlers({
 
   const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
-  const { token } = useAuthContext();
+  const { token, user } = useAuthContext();
   const { openUpgradeFlow } = useSubscription();
 
   const contentHandler = useContentHandler({ setMessages, getMessages });
@@ -598,6 +599,25 @@ export default function useEventHandlers({
         }
       }
 
+      // Fire `first_query_completed` once per user — the funnel hinge between
+      // sign_up and paywall_viewed. localStorage gate keeps it idempotent if
+      // the user reloads or sends additional messages.
+      if (user?.id && !hasNoResponse) {
+        const firstQueryFlag = `first_query_completed:${user.id}`;
+        if (!localStorage.getItem(firstQueryFlag)) {
+          try {
+            localStorage.setItem(firstQueryFlag, '1');
+          } catch {
+            /* localStorage unavailable — still capture, just may fire again */
+          }
+          posthog.capture('first_query_completed', {
+            conversation_id: conversation.conversationId,
+            endpoint: conversation.endpoint,
+            model: conversation.model,
+          });
+        }
+      }
+
       setIsSubmitting(false);
     },
     [
@@ -615,6 +635,7 @@ export default function useEventHandlers({
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,
+      user?.id,
     ],
   );
 

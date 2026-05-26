@@ -179,6 +179,13 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
+      posthog.capture('paywall_viewed', {
+        platform: 'native',
+        entitlement_id: entitlementId,
+        is_pro: subscriptionQuery.data?.isPro,
+        current_plan: subscriptionQuery.data?.currentPlan,
+      });
+
       try {
         await purchasesUiModule.RevenueCatUI.presentPaywallIfNeeded({
           requiredEntitlementIdentifier: entitlementId,
@@ -199,6 +206,12 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
         undefined,
       )) as TSubscriptionCheckoutResponse;
       if (response?.url) {
+        posthog.capture('paywall_viewed', {
+          platform: 'web',
+          entitlement_id: entitlementId,
+          is_pro: subscriptionQuery.data?.isPro,
+          current_plan: subscriptionQuery.data?.currentPlan,
+        });
         window.location.assign(response.url);
         return;
       }

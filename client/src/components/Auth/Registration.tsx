@@ -1,4 +1,5 @@
 import { useForm } from 'react-hook-form';
+import posthog from 'posthog-js';
 import React, { useContext, useEffect, useState } from 'react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
@@ -48,6 +49,19 @@ const Registration: React.FC = () => {
     },
     onSuccess: (data: TRegisterUserResponse) => {
       setIsSubmitting(false);
+
+      // Identify before capturing sign_up so the event lands on the user's
+      // distinct_id (which then matches RC's appUserID set in useRevenueCatInit).
+      if (data.user?.id) {
+        posthog.identify(data.user.id, {
+          email: data.user.email,
+          username: data.user.username,
+        });
+      }
+      posthog.capture('sign_up', {
+        method: 'email',
+        email_verification_required: !data.token,
+      });
 
       if (data.token && data.user) {
         sessionStorage.setItem(
