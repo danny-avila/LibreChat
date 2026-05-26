@@ -153,7 +153,11 @@ const FarmerProfileModal = ({
 
   const kvkOptions =
     selectedDistrict && selectedDistrict !== otherOption
-      ? KVKS[selectedDistrict] ?? KVKS.Other
+      ? Array.isArray(KVKS[selectedDistrict])
+        ? KVKS[selectedDistrict]
+        : Array.isArray((KVKS as any).Other)
+          ? (KVKS as any).Other
+          : []
       : [];
 
   const selectedPrimaryCropList = selectedPrimaryCrop
