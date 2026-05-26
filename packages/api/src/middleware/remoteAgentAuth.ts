@@ -461,6 +461,13 @@ async function selectOpenIdRoleForOpenIdSync(
     return;
   }
 
+  if (user.role === SystemRoles.ADMIN) {
+    logger.info(
+      `[remoteAgentAuth] OpenID role sync skipped for ${user.id}; existing ADMIN role is not managed by generic role sync`,
+    );
+    return;
+  }
+
   if (options.claimSource !== 'access') {
     logger.warn(
       `[remoteAgentAuth] OpenID role sync skipped; source '${options.claimSource}' is not available for API auth`,

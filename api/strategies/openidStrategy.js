@@ -491,6 +491,13 @@ async function applyOpenIdRoleSync({
     return;
   }
 
+  if (user.role === SystemRoles.ADMIN) {
+    logger.info(
+      `[openidStrategy] OpenID role sync skipped for ${username}; existing ADMIN role is not managed by generic role sync`,
+    );
+    return;
+  }
+
   const resolveGroupOverage = async () =>
     resolvedOverageGroups || (await resolveGroupsFromOverage(tokenset.access_token, claims.sub));
 
