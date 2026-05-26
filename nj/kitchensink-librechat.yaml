@@ -10,11 +10,10 @@ version: 1.3.6
 
 # Cache settings: Set to true to enable caching
 cache: true
-fileStrategy: "s3"
+fileStrategy: 's3'
 
 # Custom interface configuration
 interface:
-
   customWelcome: 'NJ AI Assistant'
 
   # Disable temporary chats (we need to retain data for OPRA)
@@ -47,12 +46,12 @@ interface:
   runCode: true
   sidePanel: true
   webSearch: true
-  mcpServers: 
+  mcpServers:
     use: true
     create: true
     share: true
     public: true
-  remoteAgents: 
+  remoteAgents:
     use: true
     create: true
     share: true
@@ -61,48 +60,48 @@ interface:
 endpoints:
   bedrock:
     availableRegions:
-      - "us-east-1"
-    titleModel: "us.anthropic.claude-sonnet-4-6"
+      - 'us-east-1'
+    titleModel: 'us.anthropic.claude-sonnet-4-6'
     guardrailConfig:
       # My upstream PR to make guardrail config injectable from env vars has not been merged, so I must hardcode
-      guardrailIdentifier: "cwwc15fplrpc"
-      guardrailVersion: "10"
-      trace: "enabled"
+      guardrailIdentifier: 'cwwc15fplrpc'
+      guardrailVersion: '10'
+      trace: 'enabled'
 
   agents:
     capabilities:
-      - "hide_sequential_outputs"
-      - "programmatic_tools"
-      - "end_after_tools"
-      - "deferred_tools"
-      - "execute_code"
-      - "file_search"
-      - "web_search"
-      - "artifacts"
-      - "actions"
-      - "context"
-      - "tools"
-      - "chain"
-      - "ocr"
+      - 'hide_sequential_outputs'
+      - 'programmatic_tools'
+      - 'end_after_tools'
+      - 'deferred_tools'
+      - 'execute_code'
+      - 'file_search'
+      - 'web_search'
+      - 'artifacts'
+      - 'actions'
+      - 'context'
+      - 'tools'
+      - 'chain'
+      - 'ocr'
 
 # We explicitly spec our models (since we only have a few models and this makes the selector simpler)
 modelSpecs:
   list:
     - name: claude-sonnet-4-6
-      label: "Claude Sonnet 4.6"
+      label: 'Claude Sonnet 4.6'
       default: true
       preset:
-        endpoint: "bedrock"
-        model: "us.anthropic.claude-sonnet-4-6"
-    - name: "Claude Sonnet 4.5"
-      label: "Claude Sonnet 4.5"
+        endpoint: 'bedrock'
+        model: 'us.anthropic.claude-sonnet-4-6'
+    - name: 'Claude Sonnet 4.5'
+      label: 'Claude Sonnet 4.5'
       default: true
       preset:
-        endpoint: "bedrock"
-        model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        endpoint: 'bedrock'
+        model: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
 
 ocr:
-  strategy: "document_parser"
+  strategy: 'document_parser'
 
 fileConfig:
   endpoints:
@@ -114,5 +113,6 @@ fileConfig:
 memory:
   tokenLimit: 2000
   agent:
-    provider: "bedrock"
-    model: "us.anthropic.claude-sonnet-4-6"
+    enabled: true
+    provider: 'bedrock'
+    model: 'us.anthropic.claude-sonnet-4-6'
