@@ -42,7 +42,9 @@ jest.mock('~/models', () => ({
   deleteUserById: jest.fn(),
   generateRefreshToken: jest.fn(),
 }));
-jest.mock('~/strategies/validators', () => ({ registerSchema: { parse: jest.fn() } }));
+jest.mock('~/strategies/validators', () => ({
+  registerSchema: { parse: jest.fn(), safeParse: jest.fn().mockReturnValue({ error: null }) },
+}));
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
 
@@ -67,6 +69,7 @@ const { getAppConfig } = require('~/server/services/Config');
 const {
   setOpenIDAuthTokens,
   requestPasswordReset,
+  registerUser,
   setAuthTokens,
   setCloudFrontAuthCookies,
 } = require('./AuthService');
@@ -378,6 +381,35 @@ describe('setOpenIDAuthTokens', () => {
       expect(result).toBe('the-id-token');
       expect(req.session.openidTokens.refreshToken).toBe('existing-refresh');
     });
+  });
+});
+
+describe('registerUser', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    isEmailDomainAllowed.mockReturnValue(true);
+    getAppConfig.mockResolvedValue({});
+  });
+
+  it('calls getAppConfig without baseOnly to include admin-panel __base__ override', async () => {
+    isEmailDomainAllowed.mockReturnValue(false);
+
+    const user = { email: 'user@blocked.com', password: 'pass123', name: 'Test', username: 'test' };
+    const result = await registerUser(user);
+
+    expect(getAppConfig).toHaveBeenCalledWith();
+    expect(result.status).toBe(403);
+  });
+
+  it('rejects registration when admin-panel allowedDomains blocks the email domain', async () => {
+    isEmailDomainAllowed.mockReturnValue(false);
+    getAppConfig.mockResolvedValue({ registration: { allowedDomains: ['allowed.com'] } });
+
+    const user = { email: 'user@blocked.com', password: 'pass123', name: 'Test', username: 'test' };
+    const result = await registerUser(user);
+
+    expect(result.status).toBe(403);
+    expect(result.message).toContain('email address provided cannot be used');
   });
 });
 
