@@ -4,14 +4,16 @@
 services:
   api:
     container_name: LibreChat
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "${PORT}:${PORT}"
     depends_on:
       - mongodb
       - rag_api
-    image: registry.librechat.ai/danny-avila/librechat-dev:latest
+    image: librechat-smb:latest
     restart: always
-    user: "${UID}:${GID}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:

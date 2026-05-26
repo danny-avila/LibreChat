@@ -26,10 +26,10 @@ jobs:
         run: |
           set -e
           cd ${{ vars.GCP_VM_APP_DIR }}
-          echo "==> Building image from source..."
-          docker compose -f docker-compose.yml build api
+          echo "==> Building image from source (this takes ~15 min)..."
+          docker compose build api
           echo "==> Restarting containers..."
-          docker compose -f docker-compose.yml up -d
+          docker compose up -d
 
       - name: Verify
         run: |
