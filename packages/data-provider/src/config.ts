@@ -268,6 +268,18 @@ const skillSyncGitHubRepoSchema = z
     message: 'must be a valid GitHub repository name',
   });
 
+const invalidGitRefChars = new Set(['~', '^', ':', '?', '*', '[']);
+
+function hasInvalidGitRefCharacter(value: string): boolean {
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (code <= 32 || code === 127 || invalidGitRefChars.has(char)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 const skillSyncGitHubRefSchema = z
   .string()
   .min(1)
@@ -284,7 +296,7 @@ const skillSyncGitHubRefSchema = z
   .refine((value) => !value.endsWith('.'), {
     message: 'must not end with a dot',
   })
-  .refine((value) => !/[\x00-\x20\x7f~^:?*\[]/.test(value), {
+  .refine((value) => !hasInvalidGitRefCharacter(value), {
     message: 'must not contain invalid Git ref characters',
   })
   .refine(
