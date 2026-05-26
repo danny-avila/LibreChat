@@ -1,9 +1,17 @@
 const mockGetEnabledEndpoints = jest.fn();
 const mockLoadAsyncEndpoints = jest.fn();
 
-jest.mock(
-  'librechat-data-provider',
-  () => ({
+function mockOptionalModule(moduleName, factory) {
+  try {
+    require.resolve(moduleName);
+    jest.doMock(moduleName, factory);
+  } catch {
+    jest.doMock(moduleName, factory, { virtual: true });
+  }
+}
+
+function mockDependencies() {
+  mockOptionalModule('librechat-data-provider', () => ({
     EModelEndpoint: {
       agents: 'agents',
       anthropic: 'anthropic',
@@ -15,28 +23,28 @@ jest.mock(
       openAI: 'openAI',
     },
     getEnabledEndpoints: mockGetEnabledEndpoints,
-  }),
-  { virtual: true },
-);
+  }));
 
-jest.mock('./loadAsyncEndpoints', () => mockLoadAsyncEndpoints);
+  jest.doMock('./loadAsyncEndpoints', () => mockLoadAsyncEndpoints);
 
-jest.mock('./EndpointService', () => ({
-  config: {
-    agents: { userProvide: false },
-    anthropic: false,
-    assistants: false,
-    azureAssistants: false,
-    azureOpenAI: false,
-    bedrock: false,
-    openAI: { userProvide: false },
-  },
-}));
+  jest.doMock('./EndpointService', () => ({
+    config: {
+      agents: { userProvide: false },
+      anthropic: false,
+      assistants: false,
+      azureAssistants: false,
+      azureOpenAI: false,
+      bedrock: false,
+      openAI: { userProvide: false },
+    },
+  }));
+}
 
 describe('loadDefaultEndpointsConfig', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
+    mockDependencies();
   });
 
   it('does not probe async Google credentials when Google is excluded from enabled endpoints', async () => {

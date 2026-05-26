@@ -7,31 +7,31 @@ const mockLogger = {
   warn: jest.fn(),
 };
 
-jest.mock('fs/promises', () => ({
-  access: mockAccess,
-}));
+function mockOptionalModule(moduleName, factory) {
+  try {
+    require.resolve(moduleName);
+    jest.doMock(moduleName, factory);
+  } catch {
+    jest.doMock(moduleName, factory, { virtual: true });
+  }
+}
 
-jest.mock(
-  '@librechat/api',
-  () => ({
+function mockDependencies() {
+  jest.doMock('fs/promises', () => ({
+    access: mockAccess,
+  }));
+
+  mockOptionalModule('@librechat/api', () => ({
     isEnabled: (value) => value === true || value === 'true' || value === '1',
     isUserProvided: mockIsUserProvided,
     loadServiceKey: mockLoadServiceKey,
-  }),
-  { virtual: true },
-);
+  }));
 
-jest.mock(
-  '@librechat/data-schemas',
-  () => ({
+  mockOptionalModule('@librechat/data-schemas', () => ({
     logger: mockLogger,
-  }),
-  { virtual: true },
-);
+  }));
 
-jest.mock(
-  'librechat-data-provider',
-  () => ({
+  mockOptionalModule('librechat-data-provider', () => ({
     EModelEndpoint: {
       agents: 'agents',
       anthropic: 'anthropic',
@@ -42,13 +42,12 @@ jest.mock(
       google: 'google',
       openAI: 'openAI',
     },
-  }),
-  { virtual: true },
-);
+  }));
 
-jest.mock('~/server/utils/handleText', () => ({
-  generateConfig: (key) => (key ? { userProvide: key === 'user_provided' } : false),
-}));
+  jest.doMock('~/server/utils/handleText', () => ({
+    generateConfig: (key) => (key ? { userProvide: key === 'user_provided' } : false),
+  }));
+}
 
 describe('loadAsyncEndpoints', () => {
   const originalEnv = process.env;
@@ -56,6 +55,7 @@ describe('loadAsyncEndpoints', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
+    mockDependencies();
     process.env = { ...originalEnv };
     delete process.env.GOOGLE_KEY;
     delete process.env.GOOGLE_SERVICE_KEY_FILE;
