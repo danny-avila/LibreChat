@@ -1032,7 +1032,10 @@ async function syncSource(params: {
         counts.deletedFileCount += fileCounts.deletedFileCount;
       } catch (error) {
         await deleteSyncedSkill(deps, skill).catch((cleanupError) =>
-          logger.error('[GitHubSkillSync] Failed to roll back partially synced skill:', cleanupError),
+          logger.error(
+            '[GitHubSkillSync] Failed to roll back partially synced skill:',
+            cleanupError,
+          ),
         );
         throw error;
       }
