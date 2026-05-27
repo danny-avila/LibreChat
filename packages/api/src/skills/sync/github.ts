@@ -302,6 +302,28 @@ function buildGitHubUrl(pathname: string): string {
   return `${GITHUB_API_BASE}${pathname}`;
 }
 
+async function readGitHubErrorMessage(response: Response): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as { message?: unknown };
+    return typeof body.message === 'string' ? body.message : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isGitHubRateLimitResponse(params: {
+  status: number;
+  remaining: string | null;
+  retryAfter: string | null;
+  message?: string;
+}): boolean {
+  if (params.status === 429 || params.remaining === '0' || params.retryAfter) {
+    return true;
+  }
+  const message = params.message?.toLowerCase() ?? '';
+  return message.includes('rate limit') || message.includes('abuse detection');
+}
+
 async function githubJson<T>(params: {
   fetchFn: FetchFn;
   token: string;
@@ -314,8 +336,17 @@ async function githubJson<T>(params: {
     return (await response.json()) as T;
   }
   const remaining = response.headers.get('x-ratelimit-remaining');
-  if (response.status === 401 || response.status === 403) {
-    const code = remaining === '0' ? 'GITHUB_RATE_LIMITED' : 'GITHUB_AUTH_FAILED';
+  const retryAfter = response.headers.get('retry-after');
+  const message = await readGitHubErrorMessage(response);
+  if (response.status === 401 || response.status === 403 || response.status === 429) {
+    const code = isGitHubRateLimitResponse({
+      status: response.status,
+      remaining,
+      retryAfter,
+      message,
+    })
+      ? 'GITHUB_RATE_LIMITED'
+      : 'GITHUB_AUTH_FAILED';
     throw new SkillSyncError(code, `GitHub request failed with HTTP ${response.status}`);
   }
   if (response.status === 404) {
