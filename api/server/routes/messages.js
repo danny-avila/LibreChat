@@ -218,7 +218,6 @@ router.post('/artifact/:messageId', async (req, res) => {
         targetArtifact,
         unescapedOriginal,
         unescapedUpdated,
-        { replaceAllOnMissing: true },
       );
       if (updatedText) {
         part.text = updatedText;
@@ -229,7 +228,6 @@ router.post('/artifact/:messageId', async (req, res) => {
         targetArtifact,
         unescapedOriginal,
         unescapedUpdated,
-        { replaceAllOnMissing: true },
       );
       if (updatedText) {
         message.text = updatedText;

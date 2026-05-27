@@ -98,11 +98,17 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
       }
     },
     onError: () => {
+      const pending = pendingUpdateRef.current;
+      pendingUpdateRef.current = null;
       isMutatingRef.current = false;
       currentUpdateRef.current = null;
-      pendingUpdateRef.current = null;
       setIsMutating(false);
       setCurrentUpdate(null);
+
+      if (pending != null) {
+        setCurrentCodeRef.current(pending);
+        runMutationRef.current(pending);
+      }
     },
   });
 

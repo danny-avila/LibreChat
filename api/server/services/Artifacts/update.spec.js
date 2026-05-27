@@ -90,6 +90,22 @@ ${ARTIFACT_END}`;
     expect(result).toHaveLength(1);
     expect(result[0].end).toBe(artifactText.length);
   });
+
+  test('should not end an unclosed artifact at an internal marker in a closed fence', () => {
+    const artifactText = `${ARTIFACT_START}{identifier="markdown" type="text/markdown" title="Markdown"}
+\`\`\`markdown
+before
+:::
+after
+\`\`\`
+trailer`;
+    const message = { text: artifactText };
+
+    const result = findAllArtifacts(message);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].end).toBe(artifactText.length);
+  });
 });
 
 describe('replaceArtifactContent', () => {

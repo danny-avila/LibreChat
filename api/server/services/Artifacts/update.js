@@ -57,7 +57,7 @@ const findArtifactEnd = (text, start) => {
     currentIndex = getNextLineStart(text, lineEnd);
   }
 
-  return fallbackEnd !== -1 ? fallbackEnd : text.length;
+  return codeFence && fallbackEnd !== -1 ? fallbackEnd : text.length;
 };
 
 const findLastArtifactCloseStart = (text, start, end) => {
