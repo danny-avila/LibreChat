@@ -416,6 +416,7 @@ describe('createGitHubSkillSyncRunner', () => {
         },
       }),
       findSkillBySourceIdentity: jest.fn(async () => existing),
+      getSkillById: jest.fn(async () => ({ ...existing, version: existing.version + 1 })),
       fetchFn: githubFetch('---\nname: research\ndescription: Research things\n---\nBody'),
       updateSkill: jest.fn(async ({ update }) => ({
         status: 'updated' as const,
@@ -447,6 +448,92 @@ describe('createGitHubSkillSyncRunner', () => {
         }),
       }),
     );
+  });
+
+  it('refreshes an existing skill version after file sync before updating metadata', async () => {
+    const existing = makeSkill({
+      name: 'research',
+      description: 'Old description',
+      author: new Types.ObjectId(),
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const afterFileSync = { ...existing, version: existing.version + 2 };
+    const deps = createDeps({
+      findSkillBySourceIdentity: jest.fn(async () => existing),
+      getSkillById: jest.fn(async () => afterFileSync),
+      updateSkill: jest.fn(async ({ expectedVersion, update }) => ({
+        status: 'updated' as const,
+        skill: {
+          ...afterFileSync,
+          ...update,
+          version: expectedVersion + 1,
+        },
+        warnings: [],
+      })),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.upsertSkillFile).toHaveBeenCalled();
+    expect(deps.getSkillById).toHaveBeenCalledWith(existing._id);
+    expect(deps.updateSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: existing._id.toString(),
+        expectedVersion: afterFileSync.version,
+      }),
+    );
+  });
+
+  it('preserves credential presence when a manual run is skipped by an active lock', async () => {
+    const deps = createDeps({
+      tryAcquireLock: jest.fn(async () => false),
+      listCredentials: jest.fn(async () => [
+        {
+          provider: 'github',
+          credentialKey: 'github-skills-prod',
+          credentialPresent: true,
+          tokenFingerprint: 'abc123',
+        },
+      ]),
+      listStatuses: jest.fn(async () => [
+        {
+          provider: 'github',
+          sourceId: 'librechat-skills',
+          status: 'running',
+          credentialKey: 'github-skills-prod',
+          owner: 'LibreChat',
+          repo: 'skills',
+          ref: 'main',
+          paths: ['skills'],
+          syncedSkillCount: 0,
+          syncedFileCount: 0,
+          deletedSkillCount: 0,
+          deletedFileCount: 0,
+        } as ISkillSyncStatus,
+      ]),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('skipped');
+    expect(result.sources).toEqual([
+      expect.objectContaining({
+        sourceId: 'librechat-skills',
+        status: 'running',
+        credentialPresent: true,
+      }),
+    ]);
   });
 
   it('excludes child skill packages from parent synced files', async () => {
