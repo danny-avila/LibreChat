@@ -1,9 +1,15 @@
+const crypto = require('node:crypto');
 const rateLimit = require('express-rate-limit');
 const { ViolationTypes } = require('librechat-data-provider');
-const { limiterCache, removePorts } = require('@librechat/api');
+const { isEnabled, limiterCache, removePorts } = require('@librechat/api');
 const { logViolation } = require('~/cache');
 
-const { LOGIN_WINDOW = 5, LOGIN_MAX = 7, LOGIN_VIOLATION_SCORE: score } = process.env;
+const {
+  LOGIN_WINDOW = 5,
+  LOGIN_MAX = 7,
+  LOGIN_VIOLATION_SCORE: score,
+  LOGIN_LIMITER_INCLUDE_USER_AGENT,
+} = process.env;
 const windowMs = LOGIN_WINDOW * 60 * 1000;
 const max = LOGIN_MAX;
 const windowInMinutes = windowMs / 60000;
@@ -21,14 +27,30 @@ const handler = async (req, res) => {
   return res.status(429).json({ message });
 };
 
+const hashUserAgent = (userAgent) =>
+  crypto
+    .createHash('sha1')
+    .update(userAgent ?? '')
+    .digest('hex')
+    .slice(0, 16);
+
+const keyGenerator = (req) => {
+  const ip = removePorts(req);
+  if (!isEnabled(LOGIN_LIMITER_INCLUDE_USER_AGENT)) {
+    return ip;
+  }
+  return `${ip}:${hashUserAgent(req.headers?.['user-agent'])}`;
+};
+
 const limiterOptions = {
   windowMs,
   max,
   handler,
-  keyGenerator: removePorts,
+  keyGenerator,
   store: limiterCache('login_limiter'),
 };
 
 const loginLimiter = rateLimit(limiterOptions);
 
 module.exports = loginLimiter;
+module.exports.keyGenerator = keyGenerator;
