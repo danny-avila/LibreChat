@@ -45,6 +45,7 @@ export function parseFrontmatter(raw: string): {
   alwaysApply?: boolean;
   /** Keys that carried non-boolean values for fields that must be boolean. */
   invalidBooleans: string[];
+  parseError?: string;
 } {
   const parsed = parseSkillMarkdown(raw);
   const result: {
@@ -52,15 +53,32 @@ export function parseFrontmatter(raw: string): {
     description: string;
     alwaysApply?: boolean;
     invalidBooleans: string[];
+    parseError?: string;
   } = {
     name: parsed.name,
     description: parsed.description,
     invalidBooleans: parsed.invalidBooleans,
   };
+  if (parsed.parseError) {
+    result.parseError = parsed.parseError;
+  }
   if ('alwaysApply' in parsed) {
     result.alwaysApply = parsed.alwaysApply;
   }
   return result;
+}
+
+function sendFrontmatterParseError(res: Response, parseError: string) {
+  return res.status(400).json({
+    error: 'Validation failed',
+    issues: [
+      {
+        field: 'frontmatter',
+        code: 'INVALID_YAML',
+        message: `Invalid YAML frontmatter: ${parseError}`,
+      },
+    ],
+  });
 }
 
 /** Validates a relative path is safe (no traversal, no absolute paths). */
@@ -242,7 +260,11 @@ async function handleMarkdown(
 ) {
   const content = file.buffer.toString('utf-8');
 
-  const { name, description, alwaysApply, invalidBooleans } = parseFrontmatter(content);
+  const { name, description, alwaysApply, invalidBooleans, parseError } =
+    parseFrontmatter(content);
+  if (parseError) {
+    return sendFrontmatterParseError(res, parseError);
+  }
   if (invalidBooleans.length > 0) {
     return res.status(400).json({
       error: 'Validation failed',
@@ -353,7 +375,11 @@ async function handleZip(
     return res.status(400).json({ error: 'SKILL.md exceeds maximum file size' });
   }
 
-  const { name, description, alwaysApply, invalidBooleans } = parseFrontmatter(skillMdContent);
+  const { name, description, alwaysApply, invalidBooleans, parseError } =
+    parseFrontmatter(skillMdContent);
+  if (parseError) {
+    return sendFrontmatterParseError(res, parseError);
+  }
   if (invalidBooleans.length > 0) {
     return res.status(400).json({
       error: 'Validation failed',
