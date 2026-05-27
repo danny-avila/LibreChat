@@ -643,7 +643,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
         (endpointUrl.pathname.endsWith('/') ? 0 : 1) +
         bucketName.length +
         1;
-      const key = url.pathname.substring(startPos);
+      const key = decodeURIComponent(url.pathname.substring(startPos));
       if (!key) {
         logger.warn(
           `[extractKeyFromS3Url] Extracted key is empty for endpoint path-style URL: ${fileUrlOrKey}`,
@@ -661,7 +661,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
     ) {
       const firstSlashIndex = pathname.indexOf('/');
       if (firstSlashIndex > 0) {
-        const key = pathname.substring(firstSlashIndex + 1);
+        const key = decodeURIComponent(pathname.substring(firstSlashIndex + 1));
         if (key === '') {
           logger.warn(
             `[extractKeyFromS3Url] Extracted key is empty after removing bucket name from URL: ${fileUrlOrKey}`,
@@ -679,8 +679,9 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
       return '';
     }
 
-    logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${pathname}`);
-    return pathname;
+    const decodedPathname = decodeURIComponent(pathname);
+    logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${decodedPathname}`);
+    return decodedPathname;
   } catch (error) {
     if (fileUrlOrKey.startsWith('http://') || fileUrlOrKey.startsWith('https://')) {
       logger.error(
