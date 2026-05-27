@@ -223,6 +223,55 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('uses distinct synthetic authors so same-named skills can sync from different sources', async () => {
+    const seenNamesByAuthor = new Set<string>();
+    const deps = createDeps({
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'source-a',
+              owner: 'LibreChat',
+              repo: 'skills-a',
+              ref: 'main',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+            },
+            {
+              id: 'source-b',
+              owner: 'LibreChat',
+              repo: 'skills-b',
+              ref: 'main',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+            },
+          ],
+        },
+      }),
+      createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+        const key = `${input.name}:${input.author.toString()}`;
+        if (seenNamesByAuthor.has(key)) {
+          throw new Error('duplicate key');
+        }
+        seenNamesByAuthor.add(key);
+        return { skill: makeSkill(input), warnings: [] };
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+    const createCalls = (deps.createSkill as jest.Mock).mock.calls.map(
+      ([input]: [CreateSkillInput]) => input,
+    );
+
+    expect(result.status).toBe('completed');
+    expect(createCalls).toHaveLength(2);
+    expect(createCalls.map((input) => input.name)).toEqual(['research', 'research']);
+    expect(new Set(createCalls.map((input) => input.author.toString())).size).toBe(2);
+  });
+
   it('marks a source failed and skips mirror deletion when the credential is missing', async () => {
     const deps = createDeps({
       getCredentialToken: jest.fn(async () => null),

@@ -83,6 +83,10 @@ function parseBoolean(value: unknown, rawValue?: string): boolean | undefined {
   return undefined;
 }
 
+function hasBooleanPlaceholder(rawValue?: string): boolean {
+  return rawValue !== undefined && stripInlineComment(rawValue).length === 0;
+}
+
 export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
   const block = extractFrontmatterBlock(raw);
   if (!block) {
@@ -116,7 +120,7 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
   const invalidBooleans: string[] = [];
   if (alwaysApplyValue !== undefined) {
     alwaysApply = parseBoolean(alwaysApplyValue, rawAlwaysApplyValue);
-    if (alwaysApply === undefined && alwaysApplyValue !== null && alwaysApplyValue !== '') {
+    if (alwaysApply === undefined && !hasBooleanPlaceholder(rawAlwaysApplyValue)) {
       invalidBooleans.push('always-apply');
     }
   }
