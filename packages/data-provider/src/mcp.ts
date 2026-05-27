@@ -51,12 +51,28 @@ const OAuthOptionsSchema = z
     }
   });
 
+/** Validates that a string compiles to a valid regular expression. */
+const isValidRegex = (value: string): boolean => {
+  try {
+    new RegExp(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /**
  * A single tool-filter matcher: either an exact tool name or a regular
  * expression wrapped in `{ regex: "..." }`. Matching is performed against the
- * server's original (un-prefixed) tool names.
+ * server's original (un-prefixed) tool names. Regex patterns are validated at
+ * parse time so misconfigurations surface immediately on config load.
  */
-export const ToolFilterPatternSchema = z.union([z.string(), z.object({ regex: z.string() })]);
+export const ToolFilterPatternSchema = z.union([
+  z.string(),
+  z.object({
+    regex: z.string().refine(isValidRegex, { message: 'Invalid regular expression pattern' }),
+  }),
+]);
 
 /**
  * Optional allow/block filtering of the tools an MCP server exposes.

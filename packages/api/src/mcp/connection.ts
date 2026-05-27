@@ -2191,11 +2191,7 @@ export class MCPConnection extends EventEmitter {
   async fetchTools() {
     try {
       const { tools } = await this.client.listTools();
-      const filter = this.options.toolFilter;
-      if (!filter) {
-        return tools;
-      }
-      return tools.filter((tool) => isToolAllowed(tool.name, filter));
+      return tools.filter((tool) => isToolAllowed(tool.name, this.options.toolFilter));
     } catch (error) {
       this.emitError(error, 'Failed to fetch tools');
       return [];

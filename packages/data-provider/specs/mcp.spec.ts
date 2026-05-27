@@ -273,4 +273,37 @@ describe('MCP schemas', () => {
       expect(result.success).toBe(true);
     });
   });
+
+  describe('toolFilter', () => {
+    const withFilter = (toolFilter: unknown) =>
+      MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        toolFilter,
+      });
+
+    it('accepts string and regex include/exclude entries', () => {
+      const result = withFilter({
+        include: ['search', { regex: '.*Jira.*' }],
+        exclude: ['lookupJiraAccountId'],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts a config with no toolFilter', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects an invalid regex pattern at parse time', () => {
+      const result = withFilter({ include: [{ regex: '[' }] });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0].message).toBe('Invalid regular expression pattern');
+      }
+    });
+  });
 });

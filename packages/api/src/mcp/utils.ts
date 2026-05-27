@@ -1,4 +1,5 @@
 import { Constants } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
 import type { ToolFilter, ToolFilterPattern } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 
@@ -111,16 +112,39 @@ export function redactAllServerSecrets(
   return result;
 }
 
+/**
+ * Caches compiled tool-filter regexes so repeated checks (every tool against
+ * every pattern, on each `fetchTools`/`getToolFunctions` call) don't recompile.
+ * Patterns originate from admin config, so the set is bounded. A `null` entry
+ * marks a pattern that failed to compile — it is logged once and never retried.
+ */
+const compiledToolFilterRegexes = new Map<string, RegExp | null>();
+
+function getToolFilterRegex(pattern: string): RegExp | null {
+  const cached = compiledToolFilterRegexes.get(pattern);
+  if (cached !== undefined) {
+    return cached;
+  }
+  let regex: RegExp | null;
+  try {
+    regex = new RegExp(pattern);
+  } catch {
+    regex = null;
+    logger.warn(
+      `[MCP] Ignoring invalid toolFilter regex pattern "${pattern}"; it will not match any tool.`,
+    );
+  }
+  compiledToolFilterRegexes.set(pattern, regex);
+  return regex;
+}
+
 /** Tests a single tool name against one filter pattern (exact match or regex). */
 function matchesToolPattern(toolName: string, pattern: ToolFilterPattern): boolean {
   if (typeof pattern === 'string') {
     return toolName === pattern;
   }
-  try {
-    return new RegExp(pattern.regex).test(toolName);
-  } catch {
-    return false;
-  }
+  const regex = getToolFilterRegex(pattern.regex);
+  return regex != null && regex.test(toolName);
 }
 
 /**
