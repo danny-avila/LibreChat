@@ -159,6 +159,8 @@ export type TFile = {
      * resolve via `resolveCodeEnvRef`.
      */
     codeEnvRef?: CodeEnvRef;
+    /** Indicates the file was uploaded as text (for UI icon) */
+    uploadedAs?: string;
   };
   createdAt?: string | Date;
   updatedAt?: string | Date;

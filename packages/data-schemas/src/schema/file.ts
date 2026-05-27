@@ -135,6 +135,10 @@ const file: Schema<IMongoFile> = new Schema(
         ),
         default: undefined,
       },
+      uploadedAs: {
+        type: String,
+        default: undefined,
+      },
     },
     expiresAt: {
       /* Short-lived upload TTL managed by MongoDB. This is separate from
