@@ -490,16 +490,18 @@ export default function AgentPanel() {
         aria-label="Agent configuration form"
       >
         <div className="flex-1">
-          <AgentBuilderHeader
-            agent_id={agent_id}
-            onClickCreateNew={() => {
-              reset(getDefaultAgentFormValues());
-              setCurrentAgentId(undefined);
-            }}
-            agentQuery={agentQuery}
-            setCurrentAgentId={setCurrentAgentId}
-            createMutation={create}
-          />
+          {activePanel === Panel.builder && (
+            <AgentBuilderHeader
+              agent_id={agent_id}
+              onClickCreateNew={() => {
+                reset(getDefaultAgentFormValues());
+                setCurrentAgentId(undefined);
+              }}
+              agentQuery={agentQuery}
+              setCurrentAgentId={setCurrentAgentId}
+              createMutation={create}
+            />
+          )}
 
           {/* NJ: We use our own custom agent builder header (above)
           <div className="flex w-full flex-wrap gap-2">
