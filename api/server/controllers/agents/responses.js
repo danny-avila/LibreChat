@@ -698,7 +698,7 @@ const createResponse = async (req, res) => {
           messageId: responseId,
           conversationId,
         },
-        user: { id: userId },
+        user: createSafeUser(req.user),
       });
 
       if (!run) {
@@ -872,7 +872,7 @@ const createResponse = async (req, res) => {
           messageId: responseId,
           conversationId,
         },
-        user: { id: userId },
+        user: createSafeUser(req.user),
       });
 
       if (!run) {
