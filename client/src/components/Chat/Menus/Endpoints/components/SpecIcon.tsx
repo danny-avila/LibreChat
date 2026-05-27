@@ -15,7 +15,7 @@ type IconType = (props: IconMapProps) => React.JSX.Element;
 
 const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig }) => {
   const iconURL = getModelSpecIconURL(currentSpec);
-  const { endpoint } = currentSpec.preset;
+  const endpoint = currentSpec.preset?.endpoint;
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
   let Icon: IconType;

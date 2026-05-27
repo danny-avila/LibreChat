@@ -340,7 +340,7 @@ export function mergeQuerySettingsWithSpec(
  * First, the admin defined default, then last selected spec, followed by first spec
  */
 export function getModelSpecIconURL(modelSpec: t.TModelSpec) {
-  return modelSpec.iconURL ?? modelSpec.preset.iconURL ?? modelSpec.preset.endpoint ?? '';
+  return modelSpec.iconURL ?? modelSpec.preset?.iconURL ?? modelSpec.preset?.endpoint ?? '';
 }
 
 /** Gets the default frontend-facing endpoint, dependent on iconURL definition.
