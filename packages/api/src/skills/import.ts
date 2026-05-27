@@ -260,8 +260,7 @@ async function handleMarkdown(
 ) {
   const content = file.buffer.toString('utf-8');
 
-  const { name, description, alwaysApply, invalidBooleans, parseError } =
-    parseFrontmatter(content);
+  const { name, description, alwaysApply, invalidBooleans, parseError } = parseFrontmatter(content);
   if (parseError) {
     return sendFrontmatterParseError(res, parseError);
   }
