@@ -1,27 +1,71 @@
+import getStream from 'get-stream';
 import { logger } from '@librechat/data-schemas';
 import { FileSources, mergeFileConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { ServerRequest } from '~/types';
+import type { ServerRequest, StrategyFunctions } from '~/types';
 import { processTextWithTokenLimit } from '~/utils/text';
 import type { TokenCountFn } from '~/utils/text';
+
+/** Cache for strategy functions to avoid repeated lookups */
+const strategyCache: Record<string, StrategyFunctions> = {};
+
+/**
+ * Fetches text content from cloud storage (S3, Azure, etc.) when not stored in database.
+ * @param file - The file record
+ * @param req - Server request for context
+ * @param getStrategyFunctions - Function to get storage strategy handlers
+ * @returns The text content, or undefined if fetch fails
+ */
+async function fetchTextFromStorage(
+  file: IMongoFile,
+  req: ServerRequest,
+  getStrategyFunctions: (source: string) => StrategyFunctions,
+): Promise<string | undefined> {
+  const source = file.source ?? FileSources.local;
+
+  try {
+    if (!strategyCache[source]) {
+      strategyCache[source] = getStrategyFunctions(source);
+    }
+
+    const { getDownloadStream } = strategyCache[source];
+    if (!getDownloadStream) {
+      logger.warn(`[fetchTextFromStorage] No download stream for source: ${source}`);
+      return undefined;
+    }
+
+    logger.debug(`[fetchTextFromStorage] Fetching file from ${source}: ${file.filepath}`);
+    const stream = await getDownloadStream(req, file.filepath);
+    const buffer = await getStream.buffer(stream);
+    logger.debug(`[fetchTextFromStorage] Successfully fetched file from ${source}: ${file.filename}`);
+    return buffer.toString('utf8');
+  } catch (err) {
+    logger.error(`[fetchTextFromStorage] Failed to fetch file from ${source}: ${file.filepath}`, err);
+    return undefined;
+  }
+}
 
 /**
  * Extracts text context from attachments and returns formatted text.
  * This handles text that was already extracted from files (OCR, transcriptions, document text, etc.)
+ * For cloud storage (S3, etc.), text is fetched on demand from the storage backend.
  * @param params - The parameters object
  * @param params.attachments - Array of file attachments
  * @param params.req - Express request object for config access
  * @param params.tokenCountFn - Function to count tokens in text
+ * @param params.getStrategyFunctions - Function to get storage strategy handlers (required for cloud storage)
  * @returns The formatted file context text, or undefined if no text found
  */
 export async function extractFileContext({
   attachments,
   req,
   tokenCountFn,
+  getStrategyFunctions,
 }: {
   attachments: IMongoFile[];
   req?: ServerRequest;
   tokenCountFn: TokenCountFn;
+  getStrategyFunctions?: (source: string) => StrategyFunctions;
 }): Promise<string | undefined> {
   if (!attachments || attachments.length === 0) {
     return undefined;
@@ -38,10 +82,21 @@ export async function extractFileContext({
   let resultText = '';
 
   for (const file of attachments) {
-    const source = file.source ?? FileSources.local;
-    if (source === FileSources.text && file.text) {
+    let text = file.text;
+
+    // If text not in DB, try to fetch from cloud storage
+    // Files uploaded as text use cloud storage (s3, etc.) when fileStrategies.document is set
+    if (!text && file.filepath && getStrategyFunctions && req) {
+      const source = file.source ?? FileSources.local;
+      // Only fetch from cloud storage backends (not local/text)
+      if (source !== FileSources.local && source !== FileSources.text) {
+        text = await fetchTextFromStorage(file, req, getStrategyFunctions);
+      }
+    }
+
+    if (text) {
       const { text: limitedText, wasTruncated } = await processTextWithTokenLimit({
-        text: file.text,
+        text,
         tokenLimit: fileTokenLimit,
         tokenCountFn,
       });
