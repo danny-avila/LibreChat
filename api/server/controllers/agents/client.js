@@ -57,6 +57,7 @@ const {
   isEphemeralAgentId,
   removeNullishValues,
 } = require('librechat-data-provider');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
@@ -416,6 +417,7 @@ class AgentClient extends BaseClient {
       sharedRunAttachmentIds,
       req: this.options.req,
       tokenCountFn: (text) => countTokens(text),
+      getStrategyFunctions,
     });
 
     /** Preserve canonical pre-format token counts for all history entering graph formatting */

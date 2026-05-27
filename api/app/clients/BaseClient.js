@@ -1197,6 +1197,7 @@ class BaseClient {
       attachments,
       req: this.options?.req,
       tokenCountFn: (text) => countTokens(text),
+      getStrategyFunctions,
     });
 
     if (fileContext) {
