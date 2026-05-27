@@ -7,6 +7,7 @@ import type {
   ISkillSyncStatus,
   SkillSyncStatusInput,
 } from '@librechat/data-schemas';
+import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { createGitHubSkillSyncRunner } from './github';
 import type { GitHubSkillSyncDeps } from './github';
 
@@ -51,6 +52,7 @@ function githubFetch(
             mode: '100644',
             type: 'blob',
             sha: 'skill-md-sha',
+            size: Buffer.byteLength(skillMarkdown),
             url: 'https://api.github.test/blob/skill',
           },
           {
@@ -361,6 +363,7 @@ describe('createGitHubSkillSyncRunner', () => {
       description: 'Old description',
       author: new Types.ObjectId(),
       authorName: 'GitHub Sync',
+      frontmatter: { 'allowed-tools': ['old-tool'] },
       source: 'github',
       sourceMetadata: {
         provider: 'github',
@@ -391,6 +394,7 @@ describe('createGitHubSkillSyncRunner', () => {
         },
       }),
       findSkillBySourceIdentity: jest.fn(async () => existing),
+      fetchFn: githubFetch('---\nname: research\ndescription: Research things\n---\nBody'),
       updateSkill: jest.fn(async ({ update }) => ({
         status: 'updated' as const,
         skill: {
@@ -417,7 +421,171 @@ describe('createGitHubSkillSyncRunner', () => {
             ref: 'release',
             upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
           }),
+          frontmatter: {},
         }),
+      }),
+    );
+  });
+
+  it('excludes child skill packages from parent synced files', async () => {
+    const parentSkillMarkdown = '---\nname: parent\ndescription: Parent skill\n---\nParent';
+    const childSkillMarkdown = '---\nname: child\ndescription: Child skill\n---\nChild';
+    const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/commits/')) {
+        return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
+      }
+      if (url.includes('/git/trees/tree-sha')) {
+        return response({
+          sha: 'tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'skills/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'parent-skill-sha',
+              size: Buffer.byteLength(parentSkillMarkdown),
+              url: 'https://api.github.test/blob/parent-skill',
+            },
+            {
+              path: 'skills/parent.txt',
+              mode: '100644',
+              type: 'blob',
+              sha: 'parent-file-sha',
+              size: 6,
+              url: 'https://api.github.test/blob/parent-file',
+            },
+            {
+              path: 'skills/child/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'child-skill-sha',
+              size: Buffer.byteLength(childSkillMarkdown),
+              url: 'https://api.github.test/blob/child-skill',
+            },
+            {
+              path: 'skills/child/child.txt',
+              mode: '100644',
+              type: 'blob',
+              sha: 'child-file-sha',
+              size: 5,
+              url: 'https://api.github.test/blob/child-file',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/blobs/parent-skill-sha')) {
+        return response(blob(parentSkillMarkdown));
+      }
+      if (url.includes('/git/blobs/parent-file-sha')) {
+        return response(blob('parent'));
+      }
+      if (url.includes('/git/blobs/child-skill-sha')) {
+        return response(blob(childSkillMarkdown));
+      }
+      if (url.includes('/git/blobs/child-file-sha')) {
+        return response(blob('child'));
+      }
+      return response({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+    const deps = createDeps({ fetchFn });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+    const fileCalls = (deps.upsertSkillFile as jest.Mock).mock.calls.map(
+      ([row]: [Parameters<GitHubSkillSyncDeps['upsertSkillFile']>[0]]) => row,
+    );
+
+    expect(result.status).toBe('completed');
+    expect(fileCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relativePath: 'parent.txt',
+          sourceMetadata: expect.objectContaining({
+            upstreamId: 'librechat-skills:LibreChat/skills:skills',
+          }),
+        }),
+        expect.objectContaining({
+          relativePath: 'child.txt',
+          sourceMetadata: expect.objectContaining({
+            upstreamId: 'librechat-skills:LibreChat/skills:skills/child',
+          }),
+        }),
+      ]),
+    );
+    expect(fileCalls).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relativePath: 'child/SKILL.md',
+          sourceMetadata: expect.objectContaining({
+            upstreamId: 'librechat-skills:LibreChat/skills:skills',
+          }),
+        }),
+        expect.objectContaining({
+          relativePath: 'child/child.txt',
+          sourceMetadata: expect.objectContaining({
+            upstreamId: 'librechat-skills:LibreChat/skills:skills',
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects oversized GitHub blobs before downloading file content', async () => {
+    const skillMarkdown = '---\nname: research\ndescription: Research things\n---\nBody';
+    const oversizedBytes = DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes + 1;
+    const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/commits/')) {
+        return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
+      }
+      if (url.includes('/git/trees/tree-sha')) {
+        return response({
+          sha: 'tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'skills/research/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'skill-md-sha',
+              size: Buffer.byteLength(skillMarkdown),
+              url: 'https://api.github.test/blob/skill',
+            },
+            {
+              path: 'skills/research/data.bin',
+              mode: '100644',
+              type: 'blob',
+              sha: 'oversized-file-sha',
+              size: oversizedBytes,
+              url: 'https://api.github.test/blob/oversized',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/blobs/skill-md-sha')) {
+        return response(blob(skillMarkdown));
+      }
+      if (url.includes('/git/blobs/oversized-file-sha')) {
+        throw new Error('oversized blob should not be downloaded');
+      }
+      return response({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+    const deps = createDeps({ fetchFn });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+    const fetchedUrls = (fetchFn as unknown as jest.Mock).mock.calls.map(
+      ([input]: [RequestInfo | URL]) => input.toString(),
+    );
+
+    expect(result.status).toBe('failed');
+    expect(fetchedUrls.some((url) => url.includes('/git/blobs/oversized-file-sha'))).toBe(false);
+    expect(deps.saveBuffer).not.toHaveBeenCalled();
+    expect(deps.listSkillsBySource).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'GITHUB_BLOB_TOO_LARGE',
       }),
     );
   });
