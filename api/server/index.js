@@ -34,9 +34,7 @@ const {
 } = require('~/models');
 const { bootstrapSuperAdmin } = require('./services/AuthService');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
-const {
-  capabilityContextMiddleware
-} = require('./middleware/roles/capabilities');
+const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
