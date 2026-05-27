@@ -42,9 +42,13 @@ const getLogDir = () => {
   return path.join(__dirname, '..', 'logs');
 };
 
-const logDir = getLogDir();
-
-const { NODE_ENV, DEBUG_LOGGING = true, CONSOLE_JSON = false, DEBUG_CONSOLE = false } = process.env;
+const {
+  NODE_ENV,
+  DEBUG_LOGGING = true,
+  CONSOLE_JSON = false,
+  DEBUG_CONSOLE = false,
+  LOG_TO_FILE = true,
+} = process.env;
 
 const useConsoleJson =
   (typeof CONSOLE_JSON === 'string' && CONSOLE_JSON?.toLowerCase() === 'true') ||
@@ -57,6 +61,10 @@ const useDebugConsole =
 const useDebugLogging =
   (typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING?.toLowerCase() === 'true') ||
   DEBUG_LOGGING === true;
+
+const useFileLogging =
+  (typeof LOG_TO_FILE === 'string' && LOG_TO_FILE?.toLowerCase() !== 'false') ||
+  LOG_TO_FILE === true;
 
 const levels = {
   error: 0,
@@ -129,30 +137,36 @@ const fileFormat = winston.format.combine(
   // redactErrors(),
 );
 
-const transports = [
-  new winston.transports.DailyRotateFile({
-    level: 'error',
-    filename: `${logDir}/error-%DATE%.log`,
-    datePattern: 'YYYY-MM-DD',
-    zippedArchive: true,
-    maxSize: '20m',
-    maxFiles: '14d',
-    format: fileFormat,
-  }),
-];
+const transports = [];
 
-if (useDebugLogging) {
+if (useFileLogging) {
+  const logDir = getLogDir();
+
   transports.push(
     new winston.transports.DailyRotateFile({
-      level: 'debug',
-      filename: `${logDir}/debug-%DATE%.log`,
+      level: 'error',
+      filename: `${logDir}/error-%DATE%.log`,
       datePattern: 'YYYY-MM-DD',
       zippedArchive: true,
       maxSize: '20m',
       maxFiles: '14d',
-      format: winston.format.combine(fileFormat, debugTraverse),
+      format: fileFormat,
     }),
   );
+
+  if (useDebugLogging) {
+    transports.push(
+      new winston.transports.DailyRotateFile({
+        level: 'debug',
+        filename: `${logDir}/debug-%DATE%.log`,
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '14d',
+        format: winston.format.combine(fileFormat, debugTraverse),
+      }),
+    );
+  }
 }
 
 const consoleFormat = winston.format.combine(

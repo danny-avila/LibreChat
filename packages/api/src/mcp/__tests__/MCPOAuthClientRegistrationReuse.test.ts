@@ -45,7 +45,7 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('~/auth', () => ({
   createSSRFSafeUndiciConnect: jest.fn(() => undefined),
   resolveHostnameSSRF: jest.fn(async () => false),
-  isSSRFTarget: jest.fn(async () => false),
+  isSSRFTarget: jest.fn(() => false),
   isOAuthUrlAllowed: jest.fn(() => true),
 }));
 
