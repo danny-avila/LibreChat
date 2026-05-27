@@ -10,6 +10,8 @@ import type { Agent } from 'librechat-data-provider';
 // Mock toast context - define this after all mocks
 let mockShowToast: jest.Mock;
 
+jest.mock('react-router-dom');
+
 // Mock notification severity enum before other imports
 jest.mock('~/common/types', () => ({
   NotificationSeverity: {
@@ -99,6 +101,7 @@ jest.mock('~/hooks', () => ({
   useSelectAgent: () => ({ onSelect: jest.fn() }),
   useLocalize: () => (key: string) => key,
   useAuthContext: () => ({ user: { id: 'user-123', role: 'USER' } }),
+  useShowMarketplace: () => false,
 }));
 
 jest.mock('~/hooks/useResourcePermissions', () => ({

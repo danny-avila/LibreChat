@@ -2,7 +2,7 @@
 /* ^ We're not worried about i18n for this app ^ */
 
 import React, { useMemo, useCallback, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { LayoutGrid, Plus } from 'lucide-react';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -27,7 +27,7 @@ import {
 } from '~/data-provider';
 import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
-import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
+import { useSelectAgent, useLocalize, useAuthContext, useShowMarketplace } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
@@ -36,6 +36,7 @@ import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
 import ModelPanel from './ModelPanel';
+import { useNavigate } from 'react-router-dom';
 
 /* Helpers */
 function getUpdateToastMessage(
@@ -217,6 +218,8 @@ export const isAvatarUploadOnlyDirty = (
 
 export default function AgentPanel() {
   const localize = useLocalize();
+  const navigate = useNavigate();
+  const showAgentMarketplace = useShowMarketplace();
   const { user } = useAuthContext();
   const { showToast } = useToastContext();
   const {
@@ -541,7 +544,21 @@ export default function AgentPanel() {
               </div>
             )}
 
-            <hr className="mt-3 w-full border-border-heavy" />
+            {/* NJ: add link to agent marketplace here as well */}
+            {showAgentMarketplace && (
+              <button
+                type="button"
+                className="mx-3 mt-1 w-full rounded px-2 py-2 hover:bg-surface-active-alt"
+                onClick={() => navigate('/agents')}
+              >
+                <div className="flex flex-1 items-center truncate">
+                  <LayoutGrid className="mr-2 h-5 w-5 text-text-primary" aria-hidden="true" />
+                  <span className="truncate">{localize('com_agents_marketplace')}</span>
+                </div>
+              </button>
+            )}
+
+            <hr className="mt-1 w-full border-border-heavy" />
           </div>
           {agentQuery.isInitialLoading && <AgentPanelSkeleton />}
           {!canEditAgent && !agentQuery.isInitialLoading && (
