@@ -91,6 +91,18 @@ ${ARTIFACT_END}`;
     expect(result[0].end).toBe(artifactText.length);
   });
 
+  test('should allow trailing text after an artifact close marker', () => {
+    const artifactText = `${ARTIFACT_START}{identifier="plain" type="text/plain" title="Plain"}
+content
+${ARTIFACT_END}Thanks for reading`;
+    const message = { text: `${artifactText}\n${createArtifactText({ content: 'next' })}` };
+
+    const result = findAllArtifacts(message);
+
+    expect(result).toHaveLength(2);
+    expect(message.text.slice(result[0].end, result[0].end + 18)).toBe('Thanks for reading');
+  });
+
   test('should not end an unclosed artifact at an internal marker in a closed fence', () => {
     const artifactText = `${ARTIFACT_START}{identifier="markdown" type="text/markdown" title="Markdown"}
 \`\`\`markdown
@@ -210,6 +222,27 @@ ${ARTIFACT_END}`;
     expect(result).not.toBeNull();
     expect(result).toContain('Updated');
     expect(result).toContain("console.log('inside');");
+  });
+
+  test('should replace unclosed artifacts with internal markers in fenced content', () => {
+    const original = `before
+\`\`\`markdown
+inside
+:::
+still inside
+\`\`\`
+after`;
+    const artifactText = `${ARTIFACT_START}{identifier="notes" type="text/markdown" title="Notes"}
+${original}`;
+    const message = { text: artifactText };
+    const artifacts = findAllArtifacts(message);
+    const updated = original.replace('after', 'updated');
+
+    const result = replaceArtifactContent(artifactText, artifacts[0], original, updated);
+
+    expect(result).not.toBeNull();
+    expect(result).toContain('updated');
+    expect(result).toContain(':::');
   });
 });
 
