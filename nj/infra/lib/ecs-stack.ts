@@ -217,6 +217,7 @@ export class EcsStack extends cdk.Stack {
       USE_REDIS: 'true',
       REDIS_URI: redisUri,
       REDIS_USE_ALTERNATIVE_DNS_LOOKUP: 'true',
+      REDIS_CLUSTER_SAFE_DELETE: 'true',
 
       ...(!isProd && !mongoSecret ? { MONGO_URI: 'mongodb://mongodb.internal:27017/LibreChat' } : {}),
       ...(!isProd && props.rdsEndpoint && props.rdsPort
