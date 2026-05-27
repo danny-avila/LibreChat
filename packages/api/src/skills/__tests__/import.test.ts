@@ -67,6 +67,20 @@ function mockZipRequest(buffer: Buffer): ImportRequest {
   } as unknown as ImportRequest;
 }
 
+function mockMarkdownRequest(content: string, originalname = 'bad-frontmatter.md'): ImportRequest {
+  return {
+    user: {
+      id: 'user-1',
+      _id: new Types.ObjectId(),
+      username: 'tester',
+    },
+    file: {
+      originalname,
+      buffer: Buffer.from(content),
+    },
+  } as unknown as ImportRequest;
+}
+
 function importSummary(body: unknown): ImportSummary {
   return (body as { _importSummary: ImportSummary })._importSummary;
 }
@@ -87,6 +101,12 @@ async function zipWithAdditionalFiles(fileCount: number, fileBytes: number): Pro
   for (let i = 0; i < fileCount; i++) {
     zip.file(`files/${i}.txt`, content);
   }
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+async function zipWithSkillMarkdown(skillMarkdown: string): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file('SKILL.md', skillMarkdown);
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
@@ -209,11 +229,14 @@ describe('parseFrontmatter', () => {
 
   it('returns empty fields when frontmatter YAML is malformed', () => {
     const raw = `---\nname: [\n---\n\nbody`;
-    expect(parseFrontmatter(raw)).toEqual({
-      name: '',
-      description: '',
-      invalidBooleans: [],
-    });
+    expect(parseFrontmatter(raw)).toEqual(
+      expect.objectContaining({
+        name: '',
+        description: '',
+        invalidBooleans: [],
+        parseError: expect.any(String),
+      }),
+    );
   });
 
   it('ignores always-apply appearing outside the frontmatter block', () => {
@@ -298,5 +321,50 @@ describe('createImportHandler', () => {
     expect(summary.filesSucceeded).toBe(0);
     expect(summary.filesFailed).toBe(3);
     expect(summary.errors).toHaveLength(3);
+  });
+
+  it('rejects malformed YAML frontmatter in markdown imports', async () => {
+    const deps = mockImportDeps();
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+
+    await handler(mockMarkdownRequest('---\nname: [\n---\n\nbody'), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        error: 'Validation failed',
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            field: 'frontmatter',
+            code: 'INVALID_YAML',
+          }),
+        ]),
+      }),
+    );
+    expect(deps.createSkill).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed YAML frontmatter in archive imports', async () => {
+    const deps = mockImportDeps();
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+    const buffer = await zipWithSkillMarkdown('---\nname: [\n---\n\nbody');
+
+    await handler(mockZipRequest(buffer), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        error: 'Validation failed',
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            field: 'frontmatter',
+            code: 'INVALID_YAML',
+          }),
+        ]),
+      }),
+    );
+    expect(deps.createSkill).not.toHaveBeenCalled();
   });
 });
