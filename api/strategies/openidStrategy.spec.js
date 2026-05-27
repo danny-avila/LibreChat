@@ -2101,3 +2101,61 @@ describe('setupOpenId', () => {
     });
   });
 });
+
+describe('getRoleSource', () => {
+  const { getRoleSource } = require('./openidStrategy');
+  const { logger } = require('@librechat/data-schemas');
+
+  const accessClaims = { roles: ['from-access'] };
+  const idClaims = { roles: ['from-id'] };
+  const userinfo = { roles: ['from-userinfo'] };
+  const tokenset = { access_token: 'access.jwt', id_token: 'id.jwt' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jwtDecode.mockImplementation((token) => {
+      if (token === 'access.jwt') return accessClaims;
+      if (token === 'id.jwt') return idClaims;
+      return {};
+    });
+  });
+
+  it.each([
+    ['access', accessClaims],
+    ['id', idClaims],
+    ['userinfo', userinfo],
+  ])('returns the expected source object for kind=%s', (kind, expected) => {
+    expect(getRoleSource(kind, 'required role', tokenset, userinfo)).toEqual(expected);
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['empty string', ''],
+    ['unknown kind', 'bogus'],
+  ])('throws and logs for invalid kind: %s', (_name, kind) => {
+    expect(() => getRoleSource(kind, 'required role', tokenset, userinfo)).toThrow(
+      'Invalid required role token kind',
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(`Invalid required role token kind: ${kind}`),
+    );
+  });
+
+  it('uses the provided label in the error message and thrown error', () => {
+    expect(() => getRoleSource('bogus', 'admin role', tokenset, userinfo)).toThrow(
+      'Invalid admin role token kind',
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Invalid admin role token kind: bogus'),
+    );
+  });
+
+  it('propagates jwtDecode errors when the requested token is missing', () => {
+    jwtDecode.mockImplementation(() => {
+      throw new Error('Invalid token specified');
+    });
+    expect(() => getRoleSource('access', 'required role', {}, userinfo)).toThrow(
+      'Invalid token specified',
+    );
+  });
+});
