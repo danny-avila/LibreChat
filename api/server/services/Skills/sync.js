@@ -32,7 +32,7 @@ async function loadCurrentAppConfig() {
 
 async function getSyncConfig() {
   const appConfig = await loadCurrentAppConfig();
-  return appConfig?.skillSync ?? appConfig?.config?.skillSync;
+  return appConfig?.skillSync;
 }
 
 async function resolveSkillStorage({ isImage = false } = {}) {
@@ -45,13 +45,14 @@ async function resolveSkillStorage({ isImage = false } = {}) {
   return { source, saveBuffer: strategy.saveBuffer };
 }
 
-async function getSyntheticReq() {
+async function getSyntheticReq({ userId = SYSTEM_USER_ID, tenantId } = {}) {
   const appConfig = await loadCurrentAppConfig();
   return {
     config: appConfig,
     user: {
-      id: SYSTEM_USER_ID,
-      _id: SYSTEM_USER_ID,
+      id: userId,
+      _id: userId,
+      tenantId,
     },
   };
 }
@@ -98,7 +99,13 @@ function createRunner() {
       if (!strategy.deleteFile) {
         return;
       }
-      await strategy.deleteFile(await getSyntheticReq(), file);
+      await strategy.deleteFile(
+        await getSyntheticReq({
+          userId: file.user?.toString?.() ?? file.user ?? SYSTEM_USER_ID,
+          tenantId: file.tenantId,
+        }),
+        file,
+      );
     },
   });
   return {
