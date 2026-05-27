@@ -30,7 +30,7 @@ function getExtension(mimetype: string): string {
   }
 
   // @ts-ignore - LibreChat is using the wrong TS specs w/ their version of mime
-  return mime.getExtension(mimetype) || '';
+  return mime.getExtension(mimetype) ?? 'file';
 }
 
 const TYPE_TO_CLASS: Record<string, string> = {
@@ -61,6 +61,7 @@ export default function FileIcon({ file }: { file: TFile }) {
         className,
         textSizeClass,
       )}
+      aria-hidden="true"
     >
       {extension.toLocaleUpperCase('en-US')}
     </div>
