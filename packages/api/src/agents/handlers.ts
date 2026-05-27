@@ -154,8 +154,195 @@ export interface ToolExecuteOptions {
 const MAX_READABLE_BYTES = 262_144;
 const MAX_BINARY_BYTES = 5 * 1024 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
+const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
+const MAX_TOOL_ERROR_STACK_CHARS = 4_000;
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+type ToolInputSchemaKind = {
+  object: boolean;
+  string: boolean;
+};
+
+function truncateMiddle(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  const indicator = `\n\n... [truncated: ${value.length} chars exceeded ${maxChars} limit] ...\n\n`;
+  const available = maxChars - indicator.length;
+  if (available <= 0) {
+    return value.slice(0, maxChars);
+  }
+
+  const headSize = Math.ceil(available * 0.7);
+  const tailSize = available - headSize;
+  return value.slice(0, headSize) + indicator + value.slice(value.length - tailSize);
+}
+
+function stringifyThrownValue(error: unknown): string {
+  try {
+    return String(error);
+  } catch {
+    return '[Thrown value could not be converted to string]';
+  }
+}
+
+function getThrownValueMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error != null && typeof error === 'object') {
+    try {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === 'string') {
+        return message;
+      }
+      if (message != null) {
+        return stringifyThrownValue(message);
+      }
+    } catch {
+      // Fall through to whole-value stringification.
+    }
+  }
+
+  return stringifyThrownValue(error);
+}
+
+function getSafeToolError(error: unknown): {
+  message: string;
+  logContext: Record<string, unknown>;
+} {
+  const rawMessage = getThrownValueMessage(error);
+  const message = truncateMiddle(rawMessage, MAX_TOOL_ERROR_MESSAGE_CHARS);
+  const stack = error instanceof Error && error.stack ? error.stack : undefined;
+
+  return {
+    message,
+    logContext: {
+      name: error instanceof Error ? error.name : typeof error,
+      message,
+      messageLength: rawMessage.length,
+      messageTruncated: message.length !== rawMessage.length,
+      stack: stack ? truncateMiddle(stack, MAX_TOOL_ERROR_STACK_CHARS) : undefined,
+    },
+  };
+}
+
+function mergeSchemaKind(target: ToolInputSchemaKind, source: ToolInputSchemaKind): void {
+  target.object ||= source.object;
+  target.string ||= source.string;
+}
+
+function detectToolInputSchemaKind(schema: unknown): ToolInputSchemaKind {
+  const kind: ToolInputSchemaKind = { object: false, string: false };
+
+  if (!schema || typeof schema !== 'object') {
+    return kind;
+  }
+
+  const jsonSchemaType = (schema as { type?: unknown }).type;
+  if (jsonSchemaType === 'object') {
+    kind.object = true;
+  } else if (jsonSchemaType === 'string') {
+    kind.string = true;
+  } else if (Array.isArray(jsonSchemaType)) {
+    kind.object = jsonSchemaType.includes('object');
+    kind.string = jsonSchemaType.includes('string');
+  }
+
+  for (const compositeKey of ['anyOf', 'oneOf', 'allOf'] as const) {
+    const options = (schema as Record<typeof compositeKey, unknown>)[compositeKey];
+    if (Array.isArray(options)) {
+      for (const option of options) {
+        mergeSchemaKind(kind, detectToolInputSchemaKind(option));
+      }
+    }
+  }
+
+  const zodDef = (schema as { _def?: unknown })._def;
+  if (!zodDef || typeof zodDef !== 'object') {
+    return kind;
+  }
+
+  const zodType = (zodDef as { type?: unknown; typeName?: unknown }).type;
+  const zodTypeName = (zodDef as { type?: unknown; typeName?: unknown }).typeName;
+
+  if (zodType === 'object' || zodTypeName === 'ZodObject') {
+    kind.object = true;
+  } else if (zodType === 'string' || zodTypeName === 'ZodString') {
+    kind.string = true;
+  }
+
+  const innerSchema =
+    (zodDef as { innerType?: unknown; schema?: unknown }).innerType ??
+    (zodDef as { schema?: unknown }).schema;
+  if (innerSchema) {
+    mergeSchemaKind(kind, detectToolInputSchemaKind(innerSchema));
+  }
+
+  const zodOptions = (zodDef as { options?: unknown }).options;
+  if (Array.isArray(zodOptions)) {
+    for (const option of zodOptions) {
+      mergeSchemaKind(kind, detectToolInputSchemaKind(option));
+    }
+  }
+
+  return kind;
+}
+
+function getToolInputSchemaKind(tool: StructuredToolInterface): ToolInputSchemaKind {
+  const constructorName = (tool as { constructor?: { name?: string } }).constructor?.name;
+  if (constructorName === 'DynamicTool') {
+    return { object: false, string: true };
+  }
+
+  return detectToolInputSchemaKind((tool as { schema?: unknown }).schema);
+}
+
+function normalizeToolInvokeArgs(args: unknown, tool: StructuredToolInterface): unknown {
+  const schemaKind = getToolInputSchemaKind(tool);
+
+  if (typeof args !== 'string') {
+    if (!schemaKind.string || schemaKind.object) {
+      return args;
+    }
+
+    const inputValue = (args as { input?: unknown })?.input;
+    return typeof inputValue === 'string' ? args : JSON.stringify(args);
+  }
+
+  if (!schemaKind.object || schemaKind.string) {
+    return args;
+  }
+
+  const trimmed = args.trim();
+  if (!trimmed.startsWith('{')) {
+    return args;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {
+    return args;
+  }
+
+  return args;
+}
+
+function getValueShape(value: unknown): string {
+  if (value === null) {
+    return 'null';
+  }
+  if (Array.isArray(value)) {
+    return 'array';
+  }
+  return typeof value;
+}
 
 function addLineNumbers(content: string): string {
   const lines = content.split('\n');
@@ -1111,11 +1298,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                        * call. Almost always means the seeding chain
                        * (primeCodeFiles → initialSessions →
                        * CodeSessionContext) dropped the file upstream.
-                       * `session_id` is still emitted; agents falls
-                       * through to the `/files/<sid>` legacy fetch
-                       * which is post-cutover broken (returns 400).
-                       * Pair with `[primeCodeFiles]` traces below to
-                       * locate the layer that lost the ref. */
+                       * `session_id` is still emitted for continuity, but
+                       * concrete file refs must arrive through
+                       * `_injected_files`; agents no longer falls back to
+                       * `/files/<sid>`. Pair with `[primeCodeFiles]`
+                       * traces below to locate the layer that lost the ref. */
                       logger.warn(
                         `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
                         {
@@ -1150,7 +1337,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     }
                   }
 
-                  const result = await tool.invoke(tc.args, {
+                  const result = await tool.invoke(normalizeToolInvokeArgs(tc.args, tool), {
                     toolCall: toolCallConfig,
                     configurable: mergedConfigurable,
                     metadata,
@@ -1195,13 +1382,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     status: 'success' as const,
                   };
                 } catch (toolError) {
-                  const error = toolError as Error;
-                  logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error:`, error);
+                  const { message, logContext } = getSafeToolError(toolError);
+                  logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                    ...logContext,
+                    toolCallArgsShape: getValueShape(tc.args),
+                    toolInputSchemaKind: getToolInputSchemaKind(tool),
+                  });
                   return {
                     toolCallId: tc.id,
                     status: 'error' as const,
                     content: '',
-                    errorMessage: error.message,
+                    errorMessage: message,
                   };
                 }
               }),

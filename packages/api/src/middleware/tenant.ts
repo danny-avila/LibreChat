@@ -20,6 +20,7 @@ type ContextRequest = {
 };
 
 const REQUEST_ID_HEADERS = ['x-request-id', 'x-correlation-id'] as const;
+const SYSTEM_TENANT_REJECTION_MESSAGE = 'System tenant is not allowed for request-scoped routes';
 
 let _checkedThread = false;
 
@@ -119,13 +120,20 @@ export function tenantContextMiddleware(
 
   const user = req.user;
   const context = buildTenantContext(req);
+  const { tenantId } = context;
+
+  if (tenantId === SYSTEM_TENANT_ID) {
+    logger.warn('[tenantContextMiddleware] Rejected system tenant for request route', {
+      path: req.path,
+    });
+    res.status(403).json({ error: SYSTEM_TENANT_REJECTION_MESSAGE });
+    return;
+  }
 
   if (!user) {
     runWithTenantContext(context, next);
     return;
   }
-
-  const { tenantId } = context;
 
   if (!tenantId) {
     if (isStrict()) {
@@ -252,11 +260,7 @@ export function restoreTenantContextFromReq(
     logger.warn('[restoreTenantContextFromReq] Rejected system tenant for request route', {
       path: req.path,
     });
-    return rejectRequestWithUploadCleanup(
-      req,
-      res,
-      'System tenant is not allowed for request-scoped routes',
-    );
+    return rejectRequestWithUploadCleanup(req, res, SYSTEM_TENANT_REJECTION_MESSAGE);
   }
 
   const currentContext = tenantStorage.getStore();
