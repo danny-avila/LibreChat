@@ -135,6 +135,13 @@ describe('parseFrontmatter', () => {
     expect(result.invalidBooleans).toEqual(['always-apply']);
   });
 
+  it.each(['null', '~'])('flags always-apply: %s as invalid', (value) => {
+    const raw = `---\nname: n\ndescription: d\nalways-apply: ${value}\n---\n\nbody`;
+    const result = parseFrontmatter(raw);
+    expect(result.alwaysApply).toBeUndefined();
+    expect(result.invalidBooleans).toEqual(['always-apply']);
+  });
+
   it('does not flag always-apply when the key is absent', () => {
     const raw = `---\nname: n\ndescription: d\n---\n\nbody`;
     expect(parseFrontmatter(raw).invalidBooleans).toEqual([]);

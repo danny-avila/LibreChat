@@ -6,6 +6,7 @@ const {
 } = require('@librechat/api');
 const { runAsSystem } = require('@librechat/data-schemas');
 const db = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
 const { grantPermission } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
@@ -16,12 +17,27 @@ let appConfigRef;
 let runner;
 let scheduler;
 
-function getSyncConfig() {
-  return appConfigRef?.skillSync ?? appConfigRef?.config?.skillSync;
+async function loadCurrentAppConfig() {
+  try {
+    const appConfig = await getAppConfig({ baseOnly: true });
+    appConfigRef = appConfig;
+    return appConfig;
+  } catch (error) {
+    if (appConfigRef) {
+      return appConfigRef;
+    }
+    throw error;
+  }
 }
 
-function resolveSkillStorage({ isImage = false } = {}) {
-  const source = getFileStrategy(appConfigRef, { context: FileContext.skill_file, isImage });
+async function getSyncConfig() {
+  const appConfig = await loadCurrentAppConfig();
+  return appConfig?.skillSync ?? appConfig?.config?.skillSync;
+}
+
+async function resolveSkillStorage({ isImage = false } = {}) {
+  const appConfig = await loadCurrentAppConfig();
+  const source = getFileStrategy(appConfig, { context: FileContext.skill_file, isImage });
   const strategy = getStrategyFunctions(source);
   if (!strategy.saveBuffer) {
     throw new Error(`Storage backend "${source}" does not support file writes`);
@@ -29,9 +45,10 @@ function resolveSkillStorage({ isImage = false } = {}) {
   return { source, saveBuffer: strategy.saveBuffer };
 }
 
-function getSyntheticReq() {
+async function getSyntheticReq() {
+  const appConfig = await loadCurrentAppConfig();
   return {
-    config: appConfigRef,
+    config: appConfig,
     user: {
       id: SYSTEM_USER_ID,
       _id: SYSTEM_USER_ID,
@@ -61,10 +78,10 @@ function createRunner() {
     deleteSkillFile: db.deleteSkillFile,
     deleteSkill: db.deleteSkill,
     grantPermission,
-    saveBuffer: async ({ buffer, fileName, basePath, isImage, tenantId }) => {
-      const storage = resolveSkillStorage({ isImage });
+    saveBuffer: async ({ userId, buffer, fileName, basePath, isImage, tenantId }) => {
+      const storage = await resolveSkillStorage({ isImage });
       const filepath = await storage.saveBuffer({
-        userId: SYSTEM_USER_ID,
+        userId: userId ?? SYSTEM_USER_ID,
         buffer,
         fileName,
         basePath,
@@ -81,7 +98,7 @@ function createRunner() {
       if (!strategy.deleteFile) {
         return;
       }
-      await strategy.deleteFile(getSyntheticReq(), file);
+      await strategy.deleteFile(await getSyntheticReq(), file);
     },
   });
   return {

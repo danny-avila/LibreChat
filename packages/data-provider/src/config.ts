@@ -245,6 +245,9 @@ const skillSyncIdentifierSchema = z
       'must start with a letter or digit and contain only letters, digits, underscores, or hyphens',
   });
 
+export const SKILL_SYNC_MIN_INTERVAL_MINUTES = 5;
+export const SKILL_SYNC_MAX_INTERVAL_MINUTES = Math.floor(2147483647 / 60_000);
+
 const skillSyncGitHubOwnerSchema = z
   .string()
   .min(1)
@@ -338,7 +341,12 @@ export const skillSyncConfigSchema = z
     github: z
       .object({
         enabled: z.boolean().default(false),
-        intervalMinutes: z.number().int().min(5).default(60),
+        intervalMinutes: z
+          .number()
+          .int()
+          .min(SKILL_SYNC_MIN_INTERVAL_MINUTES)
+          .max(SKILL_SYNC_MAX_INTERVAL_MINUTES)
+          .default(60),
         runOnStartup: z.boolean().default(false),
         sources: z.array(skillSyncGitHubSourceSchema).default([]),
       })
