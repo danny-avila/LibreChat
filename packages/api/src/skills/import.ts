@@ -12,22 +12,14 @@ import type {
 } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { Types } from 'mongoose';
+import type { ImportLimits } from './limits';
 import { resolveRequestTenantId } from '~/middleware/tenant';
+import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
 import { parseSkillMarkdown } from './parse';
 
-/** Security limits for zip processing. */
-const MAX_ZIP_BYTES = 50 * 1024 * 1024; // 50 MB compressed
-const MAX_DECOMPRESSED_BYTES = 500 * 1024 * 1024; // 500 MB total decompressed
-const MAX_ENTRIES = 500;
-const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const SKILL_MD = 'SKILL.md';
 
-export interface ImportLimits {
-  maxZipBytes: number;
-  maxDecompressedBytes: number;
-  maxEntries: number;
-  maxSingleFileBytes: number;
-}
+export type { ImportLimits } from './limits';
 
 /**
  * YAML frontmatter parser — extracts the first-class fields LibreChat
@@ -190,10 +182,12 @@ export function createImportHandler(deps: ImportSkillDeps) {
 
 function getImportLimits(limits?: Partial<ImportLimits>): ImportLimits {
   return {
-    maxZipBytes: limits?.maxZipBytes ?? MAX_ZIP_BYTES,
-    maxDecompressedBytes: limits?.maxDecompressedBytes ?? MAX_DECOMPRESSED_BYTES,
-    maxEntries: limits?.maxEntries ?? MAX_ENTRIES,
-    maxSingleFileBytes: limits?.maxSingleFileBytes ?? MAX_SINGLE_FILE_BYTES,
+    maxZipBytes: limits?.maxZipBytes ?? DEFAULT_SKILL_IMPORT_LIMITS.maxZipBytes,
+    maxDecompressedBytes:
+      limits?.maxDecompressedBytes ?? DEFAULT_SKILL_IMPORT_LIMITS.maxDecompressedBytes,
+    maxEntries: limits?.maxEntries ?? DEFAULT_SKILL_IMPORT_LIMITS.maxEntries,
+    maxSingleFileBytes:
+      limits?.maxSingleFileBytes ?? DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes,
   };
 }
 
