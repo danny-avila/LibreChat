@@ -1,8 +1,4 @@
-/* eslint-disable i18next/no-literal-string */
-/* ^ We're not worried about i18n for this app ^ */
-
 import React, { useMemo, useCallback, useRef, useState } from 'react';
-import { LayoutGrid, Plus } from 'lucide-react';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -27,7 +23,7 @@ import {
 } from '~/data-provider';
 import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
-import { useSelectAgent, useLocalize, useAuthContext, useShowMarketplace } from '~/hooks';
+import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
@@ -36,8 +32,7 @@ import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
 import ModelPanel from './ModelPanel';
-import { useNavigate } from 'react-router-dom';
-import ManageAgentDropdown from '~/nj/components/Agents/ManageAgentDropdown';
+import AgentBuilderHeader from '~/nj/components/Agents/AgentBuilderHeader';
 
 /* Helpers */
 function getUpdateToastMessage(
@@ -219,8 +214,6 @@ export const isAvatarUploadOnlyDirty = (
 
 export default function AgentPanel() {
   const localize = useLocalize();
-  const navigate = useNavigate();
-  const showAgentMarketplace = useShowMarketplace();
   const { user } = useAuthContext();
   const { showToast } = useToastContext();
   const {
@@ -497,15 +490,20 @@ export default function AgentPanel() {
         aria-label="Agent configuration form"
       >
         <div className="flex-1">
-          <div className="flex w-full flex-wrap gap-2">
-            {/* NJ custom agent builder header */}
-            <div className="mx-4 mb-1 w-full">
-              <h2 className="text-xl font-bold">Agent Builder</h2>
-              <hr className="my-4 border-border-medium" />
-              <span className="text-sm font-semibold">Select an agent to edit</span>
-            </div>
+          <AgentBuilderHeader
+            agent_id={agent_id}
+            onClickCreateNew={() => {
+              reset(getDefaultAgentFormValues());
+              setCurrentAgentId(undefined);
+            }}
+            agentQuery={agentQuery}
+            setCurrentAgentId={setCurrentAgentId}
+            createMutation={create}
+          />
 
-            <div className="mx-4 w-full">
+          {/* NJ: We use our own custom agent builder header (above)
+          <div className="flex w-full flex-wrap gap-2">
+            <div className="w-full">
               <AgentSelect
                 createMutation={create}
                 agentQuery={agentQuery}
@@ -514,7 +512,7 @@ export default function AgentPanel() {
               />
             </div>
             {agent_id && (
-              <div className="mx-4 mt-2 flex w-full gap-2">
+              <div className="flex w-full gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -529,7 +527,6 @@ export default function AgentPanel() {
                   <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
                   {localize('com_ui_create_new_agent')}
                 </Button>
-                {/* NJ: We purposefully disable the "select" button because we put it in the footer
                 <Button
                   variant="submit"
                   disabled={isEphemeralAgent(agent_id) || agentQuery.isInitialLoading}
@@ -541,39 +538,10 @@ export default function AgentPanel() {
                 >
                   {localize('com_ui_select')}
                 </Button>
-                */}
               </div>
             )}
-
-            {/* NJ: add link to agent marketplace here as well */}
-            {showAgentMarketplace && (
-              <div className="mx-3 mt-1 flex w-full flex-row items-center justify-between">
-                <button
-                  type="button"
-                  className="rounded px-2 py-2 hover:bg-surface-active-alt"
-                  onClick={() => navigate('/agents')}
-                >
-                  <div className="flex flex-1 items-center truncate">
-                    <LayoutGrid className="mr-2 h-5 w-5 text-text-primary" aria-hidden="true" />
-                    <span className="truncate text-sm font-semibold">
-                      {localize('com_agents_marketplace')}
-                    </span>
-                  </div>
-                </button>
-
-                {/* NJ: We moved duplicate / delete to the top of the agent builder */}
-                {agent_id && (
-                  <ManageAgentDropdown
-                    agent={agentQuery.data}
-                    createMutation={create}
-                    setCurrentAgentId={setCurrentAgentId}
-                  />
-                )}
-              </div>
-            )}
-
-            <hr className="mt-1 w-full border-border-heavy" />
           </div>
+          */}
           {agentQuery.isInitialLoading && <AgentPanelSkeleton />}
           {!canEditAgent && !agentQuery.isInitialLoading && (
             <div className="flex h-[30vh] w-full items-center justify-center">
