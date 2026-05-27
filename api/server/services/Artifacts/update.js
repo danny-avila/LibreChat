@@ -1,6 +1,166 @@
 const ARTIFACT_START = ':::artifact';
 const ARTIFACT_END = ':::';
 
+const getLineEnd = (text, start) => {
+  const index = text.indexOf('\n', start);
+  return index === -1 ? text.length : index;
+};
+
+const getNextLineStart = (text, lineEnd) => (lineEnd >= text.length ? text.length : lineEnd + 1);
+
+const getCloseLineEnd = (text, lineStart, lineEnd) => {
+  const line = text.slice(lineStart, lineEnd);
+  return line.trim() === ARTIFACT_END ? lineEnd : -1;
+};
+
+const getCodeFence = (line) => {
+  const match = line.trimStart().match(/^(`{3,}|~{3,})/);
+  if (!match) {
+    return null;
+  }
+  return {
+    marker: match[1][0],
+    length: match[1].length,
+  };
+};
+
+const isClosingCodeFence = (line, openingFence) => {
+  const closePattern = new RegExp(`^\\${openingFence.marker}{${openingFence.length},}\\s*$`);
+  return closePattern.test(line.trim());
+};
+
+const findArtifactEnd = (text, start) => {
+  const openingLineEnd = getLineEnd(text, start);
+  let currentIndex = getNextLineStart(text, openingLineEnd);
+  let codeFence = null;
+  let fallbackEnd = -1;
+
+  while (currentIndex < text.length) {
+    const lineEnd = getLineEnd(text, currentIndex);
+    const line = text.slice(currentIndex, lineEnd);
+    const closeLineEnd = getCloseLineEnd(text, currentIndex, lineEnd);
+
+    if (closeLineEnd !== -1) {
+      if (!codeFence) {
+        return closeLineEnd;
+      }
+      fallbackEnd = closeLineEnd;
+    }
+
+    const fence = getCodeFence(line);
+    if (fence && !codeFence) {
+      codeFence = fence;
+    } else if (codeFence && isClosingCodeFence(line, codeFence)) {
+      codeFence = null;
+    }
+
+    currentIndex = getNextLineStart(text, lineEnd);
+  }
+
+  return fallbackEnd !== -1 ? fallbackEnd : text.length;
+};
+
+const findLastArtifactCloseStart = (text, start, end) => {
+  let currentIndex = start;
+  let closeStart = -1;
+
+  while (currentIndex < end) {
+    const lineEnd = getLineEnd(text, currentIndex);
+    if (getCloseLineEnd(text, currentIndex, lineEnd) !== -1) {
+      closeStart = currentIndex;
+    }
+    currentIndex = getNextLineStart(text, lineEnd);
+  }
+
+  return closeStart;
+};
+
+const getOpeningCodeFence = (text, contentStart, contentEnd) => {
+  const content = text.slice(contentStart, contentEnd);
+  const firstContentMatch = content.match(/\S/);
+  if (!firstContentMatch) {
+    return null;
+  }
+
+  const fenceStart = contentStart + firstContentMatch.index;
+  const lineEnd = getLineEnd(text, fenceStart);
+  const line = text.slice(fenceStart, lineEnd);
+  const fence = getCodeFence(line);
+
+  if (!fence || !line.trimStart().startsWith(fence.marker.repeat(fence.length))) {
+    return null;
+  }
+
+  return {
+    ...fence,
+    contentStart: getNextLineStart(text, lineEnd),
+  };
+};
+
+const findClosingCodeFenceStart = (text, start, end, openingFence) => {
+  let currentIndex = start;
+
+  while (currentIndex < end) {
+    const lineEnd = getLineEnd(text, currentIndex);
+    const line = text.slice(currentIndex, lineEnd);
+
+    if (isClosingCodeFence(line, openingFence)) {
+      return currentIndex;
+    }
+
+    currentIndex = getNextLineStart(text, lineEnd);
+  }
+
+  return -1;
+};
+
+const getSearchRange = (artifactContent) => {
+  const openingLineEnd = getLineEnd(artifactContent, artifactContent.indexOf(ARTIFACT_START));
+  if (openingLineEnd >= artifactContent.length) {
+    return null;
+  }
+
+  const contentStart = getNextLineStart(artifactContent, openingLineEnd);
+  const lastCloseStart = findLastArtifactCloseStart(
+    artifactContent,
+    contentStart,
+    artifactContent.length,
+  );
+  const contentEnd = lastCloseStart === -1 ? artifactContent.length : lastCloseStart;
+  const openingFence = getOpeningCodeFence(artifactContent, contentStart, contentEnd);
+
+  if (!openingFence) {
+    return { searchStart: contentStart, searchEnd: contentEnd };
+  }
+
+  const closingFenceStart = findClosingCodeFenceStart(
+    artifactContent,
+    openingFence.contentStart,
+    contentEnd,
+    openingFence,
+  );
+
+  if (closingFenceStart === -1) {
+    return { searchStart: openingFence.contentStart, searchEnd: contentEnd };
+  }
+
+  const closingLineEnd = getLineEnd(artifactContent, closingFenceStart);
+  const trailingContent = artifactContent.slice(closingLineEnd, contentEnd);
+  if (trailingContent.trim().length > 0) {
+    return { searchStart: contentStart, searchEnd: contentEnd };
+  }
+
+  const searchEnd =
+    artifactContent[closingFenceStart - 1] === '\n' ? closingFenceStart - 1 : closingFenceStart;
+  return { searchStart: openingFence.contentStart, searchEnd };
+};
+
+const replaceRange = (originalText, start, end, updated) => {
+  const endText = originalText.substring(end);
+  const separator = endText.startsWith('\n') || updated.endsWith('\n') ? '' : '\n';
+  return originalText.substring(0, start) + updated + separator + endText;
+};
+
 /**
  * Find all artifact boundaries in the message
  * @param {TMessage} message
@@ -17,16 +177,16 @@ const findAllArtifacts = (message) => {
         let start = part.text.indexOf(ARTIFACT_START, currentIndex);
 
         while (start !== -1) {
-          const end = part.text.indexOf(ARTIFACT_END, start + ARTIFACT_START.length);
+          const end = findArtifactEnd(part.text, start);
           artifacts.push({
             start,
-            end: end !== -1 ? end + ARTIFACT_END.length : part.text.length,
+            end,
             source: 'content',
             partIndex,
             text: part.text,
           });
 
-          currentIndex = end !== -1 ? end + ARTIFACT_END.length : part.text.length;
+          currentIndex = end;
           start = part.text.indexOf(ARTIFACT_START, currentIndex);
         }
       }
@@ -39,15 +199,15 @@ const findAllArtifacts = (message) => {
     let start = message.text.indexOf(ARTIFACT_START, currentIndex);
 
     while (start !== -1) {
-      const end = message.text.indexOf(ARTIFACT_END, start + ARTIFACT_START.length);
+      const end = findArtifactEnd(message.text, start);
       artifacts.push({
         start,
-        end: end !== -1 ? end + ARTIFACT_END.length : message.text.length,
+        end,
         source: 'text',
         text: message.text,
       });
 
-      currentIndex = end !== -1 ? end + ARTIFACT_END.length : message.text.length;
+      currentIndex = end;
       start = message.text.indexOf(ARTIFACT_START, currentIndex);
     }
   }
@@ -55,75 +215,34 @@ const findAllArtifacts = (message) => {
   return artifacts;
 };
 
-const replaceArtifactContent = (originalText, artifact, original, updated) => {
+const replaceArtifactContent = (originalText, artifact, original, updated, options = {}) => {
   const artifactContent = artifact.text.substring(artifact.start, artifact.end);
-
-  // Find boundaries between ARTIFACT_START and ARTIFACT_END
-  const contentStart = artifactContent.indexOf('\n', artifactContent.indexOf(ARTIFACT_START)) + 1;
-  let contentEnd = artifactContent.lastIndexOf(ARTIFACT_END);
-
-  // Special case: if contentEnd is 0, it means the only ::: found is at the start of :::artifact
-  // This indicates an incomplete artifact (no closing :::)
-  // We need to check that it's exactly at position 0 (the beginning of artifactContent)
-  if (contentEnd === 0 && artifactContent.indexOf(ARTIFACT_START) === 0) {
-    contentEnd = artifactContent.length;
-  }
-
-  if (contentStart === -1 || contentEnd === -1) {
+  const range = getSearchRange(artifactContent);
+  if (!range) {
     return null;
   }
 
-  // Check if there are code blocks - handle both ```\n and ```lang\n formats
-  let codeBlockStart = artifactContent.indexOf('```', contentStart);
-  const codeBlockEnd = artifactContent.lastIndexOf('\n```', contentEnd);
-
-  // If we found opening backticks, find the actual newline (skipping any language identifier)
-  if (codeBlockStart !== -1) {
-    const newlineAfterBackticks = artifactContent.indexOf('\n', codeBlockStart);
-    if (newlineAfterBackticks !== -1 && newlineAfterBackticks < contentEnd) {
-      codeBlockStart = newlineAfterBackticks;
-    } else {
-      codeBlockStart = -1;
-    }
-  }
-
-  // Determine where to look for the original content
-  let searchStart, searchEnd;
-  if (codeBlockStart !== -1) {
-    // Code block starts - searchStart is right after the newline following ```[lang]
-    searchStart = codeBlockStart + 1; // after the newline
-
-    if (codeBlockEnd !== -1 && codeBlockEnd > codeBlockStart) {
-      // Code block has proper ending
-      searchEnd = codeBlockEnd;
-    } else {
-      // No closing backticks found or they're before the opening (shouldn't happen)
-      // This might be an incomplete artifact - search to contentEnd
-      searchEnd = contentEnd;
-    }
-  } else {
-    // No code blocks at all
-    searchStart = contentStart;
-    searchEnd = contentEnd;
-  }
+  const { searchStart, searchEnd } = range;
 
   const innerContent = artifactContent.substring(searchStart, searchEnd);
-  // Remove trailing newline from original for comparison
   const originalTrimmed = original.replace(/\n$/, '');
-  const relativeIndex = innerContent.indexOf(originalTrimmed);
+  const relativeIndex =
+    originalTrimmed === '' && innerContent.trim().length > 0
+      ? -1
+      : innerContent.indexOf(originalTrimmed);
 
   if (relativeIndex === -1) {
-    return null;
+    if (!options.replaceAllOnMissing) {
+      return null;
+    }
+    const start = artifact.start + searchStart;
+    const end = artifact.start + searchEnd;
+    return replaceRange(originalText, start, end, updated).replace(/\n+(?=```\n:::)/g, '\n');
   }
 
   const absoluteIndex = artifact.start + searchStart + relativeIndex;
-  const endText = originalText.substring(absoluteIndex + originalTrimmed.length);
-  const hasTrailingNewline = endText.startsWith('\n');
-
-  const updatedText =
-    originalText.substring(0, absoluteIndex) + updated + (hasTrailingNewline ? '' : '\n') + endText;
-
-  return updatedText.replace(/\n+(?=```\n:::)/g, '\n');
+  return replaceRange(originalText, absoluteIndex, absoluteIndex + originalTrimmed.length, updated)
+    .replace(/\n+(?=```\n:::)/g, '\n');
 };
 
 module.exports = {

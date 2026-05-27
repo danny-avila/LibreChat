@@ -75,6 +75,21 @@ describe('findAllArtifacts', () => {
     expect(result).toHaveLength(2);
     expect(result[1].start).toBeGreaterThan(result[0].end);
   });
+
+  test('should ignore artifact close markers inside fenced content', () => {
+    const content = 'before\n:::\nafter';
+    const artifactText = `${ARTIFACT_START}{identifier="markdown" type="text/markdown" title="Markdown"}
+\`\`\`markdown
+${content}
+\`\`\`
+${ARTIFACT_END}`;
+    const message = { text: `${artifactText}\ntrailer` };
+
+    const result = findAllArtifacts(message);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].end).toBe(artifactText.length);
+  });
 });
 
 describe('replaceArtifactContent', () => {
@@ -103,6 +118,21 @@ describe('replaceArtifactContent', () => {
     const artifact = createTestArtifact('function test() {}');
     const result = replaceArtifactContent(artifact.text, artifact, 'missing', 'updated');
     expect(result).toBeNull();
+  });
+
+  test('should replace full artifact content when original snapshot is stale and fallback enabled', () => {
+    const artifact = createTestArtifact('saved content');
+    const result = replaceArtifactContent(
+      artifact.text,
+      artifact,
+      'stale content',
+      'latest content',
+      { replaceAllOnMissing: true },
+    );
+
+    expect(result).not.toBeNull();
+    expect(result).toContain('latest content');
+    expect(result).not.toContain('saved content');
   });
 
   test('should handle dedented content', () => {
@@ -142,6 +172,28 @@ describe('replaceArtifactContent', () => {
     const result = replaceArtifactContent(artifactText, artifact, original, updated);
 
     expect(result).toBe(`${ARTIFACT_START}\n${updated}\n${ARTIFACT_END}`);
+  });
+
+  test('should replace markdown artifacts with internal code fences', () => {
+    const original = `# Notes
+
+\`\`\`js
+console.log('inside');
+\`\`\`
+
+Done`;
+    const updated = original.replace('Done', 'Updated');
+    const artifactText = `${ARTIFACT_START}{identifier="notes" type="text/markdown" title="Notes"}
+${original}
+${ARTIFACT_END}`;
+    const message = { text: artifactText };
+    const artifacts = findAllArtifacts(message);
+
+    const result = replaceArtifactContent(artifactText, artifacts[0], original, updated);
+
+    expect(result).not.toBeNull();
+    expect(result).toContain('Updated');
+    expect(result).toContain("console.log('inside');");
   });
 });
 
@@ -373,6 +425,26 @@ ${original}`;
 
       expect(result).not.toBeNull();
       expect(result).toContain('UPDATED');
+    });
+
+    test('should handle complete artifact marker with unclosed wrapping code block', () => {
+      const original = '# Markdown document\n\n```js\nconsole.log("missing closing fence");';
+      const artifactText = `${ARTIFACT_START}{identifier="doc" type="text/markdown" title="Doc"}
+\`\`\`markdown
+${original}
+${ARTIFACT_END}`;
+      const message = { text: artifactText };
+      const artifacts = findAllArtifacts(message);
+
+      expect(artifacts).toHaveLength(1);
+      expect(artifacts[0].end).toBe(artifactText.length);
+
+      const updated = original.replace('Markdown document', 'Updated document');
+      const result = replaceArtifactContent(artifactText, artifacts[0], original, updated);
+
+      expect(result).not.toBeNull();
+      expect(result).toContain('Updated document');
+      expect(result).toContain(ARTIFACT_END);
     });
 
     test('should handle incomplete artifacts without code blocks', () => {
