@@ -23,11 +23,12 @@ function extractFrontmatterBlock(raw: string): string | null {
   if (!content.startsWith('---\n')) {
     return null;
   }
-  const closingIdx = content.indexOf('\n---', 4);
-  if (closingIdx === -1) {
+  const body = content.slice(4);
+  const closingFence = /(?:^|\n)---[ \t]*(?:\n|$)/.exec(body);
+  if (!closingFence) {
     return null;
   }
-  return content.slice(4, closingIdx);
+  return body.slice(0, closingFence.index);
 }
 
 function getCaseInsensitive(frontmatter: Record<string, unknown>, key: string): unknown {
