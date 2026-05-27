@@ -23,10 +23,12 @@ const defaultClassName =
 export default function SourceIcon({
   source,
   isCodeFile,
+  uploadedAs,
   className = defaultClassName,
 }: {
   source?: FileSources;
   isCodeFile?: boolean;
+  uploadedAs?: string;
   className?: string;
 }) {
   if (isCodeFile === true) {
@@ -39,9 +41,9 @@ export default function SourceIcon({
     );
   }
 
-  if (source === FileSources.text) {
+  if (source === FileSources.text || uploadedAs === 'text') {
     return (
-      <div className={cn(className, sourceToClassname[source] ?? '')}>
+      <div className={cn(className, sourceToClassname[FileSources.text] ?? '')}>
         <span className="flex items-center justify-center">
           <Type className="h-3 w-3" aria-hidden="true" />
         </span>
