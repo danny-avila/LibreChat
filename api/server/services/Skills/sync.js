@@ -4,7 +4,6 @@ const {
   createGitHubSkillSyncRunner,
   startGitHubSkillSyncScheduler,
 } = require('@librechat/api');
-const { runAsSystem } = require('@librechat/data-schemas');
 const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const { grantPermission } = require('~/server/services/PermissionService');
@@ -110,7 +109,7 @@ function createRunner() {
   });
   return {
     getStatus: createdRunner.getStatus,
-    runOnce: () => runAsSystem(createdRunner.runOnce),
+    runOnce: createdRunner.runOnce,
   };
 }
 
