@@ -493,26 +493,18 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
 
-    let decodedToken = '';
-    switch (requiredRoleTokenKind) {
-      case 'access':
-        if (tokenset.access_token) {
-          decodedToken = jwtDecode(tokenset.access_token);
-        }
-        break;
-      case 'id':
-        if (tokenset.id_token) {
-          decodedToken = jwtDecode(tokenset.id_token);
-        }
-        break;
-      case 'userinfo':
-        decodedToken = userinfo;
-        break;
-      default:
-        logger.error(
-          `[openidStrategy] Invalid required role token kind: ${requiredRoleTokenKind}. Must be one of 'access', 'id', or 'userinfo'.`,
-        );
-        throw new Error('Invalid required role token kind');
+    let decodedToken;
+    if (requiredRoleTokenKind === 'access') {
+      decodedToken = jwtDecode(tokenset.access_token);
+    } else if (requiredRoleTokenKind === 'id') {
+      decodedToken = jwtDecode(tokenset.id_token);
+    } else if (requiredRoleTokenKind === 'userinfo') {
+      decodedToken = userinfo;
+    } else {
+      logger.error(
+        `[openidStrategy] Invalid required role token kind: ${requiredRoleTokenKind}. Must be one of 'access', 'id', or 'userinfo'.`,
+      );
+      throw new Error('Invalid required role token kind');
     }
 
     let roles = get(decodedToken, requiredRoleParameterPath);
