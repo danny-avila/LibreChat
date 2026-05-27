@@ -17,6 +17,7 @@ import type {
   SkillSyncCredentialSummary,
   SkillSyncStatusInput,
 } from '@librechat/data-schemas';
+import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { parseSkillMarkdown } from '../parse';
 
 const GITHUB_API_BASE = 'https://api.github.com';
@@ -253,14 +254,60 @@ function guessMimeType(filename: string): string {
 
 function toCleanFrontmatter(
   frontmatter: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined {
+): Record<string, unknown> {
   if (!frontmatter) {
-    return undefined;
+    return {};
   }
   const clean = { ...frontmatter };
   delete clean.name;
   delete clean.description;
-  return Object.keys(clean).length > 0 ? clean : undefined;
+  return clean;
+}
+
+function getLimitMegabytes(bytes: number): number {
+  return Math.round(bytes / 1024 / 1024);
+}
+
+function assertGitHubBlobSize(entry: GitHubTreeEntry, relativePath: string): number {
+  if (typeof entry.size !== 'number' || !Number.isFinite(entry.size) || entry.size < 0) {
+    throw new SkillSyncError(
+      'GITHUB_BLOB_SIZE_UNKNOWN',
+      `GitHub file "${relativePath}" did not include a valid blob size`,
+    );
+  }
+  if (entry.size > DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes) {
+    throw new SkillSyncError(
+      'GITHUB_BLOB_TOO_LARGE',
+      `GitHub file "${relativePath}" exceeds the ${getLimitMegabytes(
+        DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes,
+      )}MB per-file skill import limit`,
+    );
+  }
+  return entry.size;
+}
+
+function assertGitHubBufferSize(buffer: Buffer, relativePath: string): void {
+  if (buffer.length <= DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes) {
+    return;
+  }
+  throw new SkillSyncError(
+    'GITHUB_BLOB_TOO_LARGE',
+    `GitHub file "${relativePath}" exceeds the ${getLimitMegabytes(
+      DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes,
+    )}MB per-file skill import limit`,
+  );
+}
+
+function assertCumulativeGitHubFileSize(totalBytes: number): void {
+  if (totalBytes <= DEFAULT_SKILL_IMPORT_LIMITS.maxDecompressedBytes) {
+    return;
+  }
+  throw new SkillSyncError(
+    'GITHUB_PACKAGE_TOO_LARGE',
+    `GitHub skill files exceed the ${getLimitMegabytes(
+      DEFAULT_SKILL_IMPORT_LIMITS.maxDecompressedBytes,
+    )}MB cumulative skill import limit`,
+  );
 }
 
 function getSourceMetadataString(
@@ -441,14 +488,24 @@ function discoverSkills(
     }
   }
 
+  const skillRoots = [...skillMdByRoot.keys()];
   return [...skillMdByRoot.entries()].map(([rootPath, skillMd]) => {
     const prefix = rootPath ? `${rootPath}/` : '';
+    const childSkillRoots = skillRoots.filter((candidate) => {
+      if (!candidate || candidate === rootPath) {
+        return false;
+      }
+      return rootPath ? candidate.startsWith(`${rootPath}/`) : true;
+    });
     const files = tree.filter((entry) => {
       if (entry.type !== 'blob') {
         return false;
       }
       const normalized = normalizeRepoPath(entry.path);
       if (!normalized.startsWith(prefix) || normalized === skillMd.path) {
+        return false;
+      }
+      if (childSkillRoots.some((childRoot) => normalized.startsWith(`${childRoot}/`))) {
         return false;
       }
       const relativePath = prefix ? normalized.slice(prefix.length) : normalized;
@@ -631,6 +688,7 @@ async function syncSkillFiles(params: {
   const remotePaths = new Set<string>();
   let syncedFileCount = 0;
   let deletedFileCount = 0;
+  let totalFileBytes = 0;
 
   for (const entry of discovered.files) {
     const normalized = normalizeRepoPath(entry.path);
@@ -638,6 +696,8 @@ async function syncSkillFiles(params: {
     if (!isSafeRelativePath(relativePath) || relativePath.toUpperCase() === 'SKILL.MD') {
       continue;
     }
+    totalFileBytes += assertGitHubBlobSize(entry, relativePath);
+    assertCumulativeGitHubFileSize(totalFileBytes);
     remotePaths.add(relativePath);
     syncedFileCount++;
     const existing = await deps.getSkillFileByPath(skill._id, relativePath);
@@ -645,6 +705,7 @@ async function syncSkillFiles(params: {
       continue;
     }
     const buffer = await fetchBlob({ fetchFn, token, source, sha: entry.sha });
+    assertGitHubBufferSize(buffer, relativePath);
     const fileId = crypto.randomUUID();
     const filename = getFilename(relativePath);
     const mimeType = guessMimeType(filename);
@@ -772,12 +833,15 @@ async function syncSource(params: {
     const syncedAt = new Date();
 
     for (const discovered of discoveredSkills) {
+      const skillMdPath = discovered.rootPath ? `${discovered.rootPath}/SKILL.md` : 'SKILL.md';
+      assertGitHubBlobSize(discovered.skillMd, skillMdPath);
       const skillMdBuffer = await fetchBlob({
         fetchFn,
         token,
         source,
         sha: discovered.skillMd.sha,
       });
+      assertGitHubBufferSize(skillMdBuffer, skillMdPath);
       const skill = await upsertRemoteSkill({
         deps,
         source,
