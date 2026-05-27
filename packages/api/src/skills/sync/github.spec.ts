@@ -10,12 +10,15 @@ import type {
 import { createGitHubSkillSyncRunner } from './github';
 import type { GitHubSkillSyncDeps } from './github';
 
-function response(body: unknown, status = 200): Response {
+function response(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
+  const normalizedHeaders = new Map(
+    Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]),
+  );
   return {
     ok: status >= 200 && status < 300,
     status,
     headers: {
-      get: () => null,
+      get: (key: string) => normalizedHeaders.get(key.toLowerCase()) ?? null,
     },
     json: async () => body,
   } as unknown as Response;
@@ -286,6 +289,48 @@ describe('createGitHubSkillSyncRunner', () => {
       expect.objectContaining({
         status: 'failed',
         errorCode: 'MISSING_CREDENTIAL',
+      }),
+    );
+  });
+
+  it('marks GitHub secondary rate limits as rate limited instead of auth failures', async () => {
+    const deps = createDeps({
+      fetchFn: jest.fn(async () =>
+        response(
+          { message: 'You have exceeded a secondary rate limit. Please wait before retrying.' },
+          403,
+          { 'x-ratelimit-remaining': '42' },
+        ),
+      ) as unknown as typeof fetch,
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'GITHUB_RATE_LIMITED',
+      }),
+    );
+  });
+
+  it('keeps non-rate-limit GitHub 403 responses classified as auth failures', async () => {
+    const deps = createDeps({
+      fetchFn: jest.fn(async () =>
+        response({ message: 'Resource not accessible by personal access token' }, 403, {
+          'x-ratelimit-remaining': '42',
+        }),
+      ) as unknown as typeof fetch,
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'GITHUB_AUTH_FAILED',
       }),
     );
   });
