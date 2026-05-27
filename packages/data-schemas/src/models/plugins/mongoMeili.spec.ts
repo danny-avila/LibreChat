@@ -3,7 +3,55 @@ import mongoose from 'mongoose';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { createConversationModel } from '~/models/convo';
 import { createMessageModel } from '~/models/message';
-import { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import mongoMeili, { type SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+
+interface DynamicMeiliDocument extends mongoose.Document {
+  docId: string;
+  user: string;
+  title: string;
+  isTemporary?: boolean;
+  expiredAt?: Date | null;
+  _meiliIndex?: boolean;
+}
+
+type DynamicMeiliModel = mongoose.Model<DynamicMeiliDocument> & SchemaWithMeiliMethods;
+
+const createDynamicMeiliModel = (modelName: string): DynamicMeiliModel => {
+  const schema = new mongoose.Schema<DynamicMeiliDocument>({
+    docId: {
+      type: String,
+      required: true,
+      meiliIndex: true,
+    },
+    title: {
+      type: String,
+      meiliIndex: true,
+    },
+    user: {
+      type: String,
+      meiliIndex: true,
+    },
+    isTemporary: {
+      type: Boolean,
+      default: false,
+    },
+    expiredAt: {
+      type: Date,
+    },
+  });
+
+  schema.plugin(mongoMeili, {
+    mongoose,
+    host: 'foo',
+    apiKey: 'bar',
+    indexName: modelName.toLowerCase(),
+    primaryKey: 'docId',
+  });
+
+  return mongoose.model<DynamicMeiliDocument>(modelName, schema) as unknown as DynamicMeiliModel;
+};
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const mockAddDocuments = jest.fn();
 const mockAddDocumentsInBatches = jest.fn();
@@ -90,12 +138,37 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(mockAddDocuments).toHaveBeenCalled();
   });
 
-  test('saving TTL conversation does NOT index w/ meilisearch', async () => {
+  test('saving retained non-temporary conversation indexes w/ meilisearch', async () => {
     await createConversationModel(mongoose).create({
       conversationId: new mongoose.Types.ObjectId(),
       user: new mongoose.Types.ObjectId(),
       title: 'Test Conversation',
       endpoint: EModelEndpoint.openAI,
+      isTemporary: false,
+      expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    expect(mockAddDocuments).toHaveBeenCalled();
+  });
+
+  test('saving expired retained non-temporary conversation does NOT index w/ meilisearch', async () => {
+    await createConversationModel(mongoose).create({
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      title: 'Test Conversation',
+      endpoint: EModelEndpoint.openAI,
+      isTemporary: false,
+      expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+  });
+
+  test('saving temporary conversation does NOT index w/ meilisearch', async () => {
+    await createConversationModel(mongoose).create({
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      title: 'Test Conversation',
+      endpoint: EModelEndpoint.openAI,
+      isTemporary: true,
       expiredAt: new Date(),
     });
     expect(mockAddDocuments).not.toHaveBeenCalled();
@@ -125,12 +198,37 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(mockAddDocuments).toHaveBeenCalled();
   });
 
-  test('saving TTL messages does NOT index w/ meilisearch', async () => {
+  test('saving retained non-temporary messages indexes w/ meilisearch', async () => {
     await createMessageModel(mongoose).create({
       messageId: new mongoose.Types.ObjectId(),
       conversationId: new mongoose.Types.ObjectId(),
       user: new mongoose.Types.ObjectId(),
       isCreatedByUser: true,
+      isTemporary: false,
+      expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    expect(mockAddDocuments).toHaveBeenCalled();
+  });
+
+  test('saving expired retained non-temporary message does NOT index w/ meilisearch', async () => {
+    await createMessageModel(mongoose).create({
+      messageId: new mongoose.Types.ObjectId(),
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      isCreatedByUser: true,
+      isTemporary: false,
+      expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+  });
+
+  test('saving temporary messages does NOT index w/ meilisearch', async () => {
+    await createMessageModel(mongoose).create({
+      messageId: new mongoose.Types.ObjectId(),
+      conversationId: new mongoose.Types.ObjectId(),
+      user: new mongoose.Types.ObjectId(),
+      isCreatedByUser: true,
+      isTemporary: true,
       expiredAt: new Date(),
     });
     expect(mockAddDocuments).not.toHaveBeenCalled();
@@ -224,12 +322,180 @@ describe('Meilisearch Mongoose plugin', () => {
       user: new mongoose.Types.ObjectId(),
       title: 'Test Conversation',
       endpoint: EModelEndpoint.openAI,
+      isTemporary: true,
       expiredAt: new Date(),
     });
 
     await conversationModel.syncWithMeili();
 
     expect(mockAddDocuments).not.toHaveBeenCalled();
+  });
+
+  test('sync w/ meili excludes legacy temporary conversations without isTemporary', async () => {
+    const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    mockAddDocumentsInBatches.mockClear();
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Legacy Temporary Conversation',
+      endpoint: EModelEndpoint.openAI,
+      expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+      _meiliIndex: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await conversationModel.syncWithMeili();
+    const storedDoc = await conversationModel.collection.findOne({ conversationId });
+
+    expect(mockAddDocumentsInBatches).not.toHaveBeenCalled();
+    expect(storedDoc?._meiliIndex).toBe(false);
+  });
+
+  test('saving hydrated legacy temporary conversations without isTemporary does NOT index', async () => {
+    const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    mockAddDocuments.mockClear();
+    mockUpdateDocuments.mockClear();
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Legacy Temporary Conversation',
+      endpoint: EModelEndpoint.openAI,
+      expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+      _meiliIndex: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const legacyConvo = await conversationModel.findOne({ conversationId });
+    expect(legacyConvo).toBeTruthy();
+
+    legacyConvo!.title = 'Updated Legacy Temporary Conversation';
+    await legacyConvo!.save();
+    const storedDoc = await conversationModel.collection.findOne({ conversationId });
+
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+    expect(mockUpdateDocuments).not.toHaveBeenCalled();
+    expect(storedDoc?._meiliIndex).toBe(false);
+  });
+
+  test('findOneAndUpdate on legacy temporary conversations without isTemporary does NOT index', async () => {
+    const conversationModel = createConversationModel(mongoose) as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    mockAddDocuments.mockClear();
+    mockUpdateDocuments.mockClear();
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Legacy Temporary Conversation',
+      endpoint: EModelEndpoint.openAI,
+      expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+      _meiliIndex: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await conversationModel.findOneAndUpdate(
+      { conversationId },
+      { $set: { title: 'Updated via findOneAndUpdate' } },
+      { new: true },
+    );
+    const storedDoc = await conversationModel.collection.findOne({ conversationId });
+
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+    expect(mockUpdateDocuments).not.toHaveBeenCalled();
+    expect(storedDoc?._meiliIndex).toBe(false);
+  });
+
+  test('sync w/ meili excludes legacy temporary messages without isTemporary', async () => {
+    const messageModel = createMessageModel(mongoose) as SchemaWithMeiliMethods;
+    await messageModel.deleteMany({});
+    mockAddDocumentsInBatches.mockClear();
+    const messageId = new mongoose.Types.ObjectId().toString();
+
+    await messageModel.collection.insertOne({
+      messageId,
+      conversationId: new mongoose.Types.ObjectId().toString(),
+      user: new mongoose.Types.ObjectId().toString(),
+      isCreatedByUser: true,
+      text: 'Legacy temporary message',
+      expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+      _meiliIndex: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await messageModel.syncWithMeili();
+    const storedDoc = await messageModel.collection.findOne({ messageId });
+
+    expect(mockAddDocumentsInBatches).not.toHaveBeenCalled();
+    expect(storedDoc?._meiliIndex).toBe(false);
+  });
+
+  test('sync w/ meili treats null isTemporary with no expiration like missing legacy fields', async () => {
+    const modelName = `DynamicMeiliNullTemporary${new mongoose.Types.ObjectId().toString()}`;
+    const dynamicModel = createDynamicMeiliModel(modelName);
+    mockAddDocumentsInBatches.mockClear();
+
+    try {
+      await dynamicModel.collection.insertOne({
+        docId: 'legacy-null-temporary',
+        user: 'user-123',
+        title: 'Legacy Null Temporary',
+        isTemporary: null as unknown as boolean,
+        expiredAt: null,
+        _meiliIndex: false,
+      });
+
+      const progress = await dynamicModel.getSyncProgress();
+      await dynamicModel.syncWithMeili();
+      const storedDoc = await dynamicModel.collection.findOne({ docId: 'legacy-null-temporary' });
+
+      expect(progress.totalDocuments).toBe(1);
+      expect(mockAddDocumentsInBatches).toHaveBeenCalled();
+      expect(storedDoc?._meiliIndex).toBe(true);
+    } finally {
+      await mongoose.connection.dropCollection(modelName.toLowerCase()).catch(() => undefined);
+      delete mongoose.models[modelName];
+    }
+  });
+
+  test('sync queries use a fresh expiration cutoff after plugin initialization', async () => {
+    const modelName = `DynamicMeiliCutoff${new mongoose.Types.ObjectId().toString()}`;
+    const dynamicModel = createDynamicMeiliModel(modelName);
+    mockAddDocumentsInBatches.mockClear();
+
+    try {
+      await dynamicModel.collection.insertOne({
+        docId: 'expires-soon',
+        user: 'user-123',
+        title: 'Expires Soon',
+        isTemporary: false,
+        expiredAt: new Date(Date.now() + 25),
+        _meiliIndex: false,
+      });
+
+      await wait(100);
+
+      const progress = await dynamicModel.getSyncProgress();
+      await dynamicModel.syncWithMeili();
+      const storedDoc = await dynamicModel.collection.findOne({ docId: 'expires-soon' });
+
+      expect(progress.totalDocuments).toBe(0);
+      expect(mockAddDocumentsInBatches).not.toHaveBeenCalled();
+      expect(storedDoc?._meiliIndex).toBe(false);
+    } finally {
+      await dynamicModel.deleteMany({});
+      mongoose.deleteModel(modelName);
+    }
   });
 
   describe('estimatedDocumentCount usage in syncWithMeili', () => {
@@ -335,6 +601,7 @@ describe('Meilisearch Mongoose plugin', () => {
         conversationId: new mongoose.Types.ObjectId(),
         user: new mongoose.Types.ObjectId(),
         isCreatedByUser: true,
+        isTemporary: true,
         expiredAt: new Date(),
       });
 
@@ -343,6 +610,7 @@ describe('Meilisearch Mongoose plugin', () => {
         conversationId: new mongoose.Types.ObjectId(),
         user: new mongoose.Types.ObjectId(),
         isCreatedByUser: false,
+        isTemporary: true,
         expiredAt: new Date(),
       });
 

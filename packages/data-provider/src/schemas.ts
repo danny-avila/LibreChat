@@ -372,7 +372,7 @@ export const googleSettings = {
   },
   maxOutputTokens: {
     min: 1 as const,
-    max: 64000 as const,
+    max: 65536 as const,
     step: 1 as const,
     default: 8192 as const,
   },
@@ -648,6 +648,8 @@ export const tMessageSchema = z.object({
   /** @deprecated */
   generation: z.string().nullable().optional(),
   isCreatedByUser: z.boolean(),
+  isTemporary: z.boolean().optional(),
+  expiredAt: z.string().nullable().optional(),
   error: z.boolean().optional(),
   clientTimestamp: z.string().optional(),
   createdAt: z
@@ -855,6 +857,7 @@ export const tConversationSchema = z.object({
   iconURL: z.string().nullable().optional(),
   /* temporary chat */
   expiredAt: z.string().nullable().optional(),
+  isTemporary: z.boolean().optional(),
   /* file token limits */
   fileTokenLimit: coerceNumber.optional(),
   /** @deprecated */

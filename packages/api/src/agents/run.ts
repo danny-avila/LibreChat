@@ -804,6 +804,10 @@ export async function createRun({
     );
 
     const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
+    const hasExplicitStreamUsage = Object.prototype.hasOwnProperty.call(
+      modelParameters ?? {},
+      'streamUsage',
+    );
     const llmConfig = Object.assign(
       {
         provider,
@@ -847,7 +851,9 @@ export async function createRun({
       customProviders.has(agent.provider) ||
       (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider)
     ) {
-      llmConfig.streamUsage = false;
+      if (!hasExplicitStreamUsage) {
+        llmConfig.streamUsage = false;
+      }
       llmConfig.usage = true;
     }
 
@@ -987,9 +993,10 @@ export async function createRun({
     graphConfig,
     tokenCounter,
     customHandlers,
-    indexTokenCountMap,
     initialSessions,
     calibrationRatio,
+    indexTokenCountMap,
+    eagerEventToolExecution: { enabled: true },
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),

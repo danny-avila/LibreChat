@@ -276,6 +276,7 @@ router.post(
         filepath: req.file.path,
         requestUserId: req.user.id,
         userRole: req.user.role,
+        interfaceConfig: req.config?.interfaceConfig,
       });
       res.status(201).json({ message: 'Conversation(s) imported successfully' });
     } catch (error) {

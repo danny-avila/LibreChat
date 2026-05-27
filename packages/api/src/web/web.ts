@@ -7,11 +7,7 @@ import {
   extractVariableName,
 } from 'librechat-data-provider';
 import { webSearchAuth } from '@librechat/data-schemas';
-import type {
-  RerankerTypes,
-  TCustomConfig,
-  TWebSearchConfig,
-} from 'librechat-data-provider';
+import type { RerankerTypes, TCustomConfig, TWebSearchConfig } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
 import { isSSRFTarget, resolveHostnameSSRF } from '../auth';
 
@@ -209,8 +205,7 @@ export async function loadWebSearchAuth({
           const isUserProvidedOptInUrlKey =
             originalKey != null && USER_PROVIDED_OPT_IN_URL_KEYS.has(originalKey);
           const isUserProvidedUrlEnabled =
-            isUserProvidedUrlKey ||
-            (isUserProvidedOptInUrlKey && isUserProvidedEnabled(field));
+            isUserProvidedUrlKey || (isUserProvidedOptInUrlKey && isUserProvidedEnabled(field));
           let contributed = false;
 
           if (isUserProvidedOptInUrlKey && isFieldUserProvided && !isUserProvidedUrlEnabled) {
@@ -252,6 +247,10 @@ export async function loadWebSearchAuth({
       } catch {
         continue;
       }
+    }
+    if (category === SearchCategories.RERANKERS && !webSearchConfig?.rerankerType) {
+      authResult.rerankerType = 'none' as RerankerTypes;
+      return [true, false];
     }
     return [false, isUserProvided];
   }
