@@ -241,8 +241,12 @@ const replaceArtifactContent = (originalText, artifact, original, updated, optio
   }
 
   const absoluteIndex = artifact.start + searchStart + relativeIndex;
-  return replaceRange(originalText, absoluteIndex, absoluteIndex + originalTrimmed.length, updated)
-    .replace(/\n+(?=```\n:::)/g, '\n');
+  return replaceRange(
+    originalText,
+    absoluteIndex,
+    absoluteIndex + originalTrimmed.length,
+    updated,
+  ).replace(/\n+(?=```\n:::)/g, '\n');
 };
 
 module.exports = {
