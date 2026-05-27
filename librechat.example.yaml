@@ -315,6 +315,15 @@ actions:
 #     url: http://localhost:3001/sse
 #     # proxy: "${MCP_PROXY_URL}"  # optional outbound proxy (http/https/socks/socks5)
 #     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+#     # (optional) Limit which tools this server exposes to the model to save context tokens or security.
+#     # `include` (allowlist) is applied first, then `exclude` removes matches from the result.
+#     # Each entry is an exact tool name or a regex pattern `{ regex: "..." }`. Omit to expose all.
+#     # toolFilter:
+#     #   include:
+#     #     - "search"
+#     #     - { regex: ".*Jira.*" }
+#     #   exclude:
+#     #     - "lookupJiraAccountId"
 #   puppeteer:
 #     type: stdio
 #     command: npx

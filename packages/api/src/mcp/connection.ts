@@ -23,7 +23,7 @@ import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { isAddressAllowed } from '~/auth/domain';
 import { runOutsideTracing } from '~/utils/tracing';
-import { sanitizeUrlForLogging } from './utils';
+import { sanitizeUrlForLogging, isToolAllowed } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { mcpConfig } from './mcpConfig';
 
@@ -1254,6 +1254,11 @@ export class MCPConnection extends EventEmitter {
     this.setupEventListeners();
   }
 
+  /** Optional include/exclude tool filter configured for this server. */
+  public get toolFilter(): t.MCPOptions['toolFilter'] {
+    return this.options.toolFilter;
+  }
+
   /** Helper to generate consistent log prefixes */
   private getLogPrefix(): string {
     const userPart = this.userId ? `[User: ${this.userId}]` : '';
@@ -2186,7 +2191,11 @@ export class MCPConnection extends EventEmitter {
   async fetchTools() {
     try {
       const { tools } = await this.client.listTools();
-      return tools;
+      const filter = this.options.toolFilter;
+      if (!filter) {
+        return tools;
+      }
+      return tools.filter((tool) => isToolAllowed(tool.name, filter));
     } catch (error) {
       this.emitError(error, 'Failed to fetch tools');
       return [];

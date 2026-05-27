@@ -433,5 +433,70 @@ describe('MCPServerInspector', () => {
 
       expect(result).toEqual({});
     });
+
+    describe('toolFilter', () => {
+      beforeEach(() => {
+        mockConnection.client.listTools = jest.fn().mockResolvedValue({
+          tools: [
+            { name: 'searchJira', description: '', inputSchema: { type: 'object' } },
+            { name: 'createJiraIssue', description: '', inputSchema: { type: 'object' } },
+            { name: 'lookupJiraAccountId', description: '', inputSchema: { type: 'object' } },
+            { name: 'searchConfluence', description: '', inputSchema: { type: 'object' } },
+          ],
+        });
+      });
+
+      it('keeps only tools matching the include allowlist', async () => {
+        const result = await MCPServerInspector.getToolFunctions('atlassian', mockConnection, {
+          include: ['searchConfluence'],
+        });
+
+        expect(Object.keys(result)).toEqual(['searchConfluence_mcp_atlassian']);
+      });
+
+      it('supports regex include patterns', async () => {
+        const result = await MCPServerInspector.getToolFunctions('atlassian', mockConnection, {
+          include: [{ regex: '.*Jira.*' }],
+        });
+
+        expect(Object.keys(result).sort()).toEqual([
+          'createJiraIssue_mcp_atlassian',
+          'lookupJiraAccountId_mcp_atlassian',
+          'searchJira_mcp_atlassian',
+        ]);
+      });
+
+      it('removes tools matching the exclude blocklist', async () => {
+        const result = await MCPServerInspector.getToolFunctions('atlassian', mockConnection, {
+          exclude: ['lookupJiraAccountId'],
+        });
+
+        expect(Object.keys(result)).not.toContain('lookupJiraAccountId_mcp_atlassian');
+        expect(Object.keys(result)).toHaveLength(3);
+      });
+
+      it('applies include before exclude', async () => {
+        const result = await MCPServerInspector.getToolFunctions('atlassian', mockConnection, {
+          include: [{ regex: '.*Jira.*' }],
+          exclude: ['lookupJiraAccountId'],
+        });
+
+        expect(Object.keys(result).sort()).toEqual([
+          'createJiraIssue_mcp_atlassian',
+          'searchJira_mcp_atlassian',
+        ]);
+      });
+
+      it('exposes all tools when filter is undefined or empty', async () => {
+        const noFilter = await MCPServerInspector.getToolFunctions('atlassian', mockConnection);
+        const emptyFilter = await MCPServerInspector.getToolFunctions('atlassian', mockConnection, {
+          include: [],
+          exclude: [],
+        });
+
+        expect(Object.keys(noFilter)).toHaveLength(4);
+        expect(Object.keys(emptyFilter)).toHaveLength(4);
+      });
+    });
   });
 });

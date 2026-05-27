@@ -1,4 +1,5 @@
 import { Constants } from 'librechat-data-provider';
+import type { ToolFilter, ToolFilterPattern } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 
 export const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
@@ -108,6 +109,38 @@ export function redactAllServerSecrets(
     result[key] = redactServerSecrets(config);
   }
   return result;
+}
+
+/** Tests a single tool name against one filter pattern (exact match or regex). */
+function matchesToolPattern(toolName: string, pattern: ToolFilterPattern): boolean {
+  if (typeof pattern === 'string') {
+    return toolName === pattern;
+  }
+  try {
+    return new RegExp(pattern.regex).test(toolName);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Determines whether a tool should be exposed given an optional `toolFilter`.
+ * `include` (allowlist) is applied first: when present and non-empty, the tool
+ * must match at least one entry. `exclude` (blocklist) is applied after: a tool
+ * matching any entry is rejected. An absent or empty filter allows every tool.
+ */
+export function isToolAllowed(toolName: string, filter?: ToolFilter): boolean {
+  if (!filter) {
+    return true;
+  }
+  const { include, exclude } = filter;
+  if (include && include.length > 0 && !include.some((p) => matchesToolPattern(toolName, p))) {
+    return false;
+  }
+  if (exclude && exclude.length > 0 && exclude.some((p) => matchesToolPattern(toolName, p))) {
+    return false;
+  }
+  return true;
 }
 
 /**

@@ -4,7 +4,7 @@ import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { hasCustomUserVars, isUserSourced } from '~/mcp/utils';
+import { hasCustomUserVars, isUserSourced, isToolAllowed } from '~/mcp/utils';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isEnabled } from '~/utils';
@@ -125,13 +125,17 @@ export class MCPServerInspector {
     const capabilities = this.connection!.client.getServerCapabilities();
     this.config.capabilities = JSON.stringify(capabilities);
     const tools = await this.connection!.client.listTools();
-    this.config.tools = tools.tools.map((tool) => tool.name).join(', ');
+    this.config.tools = tools.tools
+      .filter((tool) => isToolAllowed(tool.name, this.config.toolFilter))
+      .map((tool) => tool.name)
+      .join(', ');
   }
 
   private async fetchToolFunctions(): Promise<void> {
     this.config.toolFunctions = await MCPServerInspector.getToolFunctions(
       this.serverName,
       this.connection!,
+      this.config.toolFilter,
     );
   }
 
@@ -139,16 +143,21 @@ export class MCPServerInspector {
    * Converts server tools to LibreChat-compatible tool functions format.
    * @param serverName - The name of the server
    * @param connection - The MCP connection
+   * @param toolFilter - Optional include/exclude filter applied to the server's tools
    * @returns Tool functions formatted for LibreChat
    */
   public static async getToolFunctions(
     serverName: string,
     connection: MCPConnection,
+    toolFilter?: t.MCPOptions['toolFilter'],
   ): Promise<t.LCAvailableTools> {
     const { tools }: t.MCPToolListResponse = await connection.client.listTools();
 
     const toolFunctions: t.LCAvailableTools = {};
     tools.forEach((tool) => {
+      if (!isToolAllowed(tool.name, toolFilter)) {
+        return;
+      }
       const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
       toolFunctions[name] = {
         type: 'function',
