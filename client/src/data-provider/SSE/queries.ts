@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import type { Agents, TConversation } from 'librechat-data-provider';
-import { updateConvoInAllQueries } from '~/utils';
+import { isNotFoundError, updateConvoInAllQueries } from '~/utils';
 
 export interface StreamStatusResponse {
   active: boolean;
@@ -101,7 +101,12 @@ export function useTitleGeneration(enabled = true) {
       queryKey: genTitleQueryKey(conversationId),
       queryFn: () => dataService.genTitle({ conversationId }),
       staleTime: Infinity,
-      retry: false,
+      /** Retry on 404 only: the server returns 404 while title generation is still
+       * in progress (up to 45 s). Allow up to 3 retries so the client window
+       * covers the full server generation timeout. All other errors are final. */
+      retry: (failureCount: number, error: unknown) =>
+        isNotFoundError(error) && failureCount < 3,
+      retryDelay: () => 5_000,
     })),
   });
 
@@ -125,7 +130,8 @@ export function useTitleGeneration(enabled = true) {
         titleQueue.delete(conversationId);
         setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
       } else if (titleQuery.isError) {
-        // Mark as processed even on error to avoid infinite retries
+        // Mark as processed once all retries are exhausted (provider error or
+        // title never became available within the bounded retry window)
         processedTitles.add(conversationId);
         titleQueue.delete(conversationId);
         setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
