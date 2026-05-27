@@ -122,4 +122,15 @@ describe('GitHub skill sync service', () => {
       }),
     );
   });
+
+  it('does not force manual sync runs into the system tenant context', async () => {
+    const { runAsSystem } = require('@librechat/data-schemas');
+    mockGetAppConfig.mockResolvedValue({ skillSync: undefined, paths: {} });
+
+    const service = require('./sync');
+    const { runner } = service.initializeGitHubSkillSync({ skillSync: undefined });
+    await runner.runOnce();
+
+    expect(runAsSystem).not.toHaveBeenCalled();
+  });
 });
