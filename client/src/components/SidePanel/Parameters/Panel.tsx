@@ -12,6 +12,7 @@ import {
   paramSettings,
   getSettingsKeys,
   getEndpointField,
+  EModelEndpoint,
   SettingDefinition,
   tConvoUpdateSchema,
 } from 'librechat-data-provider';
@@ -24,12 +25,12 @@ import { useChatContext } from '~/Providers';
 import { logger } from '~/utils';
 
 // V1 UX POP/BETC : refonte light du panel Paramètres modèle :
-// - 4 params essentiels visibles (Instructions perso, Nom perso, Température)
+// - params essentiels visibles (Instructions perso, Nom perso, Créativité, Recherche web)
 // - Reste des params LLM techniques en accordéon "Réglages avancés" replié
 // - Tooltips pédagogiques FR hardcodés (atelier specs post-congé pour
 //   i18n EN propre + composant Créativité 3-presets).
 // Pattern aligné sur builder Agent ModelPanel.tsx.
-const ESSENTIAL_PARAM_KEYS = ['promptPrefix', 'modelLabel', 'chatGptLabel', 'temperature'];
+const ESSENTIAL_PARAM_KEYS = ['promptPrefix', 'modelLabel', 'chatGptLabel', 'temperature', 'web_search'];
 
 interface ParamOverride {
   label?: string;
@@ -105,17 +106,6 @@ const PARAM_OVERRIDES: Record<string, ParamOverride> = {
   },
 };
 
-// V1 UX POP/BETC : 2 mécanismes Recherche web actuellement cassés
-// (services tiers nécessitent clés admin non posées, et natif LLM
-// throws 400 Anthropic). Caché en attendant décision archi avec
-// Antoine post-congé. Repasser à true quand mécanisme stabilisé.
-// Quand le param `web_search` est retiré du schema effectif, le
-// useEffect ci-dessous le supprime automatiquement de la conversation
-// courante (cf. ligne `if (paramKeys.has(key)) return` + delete) — donc
-// un user qui avait `web_search=true` voit la valeur nettoyée au
-// premier rendu du panel post-flag.
-const SHOW_USER_WEB_SEARCH_SETTING = false;
-
 export default function Parameters() {
   const localize = useLocalize();
   const { conversation, setConversation } = useChatContext();
@@ -146,7 +136,11 @@ export default function Parameters() {
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
     return defaultParams
       .filter((param) => param != null)
-      .filter((param) => SHOW_USER_WEB_SEARCH_SETTING || param.key !== 'web_search')
+      // web_search natif non supporté par les endpoints custom (ex. French
+      // Models/Featherless) → 400. On masque le toggle hors endpoints natifs.
+      // La useEffect de nettoyage ci-dessous retire alors le param de la
+      // conversation si l'user bascule vers un endpoint custom.
+      .filter((param) => param.key !== 'web_search' || endpointType !== EModelEndpoint.custom)
       .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param)
       .map((param) => {
         const override = PARAM_OVERRIDES[param.key];
