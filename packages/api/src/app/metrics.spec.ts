@@ -13,6 +13,7 @@ import {
   setGenerationJobsInFlight,
 } from './metrics';
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
 const request = require('supertest') as (app: express.Express) => any;
 
 describe('normalizePath', () => {
