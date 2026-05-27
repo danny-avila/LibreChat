@@ -206,6 +206,39 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
+// Suite: custom endpoint stream usage defaults
+// ---------------------------------------------------------------------------
+describe('custom endpoint stream usage defaults', () => {
+  it('disables streamUsage by default for OpenAI-compatible custom endpoints', async () => {
+    const agents = await callAndCapture({
+      agents: [makeAgent({ endpoint: 'LiteLLM' })],
+    });
+    const clientOptions = agents[0].clientOptions as Record<string, unknown>;
+
+    expect(clientOptions.streamUsage).toBe(false);
+    expect(clientOptions.usage).toBe(true);
+  });
+
+  it('respects explicit streamUsage from endpoint-resolved model parameters', async () => {
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          endpoint: 'LiteLLM',
+          model_parameters: {
+            model: 'gpt-4o',
+            streamUsage: true,
+          },
+        }),
+      ],
+    });
+    const clientOptions = agents[0].clientOptions as Record<string, unknown>;
+
+    expect(clientOptions.streamUsage).toBe(true);
+    expect(clientOptions.usage).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Suite 1: reserveRatio
 // ---------------------------------------------------------------------------
 describe('reserveRatio', () => {

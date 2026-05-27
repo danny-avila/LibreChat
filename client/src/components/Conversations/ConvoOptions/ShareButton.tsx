@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
 import { QRCodeSVG } from 'qrcode.react';
 import { Copy, CopyCheck } from 'lucide-react';
 import { useGetSharedLinkQuery } from 'librechat-data-provider/react-query';
 import { OGDialogTemplate, Button, Spinner, OGDialog } from '@librechat/client';
 import { useLocalize, useCopyToClipboard } from '~/hooks';
+import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import SharedLinkButton from './SharedLinkButton';
 import { buildShareLinkUrl, cn } from '~/utils';
-import store from '~/store';
 
 export default function ShareButton({
   conversationId,
@@ -35,28 +34,27 @@ export default function ShareButton({
       setAnnouncement('');
     }, 1000);
   };
-  const latestMessage = useRecoilValue(store.latestMessageFamily(0));
+  const latestMessage = useLatestMessage(0);
   const { data: share, isLoading } = useGetSharedLinkQuery(conversationId);
+  const shareId = share?.shareId ?? '';
 
   useEffect(() => {
-    if (share?.shareId !== undefined) {
-      setSharedLink(buildShareLinkUrl(share.shareId));
+    if (shareId) {
+      setSharedLink(buildShareLinkUrl(shareId));
     }
-  }, [share]);
+  }, [shareId]);
 
   const button =
     isLoading === true ? null : (
       <SharedLinkButton
         share={share}
         conversationId={conversationId}
-        targetMessageId={latestMessage?.messageId}
+        targetMessageId={latestMessage?.messageId ?? undefined}
         showQR={showQR}
         setShowQR={setShowQR}
         setSharedLink={setSharedLink}
       />
     );
-
-  const shareId = share?.shareId ?? '';
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>

@@ -168,6 +168,20 @@ describe('tenantContextMiddleware', () => {
     expect(tenantId).toBe('tenant-y');
   });
 
+  it('rejects a normalized system tenant sentinel for authenticated requests', async () => {
+    const req = mockReq({ tenantId: ` ${SYSTEM_TENANT_ID} `, role: 'user' });
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await tenantContextMiddleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'System tenant is not allowed for request-scoped routes',
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('different requests get independent tenant contexts', async () => {
     const runRequest = (tid: string) => {
       const req = mockReq({ tenantId: tid, role: 'user' });

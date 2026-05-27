@@ -33,7 +33,7 @@ function LoadingSpinner() {
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
-  const addedSubmission = useRecoilValue(store.submissionByIndex(index + 1));
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const centerFormOnLanding = false; // NJ: force this to be `false` to put our landing page text up
 
   const methods = useForm<ChatFormValues>({
@@ -42,16 +42,20 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   const fileMap = useFileMapContext();
 
-  const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
-    select: useCallback(
-      (data: TMessage[]) => {
-        const dataTree = buildTree({ messages: data, fileMap });
-        return dataTree?.length === 0 ? null : (dataTree ?? null);
-      },
-      [fileMap],
-    ),
-    enabled: !!fileMap,
-  });
+  const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(
+    conversationId ?? '',
+    {
+      select: useCallback(
+        (data: TMessage[]) => {
+          const dataTree = buildTree({ messages: data, fileMap });
+          return dataTree?.length === 0 ? null : (dataTree ?? null);
+        },
+        [fileMap],
+      ),
+      enabled: !!fileMap,
+    },
+    { isStreaming: isSubmitting },
+  );
 
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse();

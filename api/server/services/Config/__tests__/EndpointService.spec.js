@@ -60,6 +60,12 @@ describe('EndpointService', () => {
     process.env = { ...originalEnv };
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_USE_VERTEX;
+    delete process.env.BEDROCK_AWS_ACCESS_KEY_ID;
+    delete process.env.BEDROCK_AWS_SECRET_ACCESS_KEY;
+    delete process.env.BEDROCK_AWS_SESSION_TOKEN;
+    delete process.env.BEDROCK_AWS_BEARER_TOKEN;
+    delete process.env.BEDROCK_AWS_PROFILE;
+    delete process.env.BEDROCK_AWS_DEFAULT_REGION;
     Object.assign(process.env, env);
     return require('../EndpointService').config;
   }
@@ -79,5 +85,35 @@ describe('EndpointService', () => {
     });
 
     expect(config[EModelEndpoint.anthropic]).toEqual({ userProvide: true });
+  });
+
+  it('requires a user Bedrock key when bearer token user_provided is set with a legacy static secret', () => {
+    const config = loadConfig({
+      BEDROCK_AWS_SECRET_ACCESS_KEY: 'legacy-secret',
+      BEDROCK_AWS_BEARER_TOKEN: 'user_provided',
+      BEDROCK_AWS_DEFAULT_REGION: 'us-east-1',
+    });
+
+    expect(config[EModelEndpoint.bedrock]).toEqual({ userProvide: true });
+  });
+
+  it('enables Bedrock with static bearer token before static secret credentials', () => {
+    const config = loadConfig({
+      BEDROCK_AWS_SECRET_ACCESS_KEY: 'legacy-secret',
+      BEDROCK_AWS_BEARER_TOKEN: 'bedrock-api-key',
+      BEDROCK_AWS_DEFAULT_REGION: 'us-east-1',
+    });
+
+    expect(config[EModelEndpoint.bedrock]).toEqual({ userProvide: false });
+  });
+
+  it('skips blank optional Bedrock env vars before falling back to region', () => {
+    const config = loadConfig({
+      BEDROCK_AWS_BEARER_TOKEN: '',
+      BEDROCK_AWS_PROFILE: '',
+      BEDROCK_AWS_DEFAULT_REGION: 'us-east-1',
+    });
+
+    expect(config[EModelEndpoint.bedrock]).toEqual({ userProvide: false });
   });
 });

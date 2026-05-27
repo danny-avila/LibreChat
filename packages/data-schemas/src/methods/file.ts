@@ -47,6 +47,14 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     return await query.sort(sortOptions).lean<IMongoFile[]>();
   }
 
+  async function getExpiredFiles(limit = 100, now = new Date()): Promise<IMongoFile[]> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    return await File.find({ expiredAt: { $ne: null, $lte: now } })
+      .sort({ expiredAt: 1 })
+      .limit(limit)
+      .lean<IMongoFile[]>();
+  }
+
   /**
    * Retrieves tool files (files that are embedded or have a fileIdentifier) from an array of file IDs.
    * Note: execute_code files are handled separately by getCodeGeneratedFiles.
@@ -457,6 +465,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   return {
     findFileById,
     getFiles,
+    getExpiredFiles,
     getToolFilesByIds,
     getCodeGeneratedFiles,
     getUserCodeFiles,
