@@ -169,16 +169,10 @@ function SideMenu({ onCollapse }: { onCollapse?: () => void }) {
       <div className="flex flex-shrink-0 flex-col px-2">
         <SectionHeader>{localize('com_nav_my_projects')}</SectionHeader>
         <NavRow icon={FolderPlus} label={localize('com_nav_new_project')} disabled />
-        <div className="px-3 py-1 text-xs text-text-tertiary">
-          {localize('com_nav_projects_coming_soon')}
-        </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col px-2 pt-1">
-        <SectionHeader>{localize('com_nav_my_chats')}</SectionHeader>
-        <div className="min-h-0 flex-1">
-          <ConversationsSection />
-        </div>
+      <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">
+        <ConversationsSection />
       </div>
 
       <div className="flex flex-shrink-0 flex-col gap-1 border-t border-border-light px-2 pb-2 pt-2">

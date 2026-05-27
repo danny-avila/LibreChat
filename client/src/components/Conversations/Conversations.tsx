@@ -1,6 +1,6 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, MessagesSquare } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
@@ -82,12 +82,16 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
   return (
     <button
       onClick={onToggle}
-      className="group flex w-full items-center justify-between rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+      className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm text-text-primary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
       type="button"
     >
-      <span className="select-none">{localize('com_ui_chats')}</span>
+      <MessagesSquare className="h-5 w-5 flex-shrink-0" aria-hidden="true" />
+      <span className="select-none truncate">{localize('com_ui_chats')}</span>
       <ChevronDown
-        className={cn('h-3 w-3 transition-transform duration-200', isExpanded ? 'rotate-180' : '')}
+        className={cn(
+          'ml-auto h-4 w-4 flex-shrink-0 transition-transform duration-200',
+          isExpanded ? 'rotate-180' : '',
+        )}
       />
     </button>
   );
@@ -113,8 +117,6 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
 DateLabel.displayName = 'DateLabel';
 
 type FlattenedItem =
-  | { type: 'favorites' }
-  | { type: 'chats-header' }
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation }
   | { type: 'loading' };
@@ -168,8 +170,6 @@ const Conversations: FC<ConversationsProps> = ({
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
 
-  const favoritesContentKeyRef = useRef('');
-
   // Fetch active job IDs for showing generation indicators
   const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = useMemo(
@@ -180,8 +180,6 @@ const Conversations: FC<ConversationsProps> = ({
   // Determine if FavoritesList will render content
   const shouldShowFavorites =
     !search.query && (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
-
-  favoritesContentKeyRef.current = `${favorites.length}-${showAgentMarketplace ? 1 : 0}-${isFavoritesLoading ? 1 : 0}`;
 
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],
@@ -195,24 +193,16 @@ const Conversations: FC<ConversationsProps> = ({
 
   const flattenedItems = useMemo(() => {
     const items: FlattenedItem[] = [];
-    // Only include favorites row if FavoritesList will render content
-    if (shouldShowFavorites) {
-      items.push({ type: 'favorites' });
-    }
-    items.push({ type: 'chats-header' });
+    groupedConversations.forEach(([groupName, convos]) => {
+      items.push({ type: 'header', groupName });
+      items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
+    });
 
-    if (isChatsExpanded) {
-      groupedConversations.forEach(([groupName, convos]) => {
-        items.push({ type: 'header', groupName });
-        items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
-      });
-
-      if (isLoading) {
-        items.push({ type: 'loading' } as any);
-      }
+    if (isLoading) {
+      items.push({ type: 'loading' } as FlattenedItem);
     }
     return items;
-  }, [groupedConversations, isLoading, isChatsExpanded, shouldShowFavorites]);
+  }, [groupedConversations, isLoading]);
 
   // Store flattenedItems in a ref for keyMapper to access without recreating cache
   const flattenedItemsRef = useRef(flattenedItems);
@@ -229,12 +219,6 @@ const Conversations: FC<ConversationsProps> = ({
           if (!item) {
             return `unknown-${index}`;
           }
-          if (item.type === 'favorites') {
-            return `favorites-${favoritesContentKeyRef.current}`;
-          }
-          if (item.type === 'chats-header') {
-            return 'chats-header';
-          }
           if (item.type === 'header') {
             return `header-${item.groupName}`;
           }
@@ -249,22 +233,6 @@ const Conversations: FC<ConversationsProps> = ({
       }),
     [convoHeight],
   );
-
-  const clearFavoritesCache = useCallback(() => {
-    if (cache) {
-      cache.clear(0, 0);
-      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
-        containerRef.current.recomputeRowHeights(0);
-      }
-    }
-  }, [cache, containerRef]);
-
-  useEffect(() => {
-    const frameId = requestAnimationFrame(() => {
-      clearFavoritesCache();
-    });
-    return () => cancelAnimationFrame(frameId);
-  }, [favorites.length, isFavoritesLoading, showAgentMarketplace, clearFavoritesCache]);
 
   useEffect(() => {
     const frameId = requestAnimationFrame(() => {
@@ -289,33 +257,10 @@ const Conversations: FC<ConversationsProps> = ({
         );
       }
 
-      if (item.type === 'favorites') {
-        return (
-          <MeasuredRow key={key} {...rowProps}>
-            <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
-          </MeasuredRow>
-        );
-      }
-
-      if (item.type === 'chats-header') {
-        return (
-          <MeasuredRow key={key} {...rowProps}>
-            <ChatsHeader
-              isExpanded={isChatsExpanded}
-              onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
-            />
-          </MeasuredRow>
-        );
-      }
-
       if (item.type === 'header') {
-        // First date header index depends on whether favorites row is included
-        // With favorites: [favorites, chats-header, first-header] → index 2
-        // Without favorites: [chats-header, first-header] → index 1
-        const firstHeaderIndex = shouldShowFavorites ? 2 : 1;
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <DateLabel groupName={item.groupName} isFirst={index === firstHeaderIndex} />
+            <DateLabel groupName={item.groupName} isFirst={index === 0} />
           </MeasuredRow>
         );
       }
@@ -336,17 +281,7 @@ const Conversations: FC<ConversationsProps> = ({
 
       return null;
     },
-    [
-      cache,
-      flattenedItems,
-      moveToTop,
-      toggleNav,
-      isSmallScreen,
-      isChatsExpanded,
-      setIsChatsExpanded,
-      shouldShowFavorites,
-      activeJobIds,
-    ],
+    [cache, flattenedItems, moveToTop, toggleNav, activeJobIds],
   );
 
   const getRowHeight = useCallback(
@@ -368,15 +303,32 @@ const Conversations: FC<ConversationsProps> = ({
     [flattenedItems.length, throttledLoadMore],
   );
 
-  return (
-    <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
-      {isSearchLoading ? (
+  if (isSearchLoading) {
+    return (
+      <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
         <div className="flex flex-1 items-center justify-center">
           <Spinner className="text-text-primary" />
           <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
         </div>
-      ) : (
-        <div className="flex-1">
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
+      {shouldShowFavorites && (
+        <div className="flex-shrink-0">
+          <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
+        </div>
+      )}
+      <div className="flex-shrink-0">
+        <ChatsHeader
+          isExpanded={isChatsExpanded}
+          onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
+        />
+      </div>
+      {isChatsExpanded && (
+        <div className="min-h-0 flex-1">
           <AutoSizer>
             {({ width, height }) => (
               <List
