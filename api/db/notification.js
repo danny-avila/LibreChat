@@ -12,6 +12,9 @@ const notificationSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    message: {
+      type: String,
+    },
     isVisited: {
       type: Boolean,
       default: false,

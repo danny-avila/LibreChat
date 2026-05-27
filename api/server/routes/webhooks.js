@@ -3,6 +3,7 @@ const webpush = require('web-push');
 const { Message, User } = require('~/db/models');
 const Notification = require('~/db/notification');
 const { logger } = require('@librechat/data-schemas');
+const { ObjectId } = require('mongodb');
 
 const router = express.Router();
 
@@ -24,7 +25,7 @@ router.get('/debug-last', (req, res) => {
 // Middleware to configure Web-Push keys on the first request if they change or just once
 function configureWebPush() {
   if (vapidKeysSet) return true;
-  
+
   const publicVapidKey = process.env.VAPID_PUBLIC_KEY;
   const privateVapidKey = process.env.VAPID_PRIVATE_KEY;
   const vapidEmail = process.env.VAPID_EMAIL || 'mailto:admin@example.com';
@@ -54,18 +55,19 @@ router.post('/notifications', async (req, res) => {
       return res.status(403).json({ message: 'Forbidden: Invalid API key' });
     }
 
-    const {
-      messageId,
-      question,
-      originalQuestion,
-    } = req.body;
+    const { messageId, question, originalQuestion, customMessage, userid } = req.body;
 
-    if (!messageId) {
+    let message;
+    let userId;
+    if (!messageId && !userid) {
       return res.status(400).json({ message: 'Missing messageId' });
     }
 
+    if (!messageId && userId) {
+      userId = new ObjectId(userid);
+    }
     // 🔍 Find message
-    const message = await Message.findOne({ messageId }).lean();
+    message = await Message.findOne({ messageId }).lean();
     if (!message || !message.user) {
       return res.status(404).json({
         message: 'Message not found or missing user',
@@ -73,8 +75,8 @@ router.post('/notifications', async (req, res) => {
       });
     }
 
-  //  const userId = "69cd061cd64d4be60a4d6575"; // ⚠️ hardcoded (be careful)
-     const userId = message.user;
+    //  const userId = "69cd061cd64d4be60a4d6575"; // ⚠️ hardcoded (be careful)
+    userId = message.user;
 
     const user = await User.findById(userId).lean();
     if (!user) {
@@ -92,6 +94,7 @@ router.post('/notifications', async (req, res) => {
       await Notification.create({
         userId,
         originalQuestion: displayQuestion,
+        message: customMessage,
       });
     } catch (notifErr) {
       logger.error('Failed to create in-app notification:', notifErr);
@@ -122,7 +125,7 @@ router.post('/notifications', async (req, res) => {
         if (clientDomain.endsWith('/')) {
           clientDomain = clientDomain.slice(0, -1);
         }
-        
+
         const payload = JSON.stringify({
           title: 'Your answer is ready!',
           body: `Your question "${displayQuestion}" was recently answered.`,
@@ -130,9 +133,11 @@ router.post('/notifications', async (req, res) => {
           url: clientDomain,
         });
 
-        logger.info(`[PUSH-DEBUG] Attempting send to endpoint (last 15 chars): ${sub.endpoint.slice(-15)}`);
+        logger.info(
+          `[PUSH-DEBUG] Attempting send to endpoint (last 15 chars): ${sub.endpoint.slice(-15)}`,
+        );
         const pushResponse = await webpush.sendNotification(sub, payload);
-        
+
         lastPushResult = {
           timestamp: new Date().toISOString(),
           userId,
@@ -174,7 +179,6 @@ router.post('/notifications', async (req, res) => {
       failureCount,
       total: user.pushSubscriptions.length,
     });
-
   } catch (err) {
     logger.error('Webhook error:', err);
 
