@@ -8,6 +8,7 @@ import {
   interfaceSchema,
   fileStorageSchema,
   fileStrategiesSchema,
+  SKILL_SYNC_MAX_INTERVAL_MINUTES,
   summarizationTriggerSchema,
   summarizationConfigSchema,
 } from '../src/config';
@@ -726,6 +727,28 @@ describe('configSchema skillSync', () => {
         github: {
           enabled: true,
           intervalMinutes: 4,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects GitHub skill sync intervals above the Node timer limit', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          intervalMinutes: SKILL_SYNC_MAX_INTERVAL_MINUTES + 1,
           sources: [
             {
               id: 'librechat-skills',
