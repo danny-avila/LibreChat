@@ -188,6 +188,16 @@ describe('parseFrontmatter', () => {
     });
   });
 
+  it('does not treat frontmatter scalar lines that start with --- text as closing fences', () => {
+    const raw = `---\nname: marker\ndescription: 'first\n---not a closing fence\nlast'\nalways-apply: false\n---\n\nbody`;
+    expect(parseFrontmatter(raw)).toEqual({
+      name: 'marker',
+      description: 'first ---not a closing fence last',
+      alwaysApply: false,
+      invalidBooleans: [],
+    });
+  });
+
   it('returns empty fields when frontmatter is unterminated', () => {
     const raw = `---\nname: incomplete\n`;
     expect(parseFrontmatter(raw)).toEqual({
