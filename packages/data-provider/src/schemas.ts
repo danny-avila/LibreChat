@@ -372,7 +372,7 @@ export const googleSettings = {
   },
   maxOutputTokens: {
     min: 1 as const,
-    max: 64000 as const,
+    max: 65536 as const,
     step: 1 as const,
     default: 8192 as const,
   },
