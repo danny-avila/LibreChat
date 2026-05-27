@@ -48,7 +48,22 @@ function githubFetch(
         truncated: false,
         tree: [
           {
-            path: 'skills/research/SKILL.md',
+            path: 'skills',
+            mode: '040000',
+            type: 'tree',
+            sha: 'skills-tree-sha',
+            url: 'https://api.github.test/tree/skills',
+          },
+        ],
+      });
+    }
+    if (url.includes('/git/trees/skills-tree-sha')) {
+      return response({
+        sha: 'skills-tree-sha',
+        truncated: false,
+        tree: [
+          {
+            path: 'research/SKILL.md',
             mode: '100644',
             type: 'blob',
             sha: 'skill-md-sha',
@@ -56,7 +71,7 @@ function githubFetch(
             url: 'https://api.github.test/blob/skill',
           },
           {
-            path: 'skills/research/scripts/run.sh',
+            path: 'research/scripts/run.sh',
             mode: '100644',
             type: 'blob',
             sha: 'file-sha',
@@ -193,8 +208,15 @@ describe('createGitHubSkillSyncRunner', () => {
     const deps = createDeps();
     const runner = createGitHubSkillSyncRunner(deps);
     const result = await runner.runOnce();
+    const fetchedUrls = (deps.fetchFn as unknown as jest.Mock).mock.calls.map(
+      ([input]: [RequestInfo | URL]) => input.toString(),
+    );
 
     expect(result.status).toBe('completed');
+    expect(fetchedUrls.some((url) => url.includes('/git/trees/tree-sha?recursive=1'))).toBe(false);
+    expect(fetchedUrls.some((url) => url.includes('/git/trees/skills-tree-sha?recursive=1'))).toBe(
+      true,
+    );
     expect(deps.createSkill).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'research',
@@ -441,7 +463,22 @@ describe('createGitHubSkillSyncRunner', () => {
           truncated: false,
           tree: [
             {
-              path: 'skills/SKILL.md',
+              path: 'skills',
+              mode: '040000',
+              type: 'tree',
+              sha: 'skills-tree-sha',
+              url: 'https://api.github.test/tree/skills',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/trees/skills-tree-sha')) {
+        return response({
+          sha: 'skills-tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'SKILL.md',
               mode: '100644',
               type: 'blob',
               sha: 'parent-skill-sha',
@@ -449,7 +486,7 @@ describe('createGitHubSkillSyncRunner', () => {
               url: 'https://api.github.test/blob/parent-skill',
             },
             {
-              path: 'skills/parent.txt',
+              path: 'parent.txt',
               mode: '100644',
               type: 'blob',
               sha: 'parent-file-sha',
@@ -457,7 +494,7 @@ describe('createGitHubSkillSyncRunner', () => {
               url: 'https://api.github.test/blob/parent-file',
             },
             {
-              path: 'skills/child/SKILL.md',
+              path: 'child/SKILL.md',
               mode: '100644',
               type: 'blob',
               sha: 'child-skill-sha',
@@ -465,7 +502,7 @@ describe('createGitHubSkillSyncRunner', () => {
               url: 'https://api.github.test/blob/child-skill',
             },
             {
-              path: 'skills/child/child.txt',
+              path: 'child/child.txt',
               mode: '100644',
               type: 'blob',
               sha: 'child-file-sha',
@@ -545,7 +582,22 @@ describe('createGitHubSkillSyncRunner', () => {
           truncated: false,
           tree: [
             {
-              path: 'skills/research/SKILL.md',
+              path: 'skills',
+              mode: '040000',
+              type: 'tree',
+              sha: 'skills-tree-sha',
+              url: 'https://api.github.test/tree/skills',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/trees/skills-tree-sha')) {
+        return response({
+          sha: 'skills-tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'research/SKILL.md',
               mode: '100644',
               type: 'blob',
               sha: 'skill-md-sha',
@@ -553,7 +605,7 @@ describe('createGitHubSkillSyncRunner', () => {
               url: 'https://api.github.test/blob/skill',
             },
             {
-              path: 'skills/research/data.bin',
+              path: 'research/data.bin',
               mode: '100644',
               type: 'blob',
               sha: 'oversized-file-sha',
@@ -580,6 +632,7 @@ describe('createGitHubSkillSyncRunner', () => {
 
     expect(result.status).toBe('failed');
     expect(fetchedUrls.some((url) => url.includes('/git/blobs/oversized-file-sha'))).toBe(false);
+    expect(deps.createSkill).not.toHaveBeenCalled();
     expect(deps.saveBuffer).not.toHaveBeenCalled();
     expect(deps.listSkillsBySource).not.toHaveBeenCalled();
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
@@ -588,5 +641,123 @@ describe('createGitHubSkillSyncRunner', () => {
         errorCode: 'GITHUB_BLOB_TOO_LARGE',
       }),
     );
+  });
+
+  it('rejects packages that exceed the skill import entry limit before blob downloads', async () => {
+    const skillMarkdown = '---\nname: research\ndescription: Research things\n---\nBody';
+    const extraFiles = Array.from(
+      { length: DEFAULT_SKILL_IMPORT_LIMITS.maxEntries },
+      (_, index) => ({
+        path: `research/files/${index}.txt`,
+        mode: '100644',
+        type: 'blob',
+        sha: `file-${index}-sha`,
+        size: 1,
+        url: `https://api.github.test/blob/file-${index}`,
+      }),
+    );
+    const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/commits/')) {
+        return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
+      }
+      if (url.includes('/git/trees/tree-sha')) {
+        return response({
+          sha: 'tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'skills',
+              mode: '040000',
+              type: 'tree',
+              sha: 'skills-tree-sha',
+              url: 'https://api.github.test/tree/skills',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/trees/skills-tree-sha')) {
+        return response({
+          sha: 'skills-tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'research/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'skill-md-sha',
+              size: Buffer.byteLength(skillMarkdown),
+              url: 'https://api.github.test/blob/skill',
+            },
+            ...extraFiles,
+          ],
+        });
+      }
+      if (url.includes('/git/blobs/')) {
+        throw new Error('blob should not be downloaded');
+      }
+      return response({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+    const deps = createDeps({ fetchFn });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.saveBuffer).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'GITHUB_TOO_MANY_FILES',
+      }),
+    );
+  });
+
+  it('rolls back a newly created skill when file sync fails before publishing', async () => {
+    const deps = createDeps({
+      saveBuffer: jest.fn(async () => {
+        throw new Error('storage unavailable');
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.createSkill).toHaveBeenCalled();
+    expect(deps.grantPermission).not.toHaveBeenCalled();
+    expect(deps.upsertSkillFile).not.toHaveBeenCalled();
+    expect(deps.deleteSkill).toHaveBeenCalledWith(expect.any(String));
+  });
+
+  it('stops syncing after losing the Mongo lock lease', async () => {
+    jest.useFakeTimers();
+    let releaseToken: (token: string) => void = () => undefined;
+    const tokenPromise = new Promise<string>((resolve) => {
+      releaseToken = resolve;
+    });
+    const deps = createDeps({
+      getCredentialToken: jest.fn(() => tokenPromise),
+      refreshLock: jest.fn(async () => false),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+
+    try {
+      const runPromise = runner.runOnce();
+      await jest.advanceTimersByTimeAsync(10 * 60 * 1000);
+      releaseToken('github_pat_secret');
+      const result = await runPromise;
+
+      expect(result.status).toBe('failed');
+      expect(result.message).toBe('GitHub skill sync lock was lost');
+      expect(deps.fetchFn).not.toHaveBeenCalled();
+      expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          status: 'failed',
+          errorCode: 'SYNC_LOCK_LOST',
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
