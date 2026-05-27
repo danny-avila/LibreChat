@@ -81,8 +81,10 @@ type SaveBufferResult = {
   storageRegion?: string;
 };
 
+type MaybePromise<T> = T | Promise<T>;
+
 export type GitHubSkillSyncDeps = {
-  getConfig: () => SkillSyncConfig | undefined;
+  getConfig: () => MaybePromise<SkillSyncConfig | undefined>;
   getCredentialToken: (
     provider: SkillSyncProvider,
     credentialKey: string,
@@ -194,6 +196,15 @@ function isSafeRelativePath(value: string): boolean {
 
 function makeUpstreamId(source: SkillSyncGitHubSourceConfig, rootPath: string): string {
   return `${source.id}:${source.owner}/${source.repo}:${rootPath}`;
+}
+
+function makeSourceAuthorId(source: SkillSyncGitHubSourceConfig): Types.ObjectId {
+  const digest = crypto
+    .createHash('sha256')
+    .update(`${PROVIDER}:${source.id}`)
+    .digest('hex')
+    .slice(0, 24);
+  return new Types.ObjectId(digest);
 }
 
 function toSkillName(value: string): string {
@@ -549,7 +560,7 @@ async function upsertRemoteSkill(params: {
     ...(update as Omit<UpdateSkillInput, 'source'>),
     name: update.name ?? fallbackName,
     description: update.description ?? fallbackName,
-    author: SYSTEM_AUTHOR_ID,
+    author: makeSourceAuthorId(source),
     authorName: SYSTEM_AUTHOR_NAME,
     source: PROVIDER,
   };
@@ -607,7 +618,7 @@ async function syncSkillFiles(params: {
     const filename = getFilename(relativePath);
     const mimeType = guessMimeType(filename);
     const saved = await deps.saveBuffer({
-      userId: SYSTEM_AUTHOR_ID.toString(),
+      userId: skill.author.toString(),
       buffer,
       fileName: `${fileId}__${filename}`,
       basePath: 'uploads',
@@ -635,7 +646,7 @@ async function syncSkillFiles(params: {
         mimeType,
         bytes: buffer.length,
         isExecutable: false,
-        author: SYSTEM_AUTHOR_ID,
+        author: skill.author,
         tenantId: skill.tenantId,
       });
     } catch (error) {
@@ -646,7 +657,7 @@ async function syncSkillFiles(params: {
             source: saved.source,
             storageKey: saved.storageKey,
             storageRegion: saved.storageRegion,
-            user: SYSTEM_AUTHOR_ID,
+            user: skill.author,
             tenantId: skill.tenantId,
           })
           .catch((cleanupError) =>
@@ -820,7 +831,7 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
     deps.lockOwner ?? `${process.pid}:${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
 
   async function getStatus() {
-    const github = getGithubConfig(deps.getConfig());
+    const github = getGithubConfig(await deps.getConfig());
     const [storedStatuses, credentials] = await Promise.all([
       deps.listStatuses(PROVIDER),
       deps.listCredentials(PROVIDER),
@@ -867,7 +878,7 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
   }
 
   async function runOnce(): Promise<GitHubSkillSyncRunResult> {
-    const github = getGithubConfig(deps.getConfig());
+    const github = getGithubConfig(await deps.getConfig());
     if (!github.enabled || github.sources.length === 0) {
       return { status: 'skipped', message: 'GitHub skill sync is disabled', sources: [] };
     }
