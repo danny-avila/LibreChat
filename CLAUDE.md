@@ -2,7 +2,7 @@
 
 Mémoire institutionnelle du projet Vermeer Chat, à destination de tout nouveau lecteur (humain ou IA). Ce fichier est **stratégique** : contexte, stack, conventions, décisions, garde-fous, état d'avancement. Il ne contient pas l'historique détaillé des décisions et conversations — celui-ci est tracké sur Notion.
 
-Dernière mise à jour : 2026-05-27 — HEAD `a2d14b36d`.
+Dernière mise à jour : 2026-05-27 (soir) — HEAD `a98a8d6cd`.
 
 La Partie 1 ci-dessous couvre le projet Vermeer. La [Partie 2](#partie-2--conventions-techniques-librechat) reprend les conventions techniques LibreChat (workspaces, code style, tests) — à lire après le contexte projet.
 
@@ -18,6 +18,7 @@ La Partie 1 ci-dessous couvre le projet Vermeer. La [Partie 2](#partie-2--conven
 8. Roadmap V1 / V2 / V3
 9. Limitations connues et travaux en cours
 10. Documentation et ressources externes
+11. Risques techniques connus
 
 ---
 
@@ -25,7 +26,7 @@ La Partie 1 ci-dessous couvre le projet Vermeer. La [Partie 2](#partie-2--conven
 
 Vermeer Chat est un **fork de LibreChat (base v0.8.5)** adapté pour un usage interne agence. Ce n'est pas un produit développé de zéro : on étend LibreChat upstream en personnalisant l'UX, le design et la configuration, et en activant progressivement les capacités natives.
 
-- **Pour qui** : les équipes **BETC Fullsix** et **POP** (Proseonpixels). Deux environnements distincts sont prévus (voir section 5).
+- **Pour qui** : les équipes **BETC Fullsix** et **POP** (Proseonpixels). Les utilisateurs sont organisés en 2 groupes BETC et POP au sein d'une instance unique (voir décision 5.3).
 - **Promesse produit** : un assistant IA d'entreprise premium, francisé et orienté métier agence, donnant accès aux modèles Anthropic et OpenAI dans un cadre authentifié et sécurisé, avec agents, mémoire et recherche de fichiers.
 
 Le repo a deux remotes : `origin` (Vermeer) et `upstream` (LibreChat officiel). On rebase/merge depuis `upstream` pour suivre les versions amont.
@@ -88,21 +89,23 @@ Chaque décision est donnée au format **Décision → Pourquoi → Conséquence
 - Pourquoi : LibreChat fournit déjà `balance`, `autoRefill`, le tracking de tokens et le hard block ; réimplémenter serait redondant et risqué.
 - Conséquence pratique : activer et configurer `balance`/`transactions` dans `librechat.yaml` plutôt que développer un module de crédits maison.
 
-**5.3 Deux environnements distincts BETC / POP plutôt qu'une logique Teams en MongoDB**
-- Pourquoi : l'isolation par environnement est plus simple à opérer et à sécuriser qu'une logique multi-tenant ajoutée au schéma de données.
-- Conséquence pratique : ne pas introduire de notion de « team » dans les collections ; dupliquer/configurer deux déploiements paramétrés différemment.
+**5.3 Une instance unique avec 2 groupes BETC / POP + config overrides natifs**
+- Pourquoi : LibreChat v0.8.5 fait nativement de la séparation par Groups + config overrides DB-backed. Une seule infrastructure à maintenir, partage cross-BU possible, users multi-BU possibles, trajectoire alignée sur le natif v0.8.5. (Révise la décision initiale « 2 environnements distincts ».)
+- Conséquence pratique : ne pas déployer 2 environnements distincts ; utiliser les Groups et config overrides via l'Admin Panel ClickHouse en V2. L'étanchéité des données BETC vs POP est à valider rigoureusement avant déploiement.
 
-**5.4 Recherche web via les capacités natives des modèles plutôt que des clés API tierces**
-- Pourquoi : éviter de dépendre (et de payer) des services tiers (Serper, Firecrawl, Jina) quand les modèles offrent une recherche native.
-- Conséquence pratique : ne pas ajouter de clés de fournisseurs de recherche ; piloter la recherche web par la configuration des modèles/agents.
+**5.4 Recherche web native des providers (param `web_search` LLM), pas le pipeline tiers LibreChat**
+- Pourquoi : il s'agit de la web search **native** des providers (mécanisme natif Anthropic / OpenAI Responses API / Google Grounding), distincte du pipeline tiers LibreChat (Serper/Firecrawl/Jina). On évite la dépendance et le coût des services tiers côté utilisateur.
+- Architecture cible — double exposition : (a) web search native providers en toggle utilisateur (livrée V1 dans le panel Paramètres) ; (b) pipeline LibreChat conservé mais **gating ADMIN uniquement**, accessible en paramètres avancés via l'Admin Panel en V2.
+- Conséquence pratique : pas de clés tierces (Serper/Firecrawl/Jina) ajoutées en V1 ; Tavily déjà présent reste actif en `.env` mais **inaccessible aux utilisateurs en V1** ; les utilisateurs accèdent à la native via le toggle du panel Paramètres pour Claude et GPT (gated sur endpoints custom).
 
 **5.5 Deux niveaux d'agents : L1 vs L2**
 - Pourquoi : distinguer un assistant qui **produit du texte** (L1) d'un agent qui **agit via des outils** (L2) clarifie le périmètre fonctionnel et la roadmap.
 - Conséquence pratique : V1 cible le L1 ; le L2 (action via outils) est planifié pour V2 via Codeur (voir roadmap).
 
-**5.6 Système d'admin natif LibreChat plutôt que feature flags hardcodés**
-- Pourquoi : les flags `SHOW_*` posés en V1 sont des raccourcis temporaires ; l'admin natif (permissions, capabilities) est la voie pérenne et configurable sans redéploiement.
-- Conséquence pratique : tout masquage/activation de feature doit à terme passer par l'admin natif ; les flags hardcodés actuels sont à reverter (voir section 9).
+**5.6 Système d'admin natif LibreChat plutôt que feature flags hardcodés — trajectoire en 2 temps**
+- Pourquoi : les flags `SHOW_*` qui ont un équivalent natif sont des raccourcis temporaires ; l'admin natif (permissions, capabilities) est la voie pérenne et configurable sans redéploiement.
+- Trajectoire actée : **V1 (3 juin)** — revert progressif des flags concernés vers le yaml `interface` (étape intermédiaire propre mais legacy upstream). **V2 (mi-juin)** — bascule vers l'**Admin Panel ClickHouse** (service séparé à déployer), cible vraie pour gérer permissions par rôle/groupe avec config overrides DB-backed.
+- Conséquence pratique : pour le revert des flags (sujet 2 du retroplanning), appliquer la trajectoire standard V1 yaml + V2 Admin Panel. Seuls les flags à équivalent natif sont concernés (cf. garde-fou §6 et inventaire §7).
 
 ## 6. Garde-fous (NE JAMAIS faire sans validation explicite)
 
@@ -112,13 +115,13 @@ Chaque règle est suivie d'un exemple concret de ce qu'il faut éviter.
 - **Ne pas commit le `.env`.** Éviter : `git add .env` — il contient les clés API (Anthropic, OpenAI, AWS, etc.). Le template versionné est `.env.example`.
 - **Ne pas mettre de clés API en clair dans un fichier versionné.** Éviter : coller une clé dans `librechat.yaml` au lieu d'utiliser une variable `${NOM_VAR}`.
 - **Ne pas modifier la structure des collections MongoDB existantes** (User, Transactions, Conversations, Messages, Agents). Éviter : renommer/supprimer un champ de `User` — cela casse la migration des données depuis la prod existante.
-- **Ne pas ajouter de nouveaux feature flags hardcodés `SHOW_*`.** Éviter : créer `const SHOW_NEW_THING = false` dans un composant — utiliser le système d'admin/permissions natif LibreChat.
+- **Ne pas ajouter de feature flags hardcodés qui ont un équivalent admin natif.** Si la doc LibreChat propose un toggle équivalent (yaml `interface` ou Admin Panel), reverter/utiliser le natif est **obligatoire** (ex. items sidebar, toggles UI, permissions de feature). Éviter : `const SHOW_NEW_THING = false` pour masquer une feature gérable nativement. **Ne vise PAS** les flags de branding/cosmétique sans équivalent natif (ex. `FORCE_VERMEER_DARK`, `SHOW_LANDING_SUGGESTIONS`, `SHOW_LEGACY_COMPOSER_MENUS`), qui restent légitimement en code et doivent être documentés.
 - **Ne pas casser le système d'admin natif LibreChat.** Éviter : court-circuiter une permission (`hasAccessTo…`) par un flag ou une condition en dur.
 - **Méthode Phase 1 / 2 / 3 obligatoire pour tout chantier > 50 lignes de code.** Éviter : se lancer dans l'implémentation sans investigation ni plan validé.
 
 ## 7. État actuel V1 (refonte UX)
 
-Base LibreChat v0.8.5, HEAD `a2d14b36d`. La refonte UX V1 est livrée via 9 commits structurants (12–13 mai 2026) :
+Base LibreChat v0.8.5, HEAD `a98a8d6cd`. La refonte UX V1 est livrée via les commits structurants suivants (12–27 mai 2026) :
 
 - `a3315c1a6` — design system Vermeer : dark mode + accent rouge.
 - `cb73a8f7d` — Skills : francisation + bouton « + » scindé en « Créer » / « Importer ».
@@ -129,10 +132,26 @@ Base LibreChat v0.8.5, HEAD `a2d14b36d`. La refonte UX V1 est livrée via 9 comm
 - `57cad180f` — builder agent : réordonnancement + zone d'upload unifiée sous Instructions.
 - `a2d14b36d` — picker de modèle : section « Agents » retirée (sélection via le panel « Mes agents »).
 - `ca79924db` — landing : 4 cartes de suggestions orientées usages agence.
+- `22519dd92` — ajout du CLAUDE.md projet (mémoire institutionnelle).
+- `a98a8d6cd` — web search native exposée dans le panel Paramètres pour Claude et GPT, gated sur endpoints custom.
 
 **Couverture des features upstream** (`librechat.yaml`) : activées — agents, marketplace, fileSearch, fileCitations, memory, peoplePicker, presets, prompts, bookmarks, multiConvo, speech (TTS/STT). Non activées — `balance` et `transactions` sont **présents nativement mais laissés commentés en config** ; le système de crédits natif est donc disponible mais pas encore branché (point à acter en V1, voir section 8).
 
-**Feature flags hardcodés actifs** (temporaires, à reverter vers l'admin natif) : `FORCE_VERMEER_DARK=true` (`App.jsx`, `General.tsx`), `SHOW_PRESETS_BUTTON=false` (`Chat/Header.tsx`), `SHOW_PROMPTS_SIDEBAR_ITEM=false` et `SHOW_MCP_SIDEBAR_ITEM=false` (`hooks/Nav/useSideNavLinks.ts`), `SHOW_WEB_SEARCH_TOOL=false` (`Chat/Input/ActiveToolChips.tsx`, `Chat/Input/ToolsMenu.tsx`). On compte vraisemblablement 4-5 flags `SHOW_*` hardcodés au total, à confirmer par un audit ultérieur du code.
+**Feature flags hardcodés — inventaire (audit CC)** : 10 noms distincts / 12 déclarations recensés à l'origine ; après le revert de `a98a8d6cd`, 9 noms / 11 déclarations restent dans le code.
+
+_Catégorie A — équivalent admin natif → à reverter (trajectoire 5.6 : V1 yaml `interface` + V2 Admin Panel). 5 noms / 6 déclarations :_
+- `SHOW_PROMPTS_SIDEBAR_ITEM` (`hooks/Nav/useSideNavLinks.ts`)
+- `SHOW_MCP_SIDEBAR_ITEM` (`hooks/Nav/useSideNavLinks.ts`)
+- `SHOW_PRESETS_BUTTON` (`Chat/Header.tsx`)
+- `SHOW_WEB_SEARCH_TOOL` ×2 (`Chat/Input/ActiveToolChips.tsx`, `ToolsMenu.tsx`) — pipeline tiers, cible gating ADMIN (cf. 5.4)
+- ~~`SHOW_USER_WEB_SEARCH_SETTING`~~ — **reverté dans `a98a8d6cd`** (web search native exposée) ; il reste donc 4 noms / 5 déclarations à traiter en catégorie A.
+
+_Catégorie B — branding/cosmétique, sans équivalent natif → restent légitimement en code, à documenter. 5 noms / 6 déclarations :_
+- `FORCE_VERMEER_DARK` ×2 (`App.jsx`, `General.tsx`)
+- `SHOW_LANDING_SUGGESTIONS` (`Chat/Landing/SuggestionGrid.tsx`)
+- `SHOW_LEGACY_COMPOSER_MENUS` (`Chat/Input/ChatForm.tsx`)
+- `SHOW_AGENT_VARIABLES_BUTTON` (`SidePanel/Agents/Instructions.tsx`)
+- `SHOW_AGENT_ID` (`SidePanel/Agents/AgentConfig.tsx`)
 
 ## 8. Roadmap V1 / V2 / V3
 
@@ -143,9 +162,12 @@ Base LibreChat v0.8.5, HEAD `a2d14b36d`. La refonte UX V1 est livrée via 9 comm
 ## 9. Limitations connues et travaux en cours
 
 - **Mode comparaison** : le dysfonctionnement observé venait d'une clé OpenAI invalide en local, pas d'un vrai bug applicatif.
-- **Recherche web** : UX en cours de simplification (toggle composer + intégration dans le builder Agent). Aujourd'hui masquée côté UI (`SHOW_WEB_SEARCH_TOOL=false`), en attente d'une décision d'architecture (capacités natives, cf. décision 5.4).
+- **Recherche web** : native exposée en V1 dans le panel Paramètres (Claude/GPT, cf. `a98a8d6cd`). Le pipeline tiers reste masqué (`SHOW_WEB_SEARCH_TOOL=false`), cible gating ADMIN en V2 (cf. 5.4).
 - **RAG vs File context** : l'UX du dispatch entre recherche de fichiers (RAG) et contexte permanent reste à clarifier ; en V1, le builder agent expose une zone d'upload unifiée (RAG par défaut).
-- **Feature flags hardcodés** : les flags `SHOW_*` et `FORCE_VERMEER_DARK` listés en section 7 sont à basculer vers le système d'admin natif LibreChat. Un audit du code reste à mener pour recenser l'ensemble (vraisemblablement 4-5 flags `SHOW_*`) avant de les reverter.
+- **Feature flags hardcodés** : audit fait (10 noms / 12 déclarations à l'origine, cf. §7). Les flags à équivalent natif suivent la trajectoire 5.6 (V1 yaml + V2 Admin Panel) ; les flags branding/cosmétique restent documentés en code.
+- **RAG API non opérationnelle en V1** : `RAG_API_URL` est undefined dans le `.env`. File Search est exposée dans l'UI builder agent mais l'indexation échoue silencieusement (warning dans les logs backend). À activer en V1 : lancer le conteneur RAG API (port 8000 + PostgreSQL/PGVector), définir `RAG_API_URL`, vérifier les embeddings OpenAI déjà câblés (`RAG_OPENAI_API_KEY` présent). À coordonner avec Oussama (infra Docker / déploiement).
+- **Gap UX boutons d'upload** : LibreChat upstream propose 4 modes (Upload Images, Upload as Text/File Context, Upload for File Search/RAG, Upload for Code Interpreter). Vermeer V1 n'expose qu'un bouton « joindre un fichier » (= File Context) ; les 3 autres modes sont absents de l'UI. À enrichir en V1/V1.1 pour bénéficier du RAG et du Code Interpreter une fois activés.
+- **Builder agent — web search native non exposée** : l'accordéon « Recherche web » du builder pointe vers le pipeline tiers (trop technique pour les users). La native (param `web_search`, livrée V1 dans le panel Paramètres de la conversation) n'est pas exposable simplement dans le builder — upstream ne propose pas de capability « web search native » au niveau agent. Sujet V1.1+ : investiguer le stockage de `web_search` dans la config d'un agent + exposition builder (chantier custom potentiellement non trivial).
 
 ## 10. Documentation et ressources externes
 
@@ -153,6 +175,14 @@ Base LibreChat v0.8.5, HEAD `a2d14b36d`. La refonte UX V1 est livrée via 9 comm
 - Token usage : https://www.librechat.ai/docs/configuration/token_usage
 - Notion projet (privé) — historique détaillé des décisions et conversations.
 - Documentation utilisateur Vermeer Chat V1 (document Word, en cours, par Nolan).
+
+## 11. Risques techniques connus
+
+- **Fail-fast yaml** : toute erreur de validation dans `librechat.yaml` fait sortir le process en code 1 (boot cassé, pas de mode dégradé). Tester systématiquement le yaml en local avant tout déploiement prod (un yaml invalide = appli down).
+- **`balance.enabled` force `transactions.enabled`** : activer le bloc `balance` réécrit automatiquement `transactions` à true quelle que soit sa valeur. Le solde a besoin de l'historique, c'est by-design.
+- **Pricing en dur dans `api/models/tx.js`** : les rates input/completion par modèle vivent dans ce fichier, pas dans le yaml. Avant d'activer la balance en V1, vérifier que les modèles utilisés (gpt-5.x, claude-opus-4-6, claude-sonnet-4-5, claude-haiku-4-5) ont un rate défini, sinon la consommation n'est pas trackée.
+- **Synchro balance au login** : le solde se réaligne sur la config globale (`startBalance`) à chaque connexion. Attention à la migration des users existants — un `startBalance` global mal réglé peut écraser les soldes attendus.
+- **`CREDS_KEY` / `CREDS_IV`** : présents dans le `.env`, à ne JAMAIS perdre ni régénérer lors d'une migration MongoDB. Ces clés chiffrent les credentials user en base ; sans elles, les données existantes deviennent illisibles.
 
 ---
 
