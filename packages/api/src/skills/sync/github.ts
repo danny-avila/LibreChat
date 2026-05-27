@@ -88,6 +88,10 @@ type PreparedRemoteSkill = {
   createInput: CreateSkillInput;
 };
 
+type PreparedExistingRemoteSkill = PreparedRemoteSkill & {
+  existing: ISkill & { _id: Types.ObjectId };
+};
+
 type SaveBufferResult = {
   filepath: string;
   source: string;
@@ -180,7 +184,7 @@ export type GitHubSkillSyncDeps = {
 export type GitHubSkillSyncRunResult = {
   status: 'started' | 'skipped' | 'completed' | 'failed';
   message?: string;
-  sources: ISkillSyncStatus[];
+  sources: Array<ISkillSyncStatus & { credentialPresent?: boolean }>;
 };
 
 class SkillSyncError extends Error {
@@ -789,6 +793,20 @@ async function commitRemoteSkill(
   return { skill: created.skill, created: true };
 }
 
+async function commitExistingRemoteSkillAfterFileSync(
+  deps: GitHubSkillSyncDeps,
+  prepared: PreparedExistingRemoteSkill,
+): Promise<UpsertRemoteSkillResult> {
+  const refreshed = await deps.getSkillById(prepared.existing._id);
+  if (!refreshed) {
+    throw new SkillSyncError(
+      'SKILL_NOT_FOUND',
+      `Previously synced skill "${prepared.existing.name}" was removed`,
+    );
+  }
+  return commitRemoteSkill(deps, { ...prepared, existing: refreshed });
+}
+
 async function cleanupFile(
   deps: GitHubSkillSyncDeps,
   file: ISkillFile & { _id: Types.ObjectId },
@@ -1005,7 +1023,10 @@ async function syncSource(params: {
           fetchFn,
           assertNotCancelled,
         });
-        const upserted = await commitRemoteSkill(deps, prepared);
+        const upserted = await commitExistingRemoteSkillAfterFileSync(deps, {
+          ...prepared,
+          existing: prepared.existing,
+        });
         await ensurePublicViewer(deps, upserted.skill._id);
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
@@ -1160,11 +1181,11 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
       leaseMs: LOCK_LEASE_MS,
     });
     if (!acquired) {
-      const statuses = await deps.listStatuses(PROVIDER);
+      const status = await getStatus();
       return {
         status: 'skipped',
         message: 'GitHub skill sync is already running',
-        sources: statuses,
+        sources: status.sources,
       };
     }
     let lockLost = false;
