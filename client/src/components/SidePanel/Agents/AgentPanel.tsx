@@ -37,6 +37,7 @@ import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
 import ModelPanel from './ModelPanel';
 import { useNavigate } from 'react-router-dom';
+import ManageAgentDropdown from '~/nj/components/Agents/ManageAgentDropdown';
 
 /* Helpers */
 function getUpdateToastMessage(
@@ -546,16 +547,29 @@ export default function AgentPanel() {
 
             {/* NJ: add link to agent marketplace here as well */}
             {showAgentMarketplace && (
-              <button
-                type="button"
-                className="mx-3 mt-1 w-full rounded px-2 py-2 hover:bg-surface-active-alt"
-                onClick={() => navigate('/agents')}
-              >
-                <div className="flex flex-1 items-center truncate">
-                  <LayoutGrid className="mr-2 h-5 w-5 text-text-primary" aria-hidden="true" />
-                  <span className="truncate">{localize('com_agents_marketplace')}</span>
-                </div>
-              </button>
+              <div className="mx-3 mt-1 flex w-full flex-row items-center justify-between">
+                <button
+                  type="button"
+                  className="rounded px-2 py-2 hover:bg-surface-active-alt"
+                  onClick={() => navigate('/agents')}
+                >
+                  <div className="flex flex-1 items-center truncate">
+                    <LayoutGrid className="mr-2 h-5 w-5 text-text-primary" aria-hidden="true" />
+                    <span className="truncate text-sm font-semibold">
+                      {localize('com_agents_marketplace')}
+                    </span>
+                  </div>
+                </button>
+
+                {/* NJ: We moved duplicate / delete to the top of the agent builder */}
+                {agent_id && (
+                  <ManageAgentDropdown
+                    agent={agentQuery.data}
+                    createMutation={create}
+                    setCurrentAgentId={setCurrentAgentId}
+                  />
+                )}
+              </div>
             )}
 
             <hr className="mt-1 w-full border-border-heavy" />
