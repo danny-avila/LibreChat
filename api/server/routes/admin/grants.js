@@ -1,7 +1,10 @@
 const express = require('express');
 const { createAdminGrantsHandlers, getCachedPrincipals } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
-const { requireCapability } = require('~/server/middleware/roles/capabilities');
+const {
+  requireCapability,
+  superAdminContextMiddleware,
+} = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 
@@ -23,7 +26,7 @@ const handlers = createAdminGrantsHandlers({
   checkRoleExists: async (name) => (await db.getRoleByName(name)) != null,
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireJwtAuth, requireAdminAccess, superAdminContextMiddleware);
 
 router.get('/', handlers.listGrants);
 router.get('/effective', handlers.getEffectiveCapabilities);

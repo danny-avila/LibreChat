@@ -4,6 +4,7 @@ const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   hasConfigCapability,
   requireCapability,
+  superAdminContextMiddleware,
 } = require('~/server/middleware/roles/capabilities');
 const { getAppConfig, invalidateConfigCaches } = require('~/server/services/Config');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -26,7 +27,7 @@ const handlers = createAdminConfigHandlers({
   invalidateConfigCaches,
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireJwtAuth, requireAdminAccess, superAdminContextMiddleware);
 
 router.get('/', handlers.listConfigs);
 router.get('/base', handlers.getBaseConfig);

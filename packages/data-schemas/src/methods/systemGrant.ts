@@ -1,7 +1,7 @@
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type { Types, Model, ClientSession, FilterQuery } from 'mongoose';
 import type { SystemCapability } from '~/types/admin';
-import type { ISystemGrant } from '~/types';
+import type { ISystemGrant, IUser } from '~/types';
 import { SystemCapabilities, CapabilityImplications } from '~/admin/capabilities';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { normalizePrincipalId } from '~/utils/principal';
@@ -404,6 +404,39 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
+   * Seed platform-level grants (no tenantId) for a specific user, granting all
+   * SystemCapabilities. Intended for SUPER_ADMIN_EMAIL bootstrap — idempotent,
+   * concurrency-safe via bulkWrite ordered:false.
+   */
+  async function seedSuperAdminGrants(userId: string | Types.ObjectId): Promise<void> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const User = mongoose.models.User as Model<IUser>;
+    await User.updateOne({ _id: userId }, { $set: { role: SystemRoles.ADMIN } });
+    const now = new Date();
+    const normalizedId = normalizePrincipalId(userId, PrincipalType.USER);
+    const ops = Object.values(SystemCapabilities).map((capability) => ({
+      updateOne: {
+        filter: {
+          principalType: PrincipalType.USER,
+          principalId: normalizedId,
+          capability,
+          tenantId: { $exists: false },
+        },
+        update: {
+          $setOnInsert: {
+            principalType: PrincipalType.USER,
+            principalId: normalizedId,
+            capability,
+            grantedAt: now,
+          },
+        },
+        upsert: true,
+      },
+    }));
+    await tenantSafeBulkWrite(SystemGrant, ops, { ordered: false });
+  }
+
+  /**
    * Delete system grants for a principal.
    * Used for cascade cleanup when a principal (group, role) is deleted.
    *
@@ -433,6 +466,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
   return {
     grantCapability,
     seedSystemGrants,
+    seedSuperAdminGrants,
     revokeCapability,
     hasCapabilityForPrincipals,
     getHeldCapabilities,

@@ -1,7 +1,10 @@
 const express = require('express');
 const { createAdminUsersHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
-const { requireCapability } = require('~/server/middleware/roles/capabilities');
+const {
+  requireCapability,
+  superAdminContextMiddleware,
+} = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 
@@ -19,7 +22,7 @@ const handlers = createAdminUsersHandlers({
   deleteAclEntries: db.deleteAclEntries,
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireJwtAuth, requireAdminAccess, superAdminContextMiddleware);
 
 router.get('/', requireReadUsers, handlers.listUsers);
 router.get('/search', requireReadUsers, handlers.searchUsers);

@@ -32,6 +32,7 @@ const {
   getRoleByName,
   seedDatabase,
 } = require('~/models');
+const { bootstrapSuperAdmin } = require('./services/AuthService');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
@@ -83,6 +84,12 @@ const startServer = async () => {
   }
 
   await runAsSystem(seedDatabase);
+  if (!process.env.SUPER_ADMIN_EMAIL || !process.env.SUPER_ADMIN_PASSWORD) {
+    throw new Error(
+      '[superAdmin] SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD are required. Set them in your .env file.',
+    );
+  }
+  await bootstrapSuperAdmin(process.env.SUPER_ADMIN_EMAIL, process.env.SUPER_ADMIN_PASSWORD);
   /* Recover stuck `status: 'pending'` records from a crash mid-render.
    * `runAsSystem` is required — `File` is tenant-isolated and strict
    * mode rejects unscoped queries. Lazy sweep in the preview endpoint

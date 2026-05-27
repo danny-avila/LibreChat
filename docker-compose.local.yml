@@ -1,0 +1,58 @@
+# Local development dependencies only.
+# Run the API and UI on the host with npm (backend:dev + frontend:dev).
+# See docs/local-development.md for setup and .env values.
+
+services:
+  mongodb:
+    container_name: chat-mongodb
+    image: mongo:8.0.20
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./data-node:/data/db
+    command: mongod --noauth
+
+  meilisearch:
+    container_name: chat-meilisearch
+    image: getmeili/meilisearch:v1.35.1
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+    environment:
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+    volumes:
+      - ./meili_data_v1.35.1:/meili_data
+
+  vectordb:
+    container_name: vectordb
+    image: pgvector/pgvector:0.8.0-pg15-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    volumes:
+      - pgdata2:/var/lib/postgresql/data
+    profiles:
+      - rag
+
+  rag_api:
+    container_name: rag_api
+    image: registry.librechat.ai/danny-avila/librechat-rag-api-dev-lite:latest
+    restart: unless-stopped
+    ports:
+      - "${RAG_PORT:-8000}:${RAG_PORT:-8000}"
+    environment:
+      - DB_HOST=vectordb
+      - RAG_PORT=${RAG_PORT:-8000}
+    depends_on:
+      - vectordb
+    env_file:
+      - .env
+    profiles:
+      - rag
+
+volumes:
+  pgdata2:
