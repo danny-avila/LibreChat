@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const {
   logger,
+  runAsSystem,
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
@@ -34,6 +35,7 @@ const {
   generateToken,
   deleteUserById,
   generateRefreshToken,
+  seedSuperAdminGrants,
 } = require('~/models');
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
@@ -770,12 +772,56 @@ const resendVerificationEmail = async (req) => {
   }
 };
 
+/**
+ * Bootstrap the platform-level super admin on first boot.
+ * Creates the user account if it doesn't exist, then seeds platform-level
+ * SystemGrants and assigns the SUPER_ADMIN role. Idempotent.
+ *
+ * Must be called inside a runAsSystem() context so tenant-isolation hooks
+ * don't filter the User queries.
+ *
+ * @param {string} email
+ * @param {string} password - plaintext; hashed internally
+ */
+const bootstrapSuperAdmin = async (email, password) => {
+  await runAsSystem(async () => {
+    let userId;
+    const existingUser = await findUser({ email }, '_id');
+    if (!existingUser) {
+      const salt = bcrypt.genSaltSync(10);
+      const appConfig = await getAppConfig({ baseOnly: true });
+      const newUser = await createUser(
+        {
+          provider: 'local',
+          email,
+          name: 'Super Admin',
+          username: email.split('@')[0],
+          avatar: null,
+          role: SystemRoles.ADMIN,
+          password: bcrypt.hashSync(password, salt),
+          emailVerified: true,
+        },
+        appConfig.balance,
+        true,
+        true,
+      );
+      userId = newUser._id ?? newUser;
+      logger.info(`[superAdmin] User created for ${email}`);
+    } else {
+      userId = existingUser._id;
+    }
+    await seedSuperAdminGrants(userId);
+    logger.info(`[superAdmin] Platform grants applied for ${email}`);
+  });
+};
+
 module.exports = {
   logoutUser,
   verifyEmail,
   registerUser,
   setAuthTokens,
   resetPassword,
+  bootstrapSuperAdmin,
   setOpenIDAuthTokens,
   setCloudFrontAuthCookies,
   requestPasswordReset,

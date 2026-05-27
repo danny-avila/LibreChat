@@ -5,6 +5,8 @@ import {
   configCapability,
   SystemCapabilities,
   readConfigCapability,
+  SYSTEM_TENANT_ID,
+  tenantStorage,
 } from '@librechat/data-schemas';
 import type { SystemCapability, ConfigSection } from '@librechat/data-schemas';
 import type { NextFunction, Response } from 'express';
@@ -49,6 +51,12 @@ export type HasConfigCapabilityFn = (
   section: ConfigSection | null,
   verb?: 'manage' | 'read',
 ) => Promise<boolean>;
+
+export type SuperAdminContextMiddlewareFn = (
+  req: ServerRequest,
+  res: Response,
+  next: NextFunction,
+) => Promise<void>;
 
 /**
  * Per-request store for caching resolved principals and capability check results.
@@ -98,6 +106,7 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
   hasCapability: HasCapabilityFn;
   requireCapability: RequireCapabilityFn;
   hasConfigCapability: HasConfigCapabilityFn;
+  superAdminContextMiddleware: SuperAdminContextMiddlewareFn;
 } {
   const { getUserPrincipals, hasCapabilityForPrincipals } = deps;
 
@@ -200,5 +209,45 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
     };
   }
 
-  return { hasCapability, requireCapability, hasConfigCapability };
+  async function superAdminContextMiddleware(
+    req: ServerRequest,
+    _res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    const user = req.user;
+    if (!user) {
+      next();
+      return;
+    }
+    const id = user.id ?? user._id?.toString();
+    if (!id) {
+      next();
+      return;
+    }
+    try {
+      const capabilityUser: CapabilityUser = {
+        id,
+        role: user.role ?? '',
+        tenantId: (user as CapabilityUser).tenantId,
+      };
+      const principals =
+        getCachedPrincipals(capabilityUser) ??
+        (await getUserPrincipals({ userId: id, role: user.role ?? '' }));
+      const isPlatformAdmin = await hasCapabilityForPrincipals({
+        principals,
+        capability: SystemCapabilities.ACCESS_ADMIN,
+        tenantId: undefined,
+      });
+      if (isPlatformAdmin) {
+        const { requestId, userId: ctxUserId } = tenantStorage.getStore() ?? {};
+        tenantStorage.run({ tenantId: SYSTEM_TENANT_ID, requestId, userId: ctxUserId }, next);
+        return;
+      }
+    } catch (err) {
+      logger.error('[superAdminContextMiddleware] Error checking platform capability', err);
+    }
+    next();
+  }
+
+  return { hasCapability, requireCapability, hasConfigCapability, superAdminContextMiddleware };
 }
