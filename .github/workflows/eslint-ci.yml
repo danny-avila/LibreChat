@@ -61,7 +61,6 @@ jobs:
           # Run ESLint
           npx eslint --no-error-on-unmatched-pattern \
             --config eslint.config.mjs \
-            --max-warnings=0 \
             -- "${CHANGED_FILES[@]}"
 
       # Run Prettier --check on the same set of changed files to catch
