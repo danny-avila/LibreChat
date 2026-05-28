@@ -180,20 +180,11 @@ describe('isDeepSeekReasoningProvider', () => {
   });
 
   it('matches custom-named endpoints and direct DeepSeek-compatible proxies via the fallback', () => {
-    /**
-     * When a user configures OpenRouter or a DeepSeek-compatible proxy as a
-     * custom endpoint with a non-standard name (e.g. "MyOR") and
-     * `initializeAgent` normalizes the unknown provider to `openai`, only the
-     * model id remains as a reliable DeepSeek signal. Accept any model id
-     * that starts with the official DeepSeek prefix — `deepseek/` (OpenRouter
-     * shorthand) or bare `deepseek-...` / `deepseek` (direct API form).
-     */
     expect(isDeepSeekReasoningProvider('openai', 'deepseek/deepseek-v4')).toBe(true);
     expect(isDeepSeekReasoningProvider('MyCustomEndpoint', '~deepseek/r1')).toBe(true);
     expect(isDeepSeekReasoningProvider(undefined, 'deepseek/deepseek-chat')).toBe(true);
     expect(isDeepSeekReasoningProvider(null, 'deepseek/deepseek-v4')).toBe(true);
     expect(isDeepSeekReasoningProvider('', 'deepseek/deepseek-v4')).toBe(true);
-    // Bare direct-API ids on a custom OpenAI-compatible DeepSeek proxy
     expect(isDeepSeekReasoningProvider('openai', 'deepseek-chat')).toBe(true);
     expect(isDeepSeekReasoningProvider('MyDeepSeekProxy', 'deepseek-reasoner')).toBe(true);
     expect(isDeepSeekReasoningProvider(undefined, 'deepseek-r1')).toBe(true);
@@ -223,15 +214,6 @@ describe('isDeepSeekReasoningProvider', () => {
   });
 
   it('does not match cloned/distilled slugs that merely contain "deepseek" later in the id', () => {
-    /**
-     * Community and distilled models that wrap DeepSeek in another namespace
-     * (e.g. `mistral/deepseek-distilled-foo`, `community/not-a-deepseek-clone`)
-     * usually don't actually run DeepSeek's API. Anchoring the model match to
-     * the start of the id rejects them — the downstream gate on non-empty
-     * `additional_kwargs.reasoning_content` is the fallback safety net, but
-     * being conservative at the pattern level avoids unsupported wire fields
-     * on proxies that wouldn't accept them. (Codex round-3 review.)
-     */
     expect(
       isDeepSeekReasoningProvider(Providers.OPENROUTER, 'community/not-a-deepseek-clone'),
     ).toBe(false);

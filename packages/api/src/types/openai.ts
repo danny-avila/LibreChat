@@ -30,17 +30,7 @@ export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
 
 export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
   include_reasoning?: boolean;
-  /**
-   * LibreChat-extension flag honored by `LibreChatOpenAICompletions`
-   * (`@librechat/agents`): when true, replays
-   * `additional_kwargs.reasoning_content` on tool-bearing assistant
-   * messages as a top-level `reasoning_content` field in the OpenAI
-   * request body. Required by DeepSeek thinking-mode tool-calling, which
-   * 400s without it. Direct `ChatDeepSeek` hardcodes the flag; the
-   * OpenRouter path opts in via this option.
-   *
-   * @see https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
-   */
+  /** Replays `reasoning_content` on tool-bearing turns (DeepSeek thinking-mode, #13366). */
   includeReasoningContent?: boolean;
   promptCache?: boolean;
   _lc_stream_delay?: number;

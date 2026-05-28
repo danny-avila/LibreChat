@@ -963,14 +963,6 @@ describe('getOpenAILLMConfig', () => {
       expect(dropped.llmConfig).not.toHaveProperty('promptCache');
     });
 
-    /**
-     * DeepSeek's thinking-mode API requires `reasoning_content` from each
-     * tool-bearing assistant turn to be replayed verbatim, or the second
-     * tool call 400s with "The `reasoning_content` in the thinking mode
-     * must be passed back to the API." Direct `ChatDeepSeek` hardcodes
-     * the flag; `ChatOpenRouter` does not, so the OpenRouter path needs
-     * to set it explicitly for DeepSeek models. (#13366)
-     */
     it('should set includeReasoningContent for DeepSeek models via OpenRouter', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
@@ -1024,15 +1016,6 @@ describe('getOpenAILLMConfig', () => {
     });
 
     it('should set includeReasoningContent for DeepSeek-flavored models outside OpenRouter (custom proxies)', () => {
-      /**
-       * `useOpenRouter` is no longer required — any DeepSeek model id
-       * triggers the flag so custom DeepSeek-compatible proxies and
-       * renamed OpenRouter endpoints stay in sync with the
-       * `AgentClient` formatter spoof. Direct `ChatDeepSeek` ignores
-       * the flag (it hardcodes its own `includeReasoningContent: true`),
-       * so this is a harmless no-op there; for `ChatOpenAI`-backed
-       * wrappers it's load-bearing.
-       */
       const directLike = getOpenAILLMConfig({
         apiKey: 'test-api-key',
         streaming: true,

@@ -62,19 +62,7 @@ const db = require('~/models');
  * @param {boolean} [definitionsOnly=true] - When true, returns only serializable
  *   tool definitions without creating full tool instances (for event-driven mode)
  */
-/**
- * Returns true when the primary agent OR any handoff sub-agent in the run
- * needs the DeepSeek thinking-mode formatter hint. Mirrors the same check
- * used in `AgentClient`, so the OpenAI-compatible serving path preserves
- * persisted `reasoning_content` for DeepSeek tool turns the same way the
- * chat path does — including the case where a non-DeepSeek primary hands
- * off to a DeepSeek sub-agent and its tool-bearing history would otherwise
- * lose the field on replay (#13366 review comment).
- *
- * @param {object} primaryAgent
- * @param {Map<string, object> | null | undefined} handoffAgentConfigs
- * @returns {boolean}
- */
+/** Whether any agent in the run needs the DeepSeek thinking-mode formatter hint (#13366). */
 function needsDeepSeekFormatHint(primaryAgent, handoffAgentConfigs) {
   const matchesAgent = (agent) =>
     agent != null &&
@@ -496,17 +484,6 @@ const OpenAIChatCompletionController = async (req, res) => {
     const openaiMessages = convertMessages(request.messages);
 
     const toolSet = buildToolSet(primaryConfig);
-    /**
-     * Mirror `AgentClient`'s DeepSeek thinking-mode spoof so this
-     * OpenAI-compatible serving path also re-attaches
-     * `additional_kwargs.reasoning_content` to tool-bearing AIMessages
-     * when the underlying agent is DeepSeek-flavored — direct, via
-     * OpenRouter (incl. custom-named endpoints with a `deepseek/*`
-     * model id), or appearing as a handoff/added-convo agent. Without
-     * the hint, DeepSeek 400s on the second tool turn with "The
-     * `reasoning_content` in the thinking mode must be passed back to
-     * the API." (#13366).
-     */
     const formatOptions = needsDeepSeekFormatHint(primaryConfig, handoffAgentConfigs)
       ? { provider: Providers.DEEPSEEK }
       : undefined;

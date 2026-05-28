@@ -877,26 +877,7 @@ class AgentClient extends BaseClient {
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
       });
 
-      /**
-       * Spoof the `provider` hint to `Providers.DEEPSEEK` for DeepSeek models
-       * routed via OpenRouter so the SDK's `formatAgentMessages` re-attaches
-       * `additional_kwargs.reasoning_content` to tool-bearing AIMessages.
-       * Without it, DeepSeek's thinking-mode API 400s on the second tool turn
-       * with "The `reasoning_content` in the thinking mode must be passed
-       * back to the API." (issue #13366). The matching `includeReasoningContent`
-       * on the LLM config (see endpoints/openai/llm.ts) ensures the field
-       * makes it into the outbound request body.
-       *
-       * Multi-agent runs ship the primary agent's messages plus any
-       * handoff/addedConvo agents from `this.agentConfigs` through the
-       * same `formatAgentMessages` call, so check every agent — a DeepSeek
-       * handoff under a non-DeepSeek primary would otherwise lose its
-       * persisted reasoning when its tool-bearing messages are replayed.
-       *
-       * `formatAgentMessages` previously ran without an explicit `provider`,
-       * so only opt into the option object when we actually need the
-       * spoof — preserving the pre-fix behavior for everyone else.
-       */
+      /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
       const hasDeepSeekAgent = (agent) =>
         agent != null &&
         isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);

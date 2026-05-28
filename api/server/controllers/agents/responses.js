@@ -537,18 +537,7 @@ const createResponse = async (req, res) => {
     const allMessages = [...previousMessages, ...inputMessages];
 
     const toolSet = buildToolSet(primaryConfig);
-    /**
-     * Spoof `Providers.DEEPSEEK` so DeepSeek-flavored agents (direct, via
-     * OpenRouter, or via a renamed custom OpenRouter endpoint matched by
-     * the `deepseek/*` model id) get their persisted
-     * `additional_kwargs.reasoning_content` re-attached to tool-bearing
-     * AIMessages — parity with the chat path in `AgentClient` (#13366).
-     *
-     * Multi-agent runs forward both the primary and any handoff sub-agents
-     * into `formatAgentMessages` via the same payload, so check every
-     * candidate: a DeepSeek handoff under a non-DeepSeek primary would
-     * otherwise lose its persisted reasoning on replay.
-     */
+    /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
     const matchesDeepSeek = (agent) =>
       agent != null &&
       isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);

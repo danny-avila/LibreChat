@@ -238,79 +238,27 @@ export function getReasoningKey(
   return reasoningKey;
 }
 
-/**
- * Matches DeepSeek model identifiers. Anchored to the start of the id so
- * only official DeepSeek namespaces/prefixes match — `deepseek/...` (the
- * OpenRouter shorthand) and bare `deepseek-...` / `deepseek` (the direct
- * DeepSeek API form, also accepted by DeepSeek-compatible custom proxies).
- *
- * Anchoring rejects community/distilled slugs that merely contain
- * `deepseek` further into the id (e.g. `mistral/deepseek-distilled-foo`,
- * `community/deepseek-clone`) so they don't accidentally trigger the
- * DeepSeek-only `reasoning_content` field on the wire.
- */
 const DEEPSEEK_MODEL_PATTERN = /^deepseek(?:[-/]|$)/i;
-
-/**
- * OpenRouter's "latest routing" prefix (`~`) is stripped before downstream
- * matching by the SDK's `normalizeOpenRouterModel()` helper. Mirror that
- * normalization here so ids like `~deepseek-chat` and `~deepseek/r1` are
- * recognized as DeepSeek (issue #13366 review comment).
- */
 const OPENROUTER_LATEST_ROUTING_PREFIX = /^~/;
 
 function matchesDeepSeekModel(model?: string | null): boolean {
   if (typeof model !== 'string' || model.length === 0) {
     return false;
   }
-  const normalized = model.replace(OPENROUTER_LATEST_ROUTING_PREFIX, '');
-  return DEEPSEEK_MODEL_PATTERN.test(normalized);
+  return DEEPSEEK_MODEL_PATTERN.test(model.replace(OPENROUTER_LATEST_ROUTING_PREFIX, ''));
 }
 
 /**
- * Predicate for DeepSeek thinking-mode reasoning_content roundtrip.
- *
- * DeepSeek's thinking-mode API rejects multi-turn tool-calling requests
- * unless `reasoning_content` from each prior assistant message that emitted
- * `tool_calls` is replayed verbatim. The agents SDK's `formatAgentMessages`
- * only re-attaches `additional_kwargs.reasoning_content` on tool-bearing
- * AIMessages when `options.provider === Providers.DEEPSEEK`, and
- * `ChatOpenRouter` doesn't set `includeReasoningContent`, so DeepSeek models
- * routed via OpenRouter silently drop the field and 400 on the second turn.
- *
- * Callers use this to (a) spoof the provider hint passed to
- * `formatAgentMessages` and (b) enable `includeReasoningContent` on the
- * outbound LLM config so the field is included in the OpenAI-compatible
- * request body.
- *
- * Matches three cases:
- * 1. Direct `Providers.DEEPSEEK` (any model — case-insensitive provider).
- * 2. `Providers.OPENROUTER` with a DeepSeek-style model id, including
- *    the `~`-prefixed latest-routing variant.
- * 3. Any other provider string (e.g. a renamed custom endpoint that
- *    `initializeAgent` normalized to `openai`, or a DeepSeek-compatible
- *    proxy) when the model id starts with the official DeepSeek prefix —
- *    either `deepseek/` (OpenRouter namespace) or bare `deepseek-...` /
- *    `deepseek` (direct API form). The model match is anchored so cloned
- *    slugs like `community/deepseek-distilled-foo` don't trigger spuriously.
- *
+ * Whether the (provider, model) pair targets DeepSeek's thinking-mode
+ * tool-calling contract, which requires `reasoning_content` to be replayed
+ * on every prior assistant message that emitted `tool_calls`.
  * @see https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
- * @param provider - The resolved provider (e.g., `'deepseek'`, `'openrouter'`).
- * @param model - The model identifier (e.g., `'deepseek/deepseek-v4-pro'`).
  */
 export function isDeepSeekReasoningProvider(
   provider: string | Providers | undefined | null,
   model?: string | null,
 ): boolean {
   if (typeof provider === 'string' && provider.length > 0) {
-    /**
-     * Compare case-insensitively. `agent.provider` is the raw endpoint name
-     * configured by the user — librechat.yaml frequently spells custom
-     * endpoints as `OpenRouter` (PascalCase), but the `Providers` enum is
-     * all lowercase. The provider hint passed to `formatAgentMessages` is a
-     * literal `Providers.DEEPSEEK` either way, so normalization here is
-     * purely for the comparison.
-     */
     const normalized = provider.toLowerCase();
     if (normalized === Providers.DEEPSEEK) {
       return true;
