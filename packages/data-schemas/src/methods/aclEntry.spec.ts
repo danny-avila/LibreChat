@@ -1194,6 +1194,20 @@ describe('AclEntry Model Tests', () => {
       expect(agentIds).toHaveLength(1);
       expect(agentIds[0].toString()).toBe(agentRes.toString());
     });
+
+    test('should be served by the public-principal compound index', async () => {
+      const explain = await AclEntry.find({
+        principalType: PrincipalType.PUBLIC,
+        resourceType: ResourceType.AGENT,
+        permBits: { $in: [PermissionBits.VIEW] },
+      }).explain('queryPlanner');
+
+      const explainResult = Array.isArray(explain) ? explain[0] : explain;
+      const winningPlan = explainResult?.queryPlanner?.winningPlan;
+      const planString = JSON.stringify(winningPlan ?? {});
+      expect(planString).not.toContain('COLLSCAN');
+      expect(planString).toMatch(/principalType[\s\S]*resourceType[\s\S]*permBits/);
+    });
   });
 
   describe('aggregateAclEntries', () => {

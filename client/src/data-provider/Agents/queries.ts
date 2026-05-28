@@ -17,12 +17,37 @@ export const defaultAgentParams: t.AgentListParams = {
 };
 
 /**
- * Default page size for `useListAgentsQuery` consumers that want the user's
- * full accessible-agent set in a single request (selectors, mention picker,
- * agents map). Matches the server-side hard cap so a single fetch returns
- * every agent realistic deployments are expected to surface.
+ * Fetch every cursor-paginated page of agents matching `params` and return
+ * them as a single flat `AgentListResponse`. Lets the server apply its own
+ * page-size default (100) — with the AclEntry public-principal index in
+ * place each page is an indexed lookup, so the total work scales with the
+ * user's accessible-agent count rather than the global ACL collection size.
  */
-const FULL_AGENT_LIST_LIMIT = 1000;
+async function fetchAllAgentPages(
+  params: t.AgentListParams,
+): Promise<t.AgentListResponse> {
+  const pages: t.AgentListResponse[] = [];
+  let cursor: string | null | undefined = params.cursor;
+  do {
+    const page = await dataService.listAgents({
+      ...params,
+      ...(cursor ? { cursor } : {}),
+    });
+    pages.push(page);
+    cursor = page.after;
+  } while (cursor);
+
+  const lastPage = pages[pages.length - 1];
+  return {
+    object: 'list',
+    data: pages.flatMap((p) => p.data),
+    has_more: false,
+    after: null,
+    first_id: pages[0]?.first_id ?? null,
+    last_id: lastPage?.last_id ?? null,
+  };
+}
+
 /**
  * Hook for getting all available tools for A
  */
@@ -40,15 +65,19 @@ export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> 
 };
 
 /**
- * Hook for listing all Agents, with optional parameters provided for pagination and sorting.
+ * Hook for listing all Agents the user has access to.
  *
- * Applies `FULL_AGENT_LIST_LIMIT` to the outgoing request when the caller does not
- * specify `limit`, so that consumers reading the result as a flat list (and not
- * following `has_more`/`after`) receive the user's complete accessible-agent set
- * in one fetch. The default is intentionally NOT folded into the query cache key —
- * mutations in `./mutations.ts` reference `[QueryKeys.agents, { requiredPermission }]`
- * directly, and changing the key shape here would silently break their cache
- * updates after agent create/update/delete.
+ * Internally follows the server's cursor pagination and concatenates every
+ * page before resolving, so callers see a single flat `AgentListResponse`
+ * with the user's full accessible-agent set. Each page request uses the
+ * server's default page size (no large `limit` injected here), which
+ * preserves the route handler's defense-in-depth cap and keeps each
+ * MongoDB query bounded.
+ *
+ * The cache key stays `[QueryKeys.agents, params]` — keeping the shape
+ * stable so mutations in `./mutations.ts` (which target
+ * `allAgentViewAndEditQueryKeys`) continue to find and update the cached
+ * list after create/update/delete.
  */
 export const useListAgentsQuery = <TData = t.AgentListResponse>(
   params: t.AgentListParams = defaultAgentParams,
@@ -57,17 +86,11 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
 
-  const requestParams: t.AgentListParams = { limit: FULL_AGENT_LIST_LIMIT, ...params };
-
   const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
   return useQuery<t.AgentListResponse, unknown, TData>(
     [QueryKeys.agents, params],
-    () => dataService.listAgents(requestParams),
+    () => fetchAllAgentPages(params),
     {
-      // Example selector to sort them by created_at
-      // select: (res) => {
-      //   return res.data.sort((a, b) => a.created_at - b.created_at);
-      // },
       staleTime: 1000 * 5,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

@@ -79,5 +79,19 @@ aclEntrySchema.index({
 });
 aclEntrySchema.index({ resourceId: 1, principalType: 1, principalId: 1, tenantId: 1 });
 aclEntrySchema.index({ principalId: 1, permBits: 1, resourceType: 1, tenantId: 1 });
+/**
+ * Covers the public-principal ACL queries that drive
+ * `findPublicResourceIds` and the public branch of
+ * `findAccessibleResources` (both filter on `principalType + resourceType +
+ * permBits` and project `resourceId` via `.distinct`). Without this, those
+ * `find` calls fall back to a collection scan on every `GET /api/agents`,
+ * which is the latency the original #13363 bug report measured.
+ */
+aclEntrySchema.index({
+  principalType: 1,
+  resourceType: 1,
+  permBits: 1,
+  resourceId: 1,
+});
 
 export default aclEntrySchema;
