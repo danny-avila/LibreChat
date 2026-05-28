@@ -3,8 +3,17 @@ import { Spinner } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { useAdminUsageQuery } from '~/data-provider';
 
-function formatCredits(value: number): string {
+function formatTokens(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value);
+}
+
+function formatUSD(valueInCredits: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(valueInCredits / 1_000_000);
 }
 
 function Usage() {
@@ -51,6 +60,9 @@ function Usage() {
                 <th className="px-4 py-3 font-medium">{localize('com_usage_col_email')}</th>
                 <th className="px-4 py-3 font-medium">{localize('com_usage_col_bu')}</th>
                 <th className="px-4 py-3 text-right font-medium">
+                  {localize('com_usage_col_tokens')}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
                   {localize('com_usage_col_credits')}
                 </th>
                 <th className="px-4 py-3 text-right font-medium">
@@ -65,7 +77,10 @@ function Usage() {
                   <td className="px-4 py-3 text-text-secondary">{row.email ?? '—'}</td>
                   <td className="px-4 py-3 text-text-secondary">{row.tenantId ?? '—'}</td>
                   <td className="px-4 py-3 text-right tabular-nums">
-                    {formatCredits(row.totalCredits)}
+                    {formatTokens(row.totalTokens)}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {formatUSD(row.totalCredits)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums">{row.messageCount}</td>
                 </tr>

@@ -235,6 +235,7 @@ export interface AdminUsageRow {
   email: string | null;
   tenantId: string | null;
   totalCredits: number;
+  totalTokens: number;
   messageCount: number;
 }
 

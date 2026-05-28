@@ -428,6 +428,7 @@ export function createTransactionMethods(
     email: string | null;
     tenantId: string | null;
     totalCredits: number;
+    totalTokens: number;
     messageCount: number;
   }
 
@@ -453,6 +454,7 @@ export function createTransactionMethods(
         $group: {
           _id: '$user',
           totalCredits: { $sum: { $abs: { $ifNull: ['$tokenValue', 0] } } },
+          totalTokens: { $sum: { $abs: { $ifNull: ['$rawAmount', 0] } } },
           messageIds: { $addToSet: '$messageId' },
         },
       },
@@ -473,6 +475,7 @@ export function createTransactionMethods(
           email: { $ifNull: ['$userDoc.email', null] },
           tenantId: { $ifNull: ['$userDoc.tenantId', null] },
           totalCredits: 1,
+          totalTokens: 1,
           messageCount: {
             $size: {
               $filter: {
