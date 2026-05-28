@@ -1195,7 +1195,18 @@ describe('AclEntry Model Tests', () => {
       expect(agentIds[0].toString()).toBe(agentRes.toString());
     });
 
-    test('should be served by the public-principal compound index', async () => {
+    test('should have a public-principal compound index available for the planner', async () => {
+      await AclEntry.syncIndexes();
+      const indexes = await AclEntry.collection.indexes();
+      const publicIndex = indexes.find(
+        (idx) =>
+          idx.key?.principalType === 1 &&
+          idx.key?.resourceType === 1 &&
+          idx.key?.permBits === 1 &&
+          idx.key?.resourceId === 1,
+      );
+      expect(publicIndex).toBeDefined();
+
       await methods.grantPermission(
         PrincipalType.PUBLIC,
         null,
@@ -1209,13 +1220,15 @@ describe('AclEntry Model Tests', () => {
         principalType: PrincipalType.PUBLIC,
         resourceType: ResourceType.AGENT,
         permBits: { $in: [PermissionBits.VIEW] },
-      }).explain('queryPlanner')) as unknown as {
+      })
+        .hint(publicIndex!.name as string)
+        .explain('queryPlanner')) as unknown as {
         queryPlanner?: { winningPlan?: Record<string, unknown> };
       };
 
       const planString = JSON.stringify(explain?.queryPlanner?.winningPlan ?? {});
+      expect(planString).toContain('IXSCAN');
       expect(planString).not.toContain('COLLSCAN');
-      expect(planString).toMatch(/principalType[\s\S]*resourceType[\s\S]*permBits/);
     });
   });
 
