@@ -29,6 +29,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/agents', () => ({
   Callback: { TOOL_ERROR: 'TOOL_ERROR' },
+  Providers: { DEEPSEEK: 'deepseek', OPENROUTER: 'openrouter' },
   ToolEndHandler: jest.fn(),
   formatAgentMessages: jest.fn().mockReturnValue({
     messages: [],
@@ -73,6 +74,7 @@ jest.mock('@librechat/api', () => ({
     alwaysApplyDedupedFromManual: 0,
   }),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
+  isDeepSeekReasoningProvider: jest.fn().mockReturnValue(false),
   // Responses API
   writeDone: jest.fn(),
   buildResponse: jest.fn().mockReturnValue({ id: 'resp_123', output: [] }),

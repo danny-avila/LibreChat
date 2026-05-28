@@ -489,20 +489,26 @@ export function getOpenAILLMConfig({
   /**
    * DeepSeek thinking-mode tool-calling requires `reasoning_content` to be
    * replayed on every assistant message that emitted `tool_calls`. Direct
-   * `ChatDeepSeek` hardcodes this; `ChatOpenRouter` does not, so DeepSeek
-   * models routed via OpenRouter need the flag set explicitly. The
-   * downstream `_convertMessagesToOpenAIParams` is already gated on a
-   * non-empty `additional_kwargs.reasoning_content`, so leaving it on for
-   * the whole conversation is a no-op when no reasoning was captured.
+   * `ChatDeepSeek` hardcodes this; `ChatOpenAI`/`ChatOpenRouter` (and any
+   * other `LibreChatOpenAICompletions`-backed wrapper for a DeepSeek model
+   * — including custom-named OpenRouter endpoints and DeepSeek-compatible
+   * proxies — must opt in explicitly. The downstream
+   * `_convertMessagesToOpenAIParams` is already gated on a non-empty
+   * `additional_kwargs.reasoning_content`, so leaving it on for the whole
+   * conversation is a no-op when no reasoning was captured.
    *
-   * Mirror `normalizeOpenRouterModel`'s `~` stripping so OpenRouter's
-   * latest-routing prefix (e.g. `~deepseek/deepseek-v4`) is recognized.
+   * The trigger is the model id alone (with `~` latest-routing prefix
+   * stripped to mirror `normalizeOpenRouterModel`). This keeps the LLM
+   * gate aligned with the `AgentClient` formatter gate
+   * (`isDeepSeekReasoningProvider`), which also treats a `deepseek/*` id
+   * as authoritative — so a renamed custom OpenRouter endpoint doesn't
+   * get history with `reasoning_content` restored only for the LLM client
+   * to silently drop it on the wire.
    *
    * @see https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
    * @see https://github.com/danny-avila/LibreChat/issues/13366
    */
   if (
-    useOpenRouter &&
     typeof modelOptions.model === 'string' &&
     /(?:^|\/)deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''))
   ) {

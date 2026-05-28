@@ -1023,13 +1023,44 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).not.toHaveProperty('includeReasoningContent');
     });
 
-    it('should not set includeReasoningContent for DeepSeek models outside OpenRouter', () => {
-      const result = getOpenAILLMConfig({
+    it('should set includeReasoningContent for DeepSeek-flavored models outside OpenRouter (custom proxies)', () => {
+      /**
+       * `useOpenRouter` is no longer required — any DeepSeek model id
+       * triggers the flag so custom DeepSeek-compatible proxies and
+       * renamed OpenRouter endpoints stay in sync with the
+       * `AgentClient` formatter spoof. Direct `ChatDeepSeek` ignores
+       * the flag (it hardcodes its own `includeReasoningContent: true`),
+       * so this is a harmless no-op there; for `ChatOpenAI`-backed
+       * wrappers it's load-bearing.
+       */
+      const directLike = getOpenAILLMConfig({
         apiKey: 'test-api-key',
         streaming: true,
         useOpenRouter: false,
         modelOptions: {
           model: 'deepseek-chat',
+        },
+      });
+      expect(directLike.llmConfig).toHaveProperty('includeReasoningContent', true);
+
+      const customProxy = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: false,
+        modelOptions: {
+          model: 'deepseek/deepseek-v4-pro',
+        },
+      });
+      expect(customProxy.llmConfig).toHaveProperty('includeReasoningContent', true);
+    });
+
+    it('should not set includeReasoningContent for non-DeepSeek models outside OpenRouter', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: false,
+        modelOptions: {
+          model: 'gpt-4',
         },
       });
 

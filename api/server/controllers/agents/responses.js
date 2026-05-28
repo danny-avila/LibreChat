@@ -1,7 +1,7 @@
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
+const { Callback, Providers, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
 const {
   EModelEndpoint,
   ResourceType,
@@ -41,6 +41,7 @@ const {
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
+  isDeepSeekReasoningProvider,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -536,7 +537,20 @@ const createResponse = async (req, res) => {
     const allMessages = [...previousMessages, ...inputMessages];
 
     const toolSet = buildToolSet(primaryConfig);
-    const formatted = formatAgentMessages(allMessages, {}, toolSet);
+    /**
+     * Spoof `Providers.DEEPSEEK` so DeepSeek-flavored agents (direct, via
+     * OpenRouter, or via a renamed custom OpenRouter endpoint matched by
+     * the `deepseek/*` model id) get their persisted
+     * `additional_kwargs.reasoning_content` re-attached to tool-bearing
+     * AIMessages — parity with the chat path in `AgentClient` (#13366).
+     */
+    const formatOptions = isDeepSeekReasoningProvider(
+      primaryConfig.provider,
+      primaryConfig.model_parameters?.model ?? primaryConfig.model,
+    )
+      ? { provider: Providers.DEEPSEEK }
+      : undefined;
+    const formatted = formatAgentMessages(allMessages, {}, toolSet, undefined, formatOptions);
     const formattedMessages = formatted.messages;
     const initialSummary = formatted.summary;
     let indexTokenCountMap = formatted.indexTokenCountMap;

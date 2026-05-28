@@ -33,7 +33,9 @@ const {
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
+  isDeepSeekReasoningProvider,
 } = require('@librechat/api');
+const { Providers } = require('@librechat/agents');
 const {
   buildSummarizationHandlers,
   markSummarizationUsage,
@@ -60,6 +62,21 @@ const db = require('~/models');
  * @param {boolean} [definitionsOnly=true] - When true, returns only serializable
  *   tool definitions without creating full tool instances (for event-driven mode)
  */
+/**
+ * Returns true when the agent (or any sub-agent in `connectedAgents`) needs
+ * the DeepSeek thinking-mode formatter hint. Mirrors the same check used in
+ * `AgentClient`, so the OpenAI- and Responses-compatible serving paths
+ * preserve persisted `reasoning_content` for DeepSeek tool turns the same
+ * way the chat path does.
+ *
+ * @param {object} agent
+ * @returns {boolean}
+ */
+function needsDeepSeekFormatHint(agent) {
+  if (agent == null) return false;
+  return isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
+}
+
 function createToolLoader(signal, definitionsOnly = true) {
   return async function loadTools({
     req,
@@ -463,7 +480,21 @@ const OpenAIChatCompletionController = async (req, res) => {
     const openaiMessages = convertMessages(request.messages);
 
     const toolSet = buildToolSet(primaryConfig);
-    const formatted = formatAgentMessages(openaiMessages, {}, toolSet);
+    /**
+     * Mirror `AgentClient`'s DeepSeek thinking-mode spoof so this
+     * OpenAI-compatible serving path also re-attaches
+     * `additional_kwargs.reasoning_content` to tool-bearing AIMessages
+     * when the underlying agent is DeepSeek-flavored — direct, via
+     * OpenRouter (incl. custom-named endpoints with a `deepseek/*`
+     * model id), or appearing as a handoff/added-convo agent. Without
+     * the hint, DeepSeek 400s on the second tool turn with "The
+     * `reasoning_content` in the thinking mode must be passed back to
+     * the API." (#13366).
+     */
+    const formatOptions = needsDeepSeekFormatHint(primaryConfig)
+      ? { provider: Providers.DEEPSEEK }
+      : undefined;
+    const formatted = formatAgentMessages(openaiMessages, {}, toolSet, undefined, formatOptions);
     const formattedMessages = formatted.messages;
     const initialSummary = formatted.summary;
     let indexTokenCountMap = formatted.indexTokenCountMap;
