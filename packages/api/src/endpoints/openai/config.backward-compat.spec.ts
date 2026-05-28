@@ -333,12 +333,21 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
 
       const result = getOpenAIConfig(apiKey, options, endpoint);
 
+      /**
+       * Azure-serverless DeepSeek deployments forward to the same DeepSeek
+       * thinking-mode tool-calling contract, so the LLM gate flips
+       * `includeReasoningContent: true` here too. The downstream
+       * `_convertMessagesToOpenAIParams` is gated on a non-empty
+       * `additional_kwargs.reasoning_content`, so this is a no-op when
+       * no reasoning was captured. (#13366)
+       */
       expect(result).toEqual({
         llmConfig: {
           streaming: true,
           model: 'DeepSeek-R1',
           user: 'some_user_id',
           apiKey: 'some_azure_key',
+          includeReasoningContent: true,
         },
         configOptions: {
           baseURL: 'https://some_endpoint_name.models.ai.azure.com/v1/',
