@@ -43,6 +43,21 @@ export class MCPConnectionFactory {
   protected readonly returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
 
+  /**
+   * Process-local in-flight silent refresh promises, keyed by `userId:serverName`.
+   * Coalesces concurrent `attemptSilentTokenRefresh` calls within this process so
+   * a single refresh-token redemption serves every waiter — important when
+   * multiple connections (or repeated 401s) race the same refresh and the OAuth
+   * provider rotates refresh tokens. The map only holds in-flight promises (no
+   * result caching), so each new 401 after the previous attempt resolves
+   * triggers a fresh redemption.
+   *
+   * NOTE: this is a single-process lock. Across multiple worker processes the
+   * race with `getOAuthTokens()`'s `mcp_get_tokens` flow remains; that's an
+   * inherent limitation of process-local coalescing and tracked separately.
+   */
+  private static inflightSilentRefreshes = new Map<string, Promise<MCPOAuthTokens | null>>();
+
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
     basic: t.BasicConnectionOptions,
@@ -255,9 +270,12 @@ export class MCPConnectionFactory {
         await this.initiateOAuthBeforeConnect(connection);
       }
       await this.attemptToConnect(connection);
-      if (cleanupOAuthHandlers) {
-        cleanupOAuthHandlers();
-      }
+      // Intentionally do NOT call cleanupOAuthHandlers() on success.
+      // The `oauthRequired` listener must remain attached for the connection's
+      // lifetime so a mid-session 401 (emitted by `MCPConnection.connectClient`
+      // during transport recovery) can drive the silent-refresh / interactive
+      // OAuth flow. Removing it here would leave `connectClient` waiting on
+      // `oauthHandled` until its OAuth timeout fires.
       return connection;
     } catch (error) {
       if (cleanupOAuthHandlers) {
@@ -410,45 +428,64 @@ export class MCPConnectionFactory {
    * forcing the user through an interactive OAuth flow when the refresh token
    * is still valid.
    *
-   * The flow type is intentionally distinct from `'mcp_get_tokens'` —
-   * `createFlowWithHandler` short-circuits when a non-expired cached result
-   * exists, which would otherwise hand back the very tokens the server just
-   * rejected (see the cached result written by an earlier `getOAuthTokens`
-   * call whose `expires_at` is still locally in the future).
+   * Coalesces via `inflightSilentRefreshes` rather than `FlowStateManager` —
+   * the latter caches the completed result for the new token's TTL, which
+   * would hand back stale tokens on a subsequent 401 (e.g. when the freshly
+   * minted token is revoked before its local expiry). Caching only the
+   * in-flight promise means every fresh 401 after settlement triggers a
+   * fresh redemption.
    */
   protected async attemptSilentTokenRefresh(): Promise<MCPOAuthTokens | null> {
-    if (!this.tokenMethods?.findToken || !this.tokenMethods?.createToken || !this.flowManager) {
+    if (!this.tokenMethods?.findToken || !this.tokenMethods?.createToken) {
       return null;
     }
 
-    try {
-      const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
-      const tokens = await this.flowManager.createFlowWithHandler(
-        flowId,
-        'mcp_force_refresh_tokens',
-        async () => {
-          return await MCPTokenStorage.forceRefreshTokens({
-            userId: this.userId!,
-            serverName: this.serverName,
-            findToken: this.tokenMethods!.findToken!,
-            createToken: this.tokenMethods!.createToken,
-            updateToken: this.tokenMethods!.updateToken,
-            deleteTokens: this.tokenMethods!.deleteTokens,
-            refreshTokens: this.createRefreshTokensFunction(),
-          });
-        },
-        this.signal,
-      );
+    const lockKey = `${this.userId ?? ''}:${this.serverName}`;
+    const inflight = MCPConnectionFactory.inflightSilentRefreshes.get(lockKey);
+    if (inflight) {
+      logger.debug(`${this.logPrefix} Joining in-flight silent refresh attempt`);
+      return inflight;
+    }
 
-      if (tokens) {
+    const promise = this.runSilentRefresh();
+    MCPConnectionFactory.inflightSilentRefreshes.set(lockKey, promise);
+    try {
+      return await promise;
+    } finally {
+      MCPConnectionFactory.inflightSilentRefreshes.delete(lockKey);
+    }
+  }
+
+  /**
+   * Executes a single force-refresh attempt against the OAuth provider and
+   * persists the new tokens. Called by `attemptSilentTokenRefresh` under the
+   * `inflightSilentRefreshes` coalescing lock.
+   */
+  private async runSilentRefresh(): Promise<MCPOAuthTokens | null> {
+    try {
+      const tokens = await MCPTokenStorage.forceRefreshTokens({
+        userId: this.userId!,
+        serverName: this.serverName,
+        findToken: this.tokenMethods!.findToken!,
+        createToken: this.tokenMethods!.createToken,
+        updateToken: this.tokenMethods!.updateToken,
+        deleteTokens: this.tokenMethods!.deleteTokens,
+        refreshTokens: this.createRefreshTokensFunction(),
+      });
+
+      if (tokens && this.flowManager) {
         // Drop any previously cached `mcp_get_tokens` result so the next call
         // to `getOAuthTokens` reads the freshly persisted tokens from the
         // token store rather than the now-stale flow-cached value.
+        const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
         await this.flowManager
           .deleteFlow(flowId, 'mcp_get_tokens')
           .catch((err) =>
             logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`, err),
           );
+      }
+
+      if (tokens) {
         logger.info(`${this.logPrefix} Silent token refresh succeeded`);
       } else {
         logger.info(`${this.logPrefix} Silent token refresh returned no tokens`);

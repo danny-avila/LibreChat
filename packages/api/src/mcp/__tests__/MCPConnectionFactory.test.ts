@@ -35,6 +35,12 @@ describe('MCPConnectionFactory', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Clear process-local silent-refresh in-flight map so a leftover entry
+    // from a prior test (e.g. one that errored before its `finally` ran)
+    // cannot cause a later test to join a stale promise.
+    (
+      MCPConnectionFactory as unknown as { inflightSilentRefreshes: Map<string, unknown> }
+    ).inflightSilentRefreshes.clear();
     mockUser = {
       id: 'user123',
       email: 'test@example.com',
@@ -117,7 +123,9 @@ describe('MCPConnectionFactory', () => {
         'oauthFailed',
         expect.objectContaining({ message: 'Server does not use OAuth' }),
       );
-      expect(mockConnectionInstance.removeListener).toHaveBeenCalledWith(
+      // The fallback `oauthRequired` listener is intentionally kept attached
+      // for the connection's lifetime so mid-session 401s are still handled.
+      expect(mockConnectionInstance.removeListener).not.toHaveBeenCalledWith(
         'oauthRequired',
         expect.any(Function),
       );
@@ -800,12 +808,12 @@ describe('MCPConnectionFactory', () => {
       // The silent refresh path: createFlowWithHandler executes the handler
       // (which calls forceRefreshTokens) and returns the refreshed tokens.
       mockFlowManager.createFlowWithHandler.mockImplementation(async (_flowId, type, handler) => {
-        if (type === 'mcp_get_tokens' || type === 'mcp_force_refresh_tokens') {
+        if (type === 'mcp_get_tokens') {
           return handler();
         }
         return null;
       });
-      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValue(refreshedTokens);
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(refreshedTokens);
       mockConnectionInstance.isConnected.mockResolvedValue(false);
 
       let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
@@ -885,12 +893,12 @@ describe('MCPConnectionFactory', () => {
       mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
       // Silent refresh attempt returns null (no refresh token / refresh failed).
       mockFlowManager.createFlowWithHandler.mockImplementation(async (_flowId, type, handler) => {
-        if (type === 'mcp_get_tokens' || type === 'mcp_force_refresh_tokens') {
+        if (type === 'mcp_get_tokens') {
           return handler();
         }
         return null;
       });
-      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValue(null);
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(null);
       mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
       mockFlowManager.getFlowState.mockResolvedValue(null);
       mockFlowManager.createFlow.mockResolvedValue(interactiveTokens);
@@ -952,12 +960,12 @@ describe('MCPConnectionFactory', () => {
 
       mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
       mockFlowManager.createFlowWithHandler.mockImplementation(async (_flowId, type, handler) => {
-        if (type === 'mcp_get_tokens' || type === 'mcp_force_refresh_tokens') {
+        if (type === 'mcp_get_tokens') {
           return handler();
         }
         return null;
       });
-      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValue(refreshedTokens);
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(refreshedTokens);
       mockConnectionInstance.isConnected.mockResolvedValue(false);
 
       let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
@@ -1022,7 +1030,8 @@ describe('MCPConnectionFactory', () => {
 
       mockProcessMCPEnv.mockReturnValue(sseConfig);
       mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
-      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('refresh boom'));
+      // Silent refresh path throws — must be swallowed and interactive runs.
+      mockMCPTokenStorage.forceRefreshTokens.mockRejectedValueOnce(new Error('refresh boom'));
       mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
       mockFlowManager.getFlowState.mockResolvedValue(null);
       mockFlowManager.createFlow.mockResolvedValue({
@@ -1053,13 +1062,14 @@ describe('MCPConnectionFactory', () => {
       expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
     });
 
-    it('should bypass mcp_get_tokens flow cache on silent refresh (regression for stale cached token reuse)', async () => {
-      // Reproduces the cache-collision flagged by Codex review on PR #13369:
-      // when an earlier `getOAuthTokens` call cached its result under the
-      // `mcp_get_tokens` flow type, sharing that flow type for silent refresh
-      // would let `createFlowWithHandler` short-circuit and hand back the very
-      // tokens the server just rejected. The silent refresh must use a
-      // distinct flow type so the handler actually runs.
+    it('should bypass any flow cache on silent refresh and invalidate mcp_get_tokens cache (regression for stale cached token reuse)', async () => {
+      // Reproduces the cache-collision flagged by Codex on PR #13369: when an
+      // earlier `getOAuthTokens` call cached its (now server-rejected) tokens
+      // under the `mcp_get_tokens` flow, the silent refresh must NOT share or
+      // reuse that cache. The fix bypasses `FlowStateManager` entirely for the
+      // force-refresh, calls `MCPTokenStorage.forceRefreshTokens` directly,
+      // and invalidates the `mcp_get_tokens` cache afterwards so the next
+      // `getOAuthTokens` reads the freshly persisted tokens.
       const sseConfig = {
         ...mockServerConfig,
         url: 'https://api.example.com',
@@ -1100,17 +1110,17 @@ describe('MCPConnectionFactory', () => {
 
       mockProcessMCPEnv.mockReturnValue(sseConfig);
       mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
-      // Simulate the real FlowStateManager.createFlowWithHandler behavior:
-      // for `mcp_get_tokens`, a prior call cached `staleCachedTokens` and the
-      // cache is still non-expired, so the handler is NOT invoked. For any
-      // other flow type the handler runs normally.
-      mockFlowManager.createFlowWithHandler.mockImplementation(async (_flowId, type, handler) => {
+      // Simulate the real FlowStateManager cache behavior for `mcp_get_tokens`:
+      // a prior call cached `staleCachedTokens` and the cache is still
+      // non-expired, so `getOAuthTokens` returns it without re-running the
+      // handler. Silent refresh must NOT route through this cached flow.
+      mockFlowManager.createFlowWithHandler.mockImplementation(async (_flowId, type, _handler) => {
         if (type === 'mcp_get_tokens') {
           return staleCachedTokens;
         }
-        return handler();
+        return null;
       });
-      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValue(freshlyRefreshedTokens);
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(freshlyRefreshedTokens);
       mockConnectionInstance.isConnected.mockResolvedValue(false);
 
       let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
@@ -1129,8 +1139,15 @@ describe('MCPConnectionFactory', () => {
 
       await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
 
-      // The refresh handler must have actually been invoked.
+      // The refresh runs against the token storage directly — not through any
+      // `createFlowWithHandler` flow that could return a stale cached value.
       expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalled();
+      expect(mockFlowManager.createFlowWithHandler).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'mcp_force_refresh_tokens',
+        expect.anything(),
+        expect.anything(),
+      );
       // The connection receives the FRESHLY refreshed tokens, NOT the stale
       // cached ones — that's the whole point of the fix.
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(freshlyRefreshedTokens);
@@ -1139,6 +1156,88 @@ describe('MCPConnectionFactory', () => {
       // The cached `mcp_get_tokens` flow state is dropped so the next
       // `getOAuthTokens` call reads the freshly persisted tokens from storage.
       expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('flow123', 'mcp_get_tokens');
+    });
+
+    it('should coalesce concurrent silent refresh attempts into a single redemption', async () => {
+      // Reproduces the concurrent-redemption race flagged by Codex on PR #13369:
+      // if two 401s for the same user/server race the silent refresh, they
+      // must share one in-flight refresh-token redemption — providers that
+      // rotate refresh tokens reject the second redemption, otherwise causing
+      // an unnecessary interactive OAuth fallback.
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const refreshedTokens: MCPOAuthTokens = {
+        access_token: 'refreshed-access',
+        refresh_token: 'refresh456',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      // Hold a single in-flight refresh open until both concurrent callers
+      // have joined the lock. `mockImplementationOnce` (rather than the
+      // persistent `mockImplementation`) ensures this never-resolving promise
+      // does not leak into later tests' default mock behavior.
+      let resolveRefresh: ((tokens: MCPOAuthTokens) => void) | undefined;
+      mockMCPTokenStorage.forceRefreshTokens.mockImplementationOnce(
+        () =>
+          new Promise<MCPOAuthTokens>((res) => {
+            resolveRefresh = res;
+          }),
+      );
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected
+      }
+
+      // Fire two concurrent oauthRequired events; both must share the same
+      // in-flight refresh attempt.
+      const first = oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+      const second = oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      // Let the in-flight lock register, then resolve the single redemption.
+      await Promise.resolve();
+      resolveRefresh!(refreshedTokens);
+      await Promise.all([first, second]);
+
+      // Exactly one refresh-token redemption was issued.
+      expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(1);
+      // Both callers set the connection's tokens with the same refreshed value.
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(refreshedTokens);
     });
   });
 
