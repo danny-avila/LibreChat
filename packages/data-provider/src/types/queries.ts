@@ -233,7 +233,7 @@ export interface AdminUsageRow {
   user: string;
   name: string | null;
   email: string | null;
-  tenantId: string | null;
+  bu: string | null;
   totalCredits: number;
   totalTokens: number;
   messageCount: number;

@@ -426,7 +426,7 @@ export function createTransactionMethods(
     user: string;
     name: string | null;
     email: string | null;
-    tenantId: string | null;
+    bu: string | null;
     totalCredits: number;
     totalTokens: number;
     messageCount: number;
@@ -473,7 +473,59 @@ export function createTransactionMethods(
           user: { $toString: '$_id' },
           name: { $ifNull: ['$userDoc.name', null] },
           email: { $ifNull: ['$userDoc.email', null] },
-          tenantId: { $ifNull: ['$userDoc.tenantId', null] },
+          bu: {
+            $cond: {
+              if: { $ne: [{ $ifNull: ['$userDoc.tenantId', null] }, null] },
+              then: '$userDoc.tenantId',
+              else: {
+                $switch: {
+                  branches: [
+                    {
+                      case: {
+                        $regexMatch: {
+                          input: { $ifNull: ['$userDoc.email', ''] },
+                          regex: /@proseonpixels\.com$/i,
+                        },
+                      },
+                      then: 'POP',
+                    },
+                    {
+                      case: {
+                        $regexMatch: {
+                          input: { $ifNull: ['$userDoc.email', ''] },
+                          regex: /@betc\.com$/i,
+                        },
+                      },
+                      then: 'BETC',
+                    },
+                    {
+                      case: {
+                        $regexMatch: {
+                          input: { $ifNull: ['$userDoc.email', ''] },
+                          regex: /@vermeer\.cloud$/i,
+                        },
+                      },
+                      then: 'Vermeer',
+                    },
+                  ],
+                  default: {
+                    $cond: {
+                      if: {
+                        $or: [
+                          { $eq: ['$userDoc.email', null] },
+                          { $not: ['$userDoc.email'] },
+                        ],
+                      },
+                      then: null,
+                      else: {
+                        $arrayElemAt: [{ $split: ['$userDoc.email', '@'] }, 1],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
           totalCredits: 1,
           totalTokens: 1,
           messageCount: {

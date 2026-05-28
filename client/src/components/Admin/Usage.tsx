@@ -75,7 +75,7 @@ function Usage() {
                 <tr key={row.user} className="border-t border-border-light text-text-primary">
                   <td className="px-4 py-3">{row.name ?? '—'}</td>
                   <td className="px-4 py-3 text-text-secondary">{row.email ?? '—'}</td>
-                  <td className="px-4 py-3 text-text-secondary">{row.tenantId ?? '—'}</td>
+                  <td className="px-4 py-3 text-text-secondary">{row.bu ?? '—'}</td>
                   <td className="px-4 py-3 text-right tabular-nums">
                     {formatTokens(row.totalTokens)}
                   </td>
