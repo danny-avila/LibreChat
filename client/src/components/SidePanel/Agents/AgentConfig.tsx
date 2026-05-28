@@ -44,6 +44,7 @@ import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
 import { useLocalize, useVisibleTools, useHasAccess, useAuthContext } from '~/hooks';
+import type { TranslationKeys } from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
 import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
@@ -62,10 +63,38 @@ import MCPTools from './MCPTools';
 const SHOW_AGENT_ID = false;
 
 // V1 UX (POP/BETC) : paramètres essentiels du modèle visibles inline dans
-// le builder agent (Créativité, Resend Files, Thinking, Recherche web —
-// selon provider). Reste des params en accordéon « Paramètres avancés ».
-// Pattern aligné sur le panel Paramètres conversation (commit a98a8d6cd).
-const ESSENTIAL_PARAM_KEYS = ['temperature', 'resendFiles', 'thinking', 'web_search'];
+// le builder agent (Créativité, Thinking, Recherche web — selon provider).
+// Reste des params en accordéon « Paramètres avancés », incluant resendFiles
+// (défaut natif true couvre 99% des usages, on n'expose pas en essentiel —
+// aligné avec le panel Paramètres conversation, commit a98a8d6cd).
+const ESSENTIAL_PARAM_KEYS = ['temperature', 'thinking', 'web_search'];
+
+// V1 UX (POP/BETC) : overrides Vermeer i18n pour humaniser les libellés
+// techniques (Température → Créativité de la réponse, etc.) en réutilisant
+// les clés i18n "_friendly" déjà traduites EN/FR dans translation.json
+// (créées au commit 7b0dc2f6a, orphelines depuis la suppression de
+// ModelPanel au commit e61ee3778). Pattern propre i18n vs FR hardcodé.
+const LABEL_OVERRIDES: Record<string, TranslationKeys> = {
+  temperature: 'com_endpoint_temperature_friendly',
+};
+
+const DESCRIPTION_OVERRIDES: Record<string, TranslationKeys> = {
+  temperature: 'com_endpoint_temperature_friendly_desc',
+  resendFiles: 'com_endpoint_resend_files_friendly_desc',
+};
+
+const applyOverrides = (setting: SettingDefinition): SettingDefinition => {
+  const labelOverride = LABEL_OVERRIDES[setting.key];
+  const descOverride = DESCRIPTION_OVERRIDES[setting.key];
+  if (!labelOverride && !descOverride) {
+    return setting;
+  }
+  return {
+    ...setting,
+    ...(labelOverride ? { label: labelOverride, labelCode: true } : {}),
+    ...(descOverride ? { description: descOverride, descriptionCode: true } : {}),
+  };
+};
 
 const labelClass = 'mb-2 text-token-text-primary block text-sm font-medium';
 const inputClass = cn(
@@ -313,7 +342,8 @@ export default function AgentConfig() {
       .filter(
         (param) => param.key !== 'web_search' || endpointType !== EModelEndpoint.custom,
       )
-      .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
+      .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param)
+      .map(applyOverrides);
 
     const essentialByKey = new Map<string, SettingDefinition>();
     const advanced: SettingDefinition[] = [];

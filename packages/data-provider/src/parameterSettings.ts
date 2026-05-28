@@ -721,7 +721,7 @@ const google: Record<string, SettingDefinition> = {
   },
   web_search: {
     key: 'web_search',
-    label: 'com_endpoint_use_search_grounding',
+    label: 'com_ui_web_search',
     labelCode: true,
     description: 'com_endpoint_google_use_search_grounding',
     descriptionCode: true,
