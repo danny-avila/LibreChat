@@ -179,19 +179,25 @@ describe('isDeepSeekReasoningProvider', () => {
     expect(isDeepSeekReasoningProvider('DeepSeek')).toBe(true);
   });
 
-  it('matches custom-named OpenRouter endpoints via the deepseek/ namespace fallback', () => {
+  it('matches custom-named endpoints and direct DeepSeek-compatible proxies via the fallback', () => {
     /**
-     * When a user configures OpenRouter as a custom endpoint with a
-     * non-standard name (e.g. "MyOR") and `initializeAgent` normalizes the
-     * unknown provider to `openai`, only the model id remains as a reliable
-     * DeepSeek signal. The `deepseek/` prefix is OpenRouter shorthand, so
-     * accept it regardless of the resolved provider.
+     * When a user configures OpenRouter or a DeepSeek-compatible proxy as a
+     * custom endpoint with a non-standard name (e.g. "MyOR") and
+     * `initializeAgent` normalizes the unknown provider to `openai`, only the
+     * model id remains as a reliable DeepSeek signal. Accept any model id
+     * that starts with the official DeepSeek prefix — `deepseek/` (OpenRouter
+     * shorthand) or bare `deepseek-...` / `deepseek` (direct API form).
      */
     expect(isDeepSeekReasoningProvider('openai', 'deepseek/deepseek-v4')).toBe(true);
     expect(isDeepSeekReasoningProvider('MyCustomEndpoint', '~deepseek/r1')).toBe(true);
     expect(isDeepSeekReasoningProvider(undefined, 'deepseek/deepseek-chat')).toBe(true);
     expect(isDeepSeekReasoningProvider(null, 'deepseek/deepseek-v4')).toBe(true);
     expect(isDeepSeekReasoningProvider('', 'deepseek/deepseek-v4')).toBe(true);
+    // Bare direct-API ids on a custom OpenAI-compatible DeepSeek proxy
+    expect(isDeepSeekReasoningProvider('openai', 'deepseek-chat')).toBe(true);
+    expect(isDeepSeekReasoningProvider('MyDeepSeekProxy', 'deepseek-reasoner')).toBe(true);
+    expect(isDeepSeekReasoningProvider(undefined, 'deepseek-r1')).toBe(true);
+    expect(isDeepSeekReasoningProvider(undefined, '~deepseek-chat')).toBe(true);
   });
 
   it('returns false for openrouter with non-deepseek models', () => {
@@ -204,33 +210,34 @@ describe('isDeepSeekReasoningProvider', () => {
     ).toBe(false);
   });
 
-  it('does not match bare `deepseek-*` ids on unrelated providers', () => {
-    /**
-     * Without the `deepseek/` namespace prefix, a bare `deepseek-chat` id
-     * is the direct-API form — it should require an explicit DeepSeek or
-     * OpenRouter provider, since a Bedrock/Anthropic endpoint that happens
-     * to label a model "deepseek-chat" isn't actually hitting DeepSeek.
-     */
-    expect(isDeepSeekReasoningProvider(Providers.OPENAI, 'deepseek-chat')).toBe(false);
-    expect(isDeepSeekReasoningProvider(Providers.ANTHROPIC, 'deepseek-r1')).toBe(false);
-  });
-
   it('returns false when the model is missing on openrouter', () => {
     expect(isDeepSeekReasoningProvider(Providers.OPENROUTER)).toBe(false);
     expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, null)).toBe(false);
     expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, '')).toBe(false);
   });
 
-  it('returns false for nullish provider input with non-namespaced models', () => {
-    expect(isDeepSeekReasoningProvider(undefined, 'deepseek-chat')).toBe(false);
-    expect(isDeepSeekReasoningProvider(null, 'gpt-5')).toBe(false);
-    expect(isDeepSeekReasoningProvider('', 'claude-opus-4-7')).toBe(false);
+  it('returns false for nullish provider input without a DeepSeek-prefixed model', () => {
+    expect(isDeepSeekReasoningProvider(undefined, 'gpt-5')).toBe(false);
+    expect(isDeepSeekReasoningProvider(null, 'claude-opus-4-7')).toBe(false);
+    expect(isDeepSeekReasoningProvider('', 'gemini-2.5-pro')).toBe(false);
   });
 
-  it('does not match models that merely contain the substring "deepseek" via a different namespace', () => {
+  it('does not match cloned/distilled slugs that merely contain "deepseek" later in the id', () => {
+    /**
+     * Community and distilled models that wrap DeepSeek in another namespace
+     * (e.g. `mistral/deepseek-distilled-foo`, `community/not-a-deepseek-clone`)
+     * usually don't actually run DeepSeek's API. Anchoring the model match to
+     * the start of the id rejects them — the downstream gate on non-empty
+     * `additional_kwargs.reasoning_content` is the fallback safety net, but
+     * being conservative at the pattern level avoids unsupported wire fields
+     * on proxies that wouldn't accept them. (Codex round-3 review.)
+     */
     expect(
       isDeepSeekReasoningProvider(Providers.OPENROUTER, 'community/not-a-deepseek-clone'),
     ).toBe(false);
-    expect(isDeepSeekReasoningProvider(undefined, 'community/not-a-deepseek-clone')).toBe(false);
+    expect(
+      isDeepSeekReasoningProvider(Providers.OPENROUTER, 'mistral/deepseek-distilled-foo'),
+    ).toBe(false);
+    expect(isDeepSeekReasoningProvider(undefined, 'community/deepseek-r1')).toBe(false);
   });
 });

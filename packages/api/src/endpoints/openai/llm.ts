@@ -510,7 +510,7 @@ export function getOpenAILLMConfig({
    */
   if (
     typeof modelOptions.model === 'string' &&
-    /(?:^|\/)deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''))
+    /^deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''))
   ) {
     llmConfig.includeReasoningContent = true;
   }

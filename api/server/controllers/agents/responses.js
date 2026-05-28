@@ -543,13 +543,19 @@ const createResponse = async (req, res) => {
      * the `deepseek/*` model id) get their persisted
      * `additional_kwargs.reasoning_content` re-attached to tool-bearing
      * AIMessages — parity with the chat path in `AgentClient` (#13366).
+     *
+     * Multi-agent runs forward both the primary and any handoff sub-agents
+     * into `formatAgentMessages` via the same payload, so check every
+     * candidate: a DeepSeek handoff under a non-DeepSeek primary would
+     * otherwise lose its persisted reasoning on replay.
      */
-    const formatOptions = isDeepSeekReasoningProvider(
-      primaryConfig.provider,
-      primaryConfig.model_parameters?.model ?? primaryConfig.model,
-    )
-      ? { provider: Providers.DEEPSEEK }
-      : undefined;
+    const matchesDeepSeek = (agent) =>
+      agent != null &&
+      isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
+    const needsDeepSeek =
+      matchesDeepSeek(primaryConfig) ||
+      Array.from(handoffAgentConfigs?.values() ?? []).some(matchesDeepSeek);
+    const formatOptions = needsDeepSeek ? { provider: Providers.DEEPSEEK } : undefined;
     const formatted = formatAgentMessages(allMessages, {}, toolSet, undefined, formatOptions);
     const formattedMessages = formatted.messages;
     const initialSummary = formatted.summary;

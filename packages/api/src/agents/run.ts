@@ -239,13 +239,17 @@ export function getReasoningKey(
 }
 
 /**
- * Matches DeepSeek model identifiers in both direct (`deepseek-chat`,
- * `deepseek-reasoner`) and namespaced (`deepseek/deepseek-v4`, `deepseek/r1`)
- * forms. The leading boundary anchors the match to the start of the id (or a
- * `/` for OpenRouter-style namespaces) so unrelated models that merely
- * contain the substring (e.g. `community/not-a-deepseek-clone`) don't match.
+ * Matches DeepSeek model identifiers. Anchored to the start of the id so
+ * only official DeepSeek namespaces/prefixes match — `deepseek/...` (the
+ * OpenRouter shorthand) and bare `deepseek-...` / `deepseek` (the direct
+ * DeepSeek API form, also accepted by DeepSeek-compatible custom proxies).
+ *
+ * Anchoring rejects community/distilled slugs that merely contain
+ * `deepseek` further into the id (e.g. `mistral/deepseek-distilled-foo`,
+ * `community/deepseek-clone`) so they don't accidentally trigger the
+ * DeepSeek-only `reasoning_content` field on the wire.
  */
-const DEEPSEEK_MODEL_PATTERN = /(?:^|\/)deepseek(?:[-/]|$)/i;
+const DEEPSEEK_MODEL_PATTERN = /^deepseek(?:[-/]|$)/i;
 
 /**
  * OpenRouter's "latest routing" prefix (`~`) is stripped before downstream
@@ -255,30 +259,12 @@ const DEEPSEEK_MODEL_PATTERN = /(?:^|\/)deepseek(?:[-/]|$)/i;
  */
 const OPENROUTER_LATEST_ROUTING_PREFIX = /^~/;
 
-/**
- * `deepseek/...` is the OpenRouter shorthand for routing to DeepSeek's
- * thinking-mode API. We use this stricter pattern (instead of any
- * `DEEPSEEK_MODEL_PATTERN` match) for the custom-endpoint fallback to avoid
- * false positives on direct, non-routed `deepseek-chat`-style ids that don't
- * carry a namespace.
- */
-const OPENROUTER_DEEPSEEK_NAMESPACE_PATTERN = /^deepseek\//i;
-
 function matchesDeepSeekModel(model?: string | null): boolean {
   if (typeof model !== 'string' || model.length === 0) {
     return false;
   }
   const normalized = model.replace(OPENROUTER_LATEST_ROUTING_PREFIX, '');
   return DEEPSEEK_MODEL_PATTERN.test(normalized);
-}
-
-function isOpenRouterStyleDeepSeekModel(model?: string | null): boolean {
-  if (typeof model !== 'string' || model.length === 0) {
-    return false;
-  }
-  return OPENROUTER_DEEPSEEK_NAMESPACE_PATTERN.test(
-    model.replace(OPENROUTER_LATEST_ROUTING_PREFIX, ''),
-  );
 }
 
 /**
@@ -301,12 +287,12 @@ function isOpenRouterStyleDeepSeekModel(model?: string | null): boolean {
  * 1. Direct `Providers.DEEPSEEK` (any model — case-insensitive provider).
  * 2. `Providers.OPENROUTER` with a DeepSeek-style model id, including
  *    the `~`-prefixed latest-routing variant.
- * 3. Any other provider string (e.g. a user-renamed custom endpoint that
- *    `initializeAgent` normalized to `openai`) when the model id carries
- *    the unambiguous `deepseek/` OpenRouter namespace. The downstream
- *    gate on a non-empty `additional_kwargs.reasoning_content` is the
- *    real safety net against false positives, so erring broad here is
- *    safe and covers custom-named OpenRouter endpoints.
+ * 3. Any other provider string (e.g. a renamed custom endpoint that
+ *    `initializeAgent` normalized to `openai`, or a DeepSeek-compatible
+ *    proxy) when the model id starts with the official DeepSeek prefix —
+ *    either `deepseek/` (OpenRouter namespace) or bare `deepseek-...` /
+ *    `deepseek` (direct API form). The model match is anchored so cloned
+ *    slugs like `community/deepseek-distilled-foo` don't trigger spuriously.
  *
  * @see https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
  * @param provider - The resolved provider (e.g., `'deepseek'`, `'openrouter'`).
@@ -333,7 +319,7 @@ export function isDeepSeekReasoningProvider(
       return matchesDeepSeekModel(model);
     }
   }
-  return isOpenRouterStyleDeepSeekModel(model);
+  return matchesDeepSeekModel(model);
 }
 
 type RunAgent = Omit<Agent, 'tools'> & {
