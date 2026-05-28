@@ -183,35 +183,13 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="oauth_client_secret" className="text-sm font-medium">
-                {localize('com_ui_client_secret')}{' '}
-                {!isEditMode && (
-                  <>
-                    <span aria-hidden="true" className="text-text-secondary">
-                      *
-                    </span>
-                    <span className="sr-only">{localize('com_ui_field_required')}</span>
-                  </>
-                )}
+                {localize('com_ui_client_secret')}
               </Label>
               <SecretInput
                 id="oauth_client_secret"
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
-                aria-invalid={errors.auth?.oauth_client_secret ? 'true' : 'false'}
-                aria-describedby={
-                  errors.auth?.oauth_client_secret ? 'oauth-client-secret-error' : undefined
-                }
-                {...register('auth.oauth_client_secret', { required: !isEditMode })}
-                className={cn(errors.auth?.oauth_client_secret && 'border-border-destructive')}
+                {...register('auth.oauth_client_secret')}
               />
-              {errors.auth?.oauth_client_secret && (
-                <p
-                  id="oauth-client-secret-error"
-                  role="alert"
-                  className="text-xs text-text-destructive"
-                >
-                  {localize('com_ui_field_required')}
-                </p>
-              )}
             </div>
           </div>
 

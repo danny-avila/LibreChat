@@ -40,13 +40,14 @@ jobs:
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           CHART_VERSION="${REF_NAME#chart-}"
-          SEMVER_REGEX='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
-          if [[ ! "$CHART_VERSION" =~ $SEMVER_REGEX ]]; then
-            echo "Invalid chart version: $CHART_VERSION" >&2
+          SEMVER_REGEX='^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$'
+          if [[ "$REF_NAME" != chart-* || ! "$CHART_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "::error::Chart tags must use the form chart-<semver>, for example chart-2.0.3"
             exit 1
           fi
-          echo "CHART_VERSION=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
+          printf 'CHART_VERSION=%s\n' "$CHART_VERSION" >> "$GITHUB_OUTPUT"
 
       # Log in to GitHub Container Registry
       - name: Log in to GitHub Container Registry

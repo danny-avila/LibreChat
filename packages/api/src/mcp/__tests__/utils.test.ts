@@ -5,6 +5,8 @@ import {
   redactServerSecrets,
   isInvalidClientMessage,
   isClientRejectionMessage,
+  getMissingCustomUserVars,
+  hasCustomUserVars,
   isUserSourced,
 } from '~/mcp/utils';
 import type { ParsedServerConfig } from '~/mcp/types';
@@ -338,5 +340,57 @@ describe('isUserSourced', () => {
 
   it('returns false when both source and dbId are absent (pre-upgrade YAML server)', () => {
     expect(isUserSourced({})).toBe(false);
+  });
+});
+
+describe('getMissingCustomUserVars', () => {
+  const configWithVars = (keys: string[]): Pick<ParsedServerConfig, 'customUserVars'> => ({
+    customUserVars: Object.fromEntries(
+      keys.map((key) => [key, { title: key, description: `${key} description` }]),
+    ),
+  });
+
+  it('returns an empty array when the server declares no customUserVars', () => {
+    expect(getMissingCustomUserVars({}, {})).toEqual([]);
+    expect(getMissingCustomUserVars({ customUserVars: undefined }, undefined)).toEqual([]);
+  });
+
+  it('returns an empty array when customUserVars is an empty object', () => {
+    const config: Pick<ParsedServerConfig, 'customUserVars'> = { customUserVars: {} };
+    expect(hasCustomUserVars(config)).toBe(false);
+    expect(getMissingCustomUserVars(config, undefined)).toEqual([]);
+  });
+
+  it('reports every declared variable when no values are provided', () => {
+    const config = configWithVars(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, undefined)).toEqual(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, null)).toEqual(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, {})).toEqual(['THINGY_TOKEN', 'THINGY_REGION']);
+  });
+
+  it('reports only the variables the user has not set', () => {
+    const config = configWithVars(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123' })).toEqual(['THINGY_REGION']);
+  });
+
+  it('treats empty-string and whitespace-only values as missing', () => {
+    const config = configWithVars(['THINGY_TOKEN']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '' })).toEqual(['THINGY_TOKEN']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '   ' })).toEqual(['THINGY_TOKEN']);
+    expect(getMissingCustomUserVars(config, { THINGY_TOKEN: '\t\n ' })).toEqual(['THINGY_TOKEN']);
+  });
+
+  it('returns an empty array when every declared variable has a value', () => {
+    const config = configWithVars(['THINGY_TOKEN', 'THINGY_REGION']);
+    expect(
+      getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123', THINGY_REGION: 'eu-west-1' }),
+    ).toEqual([]);
+  });
+
+  it('ignores provided values for variables the server does not declare', () => {
+    const config = configWithVars(['THINGY_TOKEN']);
+    expect(
+      getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123', UNRELATED: 'value' }),
+    ).toEqual([]);
   });
 });
