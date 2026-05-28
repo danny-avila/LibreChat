@@ -58,6 +58,17 @@ export class MCPConnectionFactory {
    */
   private static inflightSilentRefreshes = new Map<string, Promise<MCPOAuthTokens | null>>();
 
+  /**
+   * Upper bound on a silent-refresh attempt. Without this cap a hung
+   * `refreshTokens()` HTTP request would leave the in-flight lock occupied
+   * forever — every subsequent 401 for the same user/server would join the
+   * stuck promise instead of starting a fresh attempt or falling back to
+   * interactive OAuth. 60s is well under the 120s OAuth-handling timeout in
+   * `MCPConnection.connectClient`, so timing out here still leaves room for
+   * the interactive fallback.
+   */
+  private static readonly SILENT_REFRESH_TIMEOUT_MS = 60_000;
+
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
     basic: t.BasicConnectionOptions,
@@ -447,7 +458,19 @@ export class MCPConnectionFactory {
       return inflight;
     }
 
-    const promise = this.runSilentRefresh();
+    // Bound the refresh attempt so a hung HTTP request can't strand the
+    // in-flight lock and starve every subsequent 401.
+    const promise = withTimeout(
+      this.runSilentRefresh(),
+      MCPConnectionFactory.SILENT_REFRESH_TIMEOUT_MS,
+      `Silent token refresh timed out after ${MCPConnectionFactory.SILENT_REFRESH_TIMEOUT_MS}ms`,
+    ).catch((error: unknown) => {
+      logger.info(
+        `${this.logPrefix} Silent token refresh timed out, falling back to interactive OAuth`,
+        error,
+      );
+      return null;
+    });
     MCPConnectionFactory.inflightSilentRefreshes.set(lockKey, promise);
     try {
       return await promise;
@@ -473,16 +496,11 @@ export class MCPConnectionFactory {
         refreshTokens: this.createRefreshTokensFunction(),
       });
 
-      if (tokens && this.flowManager) {
+      if (tokens) {
         // Drop any previously cached `mcp_get_tokens` result so the next call
         // to `getOAuthTokens` reads the freshly persisted tokens from the
         // token store rather than the now-stale flow-cached value.
-        const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
-        await this.flowManager
-          .deleteFlow(flowId, 'mcp_get_tokens')
-          .catch((err) =>
-            logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`, err),
-          );
+        await this.invalidateGetTokensFlow();
       }
 
       if (tokens) {
@@ -504,6 +522,49 @@ export class MCPConnectionFactory {
     }
   }
 
+  /**
+   * Drops any cached `mcp_get_tokens` flow state so the next `getOAuthTokens`
+   * call reads fresh tokens from the token store rather than the cached
+   * (potentially server-rejected) ones.
+   */
+  protected async invalidateGetTokensFlow(): Promise<void> {
+    if (!this.flowManager || !this.userId) {
+      return;
+    }
+    const flowId = MCPOAuthHandler.generateFlowId(this.userId, this.serverName);
+    await this.flowManager
+      .deleteFlow(flowId, 'mcp_get_tokens')
+      .catch((err) =>
+        logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`, err),
+      );
+  }
+
+  /**
+   * Drops any cached COMPLETED `mcp_oauth` flow state so that
+   * `handleOAuthRequired`'s recent-completion fast path can't re-serve the
+   * tokens that the resource server just rejected.
+   */
+  protected async invalidateCompletedOAuthFlow(): Promise<void> {
+    if (!this.flowManager || !this.userId) {
+      return;
+    }
+    const flowId = MCPOAuthHandler.generateFlowId(this.userId, this.serverName);
+    try {
+      const existing = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
+      if (!existing || existing.status !== 'COMPLETED') {
+        return;
+      }
+      const meta = existing.metadata as MCPOAuthFlowMetadata | undefined;
+      const oldState = meta?.state;
+      await this.flowManager.deleteFlow(flowId, 'mcp_oauth');
+      if (oldState) {
+        await MCPOAuthHandler.deleteStateMapping(oldState, this.flowManager);
+      }
+    } catch (err) {
+      logger.debug(`${this.logPrefix} Failed to invalidate completed mcp_oauth cache`, err);
+    }
+  }
+
   /** Sets up OAuth event handlers for the connection */
   protected handleOAuthEvents(connection: MCPConnection): () => void {
     const oauthHandler = async (data: { serverUrl?: string }) => {
@@ -515,6 +576,13 @@ export class MCPConnectionFactory {
         connection.emit('oauthHandled');
         return;
       }
+
+      // Silent refresh failed and we're about to fall through to interactive
+      // OAuth. Invalidate any COMPLETED `mcp_oauth` flow first so
+      // `handleOAuthRequired`'s recent-completion fast path can't re-serve the
+      // tokens the resource server just rejected (see the `PENDING_STALE_MS`
+      // window in `handleOAuthRequired`).
+      await this.invalidateCompletedOAuthFlow();
 
       if (this.returnOnOAuth) {
         try {
@@ -609,6 +677,11 @@ export class MCPConnectionFactory {
             clientInfo: result.clientInfo,
             metadata: result.metadata,
           });
+          // Same rationale as the silent-refresh success path: invalidate the
+          // `mcp_get_tokens` cache so the next `getOAuthTokens` reads the
+          // freshly stored tokens rather than the just-rejected ones the
+          // interactive flow replaced.
+          await this.invalidateGetTokensFlow();
           logger.info(`${this.logPrefix} OAuth tokens saved to storage`);
         } catch (error) {
           logger.error(`${this.logPrefix} Failed to save OAuth tokens to storage`, error);
