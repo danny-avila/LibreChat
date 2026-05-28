@@ -686,11 +686,16 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
 
   /**
    * Get agents by accessible IDs with optional cursor-based pagination.
+   *
+   * `limit` defaults to 100 so unbounded MongoDB scans cannot be triggered by
+   * callers that omit it. Internal callers that genuinely need the full list
+   * can opt out by passing `limit: null` explicitly. The function caps any
+   * supplied numeric limit at 100 regardless.
    */
   async function getListAgentsByAccess({
     accessibleIds = [],
     otherParams = {},
-    limit = null,
+    limit = 100,
     after = null,
     includeSkillConfig = false,
   }: {
