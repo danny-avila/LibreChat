@@ -3,7 +3,7 @@ name: Build & Push Kitchensink Image (NJ)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 6 * * 0'  # Weekly on Sundays at 6 AM UTC
+    - cron: '0 6 * * 0' # Weekly on Sundays at 6 AM UTC
 
 jobs:
   docker:
@@ -49,7 +49,9 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Redeploy kitchensink from latest
-        uses: apideck-libraries/ecs-restart-service@v1
-        with:
-          service: ${{ secrets.KITCHENSINK_SERVICE_NAME }}
-          cluster: ${{ secrets.KITCHENSINK_CLUSTER_NAME }}
+        # uses: apideck-libraries/ecs-restart-service@v1
+        run: |
+          aws ecs update-service \
+            --cluster "${{ secrets.KITCHENSINK_CLUSTER_NAME }}" \
+            --service "${{ secrets.KITCHENSINK_SERVICE_NAME }}"" \ 
+            --force-new-deployment
