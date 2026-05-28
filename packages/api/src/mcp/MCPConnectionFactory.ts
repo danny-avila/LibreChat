@@ -42,6 +42,13 @@ export class MCPConnectionFactory {
   protected readonly oauthEnd?: () => Promise<void>;
   protected readonly returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
+  /**
+   * Snapshot of the tenant ID at factory construction time. Captured eagerly
+   * because the OAuth handler runs later inside an EventEmitter callback,
+   * outside the original request's async context — `getTenantId()` called
+   * from the listener would return the wrong tenant (or none at all).
+   */
+  protected readonly tenantId?: string;
 
   /**
    * Process-local in-flight silent refresh promises, keyed by `userId:serverName`.
@@ -230,6 +237,7 @@ export class MCPConnectionFactory {
     this.allowedDomains = basic.allowedDomains;
     this.allowedAddresses = basic.allowedAddresses;
     this.connectionTimeout = options?.connectionTimeout;
+    this.tenantId = getTenantId();
     this.logPrefix = options?.user
       ? `[MCP][${basic.serverName}][${options.user.id}]`
       : `[MCP][${basic.serverName}]`;
@@ -451,7 +459,11 @@ export class MCPConnectionFactory {
       return null;
     }
 
-    const lockKey = `${this.userId ?? ''}:${this.serverName}`;
+    // Scope the lock by tenant so two tenants that share the same `userId`
+    // and `serverName` (common with username-based IDs in multi-tenant setups)
+    // can never join each other's refresh and have those tokens applied to the
+    // wrong connection.
+    const lockKey = `${this.tenantId ?? ''}:${this.userId ?? ''}:${this.serverName}`;
     const inflight = MCPConnectionFactory.inflightSilentRefreshes.get(lockKey);
     if (inflight) {
       logger.debug(`${this.logPrefix} Joining in-flight silent refresh attempt`);
@@ -460,6 +472,17 @@ export class MCPConnectionFactory {
 
     // Bound the refresh attempt so a hung HTTP request can't strand the
     // in-flight lock and starve every subsequent 401.
+    //
+    // KNOWN LIMITATION: `withTimeout` only races the promise — it does not
+    // abort the underlying refresh fetch. If the provider responds *after*
+    // this timeout and *after* a subsequent interactive OAuth has persisted
+    // newer tokens, the late `forceRefreshTokens` completion will call
+    // `storeTokens` and overwrite the newer entry. Requires (a) a provider
+    // that does not rotate refresh tokens, (b) a refresh slower than 60s,
+    // and (c) a successful interactive OAuth in the same window. Mitigating
+    // this fully requires threading an `AbortSignal` through
+    // `MCPTokenStorage.forceRefreshTokens` and the underlying OAuth refresh
+    // handler so the late write is cancelled.
     const promise = withTimeout(
       this.runSilentRefresh(),
       MCPConnectionFactory.SILENT_REFRESH_TIMEOUT_MS,
@@ -523,20 +546,27 @@ export class MCPConnectionFactory {
   }
 
   /**
-   * Drops any cached `mcp_get_tokens` flow state so the next `getOAuthTokens`
-   * call reads fresh tokens from the token store rather than the cached
-   * (potentially server-rejected) ones.
+   * Drops any cached COMPLETED `mcp_get_tokens` flow state so the next
+   * `getOAuthTokens` call reads fresh tokens from the token store rather than
+   * the cached (potentially server-rejected) ones. PENDING states are left
+   * alone — concurrent `getOAuthTokens` callers may be joined to them via
+   * `monitorFlow`, and deleting under them would make those waiters see
+   * `Flow state not found` and fail.
    */
   protected async invalidateGetTokensFlow(): Promise<void> {
     if (!this.flowManager || !this.userId) {
       return;
     }
     const flowId = MCPOAuthHandler.generateFlowId(this.userId, this.serverName);
-    await this.flowManager
-      .deleteFlow(flowId, 'mcp_get_tokens')
-      .catch((err) =>
-        logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`, err),
-      );
+    try {
+      const state = await this.flowManager.getFlowState(flowId, 'mcp_get_tokens');
+      if (!state || state.status !== 'COMPLETED') {
+        return;
+      }
+      await this.flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+    } catch (err) {
+      logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`, err);
+    }
   }
 
   /**

@@ -1120,6 +1120,15 @@ describe('MCPConnectionFactory', () => {
         }
         return null;
       });
+      // `invalidateGetTokensFlow` only deletes COMPLETED states (to avoid
+      // breaking concurrent PENDING joiners), so reflect that here.
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'COMPLETED' as const,
+        type: 'mcp_get_tokens',
+        metadata: {},
+        completedAt: Date.now(),
+        result: staleCachedTokens,
+      });
       mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(freshlyRefreshedTokens);
       mockConnectionInstance.isConnected.mockResolvedValue(false);
 
@@ -1424,6 +1433,172 @@ describe('MCPConnectionFactory', () => {
       );
     });
 
+    it('should scope the silent-refresh in-flight lock by tenant', async () => {
+      // Regression for the Codex finding "Scope silent refresh lock by
+      // tenant": two tenants that share the same `userId` and `serverName`
+      // (e.g. when IDs are username-based) must not join each other's
+      // in-flight refresh; otherwise tokens minted under tenant A's
+      // refresh-token would be applied to a tenant-B connection.
+      const tenantMock = getTenantId as jest.MockedFunction<typeof getTenantId>;
+
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const tenantATokens: MCPOAuthTokens = {
+        access_token: 'tenant-a-access',
+        refresh_token: 'tenant-a-refresh',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      const tenantBTokens: MCPOAuthTokens = {
+        access_token: 'tenant-b-access',
+        refresh_token: 'tenant-b-refresh',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      // Build a factory whose tenantId was captured as "tenant-a", trigger a
+      // refresh, then build a second factory under "tenant-b" with the same
+      // userId and serverName. Each refresh must call `forceRefreshTokens`
+      // independently and apply its own tokens.
+      tenantMock.mockReturnValue('tenant-a');
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(tenantATokens);
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected
+      }
+      const tenantAHandler = oauthRequiredHandler!;
+
+      // Reset oauthRequiredHandler capture for the second factory.
+      tenantMock.mockReturnValue('tenant-b');
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(tenantBTokens);
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected
+      }
+      const tenantBHandler = oauthRequiredHandler!;
+
+      await Promise.all([
+        tenantAHandler({ serverUrl: 'https://api.example.com' }),
+        tenantBHandler({ serverUrl: 'https://api.example.com' }),
+      ]);
+
+      // Each tenant ran its own refresh and applied its own tokens — no
+      // cross-tenant coalescing.
+      expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(2);
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(tenantATokens);
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(tenantBTokens);
+    });
+
+    it('should NOT delete a PENDING mcp_get_tokens flow after silent refresh', async () => {
+      // Regression for the Codex finding "Avoid deleting active token-fetch
+      // flows": concurrent `getOAuthTokens` callers may be joined to a
+      // PENDING `mcp_get_tokens` flow via `monitorFlow`. Deleting it under
+      // them makes the waiters see `Flow state not found` and unnecessarily
+      // fall back to interactive OAuth.
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const refreshedTokens: MCPOAuthTokens = {
+        access_token: 'refreshed-access',
+        refresh_token: 'refresh789',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(refreshedTokens);
+      // A concurrent `getOAuthTokens` for this user/server is currently
+      // PENDING — joiners are monitoring it via `monitorFlow`.
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING' as const,
+        type: 'mcp_get_tokens',
+        metadata: {},
+        createdAt: Date.now(),
+      });
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      // Silent refresh ran, but the PENDING `mcp_get_tokens` flow was NOT
+      // deleted — concurrent waiters can still settle through `monitorFlow`.
+      expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalled();
+      expect(mockFlowManager.deleteFlow).not.toHaveBeenCalledWith('flow123', 'mcp_get_tokens');
+    });
+
     it('should invalidate mcp_get_tokens cache after interactive OAuth stores fresh tokens', async () => {
       // Regression for the Codex finding "Invalidate token cache after
       // interactive fallback": when silent refresh fails but interactive OAuth
@@ -1473,7 +1648,25 @@ describe('MCPConnectionFactory', () => {
           state: 'fresh-csrf-state',
         },
       });
-      mockFlowManager.getFlowState.mockResolvedValue(null);
+      // First `getFlowState` (from `invalidateCompletedOAuthFlow`): no
+      // completed mcp_oauth flow → no-op. Second (from `handleOAuthRequired`):
+      // no existing flow either. Final (from `invalidateGetTokensFlow` after
+      // interactive store): a COMPLETED `mcp_get_tokens` cache exists and
+      // must be cleared so the next `getOAuthTokens` reads fresh tokens.
+      mockFlowManager.getFlowState
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          status: 'COMPLETED' as const,
+          type: 'mcp_get_tokens',
+          metadata: {},
+          completedAt: Date.now(),
+          result: {
+            access_token: 'old-stale',
+            token_type: 'Bearer',
+            obtained_at: Date.now(),
+          } as MCPOAuthTokens,
+        });
       mockFlowManager.createFlow.mockResolvedValue(interactiveTokens);
       mockConnectionInstance.isConnected.mockResolvedValue(false);
 

@@ -21,6 +21,7 @@ jest.mock('@librechat/data-schemas', () => ({
   },
   encryptV2: jest.fn(async (val: string) => `enc:${val}`),
   decryptV2: jest.fn(async (val: string) => val.replace(/^enc:/, '')),
+  getTenantId: jest.fn(),
 }));
 
 jest.mock('~/auth', () => ({
