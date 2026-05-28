@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import { ErrorController } from './error';
 import type { Request, Response } from 'express';
 import type { ValidationError, MongoServerError, CustomError } from '~/types';
+import { OAuthErrorCodes } from '~/auth/errors';
 
 // Mock the logger
 jest.mock('@librechat/data-schemas', () => ({
@@ -24,6 +25,7 @@ describe('ErrorController', () => {
     mockRes = {
       status: jest.fn().mockReturnThis(),
       send: jest.fn(),
+      redirect: jest.fn(),
     } as unknown as Response;
     (logger.error as jest.Mock).mockClear();
     mockNext = jest.fn();
@@ -230,6 +232,65 @@ describe('ErrorController', () => {
       expect(mockRes.status).toHaveBeenCalledWith(500);
       expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
       expect(logger.error).toHaveBeenCalledWith('ErrorController => error', genericError);
+    });
+  });
+
+  describe('OAuth callback error handling', () => {
+    const originalDomainClient = process.env.DOMAIN_CLIENT;
+
+    beforeEach(() => {
+      process.env.DOMAIN_CLIENT = 'https://client.example.com';
+      mockReq.originalUrl = '/oauth/google/callback';
+    });
+
+    afterEach(() => {
+      if (originalDomainClient == null) {
+        delete process.env.DOMAIN_CLIENT;
+        return;
+      }
+      process.env.DOMAIN_CLIENT = originalDomainClient;
+    });
+
+    it.each([
+      [
+        'code',
+        () =>
+          Object.assign(new Error('provider mismatch'), {
+            code: OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH,
+          }),
+        OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH,
+      ],
+      [
+        'message',
+        () => new Error(OAuthErrorCodes.OPENID_ISSUER_MISMATCH),
+        OAuthErrorCodes.OPENID_ISSUER_MISMATCH,
+      ],
+    ])(
+      'redirects known OAuth callback failures by %s with redirect disabled',
+      (_source, buildError, expectedCode) => {
+        const error = buildError() as CustomError;
+
+        ErrorController(error, mockReq, mockRes, mockNext);
+
+        expect(mockRes.redirect).toHaveBeenCalledWith(
+          'https://client.example.com/login?redirect=false&error=auth_failed',
+        );
+        expect(logger.error).toHaveBeenCalledWith('OAuth callback authentication failed', {
+          errorCode: expectedCode,
+          clientErrorCode: 'auth_failed',
+        });
+        expect(mockRes.status).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not redirect auth failures outside OAuth callbacks', () => {
+      mockReq.originalUrl = '/api/auth/login';
+      const error = new Error('auth_failed');
+
+      ErrorController(error, mockReq, mockRes, mockNext);
+
+      expect(mockRes.redirect).not.toHaveBeenCalled();
+      expect(mockRes.status).toHaveBeenCalledWith(500);
     });
   });
 

@@ -1,11 +1,11 @@
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { logger, createMethods, createModels } from '@librechat/data-schemas';
-import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
 import type { CommandStartedEvent } from 'mongodb';
 import type { FilterQuery } from 'mongoose';
 import { recordOpenIDUserLookup } from '~/app/metrics';
+import { OAuthErrorCodes } from './errors';
 import { findOpenIDUser, getOpenIdEmail, getOpenIdIssuer, normalizeOpenIdIssuer } from './openid';
 
 function newId() {
@@ -400,7 +400,7 @@ describe('findOpenIDUser', () => {
 
       expect(result).toEqual({
         user: null,
-        error: ErrorTypes.AUTH_FAILED,
+        error: OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH,
         migration: false,
       });
     });
@@ -425,7 +425,7 @@ describe('findOpenIDUser', () => {
 
       expect(result).toEqual({
         user: null,
-        error: ErrorTypes.AUTH_FAILED,
+        error: OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH,
         migration: false,
       });
     });
@@ -477,7 +477,7 @@ describe('findOpenIDUser', () => {
 
       expect(result).toEqual({
         user: null,
-        error: ErrorTypes.AUTH_FAILED,
+        error: OAuthErrorCodes.OPENID_ISSUER_MISMATCH,
         migration: false,
       });
     });
@@ -503,7 +503,7 @@ describe('findOpenIDUser', () => {
 
       expect(result).toEqual({
         user: null,
-        error: ErrorTypes.AUTH_FAILED,
+        error: OAuthErrorCodes.OPENID_ISSUER_MISMATCH,
         migration: false,
       });
     });
@@ -589,7 +589,7 @@ describe('findOpenIDUser', () => {
 
       expect(result).toEqual({
         user: null,
-        error: ErrorTypes.AUTH_FAILED,
+        error: OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH,
         migration: false,
       });
     });
@@ -614,7 +614,7 @@ describe('findOpenIDUser', () => {
 
       expect(result).toEqual({
         user: null,
-        error: ErrorTypes.AUTH_FAILED,
+        error: OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH,
         migration: false,
       });
     });
@@ -765,7 +765,7 @@ describe('findOpenIDUser', () => {
       expect(mockFindUser).toHaveBeenCalledWith({ email: 'user@example.com' });
       expect(result).toEqual({
         user: null,
-        error: ErrorTypes.AUTH_FAILED,
+        error: OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH,
         migration: false,
       });
     });

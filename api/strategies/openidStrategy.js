@@ -7,7 +7,7 @@ const jwtDecode = require('jsonwebtoken/decode');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
-const { CacheKeys, ErrorTypes, SystemRoles } = require('librechat-data-provider');
+const { CacheKeys, SystemRoles } = require('librechat-data-provider');
 const {
   isEnabled,
   logHeaders,
@@ -20,6 +20,8 @@ const {
   getAvatarFileStrategy,
   getAvatarSaveParams,
   resolveAppConfigForUser,
+  isKnownOAuthErrorCode,
+  OAuthErrorCodes,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { findUser, createUser, updateUser } = require('~/models');
@@ -468,7 +470,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   const error = result.error;
 
   if (error) {
-    throw new Error(ErrorTypes.AUTH_FAILED);
+    throw new Error(error);
   }
 
   const appConfig = user?.tenantId ? await resolveAppConfigForUser(getAppConfig, user) : baseConfig;
@@ -554,7 +556,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   }
 
   if (existingUsersOnly && !user) {
-    throw new Error('User does not exist');
+    throw new Error(OAuthErrorCodes.OAUTH_USER_NOT_FOUND);
   }
 
   if (!user) {
@@ -713,10 +715,10 @@ function createOpenIDCallback(existingUsersOnly) {
       const user = await processOpenIDAuth(tokenset, existingUsersOnly);
       done(null, user);
     } catch (err) {
-      if (err.message === 'Email domain not allowed') {
+      if (isKnownOAuthErrorCode(err.message)) {
         return done(null, false, { message: err.message });
       }
-      if (err.message === ErrorTypes.AUTH_FAILED) {
+      if (err.message === 'Email domain not allowed') {
         return done(null, false, { message: err.message });
       }
       if (err.message && err.message.includes('role to log in')) {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ErrorTypes, registerPage } from 'librechat-data-provider';
+import { registerPage } from 'librechat-data-provider';
 import { OpenIDIcon, useToastContext } from '@librechat/client';
 import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
@@ -23,8 +23,11 @@ function Login() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const disableAutoRedirect = searchParams.get('redirect') === 'false';
+  const initialOauthError = searchParams.get('error');
 
-  const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
+  const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(
+    disableAutoRedirect || !!initialOauthError,
+  );
 
   useEffect(() => {
     const redirectTo = searchParams.get('redirect_to');
@@ -38,7 +41,8 @@ function Login() {
     }
 
     const oauthError = searchParams?.get('error');
-    if (oauthError && oauthError === ErrorTypes.AUTH_FAILED) {
+    if (oauthError) {
+      setIsAutoRedirectDisabled(true);
       showToast({
         message: localize('com_auth_error_oauth_failed'),
         status: 'error',
@@ -67,6 +71,7 @@ function Login() {
   useEffect(() => {
     if (shouldAutoRedirect) {
       console.log('Auto-redirecting to OpenID provider...');
+      setIsAutoRedirectDisabled(true);
       window.location.href = `${startupConfig.serverDomain}/oauth/openid`;
     }
   }, [shouldAutoRedirect, startupConfig]);

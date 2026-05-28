@@ -1,7 +1,7 @@
 import reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { getByTestId, render, waitFor } from 'test/layout-test-utils';
-import type { TStartupConfig } from 'librechat-data-provider';
+import { ErrorTypes, type TStartupConfig } from 'librechat-data-provider';
 import * as endpointQueries from '~/data-provider/Endpoints/queries';
 import * as miscDataProvider from '~/data-provider/Misc/queries';
 import * as authMutations from '~/data-provider/Auth/mutations';
@@ -9,7 +9,15 @@ import * as authQueries from '~/data-provider/Auth/queries';
 import AuthLayout from '~/components/Auth/AuthLayout';
 import Login from '~/components/Auth/Login';
 
+const mockShowToast = jest.fn();
+
 jest.mock('librechat-data-provider/react-query');
+jest.mock('@librechat/client', () => ({
+  ...jest.requireActual('@librechat/client'),
+  useToastContext: () => ({
+    showToast: mockShowToast,
+  }),
+}));
 
 const mockStartupConfig = {
   isFetching: false,
@@ -22,6 +30,7 @@ const mockStartupConfig = {
     githubLoginEnabled: true,
     googleLoginEnabled: true,
     openidLoginEnabled: true,
+    openidAutoRedirect: false,
     openidLabel: 'Test OpenID',
     openidImageUrl: 'http://test-server.com',
     samlLoginEnabled: true,
@@ -112,12 +121,36 @@ const setup = ({
   };
 };
 
+const setupWithOpenIdAutoRedirect = (data: Partial<TStartupConfig> = {}) =>
+  setup({
+    useGetStartupConfigReturnValue: {
+      ...mockStartupConfig,
+      data: {
+        ...mockStartupConfig.data,
+        openidAutoRedirect: true,
+        ...data,
+      },
+    },
+  });
+
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
   useOutletContext: () => ({
     startupConfig: mockStartupConfig,
   }),
 }));
+
+beforeEach(() => {
+  sessionStorage.clear();
+  window.history.replaceState({}, '', '/login');
+});
+
+afterEach(() => {
+  sessionStorage.clear();
+  window.history.replaceState({}, '', '/');
+  mockShowToast.mockClear();
+  jest.restoreAllMocks();
+});
 
 test('renders login form', () => {
   const { getByLabelText, getByRole } = setup();
@@ -151,6 +184,24 @@ test('renders login form', () => {
     'href',
     'mock-server/oauth/saml',
   );
+});
+
+it.each([
+  ['legacy leaked OAuth account mismatch', 'oauth_account_mismatch'],
+  ['generic OAuth auth failure', ErrorTypes.AUTH_FAILED],
+  ['unknown OAuth auth failure', 'unexpected_provider_error'],
+])('does not auto redirect when the login URL has %s', async (_label, errorCode) => {
+  window.history.replaceState({}, '', `/login?error=${errorCode}`);
+
+  setupWithOpenIdAutoRedirect();
+
+  await waitFor(() => {
+    expect(getByTestId(document.body, 'login-button')).toBeInTheDocument();
+  });
+  expect(mockShowToast).toHaveBeenCalledWith({
+    message: 'Authentication failed. Please check your login method and try again.',
+    status: 'error',
+  });
 });
 
 test('calls loginUser.mutate on login', async () => {
