@@ -73,7 +73,7 @@ export default function useUnifiedSidebarLinks() {
       });
     }
 
-    return [conversationLink, ...adminLinks, ...sideNavLinks];
+    return [conversationLink, ...sideNavLinks, ...adminLinks];
   }, [sideNavLinks, user?.role, navigate]);
 
   return links;
