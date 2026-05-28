@@ -7,6 +7,10 @@ function generateResourceId(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').substring(0, 10);
 }
 
+// Known providers that are NOT OpenAI-compatible
+// This is a small, stable list that rarely changes
+const NON_OPENAI_PROVIDERS = new Set(['google', 'anthropic', 'bedrock', 'ollama']);
+
 const RECOGNIZED_PROVIDERS = new Set([
   'google',
   'anthropic',
@@ -17,7 +21,31 @@ const RECOGNIZED_PROVIDERS = new Set([
   'deepseek',
   'ollama',
   'bedrock',
+  // Note: Custom OpenAI-compatible endpoints (like scaleway, together, perplexity, etc.)
+  // are automatically recognized if they're not in NON_OPENAI_PROVIDERS
 ]);
+
+/**
+ * Check if a provider should receive structured content formatting for MCP tool responses.
+ *
+ * Recognizes:
+ * 1. Explicitly listed providers in RECOGNIZED_PROVIDERS
+ * 2. Custom OpenAI-compatible endpoints (any provider not in NON_OPENAI_PROVIDERS)
+ *
+ * Custom endpoints are passed with their endpoint name (not "openai"), so we automatically
+ * detect them rather than requiring explicit additions for each new provider.
+ */
+function isRecognizedProvider(provider: t.Provider): boolean {
+  if (RECOGNIZED_PROVIDERS.has(provider)) {
+    return true;
+  }
+
+  if (!NON_OPENAI_PROVIDERS.has(provider)) {
+    return true;
+  }
+
+  return false;
+}
 
 const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
   // google: (item) => ({
@@ -92,7 +120,7 @@ export function formatToolContent(
   result: t.MCPToolCallResponse,
   provider: t.Provider,
 ): t.FormattedContentResult {
-  if (!RECOGNIZED_PROVIDERS.has(provider)) {
+  if (!isRecognizedProvider(provider)) {
     return [parseAsString(result), undefined];
   }
 
