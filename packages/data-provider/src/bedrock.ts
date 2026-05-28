@@ -317,6 +317,8 @@ export const bedrockInputParser = s.tConversationSchema
 
     const additionalFields: Record<string, unknown> = {};
     const typedData = data as Record<string, unknown>;
+    const shouldOmitSamplingParameters =
+      typeof typedData.model === 'string' && omitsSamplingParameters(typedData.model);
 
     Object.entries(typedData).forEach(([key, value]) => {
       if (!knownKeys.includes(key)) {
@@ -445,6 +447,24 @@ export const bedrockInputParser = s.tConversationSchema
         delete amrf.reasoning_config;
         delete amrf.reasoning_effort;
       }
+
+      if (shouldOmitSamplingParameters) {
+        delete amrf.temperature;
+        delete amrf.topP;
+        delete amrf.top_p;
+        delete amrf.topK;
+        delete amrf.top_k;
+      }
+    }
+
+    if (shouldOmitSamplingParameters) {
+      delete typedData.temperature;
+      delete typedData.topP;
+      delete additionalFields.temperature;
+      delete additionalFields.topP;
+      delete additionalFields.top_p;
+      delete additionalFields.topK;
+      delete additionalFields.top_k;
     }
 
     /** Default promptCache for claude and nova models, if not defined */

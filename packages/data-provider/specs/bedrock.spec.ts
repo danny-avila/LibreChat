@@ -577,6 +577,47 @@ describe('bedrockInputParser', () => {
       expect(additionalFields.effort).toBeUndefined();
     });
 
+    test('should strip sampling parameters for Opus 4.8 Bedrock models', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-8',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        top_p: 0.8,
+        additionalModelRequestFields: {
+          custom_flag: true,
+          temperature: 0.5,
+          topP: 0.95,
+          top_k: 20,
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(result.temperature).toBeUndefined();
+      expect(result.topP).toBeUndefined();
+      expect(additionalFields.temperature).toBeUndefined();
+      expect(additionalFields.topP).toBeUndefined();
+      expect(additionalFields.top_p).toBeUndefined();
+      expect(additionalFields.top_k).toBeUndefined();
+      expect(additionalFields.custom_flag).toBe(true);
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('should preserve sampling parameters for Opus 4.6 Bedrock models', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(result.temperature).toBe(0.7);
+      expect(result.topP).toBe(0.9);
+      expect(additionalFields.top_k).toBe(40);
+    });
+
     test('should set thinking.display to "summarized" so Opus 4.7 returns reasoning blocks', () => {
       const input = {
         model: 'anthropic.claude-opus-4-7',
