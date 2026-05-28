@@ -1,7 +1,4 @@
-/* eslint-disable i18next/no-literal-string */
-/* ^ We're not worried about i18n for this app ^ */
-
-import React, { memo, useMemo, useRef, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
 import { useFormContext } from 'react-hook-form';
@@ -128,21 +125,12 @@ function FileSearch({
 
   return (
     <div className="w-full">
-      {/* NJ: Customize how we explain the File Search feature
       <div className="mb-1.5 flex items-center gap-2">
         <span>
           <label className="text-token-text-primary block text-sm font-medium">
             {localize('com_assistants_file_search')}
           </label>
         </span>
-      </div>
-      */}
-      <div className="pb-1">
-        <h3 className="text-sm font-semibold">{localize('com_assistants_file_search')}</h3>
-        <p className="mt-1 text-sm text-text-secondary">
-          Upload any documents you want the agent to search through — like policy documents,
-          research papers, and other work files.
-        </p>
       </div>
       <FileSearchCheckbox />
       <div className="flex flex-col gap-3">

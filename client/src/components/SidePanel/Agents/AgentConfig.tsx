@@ -34,7 +34,6 @@ import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
-import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
@@ -43,6 +42,7 @@ import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { X } from 'lucide-react';
 import TipComponent from '~/nj/components/TipComponent';
+import FileSearch from '~/nj/components/Agents/FileSearch';
 
 const sectionLabelClass = 'text-sm font-semibold';
 const labelClass = 'mb-2 text-token-text-primary block text-sm font-semibold';
@@ -236,7 +236,7 @@ export default function AgentConfig() {
    * Make sure to check that the LibreChat implementation hasn't drifted too far functionality-wise!
    */
   return (
-    <div className="mb-2 h-auto pt-3">
+    <div className="h-auto pt-3">
       {/* Identity */}
       <div className="mx-3 pb-3">
         <h3 className={sectionLabelClass}>Identity</h3>
@@ -346,15 +346,7 @@ export default function AgentConfig() {
       )}
 
       {/* File search */}
-      {fileSearchEnabled && (
-        <>
-          <hr className="mb-4 border-border-heavy" />
-
-          <div className="mx-3">
-            <FileSearch agent_id={agent_id} files={knowledge_files} />
-          </div>
-        </>
-      )}
+      {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
     </div>
   );
 
