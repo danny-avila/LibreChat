@@ -403,10 +403,18 @@ export const baseEndpointSchema = z.object({
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
 
+export const bedrockGuardrailConfigSchema = z.object({
+  guardrailIdentifier: z.string(),
+  guardrailVersion: z.string(),
+  trace: z.enum(['enabled', 'disabled', 'enabled_full']).optional(),
+  streamProcessingMode: z.enum(['sync', 'async']).optional(),
+});
+
 export const bedrockEndpointSchema = baseEndpointSchema.merge(
   z.object({
     availableRegions: z.array(z.string()).optional(),
     models: z.array(z.string()).optional(),
+    guardrailConfig: bedrockGuardrailConfigSchema.optional(),
     inferenceProfiles: z.record(z.string(), z.string()).optional(),
   }),
 );
