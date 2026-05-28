@@ -108,25 +108,25 @@ describe('tenantContextMiddleware', () => {
     });
   });
 
-  it('is a no-op for unauthenticated requests (no user)', async () => {
+  it('propagates SYSTEM_TENANT_ID for unauthenticated requests', async () => {
     const req = mockReq();
     const res = mockRes();
 
     const tenantId = await runMiddleware(req, res);
-    expect(tenantId).toBeUndefined();
+    expect(tenantId).toBe(SYSTEM_TENANT_ID);
   });
 
-  it('passes through without ALS when user has no tenantId in non-strict mode', async () => {
-    const req = mockReq({ role: 'user' });
+  it('uses SYSTEM_TENANT_ID when admin has no tenantId', async () => {
+    const req = mockReq({ role: 'ADMIN' });
     const res = mockRes();
 
     const tenantId = await runMiddleware(req, res);
-    expect(tenantId).toBeUndefined();
+    expect(tenantId).toBe(SYSTEM_TENANT_ID);
   });
 
-  it('keeps user context in non-strict single-tenant mode', async () => {
+  it('uses SYSTEM_TENANT_ID and preserves user/request context for admin accounts', async () => {
     const req = mockReqWithHeaders(
-      { id: 'single-user', role: 'user' },
+      { id: 'admin-user', role: 'ADMIN' },
       { 'x-request-id': 'req-1' },
     );
     const res = mockRes();
@@ -134,26 +134,48 @@ describe('tenantContextMiddleware', () => {
     const context = await runMiddlewareContext(req, res);
 
     expect(context).toEqual({
-      tenantId: undefined,
-      userId: 'single-user',
+      tenantId: SYSTEM_TENANT_ID,
+      userId: 'admin-user',
       requestId: 'req-1',
     });
   });
 
-  it('returns 403 when user has no tenantId in strict mode', async () => {
+  it('uses SYSTEM_TENANT_ID for admin without tenantId in strict mode', async () => {
     process.env.TENANT_ISOLATION_STRICT = 'true';
     _resetTenantMiddlewareStrictCache();
 
-    const req = mockReq({ role: 'user' });
+    const req = mockReq({ role: 'ADMIN' });
+    const res = mockRes();
+
+    const tenantId = await runMiddleware(req, res);
+    expect(tenantId).toBe(SYSTEM_TENANT_ID);
+  });
+
+  it('returns 403 for non-admin without tenantId in strict mode', async () => {
+    process.env.TENANT_ISOLATION_STRICT = 'true';
+    _resetTenantMiddlewareStrictCache();
+
+    const req = mockReq({ role: 'USER' });
     const res = mockRes();
     const next: NextFunction = jest.fn();
 
-    await tenantContextMiddleware(req, res, next);
+    tenantContextMiddleware(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ error: expect.stringContaining('Tenant context required') }),
     );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 for non-admin without tenantId in non-strict mode', async () => {
+    const req = mockReq({ role: 'USER' });
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    tenantContextMiddleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -271,7 +293,7 @@ describe('restoreTenantContextFromReq', () => {
     const req = {
       ...mockReq({ role: 'user' }),
       file: { path: '/tmp/no-tenant-upload' },
-    } as ServerRequest;
+    } as unknown as ServerRequest;
     const res = mockRes();
     const next: NextFunction = jest.fn();
 
@@ -298,7 +320,7 @@ describe('restoreTenantContextFromReq', () => {
     const req = {
       ...mockReqWithHeaders({ id: 'strict-user', role: 'user' }, { 'x-request-id': 'req-strict' }),
       file: { path: '/tmp/no-tenant-upload' },
-    } as ServerRequest;
+    } as unknown as ServerRequest;
     const res = mockRes();
     const next: NextFunction = jest.fn();
 
@@ -360,7 +382,7 @@ describe('restoreTenantContextFromReq', () => {
       ...mockReq({ tenantId: SYSTEM_TENANT_ID, role: 'user' }),
       file: { path: '/tmp/system-tenant-upload' },
       files: [{ path: '/tmp/system-tenant-extra' }],
-    } as ServerRequest;
+    } as unknown as ServerRequest;
     const res = mockRes();
     const next: NextFunction = jest.fn();
 
