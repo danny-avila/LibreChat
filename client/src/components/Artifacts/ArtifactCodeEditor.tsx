@@ -134,7 +134,11 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
       const pending = pendingUpdateRef.current;
       pendingUpdateRef.current = null;
       const currentTarget = getArtifactEditTarget(artifactRef.current);
-      if (pending == null || currentTarget == null || !isSameArtifactTarget(pending, currentTarget)) {
+      if (
+        pending == null ||
+        currentTarget == null ||
+        !isSameArtifactTarget(pending, currentTarget)
+      ) {
         return;
       }
 
@@ -153,7 +157,11 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
       setCurrentUpdate(null);
 
       const currentTarget = getArtifactEditTarget(artifactRef.current);
-      if (pending == null || currentTarget == null || !isSameArtifactTarget(pending, currentTarget)) {
+      if (
+        pending == null ||
+        currentTarget == null ||
+        !isSameArtifactTarget(pending, currentTarget)
+      ) {
         return;
       }
 
