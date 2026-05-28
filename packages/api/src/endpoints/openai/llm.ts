@@ -495,13 +495,16 @@ export function getOpenAILLMConfig({
    * non-empty `additional_kwargs.reasoning_content`, so leaving it on for
    * the whole conversation is a no-op when no reasoning was captured.
    *
+   * Mirror `normalizeOpenRouterModel`'s `~` stripping so OpenRouter's
+   * latest-routing prefix (e.g. `~deepseek/deepseek-v4`) is recognized.
+   *
    * @see https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
    * @see https://github.com/danny-avila/LibreChat/issues/13366
    */
   if (
     useOpenRouter &&
     typeof modelOptions.model === 'string' &&
-    /(?:^|\/)deepseek(?:[-/]|$)/i.test(modelOptions.model)
+    /(?:^|\/)deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''))
   ) {
     llmConfig.includeReasoningContent = true;
   }

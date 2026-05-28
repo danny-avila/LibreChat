@@ -238,7 +238,48 @@ export function getReasoningKey(
   return reasoningKey;
 }
 
+/**
+ * Matches DeepSeek model identifiers in both direct (`deepseek-chat`,
+ * `deepseek-reasoner`) and namespaced (`deepseek/deepseek-v4`, `deepseek/r1`)
+ * forms. The leading boundary anchors the match to the start of the id (or a
+ * `/` for OpenRouter-style namespaces) so unrelated models that merely
+ * contain the substring (e.g. `community/not-a-deepseek-clone`) don't match.
+ */
 const DEEPSEEK_MODEL_PATTERN = /(?:^|\/)deepseek(?:[-/]|$)/i;
+
+/**
+ * OpenRouter's "latest routing" prefix (`~`) is stripped before downstream
+ * matching by the SDK's `normalizeOpenRouterModel()` helper. Mirror that
+ * normalization here so ids like `~deepseek-chat` and `~deepseek/r1` are
+ * recognized as DeepSeek (issue #13366 review comment).
+ */
+const OPENROUTER_LATEST_ROUTING_PREFIX = /^~/;
+
+/**
+ * `deepseek/...` is the OpenRouter shorthand for routing to DeepSeek's
+ * thinking-mode API. We use this stricter pattern (instead of any
+ * `DEEPSEEK_MODEL_PATTERN` match) for the custom-endpoint fallback to avoid
+ * false positives on direct, non-routed `deepseek-chat`-style ids that don't
+ * carry a namespace.
+ */
+const OPENROUTER_DEEPSEEK_NAMESPACE_PATTERN = /^deepseek\//i;
+
+function matchesDeepSeekModel(model?: string | null): boolean {
+  if (typeof model !== 'string' || model.length === 0) {
+    return false;
+  }
+  const normalized = model.replace(OPENROUTER_LATEST_ROUTING_PREFIX, '');
+  return DEEPSEEK_MODEL_PATTERN.test(normalized);
+}
+
+function isOpenRouterStyleDeepSeekModel(model?: string | null): boolean {
+  if (typeof model !== 'string' || model.length === 0) {
+    return false;
+  }
+  return OPENROUTER_DEEPSEEK_NAMESPACE_PATTERN.test(
+    model.replace(OPENROUTER_LATEST_ROUTING_PREFIX, ''),
+  );
+}
 
 /**
  * Predicate for DeepSeek thinking-mode reasoning_content roundtrip.
@@ -256,6 +297,17 @@ const DEEPSEEK_MODEL_PATTERN = /(?:^|\/)deepseek(?:[-/]|$)/i;
  * outbound LLM config so the field is included in the OpenAI-compatible
  * request body.
  *
+ * Matches three cases:
+ * 1. Direct `Providers.DEEPSEEK` (any model — case-insensitive provider).
+ * 2. `Providers.OPENROUTER` with a DeepSeek-style model id, including
+ *    the `~`-prefixed latest-routing variant.
+ * 3. Any other provider string (e.g. a user-renamed custom endpoint that
+ *    `initializeAgent` normalized to `openai`) when the model id carries
+ *    the unambiguous `deepseek/` OpenRouter namespace. The downstream
+ *    gate on a non-empty `additional_kwargs.reasoning_content` is the
+ *    real safety net against false positives, so erring broad here is
+ *    safe and covers custom-named OpenRouter endpoints.
+ *
  * @see https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
  * @param provider - The resolved provider (e.g., `'deepseek'`, `'openrouter'`).
  * @param model - The model identifier (e.g., `'deepseek/deepseek-v4-pro'`).
@@ -264,25 +316,24 @@ export function isDeepSeekReasoningProvider(
   provider: string | Providers | undefined | null,
   model?: string | null,
 ): boolean {
-  if (typeof provider !== 'string' || provider.length === 0) {
-    return false;
+  if (typeof provider === 'string' && provider.length > 0) {
+    /**
+     * Compare case-insensitively. `agent.provider` is the raw endpoint name
+     * configured by the user — librechat.yaml frequently spells custom
+     * endpoints as `OpenRouter` (PascalCase), but the `Providers` enum is
+     * all lowercase. The provider hint passed to `formatAgentMessages` is a
+     * literal `Providers.DEEPSEEK` either way, so normalization here is
+     * purely for the comparison.
+     */
+    const normalized = provider.toLowerCase();
+    if (normalized === Providers.DEEPSEEK) {
+      return true;
+    }
+    if (normalized === Providers.OPENROUTER) {
+      return matchesDeepSeekModel(model);
+    }
   }
-  /**
-   * Compare case-insensitively. `agent.provider` is the raw endpoint name
-   * configured by the user — librechat.yaml frequently spells custom
-   * endpoints as `OpenRouter` (PascalCase), but the `Providers` enum is
-   * all lowercase. The provider hint passed to `formatAgentMessages` is a
-   * literal `Providers.DEEPSEEK` either way, so normalization here is
-   * purely for the comparison.
-   */
-  const normalized = provider.toLowerCase();
-  if (normalized === Providers.DEEPSEEK) {
-    return true;
-  }
-  if (normalized !== Providers.OPENROUTER || typeof model !== 'string') {
-    return false;
-  }
-  return DEEPSEEK_MODEL_PATTERN.test(model);
+  return isOpenRouterStyleDeepSeekModel(model);
 }
 
 type RunAgent = Omit<Agent, 'tools'> & {

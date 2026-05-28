@@ -997,6 +997,19 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
     });
 
+    it('should set includeReasoningContent for OpenRouter DeepSeek models with the latest-routing `~` prefix', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: '~deepseek/deepseek-v4-pro',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
+    });
+
     it('should not set includeReasoningContent for non-DeepSeek OpenRouter models', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',

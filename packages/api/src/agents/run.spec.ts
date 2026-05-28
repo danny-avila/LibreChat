@@ -167,10 +167,31 @@ describe('isDeepSeekReasoningProvider', () => {
     expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, 'deepseek-r1')).toBe(true);
   });
 
+  it("strips OpenRouter's `~` latest-routing prefix before matching", () => {
+    expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, '~deepseek/deepseek-v4')).toBe(true);
+    expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, '~deepseek/r1')).toBe(true);
+    expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, '~deepseek-chat')).toBe(true);
+  });
+
   it('matches the provider string case-insensitively (custom endpoint names)', () => {
     expect(isDeepSeekReasoningProvider('OpenRouter', 'deepseek/deepseek-v4')).toBe(true);
     expect(isDeepSeekReasoningProvider('OPENROUTER', 'deepseek/deepseek-v4')).toBe(true);
     expect(isDeepSeekReasoningProvider('DeepSeek')).toBe(true);
+  });
+
+  it('matches custom-named OpenRouter endpoints via the deepseek/ namespace fallback', () => {
+    /**
+     * When a user configures OpenRouter as a custom endpoint with a
+     * non-standard name (e.g. "MyOR") and `initializeAgent` normalizes the
+     * unknown provider to `openai`, only the model id remains as a reliable
+     * DeepSeek signal. The `deepseek/` prefix is OpenRouter shorthand, so
+     * accept it regardless of the resolved provider.
+     */
+    expect(isDeepSeekReasoningProvider('openai', 'deepseek/deepseek-v4')).toBe(true);
+    expect(isDeepSeekReasoningProvider('MyCustomEndpoint', '~deepseek/r1')).toBe(true);
+    expect(isDeepSeekReasoningProvider(undefined, 'deepseek/deepseek-chat')).toBe(true);
+    expect(isDeepSeekReasoningProvider(null, 'deepseek/deepseek-v4')).toBe(true);
+    expect(isDeepSeekReasoningProvider('', 'deepseek/deepseek-v4')).toBe(true);
   });
 
   it('returns false for openrouter with non-deepseek models', () => {
@@ -183,9 +204,15 @@ describe('isDeepSeekReasoningProvider', () => {
     ).toBe(false);
   });
 
-  it('does not match providers other than deepseek/openrouter even when the model says deepseek', () => {
+  it('does not match bare `deepseek-*` ids on unrelated providers', () => {
+    /**
+     * Without the `deepseek/` namespace prefix, a bare `deepseek-chat` id
+     * is the direct-API form — it should require an explicit DeepSeek or
+     * OpenRouter provider, since a Bedrock/Anthropic endpoint that happens
+     * to label a model "deepseek-chat" isn't actually hitting DeepSeek.
+     */
     expect(isDeepSeekReasoningProvider(Providers.OPENAI, 'deepseek-chat')).toBe(false);
-    expect(isDeepSeekReasoningProvider(Providers.ANTHROPIC, 'deepseek/deepseek-v4')).toBe(false);
+    expect(isDeepSeekReasoningProvider(Providers.ANTHROPIC, 'deepseek-r1')).toBe(false);
   });
 
   it('returns false when the model is missing on openrouter', () => {
@@ -194,15 +221,16 @@ describe('isDeepSeekReasoningProvider', () => {
     expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, '')).toBe(false);
   });
 
-  it('returns false for nullish/empty provider input', () => {
-    expect(isDeepSeekReasoningProvider(undefined, 'deepseek/deepseek-v4')).toBe(false);
-    expect(isDeepSeekReasoningProvider(null, 'deepseek/deepseek-v4')).toBe(false);
-    expect(isDeepSeekReasoningProvider('', 'deepseek/deepseek-v4')).toBe(false);
+  it('returns false for nullish provider input with non-namespaced models', () => {
+    expect(isDeepSeekReasoningProvider(undefined, 'deepseek-chat')).toBe(false);
+    expect(isDeepSeekReasoningProvider(null, 'gpt-5')).toBe(false);
+    expect(isDeepSeekReasoningProvider('', 'claude-opus-4-7')).toBe(false);
   });
 
   it('does not match models that merely contain the substring "deepseek" via a different namespace', () => {
     expect(
       isDeepSeekReasoningProvider(Providers.OPENROUTER, 'community/not-a-deepseek-clone'),
     ).toBe(false);
+    expect(isDeepSeekReasoningProvider(undefined, 'community/not-a-deepseek-clone')).toBe(false);
   });
 });

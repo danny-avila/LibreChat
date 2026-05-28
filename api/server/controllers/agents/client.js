@@ -886,21 +886,37 @@ class AgentClient extends BaseClient {
        * back to the API." (issue #13366). The matching `includeReasoningContent`
        * on the LLM config (see endpoints/openai/llm.ts) ensures the field
        * makes it into the outbound request body.
+       *
+       * Multi-agent runs ship the primary agent's messages plus any
+       * handoff/addedConvo agents from `this.agentConfigs` through the
+       * same `formatAgentMessages` call, so check every agent — a DeepSeek
+       * handoff under a non-DeepSeek primary would otherwise lose its
+       * persisted reasoning when its tool-bearing messages are replayed.
+       *
+       * `formatAgentMessages` previously ran without an explicit `provider`,
+       * so only opt into the option object when we actually need the
+       * spoof — preserving the pre-fix behavior for everyone else.
        */
-      const formatProvider = isDeepSeekReasoningProvider(
-        this.options.agent.provider,
-        this.options.agent.model_parameters?.model ?? this.options.agent.model,
-      )
-        ? Providers.DEEPSEEK
-        : this.options.agent.provider;
+      const hasDeepSeekAgent = (agent) =>
+        agent != null &&
+        isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
+      const needsDeepSeekFormat =
+        hasDeepSeekAgent(this.options.agent) ||
+        (this.agentConfigs != null &&
+          Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
+      const formatOptions = needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : undefined;
       let {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
-      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet, skillPrimeResult?.skills, {
-        provider: formatProvider,
-      });
+      } = formatAgentMessages(
+        payload,
+        this.indexTokenCountMap,
+        toolSet,
+        skillPrimeResult?.skills,
+        formatOptions,
+      );
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
