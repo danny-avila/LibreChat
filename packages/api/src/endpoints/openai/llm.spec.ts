@@ -962,6 +962,66 @@ describe('getOpenAILLMConfig', () => {
       expect(disabled.llmConfig).not.toHaveProperty('promptCache');
       expect(dropped.llmConfig).not.toHaveProperty('promptCache');
     });
+
+    /**
+     * DeepSeek's thinking-mode API requires `reasoning_content` from each
+     * tool-bearing assistant turn to be replayed verbatim, or the second
+     * tool call 400s with "The `reasoning_content` in the thinking mode
+     * must be passed back to the API." Direct `ChatDeepSeek` hardcodes
+     * the flag; `ChatOpenRouter` does not, so the OpenRouter path needs
+     * to set it explicitly for DeepSeek models. (#13366)
+     */
+    it('should set includeReasoningContent for DeepSeek models via OpenRouter', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'deepseek/deepseek-v4-pro',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
+    });
+
+    it('should set includeReasoningContent case-insensitively for OpenRouter DeepSeek models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'DeepSeek/DeepSeek-V4',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('includeReasoningContent', true);
+    });
+
+    it('should not set includeReasoningContent for non-DeepSeek OpenRouter models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'anthropic/claude-opus-4-7',
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('includeReasoningContent');
+    });
+
+    it('should not set includeReasoningContent for DeepSeek models outside OpenRouter', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: false,
+        modelOptions: {
+          model: 'deepseek-chat',
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('includeReasoningContent');
+    });
   });
 
   describe('Verbosity Handling', () => {

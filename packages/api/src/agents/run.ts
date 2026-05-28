@@ -238,6 +238,53 @@ export function getReasoningKey(
   return reasoningKey;
 }
 
+const DEEPSEEK_MODEL_PATTERN = /(?:^|\/)deepseek(?:[-/]|$)/i;
+
+/**
+ * Predicate for DeepSeek thinking-mode reasoning_content roundtrip.
+ *
+ * DeepSeek's thinking-mode API rejects multi-turn tool-calling requests
+ * unless `reasoning_content` from each prior assistant message that emitted
+ * `tool_calls` is replayed verbatim. The agents SDK's `formatAgentMessages`
+ * only re-attaches `additional_kwargs.reasoning_content` on tool-bearing
+ * AIMessages when `options.provider === Providers.DEEPSEEK`, and
+ * `ChatOpenRouter` doesn't set `includeReasoningContent`, so DeepSeek models
+ * routed via OpenRouter silently drop the field and 400 on the second turn.
+ *
+ * Callers use this to (a) spoof the provider hint passed to
+ * `formatAgentMessages` and (b) enable `includeReasoningContent` on the
+ * outbound LLM config so the field is included in the OpenAI-compatible
+ * request body.
+ *
+ * @see https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
+ * @param provider - The resolved provider (e.g., `'deepseek'`, `'openrouter'`).
+ * @param model - The model identifier (e.g., `'deepseek/deepseek-v4-pro'`).
+ */
+export function isDeepSeekReasoningProvider(
+  provider: string | Providers | undefined | null,
+  model?: string | null,
+): boolean {
+  if (typeof provider !== 'string' || provider.length === 0) {
+    return false;
+  }
+  /**
+   * Compare case-insensitively. `agent.provider` is the raw endpoint name
+   * configured by the user — librechat.yaml frequently spells custom
+   * endpoints as `OpenRouter` (PascalCase), but the `Providers` enum is
+   * all lowercase. The provider hint passed to `formatAgentMessages` is a
+   * literal `Providers.DEEPSEEK` either way, so normalization here is
+   * purely for the comparison.
+   */
+  const normalized = provider.toLowerCase();
+  if (normalized === Providers.DEEPSEEK) {
+    return true;
+  }
+  if (normalized !== Providers.OPENROUTER || typeof model !== 'string') {
+    return false;
+  }
+  return DEEPSEEK_MODEL_PATTERN.test(model);
+}
+
 type RunAgent = Omit<Agent, 'tools'> & {
   tools?: GenericTool[];
   maxContextTokens?: number;

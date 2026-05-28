@@ -487,6 +487,26 @@ export function getOpenAILLMConfig({
   }
 
   /**
+   * DeepSeek thinking-mode tool-calling requires `reasoning_content` to be
+   * replayed on every assistant message that emitted `tool_calls`. Direct
+   * `ChatDeepSeek` hardcodes this; `ChatOpenRouter` does not, so DeepSeek
+   * models routed via OpenRouter need the flag set explicitly. The
+   * downstream `_convertMessagesToOpenAIParams` is already gated on a
+   * non-empty `additional_kwargs.reasoning_content`, so leaving it on for
+   * the whole conversation is a no-op when no reasoning was captured.
+   *
+   * @see https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
+   * @see https://github.com/danny-avila/LibreChat/issues/13366
+   */
+  if (
+    useOpenRouter &&
+    typeof modelOptions.model === 'string' &&
+    /(?:^|\/)deepseek(?:[-/]|$)/i.test(modelOptions.model)
+  ) {
+    llmConfig.includeReasoningContent = true;
+  }
+
+  /**
    * Note: OpenAI reasoning models (o1/o3/gpt-5) do not support temperature and other sampling parameters
    * Exception: gpt-5-chat and versioned models like gpt-5.1 DO support these parameters
    */

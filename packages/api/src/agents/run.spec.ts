@@ -1,7 +1,11 @@
 import { Providers } from '@librechat/agents';
 import { ToolMessage, AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
 
-import { extractDiscoveredToolsFromHistory, getReasoningKey } from './run';
+import {
+  extractDiscoveredToolsFromHistory,
+  getReasoningKey,
+  isDeepSeekReasoningProvider,
+} from './run';
 
 describe('extractDiscoveredToolsFromHistory', () => {
   it('extracts tool names from tool_search JSON output', () => {
@@ -145,5 +149,60 @@ describe('getReasoningKey', () => {
     const reasoningKey = getReasoningKey(Providers.OPENAI, llmConfig);
 
     expect(reasoningKey).toBe('reasoning');
+  });
+});
+
+describe('isDeepSeekReasoningProvider', () => {
+  it('returns true for the direct deepseek provider regardless of model', () => {
+    expect(isDeepSeekReasoningProvider(Providers.DEEPSEEK)).toBe(true);
+    expect(isDeepSeekReasoningProvider(Providers.DEEPSEEK, 'deepseek-chat')).toBe(true);
+    expect(isDeepSeekReasoningProvider(Providers.DEEPSEEK, 'unrelated')).toBe(true);
+  });
+
+  it('returns true for openrouter when the model id is namespaced deepseek', () => {
+    expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, 'deepseek/deepseek-v4-pro')).toBe(
+      true,
+    );
+    expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, 'DeepSeek/DeepSeek-V4')).toBe(true);
+    expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, 'deepseek-r1')).toBe(true);
+  });
+
+  it('matches the provider string case-insensitively (custom endpoint names)', () => {
+    expect(isDeepSeekReasoningProvider('OpenRouter', 'deepseek/deepseek-v4')).toBe(true);
+    expect(isDeepSeekReasoningProvider('OPENROUTER', 'deepseek/deepseek-v4')).toBe(true);
+    expect(isDeepSeekReasoningProvider('DeepSeek')).toBe(true);
+  });
+
+  it('returns false for openrouter with non-deepseek models', () => {
+    expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, 'anthropic/claude-opus-4-7')).toBe(
+      false,
+    );
+    expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, 'openai/gpt-5')).toBe(false);
+    expect(
+      isDeepSeekReasoningProvider(Providers.OPENROUTER, 'meta-llama/llama-3.1-70b-instruct'),
+    ).toBe(false);
+  });
+
+  it('does not match providers other than deepseek/openrouter even when the model says deepseek', () => {
+    expect(isDeepSeekReasoningProvider(Providers.OPENAI, 'deepseek-chat')).toBe(false);
+    expect(isDeepSeekReasoningProvider(Providers.ANTHROPIC, 'deepseek/deepseek-v4')).toBe(false);
+  });
+
+  it('returns false when the model is missing on openrouter', () => {
+    expect(isDeepSeekReasoningProvider(Providers.OPENROUTER)).toBe(false);
+    expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, null)).toBe(false);
+    expect(isDeepSeekReasoningProvider(Providers.OPENROUTER, '')).toBe(false);
+  });
+
+  it('returns false for nullish/empty provider input', () => {
+    expect(isDeepSeekReasoningProvider(undefined, 'deepseek/deepseek-v4')).toBe(false);
+    expect(isDeepSeekReasoningProvider(null, 'deepseek/deepseek-v4')).toBe(false);
+    expect(isDeepSeekReasoningProvider('', 'deepseek/deepseek-v4')).toBe(false);
+  });
+
+  it('does not match models that merely contain the substring "deepseek" via a different namespace', () => {
+    expect(
+      isDeepSeekReasoningProvider(Providers.OPENROUTER, 'community/not-a-deepseek-clone'),
+    ).toBe(false);
   });
 });

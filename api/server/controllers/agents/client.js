@@ -21,6 +21,7 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  isDeepSeekReasoningProvider,
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
@@ -876,12 +877,30 @@ class AgentClient extends BaseClient {
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
       });
 
+      /**
+       * Spoof the `provider` hint to `Providers.DEEPSEEK` for DeepSeek models
+       * routed via OpenRouter so the SDK's `formatAgentMessages` re-attaches
+       * `additional_kwargs.reasoning_content` to tool-bearing AIMessages.
+       * Without it, DeepSeek's thinking-mode API 400s on the second tool turn
+       * with "The `reasoning_content` in the thinking mode must be passed
+       * back to the API." (issue #13366). The matching `includeReasoningContent`
+       * on the LLM config (see endpoints/openai/llm.ts) ensures the field
+       * makes it into the outbound request body.
+       */
+      const formatProvider = isDeepSeekReasoningProvider(
+        this.options.agent.provider,
+        this.options.agent.model_parameters?.model ?? this.options.agent.model,
+      )
+        ? Providers.DEEPSEEK
+        : this.options.agent.provider;
       let {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
-      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet, skillPrimeResult?.skills);
+      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet, skillPrimeResult?.skills, {
+        provider: formatProvider,
+      });
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
