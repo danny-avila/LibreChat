@@ -1230,7 +1230,7 @@ class BaseClient {
     for (const file of attachments) {
       /** @type {FileSources} */
       const source = file.source ?? FileSources.local;
-      if (source === FileSources.text) {
+      if (source === FileSources.text || file.metadata?.uploadedAs === 'text') {
         allFiles.push(file);
         continue;
       }
