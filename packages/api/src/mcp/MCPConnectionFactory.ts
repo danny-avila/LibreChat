@@ -403,10 +403,67 @@ export class MCPConnectionFactory {
     };
   }
 
+  /**
+   * Attempts to silently refresh OAuth tokens using the stored refresh token,
+   * bypassing the local `expires_at` check. Use this when the server has
+   * signaled token invalidity (a 401 emitted as `oauthRequired`) to avoid
+   * forcing the user through an interactive OAuth flow when the refresh token
+   * is still valid.
+   */
+  protected async attemptSilentTokenRefresh(): Promise<MCPOAuthTokens | null> {
+    if (!this.tokenMethods?.findToken || !this.tokenMethods?.createToken || !this.flowManager) {
+      return null;
+    }
+
+    try {
+      const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+      const tokens = await this.flowManager.createFlowWithHandler(
+        flowId,
+        'mcp_get_tokens',
+        async () => {
+          return await MCPTokenStorage.forceRefreshTokens({
+            userId: this.userId!,
+            serverName: this.serverName,
+            findToken: this.tokenMethods!.findToken!,
+            createToken: this.tokenMethods!.createToken,
+            updateToken: this.tokenMethods!.updateToken,
+            deleteTokens: this.tokenMethods!.deleteTokens,
+            refreshTokens: this.createRefreshTokensFunction(),
+          });
+        },
+        this.signal,
+      );
+
+      if (tokens) {
+        logger.info(`${this.logPrefix} Silent token refresh succeeded`);
+      } else {
+        logger.info(`${this.logPrefix} Silent token refresh returned no tokens`);
+      }
+      return tokens;
+    } catch (error) {
+      if (error instanceof ReauthenticationRequiredError) {
+        logger.info(`${this.logPrefix} ${error.message}, falling back to interactive OAuth`);
+      } else {
+        logger.info(
+          `${this.logPrefix} Silent token refresh failed, falling back to interactive OAuth`,
+          error,
+        );
+      }
+      return null;
+    }
+  }
+
   /** Sets up OAuth event handlers for the connection */
   protected handleOAuthEvents(connection: MCPConnection): () => void {
     const oauthHandler = async (data: { serverUrl?: string }) => {
       logger.info(`${this.logPrefix} oauthRequired event received`);
+
+      const refreshedTokens = await this.attemptSilentTokenRefresh();
+      if (refreshedTokens) {
+        connection.setOAuthTokens(refreshedTokens);
+        connection.emit('oauthHandled');
+        return;
+      }
 
       if (this.returnOnOAuth) {
         try {

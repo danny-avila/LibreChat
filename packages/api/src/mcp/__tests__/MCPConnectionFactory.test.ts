@@ -762,6 +762,296 @@ describe('MCPConnectionFactory', () => {
         undefined,
       );
     });
+
+    it('should silently refresh tokens on oauthRequired without invoking interactive flow', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const refreshedTokens: MCPOAuthTokens = {
+        access_token: 'refreshed-access',
+        refresh_token: 'refresh123',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      // The silent refresh path: createFlowWithHandler executes the handler
+      // (which calls forceRefreshTokens) and returns the refreshed tokens.
+      mockFlowManager.createFlowWithHandler.mockImplementation(async (_flowId, type, handler) => {
+        if (type === 'mcp_get_tokens') {
+          return handler();
+        }
+        return null;
+      });
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValue(refreshedTokens);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected to fail because connection itself is mocked as not connected
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user123',
+          serverName: 'test-server',
+          findToken: oauthOptions.tokenMethods.findToken,
+          createToken: oauthOptions.tokenMethods.createToken,
+        }),
+      );
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(refreshedTokens);
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled');
+      // Silent refresh succeeded — interactive flow must NOT be initiated.
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+    });
+
+    it('should fall back to interactive OAuth when silent refresh returns null', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        oauthEnd: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const mockFlowData = {
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'random-state',
+        },
+      };
+
+      const interactiveTokens: MCPOAuthTokens = {
+        access_token: 'interactive-access',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      // Silent refresh attempt returns null (no refresh token / refresh failed).
+      mockFlowManager.createFlowWithHandler.mockImplementation(async (_flowId, type, handler) => {
+        if (type === 'mcp_get_tokens') {
+          return handler();
+        }
+        return null;
+      });
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValue(null);
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockFlowManager.createFlow.mockResolvedValue(interactiveTokens);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected to fail
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      // Silent refresh was attempted, but yielded no tokens.
+      expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalled();
+      // Fall-through behavior: interactive flow runs.
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(interactiveTokens);
+    });
+
+    it('should silently refresh tokens for returnOnOAuth path without redirecting', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: {
+          ...mockServerConfig,
+          url: 'https://api.example.com',
+          type: 'sse' as const,
+        } as t.SSEOptions,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        returnOnOAuth: true,
+        oauthStart: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const refreshedTokens: MCPOAuthTokens = {
+        access_token: 'refreshed-access',
+        refresh_token: 'refresh123',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockFlowManager.createFlowWithHandler.mockImplementation(async (_flowId, type, handler) => {
+        if (type === 'mcp_get_tokens') {
+          return handler();
+        }
+        return null;
+      });
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValue(refreshedTokens);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(refreshedTokens);
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled');
+      // returnOnOAuth interactive path must NOT trigger when silent refresh succeeds.
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(oauthOptions.oauthStart).not.toHaveBeenCalled();
+    });
+
+    it('should fall back to interactive OAuth when silent refresh throws unexpectedly', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        oauthEnd: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const mockFlowData = {
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'random-state',
+        },
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('refresh boom'));
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue(mockFlowData);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockFlowManager.createFlow.mockResolvedValue({
+        access_token: 'fallback-access',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      } as MCPOAuthTokens);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      // The thrown silent refresh error must be swallowed and the interactive
+      // flow used as a fallback so the user is never stuck.
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
+    });
   });
 
   describe('connection retry logic', () => {
