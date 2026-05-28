@@ -94,6 +94,10 @@ const findArtifactClose = (text: string, start: number): ArtifactCloseRange | nu
   while (currentIndex < text.length) {
     const lineEnd = getLineEnd(text, currentIndex);
     const line = text.slice(currentIndex, lineEnd);
+    if (fallbackClose && line.trimStart().startsWith(ARTIFACT_START)) {
+      return fallbackClose;
+    }
+
     const closeRange = getCloseRange(text, currentIndex, lineEnd);
 
     if (closeRange) {
@@ -108,6 +112,7 @@ const findArtifactClose = (text: string, start: number): ArtifactCloseRange | nu
       codeFence = fence;
     } else if (codeFence && isClosingCodeFence(line, codeFence)) {
       codeFence = null;
+      fallbackClose = null;
     }
 
     currentIndex = getNextLineStart(text, lineEnd);
