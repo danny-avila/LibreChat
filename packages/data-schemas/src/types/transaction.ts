@@ -3,6 +3,7 @@ export interface TransactionData {
   conversationId: string;
   tokenType: string;
   model?: string;
+  agentId?: string;
   context?: string;
   valueKey?: string;
   rate?: number;

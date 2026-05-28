@@ -72,6 +72,30 @@ describe('recordCollectedUsage', () => {
       expect(result).toEqual({ input_tokens: 100, output_tokens: 50 });
     });
 
+    it('passes agentId from usage metadata to token spend metadata', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 100,
+          output_tokens: 50,
+          model: 'claude-sonnet-4-6',
+          agentId: 'agent_insights',
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentId: 'agent_insights',
+          model: 'claude-sonnet-4-6',
+        }),
+        { promptTokens: 100, completionTokens: 50 },
+      );
+    });
+
     it('should skip null entries in collectedUsage', async () => {
       const collectedUsage = [
         { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
@@ -361,6 +385,8 @@ describe('recordCollectedUsage', () => {
         },
       );
       expect(result?.input_tokens).toBe(140); // 100 + 25 + 15
+      expect(result?.cache_creation_input_tokens).toBe(25);
+      expect(result?.cache_read_input_tokens).toBe(15);
     });
   });
 
@@ -635,7 +661,12 @@ describe('recordCollectedUsage', () => {
       });
 
       // openAI is a subset provider → input_tokens already includes cache
-      expect(result).toEqual({ input_tokens: 100, output_tokens: 50 });
+      expect(result).toEqual({
+        input_tokens: 100,
+        output_tokens: 50,
+        cache_creation_input_tokens: 20,
+        cache_read_input_tokens: 10,
+      });
     });
   });
 

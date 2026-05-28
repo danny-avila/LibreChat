@@ -22,6 +22,7 @@ const { ModelEndHandler } = require('../callbacks');
 
 const buildGraph = () => ({
   getAgentContext: () => ({
+    agentId: 'agent_insights',
     provider: 'vertexai',
     clientOptions: { model: 'gemini-3.1-flash-lite-preview' },
   }),
@@ -51,6 +52,13 @@ describe('ModelEndHandler — Vertex thoughtSignature capture (issue #13006 foll
 
     expect(collectedThoughtSignatures).toEqual({ tc_a: 'SIG_A', tc_b: 'SIG_B' });
     expect(collectedUsage).toHaveLength(1);
+    expect(collectedUsage[0]).toEqual(
+      expect.objectContaining({
+        agentId: 'agent_insights',
+        model: 'gemini-3.1-flash-lite-preview',
+        provider: 'vertexai',
+      }),
+    );
   });
 
   it('accumulates per-id across multiple model_end events (multi-step tool turn)', async () => {

@@ -138,6 +138,8 @@ export interface RecordUsageParams {
 export interface RecordUsageResult {
   input_tokens: number;
   output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
 }
 
 /**
@@ -180,6 +182,8 @@ export async function recordCollectedUsage(
   const input_tokens = firstUsage == null ? 0 : splitUsage(firstUsage).totalInput;
 
   let total_output_tokens = 0;
+  let total_cache_creation_input_tokens = 0;
+  let total_cache_read_input_tokens = 0;
 
   const { pricing, bulkWriteOps } = deps;
   const useBulk = pricing && bulkWriteOps;
@@ -197,6 +201,8 @@ export async function recordCollectedUsage(
       const { inputOnly, cacheCreation, cacheRead, completion } = splitUsage(usage);
 
       total_output_tokens += completion;
+      total_cache_creation_input_tokens += cacheCreation;
+      total_cache_read_input_tokens += cacheRead;
 
       const txMetadata: TxMetadata = {
         user,
@@ -207,6 +213,7 @@ export async function recordCollectedUsage(
         endpointTokenConfig,
         context: usageContext,
         model: usage.model ?? model,
+        ...(usage.agentId && { agentId: usage.agentId }),
       };
 
       if (useBulk) {
@@ -283,5 +290,11 @@ export async function recordCollectedUsage(
   return {
     input_tokens,
     output_tokens: total_output_tokens,
+    ...(total_cache_creation_input_tokens > 0 && {
+      cache_creation_input_tokens: total_cache_creation_input_tokens,
+    }),
+    ...(total_cache_read_input_tokens > 0 && {
+      cache_read_input_tokens: total_cache_read_input_tokens,
+    }),
   };
 }
