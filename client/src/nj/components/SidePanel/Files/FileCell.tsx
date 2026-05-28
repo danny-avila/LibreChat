@@ -1,6 +1,3 @@
-/* eslint-disable i18next/no-literal-string */
-/* ^ We're not worried about i18n for this app ^ */
-
 import { useEffect, useState } from 'react';
 import type { TFile } from 'librechat-data-provider';
 import icons from '@uswds/uswds/img/sprite.svg';
@@ -12,6 +9,7 @@ import FileOptions from './FileOptions';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '@librechat/client';
 import FileIcon from '~/nj/components/SidePanel/Files/FileIcon';
+import { formatDate } from '~/nj/utils/formatDate';
 
 /**
  * Displays a file in `FilesPanel`.
@@ -116,16 +114,4 @@ export default function FileCell({
       </div>
     </button>
   );
-}
-
-function formatDate(date?: string | Date): string {
-  if (!date) return '';
-
-  const actualDate = new Date(date);
-  const dateOptions: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric' };
-  if (actualDate.getFullYear() !== new Date().getFullYear()) {
-    dateOptions.year = 'numeric';
-  }
-
-  return actualDate.toLocaleDateString('en-US', dateOptions);
 }
