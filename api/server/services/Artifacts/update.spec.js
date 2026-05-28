@@ -135,6 +135,25 @@ ${ARTIFACT_END}`;
     expect(result).toHaveLength(1);
     expect(result[0].end).toBe(artifactText.length);
   });
+
+  test('should preserve the first fallback close in an unclosed fence', () => {
+    const firstArtifact = `${ARTIFACT_START}{identifier="first" type="text/html" title="First"}
+\`\`\`html
+<div>first</div>
+${ARTIFACT_END}`;
+    const secondArtifact = createArtifactText({
+      content: '<div>second</div>',
+      wrapCode: false,
+      prefix: '{identifier="second" type="text/html" title="Second"}',
+    });
+    const message = { text: `${firstArtifact}\n${secondArtifact}` };
+
+    const result = findAllArtifacts(message);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].end).toBe(firstArtifact.length);
+    expect(result[1].start).toBe(firstArtifact.length + 1);
+  });
 });
 
 describe('replaceArtifactContent', () => {

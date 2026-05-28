@@ -96,7 +96,7 @@ const findArtifactClose = (text: string, start: number): ArtifactCloseRange | nu
       if (!codeFence) {
         return closeRange;
       }
-      fallbackClose = closeRange;
+      fallbackClose = fallbackClose ?? closeRange;
     }
 
     const fence = getCodeFence(line);
