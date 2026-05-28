@@ -421,6 +421,73 @@ export function createTransactionMethods(
     }
   }
 
+  /** Row returned by aggregateMonthlyUsage — one per user with activity in the period. */
+  interface MonthlyUsageRow {
+    user: string;
+    name: string | null;
+    email: string | null;
+    tenantId: string | null;
+    totalCredits: number;
+    messageCount: number;
+  }
+
+  /**
+   * Aggregates current-month token consumption per user.
+   * Sums absolute `tokenValue` over prompt + completion transactions of the current
+   * calendar month (UTC), joined with users to expose name/email/tenantId.
+   * Sorted by descending total. Used by GET /api/admin/usage.
+   */
+  async function aggregateMonthlyUsage(): Promise<MonthlyUsageRow[]> {
+    const Transaction = mongoose.models.Transaction;
+    const now = new Date();
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+    return Transaction.aggregate<MonthlyUsageRow>([
+      {
+        $match: {
+          createdAt: { $gte: startOfMonth },
+          tokenType: { $in: ['prompt', 'completion'] },
+        },
+      },
+      {
+        $group: {
+          _id: '$user',
+          totalCredits: { $sum: { $abs: { $ifNull: ['$tokenValue', 0] } } },
+          messageIds: { $addToSet: '$messageId' },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'userDoc',
+        },
+      },
+      { $unwind: { path: '$userDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 0,
+          user: { $toString: '$_id' },
+          name: { $ifNull: ['$userDoc.name', null] },
+          email: { $ifNull: ['$userDoc.email', null] },
+          tenantId: { $ifNull: ['$userDoc.tenantId', null] },
+          totalCredits: 1,
+          messageCount: {
+            $size: {
+              $filter: {
+                input: '$messageIds',
+                as: 'm',
+                cond: { $and: [{ $ne: ['$$m', null] }, { $ne: ['$$m', undefined] }] },
+              },
+            },
+          },
+        },
+      },
+      { $sort: { totalCredits: -1 } },
+    ]);
+  }
+
   return {
     updateBalance,
     bulkInsertTransactions,
@@ -432,6 +499,7 @@ export function createTransactionMethods(
     createTransaction,
     createAutoRefillTransaction,
     createStructuredTransaction,
+    aggregateMonthlyUsage,
   };
 }
 

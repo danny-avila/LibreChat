@@ -411,6 +411,10 @@ export const skillStates = () => `${BASE_URL}/api/user/settings/skills/active`;
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
 export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
+
+/* Admin Usage (V1 MVP — monthly consumption table for ADMIN) */
+export const adminUsage = () => `${BASE_URL}/api/admin/usage`;
+
 export const getRole = (roleName: string) => `${roles()}/${encodeURIComponent(roleName)}`;
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;

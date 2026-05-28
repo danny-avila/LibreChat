@@ -227,3 +227,18 @@ export type GraphTokenResponse = {
   expires_in: number;
   scope: string;
 };
+
+/* Admin Usage (V1 MVP — monthly consumption table for ADMIN) */
+export interface AdminUsageRow {
+  user: string;
+  name: string | null;
+  email: string | null;
+  tenantId: string | null;
+  totalCredits: number;
+  messageCount: number;
+}
+
+export interface AdminUsageResponse {
+  period: 'current-month';
+  rows: AdminUsageRow[];
+}

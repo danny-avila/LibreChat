@@ -633,6 +633,7 @@
   "com_nav_tool_dialog_mcp_server_tools": "MCP Server Tools",
   "com_nav_tool_remove": "Remove",
   "com_nav_tool_search": "Search tools",
+  "com_nav_usage": "Usage",
   "com_nav_user": "USER",
   "com_nav_user_msg_markdown": "Render user messages as markdown",
   "com_nav_user_name_display": "Display username in messages",
@@ -1771,5 +1772,14 @@
   "com_ui_zoom_in": "Zoom in",
   "com_ui_zoom_level": "Zoom level",
   "com_ui_zoom_out": "Zoom out",
+  "com_usage_col_bu": "BU",
+  "com_usage_col_credits": "Credits used",
+  "com_usage_col_email": "Email",
+  "com_usage_col_messages": "Messages",
+  "com_usage_col_user": "User",
+  "com_usage_empty": "No consumption recorded for the current month.",
+  "com_usage_error": "Failed to load usage data.",
+  "com_usage_subtitle": "Top users by token credits consumed this month.",
+  "com_usage_title": "Consumption",
   "com_user_message": "You"
 }

@@ -1271,3 +1271,8 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/* Admin Usage (V1 MVP) */
+export const getAdminUsage = (): Promise<q.AdminUsageResponse> => {
+  return request.get(endpoints.adminUsage());
+};

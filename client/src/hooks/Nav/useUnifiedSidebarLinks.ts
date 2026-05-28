@@ -1,18 +1,22 @@
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
-import { MessagesSquare } from 'lucide-react';
+import { BarChart3, MessagesSquare } from 'lucide-react';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
-import { getConfigDefaults, getEndpointField } from 'librechat-data-provider';
+import { SystemRoles, getConfigDefaults, getEndpointField } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import ConversationsSection from '~/components/UnifiedSidebar/ConversationsSection';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
+import { useAuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
 
 export default function useUnifiedSidebarLinks() {
+  const navigate = useNavigate();
+  const { user } = useAuthContext();
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const endpoint = conversation?.endpoint;
   const { data: startupConfig } = useGetStartupConfig();
@@ -58,8 +62,19 @@ export default function useUnifiedSidebarLinks() {
       Component: ConversationsSection,
     };
 
-    return [conversationLink, ...sideNavLinks];
-  }, [sideNavLinks]);
+    const adminLinks: NavLink[] = [];
+    if (user?.role === SystemRoles.ADMIN) {
+      adminLinks.push({
+        title: 'com_nav_usage',
+        label: '',
+        icon: BarChart3,
+        id: 'admin-usage',
+        onClick: () => navigate('/d/usage'),
+      });
+    }
+
+    return [conversationLink, ...adminLinks, ...sideNavLinks];
+  }, [sideNavLinks, user?.role, navigate]);
 
   return links;
 }

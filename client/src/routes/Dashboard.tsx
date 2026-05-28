@@ -1,5 +1,6 @@
 import { Navigate, useParams } from 'react-router-dom';
 import DashboardRoute from './Layouts/Dashboard';
+import { Usage } from '~/components/Admin';
 
 function PromptsRedirect() {
   const { '*': splat } = useParams();
@@ -14,6 +15,10 @@ const dashboardRoutes = {
     {
       path: 'prompts/*',
       element: <PromptsRedirect />,
+    },
+    {
+      path: 'usage',
+      element: <Usage />,
     },
     {
       path: '*',
