@@ -10,7 +10,7 @@ let s3: S3Client | null = null;
  *
  * Credential precedence:
  * 1. If AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are provided, they will be used.
- * 2. If AWS_ROLE_ARN is provided, uses IRSA (or other token-based auth) to assume that role for S3 access.
+ * 2. If AWS_ROLE_NAME is provided, uses IRSA (or other token-based auth) to assume that role for S3 access.
  *    This is useful in Kubernetes with IRSA or other environments where you need to assume a role.
  * 3. Otherwise, the AWS SDK's default credentials chain (including IRSA, instance profiles,
  *    AWS profiles, environment variables, etc.) is used.
@@ -38,7 +38,7 @@ export const initializeS3 = (): S3Client | null => {
   const endpoint = process.env.AWS_ENDPOINT_URL;
   const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
   const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-  const awsRoleArn = process.env.AWS_ROLE_ARN;
+  const awsRoleArn = process.env.AWS_ROLE_NAME;
 
   const config = {
     region,
