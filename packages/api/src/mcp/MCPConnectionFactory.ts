@@ -409,6 +409,12 @@ export class MCPConnectionFactory {
    * signaled token invalidity (a 401 emitted as `oauthRequired`) to avoid
    * forcing the user through an interactive OAuth flow when the refresh token
    * is still valid.
+   *
+   * The flow type is intentionally distinct from `'mcp_get_tokens'` —
+   * `createFlowWithHandler` short-circuits when a non-expired cached result
+   * exists, which would otherwise hand back the very tokens the server just
+   * rejected (see the cached result written by an earlier `getOAuthTokens`
+   * call whose `expires_at` is still locally in the future).
    */
   protected async attemptSilentTokenRefresh(): Promise<MCPOAuthTokens | null> {
     if (!this.tokenMethods?.findToken || !this.tokenMethods?.createToken || !this.flowManager) {
@@ -419,7 +425,7 @@ export class MCPConnectionFactory {
       const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
       const tokens = await this.flowManager.createFlowWithHandler(
         flowId,
-        'mcp_get_tokens',
+        'mcp_force_refresh_tokens',
         async () => {
           return await MCPTokenStorage.forceRefreshTokens({
             userId: this.userId!,
@@ -435,6 +441,14 @@ export class MCPConnectionFactory {
       );
 
       if (tokens) {
+        // Drop any previously cached `mcp_get_tokens` result so the next call
+        // to `getOAuthTokens` reads the freshly persisted tokens from the
+        // token store rather than the now-stale flow-cached value.
+        await this.flowManager
+          .deleteFlow(flowId, 'mcp_get_tokens')
+          .catch((err) =>
+            logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`, err),
+          );
         logger.info(`${this.logPrefix} Silent token refresh succeeded`);
       } else {
         logger.info(`${this.logPrefix} Silent token refresh returned no tokens`);
