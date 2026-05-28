@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import AuthLayout from '~/components/Auth/AuthLayout';
-import { TranslationKeys, useGTM, useLocalize } from '~/hooks';
+import { TranslationKeys, useGTM, useLocalize, usePostHog, useSeoAttribution } from '~/hooks';
 
 const headerMap: Record<string, TranslationKeys> = {
   '/register': 'com_auth_create_account',
@@ -48,6 +48,8 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   }, [startupConfig?.appTitle]);
 
   useGTM(startupConfig?.analyticsGtmId);
+  usePostHog(startupConfig?.analyticsPosthogKey, startupConfig?.analyticsPosthogHost);
+  useSeoAttribution();
 
   useEffect(() => {
     setError(null);
