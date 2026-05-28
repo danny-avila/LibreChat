@@ -1459,6 +1459,37 @@ describe('Claude Model Tests', () => {
     });
   });
 
+  it('should return correct context length for Claude Opus 4.8 (1M)', () => {
+    expect(getModelMaxTokens('claude-opus-4-8', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-8'],
+    );
+    expect(getModelMaxTokens('claude-opus-4-8')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-8'],
+    );
+  });
+
+  it('should return correct max output tokens for Claude Opus 4.8 (128K)', () => {
+    const { getModelMaxOutputTokens } = require('@librechat/api');
+    expect(getModelMaxOutputTokens('claude-opus-4-8', EModelEndpoint.anthropic)).toBe(
+      maxOutputTokensMap[EModelEndpoint.anthropic]['claude-opus-4-8'],
+    );
+  });
+
+  it('should match model names correctly for Claude Opus 4.8', () => {
+    const modelVariations = [
+      'claude-opus-4-8',
+      'claude-opus-4-8-20260528',
+      'claude-opus-4-8-latest',
+      'anthropic/claude-opus-4-8',
+      'claude-opus-4-8/anthropic',
+      'claude-opus-4-8-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-opus-4-8');
+    });
+  });
+
   it('should return correct context length for Claude Sonnet 4.6 (1M)', () => {
     expect(getModelMaxTokens('claude-sonnet-4-6', EModelEndpoint.anthropic)).toBe(
       maxTokensMap[EModelEndpoint.anthropic]['claude-sonnet-4-6'],
