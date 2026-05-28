@@ -79,19 +79,26 @@ export async function extractFileContext({
     return undefined;
   }
 
+  const documentStrategy = req?.config?.fileStrategies?.document ?? req?.config?.fileStrategy;
+  const cloudFetchEnabled =
+    documentStrategy != null &&
+    documentStrategy !== FileSources.local &&
+    documentStrategy !== FileSources.text;
+
   let resultText = '';
 
   for (const file of attachments) {
     let text = file.text;
 
-    // If text not in DB, try to fetch from cloud storage
-    // Files uploaded as text use cloud storage (s3, etc.) when fileStrategies.document is set
-    if (!text && file.filepath && getStrategyFunctions && req) {
-      const source = file.source ?? FileSources.local;
-      // Only fetch from cloud storage backends (not local/text)
-      if (source !== FileSources.local && source !== FileSources.text) {
-        text = await fetchTextFromStorage(file, req, getStrategyFunctions);
-      }
+    if (
+      !text &&
+      file.filepath &&
+      getStrategyFunctions &&
+      req &&
+      cloudFetchEnabled &&
+      file.embedded !== true
+    ) {
+      text = await fetchTextFromStorage(file, req, getStrategyFunctions);
     }
 
     if (text) {
