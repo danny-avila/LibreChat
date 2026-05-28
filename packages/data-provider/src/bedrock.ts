@@ -185,11 +185,12 @@ function getBedrockAnthropicBetaHeaders(model: string): string[] {
 }
 
 function mergeBedrockAnthropicBetaHeaders(existing: unknown, generated: string[]): string[] {
-  const existingValues: unknown[] = Array.isArray(existing)
-    ? existing
-    : typeof existing === 'string'
-      ? [existing]
-      : [];
+  let existingValues: unknown[] = [];
+  if (Array.isArray(existing)) {
+    existingValues = existing;
+  } else if (typeof existing === 'string') {
+    existingValues = [existing];
+  }
 
   const betaHeaders = new Set<string>();
 
