@@ -34,10 +34,6 @@ type SearchRange = {
   searchEnd: number;
 };
 
-type ReplaceArtifactOptions = {
-  replaceAllOnMissing?: boolean;
-};
-
 const getLineEnd = (text: string, start: number): number => {
   const index = text.indexOf('\n', start);
   return index === -1 ? text.length : index;
@@ -94,10 +90,6 @@ const findArtifactClose = (text: string, start: number): ArtifactCloseRange | nu
   while (currentIndex < text.length) {
     const lineEnd = getLineEnd(text, currentIndex);
     const line = text.slice(currentIndex, lineEnd);
-    if (fallbackClose && line.trimStart().startsWith(ARTIFACT_START)) {
-      return fallbackClose;
-    }
-
     const closeRange = getCloseRange(text, currentIndex, lineEnd);
 
     if (closeRange) {
@@ -275,7 +267,6 @@ export const replaceArtifactContent = (
   artifact: ArtifactBoundary,
   original: string,
   updated: string,
-  options: ReplaceArtifactOptions = {},
 ): string | null => {
   const artifactContent = artifact.text.substring(artifact.start, artifact.end);
   const range = getSearchRange(artifactContent);
@@ -292,12 +283,7 @@ export const replaceArtifactContent = (
       : innerContent.indexOf(originalTrimmed);
 
   if (relativeIndex === -1) {
-    if (!options.replaceAllOnMissing) {
-      return null;
-    }
-    const start = artifact.start + searchStart;
-    const end = artifact.start + searchEnd;
-    return replaceRange(originalText, start, end, updated).replace(/\n+(?=```\n:::)/g, '\n');
+    return null;
   }
 
   const absoluteIndex = artifact.start + searchStart + relativeIndex;

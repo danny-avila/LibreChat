@@ -119,22 +119,21 @@ trailer`;
     expect(result[0].end).toBe(artifactText.length);
   });
 
-  test('should stop fallback parsing before the next artifact starts', () => {
-    const firstArtifact = `${ARTIFACT_START}{identifier="first" type="text/html" title="First"}
-\`\`\`html
-<div>first</div>
+  test('should keep artifact start markers inside fenced content', () => {
+    const artifactText = `${ARTIFACT_START}{identifier="markdown" type="text/markdown" title="Markdown"}
+\`\`\`markdown
+before
+:::
+:::artifact{identifier="sample" type="text/plain" title="Sample"}
+after
+\`\`\`
 ${ARTIFACT_END}`;
-    const secondArtifact = createArtifactText({
-      content: '<div>second</div>',
-      prefix: '{identifier="second" type="text/html" title="Second"}',
-    });
-    const message = { text: `${firstArtifact}\n${secondArtifact}` };
+    const message = { text: artifactText };
 
     const result = findAllArtifacts(message);
 
-    expect(result).toHaveLength(2);
-    expect(result[0].end).toBe(firstArtifact.length);
-    expect(result[1].start).toBe(firstArtifact.length + 1);
+    expect(result).toHaveLength(1);
+    expect(result[0].end).toBe(artifactText.length);
   });
 });
 
@@ -164,21 +163,6 @@ describe('replaceArtifactContent', () => {
     const artifact = createTestArtifact('function test() {}');
     const result = replaceArtifactContent(artifact.text, artifact, 'missing', 'updated');
     expect(result).toBeNull();
-  });
-
-  test('should replace full artifact content when original snapshot is stale and fallback enabled', () => {
-    const artifact = createTestArtifact('saved content');
-    const result = replaceArtifactContent(
-      artifact.text,
-      artifact,
-      'stale content',
-      'latest content',
-      { replaceAllOnMissing: true },
-    );
-
-    expect(result).not.toBeNull();
-    expect(result).toContain('latest content');
-    expect(result).not.toContain('saved content');
   });
 
   test('should handle dedented content', () => {
