@@ -49,9 +49,6 @@ router.get('/', async (req, res) => {
       requiredPermissions: PermissionBits.EDIT,
     });
 
-    // Pass `limit: null` to opt out of the default page cap: this internal
-    // call needs every editable agent so the action list is complete.
-    // `editableAgentObjectIds` is already bounded by the user's ACL set.
     const agentsResponse = await db.getListAgentsByAccess({
       accessibleIds: editableAgentObjectIds,
       limit: null,

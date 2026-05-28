@@ -16,13 +16,7 @@ export const defaultAgentParams: t.AgentListParams = {
   requiredPermission: PermissionBits.EDIT,
 };
 
-/**
- * Fetch every cursor-paginated page of agents matching `params` and return
- * them as a single flat `AgentListResponse`. Lets the server apply its own
- * page-size default (100) — with the AclEntry public-principal index in
- * place each page is an indexed lookup, so the total work scales with the
- * user's accessible-agent count rather than the global ACL collection size.
- */
+/** Walk the cursor pagination and return all pages flattened into one `AgentListResponse`. */
 async function fetchAllAgentPages(params: t.AgentListParams): Promise<t.AgentListResponse> {
   const pages: t.AgentListResponse[] = [];
   let cursor: string | null | undefined = params.cursor;
@@ -63,19 +57,9 @@ export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> 
 };
 
 /**
- * Hook for listing all Agents the user has access to.
- *
- * Internally follows the server's cursor pagination and concatenates every
- * page before resolving, so callers see a single flat `AgentListResponse`
- * with the user's full accessible-agent set. Each page request uses the
- * server's default page size (no large `limit` injected here), which
- * preserves the route handler's defense-in-depth cap and keeps each
- * MongoDB query bounded.
- *
- * The cache key stays `[QueryKeys.agents, params]` — keeping the shape
- * stable so mutations in `./mutations.ts` (which target
- * `allAgentViewAndEditQueryKeys`) continue to find and update the cached
- * list after create/update/delete.
+ * Hook for listing all Agents the user has access to. Follows cursor
+ * pagination internally and resolves with every page concatenated.
+ * Cache key shape matches `allAgentViewAndEditQueryKeys` in `./mutations.ts`.
  */
 export const useListAgentsQuery = <TData = t.AgentListResponse>(
   params: t.AgentListParams = defaultAgentParams,

@@ -685,13 +685,8 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
   }
 
   /**
-   * Get agents by accessible IDs with optional cursor-based pagination.
-   *
-   * `limit` defaults to 100 so unbounded MongoDB scans cannot be triggered by
-   * callers that omit it. Internal callers that genuinely need the full list
-   * can opt out by passing `limit: null` explicitly. The function caps any
-   * supplied numeric limit at 1000 — the same realistic upper bound the
-   * avatar-refresh path already uses via `MAX_AVATAR_REFRESH_AGENTS`.
+   * Get agents by accessible IDs with cursor pagination. Defaults to a 100-page
+   * limit (max 1000); pass `limit: null` to opt out entirely.
    */
   async function getListAgentsByAccess({
     accessibleIds = [],
