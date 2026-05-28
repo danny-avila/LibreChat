@@ -131,7 +131,7 @@ const getOpeningCodeFence = (
     return null;
   }
 
-  const fenceStart = contentStart + firstContentMatch.index;
+  const fenceStart = contentStart + (firstContentMatch.index ?? 0);
   const lineEnd = getLineEnd(text, fenceStart);
   const line = text.slice(fenceStart, lineEnd);
   const fence = getCodeFence(line);
