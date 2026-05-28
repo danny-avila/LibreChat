@@ -23,9 +23,7 @@ export const defaultAgentParams: t.AgentListParams = {
  * place each page is an indexed lookup, so the total work scales with the
  * user's accessible-agent count rather than the global ACL collection size.
  */
-async function fetchAllAgentPages(
-  params: t.AgentListParams,
-): Promise<t.AgentListResponse> {
+async function fetchAllAgentPages(params: t.AgentListParams): Promise<t.AgentListResponse> {
   const pages: t.AgentListResponse[] = [];
   let cursor: string | null | undefined = params.cursor;
   do {

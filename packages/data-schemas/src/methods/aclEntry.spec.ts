@@ -1196,15 +1196,24 @@ describe('AclEntry Model Tests', () => {
     });
 
     test('should be served by the public-principal compound index', async () => {
-      const explain = await AclEntry.find({
+      await methods.grantPermission(
+        PrincipalType.PUBLIC,
+        null,
+        ResourceType.AGENT,
+        new mongoose.Types.ObjectId(),
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      const explain = (await AclEntry.find({
         principalType: PrincipalType.PUBLIC,
         resourceType: ResourceType.AGENT,
         permBits: { $in: [PermissionBits.VIEW] },
-      }).explain('queryPlanner');
+      }).explain('queryPlanner')) as unknown as {
+        queryPlanner?: { winningPlan?: Record<string, unknown> };
+      };
 
-      const explainResult = Array.isArray(explain) ? explain[0] : explain;
-      const winningPlan = explainResult?.queryPlanner?.winningPlan;
-      const planString = JSON.stringify(winningPlan ?? {});
+      const planString = JSON.stringify(explain?.queryPlanner?.winningPlan ?? {});
       expect(planString).not.toContain('COLLSCAN');
       expect(planString).toMatch(/principalType[\s\S]*resourceType[\s\S]*permBits/);
     });
