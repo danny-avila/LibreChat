@@ -888,7 +888,7 @@ describe('getLLMConfig', () => {
         expect(opus64kResult.llmConfig.maxTokens).toBe(64000);
 
         // opus-4-6+ get 128K
-        const opus128kModels = ['claude-opus-4-7', 'claude-opus-4-10'];
+        const opus128kModels = ['claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-4-10'];
         opus128kModels.forEach((model) => {
           const result = getLLMConfig('test-key', {
             modelOptions: { model },

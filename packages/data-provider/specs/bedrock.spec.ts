@@ -222,7 +222,7 @@ describe('omitsThinkingByDefault', () => {
     expect(omitsThinkingByDefault('us.anthropic.claude-opus-4-7')).toBe(true);
   });
 
-  test('returns true for claude-opus-4-8 (future Opus 4.x)', () => {
+  test('returns true for claude-opus-4-8', () => {
     expect(omitsThinkingByDefault('claude-opus-4-8')).toBe(true);
   });
 
