@@ -34,7 +34,7 @@ jest.mock('fs', () => {
 });
 
 const fs = require('fs');
-const { processAgentFileUpload } = require('~/server/services/Files/process');
+const { processAgentFileUpload, processImageFile } = require('~/server/services/Files/process');
 
 const router = require('~/server/routes/files/images');
 
@@ -259,6 +259,24 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     });
 
     expect(response.status).toBe(200);
+  });
+
+  it('should preserve storage-limit status for regular image uploads', async () => {
+    processImageFile.mockRejectedValueOnce(
+      Object.assign(new Error('storage limit exceeded. Delete files first.'), {
+        code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+        status: 413,
+      }),
+    );
+    const app = createAppWithUser(otherUserId);
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(413);
+    expect(response.body.message).toBe('storage limit exceeded. Delete files first.');
   });
 
   it('should return 404 for non-existent agent', async () => {

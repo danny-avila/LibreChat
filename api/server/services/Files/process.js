@@ -24,6 +24,9 @@ const {
   parseText,
   processAudioFile,
   getStorageMetadata,
+  isFileStorageLimitError,
+  assertFileStorageLimit,
+  recordFileStorageUsage,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -65,6 +68,143 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
 
     return uploadFunction({ req, file: sanitizedFile, file_id, ...restParams });
   };
+};
+
+const assertUploadStorageLimit = (req, incomingBytes, options = {}) =>
+  assertFileStorageLimit({
+    req,
+    incomingBytes,
+    getUserStorageUsage: db.getUserStorageUsage,
+    ...options,
+  });
+
+const cleanupStoredFile = async ({ req, file, openai }) => {
+  const source = file?.source ?? FileSources.local;
+  if (source === FileSources.text) {
+    return;
+  }
+
+  const { deleteFile } = getStrategyFunctions(source);
+  if (!deleteFile) {
+    return;
+  }
+
+  try {
+    await deleteFile(
+      req,
+      {
+        ...file,
+        user: file.user ?? req.user.id,
+        tenantId: file.tenantId ?? req.user.tenantId,
+      },
+      openai,
+    );
+  } catch (cleanupError) {
+    logger.error('[fileStorageLimit] Failed to clean up over-limit file storage:', cleanupError);
+  }
+};
+
+const cleanupVectorFile = async ({ req, file }) => {
+  const { deleteFile } = getStrategyFunctions(FileSources.vectordb);
+  if (!deleteFile) {
+    return;
+  }
+
+  try {
+    await deleteFile(req, {
+      ...file,
+      source: FileSources.vectordb,
+      embedded: true,
+      user: file.user ?? req.user.id,
+      tenantId: file.tenantId ?? req.user.tenantId,
+    });
+  } catch (cleanupError) {
+    logger.error('[fileStorageLimit] Failed to clean up over-limit vector storage:', cleanupError);
+  }
+};
+
+const cleanupFileMetadata = async ({ fileId }) => {
+  if (!fileId) {
+    return;
+  }
+
+  try {
+    await db.deleteFiles([fileId]);
+  } catch (cleanupError) {
+    logger.error('[fileStorageLimit] Failed to clean up over-limit file metadata:', cleanupError);
+  }
+};
+
+const cleanupCodeEnvFile = async ({ req, file }) => {
+  if (!file?.metadata?.codeEnvRef) {
+    return;
+  }
+
+  const { deleteFile } = getStrategyFunctions(FileSources.execute_code);
+  if (!deleteFile) {
+    return;
+  }
+
+  try {
+    await deleteFile(req, file);
+  } catch (cleanupError) {
+    logger.error('[fileStorageLimit] Failed to clean up over-limit code env file:', cleanupError);
+  }
+};
+
+const cleanupPersistedFile = async ({ req, file, openai }) => {
+  await cleanupStoredFile({ req, file, openai });
+  if (!file?.file_id) {
+    return;
+  }
+
+  await cleanupFileMetadata({ fileId: file.file_id });
+};
+
+const detachAssistantStoredFile = async ({ req, metadata, openai, fileId }) => {
+  if (!openai || !metadata?.assistant_id || metadata.message_file) {
+    return;
+  }
+
+  try {
+    if (metadata.tool_resource) {
+      await deleteResourceFileId({
+        req,
+        openai,
+        file_id: fileId,
+        assistant_id: metadata.assistant_id,
+        tool_resource: metadata.tool_resource,
+      });
+      return;
+    }
+
+    await openai.beta.assistants.files.del(metadata.assistant_id, fileId);
+  } catch (cleanupError) {
+    logger.error('[fileStorageLimit] Failed to detach over-limit assistant file:', cleanupError);
+  }
+};
+
+const cleanupAssistantStoredFile = async ({ req, metadata, openai, file }) => {
+  if (!file?.file_id) {
+    return;
+  }
+
+  await detachAssistantStoredFile({ req, metadata, openai, fileId: file.file_id });
+  await cleanupStoredFile({ req, file, openai });
+};
+
+const createFileWithStorageLimit = async (req, fileInfo, disableTTL, options = {}) => {
+  try {
+    await assertUploadStorageLimit(req, fileInfo.bytes, { excludeFileId: fileInfo.file_id });
+    const result = await db.createFile(fileInfo, disableTTL);
+    recordFileStorageUsage(req, fileInfo.bytes, { fileId: fileInfo.file_id });
+    return result;
+  } catch (error) {
+    if (isFileStorageLimitError(error) && options.cleanup !== false) {
+      await cleanupStoredFile({ req, file: fileInfo, openai: options.openai });
+    }
+    throw error;
+  }
 };
 
 const isMissingStorageError = (err) => {
@@ -362,11 +502,7 @@ const processFileURL = async ({
       throw new Error(`Strategy "${fileStrategy}" did not save "${fileName}"`);
     }
 
-    const {
-      bytes = 0,
-      type = '',
-      dimensions = {},
-    } = typeof savedFile === 'string' ? {} : savedFile;
+    const { bytes, type = '', dimensions = {} } = typeof savedFile === 'string' ? {} : savedFile;
     const fallbackFileName =
       fileStrategy === FileSources.local || fileStrategy === FileSources.firebase
         ? `${userId}/${fileName}`
@@ -385,26 +521,44 @@ const processFileURL = async ({
       storageKey: typeof savedFile === 'string' ? undefined : savedFile.storageKey,
       storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,
     });
+    if (req && !Number.isFinite(bytes)) {
+      await cleanupStoredFile({
+        req,
+        file: {
+          filepath,
+          ...storageMetadata,
+          source: fileStrategy,
+          user: userId,
+          tenantId,
+        },
+      });
+      throw new Error(`Strategy "${fileStrategy}" did not return byte metadata for "${fileName}"`);
+    }
 
-    return await db.createFile(
-      {
-        user: userId,
-        file_id: v4(),
-        bytes,
-        filepath,
-        ...storageMetadata,
-        filename: fileName,
-        source: fileStrategy,
-        type,
-        context,
-        ...(await getRetentionExpiry(req)),
-        tenantId,
-        width: dimensions.width,
-        height: dimensions.height,
-      },
-      true,
-    );
+    const fileInfo = {
+      user: userId,
+      file_id: v4(),
+      bytes: Math.max(0, bytes ?? 0),
+      filepath,
+      ...storageMetadata,
+      filename: fileName,
+      source: fileStrategy,
+      type,
+      context,
+      ...(await getRetentionExpiry(req)),
+      tenantId,
+      width: dimensions.width,
+      height: dimensions.height,
+    };
+    // Some legacy tool tests call this helper without an Express request; runtime callers pass req
+    // so generated files go through retention and storage quota enforcement.
+    return req
+      ? await createFileWithStorageLimit(req, fileInfo, true)
+      : await db.createFile(fileInfo, true);
   } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      throw error;
+    }
     logger.error(`Error while processing the image with ${fileStrategy}:`, error);
     throw new Error(`Failed to process the image with ${fileStrategy}. ${error.message}`);
   }
@@ -436,7 +590,8 @@ const processImageFile = async ({ req, res, metadata, returnFile = false }) => {
   });
   const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
 
-  const result = await db.createFile(
+  const result = await createFileWithStorageLimit(
+    req,
     {
       user: req.user.id,
       file_id,
@@ -490,6 +645,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     }`;
   }
   const fileName = `${file_id}-${filename}`;
+  await assertUploadStorageLimit(req, bytes, { excludeFileId: file_id });
   const filepath = await saveBuffer({
     userId: req.user.id,
     fileName,
@@ -497,7 +653,8 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     tenantId: req.user.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  return await db.createFile(
+  return await createFileWithStorageLimit(
+    req,
     {
       user: req.user.id,
       file_id,
@@ -537,6 +694,9 @@ const processFileUpload = async ({ req, res, metadata }) => {
   const source = isAssistantUpload ? assistantSource : appConfig.fileStrategy;
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id = null } = metadata;
+  const { file } = req;
+
+  await assertUploadStorageLimit(req, file?.size, { excludeFileId: file_id });
 
   /** @type {OpenAI | undefined} */
   let openai;
@@ -544,7 +704,6 @@ const processFileUpload = async ({ req, res, metadata }) => {
     ({ openai } = await getOpenAIClient({ req }));
   }
 
-  const { file } = req;
   const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
   const {
     id,
@@ -563,64 +722,97 @@ const processFileUpload = async ({ req, res, metadata }) => {
     openai,
   });
 
+  const assistantFileId = id ?? file_id;
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
     await openai.beta.assistants.files.create(metadata.assistant_id, {
-      file_id: id,
+      file_id: assistantFileId,
     });
   } else if (isAssistantUpload && !metadata.message_file) {
     await addResourceFileId({
       req,
       openai,
-      file_id: id,
+      file_id: assistantFileId,
       assistant_id: metadata.assistant_id,
       tool_resource: metadata.tool_resource,
     });
   }
 
-  let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
+  const assistantStoredFile = isAssistantUpload
+    ? {
+        user: req.user.id,
+        file_id: assistantFileId,
+        bytes,
+        filepath: `${openai.baseURL}/files/${assistantFileId}`,
+        filename: filename ?? sanitizeFilename(file.originalname),
+        source,
+        tenantId: req.user.tenantId,
+      }
+    : null;
+  let filepath = isAssistantUpload ? `${openai.baseURL}/files/${assistantFileId}` : _filepath;
   let storageMetadata = getStorageMetadata({
     filepath,
     source,
     storageKey: _storageKey,
     storageRegion: _storageRegion,
   });
+  let imageFile;
   if (isAssistantUpload && file.mimetype.startsWith('image')) {
-    const result = await processImageFile({
-      req,
-      file,
-      metadata: { file_id: v4() },
-      returnFile: true,
-    });
-    filepath = result.filepath;
+    try {
+      imageFile = await processImageFile({
+        req,
+        file,
+        metadata: { file_id: v4() },
+        returnFile: true,
+      });
+    } catch (error) {
+      if (isFileStorageLimitError(error)) {
+        await cleanupAssistantStoredFile({ req, metadata, openai, file: assistantStoredFile });
+      }
+      throw error;
+    }
+    filepath = imageFile.filepath;
     storageMetadata = getStorageMetadata({
       filepath,
-      source: result.source,
-      storageKey: result.storageKey,
-      storageRegion: result.storageRegion,
+      source: imageFile.source,
+      storageKey: imageFile.storageKey,
+      storageRegion: imageFile.storageRegion,
     });
   }
 
-  const result = await db.createFile(
-    {
-      user: req.user.id,
-      file_id: id ?? file_id,
-      temp_file_id,
-      bytes,
-      filepath,
-      ...storageMetadata,
-      filename: filename ?? sanitizeFilename(file.originalname),
-      context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
-      model: isAssistantUpload ? req.body.model : undefined,
-      type: file.mimetype,
-      ...(await getRetentionExpiry(req)),
-      embedded,
-      source,
-      height,
-      width,
-      tenantId: req.user.tenantId,
-    },
-    true,
-  );
+  const fileInfo = {
+    user: req.user.id,
+    file_id: assistantFileId,
+    temp_file_id,
+    bytes,
+    filepath,
+    ...storageMetadata,
+    filename: filename ?? sanitizeFilename(file.originalname),
+    context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
+    model: isAssistantUpload ? req.body.model : undefined,
+    type: file.mimetype,
+    ...(await getRetentionExpiry(req)),
+    embedded,
+    source,
+    height,
+    width,
+    tenantId: req.user.tenantId,
+  };
+
+  let result;
+  try {
+    result = await createFileWithStorageLimit(req, fileInfo, true, {
+      openai,
+      cleanup: !isAssistantUpload,
+    });
+  } catch (error) {
+    if (isFileStorageLimitError(error) && isAssistantUpload) {
+      if (imageFile) {
+        await cleanupPersistedFile({ req, file: imageFile });
+      }
+      await cleanupAssistantStoredFile({ req, metadata, openai, file: fileInfo });
+    }
+    throw error;
+  }
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
 
@@ -639,6 +831,10 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
+
+  if (tool_resource !== EToolResources.context) {
+    await assertUploadStorageLimit(req, file?.size, { excludeFileId: file_id });
+  }
 
   let messageAttachment = !!metadata.message_file;
 
@@ -746,15 +942,20 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         ...retentionExpiry,
       };
 
+      const result = await createFileWithStorageLimit(req, fileInfo, true, { cleanup: false });
       if (!messageAttachment && tool_resource) {
-        await db.addAgentResourceFile({
-          file_id,
-          agent_id,
-          tool_resource,
-          updatingUserId: req?.user?.id,
-        });
+        try {
+          await db.addAgentResourceFile({
+            file_id,
+            agent_id,
+            tool_resource,
+            updatingUserId: req?.user?.id,
+          });
+        } catch (error) {
+          await cleanupFileMetadata({ fileId: file_id });
+          throw error;
+        }
       }
-      const result = await db.createFile(fileInfo, true);
       return res
         .status(200)
         .json({ message: 'Agent file uploaded and processed successfully', ...result });
@@ -851,6 +1052,25 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       entity_id,
     });
 
+    try {
+      await assertUploadStorageLimit(req, storageResult.bytes, { excludeFileId: file_id });
+    } catch (error) {
+      if (isFileStorageLimitError(error)) {
+        await cleanupStoredFile({
+          req,
+          file: {
+            file_id,
+            filepath: storageResult.filepath,
+            storageKey: storageResult.storageKey,
+            storageRegion: storageResult.storageRegion,
+            source,
+            tenantId: req.user.tenantId,
+          },
+        });
+      }
+      throw error;
+    }
+
     // SECOND: Upload to Vector DB
     const { uploadVectors } = require('./VectorDB/crud');
 
@@ -893,6 +1113,17 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   }
 
   let filepath = _filepath;
+  let fileSource = source;
+  let fileType = file.mimetype;
+  const originalStoredFile = {
+    file_id,
+    bytes,
+    filepath,
+    storageKey: _storageKey,
+    storageRegion: _storageRegion,
+    source,
+    tenantId: req.user.tenantId,
+  };
   let storageMetadata = getStorageMetadata({
     filepath,
     source,
@@ -900,28 +1131,32 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     storageRegion: _storageRegion,
   });
 
-  if (!messageAttachment && tool_resource) {
-    await db.addAgentResourceFile({
-      file_id,
-      agent_id,
-      tool_resource,
-      updatingUserId: req?.user?.id,
-    });
-  }
-
+  let imageFile;
   if (isImage) {
-    const result = await processImageFile({
-      req,
-      file,
-      metadata: { file_id: v4() },
-      returnFile: true,
-    });
-    filepath = result.filepath;
+    try {
+      imageFile = await processImageFile({
+        req,
+        file,
+        metadata: { file_id: v4() },
+        returnFile: true,
+      });
+    } catch (error) {
+      if (isFileStorageLimitError(error)) {
+        await cleanupStoredFile({ req, file: originalStoredFile });
+      }
+      throw error;
+    }
+    filepath = imageFile.filepath;
+    bytes = imageFile.bytes ?? bytes;
+    height = imageFile.height ?? height;
+    width = imageFile.width ?? width;
+    fileSource = imageFile.source ?? source;
+    fileType = imageFile.type ?? file.mimetype;
     storageMetadata = getStorageMetadata({
       filepath,
-      source: result.source,
-      storageKey: result.storageKey,
-      storageRegion: result.storageRegion,
+      source: fileSource,
+      storageKey: imageFile.storageKey,
+      storageRegion: imageFile.storageRegion,
     });
   }
 
@@ -938,9 +1173,9 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       model: messageAttachment ? undefined : req.body.model,
       metadata: fileInfoMetadata,
-      type: file.mimetype,
+      type: fileType,
       embedded,
-      source,
+      source: fileSource,
       height,
       width,
       tenantId: req.user.tenantId,
@@ -948,7 +1183,49 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     ...retentionExpiry,
   };
 
-  const result = await db.createFile(fileInfo, true);
+  let result;
+  try {
+    result = await createFileWithStorageLimit(req, fileInfo, true);
+  } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      if (imageFile) {
+        await cleanupPersistedFile({ req, file: imageFile });
+        await cleanupStoredFile({ req, file: originalStoredFile });
+      }
+      if (tool_resource === EToolResources.file_search && embedded) {
+        await cleanupVectorFile({ req, file: fileInfo });
+      }
+      if (tool_resource === EToolResources.execute_code) {
+        await cleanupCodeEnvFile({ req, file: fileInfo });
+      }
+    }
+    throw error;
+  }
+  if (!messageAttachment && tool_resource) {
+    try {
+      await db.addAgentResourceFile({
+        file_id,
+        agent_id,
+        tool_resource,
+        updatingUserId: req?.user?.id,
+      });
+    } catch (error) {
+      if (imageFile) {
+        await cleanupFileMetadata({ fileId: fileInfo.file_id });
+        await cleanupPersistedFile({ req, file: imageFile });
+        await cleanupStoredFile({ req, file: originalStoredFile });
+      } else {
+        await cleanupPersistedFile({ req, file: fileInfo });
+      }
+      if (tool_resource === EToolResources.file_search && embedded) {
+        await cleanupVectorFile({ req, file: fileInfo });
+      }
+      if (tool_resource === EToolResources.execute_code) {
+        await cleanupCodeEnvFile({ req, file: fileInfo });
+      }
+      throw error;
+    }
+  }
 
   res.status(200).json({ message: 'Agent file uploaded and processed successfully', ...result });
 };
@@ -956,6 +1233,7 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 /**
  * @param {object} params - The params object.
  * @param {OpenAI} params.openai - The OpenAI client instance.
+ * @param {ServerRequest} params.req - The Express request object associated with the client.
  * @param {string} params.file_id - The ID of the file to retrieve.
  * @param {string} params.userId - The user ID.
  * @param {string} [params.filename] - The name of the file. `undefined` for `file_citation` annotations.
@@ -964,12 +1242,14 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
  */
 const processOpenAIFile = async ({
   openai,
+  req,
   file_id,
   userId,
   filename,
   saveFile = false,
   updateUsage = false,
 }) => {
+  const request = req ?? openai.req;
   const _file = await openai.files.retrieve(file_id);
   const originalName = filename ?? (_file.filename ? path.basename(_file.filename) : undefined);
   const filepath = `${openai.baseURL}/files/${userId}/${file_id}${
@@ -977,7 +1257,7 @@ const processOpenAIFile = async ({
   }`;
   const type = mime.getType(originalName ?? file_id);
   const source =
-    openai.req.body.endpoint === EModelEndpoint.azureAssistants
+    request.body.endpoint === EModelEndpoint.azureAssistants
       ? FileSources.azure
       : FileSources.openai;
   const file = {
@@ -989,14 +1269,14 @@ const processOpenAIFile = async ({
     user: userId,
     context: _file.purpose,
     source,
-    model: openai.req.body.model,
+    model: request.body.model,
     filename: originalName ?? file_id,
-    ...(await getRetentionExpiry(openai.req)),
-    tenantId: openai.req?.user?.tenantId,
+    ...(await getRetentionExpiry(request)),
+    tenantId: request.user?.tenantId,
   };
 
   if (saveFile) {
-    await db.createFile(file, true);
+    await createFileWithStorageLimit(request, file, true, { cleanup: false });
   } else if (updateUsage) {
     try {
       await db.updateFileUsage({ file_id });
@@ -1032,7 +1312,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     type: mime.getType(fileExt),
     createdAt: formattedDate,
     updatedAt: formattedDate,
-    source: getFileStrategy(appConfig, { isImage: true }),
+    source: appConfig.fileStrategy,
     context: FileContext.assistants_output,
     file_id,
     filename,
@@ -1040,8 +1320,11 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     tenantId: req.user.tenantId,
   };
   try {
-    await db.createFile(file, true);
+    await createFileWithStorageLimit(req, file, true);
   } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      throw error;
+    }
     logger.warn('Error saving OpenAI image output file metadata', error);
   }
   return file;
@@ -1071,7 +1354,13 @@ async function retrieveAndProcessFile({
   }
 
   let basename = _basename;
-  const processArgs = { openai, file_id, filename: basename, userId: client.req.user.id };
+  const processArgs = {
+    openai,
+    req: client.req,
+    file_id,
+    filename: basename,
+    userId: client.req.user.id,
+  };
 
   // If no basename provided, return only the file metadata
   if (!basename) {
@@ -1182,6 +1471,7 @@ async function saveBase64Image(
   const image = await resizeImageBuffer(inputBuffer, effectiveResolution, endpoint);
   const source = getFileStrategy(appConfig, { isImage: true });
   const { saveBuffer } = getStrategyFunctions(source);
+  await assertUploadStorageLimit(req, image.bytes, { excludeFileId: file_id });
   const filepath = await saveBuffer({
     userId: req.user.id,
     fileName: filename,
@@ -1189,7 +1479,8 @@ async function saveBase64Image(
     tenantId: req.user.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  return await db.createFile(
+  return await createFileWithStorageLimit(
+    req,
     {
       type,
       source,

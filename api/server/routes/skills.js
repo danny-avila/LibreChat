@@ -7,6 +7,9 @@ const {
   createImportHandler,
   generateCheckAccess,
   getStorageMetadata,
+  isFileStorageLimitError,
+  assertFileStorageLimit,
+  recordFileStorageUsage,
   resolveRequestTenantId,
   restoreTenantContextFromReq,
 } = require('@librechat/api');
@@ -30,6 +33,7 @@ const {
   getSkillFileByPath,
   updateSkillFileContent,
   getRoleByName,
+  getUserStorageUsage,
 } = require('~/models');
 const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware');
 const {
@@ -138,6 +142,26 @@ function resolveSkillStorage(req, { isImage = false } = {}) {
   return { saveBuffer: strategy.saveBuffer, source };
 }
 
+const assertSkillFileStorageLimit = (req, incomingBytes, excludeSkillFile) =>
+  assertFileStorageLimit({
+    req,
+    incomingBytes,
+    excludeSkillFile,
+    getUserStorageUsage,
+  });
+
+function getReplacementExclusion(req, existingFile, skillId, relativePath) {
+  if (!existingFile) {
+    return undefined;
+  }
+
+  if (existingFile.author?.toString() !== req.user._id?.toString()) {
+    return undefined;
+  }
+
+  return { skillId, relativePath };
+}
+
 // ---------------------------------------------------------------------------
 // Import handler (zip/md/skill → create skill + files)
 // ---------------------------------------------------------------------------
@@ -149,16 +173,22 @@ const importHandler = createImportHandler({
   getSkillById,
   deleteSkill,
   upsertSkillFile,
-  saveBuffer: (req, { userId, buffer, fileName, basePath, isImage, tenantId }) => {
+  saveBuffer: async (req, { userId, buffer, fileName, basePath, isImage, tenantId }) => {
     const requestTenantId = tenantId ?? resolveRequestTenantId(req);
     const storage = resolveSkillStorage(req, { isImage });
-    return storage
-      .saveBuffer({ userId, buffer, fileName, basePath, tenantId: requestTenantId })
-      .then((filepath) => ({
-        filepath,
-        source: storage.source,
-        ...getStorageMetadata({ filepath, source: storage.source }),
-      }));
+    await assertSkillFileStorageLimit(req, buffer.length);
+    const filepath = await storage.saveBuffer({
+      userId,
+      buffer,
+      fileName,
+      basePath,
+      tenantId: requestTenantId,
+    });
+    return {
+      filepath,
+      source: storage.source,
+      ...getStorageMetadata({ filepath, source: storage.source }),
+    };
   },
   deleteFile: (req, file) => {
     const { deleteFile } = getStrategyFunctions(file.source);
@@ -202,6 +232,7 @@ async function uploadFileHandler(req, res) {
 
     // Look up existing file before saving — needed to clean up old blob on replace
     const existingFile = await getSkillFileByPath(skillId, relativePath);
+    const excludeSkillFile = getReplacementExclusion(req, existingFile, skillId, relativePath);
 
     const fileId = crypto.randomUUID();
     const filename = file.originalname;
@@ -209,6 +240,7 @@ async function uploadFileHandler(req, res) {
 
     const isImage = (file.mimetype || '').startsWith('image/');
     const storage = resolveSkillStorage(req, { isImage });
+    await assertSkillFileStorageLimit(req, file.size, excludeSkillFile);
     const filepath = await storage.saveBuffer({
       userId: req.user.id,
       buffer: file.buffer,
@@ -233,6 +265,9 @@ async function uploadFileHandler(req, res) {
         isExecutable: false,
         author: req.user._id,
         tenantId,
+      });
+      recordFileStorageUsage(req, file.size, {
+        skillFile: { id: result?._id, skillId, relativePath },
       });
     } catch (dbError) {
       // Clean up the stored blob so it doesn't leak on DB failure
@@ -261,6 +296,10 @@ async function uploadFileHandler(req, res) {
 
     return res.status(200).json(result);
   } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      return res.status(error.status ?? 413).json({ error: error.message });
+    }
+
     if (error.code === 'SKILL_FILE_VALIDATION_FAILED') {
       return res.status(400).json({ error: error.message });
     }

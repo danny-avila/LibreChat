@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EToolResources, FileContext } from 'librechat-data-provider';
@@ -8,6 +9,7 @@ import { runAsSystem } from '~/config/tenantContext';
 import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
 
 let File: mongoose.Model<unknown>;
+let SkillFile: mongoose.Model<unknown>;
 let fileMethods: ReturnType<typeof createFileMethods>;
 let mongoServer: MongoMemoryServer;
 let modelsToCleanup: string[] = [];
@@ -23,6 +25,7 @@ describe('File Methods', () => {
     Object.assign(mongoose.models, models);
 
     File = mongoose.models.File as mongoose.Model<unknown>;
+    SkillFile = mongoose.models.SkillFile as mongoose.Model<unknown>;
     fileMethods = createFileMethods(mongoose);
   });
 
@@ -44,6 +47,7 @@ describe('File Methods', () => {
 
   beforeEach(async () => {
     await File.deleteMany({});
+    await SkillFile.deleteMany({});
   });
 
   describe('createFile', () => {
@@ -163,6 +167,173 @@ describe('File Methods', () => {
 
       expect(legacy.file_id).toBe('legacy-null-file');
       expect(legacyAgain.file_id).toBe('legacy-null-file');
+    });
+  });
+
+  describe('getUserStorageUsage', () => {
+    const createStoredFile = async ({
+      user,
+      file_id,
+      bytes,
+      tenantId,
+    }: {
+      user: mongoose.Types.ObjectId;
+      file_id: string;
+      bytes: number;
+      tenantId?: string;
+    }) =>
+      runAsSystem(() =>
+        File.create({
+          file_id,
+          user,
+          filename: `${file_id}.txt`,
+          filepath: `/uploads/${file_id}.txt`,
+          type: 'text/plain',
+          bytes,
+          tenantId,
+        }),
+      );
+
+    const createSkillFile = ({
+      author,
+      skillId,
+      relativePath,
+      bytes,
+      tenantId,
+    }: {
+      author: mongoose.Types.ObjectId;
+      skillId: mongoose.Types.ObjectId;
+      relativePath: string;
+      bytes: number;
+      tenantId?: string;
+    }) =>
+      runAsSystem(() =>
+        SkillFile.create({
+          skillId,
+          relativePath,
+          file_id: uuidv4(),
+          filename: path.basename(relativePath),
+          filepath: `/uploads/${relativePath}`,
+          source: 'local',
+          mimeType: 'text/plain',
+          bytes,
+          isExecutable: false,
+          author,
+          tenantId,
+        }),
+      );
+
+    it('sums File and authored SkillFile bytes by user and tenant', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const otherUserId = new mongoose.Types.ObjectId();
+      const skillId = new mongoose.Types.ObjectId();
+
+      await createStoredFile({ user: userId, file_id: 'tenant-file', bytes: 100, tenantId: 't1' });
+      await createStoredFile({ user: userId, file_id: 'other-tenant', bytes: 200, tenantId: 't2' });
+      await createStoredFile({
+        user: otherUserId,
+        file_id: 'other-user',
+        bytes: 300,
+        tenantId: 't1',
+      });
+      await createSkillFile({
+        author: userId,
+        skillId,
+        relativePath: 'scripts/run.sh',
+        bytes: 50,
+        tenantId: 't1',
+      });
+      await createSkillFile({
+        author: otherUserId,
+        skillId,
+        relativePath: 'scripts/other.sh',
+        bytes: 75,
+        tenantId: 't1',
+      });
+
+      await expect(fileMethods.getUserStorageUsage({ userId, tenantId: 't1' })).resolves.toBe(150);
+    });
+
+    it('defines compound indexes for storage usage lookups', () => {
+      const fileIndexes = File.schema.indexes().map(([fields]) => fields);
+      const skillFileIndexes = SkillFile.schema.indexes().map(([fields]) => fields);
+
+      expect(fileIndexes).toContainEqual({ user: 1, tenantId: 1 });
+      expect(skillFileIndexes).toContainEqual({ author: 1, tenantId: 1 });
+    });
+
+    it('uses legacy no-tenant scope when tenantId is absent', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const skillId = new mongoose.Types.ObjectId();
+
+      await createStoredFile({ user: userId, file_id: 'legacy-file', bytes: 100 });
+      await createStoredFile({ user: userId, file_id: 'tenant-file', bytes: 200, tenantId: 't1' });
+      await createSkillFile({
+        author: userId,
+        skillId,
+        relativePath: 'legacy.txt',
+        bytes: 25,
+      });
+
+      await expect(fileMethods.getUserStorageUsage({ userId })).resolves.toBe(125);
+    });
+
+    it('ignores non-positive bytes', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const skillId = new mongoose.Types.ObjectId();
+
+      await createStoredFile({ user: userId, file_id: 'positive', bytes: 10 });
+      await createStoredFile({ user: userId, file_id: 'zero', bytes: 0 });
+      await createStoredFile({ user: userId, file_id: 'negative', bytes: -10 });
+      await createSkillFile({
+        author: userId,
+        skillId,
+        relativePath: 'empty.txt',
+        bytes: 0,
+      });
+
+      await expect(fileMethods.getUserStorageUsage({ userId })).resolves.toBe(10);
+    });
+
+    it('excludes replacement File and SkillFile rows', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const skillId = new mongoose.Types.ObjectId();
+
+      await createStoredFile({ user: userId, file_id: 'replace-me', bytes: 100 });
+      await createStoredFile({ user: userId, file_id: 'keep-me', bytes: 30 });
+      await createSkillFile({
+        author: userId,
+        skillId,
+        relativePath: 'replace.txt',
+        bytes: 40,
+      });
+      await createSkillFile({
+        author: userId,
+        skillId,
+        relativePath: 'keep.txt',
+        bytes: 20,
+      });
+
+      await expect(
+        fileMethods.getUserStorageUsage({
+          userId,
+          excludeFileId: 'replace-me',
+          excludeSkillFile: { skillId, relativePath: 'replace.txt' },
+        }),
+      ).resolves.toBe(50);
+    });
+
+    it('rejects invalid ObjectId inputs instead of under-counting usage', async () => {
+      await expect(fileMethods.getUserStorageUsage({ userId: 'not-an-object-id' })).rejects.toThrow(
+        'Invalid userId',
+      );
+
+      await expect(
+        fileMethods.getUserStorageUsage({
+          userId: new mongoose.Types.ObjectId(),
+          excludeSkillFile: { skillId: 'not-an-object-id', relativePath: 'replace.txt' },
+        }),
+      ).rejects.toThrow('Invalid excludeSkillFile.skillId');
     });
   });
 

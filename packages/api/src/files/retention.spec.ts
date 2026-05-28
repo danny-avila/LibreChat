@@ -215,16 +215,22 @@ describe('retention helpers', () => {
   });
 
   it('creates minimal retention requests for tool calls', () => {
+    const paths = {
+      imageOutput: '/srv/public/images',
+      publicPath: '/srv/public',
+      uploads: '/srv/uploads',
+    };
+
     expect(
       createMinimalRetentionRequest({
         user: { id: 'user-1', tenantId: 'tenant-1' },
         body: { conversationId: 'convo-1', isTemporary: 'true' },
-        config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY } },
+        config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY }, paths },
       }),
     ).toEqual({
       user: { id: 'user-1', tenantId: 'tenant-1' },
       body: { conversationId: 'convo-1', isTemporary: 'true' },
-      config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY } },
+      config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY }, paths },
     });
 
     expect(createMinimalRetentionRequest()).toBeUndefined();

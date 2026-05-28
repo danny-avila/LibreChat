@@ -3,6 +3,8 @@ import { createFallbackRetentionDate } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 
 type InterfaceConfig = AppConfig['interfaceConfig'];
+type FileConfig = AppConfig['fileConfig'];
+type PathsConfig = AppConfig['paths'];
 
 const retentionExpiryCache = new WeakMap<
   RetentionRequest,
@@ -27,6 +29,8 @@ export type RetentionRequest = {
   };
   config?: {
     interfaceConfig?: InterfaceConfig;
+    paths?: PathsConfig;
+    fileConfig?: FileConfig;
   };
 };
 
@@ -226,6 +230,8 @@ export const createMinimalRetentionRequest = (
     },
     config: {
       interfaceConfig: req.config?.interfaceConfig,
+      ...(req.config?.paths ? { paths: req.config.paths } : {}),
+      ...(req.config?.fileConfig ? { fileConfig: req.config.fileConfig } : {}),
     },
   };
 };

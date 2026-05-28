@@ -656,6 +656,7 @@ endpoints:
 #       fileLimit: 2
 #       fileSizeLimit: 5
 #   serverFileSizeLimit: 100  # Global server file size limit in MB
+#   storageLimit: 1000  # Per-user total persisted file storage limit in MB
 #   avatarSizeLimit: 2  # Limit for user avatar image size in MB
 #   imageGeneration: # Image Gen settings, either percentage or px
 #     percentage: 100

@@ -128,6 +128,49 @@ async function uploadCodeEnvFile({ req, stream, filename, kind, id, version }) {
 }
 
 /**
+ * Deletes a file from the Code Environment server.
+ *
+ * @param {ServerRequest} req - The authenticated request used for Code API auth.
+ * @param {import('librechat-data-provider').CodeEnvRef | { metadata?: { codeEnvRef?: import('librechat-data-provider').CodeEnvRef } }} file
+ *   The code environment reference, or a file object containing one.
+ * @returns {Promise<void>}
+ */
+async function deleteCodeEnvFile(req, file) {
+  const ref = file?.metadata?.codeEnvRef ?? file;
+  if (!ref?.storage_session_id || !ref?.file_id) {
+    return;
+  }
+
+  try {
+    const baseURL = getCodeBaseURL();
+    const query = buildCodeEnvDownloadQuery({
+      kind: ref.kind,
+      id: ref.id,
+      ...(ref.kind === 'skill' ? { version: ref.version } : {}),
+    });
+    const authHeaders = await getCodeApiAuthHeaders(req);
+    await axios({
+      method: 'delete',
+      url: `${baseURL}/files/${ref.storage_session_id}/${ref.file_id}${query}`,
+      headers: {
+        'User-Agent': 'LibreChat/1.0',
+        ...authHeaders,
+      },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
+      timeout: 15000,
+    });
+  } catch (error) {
+    throw new Error(
+      logAxiosError({
+        message: `Error deleting code environment file: ${error.message}`,
+        error,
+      }),
+    );
+  }
+}
+
+/**
  * Uploads multiple files to the code execution environment in a single request.
  * Uses the /upload/batch endpoint which shares one session_id across all files.
  *
@@ -211,5 +254,6 @@ async function batchUploadCodeEnvFiles({ req, files, kind, id, version, read_onl
 module.exports = {
   getCodeOutputDownloadStream,
   uploadCodeEnvFile,
+  deleteCodeEnvFile,
   batchUploadCodeEnvFiles,
 };

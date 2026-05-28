@@ -474,6 +474,33 @@ describe('File Routes - Agent Files Endpoint', () => {
       expect(processAgentFileUpload).toHaveBeenCalled();
     });
 
+    it('should preserve storage-limit status when agent upload is over quota', async () => {
+      await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+      processAgentFileUpload.mockRejectedValueOnce(
+        Object.assign(new Error('storage limit exceeded. Delete files first.'), {
+          code: 'FILE_STORAGE_LIMIT_EXCEEDED',
+          status: 413,
+        }),
+      );
+      const testApp = createAppWithUser(authorId);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(413);
+      expect(response.body.message).toBe('storage limit exceeded. Delete files first.');
+    });
+
     it('should allow file upload to agent for user with EDIT permission', async () => {
       // Create an agent owned by authorId
       const agent = await createAgent({

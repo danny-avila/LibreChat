@@ -61,7 +61,7 @@ const {
   codeServerHttpsAgent,
   getCodeApiAuthHeaders,
 } = require('@librechat/api');
-const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./crud');
+const { getCodeOutputDownloadStream, uploadCodeEnvFile, deleteCodeEnvFile } = require('./crud');
 
 describe('Code CRUD', () => {
   beforeEach(() => {
@@ -325,6 +325,56 @@ describe('Code CRUD', () => {
       mockAxios.post.mockRejectedValue(new Error('ECONNREFUSED'));
 
       await expect(uploadCodeEnvFile(baseUploadParams)).rejects.toThrow();
+    });
+  });
+
+  describe('deleteCodeEnvFile', () => {
+    const req = { user: { id: 'user-123' } };
+    const ref = {
+      kind: 'agent',
+      id: 'agent-123',
+      storage_session_id: 'sess-1',
+      file_id: 'fid-1',
+    };
+
+    it('deletes through the Code API with identity and auth headers', async () => {
+      getCodeApiAuthHeaders.mockResolvedValue({ Authorization: 'Bearer codeapi-token' });
+      mockAxios.mockResolvedValue({ data: { message: 'File deleted successfully' } });
+
+      await deleteCodeEnvFile(req, ref);
+
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(req);
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'delete',
+          url: 'https://code-api.example.com/files/sess-1/fid-1?kind=agent&id=agent-123',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer codeapi-token',
+            'User-Agent': 'LibreChat/1.0',
+          }),
+          httpAgent: codeServerHttpAgent,
+          httpsAgent: codeServerHttpsAgent,
+          timeout: 15000,
+        }),
+      );
+    });
+
+    it('accepts a file object containing metadata.codeEnvRef', async () => {
+      mockAxios.mockResolvedValue({ data: { message: 'File deleted successfully' } });
+
+      await deleteCodeEnvFile(req, { metadata: { codeEnvRef: ref } });
+
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://code-api.example.com/files/sess-1/fid-1?kind=agent&id=agent-123',
+        }),
+      );
+    });
+
+    it('no-ops when a code environment ref is missing', async () => {
+      await deleteCodeEnvFile(req, { metadata: {} });
+
+      expect(mockAxios).not.toHaveBeenCalled();
     });
   });
 });
