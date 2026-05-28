@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { X, Info } from 'lucide-react';
+import keyBy from 'lodash/keyBy';
 import {
   Switch,
   useToastContext,
@@ -8,6 +9,7 @@ import {
   AccordionTrigger,
   AccordionContent,
   TooltipAnchor,
+  ControlCombobox,
 } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import {
@@ -16,8 +18,14 @@ import {
   PermissionTypes,
   Permissions,
   getEndpointField,
+  getSettingsKeys,
+  agentParamSettings,
+  LocalStorageKeys,
+  SettingDefinition,
 } from 'librechat-data-provider';
-import type { AgentForm, IconComponentTypes } from '~/common';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import type * as t from 'librechat-data-provider';
+import type { AgentForm, IconComponentTypes, StringOption } from '~/common';
 import {
   removeFocusOutlines,
   processAgentOption,
@@ -25,6 +33,8 @@ import {
   validateEmail,
   getIconKey,
   getModelDisplayName,
+  getEndpointAlternateName,
+  createProviderOption,
   cn,
 } from '~/utils';
 import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
@@ -36,10 +46,10 @@ import Action from '~/components/SidePanel/Builder/Action';
 import { useLocalize, useVisibleTools, useHasAccess, useAuthContext } from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
 import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
+import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AdminSettings from './AdminSettings';
-import SearchForm from './Search/Form';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
@@ -50,6 +60,12 @@ import MCPTools from './MCPTools';
 // bruit visuel sans utilité métier. Réactiver en passant à `true` ; le
 // champ id reste dans le formulaire et le data model côté backend.
 const SHOW_AGENT_ID = false;
+
+// V1 UX (POP/BETC) : paramètres essentiels du modèle visibles inline dans
+// le builder agent (Créativité, Resend Files, Thinking, Recherche web —
+// selon provider). Reste des params en accordéon « Paramètres avancés ».
+// Pattern aligné sur le panel Paramètres conversation (commit a98a8d6cd).
+const ESSENTIAL_PARAM_KEYS = ['temperature', 'resendFiles', 'thinking', 'web_search'];
 
 const labelClass = 'mb-2 text-token-text-primary block text-sm font-medium';
 const inputClass = cn(
@@ -108,7 +124,6 @@ export default function AgentConfig() {
     actionsEnabled,
     skillsEnabled,
     artifactsEnabled,
-    webSearchEnabled,
     fileSearchEnabled,
   } = useAgentCapabilities(agentsConfig?.capabilities);
 
@@ -229,6 +244,131 @@ export default function AgentConfig() {
 
   const { toolIds, mcpServerNames } = useVisibleTools(tools, regularTools, mcpServersMap);
 
+  // V1 UX (POP/BETC) : dropdowns Provider/Model + grille de paramètres
+  // inline dans la page principale du builder (cf. refonte commit dédié).
+  const modelsQuery = useGetModelsQuery({ refetchOnMount: 'always' });
+  const modelsData = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
+
+  const allowedProviders = useMemo(
+    () => new Set(agentsConfig?.allowedProviders),
+    [agentsConfig?.allowedProviders],
+  );
+
+  const providers = useMemo(
+    () =>
+      Object.keys(endpointsConfig ?? {})
+        .filter(
+          (key) =>
+            key !== EModelEndpoint.agents &&
+            (allowedProviders.size > 0 ? allowedProviders.has(key) : true),
+        )
+        .map((p) => createProviderOption(p)),
+    [endpointsConfig, allowedProviders],
+  );
+
+  const models = useMemo(
+    () => (providerValue ? (modelsData[providerValue as string] ?? []) : []),
+    [modelsData, providerValue],
+  );
+
+  useEffect(() => {
+    const _model = model ?? '';
+    if (providerValue && _model) {
+      const modelExists = models.includes(_model);
+      if (!modelExists) {
+        const newModels = modelsData[providerValue as string] ?? [];
+        methods.setValue('model', newModels[0] ?? '');
+      }
+      localStorage.setItem(LocalStorageKeys.LAST_AGENT_MODEL, _model);
+      localStorage.setItem(LocalStorageKeys.LAST_AGENT_PROVIDER, providerValue as string);
+    }
+    if (providerValue && !_model) {
+      methods.setValue('model', models[0] ?? '');
+    }
+  }, [providerValue, models, modelsData, methods, model]);
+
+  const bedrockRegions = useMemo(
+    () => endpointsConfig?.[providerValue as string]?.availableRegions ?? [],
+    [endpointsConfig, providerValue],
+  );
+
+  // Calcul essentiels + avancés selon provider/model.
+  // Gating endpoint custom sur web_search uniquement (cohérent a98a8d6cd) :
+  // les endpoints custom (ex. French Models/Featherless) ne supportent pas
+  // le tool web_search natif → 400 garanti si activé.
+  const { essentialParams, advancedParams } = useMemo(() => {
+    const customParams = endpointsConfig?.[providerValue as string]?.customParams ?? {};
+    const [combinedKey, endpointKey] = getSettingsKeys(
+      endpointType ?? (providerValue as string) ?? '',
+      model ?? '',
+    );
+    const overriddenEndpointKey = customParams.defaultParamsEndpoint ?? endpointKey;
+    const defaultParams =
+      agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey] ?? [];
+    const overriddenParams =
+      endpointsConfig?.[providerValue as string]?.customParams?.paramDefinitions ?? [];
+    const overriddenParamsMap = keyBy(overriddenParams, 'key');
+    const parameters = defaultParams
+      .filter((param) => param != null)
+      .filter(
+        (param) => param.key !== 'web_search' || endpointType !== EModelEndpoint.custom,
+      )
+      .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
+
+    const essentialByKey = new Map<string, SettingDefinition>();
+    const advanced: SettingDefinition[] = [];
+    for (const param of parameters) {
+      if (ESSENTIAL_PARAM_KEYS.includes(param.key)) {
+        essentialByKey.set(param.key, param);
+      } else {
+        advanced.push(param);
+      }
+    }
+    const ordered = ESSENTIAL_PARAM_KEYS.map((k) => essentialByKey.get(k)).filter(
+      (p): p is SettingDefinition => p != null,
+    );
+    return { essentialParams: ordered, advancedParams: advanced };
+  }, [endpointType, endpointsConfig, model, providerValue]);
+
+  const modelParameters = useWatch({ control, name: 'model_parameters' });
+
+  // Nettoyage : si l'utilisateur bascule vers un endpoint custom alors que
+  // web_search était activé, on retire le param pour éviter un 400 au prochain
+  // appel LLM (pattern Panel.tsx:177-229 côté conversation).
+  useEffect(() => {
+    if (endpointType !== EModelEndpoint.custom) return;
+    const ws = (modelParameters as { web_search?: boolean } | undefined)?.web_search;
+    if (ws != null) {
+      methods.setValue('model_parameters.web_search' as never, undefined as never, {
+        shouldDirty: true,
+      });
+    }
+  }, [endpointType, modelParameters, methods]);
+
+  const setOption =
+    (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
+      methods.setValue(`model_parameters.${optionKey}`, value);
+    };
+
+  const renderParam = (setting: SettingDefinition) => {
+    const Component = componentMapping[setting.component];
+    if (!Component) return null;
+    const { key, default: defaultValue, ...rest } = setting;
+    if (key === 'region' && bedrockRegions.length) {
+      rest.options = bedrockRegions;
+    }
+    return (
+      <Component
+        key={key}
+        settingKey={key}
+        defaultValue={defaultValue}
+        {...rest}
+        setOption={setOption as t.TSetOption}
+        conversation={modelParameters as Partial<t.TConversation>}
+      />
+    );
+  };
+
   return (
     <>
       <div className="h-auto pt-1">
@@ -309,35 +449,114 @@ export default function AgentConfig() {
           </label>
           <AgentCategorySelector className="w-full" />
         </div>
-        {/* Model and Provider */}
+        {/* Fournisseur (Provider) */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="provider">
+            {localize('com_ui_provider')} <span className="text-red-500">*</span>
+          </label>
+          <Controller
+            name="provider"
+            control={control}
+            rules={{ required: true, minLength: 1 }}
+            render={({ field, fieldState: { error } }) => {
+              const value =
+                typeof field.value === 'string'
+                  ? field.value
+                  : ((field.value as StringOption)?.value ?? '');
+              const display =
+                typeof field.value === 'string'
+                  ? field.value
+                  : ((field.value as StringOption)?.label ?? '');
+              return (
+                <>
+                  <ControlCombobox
+                    selectedValue={value}
+                    displayValue={getEndpointAlternateName(display, localize) ?? display}
+                    selectPlaceholder={localize('com_ui_select_provider')}
+                    searchPlaceholder={localize('com_ui_select_search_provider')}
+                    setValue={field.onChange}
+                    items={providers.map((provider) => ({
+                      label: typeof provider === 'string' ? provider : provider.label,
+                      value: typeof provider === 'string' ? provider : provider.value,
+                    }))}
+                    className={cn(error ? 'border-2 border-red-500' : '')}
+                    ariaLabel={localize('com_ui_provider')}
+                    isCollapsed={false}
+                    showCarat={true}
+                  />
+                  {error && (
+                    <span className="text-sm text-red-500">
+                      {localize('com_ui_field_required')}
+                    </span>
+                  )}
+                </>
+              );
+            }}
+          />
+        </div>
+        {/* Modèle */}
+        <div className="mb-4">
+          <label className={labelClass} htmlFor="model">
             {localize('com_ui_model')} <span className="text-red-500">*</span>
           </label>
-          <button
-            type="button"
-            onClick={() => setActivePanel(Panel.model)}
-            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
-          >
-            <div className="flex w-full items-center gap-2">
-              {Icon && (
-                <div className="shadow-stroke relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-white">
-                  <Icon
-                    className="h-2/3 w-2/3"
-                    endpoint={providerValue as string}
-                    endpointType={endpointType}
-                    iconURL={endpointIconURL}
-                  />
-                </div>
-              )}
-              <span>
-                {model != null && model
-                  ? getModelDisplayName(model, localize).dropdownLabel
-                  : localize('com_ui_select_model')}
-              </span>
-            </div>
-          </button>
+          <Controller
+            name="model"
+            control={control}
+            rules={{ required: true, minLength: 1 }}
+            render={({ field, fieldState: { error } }) => (
+              <>
+                <ControlCombobox
+                  selectedValue={field.value || ''}
+                  displayValue={
+                    field.value ? getModelDisplayName(field.value, localize).dropdownLabel : ''
+                  }
+                  selectPlaceholder={
+                    providerValue
+                      ? localize('com_ui_select_model')
+                      : localize('com_ui_select_provider_first')
+                  }
+                  searchPlaceholder={localize('com_ui_select_model')}
+                  setValue={field.onChange}
+                  items={models.map((m) => ({
+                    label: getModelDisplayName(m, localize).dropdownLabel,
+                    value: m,
+                  }))}
+                  disabled={!providerValue}
+                  className={cn('disabled:opacity-50', error ? 'border-2 border-red-500' : '')}
+                  ariaLabel={localize('com_ui_model')}
+                  isCollapsed={false}
+                  showCarat={true}
+                />
+                {providerValue && error && (
+                  <span className="text-sm text-red-500">
+                    {localize('com_ui_field_required')}
+                  </span>
+                )}
+              </>
+            )}
+          />
         </div>
+        {/* Paramètres essentiels du modèle (inline) */}
+        {essentialParams.length > 0 && (
+          <div className="mb-4">
+            <div className="grid grid-cols-2 gap-4">{essentialParams.map(renderParam)}</div>
+          </div>
+        )}
+        {/* Paramètres avancés du modèle (accordéon replié) */}
+        {advancedParams.length > 0 && (
+          <Accordion type="single" collapsible className="mb-4 w-full">
+            <AccordionItem value="model-advanced-params" className="border-b-0">
+              <AccordionTrigger className="text-sm font-medium text-text-primary hover:no-underline">
+                {localize('com_ui_advanced_settings')}
+              </AccordionTrigger>
+              <AccordionContent>
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  {advancedParams.map(renderParam)}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        )}
         {/* Instructions */}
         <Instructions />
         {/* Fichiers de référence */}
@@ -346,23 +565,6 @@ export default function AgentConfig() {
             <label className={labelClass}>{localize('com_ui_reference_files')}</label>
             <FileSearch agent_id={agent_id} files={knowledge_files} />
           </div>
-        )}
-        {/* === SECTION 3 : Recherche web (Accordion replié par défaut) === */}
-        {webSearchEnabled && (
-          <Accordion type="single" collapsible className="mb-4 w-full">
-            <AccordionItem value="agent-actions" className="border-b-0">
-              <AccordionTrigger className="text-sm font-medium text-text-primary hover:no-underline">
-                <div className="flex items-center gap-2">
-                  <span>{localize('com_ui_web_search')}</span>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                <div className="flex flex-col gap-3 pt-2">
-                  <SearchForm />
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
         )}
         {/* === SECTION 4 : Outils avancés (Accordion replié par défaut) === */}
         <Accordion type="single" collapsible className="mb-4 w-full">

@@ -144,7 +144,6 @@ export enum Panel {
   advanced = 'advanced',
   builder = 'builder',
   actions = 'actions',
-  model = 'model',
   version = 'version',
 }
 
@@ -233,13 +232,6 @@ export type AgentPanelContextType = {
   mcpServersMap: Map<string, MCPServerInfo>;
   availableMCPServers: MCPServerDefinition[];
   availableMCPServersMap: t.MCPServersListResponse | undefined;
-};
-
-export type AgentModelPanelProps = {
-  agent_id?: string;
-  providers: Option[];
-  models: Record<string, string[] | undefined>;
-  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & DataColumnMeta;

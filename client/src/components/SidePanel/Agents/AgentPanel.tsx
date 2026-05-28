@@ -3,14 +3,11 @@ import { Plus, LayoutGrid } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
-import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
   SystemRoles,
   ResourceType,
-  EModelEndpoint,
   PermissionBits,
-  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { Agent } from 'librechat-data-provider';
@@ -23,7 +20,7 @@ import {
   useGetExpandedAgentByIdQuery,
   useUploadAgentAvatarMutation,
 } from '~/data-provider';
-import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
+import { getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext, useShowMarketplace } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
@@ -33,7 +30,6 @@ import { Panel, isEphemeralAgent } from '~/common';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
-import ModelPanel from './ModelPanel';
 
 /* Helpers */
 function getUpdateToastMessage(
@@ -221,16 +217,13 @@ export default function AgentPanel() {
   const { showToast } = useToastContext();
   const {
     activePanel,
-    agentsConfig,
     setActivePanel,
-    endpointsConfig,
     setCurrentAgentId,
     agent_id: current_agent_id,
   } = useAgentPanelContext();
 
   const { onSelect: onSelectAgent } = useSelectAgent();
 
-  const modelsQuery = useGetModelsQuery({ refetchOnMount: 'always' });
   const basicAgentQuery = useGetAgentByIdQuery(current_agent_id);
 
   const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
@@ -246,7 +239,6 @@ export default function AgentPanel() {
 
   const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
-  const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const methods = useForm<AgentForm>({
     defaultValues: getDefaultAgentFormValues(),
     mode: 'onChange',
@@ -307,24 +299,6 @@ export default function AgentPanel() {
   );
   const agent_id = useWatch({ control, name: 'id' });
   const previousVersionRef = useRef<number | undefined>();
-
-  const allowedProviders = useMemo(
-    () => new Set(agentsConfig?.allowedProviders),
-    [agentsConfig?.allowedProviders],
-  );
-
-  const providers = useMemo(
-    () =>
-      Object.keys(endpointsConfig ?? {})
-        .filter(
-          (key) =>
-            !isAssistantsEndpoint(key) &&
-            (allowedProviders.size > 0 ? allowedProviders.has(key) : true) &&
-            key !== EModelEndpoint.agents,
-        )
-        .map((provider) => createProviderOption(provider)),
-    [endpointsConfig, allowedProviders],
-  );
 
   /* Mutations */
   const update = useUpdateAgentMutation({
@@ -570,9 +544,6 @@ export default function AgentPanel() {
                 <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
               </div>
             </div>
-          )}
-          {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
-            <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
           )}
           {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
             <AgentConfig />

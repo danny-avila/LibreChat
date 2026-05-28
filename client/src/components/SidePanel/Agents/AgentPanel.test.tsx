@@ -124,7 +124,6 @@ jest.mock('~/common', () => ({
     return agentId == null || agentId === '' || agentId === 'ephemeral';
   },
   Panel: {
-    model: 'model',
     builder: 'builder',
     advanced: 'advanced',
   },
@@ -149,11 +148,6 @@ jest.mock('./AgentConfig', () => ({
 jest.mock('./AgentSelect', () => ({
   __esModule: true,
   default: () => <div>{`Agent Select`}</div>,
-}));
-
-jest.mock('./ModelPanel', () => ({
-  __esModule: true,
-  default: () => <div>{`Model Panel`}</div>,
 }));
 
 // Mock AgentFooter to provide a save button
