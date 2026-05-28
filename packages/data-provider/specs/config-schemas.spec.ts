@@ -4,6 +4,7 @@ import {
   azureEndpointSchema,
   endpointSchema,
   configSchema,
+  getConfigDefaults,
   interfaceSchema,
   fileStorageSchema,
   fileStrategiesSchema,
@@ -632,6 +633,11 @@ describe('interfaceSchema', () => {
     expect(result).not.toHaveProperty('endpointsMenu');
     expect(result).not.toHaveProperty('sidePanel');
     expect(result.modelSelect).toBe(false);
+  });
+
+  it('defaults notifications to false and accepts explicit true', () => {
+    expect(getConfigDefaults().interface.notifications).toBe(false);
+    expect(interfaceSchema.parse({ notifications: true }).notifications).toBe(true);
   });
 });
 

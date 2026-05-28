@@ -1,4 +1,5 @@
 const express = require('express');
+const { SystemCapabilities } = require('@librechat/data-schemas');
 const { notificationTypes } = require('librechat-data-provider');
 const {
   createNotification,
@@ -8,9 +9,11 @@ const {
   deleteNotification,
 } = require('~/models');
 const { requireJwtAuth } = require('~/server/middleware');
+const { requireCapability } = require('~/server/middleware/roles/capabilities');
 
 const router = express.Router();
 const notificationPayloadLimit = express.json({ limit: '100kb' });
+const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
 router.use(requireJwtAuth);
 
@@ -45,10 +48,11 @@ router.post('/read-all', async (req, res) => {
 });
 
 /**
- * POST /notifications
- * Body: { type, title, message, link? } — always for the authenticated user.
+ * POST /notifications (admin only)
+ * Body: { type, title, message, link? } — for the authenticated admin user.
+ * Production fan-out: POST /api/admin/notifications/broadcast or server model methods.
  */
-router.post('/', notificationPayloadLimit, async (req, res) => {
+router.post('/', requireAdminAccess, notificationPayloadLimit, async (req, res) => {
   const { type, title, message, link } = req.body;
 
   if (typeof type !== 'string' || !notificationTypes.includes(type)) {

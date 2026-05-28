@@ -968,6 +968,7 @@ export const interfaceSchema = z
       .optional(),
     fileSearch: z.boolean().optional(),
     fileCitations: z.boolean().optional(),
+    notifications: z.boolean().optional(),
     buildInfo: z.boolean().optional(),
     remoteAgents: z
       .object({
@@ -1029,6 +1030,7 @@ export const interfaceSchema = z
     },
     fileSearch: true,
     fileCitations: true,
+    notifications: false,
     buildInfo: true,
     remoteAgents: {
       use: false,
