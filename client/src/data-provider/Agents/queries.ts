@@ -42,9 +42,13 @@ export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> 
 /**
  * Hook for listing all Agents, with optional parameters provided for pagination and sorting.
  *
- * Applies `FULL_AGENT_LIST_LIMIT` when the caller does not specify `limit` so that
- * consumers reading the result as a flat list (and not following `has_more`/`after`)
- * receive the user's complete accessible-agent set in one request.
+ * Applies `FULL_AGENT_LIST_LIMIT` to the outgoing request when the caller does not
+ * specify `limit`, so that consumers reading the result as a flat list (and not
+ * following `has_more`/`after`) receive the user's complete accessible-agent set
+ * in one fetch. The default is intentionally NOT folded into the query cache key —
+ * mutations in `./mutations.ts` reference `[QueryKeys.agents, { requiredPermission }]`
+ * directly, and changing the key shape here would silently break their cache
+ * updates after agent create/update/delete.
  */
 export const useListAgentsQuery = <TData = t.AgentListResponse>(
   params: t.AgentListParams = defaultAgentParams,
@@ -53,12 +57,12 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
 
-  const mergedParams: t.AgentListParams = { limit: FULL_AGENT_LIST_LIMIT, ...params };
+  const requestParams: t.AgentListParams = { limit: FULL_AGENT_LIST_LIMIT, ...params };
 
   const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
   return useQuery<t.AgentListResponse, unknown, TData>(
-    [QueryKeys.agents, mergedParams],
-    () => dataService.listAgents(mergedParams),
+    [QueryKeys.agents, params],
+    () => dataService.listAgents(requestParams),
     {
       // Example selector to sort them by created_at
       // select: (res) => {
