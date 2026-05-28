@@ -15,6 +15,14 @@ export const defaultAgentParams: t.AgentListParams = {
   limit: 10,
   requiredPermission: PermissionBits.EDIT,
 };
+
+/**
+ * Default page size for `useListAgentsQuery` consumers that want the user's
+ * full accessible-agent set in a single request (selectors, mention picker,
+ * agents map). Matches the server-side hard cap so a single fetch returns
+ * every agent realistic deployments are expected to surface.
+ */
+const FULL_AGENT_LIST_LIMIT = 1000;
 /**
  * Hook for getting all available tools for A
  */
@@ -32,7 +40,11 @@ export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> 
 };
 
 /**
- * Hook for listing all Agents, with optional parameters provided for pagination and sorting
+ * Hook for listing all Agents, with optional parameters provided for pagination and sorting.
+ *
+ * Applies `FULL_AGENT_LIST_LIMIT` when the caller does not specify `limit` so that
+ * consumers reading the result as a flat list (and not following `has_more`/`after`)
+ * receive the user's complete accessible-agent set in one request.
  */
 export const useListAgentsQuery = <TData = t.AgentListResponse>(
   params: t.AgentListParams = defaultAgentParams,
@@ -41,10 +53,12 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
   const queryClient = useQueryClient();
   const endpointsConfig = queryClient.getQueryData<t.TEndpointsConfig>([QueryKeys.endpoints]);
 
+  const mergedParams: t.AgentListParams = { limit: FULL_AGENT_LIST_LIMIT, ...params };
+
   const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
   return useQuery<t.AgentListResponse, unknown, TData>(
-    [QueryKeys.agents, params],
-    () => dataService.listAgents(params),
+    [QueryKeys.agents, mergedParams],
+    () => dataService.listAgents(mergedParams),
     {
       // Example selector to sort them by created_at
       // select: (res) => {

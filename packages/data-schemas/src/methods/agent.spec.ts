@@ -3566,6 +3566,32 @@ describe('Support Contact Field', () => {
       expect(result.has_more).toBe(false);
       expect(result.after).toBeNull();
     });
+
+    test('should honor explicit limits above the legacy 100 cap', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 105; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        limit: 500,
+      });
+
+      expect(result.data).toHaveLength(105);
+      expect(result.has_more).toBe(false);
+    });
   });
 });
 

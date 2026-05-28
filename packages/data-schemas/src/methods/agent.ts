@@ -690,7 +690,8 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
    * `limit` defaults to 100 so unbounded MongoDB scans cannot be triggered by
    * callers that omit it. Internal callers that genuinely need the full list
    * can opt out by passing `limit: null` explicitly. The function caps any
-   * supplied numeric limit at 100 regardless.
+   * supplied numeric limit at 1000 — the same realistic upper bound the
+   * avatar-refresh path already uses via `MAX_AVATAR_REFRESH_AGENTS`.
    */
   async function getListAgentsByAccess({
     accessibleIds = [],
@@ -715,7 +716,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const isPaginated = limit !== null && limit !== undefined;
     const normalizedLimit = isPaginated
-      ? Math.min(Math.max(1, parseInt(String(limit)) || 20), 100)
+      ? Math.min(Math.max(1, parseInt(String(limit)) || 20), 1000)
       : null;
 
     const baseQuery: Record<string, unknown> = {
