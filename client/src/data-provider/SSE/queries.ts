@@ -104,8 +104,7 @@ export function useTitleGeneration(enabled = true) {
       /** Retry on 404 only: the server returns 404 while title generation is still
        * in progress (up to 45 s). Allow up to 3 retries so the client window
        * covers the full server generation timeout. All other errors are final. */
-      retry: (failureCount: number, error: unknown) =>
-        isNotFoundError(error) && failureCount < 3,
+      retry: (failureCount: number, error: unknown) => isNotFoundError(error) && failureCount < 3,
       retryDelay: () => 5_000,
     })),
   });
