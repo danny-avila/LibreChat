@@ -1066,6 +1066,22 @@ describe('getLLMConfig', () => {
         expect(thinking.display).toBe('summarized');
       });
 
+      it('should omit sampling parameters for Opus 4.8', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-8',
+            thinking: false,
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+
+        expect(result.llmConfig).not.toHaveProperty('temperature');
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
+      });
+
       it('should NOT set thinking.display for pre-Opus-4.7 adaptive models', () => {
         const pre47Models = ['claude-opus-4-6', 'claude-sonnet-4-6'];
 

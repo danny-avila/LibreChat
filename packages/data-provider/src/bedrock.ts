@@ -68,14 +68,14 @@ type AnthropicInput = BedrockConverseInput & {
 
 /** Extracts opus major/minor version from both naming formats */
 function parseOpusVersion(model: string): { major: number; minor: number } | null {
-  const nameFirst = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
+  const nameFirst = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d{1,2})(?!\d))?/);
   if (nameFirst) {
     return {
       major: parseInt(nameFirst[1], 10),
       minor: nameFirst[2] != null ? parseInt(nameFirst[2], 10) : 0,
     };
   }
-  const numFirst = model.match(/claude-(\d+)(?:[-.](\d+))?-opus/);
+  const numFirst = model.match(/claude-(\d+)(?:[-.](\d{1,2})(?!\d))?-opus/);
   if (numFirst) {
     return {
       major: parseInt(numFirst[1], 10),
@@ -129,6 +129,14 @@ export function supportsAdaptiveThinking(model: string): boolean {
  * See https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-7#thinking-content-omitted-by-default
  */
 export function omitsThinkingByDefault(model: string): boolean {
+  const opus = parseOpusVersion(model);
+  if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 7))) {
+    return true;
+  }
+  return false;
+}
+
+export function omitsSamplingParameters(model: string): boolean {
   const opus = parseOpusVersion(model);
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 7))) {
     return true;

@@ -2,6 +2,7 @@ import { ThinkingDisplay } from '../src/schemas';
 import {
   BEDROCK_OUTPUT_128K_BETA,
   supportsAdaptiveThinking,
+  omitsSamplingParameters,
   omitsThinkingByDefault,
   resolveThinkingDisplay,
   bedrockOutputParser,
@@ -238,6 +239,11 @@ describe('omitsThinkingByDefault', () => {
     expect(omitsThinkingByDefault('claude-opus-4-6')).toBe(false);
   });
 
+  test('returns false for base Opus 4 snapshot IDs', () => {
+    expect(omitsThinkingByDefault('claude-opus-4-20250514')).toBe(false);
+    expect(omitsThinkingByDefault('anthropic.claude-opus-4-20250514-v1:0')).toBe(false);
+  });
+
   test('returns false for claude-opus-4-5', () => {
     expect(omitsThinkingByDefault('claude-opus-4-5')).toBe(false);
   });
@@ -261,6 +267,36 @@ describe('omitsThinkingByDefault', () => {
   test('returns false for unrelated models', () => {
     expect(omitsThinkingByDefault('gpt-4o')).toBe(false);
     expect(omitsThinkingByDefault('')).toBe(false);
+  });
+});
+
+describe('omitsSamplingParameters', () => {
+  test('returns true for Opus 4.7+ models', () => {
+    const models = [
+      'claude-opus-4-7',
+      'claude-opus-4-8',
+      'anthropic.claude-opus-4-8',
+      'us.anthropic.claude-opus-4-8',
+      'claude-opus-5',
+    ];
+
+    models.forEach((model) => {
+      expect(omitsSamplingParameters(model)).toBe(true);
+    });
+  });
+
+  test('returns false for older Opus and non-Opus models', () => {
+    const models = [
+      'claude-opus-4-20250514',
+      'anthropic.claude-opus-4-20250514-v1:0',
+      'claude-opus-4-1-20250805',
+      'claude-opus-4-6',
+      'claude-sonnet-4-7',
+    ];
+
+    models.forEach((model) => {
+      expect(omitsSamplingParameters(model)).toBe(false);
+    });
   });
 });
 
