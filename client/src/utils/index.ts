@@ -5,6 +5,7 @@ import logger from './logger';
 
 export * from './map';
 export * from './json';
+export * from './icons';
 export * from './email';
 export * from './share';
 export * from './files';
