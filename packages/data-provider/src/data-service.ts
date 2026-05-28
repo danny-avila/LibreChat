@@ -24,8 +24,8 @@ export function revokeAllUserKeys(): Promise<unknown> {
   return request.delete(endpoints.revokeAllUserKeys());
 }
 
-export function deleteUser(): Promise<s.TPreset> {
-  return request.delete(endpoints.deleteUser());
+export function deleteUser(payload?: t.TDeleteUserRequest): Promise<unknown> {
+  return request.deleteWithOptions(endpoints.deleteUser(), { data: payload });
 }
 
 export function getFavorites(): Promise<q.TUserFavorite[]> {
@@ -101,6 +101,20 @@ export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
   }
 
   return request.put(endpoints.keys(), payload);
+}
+
+export function getAgentApiKeys(): Promise<t.TAgentApiKeyListResponse> {
+  return request.get(endpoints.apiKeys());
+}
+
+export function createAgentApiKey(
+  payload: t.TAgentApiKeyCreateRequest,
+): Promise<t.TAgentApiKeyCreateResponse> {
+  return request.post(endpoints.apiKeys(), payload);
+}
+
+export function deleteAgentApiKey(id: string): Promise<void> {
+  return request.delete(endpoints.apiKeyById(id));
 }
 
 export function getPresets(): Promise<s.TPreset[]> {
@@ -184,6 +198,14 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
 
 export const reinitializeMCPServer = (serverName: string) => {
   return request.post(endpoints.mcpReinitialize(serverName));
+};
+
+export const bindMCPOAuth = (serverName: string): Promise<{ success: boolean }> => {
+  return request.post(endpoints.mcpOAuthBind(serverName));
+};
+
+export const bindActionOAuth = (actionId: string): Promise<{ success: boolean }> => {
+  return request.post(endpoints.actionOAuthBind(actionId));
 };
 
 export const getMCPConnectionStatus = (): Promise<q.MCPConnectionStatusResponse> => {
@@ -1134,6 +1156,15 @@ export function updateMCPServersPermissions(
   return request.put(endpoints.updateMCPServersPermissions(variables.roleName), variables.updates);
 }
 
+export function updateRemoteAgentsPermissions(
+  variables: m.UpdateRemoteAgentsPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(
+    endpoints.updateRemoteAgentsPermissions(variables.roleName),
+    variables.updates,
+  );
+}
+
 export function updateMarketplacePermissions(
   variables: m.UpdateMarketplacePermVars,
 ): Promise<m.UpdatePermResponse> {
@@ -1202,8 +1233,8 @@ export function updateFeedback(
 }
 
 // 2FA
-export function enableTwoFactor(): Promise<t.TEnable2FAResponse> {
-  return request.get(endpoints.enableTwoFactor());
+export function enableTwoFactor(payload?: t.TEnable2FARequest): Promise<t.TEnable2FAResponse> {
+  return request.post(endpoints.enableTwoFactor(), payload);
 }
 
 export function verifyTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
@@ -1218,8 +1249,10 @@ export function disableTwoFactor(payload?: t.TDisable2FARequest): Promise<t.TDis
   return request.post(endpoints.disableTwoFactor(), payload);
 }
 
-export function regenerateBackupCodes(): Promise<t.TRegenerateBackupCodesResponse> {
-  return request.post(endpoints.regenerateBackupCodes());
+export function regenerateBackupCodes(
+  payload?: t.TRegenerateBackupCodesRequest,
+): Promise<t.TRegenerateBackupCodesResponse> {
+  return request.post(endpoints.regenerateBackupCodes(), payload);
 }
 
 export function verifyTwoFactorTemp(

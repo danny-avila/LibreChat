@@ -28,6 +28,30 @@ export const useNotificationsQuery = (
   );
 };
 
+const defaultUnreadParams: NotificationsListParams = {
+  unreadOnly: true,
+  limit: 100,
+};
+
+export const useUnreadNotificationsQuery = (
+  config?: UseQueryOptions<NotificationsListResponse>,
+): QueryObserverResult<NotificationsListResponse> => {
+  return useNotificationsQuery(defaultUnreadParams, {
+    refetchInterval: 30_000,
+    ...config,
+  });
+};
+
+export const useUnreadNotificationCount = (
+  config?: UseQueryOptions<NotificationsListResponse>,
+): number => {
+  const { data } = useUnreadNotificationsQuery(config);
+  if (data?.hasNextPage === true) {
+    return 100;
+  }
+  return data?.notifications.length ?? 0;
+};
+
 export const useCreateNotificationMutation = (
   options?: UseMutationOptions<
     { created: boolean; notification: TNotification },

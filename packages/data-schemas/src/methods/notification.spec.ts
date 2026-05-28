@@ -12,6 +12,9 @@ jest.mock('~/config/winston', () => ({
 
 let mongoServer: MongoMemoryServer | undefined;
 let createNotification: ReturnType<typeof createNotificationMethods>['createNotification'];
+let createBroadcastNotification: ReturnType<
+  typeof createNotificationMethods
+>['createBroadcastNotification'];
 let listNotificationsForUser: ReturnType<typeof createNotificationMethods>['listNotificationsForUser'];
 let markNotificationRead: ReturnType<typeof createNotificationMethods>['markNotificationRead'];
 let markAllNotificationsRead: ReturnType<typeof createNotificationMethods>['markAllNotificationsRead'];
@@ -24,6 +27,7 @@ beforeAll(async () => {
 
   const methods = createNotificationMethods(mongoose);
   createNotification = methods.createNotification;
+  createBroadcastNotification = methods.createBroadcastNotification;
   listNotificationsForUser = methods.listNotificationsForUser;
   markNotificationRead = methods.markNotificationRead;
   markAllNotificationsRead = methods.markAllNotificationsRead;
@@ -40,6 +44,7 @@ afterAll(async () => {
 describe('Notification methods', () => {
   beforeEach(async () => {
     await mongoose.models.Notification.deleteMany({});
+    await mongoose.models.User.deleteMany({});
   });
 
   it('creates and lists notifications for a user', async () => {
@@ -157,5 +162,72 @@ describe('Notification methods', () => {
     });
     const page = await listNotificationsForUser('user-b', { limit: 10 });
     expect(page.notifications).toHaveLength(0);
+  });
+
+  it('creates announcement broadcast notifications for all users', async () => {
+    await mongoose.models.User.create([
+      {
+        email: 'broadcast-user-a@example.com',
+        emailVerified: true,
+        provider: 'local',
+      },
+      {
+        email: 'broadcast-user-b@example.com',
+        emailVerified: true,
+        provider: 'local',
+      },
+    ]);
+
+    const { createdCount } = await createBroadcastNotification({
+      type: 'announcement',
+      title: 'New capability',
+      message: 'KAIT now supports feature announcements.',
+      link: '/admin/agents/verification',
+    });
+
+    expect(createdCount).toBe(2);
+
+    const users = await mongoose.models.User.find({}, { _id: 1 }).lean();
+    const [firstUser, secondUser] = users;
+
+    const firstInbox = await listNotificationsForUser(firstUser._id.toString(), { limit: 10 });
+    const secondInbox = await listNotificationsForUser(secondUser._id.toString(), { limit: 10 });
+
+    expect(firstInbox.notifications).toHaveLength(1);
+    expect(secondInbox.notifications).toHaveLength(1);
+    expect(firstInbox.notifications[0].type).toBe('announcement');
+    expect(secondInbox.notifications[0].type).toBe('announcement');
+  });
+
+  it('supports mark-read and mark-all-read for announcement notifications', async () => {
+    const createdUser = await mongoose.models.User.create({
+      email: 'announcement-read@example.com',
+      emailVerified: true,
+      provider: 'local',
+    });
+    const userId = createdUser._id.toString();
+
+    await createNotification({
+      userId,
+      type: 'announcement',
+      title: 'Announcement 1',
+      message: 'A1',
+    });
+
+    const second = await createNotification({
+      userId,
+      type: 'announcement',
+      title: 'Announcement 2',
+      message: 'A2',
+    });
+
+    const single = await markNotificationRead(userId, second.id);
+    expect(single.updated).toBe(true);
+
+    const { count } = await markAllNotificationsRead(userId);
+    expect(count).toBe(1);
+
+    const unread = await listNotificationsForUser(userId, { unreadOnly: true, limit: 10 });
+    expect(unread.notifications).toHaveLength(0);
   });
 });
