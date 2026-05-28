@@ -16,6 +16,7 @@ import { createBannerModel } from './banner';
 import { createKeyModel } from './key';
 import { createPluginAuthModel } from './pluginAuth';
 import { createTransactionModel } from './transaction';
+import { createPaymentOrderModel } from './paymentOrder';
 import { createPresetModel } from './preset';
 import { createPromptModel } from './prompt';
 import { createPromptGroupModel } from './promptGroup';
@@ -54,6 +55,7 @@ export function createModels(mongoose: typeof import('mongoose')) {
     Key: createKeyModel(mongoose),
     PluginAuth: createPluginAuthModel(mongoose),
     Transaction: createTransactionModel(mongoose),
+    PaymentOrder: createPaymentOrderModel(mongoose),
     Preset: createPresetModel(mongoose),
     Prompt: createPromptModel(mongoose),
     PromptGroup: createPromptGroupModel(mongoose),

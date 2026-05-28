@@ -9,6 +9,7 @@ export * from './session';
 export * from './balance';
 export * from './banner';
 export * from './transaction';
+export * from './paymentOrder';
 export * from './message';
 export * from './agent';
 export * from './agentApiKey';
