@@ -53,5 +53,5 @@ jobs:
         run: |
           aws ecs update-service \
             --cluster "${{ secrets.KITCHENSINK_CLUSTER_NAME }}" \
-            --service "${{ secrets.KITCHENSINK_SERVICE_NAME }}" \ 
+            --service "${{ secrets.KITCHENSINK_SERVICE_NAME }}" \
             --force-new-deployment
