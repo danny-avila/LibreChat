@@ -41,12 +41,24 @@ export class InMemoryJobStore implements IJobStore {
   /** Maximum number of concurrent jobs */
   private maxJobs = 1000;
 
-  constructor(options?: { ttlAfterComplete?: number; maxJobs?: number }) {
+  /**
+   * Failsafe timeout (ms) for jobs stuck in "running" status. Mirrors
+   * RedisJobStore's running-job TTL: a crashed or hung generation that never
+   * reaches a terminal state would otherwise retain its content state forever,
+   * leaking the full message context until the process runs out of memory.
+   * 0 disables the failsafe. Default: 20 minutes.
+   */
+  private staleJobTimeout = 1_200_000;
+
+  constructor(options?: { ttlAfterComplete?: number; maxJobs?: number; staleJobTimeout?: number }) {
     if (options?.ttlAfterComplete) {
       this.ttlAfterComplete = options.ttlAfterComplete;
     }
     if (options?.maxJobs) {
       this.maxJobs = options.maxJobs;
+    }
+    if (options?.staleJobTimeout !== undefined) {
+      this.staleJobTimeout = options.staleJobTimeout;
     }
   }
 
@@ -137,6 +149,7 @@ export class InMemoryJobStore implements IJobStore {
   async cleanup(): Promise<number> {
     const now = Date.now();
     const toDelete: string[] = [];
+    let staleRunning = 0;
 
     for (const [streamId, job] of this.jobs) {
       const isFinished = ['complete', 'error', 'aborted'].includes(job.status);
@@ -145,6 +158,16 @@ export class InMemoryJobStore implements IJobStore {
         if (this.ttlAfterComplete === 0 || now - job.completedAt > this.ttlAfterComplete) {
           toDelete.push(streamId);
         }
+      } else if (
+        this.staleJobTimeout > 0 &&
+        job.status === 'running' &&
+        now - job.createdAt > this.staleJobTimeout
+      ) {
+        // Failsafe: reap jobs stuck in "running" past the stale timeout. These are
+        // crashed/hung generations that never reached a terminal state; without this
+        // they accumulate their content state in memory until the process OOMs.
+        toDelete.push(streamId);
+        staleRunning++;
       }
     }
 
@@ -161,6 +184,12 @@ export class InMemoryJobStore implements IJobStore {
         }
       }
       await this.deleteJob(id);
+    }
+
+    if (staleRunning > 0) {
+      logger.warn(
+        `[InMemoryJobStore] Reaped ${staleRunning} stale running job(s) exceeding ${this.staleJobTimeout}ms (likely crashed/hung generations)`,
+      );
     }
 
     if (toDelete.length > 0) {

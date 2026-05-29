@@ -220,6 +220,19 @@ class GenerationJobManagerClass {
     userId: string,
     conversationId?: string,
   ): Promise<t.GenerationJob> {
+    /**
+     * If a job already exists for this stream (streamId === conversationId), the
+     * previous generation is being replaced (e.g. user re-sent in the same
+     * conversation). Abort its controller so its in-flight work unwinds and
+     * releases its client/graph references, instead of leaking as an orphaned,
+     * no-longer-tracked generation once we overwrite the runtime state below.
+     */
+    const previousRuntime = this.runtimeState.get(streamId);
+    if (previousRuntime && !previousRuntime.abortController.signal.aborted) {
+      logger.debug(`[GenerationJobManager] Aborting replaced generation for ${streamId}`);
+      previousRuntime.abortController.abort();
+    }
+
     const tenantId = getTenantId();
     const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
     const jobData = await this.jobStore.createJob(streamId, userId, conversationId, safeTenantId);
@@ -1234,6 +1247,16 @@ class GenerationJobManagerClass {
     // Cleanup runtime state for deleted jobs
     for (const streamId of this.runtimeState.keys()) {
       if (!(await this.jobStore.hasJob(streamId))) {
+        /**
+         * Abort any still-pending generation whose job has been reaped (e.g. a
+         * stale "running" job removed by the store's failsafe timeout). This
+         * unwinds the hung in-flight work so its client/graph references can be
+         * garbage collected, rather than leaking via the pending promise.
+         */
+        const runtime = this.runtimeState.get(streamId);
+        if (runtime && !runtime.abortController.signal.aborted) {
+          runtime.abortController.abort();
+        }
         this.runtimeState.delete(streamId);
         runningJobsChanged = this.runningJobs.delete(streamId) || runningJobsChanged;
         this.runStepBuffers?.delete(streamId);
