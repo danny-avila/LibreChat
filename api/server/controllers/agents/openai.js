@@ -18,10 +18,12 @@ const {
   createSafeUser,
   validateRequest,
   initializeAgent,
+  encodeAndFormatDocuments,
   getBalanceConfig,
   injectSkillPrimes,
   extractManualSkills,
   createErrorResponse,
+  extractRemoteAgentChatFiles,
   recordCollectedUsage,
   getTransactionsConfig,
   resolveRecursionLimit,
@@ -51,6 +53,7 @@ const {
   buildSkillPrimedIdsByName,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -200,6 +203,17 @@ const OpenAIChatCompletionController = async (req, res) => {
   });
 
   try {
+    const { value: remoteMessages, files: inlineProviderFiles } = extractRemoteAgentChatFiles(
+      request.messages,
+      req.user?.id,
+    );
+
+    if (inlineProviderFiles.length > 0) {
+      logger.debug(
+        `[OpenAI API] Detected ${inlineProviderFiles.length} remote inline provider file(s) for agent ${agentId}: ${inlineProviderFiles.map((file) => file.filename).join(', ')}`,
+      );
+    }
+
     if (request.conversation_id != null) {
       if (typeof request.conversation_id !== 'string') {
         return sendErrorResponse(
@@ -460,7 +474,47 @@ const OpenAIChatCompletionController = async (req, res) => {
 
     const summarizationConfig = appConfig?.summarization;
 
-    const openaiMessages = convertMessages(request.messages);
+    const openaiMessages = convertMessages(remoteMessages);
+
+    if (inlineProviderFiles.length > 0) {
+      let latestUserMessage;
+      for (let i = openaiMessages.length - 1; i >= 0; i--) {
+        if (openaiMessages[i]?.role === 'user') {
+          latestUserMessage = openaiMessages[i];
+          break;
+        }
+      }
+
+      const documentResult = await encodeAndFormatDocuments(
+        req,
+        inlineProviderFiles,
+        {
+          provider: primaryConfig.provider ?? agent.provider,
+          endpoint: primaryConfig.endpoint ?? agent.provider,
+          useResponsesApi: primaryConfig.model_parameters?.useResponsesApi,
+          model: primaryConfig.model || agent.model_parameters?.model,
+        },
+        getStrategyFunctions,
+      );
+
+      if (documentResult.documents.length !== inlineProviderFiles.length) {
+        return sendErrorResponse(
+          res,
+          400,
+          'One or more file inputs are not supported by the configured provider.',
+          'invalid_request_error',
+          'unsupported_file',
+        );
+      }
+
+      if (latestUserMessage && documentResult.documents.length > 0) {
+        latestUserMessage.documents = documentResult.documents;
+      }
+
+      logger.debug(
+        `[OpenAI API] Attached ${documentResult.documents.length} provider document block(s) for ${inlineProviderFiles.length} remote inline file(s) on agent ${agentId}`,
+      );
+    }
 
     const toolSet = buildToolSet(primaryConfig);
     const formatted = formatAgentMessages(openaiMessages, {}, toolSet);
@@ -808,9 +862,10 @@ const OpenAIChatCompletionController = async (req, res) => {
       res.end();
     } else {
       // Forward upstream provider status codes (e.g., Anthropic 400s) instead of masking as 500
+      const errorStatus = error?.status ?? error?.statusCode;
       const statusCode =
-        typeof error?.status === 'number' && error.status >= 400 && error.status < 600
-          ? error.status
+        typeof errorStatus === 'number' && errorStatus >= 400 && errorStatus < 600
+          ? errorStatus
           : 500;
       const errorType =
         statusCode >= 400 && statusCode < 500 ? 'invalid_request_error' : 'server_error';

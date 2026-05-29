@@ -11,6 +11,10 @@ const mockRecordCollectedUsage = jest
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
+const mockExtractRemoteAgentChatFiles = jest
+  .fn()
+  .mockImplementation((messages) => ({ value: messages, files: [] }));
+const mockEncodeAndFormatDocuments = jest.fn().mockResolvedValue({ documents: [], files: [] });
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -53,12 +57,15 @@ jest.mock('@librechat/api', () => ({
   initializeAgent: jest.fn().mockResolvedValue({
     id: 'agent-123',
     model: 'gpt-4',
+    provider: 'openAI',
     model_parameters: {},
     toolRegistry: {},
     edges: [],
   }),
+  encodeAndFormatDocuments: mockEncodeAndFormatDocuments,
   getBalanceConfig: mockGetBalanceConfig,
   createErrorResponse: jest.fn(),
+  extractRemoteAgentChatFiles: mockExtractRemoteAgentChatFiles,
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
   extractManualSkills: jest.fn().mockReturnValue(undefined),
@@ -145,7 +152,9 @@ const mockUpdateBalance = jest.fn().mockResolvedValue({});
 const mockBulkInsertTransactions = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('~/models', () => ({
-  getAgent: jest.fn().mockResolvedValue({ id: 'agent-123', name: 'Test Agent' }),
+  getAgent: jest
+    .fn()
+    .mockResolvedValue({ id: 'agent-123', name: 'Test Agent', provider: 'openAI' }),
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn(),
@@ -366,6 +375,163 @@ describe('OpenAIChatCompletionController', () => {
       await OpenAIChatCompletionController(req, res);
 
       expect(resolveRecursionLimit).toHaveBeenCalledWith(req.config.endpoints.agents, mockAgent);
+    });
+  });
+
+  describe('remote inline provider files', () => {
+    const inlineFile = {
+      file_id: 'remote-file-1',
+      temp_file_id: 'remote-file-1',
+      filename: 'document.pdf',
+      filepath: '',
+      source: 'remote_inline',
+      type: 'application/pdf',
+      bytes: 8,
+      object: 'file',
+      usage: 1,
+      user: 'user-123',
+      metadata: { inlineBase64: 'JVBERi0x' },
+    };
+
+    it('should attach encoded documents before formatting non-streaming messages', async () => {
+      const { formatAgentMessages } = require('@librechat/agents');
+      const { encodeAndFormatDocuments, initializeAgent } = require('@librechat/api');
+      const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+      const cleanedMessages = [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: '[File: document.pdf]' }],
+        },
+      ];
+      mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
+        value: cleanedMessages,
+        files: [inlineFile],
+      });
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [{ type: 'file', file: { filename: 'document.pdf', file_data: 'data' } }],
+        files: [],
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(encodeAndFormatDocuments).toHaveBeenCalledWith(
+        req,
+        [inlineFile],
+        expect.objectContaining({
+          provider: 'openAI',
+          endpoint: 'openAI',
+          model: 'gpt-4',
+        }),
+        getStrategyFunctions,
+      );
+      expect(formatAgentMessages).toHaveBeenCalledWith(
+        [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: '[File: document.pdf]' }],
+            documents: [{ type: 'file', file: { filename: 'document.pdf', file_data: 'data' } }],
+          },
+        ],
+        {},
+        expect.any(Set),
+      );
+      expect(initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ requestFiles: [] }),
+        expect.any(Object),
+      );
+    });
+
+    it('should attach encoded documents before formatting streaming messages', async () => {
+      const { formatAgentMessages } = require('@librechat/agents');
+      const { validateRequest } = require('@librechat/api');
+      const cleanedMessages = [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: '[File: document.pdf]' }],
+        },
+      ];
+      validateRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', messages: req.body.messages, stream: true },
+      });
+      mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
+        value: cleanedMessages,
+        files: [inlineFile],
+      });
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [{ type: 'file', file: { filename: 'document.pdf', file_data: 'data' } }],
+        files: [],
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
+      expect(formatAgentMessages).toHaveBeenCalledWith(
+        [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: '[File: document.pdf]' }],
+            documents: [{ type: 'file', file: { filename: 'document.pdf', file_data: 'data' } }],
+          },
+        ],
+        {},
+        expect.any(Set),
+      );
+    });
+
+    it('should support multiple inline files without passing them to agent requestFiles', async () => {
+      const { discoverConnectedAgents, initializeAgent } = require('@librechat/api');
+      const secondFile = { ...inlineFile, file_id: 'remote-file-2', filename: 'notes.txt' };
+      mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: 'Files attached' }],
+        files: [inlineFile, secondFile],
+      });
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [
+          { type: 'file', file: { filename: 'document.pdf', file_data: 'data' } },
+          { type: 'file', file: { filename: 'notes.txt', file_data: 'data' } },
+        ],
+        files: [],
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(mockEncodeAndFormatDocuments).toHaveBeenCalledWith(
+        req,
+        [inlineFile, secondFile],
+        expect.any(Object),
+        expect.any(Function),
+      );
+      expect(initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ requestFiles: [] }),
+        expect.any(Object),
+      );
+      expect(discoverConnectedAgents).not.toHaveBeenCalled();
+    });
+
+    it('should return an OpenAI-compatible 400 for malformed inline file input', async () => {
+      mockExtractRemoteAgentChatFiles.mockImplementationOnce(() => {
+        const error = new Error('File "document.pdf" must use a base64 data URL.');
+        error.statusCode = 400;
+        throw error;
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when provider formatting skips an inline file', async () => {
+      mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: 'Files attached' }],
+        files: [inlineFile],
+      });
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({ documents: [], files: [] });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockProcessStream).not.toHaveBeenCalled();
     });
   });
 });
