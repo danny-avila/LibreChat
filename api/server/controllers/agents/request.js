@@ -4,6 +4,7 @@ const {
   sendEvent,
   getViolationInfo,
   buildMessageFiles,
+  resolveTitleTiming,
   GenerationJobManager,
   decrementPendingRequest,
   sanitizeMessageForTransmit,
@@ -92,6 +93,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   } = req.body;
 
   const userId = req.user.id;
+
+  /** When to generate the conversation title. `immediate` (default) fires title
+   *  generation in parallel with the response, from the user's first message;
+   *  `final` defers it until the full response completes (legacy behavior). */
+  const titleTiming = resolveTitleTiming({
+    appConfig: req.config,
+    endpoint: endpointOption?.endpoint,
+  });
 
   const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
   if (!allowed) {
@@ -243,6 +252,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         );
       }
 
+      /** Immediate-mode title generation runs in parallel with the response, so
+       *  the conversation row may not exist when the title resolves. `convoReady`
+       *  resolves once the response (and thus the conversation) has been saved,
+       *  gating the title's `saveConvo`. Declared here so both the success tail
+       *  and the catch block can settle it and gate `disposeClient` on the title. */
+      let immediateTitlePromise = null;
+      let resolveConvoReady;
+      const convoReady = new Promise((resolve) => {
+        resolveConvoReady = resolve;
+      });
+      const titleEligible =
+        addTitle && parentMessageId === Constants.NO_PARENT && isNewConvo && !req.body?.isTemporary;
+
       try {
         const onStart = (userMsg, respMsgId, _isNewConvo) => {
           userMessage = userMsg;
@@ -289,7 +311,21 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           },
         };
 
-        const response = await client.sendMessage(text, messageOptions);
+        const sendPromise = client.sendMessage(text, messageOptions);
+
+        if (titleEligible && titleTiming === 'immediate') {
+          immediateTitlePromise = addTitle(req, {
+            text,
+            conversationId,
+            client,
+            immediate: true,
+            convoReady,
+          }).catch((err) => {
+            logger.error('[ResumableAgentController] Error in immediate title generation', err);
+          });
+        }
+
+        const response = await sendPromise;
 
         const messageId = response.messageId;
         const endpoint = endpointOption.endpoint;
@@ -343,6 +379,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             { context: 'api/server/controllers/agents/request.js - resumable response end' },
           );
         }
+
+        // The conversation row now exists; allow any in-flight immediate title
+        // generation to persist its result (saveConvo uses noUpsert).
+        resolveConvoReady();
 
         // Check if our job was replaced by a new request before emitting
         // This prevents stale requests from emitting events to newer jobs
@@ -402,7 +442,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           await decrementPendingRequest(userId);
         }
 
-        if (shouldGenerateTitle) {
+        if (titleTiming === 'immediate') {
+          // Title was fired in parallel above (if eligible). Defer disposal until
+          // it settles so the run/req aren't torn down mid-generation.
+          if (immediateTitlePromise) {
+            immediateTitlePromise.finally(() => {
+              if (client) {
+                disposeClient(client);
+              }
+            });
+          } else if (client) {
+            disposeClient(client);
+          }
+        } else if (shouldGenerateTitle) {
           addTitle(req, {
             text,
             response: { ...response },
@@ -422,6 +474,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           }
         }
       } catch (error) {
+        // Unblock any in-flight immediate title generation so it doesn't hang on
+        // convoReady; its saveConvo is a harmless no-op if the row never persisted.
+        resolveConvoReady();
+
         // Check if this was an abort (not a real error)
         const wasAborted = job.abortController.signal.aborted || error.message?.includes('abort');
 
@@ -436,7 +492,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         await decrementPendingRequest(userId);
 
-        if (client) {
+        // Defer disposal until any immediate title settles (it holds the run/req).
+        if (immediateTitlePromise) {
+          immediateTitlePromise.finally(() => {
+            if (client) {
+              disposeClient(client);
+            }
+          });
+        } else if (client) {
           disposeClient(client);
         }
 

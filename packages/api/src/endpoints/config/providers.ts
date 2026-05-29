@@ -49,6 +49,32 @@ export const providerConfigMap: Record<string, InitializeFn> = {
   [EModelEndpoint.anthropic]: initializeAnthropic,
 };
 
+export type TitleTiming = 'immediate' | 'final';
+
+/**
+ * Resolves when conversation titles are generated for a given endpoint.
+ *
+ * The global `endpoints.all` value takes precedence over the per-endpoint value,
+ * mirroring the resolution used for other title options in the agent client.
+ * Defaults to `immediate` (generate the title as soon as the request is made).
+ */
+export function resolveTitleTiming({
+  appConfig,
+  endpoint,
+}: {
+  appConfig?: AppConfig;
+  endpoint?: string;
+}): TitleTiming {
+  const endpoints = appConfig?.endpoints;
+  const endpointConfig = endpoint
+    ? (endpoints?.[endpoint as keyof NonNullable<typeof endpoints>] as
+        | Partial<TEndpoint>
+        | undefined)
+    : undefined;
+  const timing = endpoints?.all?.titleTiming ?? endpointConfig?.titleTiming;
+  return timing === 'final' ? 'final' : 'immediate';
+}
+
 /**
  * Result from getProviderConfig
  */

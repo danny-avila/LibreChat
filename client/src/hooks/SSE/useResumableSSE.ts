@@ -801,9 +801,11 @@ export default function useResumableSSE(
           setStreamId(newStreamId);
           // Optimistically add to active jobs
           addActiveJob(newStreamId);
-          // Queue title generation if this is a new conversation (first message)
+          // Queue title generation if this is a new conversation (first message).
+          // Skip temporary conversations — the server never generates titles for
+          // them, so polling would 404 indefinitely.
           const isNewConvo = submission.userMessage?.parentMessageId === Constants.NO_PARENT;
-          if (isNewConvo) {
+          if (isNewConvo && !submission.isTemporary) {
             queueTitleGeneration(newStreamId);
           }
           if (isInitialNewConversation(submission)) {

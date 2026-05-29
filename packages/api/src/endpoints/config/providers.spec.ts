@@ -1,7 +1,7 @@
 import { Providers } from '@librechat/agents';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { getProviderConfig, providerConfigMap } from './providers';
+import { getProviderConfig, providerConfigMap, resolveTitleTiming } from './providers';
 
 const buildAppConfig = (
   customEndpoints: Array<{ name: string; baseURL?: string; apiKey?: string }>,
@@ -95,5 +95,46 @@ describe('getProviderConfig', () => {
     expect(() =>
       getProviderConfig({ provider: 'openrouter', appConfig: buildAppConfig([]) }),
     ).toThrow('Provider openrouter not supported');
+  });
+});
+
+describe('resolveTitleTiming', () => {
+  const withEndpoints = (endpoints: Record<string, unknown>): AppConfig =>
+    ({ endpoints }) as unknown as AppConfig;
+
+  it("defaults to 'immediate' when no config is provided", () => {
+    expect(resolveTitleTiming({})).toBe('immediate');
+  });
+
+  it("defaults to 'immediate' when endpoints is missing", () => {
+    expect(resolveTitleTiming({ appConfig: {} as AppConfig })).toBe('immediate');
+  });
+
+  it("defaults to 'immediate' when no titleTiming is set", () => {
+    const appConfig = withEndpoints({ [EModelEndpoint.agents]: { titleConvo: true } });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('immediate');
+  });
+
+  it("returns 'final' from the global `all` config", () => {
+    const appConfig = withEndpoints({ all: { titleTiming: 'final' } });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('final');
+  });
+
+  it("returns 'final' from the per-endpoint config when `all` is unset", () => {
+    const appConfig = withEndpoints({ [EModelEndpoint.agents]: { titleTiming: 'final' } });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('final');
+  });
+
+  it('lets `all` take precedence over the per-endpoint value', () => {
+    const appConfig = withEndpoints({
+      all: { titleTiming: 'immediate' },
+      [EModelEndpoint.agents]: { titleTiming: 'final' },
+    });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('immediate');
+  });
+
+  it("returns 'immediate' for an endpoint with no override and no `all`", () => {
+    const appConfig = withEndpoints({ [EModelEndpoint.openAI]: { titleTiming: 'final' } });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('immediate');
   });
 });

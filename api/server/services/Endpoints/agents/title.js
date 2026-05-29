@@ -5,9 +5,25 @@ const getLogStores = require('~/cache/getLogStores');
 const { saveConvo } = require('~/models');
 
 /**
- * Add title to conversation in a way that avoids memory retention
+ * Add title to conversation in a way that avoids memory retention.
+ *
+ * @param {ServerRequest} req
+ * @param {Object} params
+ * @param {string} params.text - The user's first message.
+ * @param {TMessage} [params.response] - The assistant response (legacy/`final` timing only).
+ * @param {AgentClient} params.client
+ * @param {string} [params.conversationId] - Required for `immediate` timing, where
+ *   `response` is not yet available; falls back to `response.conversationId`.
+ * @param {boolean} [params.immediate] - When true, the title is generated in parallel
+ *   with the response (from the user's first message) and persisted to the conversation
+ *   only after `convoReady` resolves (the conversation row must exist for `noUpsert`).
+ * @param {Promise<void>} [params.convoReady] - Resolves once the conversation has been
+ *   persisted; awaited before saving the title in `immediate` mode.
  */
-const addTitle = async (req, { text, response, client }) => {
+const addTitle = async (
+  req,
+  { text, response, client, conversationId, immediate = false, convoReady },
+) => {
   const { TITLE_CONVO = true } = process.env ?? {};
   if (!isEnabled(TITLE_CONVO)) {
     return;
@@ -22,8 +38,9 @@ const addTitle = async (req, { text, response, client }) => {
     return;
   }
 
+  const convoId = conversationId ?? response?.conversationId;
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
-  const key = `${req.user.id}-${response.conversationId}`;
+  const key = `${req.user.id}-${convoId}`;
   /** @type {NodeJS.Timeout} */
   let timeoutId;
   try {
@@ -41,6 +58,7 @@ const addTitle = async (req, { text, response, client }) => {
           .titleConvo({
             text,
             abortController,
+            immediate,
           })
           .catch((error) => {
             logger.error('Client title error:', error);
@@ -65,6 +83,16 @@ const addTitle = async (req, { text, response, client }) => {
     }
 
     await titleCache.set(key, title, 120000);
+
+    /** In immediate mode the title is generated in parallel with the response,
+     *  so the conversation row may not exist yet. `saveConvo` with `noUpsert`
+     *  is a silent no-op when the row is missing, which would drop the title
+     *  from the database (the cache above still serves the live UI). Wait for
+     *  the controller to signal the conversation has been persisted. */
+    if (convoReady) {
+      await convoReady;
+    }
+
     await saveConvo(
       {
         userId: req?.user?.id,
@@ -72,7 +100,7 @@ const addTitle = async (req, { text, response, client }) => {
         interfaceConfig: req?.config?.interfaceConfig,
       },
       {
-        conversationId: response.conversationId,
+        conversationId: convoId,
         title,
       },
       { context: 'api/server/services/Endpoints/agents/title.js', noUpsert: true },

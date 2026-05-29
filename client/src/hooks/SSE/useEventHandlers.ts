@@ -523,7 +523,8 @@ export default function useEventHandlers({
 
         const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
 
-        if (isNewConvo && conversation.conversationId) {
+        // Skip temporary conversations — the server never generates titles for them.
+        if (isNewConvo && conversation.conversationId && !_isTemporary) {
           queueTitleGeneration(conversation.conversationId);
         }
 
