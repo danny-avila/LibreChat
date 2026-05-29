@@ -122,6 +122,9 @@ export function useTitleGeneration(enabled = true) {
     queries: readyToFetch.map((conversationId) => ({
       queryKey: genTitleQueryKey(conversationId),
       queryFn: () => dataService.genTitle({ conversationId }),
+      // Gate on `enabled` so no /gen_title request fires while unauthenticated
+      // (e.g. after logout) even if the module-level queue still holds IDs.
+      enabled,
       staleTime: Infinity,
       /** Retry only on 404 (title still generating server-side) so a transient
        * not-ready response is never treated as final. All other errors are

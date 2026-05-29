@@ -39,6 +39,11 @@ const addTitle = async (
   }
 
   const convoId = conversationId ?? response?.conversationId;
+  if (!convoId) {
+    logger.warn('[addTitle] Missing conversationId; skipping title generation');
+    return;
+  }
+
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
   const key = `${req.user.id}-${convoId}`;
   /** @type {NodeJS.Timeout} */

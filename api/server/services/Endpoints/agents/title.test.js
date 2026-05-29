@@ -150,4 +150,14 @@ describe('agents addTitle', () => {
     expect(client.titleConvo).not.toHaveBeenCalled();
     expect(mockSaveConvo).not.toHaveBeenCalled();
   });
+
+  it('skips generation when neither conversationId nor response is provided', async () => {
+    const client = makeClient();
+
+    await addTitle(makeReq(), { text: 'hi', client });
+
+    expect(client.titleConvo).not.toHaveBeenCalled();
+    expect(mockCache.set).not.toHaveBeenCalled();
+    expect(mockSaveConvo).not.toHaveBeenCalled();
+  });
 });
