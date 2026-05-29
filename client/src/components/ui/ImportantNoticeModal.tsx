@@ -1,5 +1,6 @@
 import { OGDialog, DialogTemplate, useToastContext } from '@librechat/client';
 import { useAcceptSecondTermsMutation } from '~/data-provider';
+import { useLocalize } from '~/hooks';
 
 const ImportantNoticeModal = ({
   open,
@@ -12,6 +13,7 @@ const ImportantNoticeModal = ({
   onAccept: () => void;
   onDecline: () => void;
 }) => {
+  const localize = useLocalize();
   const { showToast } = useToastContext();
   const acceptSecondTermsMutation = useAcceptSecondTermsMutation({
     onSuccess: () => {
@@ -66,31 +68,24 @@ const ImportantNoticeModal = ({
                 </svg>
               </div>
 
-              {/* English heading */}
+              {/* Heading */}
               <h2 className="!mt-0 mb-1 text-center text-2xl font-bold text-red-600">
-                {'Important Notice'}
+                {localize('com_ui_important_notice').replace(/\s*\(.*\)$/, '')}
               </h2>
-              <p className="mb-4 text-center text-sm !text-text-secondary">(Testing Version)</p>
+              <p className="mb-4 text-center text-sm !text-text-secondary">
+                {localize('com_ui_important_notice').match(/\((.*)\)/)?.[0] || ''}
+              </p>
 
               <hr />
 
+              <p>{localize('com_ui_important_notice_p1')}</p>
+              <p>{localize('com_ui_important_notice_p2')}</p>
+              <p>{localize('com_ui_important_notice_p3')}</p>
+              <p>{localize('com_ui_important_notice_p4')}</p>
               <p>
-                ਇਹ ਐਪਲੀਕੇਸ਼ਨ ਵਰਤਮਾਨ ਵਿੱਚ ਵਿਕਾਸ ਅਧੀਨ ਹੈ ਅਤੇ ਸਿਰਫ਼ ਟੈਸਟਿੰਗ ਅਤੇ ਪ੍ਰਮਾਣਿਕਤਾ ਦੇ ਉਦੇਸ਼ਾਂ
-                ਲਈ ਪ੍ਰਦਾਨ ਕੀਤੀ ਗਈ ਹੈ।
+                <strong>{localize('com_ui_important_notice_p5')}</strong>
               </p>
-              <p>
-                ਇਹ ਕੋਈ ਜਨਤਕ ਸਲਾਹਕਾਰੀ ਸੇਵਾ ਨਹੀਂ ਹੈ ਅਤੇ ਅਸਲ-ਸੰਸਾਰ ਦੇ ਖੇਤੀ ਫੈਸਲਿਆਂ ਲਈ ਇਸ 'ਤੇ ਭਰੋਸਾ ਨਹੀਂ
-                ਕੀਤਾ ਜਾਣਾ ਚਾਹੀਦਾ ਹੈ।
-              </p>
-              <p>
-                ਸਲਾਹਕਾਰੀਆਂ ਪ੍ਰਯੋਗਾਤਮਕ ਹਨ ਅਤੇ ਸਿਰਫ਼ ਚੁਣੇ ਹੋਏ ਰਾਜਾਂ ਲਈ ਝੋਨੇ ਦੀਆਂ ਫ਼ਸਲਾਂ ਤੱਕ ਸੀਮਤ ਹਨ।
-              </p>
-              <p>ਮੌਸਮ ਡੇਟਾ ਅਤੇ ਮਾਰਕੀਟ ਡੇਟਾ ਪ੍ਰਮਾਣਿਕ ਸਰਕਾਰੀ ਸਰੋਤਾਂ ਤੋਂ ਹਨ।</p>
-              <p>
-                <strong>
-                  ਅੱਗੇ ਵਧ ਕੇ, ਤੁਸੀਂ ਇਸ ਐਪ ਨੂੰ ਸਿਰਫ਼ ਇੱਕ ਟੈਸਟਰ ਵਜੋਂ ਵਰਤਣ ਲਈ ਸਹਿਮਤ ਹੁੰਦੇ ਹੋ।
-                </strong>
-              </p>
+              <p>{localize('com_ui_important_notice_p6')}</p>
             </div>
           </section>
         }
@@ -100,14 +95,14 @@ const ImportantNoticeModal = ({
               onClick={handleDecline}
               className="inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800"
             >
-              {'ਅਸਵੀਕਾਰ ਕਰੋ'}
+              {localize('com_ui_important_notice_decline')}
             </button>
             <button
               onClick={handleAccept}
               disabled={acceptSecondTermsMutation.isLoading}
               className="inline-flex items-center justify-center rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 dark:bg-green-700 dark:hover:bg-green-800"
             >
-              {'ਮੈਂ ਸਹਿਮਤ ਹਾਂ & ਅੱਗੇ ਵਧੋ'}
+              {localize('com_ui_important_notice_agree')}
             </button>
           </>
         }

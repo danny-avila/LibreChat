@@ -38,11 +38,7 @@ function AuthLayout({
   });
   const [langcode, setLangcode] = useRecoilState(store.lang);
 
-  const languageOptions: LanguageOption[] = [
-    { value: 'auto', label: 'Auto' },
-    { value: 'en-US', label: 'English' },
-    { value: 'pa', label: 'ਪੰਜਾਬੀ' },
-  ];
+
 
   const handleLangChange = useCallback(
     (value: string) => {
@@ -146,14 +142,7 @@ function AuthLayout({
 
                 <LangSelector
                   langcode={langcode}
-                  // onChange={(value) => {
-                  //   localStorage.setItem('lang', value);
-                  //   localStorage.setItem('lang_selected', 'true');
-                  //   setLangcode(value);
-                  //   setIsLangOpen(false);
-                  // }}
                   onChange={handleLangChange}
-                  defaultLanguageOptions={languageOptions}
                   portal={false}
                 />
               </DialogPanel>
