@@ -15,6 +15,7 @@ import type {
   BaseInitializeParams,
   InitializeResultBase,
   BedrockCredentials,
+  BedrockPromptCacheTtl,
   GuardrailConfiguration,
   InferenceProfileConfig,
 } from '~/types';
@@ -106,6 +107,7 @@ export async function initializeBedrock({
     | ({
         guardrailConfig?: GuardrailConfiguration;
         inferenceProfiles?: InferenceProfileConfig;
+        promptCacheTtl?: BedrockPromptCacheTtl;
       } & Record<string, unknown>)
     | undefined;
 
@@ -210,6 +212,7 @@ export async function initializeBedrock({
   const requestOptions: Record<string, unknown> = {
     model: model_parameters?.model as string | undefined,
     region: BEDROCK_AWS_DEFAULT_REGION,
+    promptCacheTtl: bedrockConfig?.promptCacheTtl,
   };
 
   const configOptions: Record<string, unknown> = {};
@@ -217,8 +220,8 @@ export async function initializeBedrock({
   const llmConfig = bedrockOutputParser(
     bedrockInputParser.parse(
       removeNullishValues({
-        ...requestOptions,
         ...(model_parameters ?? {}),
+        ...requestOptions,
       }),
     ),
   ) as InitializeResultBase['llmConfig'] & {
@@ -230,6 +233,7 @@ export async function initializeBedrock({
     profile?: string;
     guardrailConfig?: GuardrailConfiguration;
     applicationInferenceProfile?: string;
+    promptCacheTtl?: BedrockPromptCacheTtl;
   };
 
   if (bedrockConfig?.guardrailConfig) {

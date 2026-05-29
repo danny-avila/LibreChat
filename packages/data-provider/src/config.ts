@@ -416,6 +416,7 @@ export const bedrockEndpointSchema = baseEndpointSchema.merge(
     models: z.array(z.string()).optional(),
     guardrailConfig: bedrockGuardrailConfigSchema.optional(),
     inferenceProfiles: z.record(z.string(), z.string()).optional(),
+    promptCacheTtl: z.enum(['5m', '1h']).optional(),
   }),
 );
 

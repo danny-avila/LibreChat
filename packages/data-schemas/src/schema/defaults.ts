@@ -73,10 +73,16 @@ export const conversationPreset = {
   resendImages: {
     type: Boolean,
   },
-  /* Anthropic only */
+  /* Anthropic/Bedrock */
   promptCache: {
     type: Boolean,
   },
+  /* Bedrock */
+  promptCacheTtl: {
+    type: String,
+    enum: ['5m', '1h'],
+  },
+  /* Anthropic */
   thinking: {
     type: Boolean,
   },

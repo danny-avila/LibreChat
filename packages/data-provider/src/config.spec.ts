@@ -3,6 +3,7 @@ import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
 import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 import {
   allowedAddressesSchema,
+  bedrockEndpointSchema,
   configSchema,
   excludedKeys,
   resolveEndpointType,
@@ -54,6 +55,15 @@ describe('bedrockEndpointSchema', () => {
       return;
     }
     expect(result.data.endpoints?.bedrock?.guardrailConfig).toEqual(guardrailConfig);
+  });
+
+  it('accepts supported Bedrock prompt cache TTL values', () => {
+    expect(bedrockEndpointSchema.parse({ promptCacheTtl: '5m' }).promptCacheTtl).toBe('5m');
+    expect(bedrockEndpointSchema.parse({ promptCacheTtl: '1h' }).promptCacheTtl).toBe('1h');
+  });
+
+  it('rejects unsupported Bedrock prompt cache TTL values', () => {
+    expect(() => bedrockEndpointSchema.parse({ promptCacheTtl: '30m' })).toThrow();
   });
 });
 

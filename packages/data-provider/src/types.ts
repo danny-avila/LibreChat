@@ -49,8 +49,11 @@ export type TEndpointOption = Pick<
   | 'stop'
   | 'region'
   | 'additionalModelRequestFields'
-  // Anthropic-specific
+  // Anthropic/Bedrock
   | 'promptCache'
+  // Bedrock-specific
+  | 'promptCacheTtl'
+  // Anthropic-specific
   | 'thinking'
   | 'thinkingBudget'
   | 'thinkingLevel'
