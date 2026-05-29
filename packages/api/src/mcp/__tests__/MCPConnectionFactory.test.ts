@@ -366,7 +366,7 @@ describe('MCPConnectionFactory', () => {
 
       // initFlow must be awaited BEFORE the redirect to guarantee state is stored
       expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
-        'tenant:test-tenant:flow123',
+        'flow123',
         'mcp_oauth',
         expect.objectContaining({ ...mockFlowData.flowMetadata, tenantId: 'test-tenant' }),
       );
@@ -715,7 +715,7 @@ describe('MCPConnectionFactory', () => {
 
       // initFlow must be called BEFORE oauthStart and createFlow
       expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
-        'tenant:test-tenant:flow123',
+        'flow123',
         'mcp_oauth',
         expect.objectContaining({ ...mockFlowData.flowMetadata, tenantId: 'test-tenant' }),
       );
@@ -728,7 +728,7 @@ describe('MCPConnectionFactory', () => {
 
       // createFlow should receive {} since initFlow already persisted metadata
       expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
-        'tenant:test-tenant:flow123',
+        'flow123',
         'mcp_oauth',
         {},
         undefined,
@@ -1535,6 +1535,79 @@ describe('MCPConnectionFactory', () => {
       expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
     });
 
+    it('should not reuse request-scoped OAuth callbacks after connection is cached', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const oauthStart = jest.fn();
+      const oauthEnd = jest.fn();
+      const requestAbortController = new AbortController();
+      const initialTokens: MCPOAuthTokens = {
+        access_token: 'initial-access',
+        refresh_token: 'initial-refresh',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart,
+        oauthEnd,
+        signal: requestAbortController.signal,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(initialTokens);
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      await MCPConnectionFactory.create(basicOptions, oauthOptions);
+
+      requestAbortController.abort();
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(null);
+
+      await oauthRequiredHandler!({
+        serverUrl: 'https://api.example.com',
+        error: new Error('Non-200 status code (401)'),
+      });
+
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(mockFlowManager.initFlow).not.toHaveBeenCalled();
+      expect(mockFlowManager.createFlow).not.toHaveBeenCalled();
+      expect(oauthStart).not.toHaveBeenCalled();
+      expect(oauthEnd).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({ message: 'OAuth reauthentication required' }),
+      );
+    });
+
     it('should invalidate completed mcp_oauth cache before falling through to interactive OAuth', async () => {
       // Regression for the Codex finding "Bypass completed OAuth cache after a
       // rejected token": when silent refresh returns null and the handler
@@ -1631,7 +1704,7 @@ describe('MCPConnectionFactory', () => {
       );
     });
 
-    it('should tenant-scope mcp_oauth invalidation before interactive fallback', async () => {
+    it('should not invalidate a completed mcp_oauth flow from another tenant', async () => {
       const sseConfig = {
         ...mockServerConfig,
         url: 'https://api.example.com',
@@ -1674,12 +1747,9 @@ describe('MCPConnectionFactory', () => {
       mockProcessMCPEnv.mockReturnValue(sseConfig);
       mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
       mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(null);
-      mockFlowManager.getFlowState.mockImplementation(async (flowId, type) => {
-        if (flowId === 'flow123' && type === 'mcp_oauth') {
-          return tenantBCompletedFlow;
-        }
-        return null;
-      });
+      mockFlowManager.getFlowState
+        .mockResolvedValueOnce(tenantBCompletedFlow)
+        .mockResolvedValue(null);
       mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
         authorizationUrl: 'https://auth.example.com',
         flowId: 'flow123',
@@ -1709,17 +1779,14 @@ describe('MCPConnectionFactory', () => {
 
       await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
 
-      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(
-        'tenant:tenant-a:flow123',
-        'mcp_oauth',
-      );
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith('flow123', 'mcp_oauth');
       expect(mockFlowManager.deleteFlow).not.toHaveBeenCalledWith('flow123', 'mcp_oauth');
       expect(mockMCPOAuthHandler.deleteStateMapping).not.toHaveBeenCalledWith(
         'tenant-b-state',
         mockFlowManager,
       );
       expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
-        'tenant:tenant-a:flow123',
+        'flow123',
         'mcp_oauth',
         expect.objectContaining({ tenantId: 'tenant-a' }),
       );
