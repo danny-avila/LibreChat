@@ -584,9 +584,7 @@ export class MCPOAuthHandler {
          */
         if (config?.audience) {
           authorizationUrl.searchParams.set('audience', config.audience);
-          logger.debug(
-            `[MCPOAuth] Added audience parameter (pre-configured): ${config.audience}`,
-          );
+          logger.debug(`[MCPOAuth] Added audience parameter (pre-configured): ${config.audience}`);
         }
 
         const flowMetadata: MCPOAuthFlowMetadata = {
@@ -761,9 +759,7 @@ export class MCPOAuthHandler {
          */
         if (config?.audience) {
           authorizationUrl.searchParams.set('audience', config.audience);
-          logger.debug(
-            `[MCPOAuth] Added audience parameter (discovered flow): ${config.audience}`,
-          );
+          logger.debug(`[MCPOAuth] Added audience parameter (discovered flow): ${config.audience}`);
         }
       } catch (error) {
         logger.error(`[MCPOAuth] startAuthorization failed:`, error);
