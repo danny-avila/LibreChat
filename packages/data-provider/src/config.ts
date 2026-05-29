@@ -669,6 +669,7 @@ export const azureEndpointSchema = z
         titleMethod: true,
         titleModel: true,
         titlePrompt: true,
+        titleTiming: true,
         titlePromptTemplate: true,
       })
       .partial(),

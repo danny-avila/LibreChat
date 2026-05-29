@@ -144,4 +144,13 @@ describe('resolveTitleTiming', () => {
     });
     expect(resolveTitleTiming({ appConfig, endpoint: 'MyProvider' })).toBe('final');
   });
+
+  it('resolves a normalized custom provider name (openrouter -> OpenRouter)', () => {
+    const appConfig = withEndpoints({
+      [EModelEndpoint.custom]: [
+        { name: 'OpenRouter', baseURL: 'https://openrouter.ai/api/v1', titleTiming: 'final' },
+      ],
+    });
+    expect(resolveTitleTiming({ appConfig, endpoint: 'openrouter' })).toBe('final');
+  });
 });

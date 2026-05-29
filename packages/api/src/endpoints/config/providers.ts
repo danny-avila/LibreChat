@@ -54,11 +54,13 @@ export type TitleTiming = 'immediate' | 'final';
 /**
  * Resolves when conversation titles are generated for a given endpoint.
  *
- * The global `endpoints.all` value takes precedence over the per-endpoint value,
- * mirroring the resolution used for other title options in the agent client.
- * Custom endpoints store their config under `endpoints.custom[]` (resolved via
- * `getCustomEndpointConfig`) rather than `endpoints[endpoint]`.
- * Defaults to `immediate` (generate the title as soon as the request is made).
+ * Mirrors the endpoint-config resolution in `AgentClient#titleConvo`
+ * (`endpoints.all ?? endpoints[endpoint] ?? getProviderConfig().customEndpointConfig`)
+ * so the timing decision matches the config the title generation actually uses.
+ * `endpoints.all` is the intended global override. Resolving custom providers via
+ * `getProviderConfig` (rather than `getCustomEndpointConfig` directly) picks up its
+ * case-insensitive fallback for normalized provider names (e.g. `openrouter` →
+ * `OpenRouter`). Defaults to `immediate`.
  */
 export function resolveTitleTiming({
   appConfig,
@@ -68,16 +70,21 @@ export function resolveTitleTiming({
   endpoint?: string;
 }): TitleTiming {
   const endpoints = appConfig?.endpoints;
-  const directConfig = endpoint
-    ? (endpoints?.[endpoint as keyof NonNullable<typeof endpoints>] as
-        | Partial<TEndpoint>
-        | undefined)
-    : undefined;
-  const customConfig =
-    endpoint && appConfig ? getCustomEndpointConfig({ endpoint, appConfig }) : undefined;
-  const timing =
-    endpoints?.all?.titleTiming ?? directConfig?.titleTiming ?? customConfig?.titleTiming;
-  return timing === 'final' ? 'final' : 'immediate';
+  let endpointConfig: Partial<TEndpoint> | undefined =
+    endpoints?.all ??
+    (endpoint
+      ? (endpoints?.[endpoint as keyof NonNullable<typeof endpoints>] as
+          | Partial<TEndpoint>
+          | undefined)
+      : undefined);
+  if (!endpointConfig && endpoint && appConfig) {
+    try {
+      endpointConfig = getProviderConfig({ provider: endpoint, appConfig }).customEndpointConfig;
+    } catch {
+      endpointConfig = undefined;
+    }
+  }
+  return endpointConfig?.titleTiming === 'final' ? 'final' : 'immediate';
 }
 
 /**
