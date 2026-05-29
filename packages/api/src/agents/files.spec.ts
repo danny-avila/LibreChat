@@ -176,6 +176,7 @@ describe('remote agent file extraction', () => {
       });
       expect(Array.isArray(result.value)).toBe(true);
       if (Array.isArray(result.value)) {
+        expect(result.value[0].type).toBe('message');
         expect(result.value[0].content).toEqual([
           { type: 'input_text', text: 'Read this.' },
           { type: 'input_text', text: '[File: document.pdf]' },

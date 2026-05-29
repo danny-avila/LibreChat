@@ -16,11 +16,13 @@ const {
   resolveAgentScopedSkillIds,
   createSafeUser,
   initializeAgent,
+  encodeAndFormatDocuments,
   getBalanceConfig,
   recordCollectedUsage,
   getTransactionsConfig,
   extractManualSkills,
   injectSkillPrimes,
+  extractRemoteAgentResponseFiles,
   createToolExecuteHandler,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
@@ -60,6 +62,7 @@ const {
   buildSkillPrimedIdsByName,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -326,6 +329,17 @@ const createResponse = async (req, res) => {
   });
 
   try {
+    const { value: remoteInput, files: inlineProviderFiles } = extractRemoteAgentResponseFiles(
+      request.input,
+      req.user?.id,
+    );
+
+    if (inlineProviderFiles.length > 0) {
+      logger.debug(
+        `[Responses API] Detected ${inlineProviderFiles.length} remote inline provider file(s) for agent ${agentId}: ${inlineProviderFiles.map((file) => file.filename).join(', ')}`,
+      );
+    }
+
     if (request.previous_response_id != null) {
       if (typeof request.previous_response_id !== 'string') {
         return sendResponsesErrorResponse(
@@ -529,8 +543,48 @@ const createResponse = async (req, res) => {
 
     // Convert input to internal messages
     const inputMessages = convertToInternalMessages(
-      typeof request.input === 'string' ? request.input : request.input,
+      typeof remoteInput === 'string' ? remoteInput : remoteInput,
     );
+
+    if (inlineProviderFiles.length > 0) {
+      let latestUserMessage;
+      for (let i = inputMessages.length - 1; i >= 0; i--) {
+        if (inputMessages[i]?.role === 'user') {
+          latestUserMessage = inputMessages[i];
+          break;
+        }
+      }
+
+      const documentResult = await encodeAndFormatDocuments(
+        req,
+        inlineProviderFiles,
+        {
+          provider: primaryConfig.provider ?? agent.provider,
+          endpoint: primaryConfig.endpoint ?? agent.provider,
+          useResponsesApi: primaryConfig.model_parameters?.useResponsesApi,
+          model: primaryConfig.model || agent.model_parameters?.model,
+        },
+        getStrategyFunctions,
+      );
+
+      if (documentResult.documents.length !== inlineProviderFiles.length) {
+        return sendResponsesErrorResponse(
+          res,
+          400,
+          'One or more file inputs are not supported by the configured provider.',
+          'invalid_request',
+          'unsupported_file',
+        );
+      }
+
+      if (latestUserMessage && documentResult.documents.length > 0) {
+        latestUserMessage.documents = documentResult.documents;
+      }
+
+      logger.debug(
+        `[Responses API] Attached ${documentResult.documents.length} provider document block(s) for ${inlineProviderFiles.length} remote inline file(s) on agent ${agentId}`,
+      );
+    }
 
     // Merge previous messages with new input
     const allMessages = [...previousMessages, ...inputMessages];
@@ -973,9 +1027,10 @@ const createResponse = async (req, res) => {
       res.end();
     } else {
       // Forward upstream provider status codes (e.g., Anthropic 400s) instead of masking as 500
+      const errorStatus = error?.status ?? error?.statusCode;
       const statusCode =
-        typeof error?.status === 'number' && error.status >= 400 && error.status < 600
-          ? error.status
+        typeof errorStatus === 'number' && errorStatus >= 400 && errorStatus < 600
+          ? errorStatus
           : 500;
       const errorType = statusCode >= 400 && statusCode < 500 ? 'invalid_request' : 'server_error';
       sendResponsesErrorResponse(res, statusCode, errorMessage, errorType);

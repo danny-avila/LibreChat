@@ -207,7 +207,7 @@ export function extractRemoteAgentResponseFiles(
       return { type: 'input_text', text: `[File: ${file.filename}]` };
     });
 
-    return { ...item, content };
+    return { ...item, type: 'message', content };
   });
 
   return { value, files };
