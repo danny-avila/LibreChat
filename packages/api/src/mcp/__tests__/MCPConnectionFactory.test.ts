@@ -35,6 +35,33 @@ const mockMCPConnection = MCPConnection as jest.MockedClass<typeof MCPConnection
 const mockMCPOAuthHandler = MCPOAuthHandler as jest.Mocked<typeof MCPOAuthHandler>;
 const mockMCPTokenStorage = MCPTokenStorage as jest.Mocked<typeof MCPTokenStorage>;
 
+class InspectableMCPConnectionFactory extends MCPConnectionFactory {
+  public constructor(
+    basic: t.BasicConnectionOptions,
+    options?: t.OAuthConnectionOptions | t.UserConnectionContext,
+  ) {
+    super(basic, options);
+  }
+
+  public async createConnectionForTest(): Promise<MCPConnection> {
+    return await this.createConnection();
+  }
+
+  public getRequestScopedOAuthState(): {
+    signal?: AbortSignal;
+    oauthStart?: (authURL: string) => Promise<void>;
+    oauthEnd?: () => Promise<void>;
+    returnOnOAuth?: boolean;
+  } {
+    return {
+      signal: this.signal,
+      oauthStart: this.oauthStart,
+      oauthEnd: this.oauthEnd,
+      returnOnOAuth: this.returnOnOAuth,
+    };
+  }
+}
+
 describe('MCPConnectionFactory', () => {
   let mockUser: IUser | undefined;
   let mockServerConfig: t.MCPOptions;
@@ -1847,6 +1874,59 @@ describe('MCPConnectionFactory', () => {
         'oauthFailed',
         expect.objectContaining({ message: 'OAuth reauthentication required' }),
       );
+    });
+
+    it('should clear request-scoped OAuth callbacks after successful connection', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+      const initialTokens: MCPOAuthTokens = {
+        access_token: 'initial-access',
+        refresh_token: 'initial-refresh',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      const oauthStart = jest.fn();
+      const oauthEnd = jest.fn();
+      const requestAbortController = new AbortController();
+      const factory = new InspectableMCPConnectionFactory(
+        {
+          serverName: 'test-server',
+          serverConfig: sseConfig,
+        },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          oauthStart,
+          oauthEnd,
+          signal: requestAbortController.signal,
+          returnOnOAuth: true,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+        },
+      );
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(initialTokens);
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      await factory.createConnectionForTest();
+
+      expect(mockConnectionInstance.on).toHaveBeenCalledWith('oauthRequired', expect.any(Function));
+      expect(factory.getRequestScopedOAuthState()).toEqual({
+        signal: undefined,
+        oauthStart: undefined,
+        oauthEnd: undefined,
+        returnOnOAuth: false,
+      });
     });
 
     it('should let a live request handle cached-connection reauthentication with fresh callbacks', async () => {

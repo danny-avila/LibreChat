@@ -50,10 +50,10 @@ export class MCPConnectionFactory {
   protected readonly userId?: string;
   protected readonly flowManager?: FlowStateManager<MCPOAuthTokens | null>;
   protected readonly tokenMethods?: TokenMethods;
-  protected readonly signal?: AbortSignal;
-  protected readonly oauthStart?: (authURL: string) => Promise<void>;
-  protected readonly oauthEnd?: () => Promise<void>;
-  protected readonly returnOnOAuth?: boolean;
+  protected signal?: AbortSignal;
+  protected oauthStart?: (authURL: string) => Promise<void>;
+  protected oauthEnd?: () => Promise<void>;
+  protected returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
   private connectionReady = false;
   /**
@@ -314,12 +314,9 @@ export class MCPConnectionFactory {
       }
       await this.attemptToConnect(connection);
       this.connectionReady = true;
-      // Intentionally do NOT call cleanupOAuthHandlers() on success.
-      // The `oauthRequired` listener must remain attached for the connection's
-      // lifetime so a mid-session 401 (emitted by `MCPConnection.connectClient`
-      // during transport recovery) can drive silent refresh or hand off to a
-      // live request-scoped reauth handler. Removing it here would leave
-      // `connectClient` waiting on `oauthHandled` until its OAuth timeout fires.
+      // Keep the `oauthRequired` listener for cached-connection 401 recovery,
+      // but drop response/tool-call callbacks from the completed request.
+      this.releaseRequestScopedOAuthState();
       return connection;
     } catch (error) {
       if (cleanupOAuthHandlers) {
@@ -334,6 +331,13 @@ export class MCPConnectionFactory {
       return false;
     }
     return isOAuthServer(this.serverConfig);
+  }
+
+  protected releaseRequestScopedOAuthState(): void {
+    this.signal = undefined;
+    this.oauthStart = undefined;
+    this.oauthEnd = undefined;
+    this.returnOnOAuth = false;
   }
 
   private getServerUrl(): string | undefined {
