@@ -12,6 +12,8 @@
   <a href="README.zh.md">中文</a>
 </p>
 
+> **Vermeer Chat** — fork interne de LibreChat (POPAISTUDIO). Pour la procédure de release prod (build de l'image Docker via un tag `v*`) et le contexte projet, voir [`CLAUDE.md`](CLAUDE.md) — en particulier la [section 12 · Déploiement et CI/CD](CLAUDE.md#12-déploiement-et-cicd).
+
 <p align="center">
   <a href="https://discord.librechat.ai"> 
     <img
