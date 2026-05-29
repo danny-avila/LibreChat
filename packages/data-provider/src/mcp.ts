@@ -31,15 +31,24 @@ const OAuthOptionsSchema = z
     /**
      * Auth0/Cognito-style `audience` parameter. Authorization servers that pre-date
      * RFC 8707 — most prominently Auth0 — issue API-scoped access tokens only when
-     * the authorization (and refresh) request advertises an `audience`. RFC 8707
-     * `resource` (set automatically from Protected Resource Metadata) is the
-     * standards-conformant route; `audience` covers the providers that ignore it.
+     * the `/authorize` request advertises an `audience`. RFC 8707 `resource` (set
+     * automatically from Protected Resource Metadata) is the standards-conformant
+     * route; `audience` covers the providers that ignore it.
      *
-     * When set, the value is forwarded as-is on `/authorize` and `/token`
-     * (including refresh) — no canonicalization, since the audience identifier is
-     * provider-defined and may differ from the MCP server URL.
+     * When set, the value is forwarded as-is on:
+     *   - `/authorize` (both pre-configured and DCR-discovered paths)
+     *   - `/token` `refresh_token` grant
+     *
+     * The `authorization_code` exchange does not receive `audience` — Auth0 binds
+     * audience from the original `/authorize` request and embeds it in the issued
+     * access token; sending it again is redundant. Refresh exchanges DO need it,
+     * otherwise the refreshed token loses the API audience and the next MCP call
+     * 401s.
+     *
+     * No canonicalization is applied — the audience identifier is provider-defined
+     * and may differ from the MCP server URL.
      */
-    audience: z.string().optional(),
+    audience: z.string().min(1).optional(),
     /** OAuth revocation endpoint (optional - can be auto-discovered) */
     revocation_endpoint: z.string().url().optional(),
     /** OAuth revocation endpoint authentication methods supported (optional - can be auto-discovered) */

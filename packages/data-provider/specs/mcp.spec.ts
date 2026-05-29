@@ -317,5 +317,17 @@ describe('MCP schemas', () => {
         expect(result.data.oauth.audience).toBeUndefined();
       }
     });
+
+    it('should reject empty-string audience', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          audience: '',
+        },
+      });
+
+      expect(result.success).toBe(false);
+    });
   });
 });
