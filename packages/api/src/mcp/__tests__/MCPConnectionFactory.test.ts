@@ -1323,8 +1323,9 @@ describe('MCPConnectionFactory', () => {
 
     it('should keep the in-flight silent-refresh lock until the aborted refresh settles', async () => {
       // A timed-out caller should fall back to interactive OAuth immediately,
-      // but the shared lock must remain until the underlying abortable refresh
-      // settles so another 401 cannot redeem the same rotating refresh token.
+      // but the shared lock must remain briefly while the underlying abortable
+      // refresh settles so another 401 cannot immediately redeem the same
+      // rotating refresh token.
       const sseConfig = {
         ...mockServerConfig,
         url: 'https://api.example.com',
@@ -1422,6 +1423,101 @@ describe('MCPConnectionFactory', () => {
           await Promise.resolve();
         }
         expect(inflightMap.size).toBe(0);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('should drop timed-out silent-refresh locks after abort grace if refresh stays hung', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        oauthEnd: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      let firstRefreshSignal: AbortSignal | undefined;
+      let secondRefreshSignal: AbortSignal | undefined;
+      mockMCPTokenStorage.forceRefreshTokens
+        .mockImplementationOnce((params) => {
+          firstRefreshSignal = params.signal;
+          return new Promise<MCPOAuthTokens>(() => {});
+        })
+        .mockImplementationOnce((params) => {
+          secondRefreshSignal = params.signal;
+          return Promise.resolve(null as unknown as MCPOAuthTokens);
+        });
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'state-x',
+        },
+      });
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockFlowManager.createFlow.mockResolvedValue(null);
+      mockConnectionInstance.connect.mockRejectedValue(new Error('OAuth authentication required'));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected
+      }
+
+      jest.useFakeTimers();
+      try {
+        const firstAttempt = oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+        await jest.advanceTimersByTimeAsync(2_001);
+        await firstAttempt;
+
+        const inflightMap = (
+          MCPConnectionFactory as unknown as {
+            inflightSilentRefreshes: Map<string, unknown>;
+          }
+        ).inflightSilentRefreshes;
+        expect(inflightMap.size).toBe(1);
+        expect(firstRefreshSignal?.aborted).toBe(true);
+
+        await jest.advanceTimersByTimeAsync(1_001);
+        expect(inflightMap.size).toBe(0);
+
+        const secondAttempt = oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+        await secondAttempt;
+
+        expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(2);
+        expect(secondRefreshSignal).toBeDefined();
       } finally {
         jest.useRealTimers();
       }

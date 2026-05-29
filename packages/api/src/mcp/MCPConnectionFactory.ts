@@ -86,6 +86,7 @@ export class MCPConnectionFactory {
    * connect budget for OAuth discovery, registration, and `oauthStart`.
    */
   private static readonly SILENT_REFRESH_TIMEOUT_MS = 5_000;
+  private static readonly SILENT_REFRESH_ABORT_GRACE_MS = 1_000;
 
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
@@ -534,10 +535,15 @@ export class MCPConnectionFactory {
     const timeoutMs = this.getSilentRefreshTimeoutMs();
     const abortController = new AbortController();
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let abortGraceTimeoutId: ReturnType<typeof setTimeout> | null = null;
     const refreshPromise = this.runSilentRefresh(abortController.signal);
     const promise = new Promise<MCPOAuthTokens | null>((resolve) => {
       timeoutId = setTimeout(() => {
         abortController.abort();
+        abortGraceTimeoutId = setTimeout(
+          releaseLock,
+          MCPConnectionFactory.SILENT_REFRESH_ABORT_GRACE_MS,
+        );
         logger.info(
           `${this.logPrefix} Silent token refresh timed out after ${timeoutMs}ms, falling back to interactive OAuth`,
         );
@@ -556,19 +562,17 @@ export class MCPConnectionFactory {
         clearTimeout(timeoutId);
       }
     });
+    function releaseLock() {
+      if (abortGraceTimeoutId) {
+        clearTimeout(abortGraceTimeoutId);
+        abortGraceTimeoutId = null;
+      }
+      if (MCPConnectionFactory.inflightSilentRefreshes.get(lockKey) === promise) {
+        MCPConnectionFactory.inflightSilentRefreshes.delete(lockKey);
+      }
+    }
     MCPConnectionFactory.inflightSilentRefreshes.set(lockKey, promise);
-    void refreshPromise.then(
-      () => {
-        if (MCPConnectionFactory.inflightSilentRefreshes.get(lockKey) === promise) {
-          MCPConnectionFactory.inflightSilentRefreshes.delete(lockKey);
-        }
-      },
-      () => {
-        if (MCPConnectionFactory.inflightSilentRefreshes.get(lockKey) === promise) {
-          MCPConnectionFactory.inflightSilentRefreshes.delete(lockKey);
-        }
-      },
-    );
+    void refreshPromise.then(releaseLock, releaseLock);
     return await promise;
   }
 
