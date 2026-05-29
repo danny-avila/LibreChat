@@ -531,8 +531,10 @@ describe('createResponse controller', () => {
         [
           {
             role: 'user',
-            content: '[File: document.pdf]',
-            documents: [{ type: 'document', source: { type: 'base64', data: 'JVBERi0x' } }],
+            content: [
+              { type: 'text', text: '[File: document.pdf]' },
+              { type: 'document', source: { type: 'base64', data: 'JVBERi0x' } },
+            ],
           },
         ],
         {},
@@ -572,8 +574,10 @@ describe('createResponse controller', () => {
         [
           {
             role: 'user',
-            content: '[File: document.pdf]',
-            documents: [{ type: 'document', source: { type: 'base64', data: 'JVBERi0x' } }],
+            content: [
+              { type: 'text', text: '[File: document.pdf]' },
+              { type: 'document', source: { type: 'base64', data: 'JVBERi0x' } },
+            ],
           },
         ],
         {},
@@ -665,8 +669,10 @@ describe('createResponse controller', () => {
         [
           {
             role: 'user',
-            content: 'Extract this PDF.\n[File: document.pdf]',
-            documents: [{ type: 'document', source: { type: 'base64', data: 'JVBERi0x' } }],
+            content: [
+              { type: 'text', text: 'Extract this PDF.\n[File: document.pdf]' },
+              { type: 'document', source: { type: 'base64', data: 'JVBERi0x' } },
+            ],
           },
         ],
         {},
@@ -714,8 +720,8 @@ describe('createResponse controller', () => {
         [
           expect.objectContaining({
             role: 'user',
-            content: 'Attached file(s): document.pdf',
-            documents: [
+            content: [
+              { type: 'text', text: 'Attached file(s): document.pdf' },
               { type: 'document', document: { name: 'document', source: { bytes: [] } } },
             ],
           }),

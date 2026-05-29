@@ -132,29 +132,32 @@ function convertMessages(messages) {
   });
 }
 
-function normalizeMessageContentForDocuments(message, fallbackText) {
-  if (!Array.isArray(message?.content)) {
-    if (typeof message?.content === 'string' && message.content.trim() === '') {
-      message.content = fallbackText;
-    }
-    return;
+function attachDocumentsToMessageContent(message, documents, fallbackText) {
+  let text = '';
+  let imageUrls = [];
+
+  if (Array.isArray(message?.content)) {
+    text = message.content
+      .map((part) => {
+        if (part?.type === 'text') {
+          return part.text ?? '';
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+    imageUrls = message.content.filter((part) => part?.type === 'image_url');
+  } else if (typeof message?.content === 'string') {
+    text = message.content;
   }
 
-  const text = message.content
-    .map((part) => {
-      if (part?.type === 'text') {
-        return part.text ?? '';
-      }
-      return '';
-    })
-    .filter(Boolean)
-    .join('\n');
-  const imageUrls = message.content.filter((part) => part?.type === 'image_url');
-
-  message.content = text.trim() ? text : fallbackText;
-  if (imageUrls.length > 0) {
-    message.image_urls = imageUrls;
-  }
+  message.content = [
+    { type: 'text', text: text.trim() ? text : fallbackText },
+    ...documents,
+    ...imageUrls,
+  ];
+  delete message.documents;
+  delete message.image_urls;
 }
 
 function summarizeContentBlockForLog(part) {
@@ -592,11 +595,11 @@ const OpenAIChatCompletionController = async (req, res) => {
       }
 
       if (latestUserMessage && documentResult.documents.length > 0) {
-        normalizeMessageContentForDocuments(
+        attachDocumentsToMessageContent(
           latestUserMessage,
+          documentResult.documents,
           `Attached file(s): ${inlineProviderFiles.map((file) => file.filename).join(', ')}`,
         );
-        latestUserMessage.documents = documentResult.documents;
         logger.debug(
           {
             agentId,

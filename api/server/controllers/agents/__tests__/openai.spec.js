@@ -428,8 +428,10 @@ describe('OpenAIChatCompletionController', () => {
         [
           {
             role: 'user',
-            content: '[File: document.pdf]',
-            documents: [{ type: 'file', file: { filename: 'document.pdf', file_data: 'data' } }],
+            content: [
+              { type: 'text', text: '[File: document.pdf]' },
+              { type: 'file', file: { filename: 'document.pdf', file_data: 'data' } },
+            ],
           },
         ],
         {},
@@ -469,8 +471,10 @@ describe('OpenAIChatCompletionController', () => {
         [
           {
             role: 'user',
-            content: '[File: document.pdf]',
-            documents: [{ type: 'file', file: { filename: 'document.pdf', file_data: 'data' } }],
+            content: [
+              { type: 'text', text: '[File: document.pdf]' },
+              { type: 'file', file: { filename: 'document.pdf', file_data: 'data' } },
+            ],
           },
         ],
         {},
@@ -538,8 +542,8 @@ describe('OpenAIChatCompletionController', () => {
         [
           expect.objectContaining({
             role: 'user',
-            content: 'Attached file(s): document.pdf',
-            documents: [
+            content: [
+              { type: 'text', text: 'Attached file(s): document.pdf' },
               { type: 'document', document: { name: 'document', source: { bytes: [] } } },
             ],
           }),
