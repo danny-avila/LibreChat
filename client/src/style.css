@@ -3148,3 +3148,9 @@ body {
   color: #45472F;
   background-color: #F1F4D7;
 }
+
+.tip-component-icon {
+  height: 1.25rem;
+  width: 1.25rem;
+  background: #E8F5FF;
+}
