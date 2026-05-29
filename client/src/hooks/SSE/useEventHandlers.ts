@@ -602,6 +602,12 @@ export default function useEventHandlers({
         }
 
         if (setConversation && isAddedRequest !== true) {
+          /** A title applied locally (e.g. an immediate-mode title fetched while the
+           *  response was still streaming) must survive the final event, whose
+           *  `conversation` was built before the title was saved and so carries no
+           *  title yet — otherwise the chat reverts to "New Chat" until reload. */
+          const hasRealTitle = (title?: string | null): title is string =>
+            title != null && title !== '' && title !== 'New Chat';
           setConversation((prevState) => {
             const update = {
               ...prevState,
@@ -610,14 +616,24 @@ export default function useEventHandlers({
             if (prevState?.model != null && prevState.model !== submissionConvo.model) {
               update.model = prevState.model;
             }
+            const prevTitle = prevState?.title;
+            if (!hasRealTitle(conversation.title) && hasRealTitle(prevTitle)) {
+              update.title = prevTitle;
+            }
             if (conversation.conversationId) {
               queryClient.setQueryData<TConversation>(
                 [QueryKeys.conversation, conversation.conversationId],
-                (cachedConvo) =>
-                  ({
+                (cachedConvo) => {
+                  const merged = {
                     ...cachedConvo,
                     ...serverConversation,
-                  }) as TConversation,
+                  } as TConversation;
+                  const cachedTitle = cachedConvo?.title;
+                  if (!hasRealTitle(serverConversation.title) && hasRealTitle(cachedTitle)) {
+                    merged.title = cachedTitle;
+                  }
+                  return merged;
+                },
               );
             }
             return update;

@@ -19,10 +19,13 @@ const { saveConvo } = require('~/models');
  *   only after `convoReady` resolves (the conversation row must exist for `noUpsert`).
  * @param {Promise<void>} [params.convoReady] - Resolves once the conversation has been
  *   persisted; awaited before saving the title in `immediate` mode.
+ * @param {AbortSignal} [params.signal] - When aborted (e.g. the user stops an
+ *   immediate-mode generation), cancels the in-flight title model call so a
+ *   cancelled turn neither consumes the title model nor surfaces a title.
  */
 const addTitle = async (
   req,
-  { text, response, client, conversationId, immediate = false, convoReady },
+  { text, response, client, conversationId, immediate = false, convoReady, signal },
 ) => {
   const { TITLE_CONVO = true } = process.env ?? {};
   if (!isEnabled(TITLE_CONVO)) {
@@ -57,6 +60,15 @@ const addTitle = async (
 
     let titlePromise;
     let abortController = new AbortController();
+    /** Propagate a request abort (Stop) to the title generation so a cancelled
+     *  turn does not consume the title model or surface a title. */
+    if (signal) {
+      if (signal.aborted) {
+        abortController.abort();
+      } else {
+        signal.addEventListener('abort', () => abortController.abort(), { once: true });
+      }
+    }
     if (client && typeof client.titleConvo === 'function') {
       titlePromise = Promise.race([
         client

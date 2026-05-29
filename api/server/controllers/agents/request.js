@@ -320,6 +320,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             client,
             immediate: true,
             convoReady,
+            signal: job.abortController.signal,
           }).catch((err) => {
             logger.error('[ResumableAgentController] Error in immediate title generation', err);
           });

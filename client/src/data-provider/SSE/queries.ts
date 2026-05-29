@@ -158,21 +158,28 @@ export function useTitleGeneration(enabled = true) {
         deferredTitles.delete(conversationId);
         setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
       } else if (titleQuery.isError) {
-        // Retries are exhausted here (the query only retries on 404).
-        if (!activeSet.has(conversationId)) {
-          // Stream is complete — the server had its full generation window, so
-          // a missing title is final. Mark processed to stop fetching.
+        // Retries are exhausted here (the query only retries on 404). A title may
+        // still be generated *after* the stream completes (final mode generates
+        // only once the response ends), so don't treat the first 404 as final —
+        // guarantee one fresh, full-budget fetch cycle that runs post-completion.
+        if (activeSet.has(conversationId)) {
+          // Failed while still streaming: drop and clear so the completion
+          // transition re-promotes a fresh fetch (instead of busy-looping).
+          deferredTitles.add(conversationId);
+          queryClient.removeQueries(genTitleQueryKey(conversationId));
+          setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
+        } else if (!deferredTitles.has(conversationId)) {
+          // First failure at/after completion without a prior deferral: grant one
+          // fresh cycle in place (polling has stopped, so re-promotion won't fire).
+          deferredTitles.add(conversationId);
+          queryClient.removeQueries(genTitleQueryKey(conversationId));
+        } else {
+          // The post-completion fetch also failed — the title is genuinely absent.
           processedTitles.add(conversationId);
           titleQueue.delete(conversationId);
           deferredTitles.delete(conversationId);
-        } else {
-          // Eager fetch failed while the stream is still active (e.g. a per-endpoint
-          // `final` override). Defer until completion and clear the failed query so
-          // it refetches when re-promoted, instead of busy-looping.
-          deferredTitles.add(conversationId);
-          queryClient.removeQueries(genTitleQueryKey(conversationId));
+          setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
         }
-        setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
       }
     });
   }, [titleQueries, readyToFetch, queryClient, activeJobIds]);
