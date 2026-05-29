@@ -161,7 +161,7 @@ describe('agents addTitle', () => {
     expect(mockSaveConvo).not.toHaveBeenCalled();
   });
 
-  it('propagates an aborted request signal to the title generation', async () => {
+  it('propagates an aborted request signal and discards the title without persisting', async () => {
     const client = makeClient();
     const ac = new AbortController();
     ac.abort();
@@ -177,5 +177,7 @@ describe('agents addTitle', () => {
 
     const { abortController } = client.titleConvo.mock.calls[0][0];
     expect(abortController.signal.aborted).toBe(true);
+    expect(mockSaveConvo).not.toHaveBeenCalled();
+    expect(mockCache.delete).toHaveBeenCalledWith('user-1-cid');
   });
 });

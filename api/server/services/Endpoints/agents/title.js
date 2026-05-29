@@ -110,6 +110,14 @@ const addTitle = async (
       await convoReady;
     }
 
+    if (signal?.aborted) {
+      // The turn was stopped, or this stream was replaced, after the title had
+      // already been generated — discard it instead of persisting a title for a
+      // cancelled/discarded response.
+      await titleCache.delete(key);
+      return;
+    }
+
     await saveConvo(
       {
         userId: req?.user?.id,

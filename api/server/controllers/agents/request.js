@@ -262,6 +262,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const convoReady = new Promise((resolve) => {
         resolveConvoReady = resolve;
       });
+      /** Dedicated controller so a user Stop (or a replaced stream) cancels the
+       *  in-flight title — kept separate from `job.abortController`, which
+       *  `completeJob` also aborts on *successful* completion and would otherwise
+       *  cancel a title that is merely slower than a short response. */
+      const titleAbortController = new AbortController();
       const titleEligible =
         addTitle && parentMessageId === Constants.NO_PARENT && isNewConvo && !req.body?.isTemporary;
 
@@ -320,7 +325,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             client,
             immediate: true,
             convoReady,
-            signal: job.abortController.signal,
+            signal: titleAbortController.signal,
           }).catch((err) => {
             logger.error('[ResumableAgentController] Error in immediate title generation', err);
           });
@@ -381,10 +386,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           );
         }
 
-        // The conversation row now exists; allow any in-flight immediate title
-        // generation to persist its result (saveConvo uses noUpsert).
-        resolveConvoReady();
-
         // Check if our job was replaced by a new request before emitting
         // This prevents stale requests from emitting events to newer jobs
         const currentJob = await GenerationJobManager.getJob(streamId);
@@ -396,10 +397,28 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             originalCreatedAt: jobCreatedAt,
             currentCreatedAt: currentJob?.createdAt,
           });
+          // Discard the stale title from this replaced stream: cancel it and
+          // unblock its persistence wait without letting it save (the newer job
+          // owns the conversation now).
+          titleAbortController.abort();
+          resolveConvoReady();
           // Still decrement pending request since we incremented at start
           await decrementPendingRequest(userId);
+          if (immediateTitlePromise) {
+            immediateTitlePromise.finally(() => {
+              if (client) {
+                disposeClient(client);
+              }
+            });
+          } else if (client) {
+            disposeClient(client);
+          }
           return;
         }
+
+        // The conversation row now exists and this stream is authoritative; allow
+        // any in-flight immediate title generation to persist (saveConvo uses noUpsert).
+        resolveConvoReady();
 
         if (!wasAbortedBeforeComplete) {
           const finalEvent = {
@@ -444,6 +463,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         if (titleTiming === 'immediate') {
+          // If the user stopped this turn, cancel the in-flight title so a
+          // cancelled response neither consumes the title model nor gets a title.
+          if (wasAbortedBeforeComplete) {
+            titleAbortController.abort();
+          }
           // Title was fired in parallel above (if eligible). Defer disposal until
           // it settles so the run/req aren't torn down mid-generation.
           if (immediateTitlePromise) {
@@ -484,6 +508,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         if (wasAborted) {
           logger.debug(`[ResumableAgentController] Generation aborted for ${streamId}`);
+          // Cancel the in-flight title for a stopped turn (errors keep it: the
+          // title derives from the user's input, which is valid regardless).
+          titleAbortController.abort();
           // abortJob already handled emitDone and completeJob
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);

@@ -170,9 +170,11 @@ export function useTitleGeneration(enabled = true) {
           setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
         } else if (!deferredTitles.has(conversationId)) {
           // First failure at/after completion without a prior deferral: grant one
-          // fresh cycle in place (polling has stopped, so re-promotion won't fire).
+          // fresh cycle. Polling has stopped (no re-promotion), so reset the query
+          // in place — `resetQueries` refetches active observers with a fresh retry
+          // budget, unlike `removeQueries`, which leaves the observer in error state.
           deferredTitles.add(conversationId);
-          queryClient.removeQueries(genTitleQueryKey(conversationId));
+          queryClient.resetQueries(genTitleQueryKey(conversationId));
         } else {
           // The post-completion fetch also failed — the title is genuinely absent.
           processedTitles.add(conversationId);
