@@ -952,6 +952,11 @@ class GenerationJobManagerClass {
       return;
     }
 
+    // Refresh job activity so the store's stale-job failsafe reaps on inactivity
+    // (a hung generation), not on age (a long but live stream). Parity with
+    // RedisJobStore refreshing the running TTL on each appendChunk.
+    this.jobStore.recordActivity?.(streamId);
+
     await this.trackUserMessage(streamId, event);
 
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)

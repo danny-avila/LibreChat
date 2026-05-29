@@ -35,6 +35,13 @@ export class InMemoryJobStore implements IJobStore {
   /** Maps userId -> Set of streamIds (conversationIds) for active jobs */
   private userJobMap = new Map<string, Set<string>>();
 
+  /**
+   * Maps streamId -> last generation-activity timestamp. Refreshed via
+   * recordActivity() on each emitted chunk so the stale-job failsafe reaps on
+   * inactivity (a hung generation) rather than age (a long but live stream).
+   */
+  private lastActivity = new Map<string, number>();
+
   /** Time to keep completed jobs before cleanup (0 = immediate) */
   private ttlAfterComplete = 0;
 
@@ -129,7 +136,19 @@ export class InMemoryJobStore implements IJobStore {
   async deleteJob(streamId: string): Promise<void> {
     this.jobs.delete(streamId);
     this.contentState.delete(streamId);
+    this.lastActivity.delete(streamId);
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
+  }
+
+  /**
+   * Refresh a job's last-activity timestamp (called on each emitted chunk) so the
+   * stale-job failsafe in cleanup() reaps on inactivity rather than total age,
+   * mirroring RedisJobStore refreshing the running TTL on each appendChunk.
+   */
+  recordActivity(streamId: string): void {
+    if (this.jobs.has(streamId)) {
+      this.lastActivity.set(streamId, Date.now());
+    }
   }
 
   async hasJob(streamId: string): Promise<boolean> {
@@ -158,16 +177,18 @@ export class InMemoryJobStore implements IJobStore {
         if (this.ttlAfterComplete === 0 || now - job.completedAt > this.ttlAfterComplete) {
           toDelete.push(streamId);
         }
-      } else if (
-        this.staleJobTimeout > 0 &&
-        job.status === 'running' &&
-        now - job.createdAt > this.staleJobTimeout
-      ) {
-        // Failsafe: reap jobs stuck in "running" past the stale timeout. These are
-        // crashed/hung generations that never reached a terminal state; without this
-        // they accumulate their content state in memory until the process OOMs.
-        toDelete.push(streamId);
-        staleRunning++;
+      } else if (this.staleJobTimeout > 0 && job.status === 'running') {
+        // Failsafe: reap jobs stuck in "running" with no generation activity for
+        // longer than the stale timeout. These are crashed/hung generations that
+        // never reached a terminal state; without this they accumulate their
+        // content state in memory until the process OOMs. Reaping keys off last
+        // activity (not creation time) so a long but live stream is never reaped,
+        // mirroring RedisJobStore refreshing the running TTL on each chunk.
+        const lastActive = this.lastActivity.get(streamId) ?? job.createdAt;
+        if (now - lastActive > this.staleJobTimeout) {
+          toDelete.push(streamId);
+          staleRunning++;
+        }
       }
     }
 

@@ -34,6 +34,24 @@ describe('InMemoryJobStore - stale running-job failsafe', () => {
     await store.destroy();
   });
 
+  it('does not reap a running job with recent activity even if created long ago', async () => {
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const store = new InMemoryJobStore({ staleJobTimeout: 1000 });
+    await store.initialize();
+
+    await store.createJob('s1', 'u1', 's1');
+    await store.updateJob('s1', { createdAt: Date.now() - 5000 });
+    // Actively streaming: a long but live generation must not be reaped.
+    store.recordActivity('s1');
+
+    const removed = await store.cleanup();
+
+    expect(removed).toBe(0);
+    expect(await store.hasJob('s1')).toBe(true);
+
+    await store.destroy();
+  });
+
   it('does not reap a running job within the staleJobTimeout', async () => {
     const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
     const store = new InMemoryJobStore({ staleJobTimeout: 60000 });

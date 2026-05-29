@@ -181,6 +181,18 @@ export interface IJobStore {
   /** Cleanup expired jobs */
   cleanup(): Promise<number>;
 
+  /**
+   * Record generation activity for a job (e.g. a chunk was emitted), refreshing
+   * its "last active" timestamp so the stale-running-job failsafe does not reap a
+   * stream that is still producing output.
+   *
+   * In-memory: updates an internal last-activity timestamp used by cleanup().
+   * Redis: no-op — the running-job TTL is already refreshed on each appendChunk.
+   *
+   * @param streamId - The stream identifier
+   */
+  recordActivity?(streamId: string): void;
+
   /** Get total job count */
   getJobCount(): Promise<number>;
 
