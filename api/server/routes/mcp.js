@@ -55,11 +55,24 @@ const OAUTH_CSRF_COOKIE_PATH = '/api/mcp';
 const getOAuthFlowId = (userId, serverName) =>
   MCPOAuthHandler.generateFlowId(userId, serverName, getTenantId());
 
-const getFlowUserId = (flowId) => MCPOAuthHandler.parseFlowId(flowId)?.userId;
-
 const canAccessOAuthFlow = (flowId, userId) => {
-  const flowUserId = getFlowUserId(flowId);
-  return flowUserId === userId || flowUserId === 'system';
+  const parsed = MCPOAuthHandler.parseFlowId(flowId);
+  if (!parsed) {
+    return false;
+  }
+  if (parsed.tenantId && parsed.tenantId !== getTenantId()) {
+    return false;
+  }
+  return parsed.userId === userId || parsed.userId === 'system';
+};
+
+const clearGetTokensFlow = async ({ flowManager, flowId, tokens }) => {
+  const state = await flowManager.getFlowState(flowId, 'mcp_get_tokens');
+  if (state?.type === 'mcp_get_tokens' && state.status === 'PENDING') {
+    await flowManager.completeFlow(flowId, 'mcp_get_tokens', tokens);
+    return;
+  }
+  await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
 };
 
 const checkMCPUsePermissions = generateCheckAccess({
@@ -173,18 +186,21 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           const flowManager = getFlowStateManager(flowsCache);
           const flowId = await MCPOAuthHandler.resolveStateToFlowId(state, flowManager);
           if (flowId) {
-            const flowUserId = getFlowUserId(flowId);
-            if (!flowUserId) {
-              return;
-            }
-            const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
-            const hasSession = !hasCsrf && validateOAuthSession(req, flowUserId);
-            if (hasCsrf || hasSession) {
-              await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
-              logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
+            const parsed = MCPOAuthHandler.parseFlowId(flowId);
+            if (!parsed) {
+              logger.warn('[MCP OAuth] Invalid flow ID format for OAuth error callback', {
                 flowId,
-                error: oauthError,
               });
+            } else {
+              const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
+              const hasSession = !hasCsrf && validateOAuthSession(req, parsed.userId);
+              if (hasCsrf || hasSession) {
+                await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
+                logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
+                  flowId,
+                  error: oauthError,
+                });
+              }
             }
           }
         } catch (err) {
@@ -216,14 +232,14 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     }
     logger.debug('[MCP OAuth] Resolved flow ID from state', { flowId });
 
-    const flowUserId = getFlowUserId(flowId);
-    if (!flowUserId) {
+    const parsedFlowId = MCPOAuthHandler.parseFlowId(flowId);
+    if (!parsedFlowId) {
       logger.error('[MCP OAuth] Invalid flow ID format', { flowId });
       return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
     }
 
     const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
-    const hasSession = !hasCsrf && validateOAuthSession(req, flowUserId);
+    const hasSession = !hasCsrf && validateOAuthSession(req, parsedFlowId.userId);
     let hasActiveFlow = false;
     if (!hasCsrf && !hasSession) {
       const pendingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
@@ -345,9 +361,17 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
               serverName,
               flowState.tenantId,
             );
-            await flowManager.deleteFlow(tokenFlowId, 'mcp_get_tokens');
+            await clearGetTokensFlow({
+              flowManager,
+              flowId: tokenFlowId,
+              tokens,
+            });
             if (tokenFlowId !== flowId) {
-              await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+              await clearGetTokensFlow({
+                flowManager,
+                flowId,
+                tokens,
+              });
             }
           } catch (error) {
             logger.warn('[MCP OAuth] Failed to clear cached token flow state', error);

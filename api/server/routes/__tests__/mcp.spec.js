@@ -458,6 +458,26 @@ describe('MCP Routes', () => {
         expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_client`);
         expect(mockFlowManager.failFlow).not.toHaveBeenCalled();
       });
+
+      it('should redirect instead of hanging when OAuth error flow ID is malformed', async () => {
+        const mockFlowManager = {
+          failFlow: jest.fn(),
+        };
+
+        getLogStores.mockReturnValueOnce({});
+        require('~/config').getFlowStateManager.mockReturnValueOnce(mockFlowManager);
+        MCPOAuthHandler.resolveStateToFlowId.mockResolvedValueOnce('malformed-flow-id');
+
+        const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
+          error: 'invalid_client',
+          state: 'opaque-state',
+        });
+        const basePath = getBasePath();
+
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_client`);
+        expect(mockFlowManager.failFlow).not.toHaveBeenCalled();
+      });
     });
 
     it('should redirect to error page when code is missing', async () => {
@@ -794,6 +814,74 @@ describe('MCP Routes', () => {
         }),
       );
       expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith(
+        'tenant:tenant-a:test-user-id:test-server',
+        'mcp_get_tokens',
+      );
+      expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith(flowId, 'mcp_get_tokens');
+    });
+
+    it('should complete pending token flow waiters after storing callback tokens', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockImplementation((id, type) => {
+          if (type === 'mcp_get_tokens' && id === 'tenant:tenant-a:test-user-id:test-server') {
+            return Promise.resolve({
+              type: 'mcp_get_tokens',
+              status: 'PENDING',
+            });
+          }
+          return Promise.resolve({ status: 'PENDING' });
+        }),
+        completeFlow: jest.fn().mockResolvedValue(true),
+        deleteFlow: jest.fn().mockResolvedValue(true),
+      };
+      const mockFlowState = {
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        metadata: {},
+        clientInfo: {},
+        codeVerifier: 'test-verifier',
+        tenantId: 'tenant-a',
+      };
+      const mockTokens = {
+        access_token: 'fresh-access-token',
+        refresh_token: 'fresh-refresh-token',
+      };
+
+      MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
+      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      MCPTokenStorage.storeTokens.mockResolvedValue();
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      require('~/config').getOAuthReconnectionManager.mockReturnValue({
+        clearReconnection: jest.fn(),
+      });
+      require('~/config').getMCPManager.mockReturnValue({
+        getUserConnection: jest.fn().mockResolvedValue({
+          fetchTools: jest.fn().mockResolvedValue([]),
+        }),
+      });
+      const { getCachedTools, setCachedTools } = require('~/server/services/Config');
+      getCachedTools.mockResolvedValue({});
+      setCachedTools.mockResolvedValue();
+
+      const flowId = 'test-user-id:test-server';
+      const csrfToken = generateTestCsrfToken(flowId);
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({
+          code: 'test-auth-code',
+          state: flowId,
+        });
+
+      expect(response.status).toBe(302);
+      expect(mockFlowManager.completeFlow).toHaveBeenCalledWith(
+        'tenant:tenant-a:test-user-id:test-server',
+        'mcp_get_tokens',
+        mockTokens,
+      );
+      expect(mockFlowManager.deleteFlow).not.toHaveBeenCalledWith(
         'tenant:tenant-a:test-user-id:test-server',
         'mcp_get_tokens',
       );
@@ -1211,6 +1299,7 @@ describe('MCP Routes', () => {
     });
 
     it('should return tokens for a tenant-prefixed flow owned by the user', async () => {
+      const { getTenantId } = require('@librechat/data-schemas');
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({
           status: 'COMPLETED',
@@ -1220,6 +1309,7 @@ describe('MCP Routes', () => {
         }),
       };
 
+      getTenantId.mockReturnValue('tenant-a');
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
@@ -1237,6 +1327,18 @@ describe('MCP Routes', () => {
         'tenant:tenant-a:test-user-id:test-server',
         'mcp_oauth',
       );
+    });
+
+    it('should reject tenant-prefixed token flow access from another tenant', async () => {
+      const { getTenantId } = require('@librechat/data-schemas');
+      getTenantId.mockReturnValue('tenant-b');
+
+      const response = await request(app).get(
+        '/api/mcp/oauth/tokens/tenant:tenant-a:test-user-id:test-server',
+      );
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ error: 'Access denied' });
     });
 
     it('should return 401 when user is not authenticated', async () => {
@@ -1332,6 +1434,7 @@ describe('MCP Routes', () => {
     });
 
     it('should return flow status for a tenant-prefixed flow owned by the user', async () => {
+      const { getTenantId } = require('@librechat/data-schemas');
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({
           status: 'PENDING',
@@ -1339,6 +1442,7 @@ describe('MCP Routes', () => {
         }),
       };
 
+      getTenantId.mockReturnValue('tenant-a');
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
@@ -1357,6 +1461,18 @@ describe('MCP Routes', () => {
         'tenant:tenant-a:test-user-id:test-server',
         'mcp_oauth',
       );
+    });
+
+    it('should reject tenant-prefixed status access from another tenant', async () => {
+      const { getTenantId } = require('@librechat/data-schemas');
+      getTenantId.mockReturnValue('tenant-b');
+
+      const response = await request(app).get(
+        '/api/mcp/oauth/status/tenant:tenant-a:test-user-id:test-server',
+      );
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ error: 'Access denied' });
     });
 
     it('should return 403 when flowId does not match authenticated user', async () => {
