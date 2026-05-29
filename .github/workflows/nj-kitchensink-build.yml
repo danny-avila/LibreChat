@@ -49,9 +49,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Redeploy kitchensink from latest
-        # uses: apideck-libraries/ecs-restart-service@v1
-        run: |
-          aws ecs update-service \
-            --cluster "${{ secrets.KITCHENSINK_CLUSTER_NAME }}" \
-            --service "${{ secrets.KITCHENSINK_SERVICE_NAME }}" \
-            --force-new-deployment
+        uses: apideck-libraries/ecs-restart-service@v1
+        with:
+          service: ${{ secrets.KITCHENSINK_SERVICE_NAME }}
+          cluster: ${{ secrets.KITCHENSINK_CLUSTER_NAME }}
