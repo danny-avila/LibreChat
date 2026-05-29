@@ -113,8 +113,13 @@ const addTitle = async (
     if (signal?.aborted) {
       // The turn was stopped, or this stream was replaced, after the title had
       // already been generated — discard it instead of persisting a title for a
-      // cancelled/discarded response.
-      await titleCache.delete(key);
+      // cancelled/discarded response. Only clear the cache if it still holds THIS
+      // task's title: a replacement stream shares the `userId-conversationId` key
+      // and may have already cached its own (valid) title that we must not remove.
+      const cached = await titleCache.get(key);
+      if (cached === title) {
+        await titleCache.delete(key);
+      }
       return;
     }
 

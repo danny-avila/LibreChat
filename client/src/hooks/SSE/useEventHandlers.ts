@@ -605,9 +605,12 @@ export default function useEventHandlers({
           /** A title applied locally (e.g. an immediate-mode title fetched while the
            *  response was still streaming) must survive the final event, whose
            *  `conversation` was built before the title was saved and so carries no
-           *  title yet — otherwise the chat reverts to "New Chat" until reload. */
+           *  title yet — otherwise the chat reverts to "New Chat" until reload.
+           *  Skip preservation for a stopped (unfinished) turn: the server cancels
+           *  and discards that title, so the local one would diverge from server state. */
           const hasRealTitle = (title?: string | null): title is string =>
             title != null && title !== '' && title !== 'New Chat';
+          const titlePreservable = responseMessage?.unfinished !== true;
           setConversation((prevState) => {
             const update = {
               ...prevState,
@@ -617,7 +620,7 @@ export default function useEventHandlers({
               update.model = prevState.model;
             }
             const prevTitle = prevState?.title;
-            if (!hasRealTitle(conversation.title) && hasRealTitle(prevTitle)) {
+            if (titlePreservable && !hasRealTitle(conversation.title) && hasRealTitle(prevTitle)) {
               update.title = prevTitle;
             }
             if (conversation.conversationId) {
@@ -629,7 +632,11 @@ export default function useEventHandlers({
                     ...serverConversation,
                   } as TConversation;
                   const cachedTitle = cachedConvo?.title;
-                  if (!hasRealTitle(serverConversation.title) && hasRealTitle(cachedTitle)) {
+                  if (
+                    titlePreservable &&
+                    !hasRealTitle(serverConversation.title) &&
+                    hasRealTitle(cachedTitle)
+                  ) {
                     merged.title = cachedTitle;
                   }
                   return merged;

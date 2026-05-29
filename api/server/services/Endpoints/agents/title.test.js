@@ -1,4 +1,11 @@
-const mockCache = { get: jest.fn(), set: jest.fn(), delete: jest.fn() };
+/** Backing store so `get` reflects prior `set`/`delete` — addTitle reads the cache
+ *  back to avoid clobbering a replacement stream's title on abort. */
+const mockCacheStore = new Map();
+const mockCache = {
+  get: jest.fn((key) => mockCacheStore.get(key)),
+  set: jest.fn((key, value) => mockCacheStore.set(key, value)),
+  delete: jest.fn((key) => mockCacheStore.delete(key)),
+};
 const mockSaveConvo = jest.fn();
 
 jest.mock('@librechat/api', () => ({
@@ -34,6 +41,7 @@ const makeReq = () => ({ user: { id: 'user-1' }, body: {}, config: {} });
 describe('agents addTitle', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCacheStore.clear();
   });
 
   it('uses the explicit conversationId for the cache key and saveConvo (immediate mode)', async () => {
@@ -179,5 +187,26 @@ describe('agents addTitle', () => {
     expect(abortController.signal.aborted).toBe(true);
     expect(mockSaveConvo).not.toHaveBeenCalled();
     expect(mockCache.delete).toHaveBeenCalledWith('user-1-cid');
+  });
+
+  it("does not delete a replacement stream's cached title when aborted", async () => {
+    const client = makeClient('Stale Title');
+    const ac = new AbortController();
+    ac.abort();
+    // Simulate a replacement stream having cached its own (newer) title under the
+    // shared `userId-conversationId` key by the time this stale task re-reads it.
+    mockCache.get.mockImplementationOnce(() => 'Newer Title');
+
+    await addTitle(makeReq(), {
+      text: 'hi',
+      client,
+      conversationId: 'cid',
+      immediate: true,
+      convoReady: Promise.resolve(),
+      signal: ac.signal,
+    });
+
+    expect(mockCache.delete).not.toHaveBeenCalled();
+    expect(mockSaveConvo).not.toHaveBeenCalled();
   });
 });

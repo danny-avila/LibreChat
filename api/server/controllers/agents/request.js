@@ -96,11 +96,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
   /** When to generate the conversation title. `immediate` (default) fires title
    *  generation in parallel with the response, from the user's first message;
-   *  `final` defers it until the full response completes (legacy behavior). */
-  const titleTiming = resolveTitleTiming({
-    appConfig: req.config,
-    endpoint: endpointOption?.endpoint,
-  });
+   *  `final` defers it until the full response completes (legacy behavior).
+   *  Resolved from the agent's actual endpoint once the client is initialized. */
+  let titleTiming = 'immediate';
 
   const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
   if (!allowed) {
@@ -221,6 +219,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
 
     client = result.client;
+
+    // Resolve title timing from the agent's actual endpoint (known only after
+    // initialization) so a per-endpoint `final` override on a custom/provider
+    // endpoint backing the agent is honored, not just the `agents` endpoint.
+    titleTiming = resolveTitleTiming({
+      appConfig: req.config,
+      endpoint: client?.options?.agent?.endpoint ?? endpointOption?.endpoint,
+    });
 
     if (client?.sender) {
       GenerationJobManager.updateMetadata(streamId, { sender: client.sender });
