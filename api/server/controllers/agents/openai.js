@@ -157,6 +157,65 @@ function normalizeMessageContentForDocuments(message, fallbackText) {
   }
 }
 
+function summarizeContentBlockForLog(part) {
+  if (!part || typeof part !== 'object') {
+    return { kind: typeof part };
+  }
+
+  if (part.type === 'text') {
+    const text = typeof part.text === 'string' ? part.text : '';
+    return { type: 'text', textLength: text.length, blank: text.trim() === '' };
+  }
+
+  if (part.type === 'document') {
+    const source = part.document?.source ?? part.source;
+    const bytes = source?.bytes;
+    return {
+      type: 'document',
+      name: part.document?.name,
+      format: part.document?.format,
+      sourceType: source?.type,
+      mediaType: source?.media_type,
+      bytesLength: bytes?.byteLength ?? bytes?.length,
+      hasData: Boolean(source?.data),
+    };
+  }
+
+  if (part.type === 'file' || part.type === 'input_file') {
+    return {
+      type: part.type,
+      filename: part.file?.filename ?? part.filename,
+      hasFileData: Boolean(part.file?.file_data ?? part.file_data),
+    };
+  }
+
+  if (part.type === 'image_url') {
+    return { type: 'image_url', hasUrl: Boolean(part.image_url?.url ?? part.image_url) };
+  }
+
+  return { type: part.type ?? typeof part };
+}
+
+function summarizeMessageForLog(message) {
+  const content = message?.content ?? message?.kwargs?.content;
+  const role =
+    message?.role ??
+    (typeof message?._getType === 'function' ? message._getType() : message?.constructor?.name);
+
+  if (typeof content === 'string') {
+    return {
+      role,
+      content: { kind: 'string', length: content.length, blank: content.trim() === '' },
+    };
+  }
+
+  if (Array.isArray(content)) {
+    return { role, content: { kind: 'array', blocks: content.map(summarizeContentBlockForLog) } };
+  }
+
+  return { role, content: { kind: typeof content } };
+}
+
 /**
  * Send an error response in OpenAI format
  */
@@ -538,6 +597,14 @@ const OpenAIChatCompletionController = async (req, res) => {
           `Attached file(s): ${inlineProviderFiles.map((file) => file.filename).join(', ')}`,
         );
         latestUserMessage.documents = documentResult.documents;
+        logger.debug(
+          {
+            agentId,
+            files: inlineProviderFiles.map((file) => file.filename),
+            message: summarizeMessageForLog(latestUserMessage),
+          },
+          '[OpenAI API] Prepared remote inline provider file message',
+        );
       }
 
       logger.debug(
@@ -548,6 +615,23 @@ const OpenAIChatCompletionController = async (req, res) => {
     const toolSet = buildToolSet(primaryConfig);
     const formatted = formatAgentMessages(openaiMessages, {}, toolSet);
     const formattedMessages = formatted.messages;
+    if (inlineProviderFiles.length > 0) {
+      const formattedUserMessage =
+        [...formattedMessages].reverse().find((message) => {
+          const role =
+            message?.role ??
+            (typeof message?._getType === 'function' ? message._getType() : undefined);
+          return role === 'user' || role === 'human';
+        }) ?? formattedMessages[formattedMessages.length - 1];
+      logger.debug(
+        {
+          agentId,
+          files: inlineProviderFiles.map((file) => file.filename),
+          message: summarizeMessageForLog(formattedUserMessage),
+        },
+        '[OpenAI API] Formatted remote inline provider file message',
+      );
+    }
     const initialSummary = formatted.summary;
     let indexTokenCountMap = formatted.indexTokenCountMap;
 
