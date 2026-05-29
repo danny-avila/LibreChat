@@ -2,7 +2,7 @@
 
 Mémoire institutionnelle du projet Vermeer Chat, à destination de tout nouveau lecteur (humain ou IA). Ce fichier est **stratégique** : contexte, stack, conventions, décisions, garde-fous, état d'avancement. Il ne contient pas l'historique détaillé des décisions et conversations — celui-ci est tracké sur Notion.
 
-Dernière mise à jour : 2026-05-27 (soir) — HEAD `a98a8d6cd`.
+Dernière mise à jour : 2026-05-29 — ajout de la section 12 (Déploiement et CI/CD).
 
 La Partie 1 ci-dessous couvre le projet Vermeer. La [Partie 2](#partie-2--conventions-techniques-librechat) reprend les conventions techniques LibreChat (workspaces, code style, tests) — à lire après le contexte projet.
 
@@ -19,6 +19,7 @@ La Partie 1 ci-dessous couvre le projet Vermeer. La [Partie 2](#partie-2--conven
 9. Limitations connues et travaux en cours
 10. Documentation et ressources externes
 11. Risques techniques connus
+12. Déploiement et CI/CD
 
 ---
 
@@ -71,6 +72,7 @@ Les autres intervenants (UX, chefferie de projet, business, PMO BETC, documentat
 ## 4. Conventions de code et de workflow
 
 - **Branches** : aujourd'hui `main` uniquement côté `origin`. Mise en place d'environnements staging/prod en cours via Oussama. **À CONFIRMER** : état réel des branches staging/prod.
+- **Release / déploiement** : l'image Docker de prod se construit en poussant un **tag de version** (`v*`). Procédure complète en [section 12](#12-déploiement-et-cicd).
 - **Commits** : convention `type(scope): sujet` en français (ex. `feat(ux/agents): …`), corps détaillé en français expliquant le pivot et les hors-scope, signature `Co-Authored-By: Claude Opus 4.7`.
 - **Méthode de travail** : approche **Phase 1 (investigation) → Phase 2 (plan) → Phase 3 (exécution)** avec validation explicite entre chaque phase pour tout chantier conséquent (voir garde-fou dédié section 6).
 - **Design system Vermeer V1** : dark mode global par défaut (forcé via `FORCE_VERMEER_DARK=true`), accent rouge Vermeer `#E5384A` (hover `#C52838`), fond noir principal `#0A0A0B` (`--surface-primary`) avec surfaces anthracite `#141416` / `#1A1A1C`. Variables définies dans la section `.dark` de `client/src/style.css`. Valeurs V1 best-guess, à raffiner en atelier specs avec Antoine.
@@ -183,6 +185,43 @@ _Catégorie B — branding/cosmétique, sans équivalent natif → restent légi
 - **Pricing en dur dans `api/models/tx.js`** : les rates input/completion par modèle vivent dans ce fichier, pas dans le yaml. Avant d'activer la balance en V1, vérifier que les modèles utilisés (gpt-5.x, claude-opus-4-6, claude-sonnet-4-5, claude-haiku-4-5) ont un rate défini, sinon la consommation n'est pas trackée.
 - **Synchro balance au login** : le solde se réaligne sur la config globale (`startBalance`) à chaque connexion. Attention à la migration des users existants — un `startBalance` global mal réglé peut écraser les soldes attendus.
 - **`CREDS_KEY` / `CREDS_IV`** : présents dans le `.env`, à ne JAMAIS perdre ni régénérer lors d'une migration MongoDB. Ces clés chiffrent les credentials user en base ; sans elles, les données existantes deviennent illisibles.
+
+---
+
+## 12. Déploiement et CI/CD
+
+La construction de l'image Docker de prod est automatisée par GitHub Actions, workflow [`vermeer-prod-image.yml`](.github/workflows/vermeer-prod-image.yml).
+
+**Principe** : l'image n'est construite **que lorsqu'on pousse un tag de version** (`v*`, ex. `v0.8.5`). Un simple push sur `main` ne déclenche **aucun** build — le build complet (`npm ci` + build frontend) est long et coûteux, on ne le lance donc que pour une vraie release. Un déclenchement manuel reste possible depuis l'onglet **Actions → Build & Push Vermeer Prod Image → Run workflow**.
+
+**Image produite** (registre GitHub Container Registry, pas de secret à gérer, auth via le `GITHUB_TOKEN` natif) :
+
+```
+ghcr.io/popaistudio/vermeer-text:v0.8.5     # le tag de version
+ghcr.io/popaistudio/vermeer-text:<short-sha> # le commit exact, pour rollback
+ghcr.io/popaistudio/vermeer-text:latest      # toujours la dernière release
+```
+
+### Publier une release de prod (procédure)
+
+```bash
+# 1. Être sur main à jour, code mergé et relu
+git checkout main && git pull origin main
+
+# 2. Créer le tag de version (préfixe v obligatoire pour matcher v*)
+git tag v0.8.5
+
+# 3. Pousser le tag — c'est CE push qui lance le build de l'image
+git push origin v0.8.5
+```
+
+Suivre le build dans l'onglet **Actions** du repo. Une fois vert, l'image `ghcr.io/popaistudio/vermeer-text:v0.8.5` (+ `latest`) est disponible et le serveur de prod peut la `docker pull`.
+
+**Notes pratiques** :
+- Le numéro de version du tag doit rester cohérent avec le champ `version` de `package.json` (actuellement `v0.8.5`).
+- Le déploiement sur le serveur de prod (pull de l'image + redémarrage) n'est **pas encore automatisé** — étape à câbler avec Oussama (cf. §3). Pour l'instant, après un build vert, le pull/restart est manuel côté serveur.
+- En cas de souci au build : vérifier dans **Settings → Actions → General → Workflow permissions** que « Read and write permissions » est activé (nécessaire pour pousser sur GHCR).
+- Rappel garde-fou §6 : ne pas pousser sur `main` sans review. Le tag se pose sur un commit de `main` déjà relu et mergé.
 
 ---
 
