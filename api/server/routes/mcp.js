@@ -309,7 +309,10 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             updateToken: db.updateToken,
             findToken: db.findToken,
             clientInfo: flowState.clientInfo,
-            metadata: flowState.metadata,
+            metadata: MCPOAuthHandler.buildStoredClientMetadata(
+              flowState.metadata,
+              flowState.resourceMetadata,
+            ),
           });
           logger.debug('[MCP OAuth] Stored OAuth tokens prior to reconnection', {
             serverName,
@@ -326,7 +329,15 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
          */
         if (typeof flowManager?.deleteFlow === 'function') {
           try {
-            await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+            const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(
+              flowState.userId,
+              serverName,
+              flowState.tenantId,
+            );
+            await flowManager.deleteFlow(tokenFlowId, 'mcp_get_tokens');
+            if (tokenFlowId !== flowId) {
+              await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+            }
           } catch (error) {
             logger.warn('[MCP OAuth] Failed to clear cached token flow state', error);
           }

@@ -293,6 +293,7 @@ Please follow these instructions when using tools from the respective MCP server
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
+    let cleanupRequestOAuthHandler: (() => void) | undefined;
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
 
@@ -320,9 +321,8 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
 
-      const rawConfig =
-        providedConfig ??
-        (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
+      const registry = MCPServersRegistry.getInstance();
+      const rawConfig = providedConfig ?? (await registry.getServerConfig(serverName, userId));
       if (!rawConfig) {
         throw new McpError(
           ErrorCode.InvalidRequest,
@@ -348,6 +348,30 @@ Please follow these instructions when using tools from the respective MCP server
       });
       if ('headers' in currentOptions) {
         connection.setRequestHeaders(currentOptions.headers || {});
+      }
+      if (userId && user && oauthStart && flowManager && isOAuthServer(currentOptions)) {
+        cleanupRequestOAuthHandler = MCPConnectionFactory.attachRequestOAuthHandler(
+          {
+            serverName,
+            serverConfig: currentOptions,
+            dbSourced: isDbSourced,
+            useSSRFProtection: registry.shouldEnableSSRFProtection(),
+            allowedDomains: registry.getAllowedDomains(),
+            allowedAddresses: registry.getAllowedAddresses(),
+          },
+          {
+            useOAuth: true,
+            user,
+            flowManager,
+            tokenMethods,
+            signal: options?.signal,
+            oauthStart,
+            oauthEnd,
+            customUserVars,
+            requestBody,
+          },
+          connection,
+        );
       }
 
       const result = await connection.client.request(
@@ -375,6 +399,8 @@ Please follow these instructions when using tools from the respective MCP server
       logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
+    } finally {
+      cleanupRequestOAuthHandler?.();
     }
   }
 }

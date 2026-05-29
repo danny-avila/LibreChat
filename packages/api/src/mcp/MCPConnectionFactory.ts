@@ -2,7 +2,12 @@ import { logger, getTenantId, tenantStorage } from '@librechat/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { TokenMethods, TenantContext } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, OAuthMetadata, MCPOAuthFlowMetadata } from '~/mcp/oauth';
+import type {
+  MCPOAuthTokens,
+  OAuthMetadata,
+  MCPOAuthFlowMetadata,
+  OAuthProtectedResourceMetadata,
+} from '~/mcp/oauth';
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
 import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
@@ -24,6 +29,7 @@ type OAuthRequiredEvent = {
   error?: unknown;
   status?: number;
   statusCode?: number;
+  skipSilentRefresh?: boolean;
 };
 
 /**
@@ -88,6 +94,15 @@ export class MCPConnectionFactory {
   ): Promise<MCPConnection> {
     const factory = new this(basic, oauth);
     return factory.createConnection();
+  }
+
+  static attachRequestOAuthHandler(
+    basic: t.BasicConnectionOptions,
+    oauth: t.OAuthConnectionOptions,
+    connection: MCPConnection,
+  ): () => void {
+    const factory = new this(basic, oauth);
+    return factory.handleOAuthEvents(connection, 'oauthReauthenticationRequired');
   }
 
   /**
@@ -299,9 +314,9 @@ export class MCPConnectionFactory {
       // Intentionally do NOT call cleanupOAuthHandlers() on success.
       // The `oauthRequired` listener must remain attached for the connection's
       // lifetime so a mid-session 401 (emitted by `MCPConnection.connectClient`
-      // during transport recovery) can drive the silent-refresh / interactive
-      // OAuth flow. Removing it here would leave `connectClient` waiting on
-      // `oauthHandled` until its OAuth timeout fires.
+      // during transport recovery) can drive silent refresh or hand off to a
+      // live request-scoped reauth handler. Removing it here would leave
+      // `connectClient` waiting on `oauthHandled` until its OAuth timeout fires.
       return connection;
     } catch (error) {
       if (cleanupOAuthHandlers) {
@@ -405,19 +420,12 @@ export class MCPConnectionFactory {
     );
   }
 
-  private scopeFlowIdToTenant(flowId: string): string {
-    if (!this.tenantId) {
-      return flowId;
-    }
-    return `tenant:${encodeURIComponent(this.tenantId)}:${flowId}`;
-  }
-
   private getBaseFlowId(): string {
     return MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
   }
 
   private getTokenFlowId(): string {
-    return this.scopeFlowIdToTenant(this.getBaseFlowId());
+    return MCPOAuthHandler.generateTokenFlowId(this.userId!, this.serverName, this.tenantId);
   }
 
   /** Retrieves existing OAuth tokens from storage or returns null */
@@ -467,6 +475,7 @@ export class MCPConnectionFactory {
       clientInfo?: OAuthClientInformation;
       storedTokenEndpoint?: string;
       storedAuthMethods?: string[];
+      resource?: string;
     },
     signal?: AbortSignal,
   ) => Promise<MCPOAuthTokens> {
@@ -479,6 +488,7 @@ export class MCPConnectionFactory {
           clientInfo: metadata.clientInfo,
           storedTokenEndpoint: metadata.storedTokenEndpoint,
           storedAuthMethods: metadata.storedAuthMethods,
+          resource: metadata.resource,
         },
         this.serverConfig.oauth_headers ?? {},
         this.serverConfig.oauth,
@@ -730,11 +740,14 @@ export class MCPConnectionFactory {
   }
 
   /** Sets up OAuth event handlers for the connection */
-  protected handleOAuthEvents(connection: MCPConnection): () => void {
+  protected handleOAuthEvents(
+    connection: MCPConnection,
+    eventName: 'oauthRequired' | 'oauthReauthenticationRequired' = 'oauthRequired',
+  ): () => void {
     const oauthHandler = async (data: OAuthRequiredEvent) => {
       logger.info(`${this.logPrefix} oauthRequired event received`);
 
-      if (this.shouldAttemptSilentTokenRefresh(data)) {
+      if (!data.skipSilentRefresh && this.shouldAttemptSilentTokenRefresh(data)) {
         const refreshedTokens = await this.attemptSilentTokenRefresh();
         if (refreshedTokens) {
           connection.setOAuthTokens(refreshedTokens);
@@ -751,6 +764,13 @@ export class MCPConnectionFactory {
       await this.invalidateCompletedOAuthFlow();
 
       if (this.connectionReady) {
+        const emitted = connection.emit('oauthReauthenticationRequired', {
+          ...data,
+          skipSilentRefresh: true,
+        });
+        if (emitted) {
+          return;
+        }
         logger.info(
           `${this.logPrefix} Silent refresh did not recover cached connection; requiring fresh OAuth prompt`,
         );
@@ -853,7 +873,10 @@ export class MCPConnectionFactory {
               updateToken: this.tokenMethods!.updateToken,
               findToken: this.tokenMethods!.findToken,
               clientInfo: result.clientInfo,
-              metadata: result.metadata,
+              metadata: MCPOAuthHandler.buildStoredClientMetadata(
+                result.metadata,
+                result.resourceMetadata,
+              ),
             }),
           );
           // Same rationale as the silent-refresh success path: invalidate the
@@ -877,10 +900,10 @@ export class MCPConnectionFactory {
       }
     };
 
-    connection.on('oauthRequired', oauthHandler);
+    connection.on(eventName, oauthHandler);
 
     return () => {
-      connection.removeListener('oauthRequired', oauthHandler);
+      connection.removeListener(eventName, oauthHandler);
     };
   }
 
@@ -1010,6 +1033,7 @@ export class MCPConnectionFactory {
     tokens: MCPOAuthTokens | null;
     clientInfo?: OAuthClientInformation;
     metadata?: OAuthMetadata;
+    resourceMetadata?: OAuthProtectedResourceMetadata;
     reusedStoredClient?: boolean;
     error?: unknown;
   } | null> {
@@ -1070,6 +1094,7 @@ export class MCPConnectionFactory {
               tokens,
               clientInfo: flowMeta?.clientInfo,
               metadata: flowMeta?.metadata,
+              resourceMetadata: flowMeta?.resourceMetadata,
               reusedStoredClient,
             };
           }
@@ -1096,6 +1121,7 @@ export class MCPConnectionFactory {
               tokens: cachedTokens,
               clientInfo: flowMeta?.clientInfo,
               metadata: flowMeta?.metadata,
+              resourceMetadata: flowMeta?.resourceMetadata,
             };
           }
         }
@@ -1160,6 +1186,7 @@ export class MCPConnectionFactory {
         tokens,
         clientInfo: flowMetadata.clientInfo,
         metadata: flowMetadata.metadata,
+        resourceMetadata: flowMetadata.resourceMetadata,
         reusedStoredClient,
       };
     } catch (error) {

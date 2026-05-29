@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods, IToken } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthMetadata } from './types';
+import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthStoredClientMetadata } from './types';
 import { isInvalidClientMessage } from '~/mcp/utils';
 import { isSystemUserId } from '~/mcp/enum';
 
@@ -25,7 +25,7 @@ interface StoreTokensParams {
   updateToken?: TokenMethods['updateToken'];
   findToken?: TokenMethods['findToken'];
   clientInfo?: OAuthClientInformation;
-  metadata?: OAuthMetadata;
+  metadata?: OAuthStoredClientMetadata;
   /** Optional: Pass existing token state to avoid duplicate DB calls */
   existingTokens?: {
     accessToken?: IToken | null;
@@ -47,6 +47,7 @@ interface GetTokensParams {
       clientInfo?: OAuthClientInformation;
       storedTokenEndpoint?: string;
       storedAuthMethods?: string[];
+      resource?: string;
     },
     signal?: AbortSignal,
   ) => Promise<MCPOAuthTokens>;
@@ -345,8 +346,10 @@ export class MCPTokenStorage {
 
       let clientInfo;
       let clientInfoData;
+      let storedClientMetadata: OAuthStoredClientMetadata | undefined;
       let storedTokenEndpoint: string | undefined;
       let storedAuthMethods: string[] | undefined;
+      let resource: string | undefined;
       try {
         clientInfoData = await findToken({
           userId,
@@ -366,11 +369,15 @@ export class MCPTokenStorage {
               clientInfoData.metadata instanceof Map
                 ? Object.fromEntries(clientInfoData.metadata)
                 : (clientInfoData.metadata as Record<string, unknown>);
+            storedClientMetadata = raw as OAuthStoredClientMetadata;
             if (typeof raw.token_endpoint === 'string') {
               storedTokenEndpoint = raw.token_endpoint;
             }
             if (Array.isArray(raw.token_endpoint_auth_methods_supported)) {
               storedAuthMethods = raw.token_endpoint_auth_methods_supported as string[];
+            }
+            if (typeof raw.resource === 'string') {
+              resource = raw.resource;
             }
           }
         }
@@ -385,6 +392,7 @@ export class MCPTokenStorage {
         clientInfo,
         storedTokenEndpoint,
         storedAuthMethods,
+        resource,
       };
 
       const newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
@@ -415,6 +423,7 @@ export class MCPTokenStorage {
           refreshToken: refreshTokenData,
           clientInfoToken: clientInfoData,
         },
+        metadata: storedClientMetadata,
       });
 
       logger.info(`${logPrefix} Successfully refreshed and stored OAuth tokens`);

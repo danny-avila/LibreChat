@@ -455,6 +455,43 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         });
       });
 
+      it('should reuse the stored OAuth resource indicator on refresh', async () => {
+        const metadata = {
+          serverName: 'test-server',
+          userId: 'user-123',
+          serverUrl: 'https://api.example.com/mcp',
+          resource: 'https://api.example.com/',
+          clientInfo: {
+            client_id: 'test-client-id',
+            grant_types: ['authorization_code', 'refresh_token'],
+          },
+        };
+
+        mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+          issuer: 'https://auth.example.com',
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          token_endpoint_auth_methods_supported: ['none'],
+          response_types_supported: ['code'],
+          jwks_uri: 'https://auth.example.com/.well-known/jwks.json',
+          subject_types_supported: ['public'],
+          id_token_signing_alg_values_supported: ['RS256'],
+        } as AuthorizationServerMetadata);
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'new-access-token',
+            expires_in: 3600,
+          }),
+        } as Response);
+
+        await MCPOAuthHandler.refreshOAuthTokens(mockRefreshToken, metadata, {}, {});
+
+        const body = mockFetch.mock.calls[0][1]?.body as URLSearchParams;
+        expect(body.get('resource')).toBe('https://api.example.com/');
+      });
+
       it('should use client_secret_basic when server only supports that method', async () => {
         const metadata = {
           serverName: 'test-server',

@@ -35,6 +35,15 @@ jest.mock('@librechat/api', () => {
       getFlowState: jest.fn(),
       completeOAuthFlow: jest.fn(),
       generateFlowId: jest.fn(),
+      generateTokenFlowId: jest.fn(),
+      buildStoredClientMetadata: jest.fn((metadata, resourceMetadata) =>
+        metadata
+          ? {
+              ...metadata,
+              ...(resourceMetadata?.resource && { resource: resourceMetadata.resource }),
+            }
+          : undefined,
+      ),
       resolveStateToFlowId: jest.fn(async (state) => state),
       storeStateMapping: jest.fn(),
       deleteStateMapping: jest.fn(),
@@ -175,6 +184,19 @@ describe('MCP Routes', () => {
     jest.clearAllMocks();
     mockResolveAllMcpConfigs.mockResolvedValue({});
     mockResolveMcpConfigNames.mockResolvedValue([]);
+    const { MCPOAuthHandler } = require('@librechat/api');
+    MCPOAuthHandler.generateTokenFlowId.mockImplementation((userId, serverName, tenantId) => {
+      const flowId = `${userId}:${serverName}`;
+      return tenantId ? `tenant:${encodeURIComponent(tenantId)}:${flowId}` : flowId;
+    });
+    MCPOAuthHandler.buildStoredClientMetadata.mockImplementation((metadata, resourceMetadata) =>
+      metadata
+        ? {
+            ...metadata,
+            ...(resourceMetadata?.resource && { resource: resourceMetadata.resource }),
+          }
+        : undefined,
+    );
   });
 
   describe('GET /:serverName/oauth/initiate', () => {
@@ -676,6 +698,72 @@ describe('MCP Routes', () => {
         'test-user-id:test-server',
         'mcp_get_tokens',
       );
+    });
+
+    it('should clear tenant-scoped token flow state after storing callback tokens', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
+        completeFlow: jest.fn().mockResolvedValue(),
+        deleteFlow: jest.fn().mockResolvedValue(true),
+      };
+      const mockFlowState = {
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        metadata: {
+          toolFlowId: 'tool-flow-123',
+          token_endpoint: 'https://auth.example.com/token',
+        },
+        resourceMetadata: { resource: 'https://api.example.com/' },
+        clientInfo: {},
+        codeVerifier: 'test-verifier',
+        tenantId: 'tenant-a',
+      };
+      const mockTokens = {
+        access_token: 'test-access-token',
+        refresh_token: 'test-refresh-token',
+      };
+
+      MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
+      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      MCPTokenStorage.storeTokens.mockResolvedValue();
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      require('~/config').getOAuthReconnectionManager.mockReturnValue({
+        clearReconnection: jest.fn(),
+      });
+      require('~/config').getMCPManager.mockReturnValue({
+        getUserConnection: jest.fn().mockResolvedValue({
+          fetchTools: jest.fn().mockResolvedValue([]),
+        }),
+      });
+      const { getCachedTools, setCachedTools } = require('~/server/services/Config');
+      getCachedTools.mockResolvedValue({});
+      setCachedTools.mockResolvedValue();
+
+      const flowId = 'test-user-id:test-server';
+      const csrfToken = generateTestCsrfToken(flowId);
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({
+          code: 'test-auth-code',
+          state: flowId,
+        });
+
+      expect(response.status).toBe(302);
+      expect(MCPTokenStorage.storeTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            resource: 'https://api.example.com/',
+          }),
+        }),
+      );
+      expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith(
+        'tenant:tenant-a:test-user-id:test-server',
+        'mcp_get_tokens',
+      );
+      expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith(flowId, 'mcp_get_tokens');
     });
 
     it('should use oauthHeaders from flow state when present', async () => {

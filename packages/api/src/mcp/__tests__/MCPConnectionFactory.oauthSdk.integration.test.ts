@@ -1,6 +1,10 @@
 import { Keyv } from 'keyv';
 import type { IUser } from '@librechat/data-schemas';
-import type { OAuthClientInformation, OAuthMetadata, MCPOAuthTokens } from '~/mcp/oauth';
+import type {
+  OAuthClientInformation,
+  OAuthStoredClientMetadata,
+  MCPOAuthTokens,
+} from '~/mcp/oauth';
 import { FlowStateManager } from '~/flow/manager';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from '~/mcp/connection';
@@ -119,7 +123,7 @@ async function storeTokens(
     token_endpoint_auth_method: 'none',
     scope,
   };
-  const metadata: OAuthMetadata = {
+  const metadata: OAuthStoredClientMetadata = {
     issuer: server.url.replace(/\/$/, ''),
     authorization_endpoint: new URL('authorize', server.url).href,
     token_endpoint: new URL('token', server.url).href,
@@ -127,6 +131,7 @@ async function storeTokens(
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none'],
     scopes_supported: scope.split(/\s+/).filter(Boolean),
+    resource: server.resourceUrl,
   };
 
   await MCPTokenStorage.storeTokens({

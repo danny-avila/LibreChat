@@ -85,6 +85,21 @@ describe('MCPConnectionFactory', () => {
     mockMCPOAuthHandler.generateFlowId.mockImplementation(
       (userId: string, serverName: string) => `${userId}:${serverName}`,
     );
+    mockMCPOAuthHandler.generateTokenFlowId.mockImplementation(
+      (userId: string, serverName: string, tenantId?: string) => {
+        const flowId = mockMCPOAuthHandler.generateFlowId(userId, serverName);
+        return tenantId ? `tenant:${encodeURIComponent(tenantId)}:${flowId}` : flowId;
+      },
+    );
+    mockMCPOAuthHandler.buildStoredClientMetadata.mockImplementation(
+      (metadata, resourceMetadata) =>
+        metadata
+          ? {
+              ...metadata,
+              ...(resourceMetadata?.resource && { resource: resourceMetadata.resource }),
+            }
+          : undefined,
+    );
     mockTenantStorage.getStore.mockReturnValue(undefined);
     mockTenantStorage.run.mockImplementation((_context, fn: () => Promise<unknown>) => fn());
     (getTenantId as jest.Mock).mockReturnValue(undefined);
@@ -1606,6 +1621,130 @@ describe('MCPConnectionFactory', () => {
         'oauthFailed',
         expect.objectContaining({ message: 'OAuth reauthentication required' }),
       );
+    });
+
+    it('should let a live request handle cached-connection reauthentication with fresh callbacks', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const staleOAuthStart = jest.fn();
+      const liveOAuthStart = jest.fn();
+      const initialTokens: MCPOAuthTokens = {
+        access_token: 'initial-access',
+        refresh_token: 'initial-refresh',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      const callbackTokens: MCPOAuthTokens = {
+        access_token: 'callback-access',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(initialTokens);
+      mockFlowManager.createFlow.mockResolvedValue(callbackTokens);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'state-live',
+          clientInfo: { client_id: 'client-live' },
+        },
+      });
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+      type Listener = (...args: unknown[]) => void;
+      const handlers: Record<string, Listener[]> = {};
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        const key = typeof event === 'symbol' ? event.toString() : event;
+        (handlers[key] ??= []).push(handler as Listener);
+        return mockConnectionInstance;
+      });
+      mockConnectionInstance.removeListener.mockImplementation((event, handler) => {
+        const key = typeof event === 'symbol' ? event.toString() : event;
+        const list = handlers[key];
+        const index = list?.indexOf(handler as Listener) ?? -1;
+        if (list && index !== -1) {
+          list.splice(index, 1);
+        }
+        return mockConnectionInstance;
+      });
+      mockConnectionInstance.emit.mockImplementation((event, ...args) => {
+        const key = typeof event === 'symbol' ? event.toString() : event;
+        const list = handlers[key];
+        if (!list?.length) {
+          return false;
+        }
+        for (const fn of [...list]) {
+          fn(...args);
+        }
+        return true;
+      });
+
+      await MCPConnectionFactory.create(basicOptions, {
+        useOAuth: true,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: staleOAuthStart,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      });
+
+      const liveStarted = new Promise<void>((resolve) => {
+        liveOAuthStart.mockImplementation(async () => {
+          resolve();
+        });
+      });
+      const cleanup = MCPConnectionFactory.attachRequestOAuthHandler(
+        basicOptions,
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          oauthStart: liveOAuthStart,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+        },
+        mockConnectionInstance,
+      );
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(null);
+
+      mockConnectionInstance.emit('oauthRequired', {
+        serverUrl: 'https://api.example.com',
+        error: new Error('Non-200 status code (401)'),
+      });
+
+      await liveStarted;
+
+      expect(staleOAuthStart).not.toHaveBeenCalled();
+      expect(liveOAuthStart).toHaveBeenCalledWith('https://auth.example.com');
+      expect(handlers.oauthReauthenticationRequired.length).toBe(1);
+
+      cleanup();
+
+      expect(handlers.oauthReauthenticationRequired.length).toBe(0);
     });
 
     it('should invalidate completed mcp_oauth cache before falling through to interactive OAuth', async () => {

@@ -19,6 +19,7 @@ import type { FlowStateManager } from '~/flow/manager';
 import type {
   OAuthClientInformation,
   OAuthProtectedResourceMetadata,
+  OAuthStoredClientMetadata,
   MCPOAuthFlowMetadata,
   MCPOAuthTokens,
   OAuthMetadata,
@@ -361,11 +362,31 @@ export class MCPOAuthHandler {
     );
   }
 
-  private static appendResourceParameter(body: URLSearchParams, serverUrl?: string): void {
-    if (!serverUrl) {
+  public static buildStoredClientMetadata(
+    metadata?: OAuthMetadata,
+    resourceMetadata?: OAuthProtectedResourceMetadata,
+  ): OAuthStoredClientMetadata | undefined {
+    if (!metadata) {
+      return undefined;
+    }
+    const storedMetadata: OAuthStoredClientMetadata = { ...metadata };
+    if (resourceMetadata?.resource) {
+      storedMetadata.resource = new URL(resourceMetadata.resource).href;
+    }
+    return storedMetadata;
+  }
+
+  private static appendResourceParameter(
+    body: URLSearchParams,
+    resource?: string,
+    serverUrl?: string,
+  ): void {
+    const resourceParameter =
+      resource ?? (serverUrl ? resourceUrlFromServerUrl(serverUrl).href : undefined);
+    if (!resourceParameter) {
       return;
     }
-    body.set('resource', resourceUrlFromServerUrl(serverUrl).href);
+    body.set('resource', resourceParameter);
   }
 
   private static assertNoUnpinnedClientSecret(config?: MCPOptions['oauth']): void {
@@ -900,6 +921,14 @@ export class MCPOAuthHandler {
     return `${userId}:${serverName}`;
   }
 
+  public static generateTokenFlowId(userId: string, serverName: string, tenantId?: string): string {
+    const flowId = this.generateFlowId(userId, serverName);
+    if (!tenantId) {
+      return flowId;
+    }
+    return `tenant:${encodeURIComponent(tenantId)}:${flowId}`;
+  }
+
   /**
    * Generates a secure state parameter
    */
@@ -1087,6 +1116,7 @@ export class MCPOAuthHandler {
       clientInfo?: OAuthClientInformation;
       storedTokenEndpoint?: string;
       storedAuthMethods?: string[];
+      resource?: string;
     },
     oauthHeaders: Record<string, string>,
     config?: MCPOptions['oauth'],
@@ -1181,7 +1211,7 @@ export class MCPOAuthHandler {
         if (metadata.clientInfo.scope) {
           body.append('scope', metadata.clientInfo.scope);
         }
-        this.appendResourceParameter(body, metadata.serverUrl);
+        this.appendResourceParameter(body, metadata.resource, metadata.serverUrl);
 
         const headers: HeadersInit = {
           Accept: 'application/json',
@@ -1265,7 +1295,7 @@ export class MCPOAuthHandler {
         if (config.scope) {
           body.append('scope', config.scope);
         }
-        this.appendResourceParameter(body, metadata.serverUrl);
+        this.appendResourceParameter(body, metadata.resource, metadata.serverUrl);
 
         const headers: HeadersInit = {
           Accept: 'application/json',
@@ -1368,7 +1398,7 @@ export class MCPOAuthHandler {
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
       });
-      this.appendResourceParameter(body, metadata.serverUrl);
+      this.appendResourceParameter(body, metadata.resource, metadata.serverUrl);
 
       const headers: HeadersInit = {
         Accept: 'application/json',
