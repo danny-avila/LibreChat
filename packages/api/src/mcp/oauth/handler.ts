@@ -1192,12 +1192,18 @@ export class MCPOAuthHandler {
         }
 
         /**
-         * Forward Auth0/Cognito-style `audience` on refresh as well — providers that
-         * required it on `/authorize` typically require it on `/token` too, otherwise
-         * the refresh exchange returns a token without the API audience and the next
-         * MCP call 401s. See `OAuthOptionsSchema.audience`.
+         * Forward Auth0-style `audience` on refresh by default — Auth0 strips the
+         * API audience from refreshed access tokens unless it is re-supplied on
+         * every refresh, otherwise the next MCP call 401s once the initial token
+         * expires.
+         *
+         * Operators with strict OAuth 2.0 token endpoints (Cognito and similar)
+         * that documents refresh requests as `grant_type` + `client_id` +
+         * `refresh_token` only, and that maintain the original `aud` claim on
+         * refresh, can opt out by setting `forward_audience_on_refresh: false`.
+         * See `OAuthOptionsSchema.forward_audience_on_refresh`.
          */
-        if (config?.audience) {
+        if (config?.audience && config?.forward_audience_on_refresh !== false) {
           body.append('audience', config.audience);
           logger.debug(`[MCPOAuth] Added audience parameter to refresh request: ${config.audience}`);
         }

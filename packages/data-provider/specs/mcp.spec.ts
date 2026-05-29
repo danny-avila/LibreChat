@@ -329,5 +329,36 @@ describe('MCP schemas', () => {
 
       expect(result.success).toBe(false);
     });
+
+    it('should accept forward_audience_on_refresh = false (Cognito opt-out)', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          audience: 'https://api.example.com',
+          forward_audience_on_refresh: false,
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data.oauth) {
+        expect(result.data.oauth.forward_audience_on_refresh).toBe(false);
+      }
+    });
+
+    it('should treat forward_audience_on_refresh as optional', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          audience: 'https://api.example.com',
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data.oauth) {
+        expect(result.data.oauth.forward_audience_on_refresh).toBeUndefined();
+      }
+    });
   });
 });

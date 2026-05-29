@@ -190,6 +190,35 @@ describe('MCP OAuth audience parameter', () => {
       expect(body.get('audience')).toBe('https://example.test/mcp');
     });
 
+    it('omits audience from refresh body when forward_audience_on_refresh=false (Cognito opt-out)', async () => {
+      await MCPOAuthHandler.refreshOAuthTokens(
+        'refresh-token-value',
+        {
+          serverName: 'test-server',
+          serverUrl: recorder.url,
+          clientInfo: {
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            redirect_uris: ['http://localhost/callback'],
+          },
+        },
+        {},
+        {
+          token_url: `${recorder.url}token`,
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          audience: 'https://example.test/mcp',
+          forward_audience_on_refresh: false,
+          token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        },
+      );
+
+      expect(recorder.bodies.length).toBeGreaterThan(0);
+      const body = recorder.bodies[recorder.bodies.length - 1];
+      expect(body.get('grant_type')).toBe('refresh_token');
+      expect(body.has('audience')).toBe(false);
+    });
+
     it('omits audience from refresh body when not configured', async () => {
       await MCPOAuthHandler.refreshOAuthTokens(
         'refresh-token-value',
