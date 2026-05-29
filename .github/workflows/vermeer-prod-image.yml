@@ -2,8 +2,8 @@ name: Build & Push Vermeer Prod Image
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*' # build a prod image only on a version tag (e.g. v0.8.5)
   workflow_dispatch: # allow manual rebuilds from the Actions tab
 
 permissions:
@@ -27,13 +27,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Generate image tags/labels: a commit-SHA tag for traceability + `latest`
+      # Tag the image with the version tag (e.g. v0.8.5), a commit-SHA for
+      # traceability, and `latest`. On manual dispatch there's no git tag,
+      # so only the SHA + `latest` tags are produced.
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
+            type=ref,event=tag
             type=sha,prefix=,format=short
             type=raw,value=latest
 
