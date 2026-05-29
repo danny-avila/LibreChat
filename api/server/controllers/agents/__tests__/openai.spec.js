@@ -521,6 +521,34 @@ describe('OpenAIChatCompletionController', () => {
       expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
     });
 
+    it('should use a nonblank fallback text block when document message text is empty', async () => {
+      const { formatAgentMessages } = require('@librechat/agents');
+      mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: [{ type: 'text', text: '' }] }],
+        files: [inlineFile],
+      });
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [{ type: 'document', document: { name: 'document', source: { bytes: [] } } }],
+        files: [],
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(formatAgentMessages).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            role: 'user',
+            content: 'Attached file(s): document.pdf',
+            documents: [
+              { type: 'document', document: { name: 'document', source: { bytes: [] } } },
+            ],
+          }),
+        ],
+        {},
+        expect.any(Set),
+      );
+    });
+
     it('should return 400 when provider formatting skips an inline file', async () => {
       mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
         value: [{ role: 'user', content: 'Files attached' }],

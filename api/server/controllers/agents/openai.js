@@ -132,8 +132,11 @@ function convertMessages(messages) {
   });
 }
 
-function normalizeMessageContentForDocuments(message) {
+function normalizeMessageContentForDocuments(message, fallbackText) {
   if (!Array.isArray(message?.content)) {
+    if (typeof message?.content === 'string' && message.content.trim() === '') {
+      message.content = fallbackText;
+    }
     return;
   }
 
@@ -148,7 +151,7 @@ function normalizeMessageContentForDocuments(message) {
     .join('\n');
   const imageUrls = message.content.filter((part) => part?.type === 'image_url');
 
-  message.content = text;
+  message.content = text.trim() ? text : fallbackText;
   if (imageUrls.length > 0) {
     message.image_urls = imageUrls;
   }
@@ -530,7 +533,10 @@ const OpenAIChatCompletionController = async (req, res) => {
       }
 
       if (latestUserMessage && documentResult.documents.length > 0) {
-        normalizeMessageContentForDocuments(latestUserMessage);
+        normalizeMessageContentForDocuments(
+          latestUserMessage,
+          `Attached file(s): ${inlineProviderFiles.map((file) => file.filename).join(', ')}`,
+        );
         latestUserMessage.documents = documentResult.documents;
       }
 

@@ -693,6 +693,38 @@ describe('createResponse controller', () => {
       expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
     });
 
+    it('should use a nonblank fallback text block when document message text is empty', async () => {
+      const { formatAgentMessages } = require('@librechat/agents');
+      const { convertInputToMessages } = require('@librechat/api');
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: '' }] }],
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([
+        { role: 'user', content: [{ type: 'text', text: '' }] },
+      ]);
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [{ type: 'document', document: { name: 'document', source: { bytes: [] } } }],
+        files: [],
+      });
+
+      await createResponse(req, res);
+
+      expect(formatAgentMessages).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            role: 'user',
+            content: 'Attached file(s): document.pdf',
+            documents: [
+              { type: 'document', document: { name: 'document', source: { bytes: [] } } },
+            ],
+          }),
+        ],
+        {},
+        expect.any(Set),
+      );
+    });
+
     it('should return 400 when provider formatting skips an inline file', async () => {
       const {
         createRun,
