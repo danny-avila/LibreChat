@@ -99,7 +99,7 @@ export default function AgentFooter({
    * Make sure to check that the LibreChat implementation hasn't drifted too far functionality-wise!
    */
   return (
-    <div>
+    <div className="bg-surface-tertiary-alt">
       {/* Advanced settings */}
       {showButtons && (
         <div data-testid="advanced-button">
@@ -139,7 +139,7 @@ export default function AgentFooter({
 
       {/* Run agent */}
       {!isEphemeralAgent(agent_id) && (
-        <div className="px-4">
+        <div className="px-4 pb-4">
           <button
             className="btn btn-neutral w-full justify-center"
             onClick={(e) => {

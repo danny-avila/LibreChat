@@ -83,7 +83,7 @@ export default function FileSearch({
       <hr className="border-border-heavy" />
 
       {fileSearchChecked && (
-        <div className="flex flex-col gap-3 bg-presentation px-3 pb-4 pt-4">
+        <div className="flex flex-col gap-3 bg-surface-tertiary-alt px-3 pb-4 pt-4">
           {/* File Search (RAG API) Files */}
           <FileRow
             files={files}

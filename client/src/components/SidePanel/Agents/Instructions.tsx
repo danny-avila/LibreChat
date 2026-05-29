@@ -54,7 +54,7 @@ export default function Instructions() {
   };
 
   return (
-    <div className="mb-4">
+    <div>
       <div className="mb-2 flex items-center">
         {/* NJ: Customize how we explain the Instructions feature
         <label
