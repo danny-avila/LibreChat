@@ -1,44 +1,35 @@
-import { memo, useMemo } from 'react';
+import { memo } from 'react';
 import { useMediaQuery } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
-import { PresetsMenu, HeaderNewChat, OpenSidebar } from './Menus';
-import ModelSelector from './Menus/Endpoints/ModelSelector';
+import { HeaderNewChat, OpenSidebar } from './Menus';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import BookmarkMenu from './Menus/BookmarkMenu';
-import { TemporaryChat } from './TemporaryChat';
-import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
 
+// BKL: 채팅 대기화면 헤더에서 노출하지 않는 컴포넌트들.
+// (모델 선택, 프리셋, 다중 응답 대화 추가, 비밀 대화)
+// 제품 요구상 BKL DB AI 는 단일 모델 (bkl-search) + 단일 세션이라 불필요.
 const defaultInterface = getConfigDefaults().interface;
 
 function Header() {
   const { data: startupConfig } = useGetStartupConfig();
   const { navVisible, setNavVisible } = useOutletContext<ContextType>();
 
-  const interfaceConfig = useMemo(
-    () => startupConfig?.interface ?? defaultInterface,
-    [startupConfig],
-  );
+  // BKL: interfaceConfig 는 presets 분기 제거로 unused. defaultInterface import 도 유지하되
+  // type 경고 회피용으로 빈 useMemo 만 남기지 않고 ENV-driven 분기 없이 hard-skip 함.
+  void defaultInterface;
 
   const hasAccessToBookmarks = useHasAccess({
     permissionType: PermissionTypes.BOOKMARKS,
     permission: Permissions.USE,
   });
 
-  const hasAccessToMultiConvo = useHasAccess({
-    permissionType: PermissionTypes.MULTI_CONVO,
-    permission: Permissions.USE,
-  });
-
-  const hasAccessToTemporaryChat = useHasAccess({
-    permissionType: PermissionTypes.TEMPORARY_CHAT,
-    permission: Permissions.USE,
-  });
+  // BKL: MULTI_CONVO / TEMPORARY_CHAT 권한 hooks 는 제거 (UI 자체 숨김)
 
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
@@ -69,17 +60,12 @@ function Header() {
                 !navVisible && !isSmallScreen ? 'pl-2' : '',
               )}
             >
-              <ModelSelector startupConfig={startupConfig} />
-              {interfaceConfig.presets === true && interfaceConfig.modelSelect && <PresetsMenu />}
+              {/* BKL: ModelSelector / PresetsMenu / AddMultiConvo / TemporaryChat 비활성 */}
               {hasAccessToBookmarks === true && <BookmarkMenu />}
-              {hasAccessToMultiConvo === true && <AddMultiConvo />}
               {isSmallScreen && (
-                <>
-                  <ExportAndShareMenu
-                    isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
-                  />
-                  {hasAccessToTemporaryChat === true && <TemporaryChat />}
-                </>
+                <ExportAndShareMenu
+                  isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+                />
               )}
             </div>
           )}
@@ -90,7 +76,7 @@ function Header() {
             <ExportAndShareMenu
               isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
             />
-            {hasAccessToTemporaryChat === true && <TemporaryChat />}
+            {/* BKL: TemporaryChat 비활성 */}
           </div>
         )}
       </div>

@@ -5,9 +5,8 @@ import { Constants } from 'librechat-data-provider';
 import { useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import { useUpdateConversationMutation } from '~/data-provider';
-import EndpointIcon from '~/components/Endpoints/EndpointIcon';
+// BKL: EndpointIcon / useGetEndpointsQuery 는 robot 아이콘 노출 안 하므로 사용 안 함.
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
-import { useGetEndpointsQuery } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { ConvoOptions } from './ConvoOptions';
 import RenameForm from './RenameForm';
@@ -32,7 +31,6 @@ export default function Conversation({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo();
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
@@ -235,6 +233,8 @@ export default function Conversation({
           isSmallScreen={isSmallScreen}
           localize={localize}
         >
+          {/* BKL: EndpointIcon (로봇 아이콘) 은 채팅 내역 앞에서 노출 안 함.
+              generating 중에는 spinner 만, 평소에는 아예 표시 안 함 (제목이 좌측에 붙음). */}
           {isGenerating ? (
             <svg
               className="h-5 w-5 flex-shrink-0 animate-spin text-text-primary"
@@ -256,14 +256,7 @@ export default function Conversation({
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-          ) : (
-            <EndpointIcon
-              conversation={conversation}
-              endpointsConfig={endpointsConfig}
-              size={20}
-              context="menu-item"
-            />
-          )}
+          ) : null}
         </ConvoLink>
       )}
       <div

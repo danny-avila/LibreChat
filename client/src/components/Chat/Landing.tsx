@@ -4,12 +4,15 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
-import ConvoIcon from '~/components/Endpoints/ConvoIcon';
+// BKL: ConvoIcon 대신 BKL 로고 이미지 직접 사용. 운영팀이 /assets/bkl-logo-rounded.svg 배치.
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
 
-const containerClassName =
+// BKL: ConvoIcon import 는 제거. 다음 line 의 container 도 더 이상 필요 없지만
+// 다른 곳에서 참조될 수 있으므로 string 으로만 보관.
+const _LEGACY_CONTAINER_CLASS =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
+void _LEGACY_CONTAINER_CLASS;
 
 function getTextSizeClass(text: string | undefined | null) {
   if (!text) {
@@ -132,10 +135,11 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     return margin;
   }, [lineCount, description, textHasMultipleLines, contentHeight]);
 
+  // BKL: 변호사님 어미. user.name 이 있으면 ", <이름> 변호사님" 형태로.
   const greetingText =
     typeof startupConfig?.interface?.customWelcome === 'string'
       ? getGreeting()
-      : getGreeting() + (user?.name ? ', ' + user.name : '');
+      : getGreeting() + (user?.name ? ', ' + user.name + ' 변호사님' : '');
 
   return (
     <div
@@ -145,16 +149,13 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
         <div
           className={`flex ${textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'} items-center justify-center gap-2`}
         >
+          {/* BKL: greeting 옆 로봇 대신 BKL 로고. /assets/bkl-logo-rounded.svg
+              (public 디렉토리, vite post-build 시 dist/assets 로 복사됨). */}
           <div className={`relative size-10 justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
-            <ConvoIcon
-              agentsMap={agentsMap}
-              assistantMap={assistantMap}
-              conversation={conversation}
-              endpointsConfig={endpointsConfig}
-              containerClassName={containerClassName}
-              context="landing"
-              className="h-2/3 w-2/3 text-black dark:text-white"
-              size={41}
+            <img
+              src="/assets/bkl-logo-rounded.svg"
+              alt="BKL"
+              className="size-10 rounded-full bg-white object-contain p-1 shadow-stroke dark:bg-presentation"
             />
             {startupConfig?.showBirthdayIcon && (
               <TooltipAnchor

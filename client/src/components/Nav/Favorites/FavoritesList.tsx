@@ -1,9 +1,9 @@
 import React, { useRef, useCallback, useMemo, useEffect } from 'react';
-import { LayoutGrid, FileSearch } from 'lucide-react';
+import { LayoutGrid, FileSearch, MessageSquarePlus } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue } from 'recoil';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
@@ -12,6 +12,7 @@ import { useGetConversation, useFavorites, useLocalize, useNewConvo } from '~/ho
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useGetEndpointsQuery } from '~/data-provider';
+import { clearMessagesCache } from '~/utils';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
@@ -157,6 +158,20 @@ export default function FavoritesList({
       toggleNav();
     }
   }, [navigate, isSmallScreen, toggleNav]);
+
+  // BKL: 좌측 패널 상단의 "새 채팅" row. 원래 NewChat.tsx 의 아이콘 버튼이었던 것을
+  // 문서 검색 row 와 같은 층위로 옮겼다.
+  const queryClient = useQueryClient();
+  const { conversation: activeConversation } = store.useCreateConversationAtom(0);
+  const handleNewChat = useCallback(() => {
+    clearMessagesCache(queryClient, activeConversation?.conversationId);
+    queryClient.invalidateQueries([QueryKeys.messages]);
+    newConversation();
+    navigate('/c/new', { state: { focusChat: true } });
+    if (isSmallScreen && toggleNav) {
+      toggleNav();
+    }
+  }, [queryClient, activeConversation, newConversation, navigate, isSmallScreen, toggleNav]);
 
   const handleRemoveFocus = useCallback(() => {
     if (marketplaceRef.current) {
@@ -334,6 +349,28 @@ export default function FavoritesList({
                 </div>
               </div>
             )}
+            {/* BKL: New Chat row — sidebar 상단의 아이콘 버튼 대신 여기에 같은 층위로 노출 */}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label={localize('com_ui_new_chat')}
+              className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+              onClick={handleNewChat}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleNewChat();
+                }
+              }}
+              data-testid="nav-new-chat-button"
+            >
+              <div className="flex flex-1 items-center truncate pr-6">
+                <div className="mr-2 h-5 w-5">
+                  <MessageSquarePlus className="h-5 w-5 text-text-primary" />
+                </div>
+                <span className="truncate">{localize('com_ui_new_chat')}</span>
+              </div>
+            </div>
             {/* Document Search button */}
             <div
               role="button"

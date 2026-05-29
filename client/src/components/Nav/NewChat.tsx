@@ -1,18 +1,14 @@
 import React, { useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import { QueryKeys } from 'librechat-data-provider';
-import { useQueryClient } from '@tanstack/react-query';
-import { TooltipAnchor, NewChatIcon, MobileSidebar, Sidebar, Button } from '@librechat/client';
+import { TooltipAnchor, MobileSidebar, Sidebar, Button } from '@librechat/client';
 import { CLOSE_SIDEBAR_ID, OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
-import { useLocalize, useNewConvo } from '~/hooks';
-import { clearMessagesCache } from '~/utils';
-import store from '~/store';
+import { useLocalize } from '~/hooks';
+
+// BKL: 우측의 "새 채팅" 아이콘 버튼은 sidebar 상단에서 제거. "문서 검색" 과
+// 같은 행 스타일의 row 로 FavoritesList 상단에 노출됨 (Favorites/FavoritesList.tsx).
 
 export default function NewChat({
-  index = 0,
   toggleNav,
   subHeaders,
-  isSmallScreen,
   headerButtons,
 }: {
   index?: number;
@@ -21,11 +17,9 @@ export default function NewChat({
   subHeaders?: React.ReactNode;
   headerButtons?: React.ReactNode;
 }) {
-  const queryClient = useQueryClient();
-  /** Note: this component needs an explicit index passed if using more than one */
-  const { newConversation: newConvo } = useNewConvo(index);
+  // BKL: "새 채팅" 클릭 핸들러는 FavoritesList 의 row 로 이동. 여기에서는
+  // close-sidebar 버튼만 sidebar 상단에 유지한다.
   const localize = useLocalize();
-  const { conversation } = store.useCreateConversationAtom(index);
 
   const handleToggleNav = useCallback(() => {
     toggleNav();
@@ -34,24 +28,6 @@ export default function NewChat({
       document.getElementById(OPEN_SIDEBAR_ID)?.focus();
     }, 250);
   }, [toggleNav]);
-
-  const clickHandler: React.MouseEventHandler<HTMLAnchorElement> = useCallback(
-    (e) => {
-      // Let browser handle modified/non-left clicks (new tab, context menu, etc.)
-      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
-        return;
-      }
-
-      e.preventDefault();
-      clearMessagesCache(queryClient, conversation?.conversationId);
-      queryClient.invalidateQueries([QueryKeys.messages]);
-      newConvo();
-      if (isSmallScreen) {
-        toggleNav();
-      }
-    },
-    [queryClient, conversation, newConvo, toggleNav, isSmallScreen],
-  );
 
   return (
     <>
@@ -77,27 +53,7 @@ export default function NewChat({
             </Button>
           }
         />
-        <div className="flex gap-0.5">
-          {headerButtons}
-
-          <TooltipAnchor
-            description={localize('com_ui_new_chat')}
-            render={
-              <Button
-                asChild
-                size="icon"
-                variant="outline"
-                data-testid="nav-new-chat-button"
-                aria-label={localize('com_ui_new_chat')}
-                className="rounded-full border-none bg-transparent duration-0 hover:bg-surface-active-alt focus-visible:ring-inset focus-visible:ring-black focus-visible:ring-offset-0 dark:focus-visible:ring-white md:rounded-xl"
-              >
-                <Link to="/c/new" state={{ focusChat: true }} onClick={clickHandler}>
-                  <NewChatIcon className="icon-lg text-text-primary" />
-                </Link>
-              </Button>
-            }
-          />
-        </div>
+        <div className="flex gap-0.5">{headerButtons}</div>
       </div>
       {subHeaders != null ? subHeaders : null}
     </>
