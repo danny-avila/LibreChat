@@ -12,7 +12,9 @@ import type {
   StrategyFunctions,
   DocumentResult,
   ServerRequest,
+  ProcessedFile,
 } from '~/types';
+import { remoteInlineFileSource } from '~/agents/files';
 import { validatePdf, validateBedrockDocument } from '~/files/validation';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
 
@@ -22,6 +24,12 @@ const ANTHROPIC_CITATION_TYPES = new Set([
   'text/html',
   'text/markdown',
 ]);
+
+type InlineMongoFile = IMongoFile & {
+  metadata?: IMongoFile['metadata'] & {
+    inlineBase64?: string;
+  };
+};
 
 /**
  * Formats a base64-encoded document into the appropriate provider-specific block.
@@ -141,6 +149,23 @@ export async function encodeAndFormatDocuments(
 
   const results = await Promise.allSettled(
     processableFiles.map((file) => {
+      const inlineFile = file as InlineMongoFile;
+      const inlineBase64 = inlineFile.metadata?.inlineBase64;
+      if (file.source === remoteInlineFileSource && inlineBase64) {
+        return {
+          file,
+          content: inlineBase64,
+          metadata: {
+            file_id: file.file_id,
+            temp_file_id: file.temp_file_id,
+            filepath: file.filepath ?? '',
+            source: file.source ?? remoteInlineFileSource,
+            filename: file.filename,
+            type: file.type,
+          },
+        } satisfies ProcessedFile;
+      }
+
       return getFileStream(req, file, encodingMethods, getStrategyFunctions);
     }),
   );
