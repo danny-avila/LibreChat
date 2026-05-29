@@ -428,7 +428,7 @@ describe('OpenAIChatCompletionController', () => {
         [
           {
             role: 'user',
-            content: [{ type: 'text', text: '[File: document.pdf]' }],
+            content: '[File: document.pdf]',
             documents: [{ type: 'file', file: { filename: 'document.pdf', file_data: 'data' } }],
           },
         ],
@@ -469,7 +469,7 @@ describe('OpenAIChatCompletionController', () => {
         [
           {
             role: 'user',
-            content: [{ type: 'text', text: '[File: document.pdf]' }],
+            content: '[File: document.pdf]',
             documents: [{ type: 'file', file: { filename: 'document.pdf', file_data: 'data' } }],
           },
         ],

@@ -109,6 +109,28 @@ function convertToInternalMessages(input) {
   return convertInputToMessages(input);
 }
 
+function normalizeMessageContentForDocuments(message) {
+  if (!Array.isArray(message?.content)) {
+    return;
+  }
+
+  const text = message.content
+    .map((part) => {
+      if (part?.type === 'text') {
+        return part.text ?? '';
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+  const imageUrls = message.content.filter((part) => part?.type === 'image_url');
+
+  message.content = text;
+  if (imageUrls.length > 0) {
+    message.image_urls = imageUrls;
+  }
+}
+
 /**
  * Load messages from a previous response/conversation
  * @param {string} conversationId - The conversation/response ID
@@ -578,6 +600,7 @@ const createResponse = async (req, res) => {
       }
 
       if (latestUserMessage && documentResult.documents.length > 0) {
+        normalizeMessageContentForDocuments(latestUserMessage);
         latestUserMessage.documents = documentResult.documents;
       }
 

@@ -132,6 +132,28 @@ function convertMessages(messages) {
   });
 }
 
+function normalizeMessageContentForDocuments(message) {
+  if (!Array.isArray(message?.content)) {
+    return;
+  }
+
+  const text = message.content
+    .map((part) => {
+      if (part?.type === 'text') {
+        return part.text ?? '';
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+  const imageUrls = message.content.filter((part) => part?.type === 'image_url');
+
+  message.content = text;
+  if (imageUrls.length > 0) {
+    message.image_urls = imageUrls;
+  }
+}
+
 /**
  * Send an error response in OpenAI format
  */
@@ -508,6 +530,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       }
 
       if (latestUserMessage && documentResult.documents.length > 0) {
+        normalizeMessageContentForDocuments(latestUserMessage);
         latestUserMessage.documents = documentResult.documents;
       }
 
