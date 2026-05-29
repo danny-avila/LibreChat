@@ -35,18 +35,37 @@ export class InMemoryJobStore implements IJobStore {
   /** Maps userId -> Set of streamIds (conversationIds) for active jobs */
   private userJobMap = new Map<string, Set<string>>();
 
+  /**
+   * Maps streamId -> last generation-activity timestamp. Refreshed via
+   * recordActivity() on each emitted chunk so the stale-job failsafe reaps on
+   * inactivity (a hung generation) rather than age (a long but live stream).
+   */
+  private lastActivity = new Map<string, number>();
+
   /** Time to keep completed jobs before cleanup (0 = immediate) */
   private ttlAfterComplete = 0;
 
   /** Maximum number of concurrent jobs */
   private maxJobs = 1000;
 
-  constructor(options?: { ttlAfterComplete?: number; maxJobs?: number }) {
+  /**
+   * Failsafe timeout (ms) for jobs stuck in "running" status. Mirrors
+   * RedisJobStore's running-job TTL: a crashed or hung generation that never
+   * reaches a terminal state would otherwise retain its content state forever,
+   * leaking the full message context until the process runs out of memory.
+   * 0 disables the failsafe. Default: 20 minutes.
+   */
+  private staleJobTimeout = 1_200_000;
+
+  constructor(options?: { ttlAfterComplete?: number; maxJobs?: number; staleJobTimeout?: number }) {
     if (options?.ttlAfterComplete) {
       this.ttlAfterComplete = options.ttlAfterComplete;
     }
     if (options?.maxJobs) {
       this.maxJobs = options.maxJobs;
+    }
+    if (options?.staleJobTimeout !== undefined) {
+      this.staleJobTimeout = options.staleJobTimeout;
     }
   }
 
@@ -87,6 +106,10 @@ export class InMemoryJobStore implements IJobStore {
     };
 
     this.jobs.set(streamId, job);
+    // Clear any prior activity timestamp so a replacement reusing this streamId
+    // (the controller handles job replacement) falls back to the fresh createdAt
+    // and isn't reaped on the previous generation's stale last-activity time.
+    this.lastActivity.delete(streamId);
 
     // Track job by userId (tenant-qualified when available) for efficient user-scoped queries
     const userKey = tenantId ? `${tenantId}:${userId}` : userId;
@@ -117,7 +140,19 @@ export class InMemoryJobStore implements IJobStore {
   async deleteJob(streamId: string): Promise<void> {
     this.jobs.delete(streamId);
     this.contentState.delete(streamId);
+    this.lastActivity.delete(streamId);
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
+  }
+
+  /**
+   * Refresh a job's last-activity timestamp (called on each emitted chunk) so the
+   * stale-job failsafe in cleanup() reaps on inactivity rather than total age,
+   * mirroring RedisJobStore refreshing the running TTL on each appendChunk.
+   */
+  recordActivity(streamId: string): void {
+    if (this.jobs.has(streamId)) {
+      this.lastActivity.set(streamId, Date.now());
+    }
   }
 
   async hasJob(streamId: string): Promise<boolean> {
@@ -137,6 +172,7 @@ export class InMemoryJobStore implements IJobStore {
   async cleanup(): Promise<number> {
     const now = Date.now();
     const toDelete: string[] = [];
+    let staleRunning = 0;
 
     for (const [streamId, job] of this.jobs) {
       const isFinished = ['complete', 'error', 'aborted'].includes(job.status);
@@ -144,6 +180,18 @@ export class InMemoryJobStore implements IJobStore {
         // TTL of 0 means immediate cleanup, otherwise wait for TTL to expire
         if (this.ttlAfterComplete === 0 || now - job.completedAt > this.ttlAfterComplete) {
           toDelete.push(streamId);
+        }
+      } else if (this.staleJobTimeout > 0 && job.status === 'running') {
+        // Failsafe: reap jobs stuck in "running" with no generation activity for
+        // longer than the stale timeout. These are crashed/hung generations that
+        // never reached a terminal state; without this they accumulate their
+        // content state in memory until the process OOMs. Reaping keys off last
+        // activity (not creation time) so a long but live stream is never reaped,
+        // mirroring RedisJobStore refreshing the running TTL on each chunk.
+        const lastActive = this.lastActivity.get(streamId) ?? job.createdAt;
+        if (now - lastActive > this.staleJobTimeout) {
+          toDelete.push(streamId);
+          staleRunning++;
         }
       }
     }
@@ -161,6 +209,12 @@ export class InMemoryJobStore implements IJobStore {
         }
       }
       await this.deleteJob(id);
+    }
+
+    if (staleRunning > 0) {
+      logger.warn(
+        `[InMemoryJobStore] Reaped ${staleRunning} stale running job(s) exceeding ${this.staleJobTimeout}ms (likely crashed/hung generations)`,
+      );
     }
 
     if (toDelete.length > 0) {
