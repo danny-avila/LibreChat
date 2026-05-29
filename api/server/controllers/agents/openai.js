@@ -33,9 +33,7 @@ const {
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
-  isDeepSeekReasoningProvider,
 } = require('@librechat/api');
-const { Providers } = require('@librechat/agents');
 const {
   buildSummarizationHandlers,
   markSummarizationUsage,
@@ -62,25 +60,6 @@ const db = require('~/models');
  * @param {boolean} [definitionsOnly=true] - When true, returns only serializable
  *   tool definitions without creating full tool instances (for event-driven mode)
  */
-/** Whether any agent in the run needs the DeepSeek thinking-mode formatter hint (#13366). */
-function needsDeepSeekFormatHint(primaryAgent, handoffAgentConfigs) {
-  const matchesAgent = (agent) =>
-    agent != null &&
-    isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
-  if (matchesAgent(primaryAgent)) {
-    return true;
-  }
-  if (handoffAgentConfigs == null) {
-    return false;
-  }
-  for (const handoff of handoffAgentConfigs.values()) {
-    if (matchesAgent(handoff)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function createToolLoader(signal, definitionsOnly = true) {
   return async function loadTools({
     req,
@@ -484,10 +463,7 @@ const OpenAIChatCompletionController = async (req, res) => {
     const openaiMessages = convertMessages(request.messages);
 
     const toolSet = buildToolSet(primaryConfig);
-    const formatOptions = needsDeepSeekFormatHint(primaryConfig, handoffAgentConfigs)
-      ? { provider: Providers.DEEPSEEK }
-      : undefined;
-    const formatted = formatAgentMessages(openaiMessages, {}, toolSet, undefined, formatOptions);
+    const formatted = formatAgentMessages(openaiMessages, {}, toolSet);
     const formattedMessages = formatted.messages;
     const initialSummary = formatted.summary;
     let indexTokenCountMap = formatted.indexTokenCountMap;

@@ -26,7 +26,6 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/agents', () => ({
   Callback: { TOOL_ERROR: 'TOOL_ERROR' },
-  Providers: { DEEPSEEK: 'deepseek', OPENROUTER: 'openrouter' },
   ToolEndHandler: jest.fn(),
   formatAgentMessages: jest.fn().mockReturnValue({
     messages: [],
@@ -89,7 +88,6 @@ jest.mock('@librechat/api', () => ({
   resolveRecursionLimit: jest.fn().mockReturnValue(50),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
   isChatCompletionValidationFailure: jest.fn().mockReturnValue(false),
-  isDeepSeekReasoningProvider: jest.fn().mockReturnValue(false),
   discoverConnectedAgents: jest.fn().mockResolvedValue({
     agentConfigs: new Map(),
     edges: [],

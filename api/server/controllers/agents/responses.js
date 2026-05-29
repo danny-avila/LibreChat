@@ -1,7 +1,7 @@
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { Callback, Providers, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
+const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
 const {
   EModelEndpoint,
   ResourceType,
@@ -41,7 +41,6 @@ const {
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
-  isDeepSeekReasoningProvider,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -537,15 +536,7 @@ const createResponse = async (req, res) => {
     const allMessages = [...previousMessages, ...inputMessages];
 
     const toolSet = buildToolSet(primaryConfig);
-    /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
-    const matchesDeepSeek = (agent) =>
-      agent != null &&
-      isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
-    const needsDeepSeek =
-      matchesDeepSeek(primaryConfig) ||
-      Array.from(handoffAgentConfigs?.values() ?? []).some(matchesDeepSeek);
-    const formatOptions = needsDeepSeek ? { provider: Providers.DEEPSEEK } : undefined;
-    const formatted = formatAgentMessages(allMessages, {}, toolSet, undefined, formatOptions);
+    const formatted = formatAgentMessages(allMessages, {}, toolSet);
     const formattedMessages = formatted.messages;
     const initialSummary = formatted.summary;
     let indexTokenCountMap = formatted.indexTokenCountMap;
