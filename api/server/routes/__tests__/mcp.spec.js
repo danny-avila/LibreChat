@@ -36,6 +36,7 @@ jest.mock('@librechat/api', () => {
       completeOAuthFlow: jest.fn(),
       generateFlowId: jest.fn(),
       generateTokenFlowId: jest.fn(),
+      parseFlowId: jest.fn(),
       buildStoredClientMetadata: jest.fn((metadata, resourceMetadata) =>
         metadata
           ? {
@@ -185,9 +186,41 @@ describe('MCP Routes', () => {
     mockResolveAllMcpConfigs.mockResolvedValue({});
     mockResolveMcpConfigNames.mockResolvedValue([]);
     const { MCPOAuthHandler } = require('@librechat/api');
+    const { getTenantId } = require('@librechat/data-schemas');
+    getTenantId.mockReturnValue(undefined);
+    MCPOAuthHandler.generateFlowId.mockImplementation((userId, serverName, tenantId) => {
+      const flowId = `${userId}:${serverName}`;
+      return tenantId ? `tenant:${encodeURIComponent(tenantId)}:${flowId}` : flowId;
+    });
     MCPOAuthHandler.generateTokenFlowId.mockImplementation((userId, serverName, tenantId) => {
       const flowId = `${userId}:${serverName}`;
       return tenantId ? `tenant:${encodeURIComponent(tenantId)}:${flowId}` : flowId;
+    });
+    MCPOAuthHandler.parseFlowId.mockImplementation((flowId) => {
+      const parts = flowId.split(':');
+      if (parts[0] === 'tenant') {
+        if (parts.length < 4 || !parts[1] || !parts[2]) {
+          return null;
+        }
+        let tenantId;
+        try {
+          tenantId = decodeURIComponent(parts[1]);
+        } catch {
+          return null;
+        }
+        return {
+          tenantId,
+          userId: parts[2],
+          serverName: parts.slice(3).join(':'),
+        };
+      }
+      if (parts.length < 2 || !parts[0]) {
+        return null;
+      }
+      return {
+        userId: parts[0],
+        serverName: parts.slice(1).join(':'),
+      };
     });
     MCPOAuthHandler.buildStoredClientMetadata.mockImplementation((metadata, resourceMetadata) =>
       metadata
@@ -241,6 +274,7 @@ describe('MCP Routes', () => {
         null,
         undefined,
         null,
+        undefined,
       );
     });
 
@@ -1176,6 +1210,35 @@ describe('MCP Routes', () => {
       });
     });
 
+    it('should return tokens for a tenant-prefixed flow owned by the user', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'COMPLETED',
+          result: {
+            access_token: 'tenant-access-token',
+          },
+        }),
+      };
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const response = await request(app).get(
+        '/api/mcp/oauth/tokens/tenant:tenant-a:test-user-id:test-server',
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        tokens: {
+          access_token: 'tenant-access-token',
+        },
+      });
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(
+        'tenant:tenant-a:test-user-id:test-server',
+        'mcp_oauth',
+      );
+    });
+
     it('should return 401 when user is not authenticated', async () => {
       const unauthApp = express();
       unauthApp.use(express.json());
@@ -1266,6 +1329,34 @@ describe('MCP Routes', () => {
         failed: false,
         error: null,
       });
+    });
+
+    it('should return flow status for a tenant-prefixed flow owned by the user', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          error: null,
+        }),
+      };
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const response = await request(app).get(
+        '/api/mcp/oauth/status/tenant:tenant-a:test-user-id:test-server',
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        status: 'PENDING',
+        completed: false,
+        failed: false,
+        error: null,
+      });
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(
+        'tenant:tenant-a:test-user-id:test-server',
+        'mcp_oauth',
+      );
     });
 
     it('should return 403 when flowId does not match authenticated user', async () => {

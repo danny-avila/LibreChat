@@ -421,7 +421,7 @@ export class MCPConnectionFactory {
   }
 
   private getBaseFlowId(): string {
-    return MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+    return MCPOAuthHandler.generateFlowId(this.userId!, this.serverName, this.tenantId);
   }
 
   private getTokenFlowId(): string {
@@ -817,6 +817,7 @@ export class MCPConnectionFactory {
               // Only reuse stored client when deleteTokens is available for stale-client cleanup
               this.tokenMethods?.deleteTokens ? this.tokenMethods.findToken : undefined,
               this.allowedAddresses,
+              this.tenantId,
             ),
           );
 
@@ -1155,6 +1156,7 @@ export class MCPConnectionFactory {
           this.allowedDomains,
           this.tokenMethods?.deleteTokens ? this.tokenMethods.findToken : undefined,
           this.allowedAddresses,
+          this.tenantId,
         ),
       );
 

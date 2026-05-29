@@ -83,7 +83,10 @@ describe('MCPConnectionFactory', () => {
     mockMCPConnection.mockImplementation(() => mockConnectionInstance);
     mockProcessMCPEnv.mockReturnValue(mockServerConfig);
     mockMCPOAuthHandler.generateFlowId.mockImplementation(
-      (userId: string, serverName: string) => `${userId}:${serverName}`,
+      (userId: string, serverName: string, tenantId?: string) => {
+        const flowId = `${userId}:${serverName}`;
+        return tenantId ? `tenant:${encodeURIComponent(tenantId)}:${flowId}` : flowId;
+      },
     );
     mockMCPOAuthHandler.generateTokenFlowId.mockImplementation(
       (userId: string, serverName: string, tenantId?: string) => {
@@ -377,6 +380,7 @@ describe('MCPConnectionFactory', () => {
         undefined,
         oauthOptions.tokenMethods.findToken,
         undefined,
+        'test-tenant',
       );
 
       // initFlow must be awaited BEFORE the redirect to guarantee state is stored
@@ -1926,6 +1930,80 @@ describe('MCPConnectionFactory', () => {
       );
       expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
         'flow123',
+        'mcp_oauth',
+        expect.objectContaining({ tenantId: 'tenant-a' }),
+      );
+    });
+
+    it('should tenant-scope mcp_oauth flow lookup before completed-flow reuse', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        oauthEnd: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+
+      const tenantFlowId = 'tenant:tenant-a:user123:test-server';
+
+      (getTenantId as jest.Mock).mockReturnValue('tenant-a');
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(null);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
+        authorizationUrl: 'https://auth.example.com',
+        flowId: tenantFlowId,
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'tenant-a-state',
+          tenantId: 'tenant-a',
+        },
+      });
+      mockFlowManager.createFlow.mockResolvedValue(null);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(tenantFlowId, 'mcp_oauth');
+      expect(mockFlowManager.getFlowState).not.toHaveBeenCalledWith(
+        'user123:test-server',
+        'mcp_oauth',
+      );
+      expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
+        tenantFlowId,
         'mcp_oauth',
         expect.objectContaining({ tenantId: 'tenant-a' }),
       );

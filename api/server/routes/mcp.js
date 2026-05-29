@@ -52,6 +52,16 @@ const router = Router();
 
 const OAUTH_CSRF_COOKIE_PATH = '/api/mcp';
 
+const getOAuthFlowId = (userId, serverName) =>
+  MCPOAuthHandler.generateFlowId(userId, serverName, getTenantId());
+
+const getFlowUserId = (flowId) => MCPOAuthHandler.parseFlowId(flowId)?.userId;
+
+const canAccessOAuthFlow = (flowId, userId) => {
+  const flowUserId = getFlowUserId(flowId);
+  return flowUserId === userId || flowUserId === 'system';
+};
+
 const checkMCPUsePermissions = generateCheckAccess({
   permissionType: PermissionTypes.MCP_SERVERS,
   permissions: [Permissions.USE],
@@ -123,6 +133,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
       allowedDomains,
       undefined,
       allowedAddresses,
+      getTenantId(),
     );
 
     logger.debug('[MCP OAuth] OAuth flow initiated', { oauthFlowId, authorizationUrl });
@@ -162,8 +173,10 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           const flowManager = getFlowStateManager(flowsCache);
           const flowId = await MCPOAuthHandler.resolveStateToFlowId(state, flowManager);
           if (flowId) {
-            const flowParts = flowId.split(':');
-            const [flowUserId] = flowParts;
+            const flowUserId = getFlowUserId(flowId);
+            if (!flowUserId) {
+              return;
+            }
             const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
             const hasSession = !hasCsrf && validateOAuthSession(req, flowUserId);
             if (hasCsrf || hasSession) {
@@ -203,13 +216,11 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     }
     logger.debug('[MCP OAuth] Resolved flow ID from state', { flowId });
 
-    const flowParts = flowId.split(':');
-    if (flowParts.length < 2 || !flowParts[0] || !flowParts[1]) {
+    const flowUserId = getFlowUserId(flowId);
+    if (!flowUserId) {
       logger.error('[MCP OAuth] Invalid flow ID format', { flowId });
       return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
     }
-
-    const [flowUserId] = flowParts;
 
     const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
     const hasSession = !hasCsrf && validateOAuthSession(req, flowUserId);
@@ -422,7 +433,7 @@ router.get('/oauth/tokens/:flowId', requireJwtAuth, async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    if (!flowId.startsWith(`${user.id}:`) && !flowId.startsWith('system:')) {
+    if (!canAccessOAuthFlow(flowId, user.id)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -459,7 +470,7 @@ router.post('/:serverName/oauth/bind', requireJwtAuth, setOAuthSession, async (r
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const flowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
+    const flowId = getOAuthFlowId(user.id, serverName);
     setOAuthCsrfCookie(res, flowId, OAUTH_CSRF_COOKIE_PATH);
 
     res.json({ success: true });
@@ -482,7 +493,7 @@ router.get('/oauth/status/:flowId', requireJwtAuth, async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    if (!flowId.startsWith(`${user.id}:`) && !flowId.startsWith('system:')) {
+    if (!canAccessOAuthFlow(flowId, user.id)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -523,7 +534,7 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
 
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
-    const flowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
+    const flowId = getOAuthFlowId(user.id, serverName);
     const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
 
     if (!flowState) {
@@ -611,7 +622,7 @@ router.post(
       const { success, message, oauthRequired, oauthUrl } = result;
 
       if (oauthRequired) {
-        const flowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
+        const flowId = getOAuthFlowId(user.id, serverName);
         setOAuthCsrfCookie(res, flowId, OAUTH_CSRF_COOKIE_PATH);
       }
 
