@@ -29,8 +29,8 @@ export default function AgentBuilderHeader({
 
   return (
     <div className="flex w-full flex-wrap gap-2">
-      <div className="mx-3 mb-1 mt-4 w-full">
-        <div className="flex w-full flex-row items-center justify-between">
+      <div className="mb-1 mt-4 w-full">
+        <div className="mx-3 flex w-full flex-row items-center justify-between">
           <h2 className="py-1 text-xl font-bold">Agent Builder</h2>
 
           {/* "Create new" button, shown only when editing an existing agent */}
@@ -47,7 +47,7 @@ export default function AgentBuilderHeader({
         </div>
 
         <hr className="my-4 border-border-medium" />
-        <span className="text-sm font-semibold">Select an agent to edit</span>
+        <span className="mx-3 text-sm font-semibold">Select an agent to edit</span>
       </div>
 
       {/* Select agent to edit */}

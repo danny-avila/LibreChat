@@ -13,7 +13,7 @@ export default function NewJerseyPanelButton({
     <button
       type="button"
       onClick={() => setActivePanel(Panel.advanced)}
-      className="flex w-full items-center justify-between bg-surface-tertiary px-3 py-4 text-left"
+      className="flex w-full items-center justify-between bg-surface-tertiary px-3 py-4 text-left hover:bg-[#E6E6E2]"
     >
       <span className="text-token-text-primary text-sm font-semibold">{label}</span>
       <ChevronRight className="text-token-text-primary h-4 w-4" aria-hidden />

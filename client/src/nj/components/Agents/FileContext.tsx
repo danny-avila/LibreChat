@@ -110,7 +110,7 @@ export default function FileContext({
         {/* Disabled Message */}
         {!agent_id && (
           <div className="text-center text-sm text-text-secondary">
-            {localize('com_agents_file_search_disabled')}
+            {localize('com_agents_file_context_disabled')}
           </div>
         )}
       </div>

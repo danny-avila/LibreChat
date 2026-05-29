@@ -22,7 +22,7 @@ export default function AddFilesButton({
     <>
       {hasFiles ? (
         <button type="button" className="btn btn-neutral" onClick={onClick}>
-          <div className="flex w-full items-center gap-1 text-sm font-semibold text-jersey-blue">
+          <div className="flex w-full items-center gap-1 text-sm font-semibold text-jersey-blue underline hover:decoration-2">
             <Plus aria-hidden="true" size={18} />
             Add files
           </div>

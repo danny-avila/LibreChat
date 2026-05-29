@@ -147,7 +147,7 @@ export default function AgentFooter({
               handleSelectAgent();
             }}
           >
-            Run agent
+            <span className="font-bold underline hover:decoration-2">Run agent</span>
           </button>
         </div>
       )}

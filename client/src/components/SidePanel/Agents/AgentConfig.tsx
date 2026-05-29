@@ -235,6 +235,9 @@ export default function AgentConfig() {
    *
    * Make sure to check that the LibreChat implementation hasn't drifted too far functionality-wise!
    */
+  const njInputClass =
+    'flex w-full rounded-md border border-[#454540] px-3 py-2 text-sm placeholder:text-text-secondary';
+
   return (
     <div className="h-auto pt-3">
       {/* Identity */}
@@ -262,7 +265,7 @@ export default function AgentConfig() {
                 {...field}
                 value={field.value ?? ''}
                 maxLength={256}
-                className={inputClass}
+                className={njInputClass}
                 id="name"
                 type="text"
                 placeholder="Required: give your agent a name"
@@ -293,7 +296,7 @@ export default function AgentConfig() {
               {...field}
               value={field.value ?? ''}
               maxLength={512}
-              className={inputClass}
+              className={njInputClass}
               id="description"
               type="text"
               placeholder={localize('com_agents_description_placeholder')}
@@ -311,7 +314,7 @@ export default function AgentConfig() {
         <p className="mt-1 text-sm text-text-secondary">
           Define what your agent does, how it behaves, and what it should focus on.
         </p>
-        <p className="mt-1 text-xs text-text-secondary">
+        <p className="mt-1 text-sm text-text-secondary">
           Read example instructions in the{' '}
           <a
             href="https://innovation.nj.gov/skills/ai-how-tos/"
