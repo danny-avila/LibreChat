@@ -361,6 +361,13 @@ export class MCPOAuthHandler {
     );
   }
 
+  private static appendResourceParameter(body: URLSearchParams, serverUrl?: string): void {
+    if (!serverUrl) {
+      return;
+    }
+    body.set('resource', resourceUrlFromServerUrl(serverUrl).href);
+  }
+
   private static assertNoUnpinnedClientSecret(config?: MCPOptions['oauth']): void {
     if (config?.client_secret && !config.client_id) {
       throw new Error('[MCPOAuth] OAuth client_secret requires oauth.client_id.');
@@ -1174,6 +1181,7 @@ export class MCPOAuthHandler {
         if (metadata.clientInfo.scope) {
           body.append('scope', metadata.clientInfo.scope);
         }
+        this.appendResourceParameter(body, metadata.serverUrl);
 
         const headers: HeadersInit = {
           Accept: 'application/json',
@@ -1257,6 +1265,7 @@ export class MCPOAuthHandler {
         if (config.scope) {
           body.append('scope', config.scope);
         }
+        this.appendResourceParameter(body, metadata.serverUrl);
 
         const headers: HeadersInit = {
           Accept: 'application/json',
@@ -1359,6 +1368,7 @@ export class MCPOAuthHandler {
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
       });
+      this.appendResourceParameter(body, metadata.serverUrl);
 
       const headers: HeadersInit = {
         Accept: 'application/json',
