@@ -413,10 +413,10 @@ export class MCPConnectionFactory {
 
   private getSilentRefreshTimeoutMs(): number {
     const oauthTimeout = this.getConnectionOAuthTimeoutMs();
-    const fallbackBufferMs = Math.min(1000, Math.max(0, Math.floor(oauthTimeout * 0.1)));
+    const silentRefreshBudgetMs = Math.floor(oauthTimeout * 0.4);
     return Math.max(
       1,
-      Math.min(MCPConnectionFactory.SILENT_REFRESH_TIMEOUT_MS, oauthTimeout - fallbackBufferMs),
+      Math.min(MCPConnectionFactory.SILENT_REFRESH_TIMEOUT_MS, silentRefreshBudgetMs),
     );
   }
 
@@ -532,6 +532,7 @@ export class MCPConnectionFactory {
     const timeoutMs = this.getSilentRefreshTimeoutMs();
     const abortController = new AbortController();
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const refreshPromise = this.runSilentRefresh(abortController.signal);
     const promise = new Promise<MCPOAuthTokens | null>((resolve) => {
       timeoutId = setTimeout(() => {
         abortController.abort();
@@ -541,7 +542,7 @@ export class MCPConnectionFactory {
         resolve(null);
       }, timeoutMs);
 
-      this.runSilentRefresh(abortController.signal).then(resolve, (error: unknown) => {
+      refreshPromise.then(resolve, (error: unknown) => {
         logger.info(
           `${this.logPrefix} Silent token refresh failed, falling back to interactive OAuth`,
           error,
@@ -554,11 +555,19 @@ export class MCPConnectionFactory {
       }
     });
     MCPConnectionFactory.inflightSilentRefreshes.set(lockKey, promise);
-    try {
-      return await promise;
-    } finally {
-      MCPConnectionFactory.inflightSilentRefreshes.delete(lockKey);
-    }
+    void refreshPromise.then(
+      () => {
+        if (MCPConnectionFactory.inflightSilentRefreshes.get(lockKey) === promise) {
+          MCPConnectionFactory.inflightSilentRefreshes.delete(lockKey);
+        }
+      },
+      () => {
+        if (MCPConnectionFactory.inflightSilentRefreshes.get(lockKey) === promise) {
+          MCPConnectionFactory.inflightSilentRefreshes.delete(lockKey);
+        }
+      },
+    );
+    return await promise;
   }
 
   /**
