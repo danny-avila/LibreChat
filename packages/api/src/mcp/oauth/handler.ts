@@ -1199,9 +1199,7 @@ export class MCPOAuthHandler {
          */
         if (config?.audience) {
           body.append('audience', config.audience);
-          logger.debug(
-            `[MCPOAuth] Added audience parameter to refresh request: ${config.audience}`,
-          );
+          logger.debug(`[MCPOAuth] Added audience parameter to refresh request: ${config.audience}`);
         }
 
         const headers: HeadersInit = {
