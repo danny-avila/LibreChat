@@ -348,6 +348,7 @@ describe('MCPTokenStorage', () => {
       expect(refreshTokens).toHaveBeenCalledWith(
         'rt',
         expect.objectContaining({ userId: 'u1', serverName: 'srv1' }),
+        undefined,
       );
     });
 
@@ -475,6 +476,7 @@ describe('MCPTokenStorage', () => {
         expect.objectContaining({
           clientInfo: expect.objectContaining({ client_id: 'cid' }),
         }),
+        undefined,
       );
     });
 
@@ -763,6 +765,7 @@ describe('MCPTokenStorage', () => {
           serverName: 'srv1',
           identifier: 'mcp:srv1',
         }),
+        undefined,
       );
 
       // The new access token is persisted, replacing the stale one.

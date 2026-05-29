@@ -51,6 +51,7 @@ export class MCPOAuthHandler {
     clientInfo?: OAuthClientInformation,
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
+    signal?: AbortSignal,
   ): FetchLike {
     const hardenedFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
 
@@ -121,11 +122,13 @@ export class MCPOAuthHandler {
           ...init,
           body: params.toString(),
           headers: newHeaders,
+          signal: init?.signal ?? signal,
         });
       }
       return hardenedFetch(url, {
         ...init,
         headers: newHeaders,
+        signal: init?.signal ?? signal,
       });
     };
   }
@@ -1082,6 +1085,7 @@ export class MCPOAuthHandler {
     config?: MCPOptions['oauth'],
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
+    signal?: AbortSignal,
   ): Promise<MCPOAuthTokens> {
     logger.debug(`[MCPOAuth] Refreshing tokens for ${metadata.serverName}`);
 
@@ -1135,6 +1139,7 @@ export class MCPOAuthHandler {
             undefined,
             allowedDomains,
             allowedAddresses,
+            signal,
           );
           const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
@@ -1219,6 +1224,7 @@ export class MCPOAuthHandler {
           method: 'POST',
           headers,
           body,
+          signal,
         });
 
         if (!response.ok) {
@@ -1303,6 +1309,7 @@ export class MCPOAuthHandler {
           method: 'POST',
           headers,
           body,
+          signal,
         });
 
         if (!response.ok) {
@@ -1328,6 +1335,7 @@ export class MCPOAuthHandler {
         undefined,
         allowedDomains,
         allowedAddresses,
+        signal,
       );
       const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
@@ -1363,6 +1371,7 @@ export class MCPOAuthHandler {
         method: 'POST',
         headers,
         body,
+        signal,
       });
 
       if (!response.ok) {

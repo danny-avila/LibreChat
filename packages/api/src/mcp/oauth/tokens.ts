@@ -48,11 +48,13 @@ interface GetTokensParams {
       storedTokenEndpoint?: string;
       storedAuthMethods?: string[];
     },
+    signal?: AbortSignal,
   ) => Promise<MCPOAuthTokens>;
   createToken?: TokenMethods['createToken'];
   updateToken?: TokenMethods['updateToken'];
   /** Enables cleanup of stale client registration and refresh token on invalid_client errors during refresh. */
   deleteTokens?: TokenMethods['deleteTokens'];
+  signal?: AbortSignal;
 }
 
 /**
@@ -311,6 +313,7 @@ export class MCPTokenStorage {
     deleteTokens,
     refreshTokens,
     existingAccessToken,
+    signal,
   }: GetTokensParams & { existingAccessToken?: IToken | null }): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
     const identifier = `mcp:${serverName}`;
@@ -384,7 +387,11 @@ export class MCPTokenStorage {
         storedAuthMethods,
       };
 
-      const newTokens = await refreshTokens(decryptedRefreshToken, metadata);
+      const newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
+
+      if (signal?.aborted) {
+        throw new Error('Token refresh aborted');
+      }
 
       logger.debug(`${logPrefix} Refresh completed`, {
         has_new_access_token: !!newTokens.access_token,
