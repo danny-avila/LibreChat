@@ -106,6 +106,10 @@ export class InMemoryJobStore implements IJobStore {
     };
 
     this.jobs.set(streamId, job);
+    // Clear any prior activity timestamp so a replacement reusing this streamId
+    // (the controller handles job replacement) falls back to the fresh createdAt
+    // and isn't reaped on the previous generation's stale last-activity time.
+    this.lastActivity.delete(streamId);
 
     // Track job by userId (tenant-qualified when available) for efficient user-scoped queries
     const userKey = tenantId ? `${tenantId}:${userId}` : userId;

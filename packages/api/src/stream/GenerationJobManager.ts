@@ -20,6 +20,9 @@ import type { GenerationJobStore } from '~/app/metrics';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 
+/** Error surfaced to any client still attached when a stale/hung job is reaped. */
+const REAPED_JOB_ERROR = 'Generation timed out';
+
 /**
  * Configuration options for GenerationJobManager
  */
@@ -1248,6 +1251,16 @@ class GenerationJobManagerClass {
         const runtime = this.runtimeState.get(streamId);
         if (runtime && !runtime.abortController.signal.aborted) {
           runtime.abortController.abort();
+        }
+        // If a client is still attached when the job is reaped, send a terminal
+        // error first so the SSE connection closes instead of hanging open with no
+        // final/done event (the route only ends the response from onDone/onError).
+        if (this.eventTransport.getSubscriberCount(streamId) > 0) {
+          try {
+            await this.eventTransport.emitError(streamId, REAPED_JOB_ERROR);
+          } catch (err) {
+            logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
+          }
         }
         this.runtimeState.delete(streamId);
         runningJobsChanged = this.runningJobs.delete(streamId) || runningJobsChanged;

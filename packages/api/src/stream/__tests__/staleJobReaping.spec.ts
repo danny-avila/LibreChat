@@ -52,6 +52,30 @@ describe('InMemoryJobStore - stale running-job failsafe', () => {
     await store.destroy();
   });
 
+  it('does not reap a replacement job that reuses a stale stream id', async () => {
+    jest.useFakeTimers();
+    try {
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const store = new InMemoryJobStore({ ttlAfterComplete: 0, staleJobTimeout: 1000 });
+      await store.initialize();
+
+      await store.createJob('s1', 'u1', 's1');
+      store.recordActivity('s1'); // old generation's activity
+      await jest.advanceTimersByTimeAsync(5000); // ...goes stale
+
+      // Replacement reuses the same streamId (old job never terminated).
+      await store.createJob('s1', 'u1', 's1');
+      const removed = await store.cleanup();
+
+      expect(removed).toBe(0); // fresh replacement must not be reaped immediately
+      expect(await store.hasJob('s1')).toBe(true);
+
+      await store.destroy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('does not reap a running job within the staleJobTimeout', async () => {
     const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
     const store = new InMemoryJobStore({ staleJobTimeout: 60000 });
@@ -151,6 +175,43 @@ describe('GenerationJobManager - generation abort on reaping', () => {
       expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
       expect(manager.getRuntimeStats().eventTransportStreams).toBe(0);
 
+      await manager.destroy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('sends a terminal error to a still-connected client when its job is reaped', async () => {
+    const { GenerationJobManagerClass } = await import('../GenerationJobManager');
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+    jest.useFakeTimers();
+    try {
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 0, staleJobTimeout: 1000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+
+      await manager.createJob('conv-3', 'user-1', 'conv-3');
+      const errors: string[] = [];
+      const subscription = await manager.subscribe(
+        'conv-3',
+        () => undefined,
+        () => undefined,
+        (error) => errors.push(error),
+      );
+
+      // Hung generation: no chunks emitted; advance past the stale timeout + cleanup tick.
+      await jest.advanceTimersByTimeAsync(61000);
+
+      expect(errors).toContain('Generation timed out');
+      expect(await manager.hasJob('conv-3')).toBe(false);
+
+      subscription?.unsubscribe();
       await manager.destroy();
     } finally {
       jest.useRealTimers();
