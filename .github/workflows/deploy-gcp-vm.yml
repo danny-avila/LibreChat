@@ -12,6 +12,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: self-hosted
+    timeout-minutes: 30
     steps:
       - name: Pull latest code
         run: |
@@ -31,8 +32,27 @@ jobs:
           echo "==> Restarting containers..."
           docker compose up -d
 
-      - name: Verify
+      - name: Verify containers running
         run: |
           cd ${{ vars.GCP_VM_APP_DIR }}
           docker compose ps
-          echo "==> Deploy complete."
+          echo "==> Containers up."
+
+      - name: Health check
+        run: |
+          set -e
+          echo "==> Waiting 30s for app to be ready..."
+          sleep 30
+          echo "==> Probing /api/config..."
+          for i in 1 2 3 4 5; do
+            if curl -fs http://localhost:3080/api/config > /dev/null; then
+              echo "==> App is healthy."
+              exit 0
+            fi
+            echo "==> Attempt $i: not yet responding, retrying in 10s..."
+            sleep 10
+          done
+          echo "==> Health check FAILED. Last 50 lines of api logs:"
+          cd ${{ vars.GCP_VM_APP_DIR }}
+          docker compose logs --tail=50 api
+          exit 1
