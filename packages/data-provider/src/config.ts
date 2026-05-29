@@ -950,6 +950,7 @@ export const interfaceSchema = z
       .optional(),
     temporaryChat: z.boolean().optional(),
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
+    fileRetention: z.number().min(1).max(8760).optional(),
     autoSubmitFromUrl: z.boolean().optional(),
     retentionMode: z.nativeEnum(RetentionMode).default(RetentionMode.TEMPORARY),
     runCode: z.boolean().optional(),

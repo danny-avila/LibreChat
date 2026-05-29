@@ -1,6 +1,8 @@
 import type { AppConfig } from '~/types';
 import {
+  createFileExpirationDate,
   createTempChatExpirationDate,
+  getFileRetentionHours,
   getTempChatRetentionHours,
   DEFAULT_RETENTION_HOURS,
   MIN_RETENTION_HOURS,
@@ -90,6 +92,42 @@ describe('tempChatRetention', () => {
     });
   });
 
+  describe('getFileRetentionHours', () => {
+    it('should return null when file retention is not configured', () => {
+      expect(getFileRetentionHours()).toBeNull();
+    });
+
+    it('should return the configured file retention period', () => {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
+          fileRetention: 720,
+        },
+      };
+
+      expect(getFileRetentionHours(config.interfaceConfig)).toBe(720);
+    });
+
+    it('should enforce minimum file retention period', () => {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
+          fileRetention: 0,
+        },
+      };
+
+      expect(getFileRetentionHours(config.interfaceConfig)).toBe(MIN_RETENTION_HOURS);
+    });
+
+    it('should enforce maximum file retention period', () => {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
+          fileRetention: 10000,
+        },
+      };
+
+      expect(getFileRetentionHours(config.interfaceConfig)).toBe(MAX_RETENTION_HOURS);
+    });
+  });
+
   describe('createTempChatExpirationDate', () => {
     it('should create expiration date with default retention period', () => {
       const beforeCall = Date.now();
@@ -99,7 +137,6 @@ describe('tempChatRetention', () => {
       const expectedMin = beforeCall + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000;
       const expectedMax = afterCall + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000;
 
-      // Result should be between expectedMin and expectedMax
       expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin);
       expect(result.getTime()).toBeLessThanOrEqual(expectedMax);
     });
@@ -118,7 +155,6 @@ describe('tempChatRetention', () => {
       const expectedMin = beforeCall + 12 * 60 * 60 * 1000;
       const expectedMax = afterCall + 12 * 60 * 60 * 1000;
 
-      // Result should be between expectedMin and expectedMax
       expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin);
       expect(result.getTime()).toBeLessThanOrEqual(expectedMax);
     });
@@ -132,6 +168,39 @@ describe('tempChatRetention', () => {
       const now = new Date();
       const result = createTempChatExpirationDate();
       expect(result.getTime()).toBeGreaterThan(now.getTime());
+    });
+  });
+
+  describe('createFileExpirationDate', () => {
+    it('should use file retention when configured', () => {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
+          fileRetention: 24,
+          temporaryChatRetention: 12,
+        },
+      };
+
+      const beforeCall = Date.now();
+      const result = createFileExpirationDate(config.interfaceConfig);
+      const afterCall = Date.now();
+
+      expect(result.getTime()).toBeGreaterThanOrEqual(beforeCall + 24 * 60 * 60 * 1000);
+      expect(result.getTime()).toBeLessThanOrEqual(afterCall + 24 * 60 * 60 * 1000);
+    });
+
+    it('should fall back to temporary chat retention when file retention is not configured', () => {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
+          temporaryChatRetention: 12,
+        },
+      };
+
+      const beforeCall = Date.now();
+      const result = createFileExpirationDate(config.interfaceConfig);
+      const afterCall = Date.now();
+
+      expect(result.getTime()).toBeGreaterThanOrEqual(beforeCall + 12 * 60 * 60 * 1000);
+      expect(result.getTime()).toBeLessThanOrEqual(afterCall + 12 * 60 * 60 * 1000);
     });
   });
 });

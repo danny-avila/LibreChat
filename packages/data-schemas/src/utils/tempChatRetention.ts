@@ -66,6 +66,36 @@ export function getTempChatRetentionHours(
   return retentionHours;
 }
 
+export function getFileRetentionHours(
+  interfaceConfig?: AppConfig['interfaceConfig'] | null,
+): number | null {
+  const retentionHours = interfaceConfig?.fileRetention;
+  if (retentionHours == null) {
+    return null;
+  }
+
+  if (typeof retentionHours !== 'number' || Number.isNaN(retentionHours)) {
+    logger.warn(`Invalid fileRetention in config: ${retentionHours}. Ignoring value.`);
+    return null;
+  }
+
+  if (retentionHours < MIN_RETENTION_HOURS) {
+    logger.warn(
+      `File retention period ${retentionHours} is below minimum ${MIN_RETENTION_HOURS} hours. Using minimum value.`,
+    );
+    return MIN_RETENTION_HOURS;
+  }
+
+  if (retentionHours > MAX_RETENTION_HOURS) {
+    logger.warn(
+      `File retention period ${retentionHours} exceeds maximum ${MAX_RETENTION_HOURS} hours. Using maximum value.`,
+    );
+    return MAX_RETENTION_HOURS;
+  }
+
+  return retentionHours;
+}
+
 /**
  * Creates an expiration date for temporary chats
  * @param interfaceConfig - The custom configuration object
@@ -73,5 +103,11 @@ export function getTempChatRetentionHours(
  */
 export function createTempChatExpirationDate(interfaceConfig?: AppConfig['interfaceConfig']): Date {
   const retentionHours = getTempChatRetentionHours(interfaceConfig);
+  return new Date(Date.now() + retentionHours * 60 * 60 * 1000);
+}
+
+export function createFileExpirationDate(interfaceConfig?: AppConfig['interfaceConfig']): Date {
+  const retentionHours =
+    getFileRetentionHours(interfaceConfig) ?? getTempChatRetentionHours(interfaceConfig);
   return new Date(Date.now() + retentionHours * 60 * 60 * 1000);
 }
