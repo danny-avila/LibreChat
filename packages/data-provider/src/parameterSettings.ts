@@ -1141,3 +1141,23 @@ export const agentParamSettings: Record<string, SettingsConfiguration | undefine
   }
   return acc;
 }, {});
+
+/**
+ * Resolves model-aware defaults for a settings configuration before rendering.
+ * Google's `maxOutputTokens` default depends on the selected Gemini model so that
+ * current models (2.5 and 3+) surface their 64K output limit instead of the legacy 8K value.
+ */
+export function applyModelAwareDefaults(
+  settings: SettingsConfiguration,
+  endpoint: string,
+  model?: string,
+): SettingsConfiguration {
+  if (endpoint !== EModelEndpoint.google || !model) {
+    return settings;
+  }
+  return settings.map((setting) =>
+    setting.key === 'maxOutputTokens'
+      ? { ...setting, default: googleSettings.maxOutputTokens.reset(model) }
+      : setting,
+  );
+}

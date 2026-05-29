@@ -15,7 +15,11 @@ const {
 const { updateUser, findUser } = require('~/models');
 
 const getOpenIdJwtAudience = () => {
-  const audiences = [process.env.OPENID_CLIENT_ID, process.env.OPENID_AUDIENCE].filter(Boolean);
+  const parsedAudience = (process.env.OPENID_AUDIENCE ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const audiences = [process.env.OPENID_CLIENT_ID, ...parsedAudience].filter(Boolean);
   const uniqueAudiences = [...new Set(audiences)];
 
   return uniqueAudiences.length > 1 ? uniqueAudiences : uniqueAudiences[0];

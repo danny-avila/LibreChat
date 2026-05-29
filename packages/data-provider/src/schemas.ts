@@ -366,15 +366,45 @@ export const openAISettings = {
   },
 };
 
+/**
+ * `65535` (not 65536) is the value valid on both Google AI Studio and Vertex AI:
+ * Vertex caps current Gemini text models at 65,535 output tokens, so defaulting to
+ * 65,536 would make otherwise-default Vertex requests fail validation.
+ */
+const GOOGLE_MAX_OUTPUT = 65535 as const;
+const GOOGLE_IMAGE_MAX_OUTPUT = 32768 as const;
+const GOOGLE_LEGACY_MAX_OUTPUT = 8192 as const;
+
+/**
+ * Resolves the documented max output-token limit for a Google/Gemini model.
+ * Current Gemini text models (2.5 and 3+) support 64K output tokens; their image
+ * variants (e.g. `gemini-2.5-flash-image`) cap at 32K; legacy/deprecated models
+ * (2.0 and earlier, including legacy image models) and Gemma retain the 8K limit.
+ */
+const getGoogleMaxOutputTokens = (modelName: string): number => {
+  if (/gemini-(?:2\.5|[3-9]|\d{2,})/i.test(modelName)) {
+    if (/image/i.test(modelName)) {
+      return GOOGLE_IMAGE_MAX_OUTPUT;
+    }
+    return GOOGLE_MAX_OUTPUT;
+  }
+  return GOOGLE_LEGACY_MAX_OUTPUT;
+};
+
 export const googleSettings = {
   model: {
     default: 'gemini-1.5-flash-latest' as const,
   },
   maxOutputTokens: {
     min: 1 as const,
-    max: 65536 as const,
+    max: GOOGLE_MAX_OUTPUT,
     step: 1 as const,
-    default: 8192 as const,
+    default: GOOGLE_LEGACY_MAX_OUTPUT,
+    reset: (modelName: string): number => getGoogleMaxOutputTokens(modelName),
+    set: (value: number, modelName: string): number => {
+      const max = getGoogleMaxOutputTokens(modelName);
+      return value > max ? max : value;
+    },
   },
   temperature: {
     min: 0 as const,
@@ -1265,7 +1295,7 @@ export const compactGoogleSchema = googleBaseSchema
     if (newObj.temperature === google.temperature.default) {
       delete newObj.temperature;
     }
-    if (newObj.maxOutputTokens === google.maxOutputTokens.default) {
+    if (newObj.maxOutputTokens === google.maxOutputTokens.reset(newObj.model ?? '')) {
       delete newObj.maxOutputTokens;
     }
     if (newObj.topP === google.topP.default) {
