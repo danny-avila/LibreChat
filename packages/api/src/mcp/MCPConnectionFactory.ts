@@ -19,6 +19,13 @@ export interface ToolDiscoveryResult {
   oauthUrl: string | null;
 }
 
+type OAuthRequiredEvent = {
+  serverUrl?: string;
+  error?: unknown;
+  status?: number;
+  statusCode?: number;
+};
+
 /**
  * Factory for creating MCP connections with optional OAuth authentication.
  * Handles OAuth flows, token management, and connection retry logic.
@@ -396,12 +403,23 @@ export class MCPConnectionFactory {
     );
   }
 
-  private getTokenFlowId(): string {
-    const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+  private scopeFlowIdToTenant(flowId: string): string {
     if (!this.tenantId) {
       return flowId;
     }
     return `tenant:${encodeURIComponent(this.tenantId)}:${flowId}`;
+  }
+
+  private getBaseFlowId(): string {
+    return MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+  }
+
+  private getTokenFlowId(): string {
+    return this.scopeFlowIdToTenant(this.getBaseFlowId());
+  }
+
+  private getOAuthFlowId(): string {
+    return this.scopeFlowIdToTenant(this.getBaseFlowId());
   }
 
   /** Retrieves existing OAuth tokens from storage or returns null */
@@ -618,7 +636,7 @@ export class MCPConnectionFactory {
     if (!this.flowManager || !this.userId) {
       return;
     }
-    const flowId = MCPOAuthHandler.generateFlowId(this.userId, this.serverName);
+    const flowId = this.getOAuthFlowId();
     try {
       const existing = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
       if (!existing || existing.status !== 'COMPLETED') {
@@ -635,16 +653,82 @@ export class MCPConnectionFactory {
     }
   }
 
+  private getOAuthRequiredStatusCode(data: OAuthRequiredEvent): number | undefined {
+    if (typeof data.status === 'number') {
+      return data.status;
+    }
+    if (typeof data.statusCode === 'number') {
+      return data.statusCode;
+    }
+
+    const error = data.error;
+    if (!error || typeof error !== 'object') {
+      return undefined;
+    }
+
+    const errorLike = error as {
+      code?: unknown;
+      status?: unknown;
+      statusCode?: unknown;
+      message?: unknown;
+    };
+    for (const value of [errorLike.code, errorLike.status, errorLike.statusCode]) {
+      if (typeof value === 'number' && Number.isInteger(value)) {
+        return value;
+      }
+    }
+
+    if (typeof errorLike.message === 'string') {
+      const statusMatch = errorLike.message.match(/\b(4\d{2}|5\d{2})\b/);
+      if (statusMatch) {
+        return Number.parseInt(statusMatch[1], 10);
+      }
+    }
+
+    return undefined;
+  }
+
+  private shouldAttemptSilentTokenRefresh(data: OAuthRequiredEvent): boolean {
+    const statusCode = this.getOAuthRequiredStatusCode(data);
+    if (statusCode === 403) {
+      logger.info(
+        `${this.logPrefix} OAuth server returned 403; skipping silent refresh and starting interactive OAuth`,
+      );
+      return false;
+    }
+
+    const error = data.error;
+    if (error && typeof error === 'object' && 'message' in error) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === 'string') {
+        const normalized = message.toLowerCase();
+        if (
+          normalized.includes('insufficient_scope') ||
+          normalized.includes('insufficient scope')
+        ) {
+          logger.info(
+            `${this.logPrefix} OAuth server reported insufficient scope; skipping silent refresh`,
+          );
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
   /** Sets up OAuth event handlers for the connection */
   protected handleOAuthEvents(connection: MCPConnection): () => void {
-    const oauthHandler = async (data: { serverUrl?: string }) => {
+    const oauthHandler = async (data: OAuthRequiredEvent) => {
       logger.info(`${this.logPrefix} oauthRequired event received`);
 
-      const refreshedTokens = await this.attemptSilentTokenRefresh();
-      if (refreshedTokens) {
-        connection.setOAuthTokens(refreshedTokens);
-        connection.emit('oauthHandled');
-        return;
+      if (this.shouldAttemptSilentTokenRefresh(data)) {
+        const refreshedTokens = await this.attemptSilentTokenRefresh();
+        if (refreshedTokens) {
+          connection.setOAuthTokens(refreshedTokens);
+          connection.emit('oauthHandled');
+          return;
+        }
       }
 
       // Silent refresh failed and we're about to fall through to interactive
@@ -657,7 +741,7 @@ export class MCPConnectionFactory {
       if (this.returnOnOAuth) {
         try {
           const config = this.serverConfig;
-          const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+          const flowId = this.getOAuthFlowId();
           const existingFlow = await this.flowManager!.getFlowState(flowId, 'mcp_oauth');
 
           if (existingFlow?.status === 'PENDING') {
@@ -680,7 +764,7 @@ export class MCPConnectionFactory {
 
           const {
             authorizationUrl,
-            flowId: newFlowId,
+            flowId: generatedFlowId,
             flowMetadata,
           } = await this.runWithCapturedTenant(() =>
             MCPOAuthHandler.initiateOAuthFlow(
@@ -695,11 +779,12 @@ export class MCPConnectionFactory {
               this.allowedAddresses,
             ),
           );
+          const newFlowId = this.scopeFlowIdToTenant(generatedFlowId);
 
           if (existingFlow) {
             const oldMeta = existingFlow.metadata as MCPOAuthFlowMetadata | undefined;
             const oldState = oldMeta?.state;
-            await this.flowManager!.deleteFlow(newFlowId, 'mcp_oauth');
+            await this.flowManager!.deleteFlow(flowId, 'mcp_oauth');
             if (oldState) {
               await MCPOAuthHandler.deleteStateMapping(oldState, this.flowManager!);
             }
@@ -928,7 +1013,7 @@ export class MCPConnectionFactory {
       logger.debug(`${this.logPrefix} Checking for existing OAuth flow for ${this.serverName}...`);
 
       /** Flow ID to check if a flow already exists */
-      const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+      const flowId = this.getOAuthFlowId();
 
       /** Check if there's already an ongoing OAuth flow for this flowId */
       const existingFlow = await this.flowManager.getFlowState(flowId, 'mcp_oauth');
@@ -1013,7 +1098,7 @@ export class MCPConnectionFactory {
       logger.debug(`${this.logPrefix} Initiating new OAuth flow for ${this.serverName}...`);
       const {
         authorizationUrl,
-        flowId: newFlowId,
+        flowId: generatedFlowId,
         flowMetadata,
       } = await this.runWithCapturedTenant(() =>
         MCPOAuthHandler.initiateOAuthFlow(
@@ -1027,6 +1112,7 @@ export class MCPConnectionFactory {
           this.allowedAddresses,
         ),
       );
+      const newFlowId = this.scopeFlowIdToTenant(generatedFlowId);
 
       reusedStoredClient = flowMetadata.reusedStoredClient === true;
 

@@ -71,6 +71,24 @@ describe('FlowStateManager', () => {
       expect(result2).toBe('result');
     });
 
+    it('should return the externally completed result when handler loses completion race', async () => {
+      const flowId = 'race-flow';
+      const type = 'test-type';
+
+      const result = await flowManager.createFlowWithHandler(flowId, type, async () => {
+        await flowManager.completeFlow(flowId, type, 'fresh-result');
+        return 'stale-result';
+      });
+
+      expect(result).toBe('fresh-result');
+      await expect(flowManager.getFlowState(flowId, type)).resolves.toEqual(
+        expect.objectContaining({
+          status: 'COMPLETED',
+          result: 'fresh-result',
+        }),
+      );
+    });
+
     it('should handle flow timeout correctly', async () => {
       const flowId = 'timeout-flow';
       const type = 'test-type';

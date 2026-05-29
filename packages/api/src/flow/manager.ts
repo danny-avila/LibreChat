@@ -415,6 +415,10 @@ export class FlowStateManager<T = unknown> {
     try {
       const result = await handler();
       await this.completeFlow(flowId, type, result);
+      const completedState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+      if (completedState?.status === 'COMPLETED' && completedState.result !== undefined) {
+        return completedState.result;
+      }
       return result;
     } catch (error) {
       await this.failFlow(flowId, type, error instanceof Error ? error : new Error(String(error)));
