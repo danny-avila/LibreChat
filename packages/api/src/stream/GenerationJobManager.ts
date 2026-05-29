@@ -220,19 +220,6 @@ class GenerationJobManagerClass {
     userId: string,
     conversationId?: string,
   ): Promise<t.GenerationJob> {
-    /**
-     * If a job already exists for this stream (streamId === conversationId), the
-     * previous generation is being replaced (e.g. user re-sent in the same
-     * conversation). Abort its controller so its in-flight work unwinds and
-     * releases its client/graph references, instead of leaking as an orphaned,
-     * no-longer-tracked generation once we overwrite the runtime state below.
-     */
-    const previousRuntime = this.runtimeState.get(streamId);
-    if (previousRuntime && !previousRuntime.abortController.signal.aborted) {
-      logger.debug(`[GenerationJobManager] Aborting replaced generation for ${streamId}`);
-      previousRuntime.abortController.abort();
-    }
-
     const tenantId = getTenantId();
     const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
     const jobData = await this.jobStore.createJob(streamId, userId, conversationId, safeTenantId);

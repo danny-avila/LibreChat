@@ -101,33 +101,9 @@ describe('InMemoryJobStore - stale running-job failsafe', () => {
   });
 });
 
-describe('GenerationJobManager - generation abort on replacement and reaping', () => {
+describe('GenerationJobManager - generation abort on reaping', () => {
   beforeEach(() => {
     jest.resetModules();
-  });
-
-  it('aborts the previous generation when a job is replaced for the same stream', async () => {
-    const { GenerationJobManagerClass } = await import('../GenerationJobManager');
-    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
-    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
-
-    const manager = new GenerationJobManagerClass();
-    manager.configure({
-      jobStore: new InMemoryJobStore({ ttlAfterComplete: 0, staleJobTimeout: 60000 }),
-      eventTransport: new InMemoryEventTransport(),
-      isRedis: false,
-    });
-    manager.initialize();
-
-    const first = await manager.createJob('conv-1', 'user-1', 'conv-1');
-    expect(first.abortController.signal.aborted).toBe(false);
-
-    const second = await manager.createJob('conv-1', 'user-1', 'conv-1');
-
-    expect(first.abortController.signal.aborted).toBe(true);
-    expect(second.abortController.signal.aborted).toBe(false);
-
-    await manager.destroy();
   });
 
   it('aborts and cleans up a hung running job once the store reaps it', async () => {
