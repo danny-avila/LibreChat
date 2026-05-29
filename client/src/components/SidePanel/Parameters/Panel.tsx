@@ -49,7 +49,7 @@ export default function Parameters() {
     const resolvedParams = defaultParams
       .filter((param) => param != null)
       .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
-    return applyModelAwareDefaults(resolvedParams, endpointType ?? provider, model);
+    return applyModelAwareDefaults(resolvedParams, overriddenEndpointKey, model);
   }, [endpointType, endpointsConfig, model, provider]);
 
   useEffect(() => {

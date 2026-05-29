@@ -377,15 +377,15 @@ const GOOGLE_LEGACY_MAX_OUTPUT = 8192 as const;
 
 /**
  * Resolves the documented max output-token limit for a Google/Gemini model.
- * Current Gemini text models (2.5 and 3+) support 64K output tokens; image models
- * (e.g. `gemini-2.5-flash-image`) cap at 32K; legacy/deprecated models (2.0 and
- * earlier) and Gemma retain the 8K limit.
+ * Current Gemini text models (2.5 and 3+) support 64K output tokens; their image
+ * variants (e.g. `gemini-2.5-flash-image`) cap at 32K; legacy/deprecated models
+ * (2.0 and earlier, including legacy image models) and Gemma retain the 8K limit.
  */
 const getGoogleMaxOutputTokens = (modelName: string): number => {
-  if (/gemini-.*image/i.test(modelName)) {
-    return GOOGLE_IMAGE_MAX_OUTPUT;
-  }
   if (/gemini-(?:2\.5|[3-9]|\d{2,})/i.test(modelName)) {
+    if (/image/i.test(modelName)) {
+      return GOOGLE_IMAGE_MAX_OUTPUT;
+    }
     return GOOGLE_MAX_OUTPUT;
   }
   return GOOGLE_LEGACY_MAX_OUTPUT;

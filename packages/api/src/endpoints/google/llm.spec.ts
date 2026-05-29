@@ -153,6 +153,22 @@ describe('getGoogleConfig', () => {
       });
       expect(result.llmConfig).toHaveProperty('maxOutputTokens', 1024);
     });
+
+    it('lets a configured defaultParams maxOutputTokens take precedence over the model default', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-2.5-pro' },
+        defaultParams: { maxOutputTokens: 2048 },
+      });
+      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 2048);
+    });
+
+    it('omits maxOutputTokens when listed in dropParams', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-2.5-pro' },
+        dropParams: ['maxOutputTokens'],
+      });
+      expect(result.llmConfig).not.toHaveProperty('maxOutputTokens');
+    });
   });
 
   describe('Empty String Handling (Issue Fix)', () => {

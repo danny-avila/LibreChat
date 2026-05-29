@@ -401,6 +401,7 @@ describe('googleSettings', () => {
         'gemini-1.5-flash-8b',
         'gemini-2.0-flash',
         'gemini-2.0-flash-lite',
+        'gemini-2.0-flash-preview-image-generation',
         'gemini-exp-1206',
         'gemma-3-27b',
       ])('returns 8192 for %s', (model) => {

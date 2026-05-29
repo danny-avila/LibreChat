@@ -360,9 +360,7 @@ export function getGoogleConfig(
       topP: modelOptions?.topP ?? undefined,
       topK: modelOptions?.topK ?? undefined,
       temperature: modelOptions?.temperature ?? undefined,
-      maxOutputTokens:
-        modelOptions?.maxOutputTokens ??
-        googleSettings.maxOutputTokens.reset(modelOptions?.model ?? ''),
+      maxOutputTokens: modelOptions?.maxOutputTokens ?? undefined,
     },
     true,
   ) as GoogleClientOptions | VertexAIClientOptions;
@@ -533,6 +531,25 @@ export function getGoogleConfig(
         delete (llmConfig as Record<string, unknown>)[param];
       }
     });
+  }
+
+  /**
+   * Apply the model-aware `maxOutputTokens` default last, so an explicit value,
+   * `defaultParams`, and `addParams` all take precedence and a `dropParams` entry
+   * is respected. Only fill in when the field is genuinely unset (`undefined`/`null`);
+   * an empty-string value stays stripped per Gemini empty-payload handling. Without
+   * this, current Gemini models would inherit the legacy 8K default instead of their
+   * documented limit.
+   */
+  const maxOutputDropped =
+    Array.isArray(options.dropParams) && options.dropParams.includes('maxOutputTokens');
+  if (
+    !maxOutputDropped &&
+    modelOptions?.maxOutputTokens == null &&
+    (llmConfig as Record<string, unknown>).maxOutputTokens == null
+  ) {
+    (llmConfig as GoogleClientOptions).maxOutputTokens =
+      googleSettings.maxOutputTokens.reset(modelName);
   }
 
   applyGemini35FlashOverrides({
