@@ -1,13 +1,13 @@
-import { useState, memo, useRef } from 'react';
+import { memo, useRef } from 'react';
 import * as Menu from '@ariakit/react/menu';
-import { FileText, LogOut } from 'lucide-react';
-import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
-import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
+import { LogOut } from 'lucide-react';
+import { DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
-import Settings from './Settings';
 
+// BKL: 마이메뉴는 '로그아웃' 하나만 노출. 내 파일 / 도움말 / 설정 항목은 제거.
+// 관련 import (FileText, LinkIcon, GearIcon, MyFilesModal, Settings) 도 삭제.
 function AccountSettings() {
   const localize = useLocalize();
   const { user, isAuthenticated, logout } = useAuthContext();
@@ -15,8 +15,6 @@ function AccountSettings() {
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
-  const [showSettings, setShowSettings] = useState(false);
-  const [showFiles, setShowFiles] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
@@ -59,37 +57,12 @@ function AccountSettings() {
             <DropdownMenuSeparator />
           </>
         )}
-        <Menu.MenuItem onClick={() => setShowFiles(true)} className="select-item text-sm">
-          <FileText className="icon-md" aria-hidden="true" />
-          {localize('com_nav_my_files')}
-        </Menu.MenuItem>
-        {startupConfig?.helpAndFaqURL !== '/' && (
-          <Menu.MenuItem
-            onClick={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
-            className="select-item text-sm"
-          >
-            <LinkIcon aria-hidden="true" />
-            {localize('com_nav_help_faq')}
-          </Menu.MenuItem>
-        )}
-        <Menu.MenuItem onClick={() => setShowSettings(true)} className="select-item text-sm">
-          <GearIcon className="icon-md" aria-hidden="true" />
-          {localize('com_nav_settings')}
-        </Menu.MenuItem>
-        <DropdownMenuSeparator />
+        {/* BKL: 내 파일 / 도움말 / 설정 메뉴 항목 제거. 로그아웃만 노출. */}
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
           <LogOut className="icon-md" aria-hidden="true" />
           {localize('com_nav_log_out')}
         </Menu.MenuItem>
       </Menu.Menu>
-      {showFiles && (
-        <MyFilesModal
-          open={showFiles}
-          onOpenChange={setShowFiles}
-          triggerRef={accountSettingsButtonRef}
-        />
-      )}
-      {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </Menu.MenuProvider>
   );
 }
