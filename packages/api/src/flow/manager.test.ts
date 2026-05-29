@@ -157,6 +157,25 @@ describe('FlowStateManager', () => {
 
       await expect(flowPromise).rejects.toThrow('failure');
     }, 15000);
+
+    it('should not overwrite a completed flow with a late failure', async () => {
+      const flowId = 'completed-race-flow';
+      const type = 'test-type';
+      const flowKey = `${type}:${flowId}`;
+
+      await flowManager.initFlow(flowId, type);
+      await flowManager.completeFlow(flowId, type, 'success');
+
+      const result = await flowManager.failFlow(flowId, type, new Error('late failure'));
+      const state = await store.get(flowKey);
+
+      expect(result).toBe(true);
+      expect(state).toMatchObject({
+        status: 'COMPLETED',
+        result: 'success',
+      });
+      expect(state?.error).toBeUndefined();
+    });
   });
 
   describe('initFlow', () => {

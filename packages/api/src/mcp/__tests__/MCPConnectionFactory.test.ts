@@ -1391,7 +1391,7 @@ describe('MCPConnectionFactory', () => {
       }
     });
 
-    it('should cap silent refresh by the factory connect timeout when initTimeout is omitted', async () => {
+    it('should reserve interactive OAuth fallback time when initTimeout is omitted', async () => {
       const sseConfig = {
         url: 'https://api.example.com',
         type: 'sse' as const,
@@ -1455,7 +1455,7 @@ describe('MCPConnectionFactory', () => {
       jest.useFakeTimers();
       try {
         const attempt = oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
-        await jest.advanceTimersByTimeAsync(29_001);
+        await jest.advanceTimersByTimeAsync(5_001);
         await attempt;
 
         expect(refreshSignal?.aborted).toBe(true);

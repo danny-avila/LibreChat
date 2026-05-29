@@ -67,11 +67,11 @@ export class MCPConnectionFactory {
   private static inflightSilentRefreshes = new Map<string, Promise<MCPOAuthTokens | null>>();
 
   /**
-   * Absolute upper bound on a silent-refresh attempt. The effective timeout is
-   * also capped by the connection's OAuth wait budget so fallback events still
-   * reach the waiter in `MCPConnection.connectClient`.
+   * Silent refresh is a best-effort optimization before interactive OAuth.
+   * Keep the cap short so a stalled refresh still leaves most of the factory
+   * connect budget for OAuth discovery, registration, and `oauthStart`.
    */
-  private static readonly SILENT_REFRESH_TIMEOUT_MS = 60_000;
+  private static readonly SILENT_REFRESH_TIMEOUT_MS = 5_000;
 
   /** Creates a new MCP connection with optional OAuth support */
   static async create(

@@ -345,6 +345,17 @@ export class FlowStateManager<T = unknown> {
       return false;
     }
 
+    if (flowState.status === 'COMPLETED') {
+      logger.debug(
+        '[FlowStateManager] Flow already completed, skipping failure to prevent overwrite',
+        {
+          flowId,
+          type,
+        },
+      );
+      return true;
+    }
+
     const updatedState: FlowState = {
       ...flowState,
       status: 'FAILED',
