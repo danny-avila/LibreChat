@@ -99,7 +99,7 @@ export default function FileSearch({
               <AddFilesButton
                 hasFiles={files.size !== 0}
                 onClick={handleButtonClick}
-                emptyMessage="Documents, code or images up to 15MB per file"
+                emptyMessage="PDFs, Word docs, or Spreadsheets up to 15MB per file"
               />
 
               <input

@@ -1,6 +1,3 @@
-/* eslint-disable i18next/no-literal-string */
-/* ^ We're not worried about i18n for this app ^ */
-
 import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
@@ -112,7 +109,6 @@ function FileContext({
   );
   return (
     <div className="w-full">
-      {/* NJ: Customize how we explain the File Context feature
       <HoverCard openDelay={50}>
         <div className="mb-2 flex items-center gap-2">
           <HoverCardTrigger asChild>
@@ -134,13 +130,6 @@ function FileContext({
           </HoverCardPortal>
         </div>
       </HoverCard>
-      */}
-      <div className="pb-3">
-        <h3 className="text-sm font-semibold">{localize('com_agents_file_context_label')}</h3>
-        <p className="mt-1 text-sm text-text-secondary">
-          Upload reference materials, examples, templates, or any other relevant documents.
-        </p>
-      </div>
       <div className="flex flex-col gap-3">
         {/* File Context Files */}
         <FileRow

@@ -32,7 +32,6 @@ import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
-import FileContext from './FileContext';
 import SearchForm from './Search/Form';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
@@ -42,6 +41,7 @@ import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { X } from 'lucide-react';
 import TipComponent from '~/nj/components/TipComponent';
+import FileContext from '~/nj/components/Agents/FileContext';
 import FileSearch from '~/nj/components/Agents/FileSearch';
 
 const sectionLabelClass = 'text-sm font-semibold';
@@ -336,14 +336,8 @@ export default function AgentConfig() {
         stateKey="showAgentComplexBanner"
       />
 
-      <hr className="mb-4 border-border-heavy" />
-
       {/* File context */}
-      {contextEnabled && (
-        <div className="mx-3 mb-3">
-          <FileContext agent_id={agent_id} files={context_files} />
-        </div>
-      )}
+      {contextEnabled && <FileContext agent_id={agent_id} files={context_files} />}
 
       {/* File search */}
       {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
