@@ -1,6 +1,7 @@
 const validatePasswordReset = require('./validatePasswordReset');
 const validateRegistration = require('./validateRegistration');
 const buildEndpointOption = require('./buildEndpointOption');
+const remoteAgentBodyParser = require('./remoteAgentBodyParser');
 const validateMessageReq = require('./validateMessageReq');
 const checkDomainAllowed = require('./checkDomainAllowed');
 const requireLocalAuth = require('./requireLocalAuth');
@@ -28,6 +29,7 @@ module.exports = {
   ...limiters,
   ...roles,
   ...accessResources,
+  ...remoteAgentBodyParser,
   noIndex,
   checkBan,
   uaParser,
