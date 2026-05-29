@@ -56,6 +56,8 @@ export type TitleTiming = 'immediate' | 'final';
  *
  * The global `endpoints.all` value takes precedence over the per-endpoint value,
  * mirroring the resolution used for other title options in the agent client.
+ * Custom endpoints store their config under `endpoints.custom[]` (resolved via
+ * `getCustomEndpointConfig`) rather than `endpoints[endpoint]`.
  * Defaults to `immediate` (generate the title as soon as the request is made).
  */
 export function resolveTitleTiming({
@@ -66,12 +68,15 @@ export function resolveTitleTiming({
   endpoint?: string;
 }): TitleTiming {
   const endpoints = appConfig?.endpoints;
-  const endpointConfig = endpoint
+  const directConfig = endpoint
     ? (endpoints?.[endpoint as keyof NonNullable<typeof endpoints>] as
         | Partial<TEndpoint>
         | undefined)
     : undefined;
-  const timing = endpoints?.all?.titleTiming ?? endpointConfig?.titleTiming;
+  const customConfig =
+    endpoint && appConfig ? getCustomEndpointConfig({ endpoint, appConfig }) : undefined;
+  const timing =
+    endpoints?.all?.titleTiming ?? directConfig?.titleTiming ?? customConfig?.titleTiming;
   return timing === 'final' ? 'final' : 'immediate';
 }
 

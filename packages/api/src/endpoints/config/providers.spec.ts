@@ -137,4 +137,11 @@ describe('resolveTitleTiming', () => {
     const appConfig = withEndpoints({ [EModelEndpoint.openAI]: { titleTiming: 'final' } });
     expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('immediate');
   });
+
+  it("resolves 'final' from a custom endpoint config (endpoints.custom[])", () => {
+    const appConfig = withEndpoints({
+      [EModelEndpoint.custom]: [{ name: 'MyProvider', titleTiming: 'final' }],
+    });
+    expect(resolveTitleTiming({ appConfig, endpoint: 'MyProvider' })).toBe('final');
+  });
 });

@@ -416,6 +416,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           return;
         }
 
+        // If the user stopped this turn, cancel the title BEFORE unblocking its
+        // persistence wait — otherwise resolving `convoReady` lets the title task
+        // resume and save before the later abort runs.
+        if (wasAbortedBeforeComplete) {
+          titleAbortController.abort();
+        }
+
         // The conversation row now exists and this stream is authoritative; allow
         // any in-flight immediate title generation to persist (saveConvo uses noUpsert).
         resolveConvoReady();
@@ -463,13 +470,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         if (titleTiming === 'immediate') {
-          // If the user stopped this turn, cancel the in-flight title so a
-          // cancelled response neither consumes the title model nor gets a title.
-          if (wasAbortedBeforeComplete) {
-            titleAbortController.abort();
-          }
-          // Title was fired in parallel above (if eligible). Defer disposal until
-          // it settles so the run/req aren't torn down mid-generation.
+          // Title was fired in parallel above (if eligible); a stopped turn already
+          // aborted it before `resolveConvoReady`. Defer disposal until it settles
+          // so the run/req aren't torn down mid-generation.
           if (immediateTitlePromise) {
             immediateTitlePromise.finally(() => {
               if (client) {
@@ -499,8 +502,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           }
         }
       } catch (error) {
-        // Unblock any in-flight immediate title generation so it doesn't hang on
-        // convoReady; its saveConvo is a harmless no-op if the row never persisted.
+        // Any failure (user Stop, or a preflight/quota failure before the run is
+        // even created) must cancel the title and unblock its waits: the title's
+        // `_waitForRun` would otherwise never resolve, deferring client disposal
+        // until the 45s title timeout, and no title should persist for a failed turn.
+        titleAbortController.abort();
         resolveConvoReady();
 
         // Check if this was an abort (not a real error)
@@ -508,9 +514,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         if (wasAborted) {
           logger.debug(`[ResumableAgentController] Generation aborted for ${streamId}`);
-          // Cancel the in-flight title for a stopped turn (errors keep it: the
-          // title derives from the user's input, which is valid regardless).
-          titleAbortController.abort();
           // abortJob already handled emitDone and completeJob
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
