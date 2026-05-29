@@ -63,15 +63,15 @@ export default function Instructions() {
           {localize('com_ui_instructions')}
         </label>
         */}
+        <label
+          className="text-token-text-primary block text-sm font-semibold"
+          htmlFor="instructions"
+        >
+          Give your agent a task
+        </label>
         <HoverCard openDelay={50}>
           <HoverCardTrigger asChild>
-            <span className="flex items-center gap-2">
-              <label
-                className="text-token-text-primary block text-sm font-semibold"
-                htmlFor="instructions"
-              >
-                Give your agent a task
-              </label>
+            <span className="ml-2">
               <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
             </span>
           </HoverCardTrigger>
