@@ -548,8 +548,9 @@ export function getGoogleConfig(
     modelOptions?.maxOutputTokens == null &&
     (llmConfig as Record<string, unknown>).maxOutputTokens == null
   ) {
+    const resolvedModel = (llmConfig as { model?: string }).model || modelName;
     (llmConfig as GoogleClientOptions).maxOutputTokens =
-      googleSettings.maxOutputTokens.reset(modelName);
+      googleSettings.maxOutputTokens.reset(resolvedModel);
   }
 
   applyGemini35FlashOverrides({

@@ -169,6 +169,15 @@ describe('getGoogleConfig', () => {
       });
       expect(result.llmConfig).not.toHaveProperty('maxOutputTokens');
     });
+
+    it('bases the default on the final model after an addParams override', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-1.5-flash' },
+        addParams: { model: 'gemini-2.5-pro' },
+      });
+      expect(result.llmConfig).toHaveProperty('model', 'gemini-2.5-pro');
+      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 65535);
+    });
   });
 
   describe('Empty String Handling (Issue Fix)', () => {
