@@ -52,13 +52,13 @@ export class MCPConnectionFactory {
   protected readonly tenantContext?: TenantContext;
 
   /**
-   * Process-local in-flight silent refresh promises, keyed by `userId:serverName`.
-   * Coalesces concurrent `attemptSilentTokenRefresh` calls within this process so
-   * a single refresh-token redemption serves every waiter — important when
-   * multiple connections (or repeated 401s) race the same refresh and the OAuth
-   * provider rotates refresh tokens. The map only holds in-flight promises (no
-   * result caching), so each new 401 after the previous attempt resolves
-   * triggers a fresh redemption.
+   * Process-local in-flight silent refresh promises, keyed by
+   * `tenantId:userId:serverName`. Coalesces concurrent `attemptSilentTokenRefresh`
+   * calls within this process so a single refresh-token redemption serves every
+   * waiter in the same tenant — important when multiple connections (or repeated
+   * 401s) race the same refresh and the OAuth provider rotates refresh tokens.
+   * The map only holds in-flight promises (no result caching), so each new 401
+   * after the previous attempt resolves triggers a fresh redemption.
    *
    * NOTE: this is a single-process lock. Across multiple worker processes the
    * race with `getOAuthTokens()`'s `mcp_get_tokens` flow remains; that's an
@@ -382,7 +382,9 @@ export class MCPConnectionFactory {
   }
 
   private getConnectionOAuthTimeoutMs(): number {
-    return this.serverConfig.initTimeout ?? 60000 * 2;
+    const factoryConnectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+    const connectionOAuthTimeout = this.serverConfig.initTimeout ?? 60000 * 2;
+    return Math.min(factoryConnectTimeout, connectionOAuthTimeout);
   }
 
   private getSilentRefreshTimeoutMs(): number {
@@ -394,12 +396,20 @@ export class MCPConnectionFactory {
     );
   }
 
+  private getTokenFlowId(): string {
+    const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+    if (!this.tenantId) {
+      return flowId;
+    }
+    return `tenant:${encodeURIComponent(this.tenantId)}:${flowId}`;
+  }
+
   /** Retrieves existing OAuth tokens from storage or returns null */
   protected async getOAuthTokens(): Promise<MCPOAuthTokens | null> {
     if (!this.tokenMethods?.findToken) return null;
 
     try {
-      const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
+      const flowId = this.getTokenFlowId();
       const tokens = await this.flowManager!.createFlowWithHandler(
         flowId,
         'mcp_get_tokens',
@@ -580,7 +590,7 @@ export class MCPConnectionFactory {
     if (!this.flowManager || !this.userId) {
       return;
     }
-    const flowId = MCPOAuthHandler.generateFlowId(this.userId, this.serverName);
+    const flowId = this.getTokenFlowId();
     try {
       const state = await this.flowManager.getFlowState(flowId, 'mcp_get_tokens');
       if (!state) {
