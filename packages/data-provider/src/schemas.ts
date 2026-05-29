@@ -366,15 +366,25 @@ export const openAISettings = {
   },
 };
 
-const GOOGLE_MAX_OUTPUT = 65536 as const;
+/**
+ * `65535` (not 65536) is the value valid on both Google AI Studio and Vertex AI:
+ * Vertex caps current Gemini text models at 65,535 output tokens, so defaulting to
+ * 65,536 would make otherwise-default Vertex requests fail validation.
+ */
+const GOOGLE_MAX_OUTPUT = 65535 as const;
+const GOOGLE_IMAGE_MAX_OUTPUT = 32768 as const;
 const GOOGLE_LEGACY_MAX_OUTPUT = 8192 as const;
 
 /**
  * Resolves the documented max output-token limit for a Google/Gemini model.
- * Current Gemini text models (2.5 and 3+) support 64K output tokens, while
- * legacy/deprecated models (2.0 and earlier) and Gemma retain the 8K limit.
+ * Current Gemini text models (2.5 and 3+) support 64K output tokens; image models
+ * (e.g. `gemini-2.5-flash-image`) cap at 32K; legacy/deprecated models (2.0 and
+ * earlier) and Gemma retain the 8K limit.
  */
 const getGoogleMaxOutputTokens = (modelName: string): number => {
+  if (/gemini-.*image/i.test(modelName)) {
+    return GOOGLE_IMAGE_MAX_OUTPUT;
+  }
   if (/gemini-(?:2\.5|[3-9]|\d{2,})/i.test(modelName)) {
     return GOOGLE_MAX_OUTPUT;
   }

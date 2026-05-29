@@ -103,19 +103,33 @@ describe('getGoogleConfig', () => {
     const credentials = {
       [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
     };
+    const vertexCredentials = {
+      [AuthKeys.GOOGLE_SERVICE_KEY]: {
+        project_id: 'test-project',
+        client_email: 'test@test-project.iam.gserviceaccount.com',
+        private_key: 'test-private-key',
+      },
+    };
 
-    it('defaults current Gemini models to 65536 when unset', () => {
+    it('defaults current Gemini models to 65535 when unset', () => {
       const result = getGoogleConfig(credentials, {
         modelOptions: { model: 'gemini-2.5-pro' },
       });
-      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 65536);
+      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 65535);
     });
 
-    it('defaults Gemini 3.5 Flash to 65536 when unset', () => {
+    it('defaults Gemini 3.5 Flash to 65535 when unset', () => {
       const result = getGoogleConfig(credentials, {
         modelOptions: { model: 'gemini-3.5-flash' },
       });
-      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 65536);
+      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 65535);
+    });
+
+    it('defaults Gemini image models to 32768 when unset', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-2.5-flash-image' },
+      });
+      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 32768);
     });
 
     it('defaults legacy Gemini models to 8192 when unset', () => {
@@ -123,6 +137,14 @@ describe('getGoogleConfig', () => {
         modelOptions: { model: 'gemini-2.0-flash' },
       });
       expect(result.llmConfig).toHaveProperty('maxOutputTokens', 8192);
+    });
+
+    it('keeps the Vertex default within the model output limit', () => {
+      const result = getGoogleConfig(vertexCredentials, {
+        modelOptions: { model: 'gemini-2.5-flash' },
+      });
+      expect(result.provider).toBe(Providers.VERTEXAI);
+      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 65535);
     });
 
     it('preserves an explicit maxOutputTokens value', () => {

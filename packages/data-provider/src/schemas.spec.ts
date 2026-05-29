@@ -364,12 +364,11 @@ describe('googleSettings', () => {
   describe('maxOutputTokens.reset()', () => {
     const { reset } = googleSettings.maxOutputTokens;
 
-    describe('current Gemini text models (64K)', () => {
+    describe('current Gemini text models (64K, Vertex-safe)', () => {
       it.each([
         'gemini-2.5-pro',
         'gemini-2.5-flash',
         'gemini-2.5-flash-lite',
-        'gemini-2.5-flash-image',
         'gemini-2.5-pro-preview-05-06',
         'gemini-3',
         'gemini-3-pro',
@@ -379,8 +378,14 @@ describe('googleSettings', () => {
         'models/gemini-3.5-flash',
         'gemini-4-pro',
         'gemini-10-flash',
-      ])('returns 65536 for %s', (model) => {
-        expect(reset(model)).toBe(65536);
+      ])('returns 65535 for %s', (model) => {
+        expect(reset(model)).toBe(65535);
+      });
+    });
+
+    describe('Gemini image models (32K)', () => {
+      it.each(['gemini-2.5-flash-image', 'gemini-3-pro-image'])('returns 32768 for %s', (model) => {
+        expect(reset(model)).toBe(32768);
       });
     });
 
@@ -407,18 +412,23 @@ describe('googleSettings', () => {
   describe('maxOutputTokens.set()', () => {
     const { set } = googleSettings.maxOutputTokens;
 
-    it('caps current Gemini models at 65536', () => {
-      expect(set(100000, 'gemini-2.5-pro')).toBe(65536);
-      expect(set(100000, 'gemini-3.5-flash')).toBe(65536);
+    it('caps current Gemini models at 65535', () => {
+      expect(set(100000, 'gemini-2.5-pro')).toBe(65535);
+      expect(set(100000, 'gemini-3.5-flash')).toBe(65535);
     });
 
     it('allows values within the current 64K limit', () => {
       expect(set(32000, 'gemini-2.5-flash')).toBe(32000);
-      expect(set(65536, 'gemini-3.5-flash')).toBe(65536);
+      expect(set(65535, 'gemini-3.5-flash')).toBe(65535);
+    });
+
+    it('caps Gemini image models at 32768', () => {
+      expect(set(65535, 'gemini-2.5-flash-image')).toBe(32768);
+      expect(set(32768, 'gemini-2.5-flash-image')).toBe(32768);
     });
 
     it('caps legacy Gemini models at 8192', () => {
-      expect(set(65536, 'gemini-2.0-flash')).toBe(8192);
+      expect(set(65535, 'gemini-2.0-flash')).toBe(8192);
       expect(set(20000, 'gemini-1.5-flash')).toBe(8192);
     });
 
@@ -432,7 +442,7 @@ describe('googleSettings', () => {
     it('strips the model default for current Gemini models', () => {
       const result = compactGoogleSchema.parse({
         model: 'gemini-2.5-pro',
-        maxOutputTokens: 65536,
+        maxOutputTokens: 65535,
       });
       expect(result.maxOutputTokens).toBeUndefined();
     });
