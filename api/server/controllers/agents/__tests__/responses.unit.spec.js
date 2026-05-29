@@ -755,5 +755,54 @@ describe('createResponse controller', () => {
       );
       expect(createRun).not.toHaveBeenCalled();
     });
+
+    it('should not persist transient inline document payloads when store is true', async () => {
+      const { convertInputToMessages, validateResponseRequest } = require('@librechat/api');
+      const { saveMessage } = require('~/models');
+      validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: req.body.input, stream: false, store: true },
+      });
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ type: 'message', role: 'user', content: [] }],
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([
+        {
+          role: 'user',
+          content: [{ type: 'text', text: '[File: document.pdf]' }],
+        },
+      ]);
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [
+          {
+            type: 'document',
+            source: {
+              type: 'base64',
+              media_type: 'application/pdf',
+              data: 'JVBERi0x',
+            },
+          },
+        ],
+        files: [],
+      });
+
+      await createResponse(req, res);
+
+      expect(saveMessage).toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({
+          isCreatedByUser: true,
+          text: JSON.stringify([{ type: 'text', text: '[File: document.pdf]' }]),
+        }),
+        expect.any(Object),
+      );
+      expect(saveMessage).not.toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({
+          text: expect.stringContaining('JVBERi0x'),
+        }),
+        expect.any(Object),
+      );
+    });
   });
 });

@@ -137,6 +137,17 @@ function attachDocumentsToMessageContent(message, documents, fallbackText) {
   delete message.image_urls;
 }
 
+function cloneMessagesForStorage(messages) {
+  return messages.map((message) => {
+    if (!Array.isArray(message?.content)) {
+      return { ...message };
+    }
+
+    const content = message.content.filter((part) => part?.type !== 'document');
+    return { ...message, content };
+  });
+}
+
 /**
  * Load messages from a previous response/conversation
  * @param {string} conversationId - The conversation/response ID
@@ -573,6 +584,7 @@ const createResponse = async (req, res) => {
     const inputMessages = convertToInternalMessages(
       typeof remoteInput === 'string' ? remoteInput : remoteInput,
     );
+    const inputMessagesForStorage = cloneMessagesForStorage(inputMessages);
 
     if (inlineProviderFiles.length > 0) {
       let latestUserMessage;
@@ -855,7 +867,7 @@ const createResponse = async (req, res) => {
           await saveConversation(req, conversationId, agentId, agent);
 
           // Save input messages
-          await saveInputMessages(req, conversationId, inputMessages, agentId);
+          await saveInputMessages(req, conversationId, inputMessagesForStorage, agentId);
 
           // Build response for saving (use tracker with buildResponse for streaming)
           const finalResponse = buildResponse(context, tracker, 'completed');
@@ -1028,7 +1040,7 @@ const createResponse = async (req, res) => {
         try {
           await saveConversation(req, conversationId, agentId, agent);
 
-          await saveInputMessages(req, conversationId, inputMessages, agentId);
+          await saveInputMessages(req, conversationId, inputMessagesForStorage, agentId);
 
           await saveResponseOutput(req, conversationId, responseId, response, agentId);
 
