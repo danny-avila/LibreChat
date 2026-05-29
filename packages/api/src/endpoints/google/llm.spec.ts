@@ -99,6 +99,40 @@ describe('getGoogleConfig', () => {
     });
   });
 
+  describe('Model-aware maxOutputTokens default', () => {
+    const credentials = {
+      [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+    };
+
+    it('defaults current Gemini models to 65536 when unset', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-2.5-pro' },
+      });
+      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 65536);
+    });
+
+    it('defaults Gemini 3.5 Flash to 65536 when unset', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-3.5-flash' },
+      });
+      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 65536);
+    });
+
+    it('defaults legacy Gemini models to 8192 when unset', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-2.0-flash' },
+      });
+      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 8192);
+    });
+
+    it('preserves an explicit maxOutputTokens value', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-2.5-pro', maxOutputTokens: 1024 },
+      });
+      expect(result.llmConfig).toHaveProperty('maxOutputTokens', 1024);
+    });
+  });
+
   describe('Empty String Handling (Issue Fix)', () => {
     it('should remove empty string maxOutputTokens from config', () => {
       const credentials = {

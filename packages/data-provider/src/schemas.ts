@@ -366,15 +366,35 @@ export const openAISettings = {
   },
 };
 
+const GOOGLE_MAX_OUTPUT = 65536 as const;
+const GOOGLE_LEGACY_MAX_OUTPUT = 8192 as const;
+
+/**
+ * Resolves the documented max output-token limit for a Google/Gemini model.
+ * Current Gemini text models (2.5 and 3+) support 64K output tokens, while
+ * legacy/deprecated models (2.0 and earlier) and Gemma retain the 8K limit.
+ */
+const getGoogleMaxOutputTokens = (modelName: string): number => {
+  if (/gemini-(?:2\.5|[3-9]|\d{2,})/i.test(modelName)) {
+    return GOOGLE_MAX_OUTPUT;
+  }
+  return GOOGLE_LEGACY_MAX_OUTPUT;
+};
+
 export const googleSettings = {
   model: {
     default: 'gemini-1.5-flash-latest' as const,
   },
   maxOutputTokens: {
     min: 1 as const,
-    max: 65536 as const,
+    max: GOOGLE_MAX_OUTPUT,
     step: 1 as const,
-    default: 8192 as const,
+    default: GOOGLE_LEGACY_MAX_OUTPUT,
+    reset: (modelName: string): number => getGoogleMaxOutputTokens(modelName),
+    set: (value: number, modelName: string): number => {
+      const max = getGoogleMaxOutputTokens(modelName);
+      return value > max ? max : value;
+    },
   },
   temperature: {
     min: 0 as const,
@@ -1265,7 +1285,7 @@ export const compactGoogleSchema = googleBaseSchema
     if (newObj.temperature === google.temperature.default) {
       delete newObj.temperature;
     }
-    if (newObj.maxOutputTokens === google.maxOutputTokens.default) {
+    if (newObj.maxOutputTokens === google.maxOutputTokens.reset(newObj.model ?? '')) {
       delete newObj.maxOutputTokens;
     }
     if (newObj.topP === google.topP.default) {

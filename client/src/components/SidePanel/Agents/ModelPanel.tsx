@@ -11,6 +11,7 @@ import {
   LocalStorageKeys,
   SettingDefinition,
   agentParamSettings,
+  applyModelAwareDefaults,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
@@ -82,9 +83,10 @@ export default function ModelPanel({
       agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
-    return defaultParams
+    const resolvedParams = defaultParams
       .filter((param) => param != null)
       .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
+    return applyModelAwareDefaults(resolvedParams, endpointType ?? provider, model ?? '');
   }, [endpointType, endpointsConfig, model, provider]);
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {

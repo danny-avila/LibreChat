@@ -360,7 +360,9 @@ export function getGoogleConfig(
       topP: modelOptions?.topP ?? undefined,
       topK: modelOptions?.topK ?? undefined,
       temperature: modelOptions?.temperature ?? undefined,
-      maxOutputTokens: modelOptions?.maxOutputTokens ?? undefined,
+      maxOutputTokens:
+        modelOptions?.maxOutputTokens ??
+        googleSettings.maxOutputTokens.reset(modelOptions?.model ?? ''),
     },
     true,
   ) as GoogleClientOptions | VertexAIClientOptions;
