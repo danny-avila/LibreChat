@@ -19,6 +19,7 @@ import type { TSpecialVarLabel } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { njInputClass } from '~/nj/components/Agents/agentInputStyle';
 
 const inputClass = cn(
   defaultTextProps,
@@ -122,7 +123,7 @@ export default function Instructions() {
             <textarea
               {...field}
               value={field.value ?? ''}
-              className={cn(inputClass, 'min-h-[100px] resize-y')}
+              className={cn(njInputClass, 'min-h-[100px] resize-y')}
               id="instructions"
               placeholder={localize('com_agents_instructions_placeholder')}
               rows={3}

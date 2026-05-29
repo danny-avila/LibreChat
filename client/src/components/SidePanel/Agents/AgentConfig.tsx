@@ -43,6 +43,7 @@ import { X } from 'lucide-react';
 import TipComponent from '~/nj/components/TipComponent';
 import FileContext from '~/nj/components/Agents/FileContext';
 import FileSearch from '~/nj/components/Agents/FileSearch';
+import { njInputClass } from '~/nj/components/Agents/agentInputStyle';
 
 const sectionLabelClass = 'text-sm font-semibold';
 const labelClass = 'mb-2 text-token-text-primary block text-sm font-semibold';
