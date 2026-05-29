@@ -565,5 +565,24 @@ describe('OpenAIChatCompletionController', () => {
       expect(res.status).toHaveBeenCalledWith(400);
       expect(mockProcessStream).not.toHaveBeenCalled();
     });
+
+    it('should return 400 before opening a stream when provider formatting skips an inline file', async () => {
+      const { validateRequest } = require('@librechat/api');
+      validateRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', messages: req.body.messages, stream: true },
+      });
+      mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: 'Files attached' }],
+        files: [inlineFile],
+      });
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({ documents: [], files: [] });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.setHeader).not.toHaveBeenCalledWith('Content-Type', 'text/event-stream');
+      expect(res.flushHeaders).not.toHaveBeenCalled();
+      expect(mockProcessStream).not.toHaveBeenCalled();
+    });
   });
 });

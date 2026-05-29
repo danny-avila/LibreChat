@@ -434,28 +434,6 @@ const OpenAIChatCompletionController = async (req, res) => {
     const tracker = isStreaming ? createOpenAIStreamTracker() : null;
     const aggregator = isStreaming ? null : createOpenAIContentAggregator();
 
-    // Set up response for streaming
-    if (isStreaming) {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
-      res.flushHeaders();
-
-      // Send initial chunk with role
-      const initialChunk = createChunk(context, { role: 'assistant' });
-      writeSSE(res, initialChunk);
-    }
-
-    // Create handler config for OpenAI streaming (only used when streaming)
-    const handlerConfig = isStreaming
-      ? {
-          res,
-          context,
-          tracker,
-        }
-      : null;
-
     const collectedUsage = [];
     /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
     const artifactPromises = [];
@@ -585,6 +563,27 @@ const OpenAIChatCompletionController = async (req, res) => {
         );
       }
     }
+
+    // Set up response for streaming only after request-scoped file validation succeeds.
+    if (isStreaming) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders();
+
+      const initialChunk = createChunk(context, { role: 'assistant' });
+      writeSSE(res, initialChunk);
+    }
+
+    // Create handler config for OpenAI streaming (only used when streaming)
+    const handlerConfig = isStreaming
+      ? {
+          res,
+          context,
+          tracker,
+        }
+      : null;
 
     /**
      * Create a simple handler that processes data
