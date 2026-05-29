@@ -28,6 +28,18 @@ const OAuthOptionsSchema = z
     code_challenge_methods_supported: z.array(z.string()).optional(),
     /** Skip code challenge validation and force S256 (useful for providers like AWS Cognito that support S256 but don't advertise it) */
     skip_code_challenge_check: z.boolean().optional(),
+    /**
+     * Auth0/Cognito-style `audience` parameter. Authorization servers that pre-date
+     * RFC 8707 — most prominently Auth0 — issue API-scoped access tokens only when
+     * the authorization (and refresh) request advertises an `audience`. RFC 8707
+     * `resource` (set automatically from Protected Resource Metadata) is the
+     * standards-conformant route; `audience` covers the providers that ignore it.
+     *
+     * When set, the value is forwarded as-is on `/authorize` and `/token`
+     * (including refresh) — no canonicalization, since the audience identifier is
+     * provider-defined and may differ from the MCP server URL.
+     */
+    audience: z.string().optional(),
     /** OAuth revocation endpoint (optional - can be auto-discovered) */
     revocation_endpoint: z.string().url().optional(),
     /** OAuth revocation endpoint authentication methods supported (optional - can be auto-discovered) */
