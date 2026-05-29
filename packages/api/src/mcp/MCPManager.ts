@@ -355,6 +355,7 @@ Please follow these instructions when using tools from the respective MCP server
             serverName,
             serverConfig: currentOptions,
             dbSourced: isDbSourced,
+            skipEnvProcessing: true,
             useSSRFProtection: registry.shouldEnableSSRFProtection(),
             allowedDomains: registry.getAllowedDomains(),
             allowedAddresses: registry.getAllowedAddresses(),

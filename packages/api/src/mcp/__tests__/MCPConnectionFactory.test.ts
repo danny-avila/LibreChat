@@ -1648,6 +1648,38 @@ describe('MCPConnectionFactory', () => {
       expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
     });
 
+    it('should not process already resolved configs for request OAuth handlers', () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com/${SHOULD_NOT_EXPAND}',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+      mockProcessMCPEnv.mockClear();
+
+      const cleanup = MCPConnectionFactory.attachRequestOAuthHandler(
+        {
+          serverName: 'test-server',
+          serverConfig: sseConfig,
+          skipEnvProcessing: true,
+        },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          oauthStart: jest.fn(),
+        },
+        mockConnectionInstance,
+      );
+
+      expect(mockProcessMCPEnv).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.on).toHaveBeenCalledWith(
+        'oauthReauthenticationRequired',
+        expect.any(Function),
+      );
+
+      cleanup();
+    });
+
     it('should not reuse request-scoped OAuth callbacks after connection is cached', async () => {
       const sseConfig = {
         ...mockServerConfig,

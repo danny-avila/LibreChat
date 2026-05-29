@@ -9,6 +9,7 @@ import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
 import * as graphUtils from '~/utils/graph';
+import { processMCPEnv } from '~/utils/env';
 
 // Mock external dependencies
 jest.mock('@librechat/data-schemas', () => ({
@@ -55,6 +56,7 @@ jest.mock('~/mcp/ConnectionsRepository');
 jest.mock('~/mcp/MCPConnectionFactory');
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
+const mockProcessMCPEnv = processMCPEnv as jest.MockedFunction<typeof processMCPEnv>;
 
 describe('MCPManager', () => {
   const userId = 'test-user-123';
@@ -532,6 +534,65 @@ describe('MCPManager', () => {
           Authorization: 'Bearer resolved-graph-token',
         }),
       );
+    });
+
+    it('should attach request OAuth handler without reprocessing resolved config', async () => {
+      const rawServerConfig = {
+        type: 'sse',
+        url: 'https://api.example.com/{{LIBRECHAT_USER_ID}}',
+        headers: {
+          Authorization: 'Bearer {{USER_TOKEN}}',
+        },
+        requiresOAuth: true,
+        oauth: {
+          authorization_url: 'https://auth.example.com/authorize',
+        },
+      } as t.ParsedServerConfig;
+      const processedServerConfig = {
+        ...rawServerConfig,
+        url: 'https://api.example.com/user-123',
+        headers: {
+          Authorization: 'Bearer ${SHOULD_NOT_EXPAND}',
+        },
+      };
+      const cleanupOAuthHandler = jest.fn();
+
+      mockProcessMCPEnv.mockReturnValueOnce(processedServerConfig);
+      (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mockReturnValue(
+        cleanupOAuthHandler,
+      );
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(rawServerConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const oauthStart = jest.fn();
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        oauthStart,
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+      });
+
+      expect(mockProcessMCPEnv).toHaveBeenCalledTimes(1);
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverConfig: processedServerConfig,
+          skipEnvProcessing: true,
+        }),
+        expect.objectContaining({
+          oauthStart,
+          user: mockUser,
+        }),
+        mockConnection,
+      );
+      expect(cleanupOAuthHandler).toHaveBeenCalled();
     });
 
     it('should pass options unchanged when no graphTokenResolver is provided', async () => {
