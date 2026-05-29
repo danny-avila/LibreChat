@@ -339,6 +339,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           model: 'DeepSeek-R1',
           user: 'some_user_id',
           apiKey: 'some_azure_key',
+          includeReasoningContent: true,
         },
         configOptions: {
           baseURL: 'https://some_endpoint_name.models.ai.azure.com/v1/',

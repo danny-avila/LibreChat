@@ -21,6 +21,7 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  isDeepSeekReasoningProvider,
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
@@ -876,12 +877,27 @@ class AgentClient extends BaseClient {
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
       });
 
+      /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
+      const hasDeepSeekAgent = (agent) =>
+        agent != null &&
+        isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
+      const needsDeepSeekFormat =
+        hasDeepSeekAgent(this.options.agent) ||
+        (this.agentConfigs != null &&
+          Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
+      const formatOptions = needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : undefined;
       let {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
-      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet, skillPrimeResult?.skills);
+      } = formatAgentMessages(
+        payload,
+        this.indexTokenCountMap,
+        toolSet,
+        skillPrimeResult?.skills,
+        formatOptions,
+      );
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,

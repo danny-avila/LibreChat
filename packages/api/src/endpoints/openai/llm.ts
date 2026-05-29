@@ -486,6 +486,14 @@ export function getOpenAILLMConfig({
     llmConfig.promptCache = true;
   }
 
+  /** DeepSeek thinking-mode requires `reasoning_content` replay on tool turns (#13366). */
+  if (
+    typeof modelOptions.model === 'string' &&
+    /^deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''))
+  ) {
+    llmConfig.includeReasoningContent = true;
+  }
+
   /**
    * Note: OpenAI reasoning models (o1/o3/gpt-5) do not support temperature and other sampling parameters
    * Exception: gpt-5-chat and versioned models like gpt-5.1 DO support these parameters
