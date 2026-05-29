@@ -15,6 +15,7 @@ const mockExtractRemoteAgentChatFiles = jest
   .fn()
   .mockImplementation((messages) => ({ value: messages, files: [] }));
 const mockEncodeAndFormatDocuments = jest.fn().mockResolvedValue({ documents: [], files: [] });
+const mockFilterFilesByEndpointConfig = jest.fn((_, { files }) => files ?? []);
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -63,6 +64,7 @@ jest.mock('@librechat/api', () => ({
     edges: [],
   }),
   encodeAndFormatDocuments: mockEncodeAndFormatDocuments,
+  filterFilesByEndpointConfig: mockFilterFilesByEndpointConfig,
   getBalanceConfig: mockGetBalanceConfig,
   createErrorResponse: jest.fn(),
   extractRemoteAgentChatFiles: mockExtractRemoteAgentChatFiles,
@@ -563,6 +565,26 @@ describe('OpenAIChatCompletionController', () => {
       await OpenAIChatCompletionController(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockProcessStream).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when file upload settings reject an inline file', async () => {
+      const { filterFilesByEndpointConfig } = require('@librechat/api');
+      mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: 'Files attached' }],
+        files: [inlineFile],
+      });
+      mockFilterFilesByEndpointConfig.mockReturnValueOnce([]);
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(filterFilesByEndpointConfig).toHaveBeenCalledWith(req, {
+        files: [inlineFile],
+        endpoint: 'openAI',
+        endpointType: 'openAI',
+      });
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
       expect(mockProcessStream).not.toHaveBeenCalled();
     });
 

@@ -17,6 +17,7 @@ const {
   createSafeUser,
   initializeAgent,
   encodeAndFormatDocuments,
+  filterFilesByEndpointConfig,
   getBalanceConfig,
   recordCollectedUsage,
   getTransactionsConfig,
@@ -587,6 +588,21 @@ const createResponse = async (req, res) => {
     const inputMessagesForStorage = cloneMessagesForStorage(inputMessages);
 
     if (inlineProviderFiles.length > 0) {
+      const filteredInlineProviderFiles = filterFilesByEndpointConfig(req, {
+        files: inlineProviderFiles,
+        endpoint: primaryConfig.endpoint ?? agent.provider,
+        endpointType: primaryConfig.provider ?? agent.provider,
+      });
+      if (filteredInlineProviderFiles.length !== inlineProviderFiles.length) {
+        return sendResponsesErrorResponse(
+          res,
+          400,
+          'One or more file inputs are not allowed by the configured file upload settings.',
+          'invalid_request',
+          'unsupported_file',
+        );
+      }
+
       let latestUserMessage;
       for (let i = inputMessages.length - 1; i >= 0; i--) {
         if (inputMessages[i]?.role === 'user') {

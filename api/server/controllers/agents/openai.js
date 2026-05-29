@@ -19,6 +19,7 @@ const {
   validateRequest,
   initializeAgent,
   encodeAndFormatDocuments,
+  filterFilesByEndpointConfig,
   getBalanceConfig,
   injectSkillPrimes,
   extractManualSkills,
@@ -483,6 +484,21 @@ const OpenAIChatCompletionController = async (req, res) => {
     const openaiMessages = convertMessages(remoteMessages);
 
     if (inlineProviderFiles.length > 0) {
+      const filteredInlineProviderFiles = filterFilesByEndpointConfig(req, {
+        files: inlineProviderFiles,
+        endpoint: primaryConfig.endpoint ?? agent.provider,
+        endpointType: primaryConfig.provider ?? agent.provider,
+      });
+      if (filteredInlineProviderFiles.length !== inlineProviderFiles.length) {
+        return sendErrorResponse(
+          res,
+          400,
+          'One or more file inputs are not allowed by the configured file upload settings.',
+          'invalid_request_error',
+          'unsupported_file',
+        );
+      }
+
       let latestUserMessage;
       for (let i = openaiMessages.length - 1; i >= 0; i--) {
         if (openaiMessages[i]?.role === 'user') {

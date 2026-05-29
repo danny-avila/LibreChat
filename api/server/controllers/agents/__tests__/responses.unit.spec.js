@@ -14,6 +14,7 @@ const mockExtractRemoteAgentResponseFiles = jest
   .fn()
   .mockImplementation((input) => ({ value: input, files: [] }));
 const mockEncodeAndFormatDocuments = jest.fn().mockResolvedValue({ documents: [], files: [] });
+const mockFilterFilesByEndpointConfig = jest.fn((_, { files }) => files ?? []);
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -60,6 +61,7 @@ jest.mock('@librechat/api', () => ({
     edges: [],
   }),
   encodeAndFormatDocuments: mockEncodeAndFormatDocuments,
+  filterFilesByEndpointConfig: mockFilterFilesByEndpointConfig,
   discoverConnectedAgents: jest.fn().mockResolvedValue({
     agentConfigs: new Map(),
     edges: [],
@@ -753,6 +755,38 @@ describe('createResponse controller', () => {
         'invalid_request',
         'unsupported_file',
       );
+      expect(createRun).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when file upload settings reject an inline file', async () => {
+      const {
+        createRun,
+        convertInputToMessages,
+        filterFilesByEndpointConfig,
+        sendResponsesErrorResponse,
+      } = require('@librechat/api');
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: [{ type: 'input_text', text: 'Files attached' }] }],
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([{ role: 'user', content: 'Files attached' }]);
+      mockFilterFilesByEndpointConfig.mockReturnValueOnce([]);
+
+      await createResponse(req, res);
+
+      expect(filterFilesByEndpointConfig).toHaveBeenCalledWith(req, {
+        files: [inlineFile],
+        endpoint: 'anthropic',
+        endpointType: 'anthropic',
+      });
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'One or more file inputs are not allowed by the configured file upload settings.',
+        'invalid_request',
+        'unsupported_file',
+      );
+      expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
       expect(createRun).not.toHaveBeenCalled();
     });
 
