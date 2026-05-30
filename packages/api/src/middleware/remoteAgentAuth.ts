@@ -487,7 +487,7 @@ async function selectOpenIdRoleForOpenIdSync(
     return;
   }
 
-  const loadLibreChatRoles = () =>
+  const loadLibreChatRoles = async () =>
     getLibreChatRolesForOpenIdSync({
       getRolesByNames,
       rolePriority: options.rolePriority,
@@ -523,7 +523,7 @@ async function updateResolvedUser(
     return;
   }
 
-  const update = () => updateUser(userResolution.user.id, userResolution.updateData);
+  const update = async () => updateUser(userResolution.user.id, userResolution.updateData);
   if (userResolution.user.tenantId && getTenantId() !== userResolution.user.tenantId) {
     await tenantStorage.run({ tenantId: userResolution.user.tenantId }, update);
     return;

@@ -526,7 +526,7 @@ async function applyOpenIdRoleSync({
 
   /** Role definitions are tenant-scoped, so validate configured roles in the matched user's tenant. */
   const { rolePriority, fallbackRole } = user?.tenantId
-    ? await tenantStorage.run({ tenantId: user.tenantId }, () =>
+    ? await tenantStorage.run({ tenantId: user.tenantId }, async () =>
         getLibreChatRolesForOpenIdSync(libreChatRoles),
       )
     : await getLibreChatRolesForOpenIdSync(libreChatRoles);
