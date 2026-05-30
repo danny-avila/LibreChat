@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Types } from 'mongoose';
 import type {
   ISkill,
@@ -136,6 +137,11 @@ function makeSkillFile(
     author: skill.author,
     ...overrides,
   };
+}
+
+function makeSourceAuthorId(sourceId = 'librechat-skills', tenantId?: string): Types.ObjectId {
+  const seed = tenantId ? `github:${sourceId}:${tenantId}` : `github:${sourceId}`;
+  return new Types.ObjectId(crypto.createHash('sha256').update(seed).digest('hex').slice(0, 24));
 }
 
 function createDeps(
@@ -639,6 +645,64 @@ describe('createGitHubSkillSyncRunner', () => {
         }),
       }),
     );
+  });
+
+  it('reuses a same-named source mirror when a skill moves configured paths', async () => {
+    const existing = makeSkill({
+      name: 'research',
+      description: 'Old description',
+      author: makeSourceAuthorId(),
+      authorName: 'GitHub Sync',
+      frontmatter: {},
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/old-research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/old-research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const unchangedFile = makeSkillFile(existing, {
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/old-research',
+        commitSha: 'old-commit-sha',
+        blobSha: 'file-sha',
+        path: 'skills/old-research/scripts/run.sh',
+      },
+    });
+    const deps = createDeps({
+      findSkillBySourceIdentity: jest.fn(async () => null),
+      listSkillsBySource: jest.fn(async () => [existing]),
+      getSkillById: jest.fn(async () => existing),
+      getSkillFileByPath: jest.fn(async () => unchangedFile),
+      listSkillFiles: jest.fn(async () => [unchangedFile]),
+      updateSkill: jest.fn(async ({ update }) => {
+        Object.assign(existing, update, { version: existing.version + 1 });
+        return { status: 'updated' as const, skill: existing, warnings: [] };
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.updateSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: existing._id.toString(),
+        update: expect.objectContaining({
+          sourceMetadata: expect.objectContaining({
+            upstreamId: 'librechat-skills:skills/research',
+            skillPath: 'skills/research',
+          }),
+        }),
+      }),
+    );
+    expect(deps.deleteSkill).not.toHaveBeenCalled();
   });
 
   it('refreshes an existing skill version after file sync before updating metadata', async () => {
