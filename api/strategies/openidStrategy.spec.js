@@ -1,9 +1,14 @@
 const undici = require('undici');
 const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
-const { ErrorTypes, FileSources } = require('librechat-data-provider');
+const { FileSources } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
-const { getOpenIdIssuer, resolveAppConfigForUser, isEnabled } = require('@librechat/api');
+const {
+  getOpenIdIssuer,
+  OAuthErrorCodes,
+  resolveAppConfigForUser,
+  isEnabled,
+} = require('@librechat/api');
 const { getAppConfig } = require('~/server/services/Config');
 const { setupOpenId } = require('./openidStrategy');
 
@@ -170,6 +175,17 @@ describe('setupOpenId', () => {
   const validate = (tokenset) =>
     new Promise((resolve, reject) => {
       verifyCallback(tokenset, (err, user, details) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ user, details });
+        }
+      });
+    });
+  const validateStrategy = (strategyName, tokenset) =>
+    new Promise((resolve, reject) => {
+      const callback = require('openid-client/passport').__getVerifyCallbackByName(strategyName);
+      callback(tokenset, (err, user, details) => {
         if (err) {
           reject(err);
         } else {
@@ -483,7 +499,7 @@ describe('setupOpenId', () => {
 
     // Assert – verify that the strategy rejects login
     expect(result.user).toBe(false);
-    expect(result.details.message).toBe(ErrorTypes.AUTH_FAILED);
+    expect(result.details.message).toBe(OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH);
     expect(createUser).not.toHaveBeenCalled();
     expect(updateUser).not.toHaveBeenCalled();
   });
@@ -510,7 +526,18 @@ describe('setupOpenId', () => {
     const result = await validate(tokenset);
 
     expect(result.user).toBe(false);
-    expect(result.details.message).toBe(ErrorTypes.AUTH_FAILED);
+    expect(result.details.message).toBe(OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH);
+    expect(createUser).not.toHaveBeenCalled();
+    expect(updateUser).not.toHaveBeenCalled();
+  });
+
+  it('should return known OAuth failure code when admin OpenID login requires an existing user', async () => {
+    findUser.mockResolvedValue(null);
+
+    const result = await validateStrategy('openidAdmin', tokenset);
+
+    expect(result.user).toBe(false);
+    expect(result.details.message).toBe(OAuthErrorCodes.OAUTH_USER_NOT_FOUND);
     expect(createUser).not.toHaveBeenCalled();
     expect(updateUser).not.toHaveBeenCalled();
   });

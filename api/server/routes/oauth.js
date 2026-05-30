@@ -3,8 +3,7 @@ const express = require('express');
 const passport = require('passport');
 const { randomState } = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
-const { ErrorTypes } = require('librechat-data-provider');
-const { createSetBalanceConfig } = require('@librechat/api');
+const { createSetBalanceConfig, getOAuthErrorCode, OAuthErrorCodes } = require('@librechat/api');
 const { checkDomainAllowed, loginLimiter, logHeaders } = require('~/server/middleware');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
 const { findBalanceByUser, upsertBalanceFields } = require('~/models');
@@ -31,11 +30,19 @@ const oauthHandler = createOAuthHandler();
 router.get('/error', (req, res) => {
   /** A single error message is pushed by passport when authentication fails. */
   const errorMessage = req.session?.messages?.pop() || 'Unknown OAuth error';
+  const errorCode = getOAuthErrorCode(errorMessage);
+  const clientErrorCode = OAuthErrorCodes.AUTH_FAILED;
   logger.error('Error in OAuth authentication:', {
     message: errorMessage,
+    errorCode,
+    clientErrorCode,
   });
 
-  res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
+  /** Keep detailed OAuth failure codes server-side; the browser only receives a generic auth error. */
+  const errorUrl = new URL('/login', domains.client || 'http://localhost:3080');
+  errorUrl.searchParams.set('redirect', 'false');
+  errorUrl.searchParams.set('error', clientErrorCode);
+  res.redirect(errorUrl.toString());
 });
 
 /**

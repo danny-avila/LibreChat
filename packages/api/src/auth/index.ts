@@ -1,4 +1,5 @@
 export * from './domain';
+export * from './errors';
 export * from './openid';
 export * from './exchange';
 export * from './refresh';

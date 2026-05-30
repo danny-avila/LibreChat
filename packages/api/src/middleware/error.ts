@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import { ErrorTypes } from 'librechat-data-provider';
 import type { NextFunction, Request, Response } from 'express';
 import type { MongoServerError, ValidationError, CustomError } from '~/types';
+import { isKnownOAuthErrorCode } from '~/auth/errors';
 
 const handleDuplicateKeyError = (err: MongoServerError, res: Response) => {
   logger.warn('Duplicate key error: ' + (err.errmsg || err.message));
@@ -40,6 +41,16 @@ function isCustomError(err: unknown): err is CustomError {
   return err !== null && typeof err === 'object' && 'statusCode' in err && 'body' in err;
 }
 
+function getOAuthErrorCode(error: CustomError): string | null {
+  if (isKnownOAuthErrorCode(error.code)) {
+    return error.code;
+  }
+  if (isKnownOAuthErrorCode(error.message)) {
+    return error.message;
+  }
+  return null;
+}
+
 export const ErrorController = (
   err: Error | CustomError,
   req: Request,
@@ -52,14 +63,24 @@ export const ErrorController = (
     }
     const error = err as CustomError;
 
+    const oauthErrorCode = getOAuthErrorCode(error);
+
     if (
-      (error.message === ErrorTypes.AUTH_FAILED || error.code === ErrorTypes.AUTH_FAILED) &&
-      req.originalUrl &&
-      req.originalUrl.includes('/oauth/') &&
+      oauthErrorCode &&
+      req.originalUrl?.includes('/oauth/') &&
       req.originalUrl.includes('/callback')
     ) {
+      const clientErrorCode = ErrorTypes.AUTH_FAILED;
+      logger.error('OAuth callback authentication failed', {
+        errorCode: oauthErrorCode,
+        clientErrorCode,
+      });
       const domain = process.env.DOMAIN_CLIENT || 'http://localhost:3080';
-      return res.redirect(`${domain}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
+      const errorUrl = new URL('/login', domain);
+      errorUrl.searchParams.set('redirect', 'false');
+      /** Keep detailed OAuth failure codes server-side; the browser only receives a generic auth error. */
+      errorUrl.searchParams.set('error', clientErrorCode);
+      return res.redirect(errorUrl.toString());
     }
 
     if (isValidationError(error)) {

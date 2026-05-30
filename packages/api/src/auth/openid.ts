@@ -1,9 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import { ErrorTypes } from 'librechat-data-provider';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
 import type { FilterQuery } from 'mongoose';
 import { isMetricsConfigured, recordOpenIDUserLookup } from '~/app/metrics';
 import type { OpenIDUserLookupResult } from '~/app/metrics';
+import { OAuthErrorCodes } from './errors';
 
 export type OpenIdEmailClaims = {
   email?: unknown;
@@ -159,7 +159,7 @@ function resolveIssuerBoundUser(
     logger.warn(
       `[${strategyName}] Rejected ${context} for ${user.email}: stored openidIssuer does not match token issuer`,
     );
-    return { user: null, error: ErrorTypes.AUTH_FAILED, migration: false };
+    return { user: null, error: OAuthErrorCodes.OPENID_ISSUER_MISMATCH, migration: false };
   }
 
   if (normalizedIssuer && !normalizeOpenIdIssuer(user.openidIssuer)) {
@@ -260,14 +260,22 @@ export async function findOpenIDUser({
         logger.warn(
           `[${strategyName}] Attempted OpenID login by user ${user.email}, was registered with "${user.provider}" provider`,
         );
-        return finish({ user: null, error: ErrorTypes.AUTH_FAILED, migration: false });
+        return finish({
+          user: null,
+          error: OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH,
+          migration: false,
+        });
       }
 
       if (user?.openidId && user.openidId !== openidId) {
         logger.warn(
           `[${strategyName}] Rejected email fallback for ${user.email}: stored openidId does not match token sub`,
         );
-        return finish({ user: null, error: ErrorTypes.AUTH_FAILED, migration: false });
+        return finish({
+          user: null,
+          error: OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH,
+          migration: false,
+        });
       }
 
       const emailIssuerResolution = resolveIssuerBoundUser(

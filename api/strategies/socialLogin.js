@@ -1,6 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
-const { ErrorTypes } = require('librechat-data-provider');
-const { isEnabled, isEmailDomainAllowed, resolveAppConfigForUser } = require('@librechat/api');
+const {
+  isEnabled,
+  isEmailDomainAllowed,
+  OAuthErrorCodes,
+  resolveAppConfigForUser,
+} = require('@librechat/api');
 const { createSocialUser, handleExistingUser } = require('./process');
 const { getAppConfig } = require('~/server/services/Config');
 const { findUser } = require('~/models');
@@ -19,8 +23,8 @@ const socialLogin =
         logger.error(
           `[${provider}Login] Authentication blocked - email domain not allowed [Email: ${email}]`,
         );
-        const error = new Error(ErrorTypes.AUTH_FAILED);
-        error.code = ErrorTypes.AUTH_FAILED;
+        const error = new Error(OAuthErrorCodes.OAUTH_EMAIL_DOMAIN_BLOCKED);
+        error.code = OAuthErrorCodes.OAUTH_EMAIL_DOMAIN_BLOCKED;
         error.message = 'Email domain not allowed';
         return cb(error);
       }
@@ -49,8 +53,8 @@ const socialLogin =
         logger.error(
           `[${provider}Login] Authentication blocked - email domain not allowed [Email: ${email}]`,
         );
-        const error = new Error(ErrorTypes.AUTH_FAILED);
-        error.code = ErrorTypes.AUTH_FAILED;
+        const error = new Error(OAuthErrorCodes.OAUTH_EMAIL_DOMAIN_BLOCKED);
+        error.code = OAuthErrorCodes.OAUTH_EMAIL_DOMAIN_BLOCKED;
         error.message = 'Email domain not allowed';
         return cb(error);
       }
@@ -62,8 +66,8 @@ const socialLogin =
         logger.info(
           `[${provider}Login] User ${email} already exists with provider ${existingUser.provider}`,
         );
-        const error = new Error(ErrorTypes.AUTH_FAILED);
-        error.code = ErrorTypes.AUTH_FAILED;
+        const error = new Error(OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH);
+        error.code = OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH;
         error.provider = existingUser.provider;
         return cb(error);
       }
@@ -80,8 +84,8 @@ const socialLogin =
         logger.error(
           `[${provider}Login] Registration blocked - social registration is disabled [Email: ${email}]`,
         );
-        const error = new Error(ErrorTypes.AUTH_FAILED);
-        error.code = ErrorTypes.AUTH_FAILED;
+        const error = new Error(OAuthErrorCodes.OAUTH_REGISTRATION_DISABLED);
+        error.code = OAuthErrorCodes.OAUTH_REGISTRATION_DISABLED;
         error.message = 'Social registration is disabled';
         return cb(error);
       }

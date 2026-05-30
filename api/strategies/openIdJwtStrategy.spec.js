@@ -1,4 +1,5 @@
 const { SystemRoles } = require('librechat-data-provider');
+const { OAuthErrorCodes } = jest.requireActual('@librechat/api');
 
 // --- Capture JwtStrategy inputs ---
 let capturedStrategyOptions;
@@ -356,6 +357,13 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     iss: 'https://issuer.example.com',
     exp: 9999999999,
   };
+  const isOpenIdLookup = (query) =>
+    (query.openidId === payload.sub && query.openidIssuer === 'https://issuer.example.com') ||
+    query.$or?.some(
+      (condition) =>
+        condition.openidId === payload.sub &&
+        condition.openidIssuer === 'https://issuer.example.com',
+    );
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -385,7 +393,7 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
       role: SystemRoles.USER,
     };
     findUser.mockImplementation(async (query) => {
-      if (query.openidId === payload.sub && query.openidIssuer === 'https://issuer.example.com') {
+      if (isOpenIdLookup(query)) {
         return existingUser;
       }
       return null;
@@ -394,10 +402,7 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     const req = { headers: { authorization: 'Bearer tok' }, session: {} };
     await invokeVerify(req, payload);
 
-    expect(findUser).toHaveBeenCalledWith({
-      openidId: payload.sub,
-      openidIssuer: 'https://issuer.example.com',
-    });
+    expect(findUser.mock.calls.some(([query]) => isOpenIdLookup(query))).toBe(true);
   });
 
   it('should use OPENID_EMAIL_CLAIM when set for email lookup', async () => {
@@ -408,10 +413,7 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     const { user } = await invokeVerify(req, payload);
 
     expect(findUser).toHaveBeenCalledTimes(2);
-    expect(findUser.mock.calls[0][0]).toEqual({
-      openidId: payload.sub,
-      openidIssuer: 'https://issuer.example.com',
-    });
+    expect(isOpenIdLookup(findUser.mock.calls[0][0])).toBe(true);
     expect(findUser.mock.calls[1][0]).toEqual({
       email: 'test@corp.example.com',
     });
@@ -452,7 +454,7 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     const { user, info } = await invokeVerify(req, payload);
 
     expect(user).toBe(false);
-    expect(info).toEqual({ message: 'auth_failed' });
+    expect(info).toEqual({ message: OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH });
   });
 
   it('should trim whitespace from OPENID_EMAIL_CLAIM', async () => {

@@ -1,9 +1,13 @@
 const { logger } = require('@librechat/data-schemas');
-const { ErrorTypes } = require('librechat-data-provider');
 const { createSocialUser, handleExistingUser } = require('./process');
 const socialLogin = require('./socialLogin');
 const { findUser } = require('~/models');
-const { resolveAppConfigForUser } = require('@librechat/api');
+const {
+  isEmailDomainAllowed,
+  isEnabled,
+  OAuthErrorCodes,
+  resolveAppConfigForUser,
+} = require('@librechat/api');
 const { getAppConfig } = require('~/server/services/Config');
 
 jest.mock('@librechat/data-schemas', () => {
@@ -52,6 +56,17 @@ describe('socialLogin', () => {
     username: profile.name?.givenName || 'user',
     name: `${profile.name?.givenName || ''} ${profile.name?.familyName || ''}`.trim(),
     emailVerified: profile.emails[0].verified || false,
+  });
+  const buildProfile = ({
+    id = 'google-user',
+    email = 'user@example.com',
+    givenName = 'John',
+    familyName = 'Doe',
+  } = {}) => ({
+    id,
+    emails: [{ value: email, verified: true }],
+    photos: [{ value: 'https://example.com/avatar.png' }],
+    name: { givenName, familyName },
   });
 
   beforeEach(() => {
@@ -222,6 +237,33 @@ describe('socialLogin', () => {
   });
 
   describe('Error handling', () => {
+    it('should return known OAuth failure code when base config blocks the email domain', async () => {
+      const provider = 'google';
+      const email = 'blocked@example.com';
+
+      isEmailDomainAllowed.mockReturnValueOnce(false);
+
+      const loginFn = socialLogin(provider, mockGetProfileDetails);
+      const callback = jest.fn();
+
+      await loginFn(
+        null,
+        null,
+        null,
+        buildProfile({ id: 'google-blocked-domain', email, givenName: 'Blocked' }),
+        callback,
+      );
+
+      expect(callback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: OAuthErrorCodes.OAUTH_EMAIL_DOMAIN_BLOCKED,
+          message: 'Email domain not allowed',
+        }),
+      );
+      expect(findUser).not.toHaveBeenCalled();
+      expect(createSocialUser).not.toHaveBeenCalled();
+    });
+
     it('should return error if user exists with different provider', async () => {
       const provider = 'google';
       const googleId = 'google-user-123';
@@ -235,21 +277,14 @@ describe('socialLogin', () => {
 
       findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
 
-      const mockProfile = {
-        id: googleId,
-        emails: [{ value: email, verified: true }],
-        photos: [{ value: 'https://example.com/avatar.png' }],
-        name: { givenName: 'John', familyName: 'Doe' },
-      };
-
       const loginFn = socialLogin(provider, mockGetProfileDetails);
       const callback = jest.fn();
 
-      await loginFn(null, null, null, mockProfile, callback);
+      await loginFn(null, null, null, buildProfile({ id: googleId, email }), callback);
 
       expect(callback).toHaveBeenCalledWith(
         expect.objectContaining({
-          code: ErrorTypes.AUTH_FAILED,
+          code: OAuthErrorCodes.OAUTH_ACCOUNT_MISMATCH,
           provider: 'local',
         }),
       );
@@ -257,6 +292,33 @@ describe('socialLogin', () => {
       expect(logger.info).toHaveBeenCalledWith(
         `[${provider}Login] User ${email} already exists with provider local`,
       );
+    });
+
+    it('should return known OAuth failure code when social registration is disabled', async () => {
+      const provider = 'google';
+      const email = 'newuser@example.com';
+
+      findUser.mockResolvedValue(null);
+      isEnabled.mockReturnValueOnce(false);
+
+      const loginFn = socialLogin(provider, mockGetProfileDetails);
+      const callback = jest.fn();
+
+      await loginFn(
+        null,
+        null,
+        null,
+        buildProfile({ id: 'google-new-user', email, givenName: 'New', familyName: 'User' }),
+        callback,
+      );
+
+      expect(callback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: OAuthErrorCodes.OAUTH_REGISTRATION_DISABLED,
+          message: 'Social registration is disabled',
+        }),
+      );
+      expect(createSocialUser).not.toHaveBeenCalled();
     });
   });
 
@@ -342,20 +404,22 @@ describe('socialLogin', () => {
       });
       isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
 
-      const mockProfile = {
-        id: googleId,
-        emails: [{ value: email, verified: true }],
-        photos: [{ value: 'https://example.com/avatar.png' }],
-        name: { givenName: 'Blocked', familyName: 'User' },
-      };
-
       const loginFn = socialLogin(provider, mockGetProfileDetails);
       const callback = jest.fn();
 
-      await loginFn(null, null, null, mockProfile, callback);
+      await loginFn(
+        null,
+        null,
+        null,
+        buildProfile({ id: googleId, email, givenName: 'Blocked' }),
+        callback,
+      );
 
       expect(callback).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Email domain not allowed' }),
+        expect.objectContaining({
+          code: OAuthErrorCodes.OAUTH_EMAIL_DOMAIN_BLOCKED,
+          message: 'Email domain not allowed',
+        }),
       );
     });
   });
