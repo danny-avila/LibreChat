@@ -507,6 +507,48 @@ describe('Skill CRUD methods', () => {
     expect(await SkillFile.countDocuments({ skillId: skill._id })).toBe(0);
   });
 
+  it('findSkillBySourceIdentity searches only the requested tenant bucket', async () => {
+    const upstreamId = 'librechat-skills:skills/research';
+    const sourceMetadata = {
+      provider: 'github',
+      sourceId: 'librechat-skills',
+      upstreamId,
+    };
+    const author = new mongoose.Types.ObjectId();
+    const tenantSkill = await Skill.create({
+      name: 'research',
+      description: 'A tenant-scoped GitHub skill mirror.',
+      body: 'tenant body',
+      author,
+      authorName: 'GitHub Sync',
+      tenantId: 'tenant-a',
+      source: 'github',
+      sourceMetadata,
+    });
+    const ambientSkill = await Skill.create({
+      name: 'research',
+      description: 'An ambient GitHub skill mirror.',
+      body: 'ambient body',
+      author,
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata,
+    });
+
+    const ambientResult = await methods.findSkillBySourceIdentity({
+      source: 'github',
+      upstreamId,
+    });
+    const tenantResult = await methods.findSkillBySourceIdentity({
+      source: 'github',
+      upstreamId,
+      tenantId: 'tenant-a',
+    });
+
+    expect(ambientResult?._id.toString()).toBe(ambientSkill._id.toString());
+    expect(tenantResult?._id.toString()).toBe(tenantSkill._id.toString());
+  });
+
   it('listSkillsByAccess returns only accessible skills and paginates by cursor', async () => {
     const ids: mongoose.Types.ObjectId[] = [];
     for (let i = 0; i < 3; i++) {
