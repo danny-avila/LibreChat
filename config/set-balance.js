@@ -6,7 +6,6 @@ require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { getAppConfig } = require('~/server/services/Config');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
-const { getAppConfig } = require('~/server/services/Config');
 
 (async () => {
   await connect();
