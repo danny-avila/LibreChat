@@ -401,6 +401,7 @@ endpoints:
   #     # Option 1: Simple array (legacy format - model name = deployment name)
   #     # Use this if you want the technical model IDs to show in the UI
   #     # models:
+  #     #   - "claude-opus-4-8"
   #     #   - "claude-sonnet-4-6"
   #     #   - "claude-3-7-sonnet-20250219"
   #     #   - "claude-3-5-sonnet-v2@20241022"
@@ -411,6 +412,8 @@ endpoints:
   #     # The deploymentName is the actual Vertex AI model ID used for API calls
   #     # You can use friendly names (avoid spaces for cleaner YAML) or technical IDs as keys
   #     models:
+  #       claude-opus-4.8:
+  #         deploymentName: claude-opus-4-8
   #       claude-opus-4.5:
   #         deploymentName: claude-opus-4-5@20251101
   #       claude-sonnet-4:

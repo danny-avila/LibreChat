@@ -3513,6 +3513,85 @@ describe('Support Contact Field', () => {
       expect(result.data[0].id).toBe(agentB1.id);
       expect(result.data[0].author).toBe(userB.toString());
     });
+
+    test('should cap results at the default page size when limit is omitted', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 102; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(100);
+      expect(result.has_more).toBe(true);
+      expect(result.after).toBeTruthy();
+    });
+
+    test('should return all agents when limit is explicitly null', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 102; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        limit: null,
+      });
+
+      expect(result.data).toHaveLength(102);
+      expect(result.has_more).toBe(false);
+      expect(result.after).toBeNull();
+    });
+
+    test('should honor explicit limits above the legacy 100 cap', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 105; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        limit: 500,
+      });
+
+      expect(result.data).toHaveLength(105);
+      expect(result.has_more).toBe(false);
+    });
   });
 });
 

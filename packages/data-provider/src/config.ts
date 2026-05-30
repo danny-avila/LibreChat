@@ -403,10 +403,18 @@ export const baseEndpointSchema = z.object({
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
 
+export const bedrockGuardrailConfigSchema = z.object({
+  guardrailIdentifier: z.string(),
+  guardrailVersion: z.string(),
+  trace: z.enum(['enabled', 'disabled', 'enabled_full']).optional(),
+  streamProcessingMode: z.enum(['sync', 'async']).optional(),
+});
+
 export const bedrockEndpointSchema = baseEndpointSchema.merge(
   z.object({
     availableRegions: z.array(z.string()).optional(),
     models: z.array(z.string()).optional(),
+    guardrailConfig: bedrockGuardrailConfigSchema.optional(),
     inferenceProfiles: z.record(z.string(), z.string()).optional(),
   }),
 );
@@ -1058,6 +1066,22 @@ export const turnstileSchema = z.object({
 
 export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
+export type TRumConfig = {
+  provider: 'hyperdx';
+  enabled: boolean;
+  url: string;
+  serviceName: string;
+  authMode: 'publicToken' | 'userJwt';
+  authHeaderScheme?: 'Bearer' | 'Basic';
+  publicToken?: string;
+  tracePropagationTargets?: string[];
+  consoleCapture?: boolean;
+  disableReplay?: boolean;
+  advancedNetworkCapture?: boolean;
+  sampleRate?: number;
+  environment?: string;
+};
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
@@ -1098,6 +1122,7 @@ export type TStartupConfig = {
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
+  rum?: TRumConfig;
   bundlerURL?: string;
   staticBundlerURL?: string;
   sharePointFilePickerEnabled?: boolean;
@@ -1542,6 +1567,7 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-sonnet-4-6',
   'claude-opus-4-6',
@@ -1565,6 +1591,7 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-opus-4-8',
   'anthropic.claude-opus-4-7',
   'anthropic.claude-sonnet-4-6',
   'anthropic.claude-opus-4-6-v1',

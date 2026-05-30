@@ -272,5 +272,93 @@ describe('MCP schemas', () => {
 
       expect(result.success).toBe(true);
     });
+
+    it('should accept audience parameter (Auth0/Cognito-style)', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          audience: 'https://api.example.com',
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data.oauth) {
+        expect(result.data.oauth.audience).toBe('https://api.example.com');
+      }
+    });
+
+    it('should accept audience alongside scope and other OAuth fields', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          authorization_url: 'https://auth.example.com/authorize',
+          token_url: 'https://auth.example.com/token',
+          scope: 'read execute',
+          audience: 'https://api.example.com',
+        },
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('should treat audience as optional (omitting it is fine)', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          scope: 'read',
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data.oauth) {
+        expect(result.data.oauth.audience).toBeUndefined();
+      }
+    });
+
+    it('should reject empty-string audience', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          audience: '',
+        },
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept forward_audience_on_refresh = false (Cognito opt-out)', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          audience: 'https://api.example.com',
+          forward_audience_on_refresh: false,
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data.oauth) {
+        expect(result.data.oauth.forward_audience_on_refresh).toBe(false);
+      }
+    });
+
+    it('should treat forward_audience_on_refresh as optional', () => {
+      const result = MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          audience: 'https://api.example.com',
+        },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success && result.data.oauth) {
+        expect(result.data.oauth.forward_audience_on_refresh).toBeUndefined();
+      }
+    });
   });
 });

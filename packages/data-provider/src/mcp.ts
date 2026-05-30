@@ -28,6 +28,42 @@ const OAuthOptionsSchema = z
     code_challenge_methods_supported: z.array(z.string()).optional(),
     /** Skip code challenge validation and force S256 (useful for providers like AWS Cognito that support S256 but don't advertise it) */
     skip_code_challenge_check: z.boolean().optional(),
+    /**
+     * Auth0/Cognito-style `audience` parameter. Authorization servers that pre-date
+     * RFC 8707 — most prominently Auth0 — issue API-scoped access tokens only when
+     * the `/authorize` request advertises an `audience`. RFC 8707 `resource` (set
+     * automatically from Protected Resource Metadata) is the standards-conformant
+     * route; `audience` covers the providers that ignore it.
+     *
+     * When set, the value is forwarded as-is on `/authorize` (both pre-configured
+     * and DCR-discovered paths). Whether it is also forwarded on the
+     * `refresh_token` grant is controlled by `forward_audience_on_refresh` below.
+     *
+     * The `authorization_code` exchange intentionally never receives `audience` —
+     * Auth0 binds audience from the original `/authorize` request and embeds it
+     * in the issued access token; sending it again is redundant.
+     *
+     * No canonicalization is applied — the audience identifier is provider-defined
+     * and may differ from the MCP server URL.
+     */
+    audience: z.string().min(1).optional(),
+    /**
+     * Whether to also forward `audience` on the `refresh_token` grant body.
+     *
+     * Default: `true`. Required for Auth0, which strips the API audience from
+     * refreshed access tokens unless `audience` is re-supplied on every refresh
+     * — without it the next MCP call 401s once the initial access token expires.
+     *
+     * Set to `false` for providers that document refresh requests as
+     * `grant_type` + `client_id` + `refresh_token` only (Cognito and other
+     * strict OAuth 2.0 token endpoints). Those providers maintain the original
+     * `aud` claim across refreshes when the initial token was resource-bound,
+     * so the extra parameter is redundant and may be rejected as
+     * `invalid_request`.
+     *
+     * Ignored when `audience` itself is not configured.
+     */
+    forward_audience_on_refresh: z.boolean().optional(),
     /** OAuth revocation endpoint (optional - can be auto-discovered) */
     revocation_endpoint: z.string().url().optional(),
     /** OAuth revocation endpoint authentication methods supported (optional - can be auto-discovered) */

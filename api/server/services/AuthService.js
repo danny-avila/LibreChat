@@ -192,13 +192,13 @@ const verifyEmail = async (req) => {
 /**
  * Register a new user.
  * @param {IUser} user <email, password, name, username>
- * @param {Partial<IUser>} [additionalData={}]
+ * @param {Partial<IUser>} [additionalData={}] Trusted server-provided fields, such as CLI overrides.
  * @returns {Promise<{status: number, message: string, user?: IUser}>}
  */
 const registerUser = async (user, additionalData = {}) => {
-  const { error } = registerSchema.safeParse(user);
-  if (error) {
-    const errorMessage = errorsToString(error.errors);
+  const result = registerSchema.safeParse(user);
+  if (!result.success) {
+    const errorMessage = errorsToString(result.error.errors);
     logger.info(
       'Route: register - Validation Error',
       { name: 'Request params:', value: user },
@@ -208,7 +208,8 @@ const registerUser = async (user, additionalData = {}) => {
     return { status: 404, message: errorMessage };
   }
 
-  const { email, password, name, username, provider } = user;
+  const { email, password, name, username } = result.data;
+  const { provider, ...trustedAdditionalData } = additionalData ?? {};
 
   let newUserId;
   try {
@@ -247,7 +248,7 @@ const registerUser = async (user, additionalData = {}) => {
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       password: bcrypt.hashSync(password, salt),
-      ...additionalData,
+      ...trustedAdditionalData,
     };
 
     const emailEnabled = checkEmailConfig();
