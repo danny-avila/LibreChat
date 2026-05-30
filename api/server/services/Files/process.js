@@ -10,6 +10,7 @@ const {
   imageExtRegex,
   EModelEndpoint,
   EToolResources,
+  RetentionMode,
   mergeFileConfig,
   AgentCapabilities,
   checkOpenAIStorage,
@@ -71,7 +72,10 @@ const isPersistentAgentResourceUpload = ({ messageAttachment, tool_resource }) =
   !messageAttachment && !!tool_resource;
 
 const getAgentFileRetentionExpiry = async ({ req, messageAttachment, tool_resource }) => {
-  if (isPersistentAgentResourceUpload({ messageAttachment, tool_resource })) {
+  if (
+    isPersistentAgentResourceUpload({ messageAttachment, tool_resource }) &&
+    req?.config?.interfaceConfig?.retentionMode !== RetentionMode.ALL
+  ) {
     return {};
   }
 

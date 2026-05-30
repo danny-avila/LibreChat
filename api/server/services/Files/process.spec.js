@@ -144,7 +144,7 @@ const ODT_MIME = 'application/vnd.oasis.opendocument.text';
 const ODP_MIME = 'application/vnd.oasis.opendocument.presentation';
 const ODG_MIME = 'application/vnd.oasis.opendocument.graphics';
 
-const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null } = {}) => ({
+const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null, interfaceConfig, body } = {}) => ({
   user: { id: 'user-123', tenantId: 'tenant-a' },
   file: {
     path: '/tmp/upload.bin',
@@ -152,11 +152,12 @@ const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null } = {}) => ({
     filename: 'upload-uuid.bin',
     mimetype,
   },
-  body: { model: 'gpt-4o' },
+  body: { model: 'gpt-4o', ...body },
   config: {
     fileConfig: {},
     fileStrategy: 'local',
     ocr: ocrConfig,
+    ...(interfaceConfig ? { interfaceConfig } : {}),
   },
 });
 
@@ -413,15 +414,48 @@ describe('processAgentFileUpload', () => {
   });
 
   describe('retention for agent resource uploads', () => {
-    test('does not apply retention metadata to persistent agent context files', async () => {
+    test('skips retention metadata for persistent agent context files outside all-data retention', async () => {
       const expiredAt = new Date('2030-01-01T00:00:00.000Z');
       getRetentionExpiry.mockResolvedValueOnce({ expiredAt });
-      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: null,
+        interfaceConfig: { retentionMode: RetentionMode.TEMPORARY },
+        body: { conversationId: 'temporary-convo', isTemporary: true },
+      });
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
 
       expect(getRetentionExpiry).not.toHaveBeenCalled();
       expect(db.createFile).toHaveBeenCalledWith(expect.not.objectContaining({ expiredAt }), true);
+      expect(db.addAgentResourceFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.context,
+        }),
+      );
+    });
+
+    test('applies all-data retention metadata to persistent agent context files', async () => {
+      const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+      getRetentionExpiry.mockResolvedValueOnce({ expiredAt });
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: null,
+        interfaceConfig: { retentionMode: RetentionMode.ALL },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(getRetentionExpiry).toHaveBeenCalledTimes(1);
+      expect(getRetentionExpiry.mock.calls[0][0]).toBe(req);
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expiredAt,
+          context: FileContext.agents,
+        }),
+        true,
+      );
       expect(db.addAgentResourceFile).toHaveBeenCalledWith(
         expect.objectContaining({
           agent_id: 'agent-abc',
@@ -453,7 +487,7 @@ describe('processAgentFileUpload', () => {
       expect(db.addAgentResourceFile).not.toHaveBeenCalled();
     });
 
-    test('does not apply retention metadata to persistent agent file-search files', async () => {
+    test('skips retention metadata for persistent agent file-search files outside all-data retention', async () => {
       const expiredAt = new Date('2030-01-01T00:00:00.000Z');
       getRetentionExpiry.mockResolvedValueOnce({ expiredAt });
       setupStoredFileUpload();
@@ -468,6 +502,40 @@ describe('processAgentFileUpload', () => {
       expect(uploadVectors).toHaveBeenCalled();
       expect(getRetentionExpiry).not.toHaveBeenCalled();
       expect(db.createFile).toHaveBeenCalledWith(expect.not.objectContaining({ expiredAt }), true);
+      expect(db.addAgentResourceFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.file_search,
+        }),
+      );
+    });
+
+    test('applies all-data retention metadata to persistent agent file-search files', async () => {
+      const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+      getRetentionExpiry.mockResolvedValueOnce({ expiredAt });
+      setupStoredFileUpload();
+      const req = makeReq({
+        mimetype: 'text/plain',
+        ocrConfig: null,
+        interfaceConfig: { retentionMode: RetentionMode.ALL },
+      });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { ...makeMetadata(), tool_resource: EToolResources.file_search },
+      });
+
+      expect(uploadVectors).toHaveBeenCalled();
+      expect(getRetentionExpiry).toHaveBeenCalledTimes(1);
+      expect(getRetentionExpiry.mock.calls[0][0]).toBe(req);
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expiredAt,
+          context: FileContext.agents,
+        }),
+        true,
+      );
       expect(db.addAgentResourceFile).toHaveBeenCalledWith(
         expect.objectContaining({
           agent_id: 'agent-abc',
@@ -580,7 +648,7 @@ describe('processAgentFileUpload', () => {
       );
     });
 
-    it('does not apply retention metadata to persistent agent execute_code files', async () => {
+    it('skips retention metadata for persistent agent execute_code files outside all-data retention', async () => {
       const expiredAt = new Date('2030-01-01T00:00:00.000Z');
       getRetentionExpiry.mockResolvedValueOnce({ expiredAt });
       setupCodeEnvUpload({ storage_session_id: 'sess-4', file_id: 'fid-4' });
@@ -598,6 +666,47 @@ describe('processAgentFileUpload', () => {
 
       expect(getRetentionExpiry).not.toHaveBeenCalled();
       expect(db.createFile).toHaveBeenCalledWith(expect.not.objectContaining({ expiredAt }), true);
+      expect(db.addAgentResourceFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+        }),
+      );
+    });
+
+    it('applies all-data retention metadata to persistent agent execute_code files', async () => {
+      const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+      getRetentionExpiry.mockResolvedValueOnce({ expiredAt });
+      setupCodeEnvUpload({ storage_session_id: 'sess-5', file_id: 'fid-5' });
+      const req = makeReq({ interfaceConfig: { retentionMode: RetentionMode.ALL } });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+        },
+      });
+
+      expect(getRetentionExpiry).toHaveBeenCalledTimes(1);
+      expect(getRetentionExpiry.mock.calls[0][0]).toBe(req);
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expiredAt,
+          context: FileContext.agents,
+          metadata: {
+            codeEnvRef: {
+              kind: 'agent',
+              id: 'agent-abc',
+              storage_session_id: 'sess-5',
+              file_id: 'fid-5',
+            },
+          },
+        }),
+        true,
+      );
       expect(db.addAgentResourceFile).toHaveBeenCalledWith(
         expect.objectContaining({
           agent_id: 'agent-abc',
