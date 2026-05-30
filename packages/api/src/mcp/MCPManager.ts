@@ -1,9 +1,10 @@
 import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
-import type { OboTokenResolver } from '~/mcp/oauth/obo';
+import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
@@ -310,6 +311,7 @@ Please follow these instructions when using tools from the respective MCP server
     customUserVars,
     graphTokenResolver,
     oboTokenResolver,
+    oboTrustChecker,
   }: {
     user?: IUser;
     serverName: string;
@@ -327,6 +329,7 @@ Please follow these instructions when using tools from the respective MCP server
     oauthEnd?: () => Promise<void>;
     graphTokenResolver?: GraphTokenResolver;
     oboTokenResolver?: OboTokenResolver;
+    oboTrustChecker?: OboTrustChecker;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
@@ -344,6 +347,7 @@ Please follow these instructions when using tools from the respective MCP server
         oauthStart,
         oauthEnd,
         oboTokenResolver,
+        oboTrustChecker,
         signal: options?.signal,
         customUserVars,
         requestBody,
@@ -391,6 +395,22 @@ Please follow these instructions when using tools from the respective MCP server
       /** Refresh OBO token on each tool call to ensure it's current */
       const oboConfig = rawConfig.obo;
       if (oboConfig && oboTokenResolver && user) {
+        const oboTrusted = oboTrustChecker
+          ? await oboTrustChecker({
+              source: rawConfig.source,
+              author: rawConfig.author,
+              dbId: rawConfig.dbId,
+            })
+          : true;
+        if (!oboTrusted) {
+          logger.warn(
+            `${logPrefix} OBO config not trusted (author lacks ${PermissionTypes.MCP_SERVERS}.${Permissions.CONFIGURE_OBO}); refusing to mint a downstream token`,
+          );
+          throw new McpError(
+            ErrorCode.InternalError,
+            `${logPrefix} OBO is not permitted for server "${serverName}". The user who configured it no longer has permission to use OBO.`,
+          );
+        }
         let oboTokens: MCPOAuthTokens;
         try {
           oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);

@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import { extractOpenIDTokenInfo, isOpenIDTokenValid } from '~/utils/oidc';
 import type { MCPOAuthTokens } from './types';
@@ -177,3 +178,68 @@ export async function resolveOboToken(
     );
   }
 }
+
+/**
+ * Re-evaluates whether the original author of a DB-stored OBO config still has
+ * permission to configure OBO. The connection layer calls this before performing
+ * an OBO token exchange so that retained configs fail closed if the author's role
+ * is downgraded after the server was created.
+ *
+ * Returns true when the author's role grants `MCP_SERVERS.CONFIGURE_OBO`. Any of
+ * the following degraded states return false (fail closed):
+ *   - missing author id
+ *   - user lookup miss / no role
+ *   - role lookup miss
+ *   - role missing the CONFIGURE_OBO bit
+ */
+export type GetUserRoleByAuthorId = (authorId: string) => Promise<string | null | undefined>;
+export type GetRolePermissions = (
+  roleName: string,
+) => Promise<Record<string, Record<string, boolean | undefined>> | null | undefined>;
+
+export async function isOboConfigStillTrusted({
+  authorId,
+  getUserRoleByAuthorId,
+  getRolePermissions,
+}: {
+  authorId: string | undefined;
+  getUserRoleByAuthorId: GetUserRoleByAuthorId;
+  getRolePermissions: GetRolePermissions;
+}): Promise<boolean> {
+  if (!authorId) {
+    return false;
+  }
+  let roleName: string | null | undefined;
+  try {
+    roleName = await getUserRoleByAuthorId(authorId);
+  } catch (err) {
+    logger.warn('[OBO] Failed to resolve author role for OBO trust check', err);
+    return false;
+  }
+  if (!roleName) {
+    return false;
+  }
+  let permissions: Record<string, Record<string, boolean | undefined>> | null | undefined;
+  try {
+    permissions = await getRolePermissions(roleName);
+  } catch (err) {
+    logger.warn('[OBO] Failed to load role permissions for OBO trust check', err);
+    return false;
+  }
+  return permissions?.[PermissionTypes.MCP_SERVERS]?.[Permissions.CONFIGURE_OBO] === true;
+}
+
+/**
+ * Async predicate injected into MCP runtime to gate OBO exchanges per server.
+ * Returns true when OBO is allowed for the given config, false to fail closed.
+ *
+ * The runtime passes `source`, `author`, and `dbId` so the implementation can
+ * use the same `isUserSourced` semantics as the rest of the MCP layer (a
+ * missing `source` field on a legacy cached config still falls back to
+ * `dbId`-presence heuristics).
+ */
+export type OboTrustChecker = (config: {
+  source?: string;
+  author?: string;
+  dbId?: string;
+}) => Promise<boolean>;

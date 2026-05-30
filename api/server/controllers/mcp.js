@@ -7,16 +7,23 @@
  */
 const { logger } = require('@librechat/data-schemas');
 const {
+  checkAccess,
   MCPErrorCodes,
   redactServerSecrets,
   redactAllServerSecrets,
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
 } = require('@librechat/api');
-const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
+const {
+  Constants,
+  Permissions,
+  PermissionTypes,
+  MCPServerUserInputSchema,
+} = require('librechat-data-provider');
 const { resolveConfigServers, resolveAllMcpConfigs } = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
+const db = require('~/models');
 
 /**
  * Handles MCP-specific errors and sends appropriate HTTP responses.
@@ -198,6 +205,30 @@ const getMCPServersList = async (req, res) => {
 };
 
 /**
+ * Returns true when the request body's parsed config configures OBO. We block
+ * non-permission holders from creating or updating any DB-stored MCP server
+ * that mints per-user delegated tokens.
+ */
+function configHasObo(parsedConfig) {
+  return (
+    !!parsedConfig &&
+    typeof parsedConfig === 'object' &&
+    'obo' in parsedConfig &&
+    parsedConfig.obo != null
+  );
+}
+
+async function callerCanConfigureObo(req) {
+  return checkAccess({
+    req,
+    user: req.user,
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permissions: [Permissions.CONFIGURE_OBO],
+    getRoleByName: db.getRoleByName,
+  });
+}
+
+/**
  * Create MCP server
  * @route POST /api/mcp/servers
  */
@@ -212,6 +243,14 @@ const createMCPServerController = async (req, res) => {
         message: 'Invalid configuration',
         errors: validation.error.errors,
       });
+    }
+    if (configHasObo(validation.data) && !(await callerCanConfigureObo(req))) {
+      logger.warn(
+        `[createMCPServer] User ${userId} attempted to configure OBO without ${Permissions.CONFIGURE_OBO} permission`,
+      );
+      return res
+        .status(403)
+        .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
     }
     const result = await getMCPServersRegistry().addServer(
       'temp_server_name',
@@ -277,6 +316,14 @@ const updateMCPServerController = async (req, res) => {
         message: 'Invalid configuration',
         errors: validation.error.errors,
       });
+    }
+    if (configHasObo(validation.data) && !(await callerCanConfigureObo(req))) {
+      logger.warn(
+        `[updateMCPServer] User ${userId} attempted to configure OBO on '${serverName}' without ${Permissions.CONFIGURE_OBO} permission`,
+      );
+      return res
+        .status(403)
+        .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
     }
     const parsedConfig = await getMCPServersRegistry().updateServer(
       serverName,

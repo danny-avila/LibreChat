@@ -22,7 +22,7 @@ import type { LCTool } from '@librechat/agents';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
-import type { OboTokenResolver } from '~/mcp/oauth/obo';
+import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -169,6 +169,12 @@ export type ParsedServerConfig = MCPOptions & {
   consumeOnly?: boolean;
   /** True when inspection failed at startup; the server is known but not fully initialized */
   inspectionFailed?: boolean;
+  /**
+   * User-id of the creating user (DB-sourced configs only). Used at runtime to gate
+   * OBO token exchanges by re-checking the author's CONFIGURE_OBO permission, so a
+   * stored config remains safe if the author's role is downgraded.
+   */
+  author?: string;
 };
 
 export type AddServerResult = {
@@ -204,6 +210,7 @@ export interface OAuthConnectionOptions extends UserConnectionContext {
   oauthEnd?: () => Promise<void>;
   returnOnOAuth?: boolean;
   oboTokenResolver?: OboTokenResolver;
+  oboTrustChecker?: OboTrustChecker;
 }
 
 export interface ToolDiscoveryOptions {

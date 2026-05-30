@@ -3,7 +3,7 @@ import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/au
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, OAuthMetadata, MCPOAuthFlowMetadata } from '~/mcp/oauth';
-import type { OboTokenResolver } from '~/mcp/oauth/obo';
+import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
 import {
@@ -51,6 +51,7 @@ export class MCPConnectionFactory {
   protected readonly returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
   protected readonly oboTokenResolver?: OboTokenResolver;
+  protected readonly oboTrustChecker?: OboTrustChecker;
 
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
@@ -234,6 +235,7 @@ export class MCPConnectionFactory {
       this.oauthEnd = options.oauthEnd;
       this.returnOnOAuth = options.returnOnOAuth;
       this.oboTokenResolver = options.oboTokenResolver;
+      this.oboTrustChecker = options.oboTrustChecker;
     } else {
       this.useOAuth = false;
     }
@@ -244,6 +246,21 @@ export class MCPConnectionFactory {
     const oboConfig = this.serverConfig.obo;
     if (!oboConfig || !this.oboTokenResolver || !this.user) {
       return null;
+    }
+
+    if (this.oboTrustChecker) {
+      const config = this.serverConfig as t.ParsedServerConfig;
+      const trusted = await this.oboTrustChecker({
+        source: config.source,
+        author: config.author,
+        dbId: config.dbId,
+      });
+      if (!trusted) {
+        logger.warn(
+          `${this.logPrefix} OBO config not trusted (author lacks CONFIGURE_OBO permission); skipping OBO token exchange`,
+        );
+        return null;
+      }
     }
 
     logger.info(`${this.logPrefix} Resolving OBO token for scopes: ${oboConfig.scopes}`);

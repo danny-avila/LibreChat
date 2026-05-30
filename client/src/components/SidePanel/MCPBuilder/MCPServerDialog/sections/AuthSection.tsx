@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Copy, CopyCheck } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { Label, Input, Checkbox, SecretInput, Radio, useToastContext } from '@librechat/client';
 import { AuthTypeEnum, AuthorizationTypeEnum } from '../hooks/useMCPServerForm';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
-import { useLocalize, useCopyToClipboard } from '~/hooks';
+import { useLocalize, useCopyToClipboard, useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
 
 interface AuthSectionProps {
@@ -22,6 +23,11 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
   } = useFormContext<MCPServerFormData>();
 
   const [isCopying, setIsCopying] = useState(false);
+
+  const canConfigureObo = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.CONFIGURE_OBO,
+  });
 
   const authType = useWatch<MCPServerFormData, 'auth.auth_type'>({
     name: 'auth.auth_type',
@@ -41,15 +47,28 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
 
   const copyLink = useCopyToClipboard({ text: redirectUri });
 
-  const authTypeOptions = useMemo(
-    () => [
+  /**
+   * Show OBO as a selectable auth option only when the caller has the permission.
+   * If the form is loaded in edit mode for a server that already uses OBO and the
+   * caller has since lost the permission, we still surface the OBO row so the user
+   * understands why the field is locked — but mark it disabled.
+   */
+  const showOboOption = canConfigureObo || authType === AuthTypeEnum.OBO;
+
+  const authTypeOptions = useMemo(() => {
+    const options = [
       { value: AuthTypeEnum.None, label: localize('com_ui_no_auth') },
       { value: AuthTypeEnum.ServiceHttp, label: localize('com_ui_api_key') },
       { value: AuthTypeEnum.OAuth, label: 'OAuth' },
-      { value: AuthTypeEnum.OBO, label: localize('com_ui_obo') },
-    ],
-    [localize],
-  );
+    ];
+    if (showOboOption) {
+      options.push({
+        value: AuthTypeEnum.OBO,
+        label: localize('com_ui_obo'),
+      });
+    }
+    return options;
+  }, [localize, showOboOption]);
 
   const headerFormatOptions = useMemo(
     () => [
@@ -294,10 +313,13 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
             <Input
               id="obo_scopes"
               placeholder="api://<client-id>/Mcp.Tools.ReadWrite"
+              readOnly={!canConfigureObo}
               aria-invalid={errors.auth?.obo_scopes ? 'true' : 'false'}
-              aria-describedby="obo-scopes-description"
+              aria-describedby={
+                canConfigureObo ? 'obo-scopes-description' : 'obo-scopes-readonly-description'
+              }
               {...register('auth.obo_scopes', {
-                required: authType === AuthTypeEnum.OBO,
+                required: canConfigureObo && authType === AuthTypeEnum.OBO,
               })}
               className={cn(errors.auth?.obo_scopes && 'border-border-destructive')}
             />
@@ -306,9 +328,15 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
                 {localize('com_ui_field_required')}
               </p>
             )}
-            <p id="obo-scopes-description" className="text-xs text-text-secondary">
-              {localize('com_ui_obo_scopes_description')}
-            </p>
+            {canConfigureObo ? (
+              <p id="obo-scopes-description" className="text-xs text-text-secondary">
+                {localize('com_ui_obo_scopes_description')}
+              </p>
+            ) : (
+              <p id="obo-scopes-readonly-description" className="text-xs text-text-secondary">
+                {localize('com_ui_obo_readonly_no_permission')}
+              </p>
+            )}
           </div>
         </div>
       )}

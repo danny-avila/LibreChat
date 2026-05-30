@@ -143,6 +143,7 @@ describe('MCP Routes', () => {
   let app;
   let mongoServer;
   let mcpRouter;
+  let currentUser;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
@@ -157,7 +158,7 @@ describe('MCP Routes', () => {
     app.use(cookieParser());
 
     app.use((req, res, next) => {
-      req.user = { id: 'test-user-id' };
+      req.user = currentUser ?? { id: 'test-user-id' };
       next();
     });
 
@@ -171,6 +172,7 @@ describe('MCP Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    currentUser = undefined;
   });
 
   describe('GET /:serverName/oauth/initiate', () => {
@@ -2285,6 +2287,115 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ message: 'Database connection failed' });
+    });
+
+    describe('OBO permission gate', () => {
+      const oboConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        title: 'OBO Server',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      };
+      const db = require('~/models');
+
+      beforeEach(() => {
+        currentUser = { id: 'test-user-id', role: 'USER' };
+        mockRegistryInstance.addServer.mockResolvedValue({
+          serverName: 'obo-server',
+          config: oboConfig,
+        });
+      });
+
+      it('rejects POST with obo body when role lacks CONFIGURE_OBO', async () => {
+        db.getRoleByName.mockResolvedValue({
+          name: 'USER',
+          permissions: {
+            MCP_SERVERS: {
+              USE: true,
+              CREATE: true,
+              SHARE: false,
+              SHARE_PUBLIC: false,
+              CONFIGURE_OBO: false,
+            },
+          },
+        });
+
+        const response = await request(app).post('/api/mcp/servers').send({ config: oboConfig });
+
+        expect(response.status).toBe(403);
+        expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
+        expect(mockRegistryInstance.addServer).not.toHaveBeenCalled();
+      });
+
+      it('allows POST with obo body when role has CONFIGURE_OBO', async () => {
+        db.getRoleByName.mockResolvedValue({
+          name: 'USER',
+          permissions: {
+            MCP_SERVERS: {
+              USE: true,
+              CREATE: true,
+              SHARE: false,
+              SHARE_PUBLIC: false,
+              CONFIGURE_OBO: true,
+            },
+          },
+        });
+
+        const response = await request(app).post('/api/mcp/servers').send({ config: oboConfig });
+
+        expect(response.status).toBe(201);
+        expect(mockRegistryInstance.addServer).toHaveBeenCalled();
+      });
+
+      it('allows POST without obo body regardless of CONFIGURE_OBO', async () => {
+        db.getRoleByName.mockResolvedValue({
+          name: 'USER',
+          permissions: {
+            MCP_SERVERS: {
+              USE: true,
+              CREATE: true,
+              CONFIGURE_OBO: false,
+            },
+          },
+        });
+
+        const nonOboConfig = {
+          type: 'streamable-http',
+          url: 'https://mcp-server.example.com/mcp',
+          title: 'Plain Server',
+        };
+        mockRegistryInstance.addServer.mockResolvedValue({
+          serverName: 'plain-server',
+          config: nonOboConfig,
+        });
+
+        const response = await request(app).post('/api/mcp/servers').send({ config: nonOboConfig });
+
+        expect(response.status).toBe(201);
+        expect(db.getRoleByName).not.toHaveBeenCalled();
+        expect(mockRegistryInstance.addServer).toHaveBeenCalled();
+      });
+
+      it('rejects PATCH with obo body when role lacks CONFIGURE_OBO', async () => {
+        db.getRoleByName.mockResolvedValue({
+          name: 'USER',
+          permissions: {
+            MCP_SERVERS: {
+              USE: true,
+              CREATE: true,
+              CONFIGURE_OBO: false,
+            },
+          },
+        });
+
+        const response = await request(app)
+          .patch('/api/mcp/servers/obo-server')
+          .send({ config: oboConfig });
+
+        expect(response.status).toBe(403);
+        expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
+        expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+      });
     });
   });
 

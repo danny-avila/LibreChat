@@ -3,6 +3,7 @@ const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
 const { exchangeOboToken } = require('~/server/services/OboTokenService');
+const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
 const { updateMCPServerTools } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
@@ -113,6 +114,7 @@ async function reinitMCPServer({
         connectionTimeout,
         serverConfig,
         oboTokenResolver: exchangeOboToken,
+        oboTrustChecker: createOboTrustChecker(),
       });
 
       logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);

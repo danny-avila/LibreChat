@@ -1,6 +1,7 @@
 import type { IUser } from '@librechat/data-schemas';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { OboTokenResolver } from './obo';
-import { resolveOboToken } from './obo';
+import { isOboConfigStillTrusted, resolveOboToken } from './obo';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -195,5 +196,75 @@ describe('resolveOboToken', () => {
 
     expect(result).not.toBeNull();
     expect(result!.expires_at).toBe(result!.obtained_at + 300 * 1000);
+  });
+});
+
+describe('isOboConfigStillTrusted', () => {
+  const adminPerms = {
+    [PermissionTypes.MCP_SERVERS]: {
+      [Permissions.CONFIGURE_OBO]: true,
+    },
+  };
+  const userPerms = {
+    [PermissionTypes.MCP_SERVERS]: {
+      [Permissions.CONFIGURE_OBO]: false,
+    },
+  };
+  const noOboPerms = {
+    [PermissionTypes.MCP_SERVERS]: {},
+  };
+
+  it('returns false when authorId is missing', async () => {
+    const result = await isOboConfigStillTrusted({
+      authorId: undefined,
+      getUserRoleByAuthorId: jest.fn(),
+      getRolePermissions: jest.fn(),
+    });
+    expect(result).toBe(false);
+  });
+
+  it('returns false when the author has no role (deleted user)', async () => {
+    const result = await isOboConfigStillTrusted({
+      authorId: 'gone',
+      getUserRoleByAuthorId: jest.fn().mockResolvedValue(null),
+      getRolePermissions: jest.fn(),
+    });
+    expect(result).toBe(false);
+  });
+
+  it('returns false when role lookup throws', async () => {
+    const result = await isOboConfigStillTrusted({
+      authorId: 'u1',
+      getUserRoleByAuthorId: jest.fn().mockResolvedValue('ADMIN'),
+      getRolePermissions: jest.fn().mockRejectedValue(new Error('db down')),
+    });
+    expect(result).toBe(false);
+  });
+
+  it('returns false when the role lacks CONFIGURE_OBO sub-key (older deployment)', async () => {
+    const result = await isOboConfigStillTrusted({
+      authorId: 'u1',
+      getUserRoleByAuthorId: jest.fn().mockResolvedValue('ADMIN'),
+      getRolePermissions: jest.fn().mockResolvedValue(noOboPerms),
+    });
+    expect(result).toBe(false);
+  });
+
+  it('returns false when CONFIGURE_OBO is explicitly false', async () => {
+    const result = await isOboConfigStillTrusted({
+      authorId: 'u1',
+      getUserRoleByAuthorId: jest.fn().mockResolvedValue('USER'),
+      getRolePermissions: jest.fn().mockResolvedValue(userPerms),
+    });
+    expect(result).toBe(false);
+  });
+
+  it('returns true when the author still has CONFIGURE_OBO', async () => {
+    const result = await isOboConfigStillTrusted({
+      authorId: 'u1',
+      getUserRoleByAuthorId: jest.fn().mockResolvedValue('ADMIN'),
+      getRolePermissions: jest.fn().mockResolvedValue(adminPerms),
+    });
+    expect(result).toBe(true);
   });
 });

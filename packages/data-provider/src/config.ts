@@ -878,6 +878,7 @@ const mcpServersSchema = z
     create: z.boolean().optional(),
     share: z.boolean().optional(),
     public: z.boolean().optional(),
+    configureObo: z.boolean().optional(),
     trustCheckbox: z
       .object({
         label: localizedStringSchema.optional(),
