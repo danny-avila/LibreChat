@@ -797,6 +797,22 @@ async function commitRemoteSkill(
   return { skill: created.skill, created: true };
 }
 
+/**
+ * File sync bumps the parent skill's `version` (via file upserts/deletes) but
+ * never changes its authored content, so we must re-read to get past our own
+ * version bumps. A plain re-read would also silently accept and overwrite a
+ * concurrent external edit; compare the refreshed content against the pre-sync
+ * snapshot and treat a changed body/name/description/always-apply as a conflict.
+ */
+function hasExternalSkillEdit(before: ISkill, after: ISkill): boolean {
+  return (
+    before.body !== after.body ||
+    before.name !== after.name ||
+    before.description !== after.description ||
+    (before.alwaysApply ?? false) !== (after.alwaysApply ?? false)
+  );
+}
+
 async function commitExistingRemoteSkillAfterFileSync(
   deps: GitHubSkillSyncDeps,
   prepared: PreparedExistingRemoteSkill,
@@ -806,6 +822,12 @@ async function commitExistingRemoteSkillAfterFileSync(
     throw new SkillSyncError(
       'SKILL_NOT_FOUND',
       `Previously synced skill "${prepared.existing.name}" was removed`,
+    );
+  }
+  if (hasExternalSkillEdit(prepared.existing, refreshed)) {
+    throw new SkillSyncError(
+      'SKILL_CONFLICT',
+      `Skill "${prepared.existing.name}" was modified during sync`,
     );
   }
   return commitRemoteSkill(deps, { ...prepared, existing: refreshed });
