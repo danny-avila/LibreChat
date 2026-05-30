@@ -245,7 +245,6 @@ const FarmerLocationModal = ({
   const isLocationMissing = effectiveMissingFields.includes('location');
   const otherMissingFields = effectiveMissingFields.filter((f) => f !== 'location');
   const shouldShowCloseButton = isLocationMissing && otherMissingFields.length === 0;
-
   const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen && !shouldShowCloseButton) {
       return;
@@ -486,8 +485,11 @@ const FarmerLocationModal = ({
     return uniqueMissingOrInvalidFields.length === 0;
   };
 
+  const shouldShowDialog =
+  open && ((otherMissingFields?.length ?? 0) > 0 || isLocationMissing)
+
   return (
-    <OGDialog open={open} onOpenChange={handleOpenChange}>
+    <OGDialog open={shouldShowDialog} onOpenChange={handleOpenChange}>
       <OGDialogContent
         showCloseButton={shouldShowCloseButton}
         onInteractOutside={(e) => {
@@ -516,7 +518,6 @@ const FarmerLocationModal = ({
           {otherMissingFields.map((field) => {
             const config = fieldConfig[field];
             if (!config) return null;
-
             if (config.type === 'searchable-select') {
               return (
                 <div key={field} className={fieldClass}>
