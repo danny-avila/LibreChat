@@ -395,10 +395,10 @@ function assertGitHubSkillPackageManifest(discovered: DiscoveredSkill): void {
 }
 
 function getSourceMetadataString(
-  file: ISkillFile & { _id: Types.ObjectId },
+  row: { sourceMetadata?: Record<string, unknown> },
   key: string,
 ): string | undefined {
-  const metadata = file.sourceMetadata;
+  const metadata = row.sourceMetadata;
   const value = metadata && typeof metadata === 'object' ? metadata[key] : undefined;
   return typeof value === 'string' ? value : undefined;
 }
@@ -979,6 +979,33 @@ function hasRemoteSkillDefinitionChanged(update: UpdateSkillInput, existing: ISk
   );
 }
 
+function findMovedSourceSkill(params: {
+  source: SkillSyncGitHubSourceConfig;
+  prepared: PreparedRemoteSkill;
+  existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }>;
+  seenUpstreamIds: Set<string>;
+}): (ISkill & { _id: Types.ObjectId }) | null {
+  const sourceTenantId = params.source.tenantId ?? undefined;
+  const sourceAuthor = params.prepared.createInput.author.toString();
+  const name = params.prepared.createInput.name;
+
+  return (
+    params.existingSyncedSkills.find((skill) => {
+      if ((skill.tenantId ?? undefined) !== sourceTenantId) {
+        return false;
+      }
+      if (skill.name !== name || skill.author.toString() !== sourceAuthor) {
+        return false;
+      }
+      const upstreamId = getSourceMetadataString(skill, 'upstreamId');
+      if (!upstreamId) {
+        return false;
+      }
+      return !params.seenUpstreamIds.has(upstreamId);
+    }) ?? null
+  );
+}
+
 async function syncSkillFiles(params: {
   deps: GitHubSkillSyncDeps;
   token: string;
@@ -1124,6 +1151,16 @@ async function syncSource(params: {
     assertConfiguredPathsExist(treeEntries, source);
     const discoveredSkills = discoverSkills(treeEntries, source);
     const seenUpstreamIds = new Set<string>();
+    let existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }> | null = null;
+    const getExistingSyncedSkills = async () => {
+      if (!existingSyncedSkills) {
+        existingSyncedSkills = await deps.listSkillsBySource({
+          source: PROVIDER,
+          sourceId: source.id,
+        });
+      }
+      return existingSyncedSkills;
+    };
     const counts: SyncCounters = {
       syncedSkillCount: 0,
       syncedFileCount: 0,
@@ -1152,26 +1189,37 @@ async function syncSource(params: {
         commitSha: commit.sha,
         syncedAt,
       });
+      const movedExisting = prepared.existing
+        ? null
+        : findMovedSourceSkill({
+            source,
+            prepared,
+            existingSyncedSkills: await getExistingSyncedSkills(),
+            seenUpstreamIds,
+          });
+      const effectivePrepared: PreparedRemoteSkill = movedExisting
+        ? { ...prepared, existing: movedExisting }
+        : prepared;
       seenUpstreamIds.add(makeUpstreamId(source, discovered.rootPath));
-      if (prepared.existing) {
+      if (effectivePrepared.existing) {
         // Check for an external edit before mutating files, so a concurrently
         // edited skill fails fast without leaving its bundled files partially
         // rewritten to the upstream version. The post-file-sync check below
         // still guards edits that land during the file sync itself.
-        const beforeFileSync = await deps.getSkillById(prepared.existing._id);
+        const beforeFileSync = await deps.getSkillById(effectivePrepared.existing._id);
         if (!beforeFileSync) {
           throw new SkillSyncError(
             'SKILL_NOT_FOUND',
-            `Previously synced skill "${prepared.existing.name}" was removed`,
+            `Previously synced skill "${effectivePrepared.existing.name}" was removed`,
           );
         }
-        if (hasExternalSkillEdit(prepared.existing, beforeFileSync)) {
+        if (hasExternalSkillEdit(effectivePrepared.existing, beforeFileSync)) {
           throw new SkillSyncError(
             'SKILL_CONFLICT',
-            `Skill "${prepared.existing.name}" was modified during sync`,
+            `Skill "${effectivePrepared.existing.name}" was modified during sync`,
           );
         }
-        const previousFiles = await deps.listSkillFiles(prepared.existing._id);
+        const previousFiles = await deps.listSkillFiles(effectivePrepared.existing._id);
         const journal: SyncSkillFilesJournal = { staleFiles: [], savedFiles: [] };
         let fileCounts: SyncSkillFilesResult;
         let upserted: UpsertRemoteSkillResult;
@@ -1180,7 +1228,7 @@ async function syncSource(params: {
             deps,
             token,
             source,
-            skill: prepared.existing,
+            skill: effectivePrepared.existing,
             discovered,
             commitSha: commit.sha,
             fetchFn,
@@ -1190,15 +1238,15 @@ async function syncSource(params: {
           upserted = await commitExistingRemoteSkillAfterFileSync(
             deps,
             {
-              ...prepared,
-              existing: prepared.existing,
+              ...effectivePrepared,
+              existing: effectivePrepared.existing,
             },
             { forceCommit: fileCounts.syncedFileCount > 0 || fileCounts.deletedFileCount > 0 },
           );
         } catch (error) {
           await restoreExistingSkillFiles({
             deps,
-            skill: prepared.existing,
+            skill: effectivePrepared.existing,
             previousFiles,
             savedFiles: journal.savedFiles,
           }).catch((cleanupError) =>
@@ -1221,7 +1269,7 @@ async function syncSource(params: {
         continue;
       }
 
-      const upserted = await commitRemoteSkill(deps, prepared);
+      const upserted = await commitRemoteSkill(deps, effectivePrepared);
       const { skill } = upserted;
       try {
         const fileCounts = await syncSkillFiles({
@@ -1249,7 +1297,7 @@ async function syncSource(params: {
       }
     }
 
-    const existingSyncedSkills = await deps.listSkillsBySource({
+    const currentSyncedSkills = await deps.listSkillsBySource({
       source: PROVIDER,
       sourceId: source.id,
     });
@@ -1259,7 +1307,7 @@ async function syncSource(params: {
     // could delete another tenant's mirrored skills. Absent tenantId is its own
     // (ambient) bucket.
     const sourceTenantId = source.tenantId ?? undefined;
-    for (const skill of existingSyncedSkills) {
+    for (const skill of currentSyncedSkills) {
       assertNotCancelled();
       if ((skill.tenantId ?? undefined) !== sourceTenantId) {
         continue;
